@@ -21,6 +21,8 @@
 *.__i
 *.lnp
 *.build_log.htm
+**/pie_block_build.log
+**/build_test.log
 
 # Temporary and backup files
 *.bak

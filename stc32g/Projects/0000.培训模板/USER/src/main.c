@@ -1,38 +1,19 @@
-/*********************************************************************************************************************
- *     COPYRIGHT NOTICE
- *     Copyright (c) 2023,CNU_W.PIE
- *     All rights reserved.
- *
- *     ³ı×¢Ã÷³ö´¦Íâ£¬ÒÔÏÂËùÓĞÄÚÈİ°æÈ¨¾ùÊôÅÖÅÖ¸öÈËËùÓĞ£¬Î´¾­ÔÊĞí£¬²»µÃÓÃÓÚÉÌÒµÓÃÍ¾£¬
- *     ĞŞ¸ÄÄÚÈİÊ±±ØĞë±£ÁôPPµÄ°æÈ¨ÉùÃ÷¡£
- *     Except where indicated, the copyright of all the contents below is owned by PP 
- *     and can not be used for commercial purposes without permission. 
- *     The copyright notice of PP must be preserved when modifying the content.
- *
- * @file       main.h
- * @brief      Ö÷º¯Êı
- * @author     ÅÖÅÖ
- * @version    v1.0
- * @note       NULL
- * @date       2023-07-26
- ********************************************************************************************************************/
+#include "main.h"
 
-#include "main.h" 
+/* ===== å…¨å±€å˜é‡ï¼ˆè‡ªåŠ¨ç”Ÿæˆï¼‰===== */
+/* æ—  */
 
-void main(void)                                     //±ØÒªµÄÖ÷º¯Êı
-{                                                   //Ö÷º¯ÊıµÄ´óÀ¨ºÅ
-	/*³õÊ¼»¯*/
-	Board_Init();                                     //ÅàÑµµ×°å³õÊ¼»¯
-	GPIO_Init(GPIO_P3, GPIO_Pin_4, GPIO_OUT_PP);			//½«P34Òı½Å³õÊ¼»¯ÎªÊä³ö
-	
-	
-	
-	while(1)
-	{                                                 //whileÑ­»·µÄ´óÀ¨ºÅ
-		/*¶ÔÍâÉèµÄ²Ù×÷*/
-		
-		
-	 	
-	}                                                 //whileÑ­»·µÄ´óÀ¨ºÅ
-}                                                   //Ö÷º¯ÊıµÄ´óÀ¨ºÅ
+/* ===== ä¸»å‡½æ•° ===== */
+void main(void)
+{
+    Board_Init();
 
+    /* ===== åˆå§‹åŒ–åŒº ===== */
+    /* pie-block self-test */
+
+    /* ===== ä¸»å¾ªç¯ ===== */
+    while (1)
+    {
+        /* æ—  */
+    }
+}

@@ -22,6 +22,9 @@
             <button id="btn-generate">生成代码</button>
             <button id="btn-copy">复制</button>
             <button id="btn-download">下载 main.c</button>
+            <button id="btn-compile" title="使用 Keil C251 编译当前代码">编译</button>
+            <button id="btn-open-hex" class="hidden" title="在资源管理器中显示 hex">打开 hex</button>
+            <span id="compile-status" class="compile-status" aria-live="polite"></span>
             <button id="code-toggle" class="toggle-btn" title="折叠/展开代码区">收起 ▶</button>
         </div>
     </header>
@@ -30,6 +33,13 @@
         <section class="code-panel" id="code-panel">
             <div class="code-title">生成的 C 代码</div>
             <pre id="code-preview"></pre>
+            <div class="build-log-panel" id="build-log-panel">
+                <div class="build-log-title">
+                    <span>Keil 编译日志</span>
+                    <button type="button" id="btn-clear-log" class="log-action" title="清空日志">清空</button>
+                </div>
+                <pre id="build-log" class="build-log"></pre>
+            </div>
         </section>
     </main>
     <script type="module" src="/src/main.js"></script>

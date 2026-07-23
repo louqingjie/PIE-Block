@@ -92,6 +92,122 @@ document.getElementById('btn-download').addEventListener('click', () => {
     URL.revokeObjectURL(url);
 });
 
+// ========== Keil C251 编译（仅 Electron 桌面端）==========
+const btnCompile = document.getElementById('btn-compile');
+const btnOpenHex = document.getElementById('btn-open-hex');
+const compileStatus = document.getElementById('compile-status');
+const buildLogEl = document.getElementById('build-log');
+const btnClearLog = document.getElementById('btn-clear-log');
+
+/** @type {string|null} */
+let lastHexPath = null;
+/** 是否正在编译 */
+let isCompiling = false;
+
+const native = typeof window !== 'undefined' ? window.pieNative : null;
+const canCompile = Boolean(native?.compile);
+
+function setCompileStatus(text, kind = '') {
+    if (!compileStatus) return;
+    compileStatus.textContent = text || '';
+    compileStatus.classList.remove('is-ok', 'is-error', 'is-busy');
+    if (kind) compileStatus.classList.add(kind);
+}
+
+function setBuildLog(text) {
+    if (!buildLogEl) return;
+    buildLogEl.textContent = text || '';
+    buildLogEl.scrollTop = buildLogEl.scrollHeight;
+}
+
+function setCompileUiBusy(busy) {
+    isCompiling = busy;
+    if (btnCompile) {
+        btnCompile.disabled = busy || !canCompile;
+        btnCompile.textContent = busy ? '编译中…' : '编译';
+    }
+}
+
+if (!canCompile) {
+    // 浏览器预览模式：无 Node/Keil，禁用编译
+    if (btnCompile) {
+        btnCompile.disabled = true;
+        btnCompile.title = '请在 Electron 桌面端使用 Keil 编译';
+    }
+    setCompileStatus('浏览器模式：编译不可用', '');
+} else {
+    // 启动时探测工具链
+    native.detectKeil?.().then((info) => {
+        if (!info?.found) {
+            setCompileStatus('未检测到 Keil C251', 'is-error');
+            if (btnCompile) btnCompile.title = info?.message || '未安装 Keil C251';
+        } else if (!info.projectReady) {
+            setCompileStatus('工程模板缺失', 'is-error');
+        } else {
+            setCompileStatus(
+                info.c251Version ? `C251 ${info.c251Version}` : 'Keil 已就绪',
+                'is-ok',
+            );
+        }
+    }).catch(() => {
+        setCompileStatus('Keil 探测失败', 'is-error');
+    });
+}
+
+btnCompile?.addEventListener('click', async () => {
+    if (!canCompile || isCompiling) return;
+
+    // 先刷新代码，保证编译内容与积木一致
+    refresh();
+    const code = codeArea.textContent || '';
+    if (!code.trim() || code.startsWith('/* 生成出错')) {
+        setCompileStatus('代码无效，无法编译', 'is-error');
+        return;
+    }
+
+    setCompileUiBusy(true);
+    setCompileStatus('Keil 编译中…', 'is-busy');
+    setChipState('generating');
+    setBuildLog('正在调用 Keil C251 / UV4 批编译…\n');
+    lastHexPath = null;
+    btnOpenHex?.classList.add('hidden');
+
+    try {
+        const result = await native.compile(code);
+        setBuildLog(result?.log || result?.message || '（无日志）');
+
+        if (result?.success) {
+            lastHexPath = result.hexPath || null;
+            const size = result.summary?.programSize;
+            setCompileStatus(size ? `编译成功 · ${size}` : '编译成功', 'is-ok');
+            setChipState('ok');
+            if (lastHexPath) btnOpenHex?.classList.remove('hidden');
+        } else {
+            setCompileStatus(result?.message || '编译失败', 'is-error');
+            setChipState('error');
+            if (result?.hexPath) {
+                lastHexPath = result.hexPath;
+                btnOpenHex?.classList.remove('hidden');
+            }
+        }
+    } catch (err) {
+        setCompileStatus(err?.message || '编译异常', 'is-error');
+        setBuildLog(String(err?.stack || err));
+        setChipState('error');
+    } finally {
+        setCompileUiBusy(false);
+    }
+});
+
+btnOpenHex?.addEventListener('click', async () => {
+    if (!lastHexPath || !native?.showItemInFolder) return;
+    await native.showItemInFolder(lastHexPath);
+});
+
+btnClearLog?.addEventListener('click', () => {
+    setBuildLog('');
+});
+
 // 代码区折叠/展开
 const codePanel = document.getElementById('code-panel');
 const codeToggle = document.getElementById('code-toggle');

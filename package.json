@@ -36,6 +36,26 @@
       "electron/**/*",
       "package.json"
     ],
+    "extraResources": [
+      {
+        "from": "stc32g",
+        "to": "stc32g",
+        "filter": [
+          "**/*",
+          "!**/Objects/**",
+          "!**/Listings/**",
+          "!**/*.hex",
+          "!**/*.obj",
+          "!**/*.crf",
+          "!**/*.__i",
+          "!**/*.lnp",
+          "!**/*.map",
+          "!**/*.lst",
+          "!**/*.build_log.htm",
+          "!**/pie_block_build.log"
+        ]
+      }
+    ],
     "asar": true,
     "win": {
       "target": [
