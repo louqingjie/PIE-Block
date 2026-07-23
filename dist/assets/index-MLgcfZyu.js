@@ -1299,8 +1299,7 @@ void ExpansionBoradControl(uint8_t control_cmd, uint16_t data_p60, uint16_t data
     control_frame_pack[18] = (uint8_t)(data_p77 & 0xFF);
     for (i = 0; i < 21; i++)
         UART_PutChar(UART_1, control_frame_pack[i]);
-}`}E.forBlock.rm_robot_init=(e,t)=>{Fr(t);let n=[];for(let t=0;t<8;t++)n.push(e.getFieldValue(`F`+t));let r=n.map(e=>e===`0`?`0`:e).join(`, `),i=``;return i+=`Board_Init();
-`,i+=`GPIO_Init(GPIO_P3, GPIO_Pin_4, GPIO_OUT_PP);
+}`}E.forBlock.rm_robot_init=(e,t)=>{Fr(t);let n=[];for(let t=0;t<8;t++)n.push(e.getFieldValue(`F`+t));let r=n.map(e=>e===`0`?`0`:e).join(`, `),i=``;return i+=`GPIO_Init(GPIO_P3, GPIO_Pin_4, GPIO_OUT_PP);
 `,i+=`GPIO_Write_Bit(GPIO_P3, GPIO_Pin_4, 0);
 `,i+=`remote_control_init();
 `,i+=`GPIO_Write_Bit(GPIO_P3, GPIO_Pin_4, 1);

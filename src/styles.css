@@ -81,7 +81,7 @@ body {
 }
 
 /* 工具箱二级分类彩色条向右缩进 */
-.blocklyToolboxCategoryGroup [role="treeitem"][aria-level="2"] > .blocklyToolboxCategory {
+.blocklyToolboxCategoryGroup [role="treeitem"][aria-level="2"]>.blocklyToolboxCategory {
     margin-left: 19px;
     padding-left: 0px !important;
 }
