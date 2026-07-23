@@ -11,13 +11,26 @@ import './styles.css';
 // 1. 注入工作区
 const workspace = Blockly.inject('blockly-div', {
     toolbox,
-    grid: { spacing: 20, length: 1, colour: '#ccc', snap: true },
+    grid: { spacing: 20, length: 1, colour: '#222831', snap: true },
     zoom: { controls: true, wheel: true, startScale: 0.9 },
     trashcan: true,
     move: { scrollbars: true, drag: true, wheel: true },
+    theme: Blockly.Theme.defineTheme('dark', {
+        base: Blockly.Themes.Classic,
+        componentStyles: {
+            workspaceBackgroundColour: '#0d1117',
+            toolboxBackgroundColour: '#13181f',
+            toolboxForegroundColour: '#c9d1d9',
+            flyoutBackgroundColour: '#1c2128',
+            flyoutForegroundColour: '#c9d1d9',
+            flyoutOpacity: 1,
+            scrollbarColour: '#30363d',
+            insertionMarkerColour: '#4ecdc4',
+        },
+    }),
 });
 
-// 2. 默认放置“初始化区”与“主循环区”两个不可删除容器，上下连接
+// 2. 默认放置"初始化区"与"主循环区"两个不可删除容器，上下连接
 const setupBlock = Blockly.serialization.blocks.append(
     { type: 'stc_setup', x: 20, y: 20 }, workspace,
 );
@@ -31,11 +44,25 @@ loopBlock.previousConnection.connect(setupBlock.nextConnection);
 const codeArea = document.getElementById('code-preview');
 let debounceTimer = null;
 
+/** 更新顶栏芯片状态 LED */
+function setChipState(state /* 'idle' | 'generating' | 'ok' | 'error' */) {
+    document.body.classList.remove('state-generating', 'state-ok', 'state-error');
+    if (state !== 'idle') document.body.classList.add(`state-${state}`);
+}
+
+let okResetTimer = null;
+
 function refresh() {
+    setChipState('generating');
+    clearTimeout(okResetTimer);
     try {
         codeArea.textContent = generateC(workspace);
+        setChipState('ok');
+        // 3 秒后回到空闲，避免常亮绿色视觉疲劳
+        okResetTimer = setTimeout(() => setChipState('idle'), 3000);
     } catch (err) {
         codeArea.textContent = '/* 生成出错: ' + err.message + ' */';
+        setChipState('error');
     }
 }
 
@@ -70,9 +97,9 @@ const codePanel = document.getElementById('code-panel');
 const codeToggle = document.getElementById('code-toggle');
 codeToggle.addEventListener('click', () => {
     const collapsed = codePanel.classList.toggle('collapsed');
-    codeToggle.textContent = collapsed ? '展开代码 ◀' : '收起代码 ▶';
+    codeToggle.textContent = collapsed ? '展开 ◀' : '收起 ▶';
     // Blockly 需要重新计算尺寸
-    setTimeout(() => Blockly.svgResize(workspace), 260);
+    setTimeout(() => Blockly.svgResize(workspace), 250);
 });
 
 refresh();

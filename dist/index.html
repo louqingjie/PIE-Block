@@ -4,19 +4,27 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>STC32G Blockly 图形化编程</title>
-  <script type="module" crossorigin src="/assets/index-DXiJX7jJ.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/index-D_uEiXeM.css">
+    <title>STC32G 图形化编程</title>
+  <script type="module" crossorigin src="/assets/index-BvQ98Q-X.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-D5bAFiez.css">
 </head>
 
 <body>
     <header class="app-header">
-        <h1>STC32G 图形化编程</h1>
+        <div class="header-left">
+            <div class="chip-status" title="芯片状态">
+                <span class="status-led"></span>
+                <span class="status-led"></span>
+                <span class="status-led"></span>
+            </div>
+            <h1>STC32G 图形化编程</h1>
+            <span class="header-chip-label">STC32G12K128</span>
+        </div>
         <div class="actions">
             <button id="btn-generate">生成代码</button>
             <button id="btn-copy">复制</button>
             <button id="btn-download">下载 main.c</button>
-            <button id="code-toggle" class="toggle-btn" title="折叠/展开代码区">收起代码 ▶</button>
+            <button id="code-toggle" class="toggle-btn" title="折叠/展开代码区">收起 ▶</button>
         </div>
     </header>
     <main class="app-body">
