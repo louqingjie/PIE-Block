@@ -1,0 +1,32 @@
+# C/C++ Editor files
+# User keywords
+keywords6.$(file.patterns.cpp)=_at_ alien bdata bit code compact data far idata interrupt \
+large pdata _priority_ reentrant sbit sfr sfr16 small _task_ using \
+xdata regfile noalias optimize size objectadvanced auto register static extern \
+bit char enum int float double sbit sfr sfr16 code \
+data bdata ebdata near xdata far huge idata tiny xtiny \
+small xsmall large asm asmexpand define endasm incdir noextend preprintonly \
+code cond eject listinclude nocond noprint pagelength pagewidth preprint print \
+symbols tabs warning warninglevel browse debug disable fixdrk float64 floatfuzzy \
+functions hptr hold inerval intr2 intvector large maxargs modbin name \
+noalias noamake nvm_const noaasmexpand nocase nointvector noobject noregparms object objectadvanced \
+optimize order pack parm251 parm51 regfile regparms renamecode restore rom \
+save small src string tiny usigned_char userclass xsmall xtiny __c251__ \
+__date__ __date2__ __file__ __line__ __model__ __time__ __stdc__ __float64__ __modsrc__ aregs \
+noaregs register cbyte dbyte hbyte nbyte xbyte cvar dvar hvar \
+nvar xvar carray darray harray narray xarray 
+
+
+
+# Asm Editor files
+# User keywords
+keywords6.$(file.patterns.asm)=
+
+
+
+# Editor Text files
+# User keywords
+keywords6.$(file.patterns.txt)=
+
+
+

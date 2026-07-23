@@ -23,14 +23,35 @@ const DEFAULT_KEIL_ROOTS = [
 ];
 
 const CONFIG_FILE_NAME = 'keil-config.json';
+/** 内置工具链相对仓库 / resources 的目录名 */
+const BUNDLED_TOOLCHAIN_DIR = 'keil-toolchain';
 
 /**
  * 用户配置文件路径（userData/keil-config.json）。
  * @returns {string}
  */
 export function getConfigPath() {
-    return path.join(app.getPath('userData'), CONFIG_FILE_NAME);
+    try {
+        return path.join(app.getPath('userData'), CONFIG_FILE_NAME);
+    } catch {
+        // 非 Electron 环境（自检脚本）回退到临时目录语义
+        return path.join(process.env.APPDATA || process.cwd(), 'pie-block-keil-config.json');
+    }
 }
+
+/**
+ * 是否已打包。非 Electron 环境下视为未打包。
+ * @returns {boolean}
+ */
+function isAppPackaged() {
+    try {
+        return Boolean(app?.isPackaged);
+    } catch {
+        return false;
+    }
+}
+
+
 
 /**
  * @typedef {{ customRoot?: string|null, customUv4?: string|null, customC251?: string|null }} KeilConfig
@@ -81,10 +102,168 @@ export function clearKeilConfig() {
  * @returns {string}
  */
 export function getStc32gRoot() {
-    if (app.isPackaged) {
+    if (isAppPackaged()) {
         return path.join(process.resourcesPath, 'stc32g');
     }
     return path.join(__dirname, '..', 'stc32g');
+}
+
+/**
+ * 内置 Keil 工具链根目录（开发：vendor/keil-toolchain；打包：resources/keil-toolchain）。
+ * @returns {string}
+ */
+export function getBundledKeilRoot() {
+    if (isAppPackaged()) {
+        return path.join(process.resourcesPath, BUNDLED_TOOLCHAIN_DIR);
+    }
+    return path.join(__dirname, '..', 'vendor', BUNDLED_TOOLCHAIN_DIR);
+}
+
+/**
+ * 内置工具链是否包含 UV4 + C251。
+ * @param {string} [root]
+ * @returns {boolean}
+ */
+export function isBundledToolchainPresent(root = getBundledKeilRoot()) {
+    if (!root || !fs.existsSync(root)) return false;
+    const uv4 = path.join(root, 'UV4', 'UV4.exe');
+    const c251 = path.join(root, 'C251', 'BIN', 'C251.EXE');
+    return fs.existsSync(uv4) && fs.existsSync(c251);
+}
+
+/**
+ * 将 TOOLS.INI 中的 PATH 改写为当前绝对路径。
+ * 优先写回工具链目录；若只读（安装目录），则写到 userData 并复制一份可写 TOOLS.INI，
+ * 同时尽量把 UV4 工作环境指回内置根（UV4 通常从安装根读 TOOLS.INI）。
+ *
+ * @param {string} keilRoot 内置或便携 Keil 根目录
+ * @returns {{ ok: boolean, toolsIni: string|null, message: string, writableRoot: string }}
+ */
+export function ensureBundledToolsIni(keilRoot) {
+    const root = path.resolve(keilRoot);
+    const srcIni = path.join(root, 'TOOLS.INI');
+    if (!fs.existsSync(srcIni)) {
+        return {
+            ok: false,
+            toolsIni: null,
+            message: `内置工具链缺少 TOOLS.INI：${srcIni}`,
+            writableRoot: root,
+        };
+    }
+
+    const c251Slash = normalizeKeilIniPath(path.join(root, 'C251'));
+
+    let raw = fs.readFileSync(srcIni, 'utf8');
+    // 去掉 UTF-8 BOM，避免 UV4 解析失败
+    if (raw.charCodeAt(0) === 0xfeff) raw = raw.slice(1);
+    raw = raw.replace(/\{\{KEIL_ROOT\}\}/g, root);
+    // μVision 要求 [C251] 段内必须有 PATH，且必须紧跟段名（与官方 TOOLS.INI 一致）
+    raw = ensureSectionPathFirst(raw, 'C251', c251Slash);
+
+    /** 尝试写回原位置（CRLF，与 Keil 官方文件一致） */
+    const out = raw.replace(/\r?\n/g, '\r\n');
+    try {
+        fs.writeFileSync(srcIni, out.endsWith('\r\n') ? out : `${out}\r\n`, 'utf8');
+        return {
+            ok: true,
+            toolsIni: srcIni,
+            message: 'TOOLS.INI 已更新',
+            writableRoot: root,
+        };
+    } catch {
+        /* 只读资源目录：写到 userData */
+    }
+
+    let userDataDir;
+    try {
+        userDataDir = app.getPath('userData');
+    } catch {
+        userDataDir = path.join(process.env.APPDATA || process.cwd(), 'pie-block');
+    }
+    const fallbackDir = path.join(userDataDir, 'keil-toolchain-runtime');
+    const fallbackIni = path.join(fallbackDir, 'TOOLS.INI');
+    try {
+        fs.mkdirSync(fallbackDir, { recursive: true });
+        // UV4 需要 TOOLS.INI 与 UV4/C251 同根；只读时无法改写安装目录。
+        // 仍写入 fallback 供诊断；实际编译依赖源目录若已含正确 PATH，或系统已注册。
+        fs.writeFileSync(fallbackIni, out.endsWith('\r\n') ? out : `${out}\r\n`, 'utf8');
+        return {
+            ok: true,
+            toolsIni: fallbackIni,
+            message:
+                '内置 TOOLS.INI 只读，已写入 userData 副本；若批编译找不到 C251，请以可写目录准备 vendor/keil-toolchain 或使用手动路径。',
+            writableRoot: root,
+        };
+    } catch (err) {
+        return {
+            ok: false,
+            toolsIni: null,
+            message: `无法写入 TOOLS.INI：${err.message}`,
+            writableRoot: root,
+        };
+    }
+}
+
+/**
+ * Keil TOOLS.INI PATH 值：绝对路径 + 尾随反斜杠，并用双引号包裹。
+ * @param {string} dir
+ */
+function normalizeKeilIniPath(dir) {
+    let p = path.resolve(dir);
+    if (!p.endsWith('\\') && !p.endsWith('/')) p += '\\';
+    return p;
+}
+
+/**
+ * 确保 INI 某段存在，且 PATH= 为该段第一项（μVision 对 [C251] 会强制检查 PATH）。
+ * @param {string} text
+ * @param {string} section
+ * @param {string} pathValue 已带尾随 \ 的绝对路径
+ */
+function ensureSectionPathFirst(text, section, pathValue) {
+    const pathLine = `PATH="${pathValue}"`;
+    // 仅匹配行首的段名，避免注释中的 [C251] 被误改
+    const secRe = new RegExp(`^[ \\t]*\\[${section}\\][ \\t]*\\r?\\n([\\s\\S]*?)(?=^[ \\t]*\\[|\\s*$)`, 'im');
+    if (!secRe.test(text)) {
+        return `${String(text).replace(/\s*$/, '')}\r\n[${section}]\r\n${pathLine}\r\n`;
+    }
+    return text.replace(secRe, (_m, body) => {
+        const lines = String(body)
+            .split(/\r?\n/)
+            .filter((l) => l.trim() !== '' && !/^\s*PATH\s*=/i.test(l));
+        return `[${section}]\r\n${pathLine}\r\n${lines.join('\r\n')}${lines.length ? '\r\n' : ''}`;
+    });
+}
+
+/**
+ * 解析内置工具链 UV4/C251，并确保 TOOLS.INI。
+ * @returns {{ uv4: string|null, c251: string|null, keilRoot: string|null, toolsIni: string|null, ready: boolean, message: string }}
+ */
+export function resolveBundledToolchain() {
+    const keilRoot = getBundledKeilRoot();
+    if (!isBundledToolchainPresent(keilRoot)) {
+        return {
+            uv4: null,
+            c251: null,
+            keilRoot: fs.existsSync(keilRoot) ? keilRoot : null,
+            toolsIni: null,
+            ready: false,
+            message: `未找到内置工具链（期望 ${keilRoot}）。开发态请运行 node scripts/prepare-keil-toolchain.mjs`,
+        };
+    }
+    const ini = ensureBundledToolsIni(keilRoot);
+    const uv4 = path.join(keilRoot, 'UV4', 'UV4.exe');
+    const c251 = path.join(keilRoot, 'C251', 'BIN', 'C251.EXE');
+    return {
+        uv4,
+        c251,
+        keilRoot,
+        toolsIni: ini.toolsIni,
+        ready: Boolean(ini.ok && fs.existsSync(uv4)),
+        message: ini.ok
+            ? `内置工具链就绪：${keilRoot}`
+            : ini.message || '内置工具链 TOOLS.INI 配置失败',
+    };
 }
 
 /**
@@ -283,45 +462,81 @@ async function readC251Version(c251Path) {
 }
 
 /**
- * 探测本机 Keil μVision / C251 工具链。
- * 优先级：用户手动路径 > 注册表 > 常见安装目录。
+ * 探测 Keil μVision / C251 工具链。
+ * 优先级：内置工具链 > 用户手动路径 > 注册表 > 常见安装目录。
+ * 若设置 options.preferManual，则手动路径优先于内置（用于用户主动指定后）。
+ * 若设置 options.bundledOnly，则仅使用内置。
+ *
+ * @param {{ preferManual?: boolean, bundledOnly?: boolean }} [options]
  */
-export async function detectKeil() {
+export async function detectKeil(options = {}) {
     const paths = getProjectPaths();
     const config = loadKeilConfig();
-    const roots = [...DEFAULT_KEIL_ROOTS];
-
-    const c251Reg = await readKeilRegistryPath('C251');
-    if (c251Reg) {
-        roots.unshift(path.dirname(c251Reg));
-        roots.unshift(c251Reg);
-    }
-
-    // 用户手动根目录优先
-    if (config.customRoot) {
-        roots.unshift(config.customRoot);
-    }
-
-    let tools = findToolsInRoots(roots);
-
-    // 用户直接指定的 exe 覆盖自动结果
-    if (config.customUv4 && fs.existsSync(config.customUv4)) {
-        tools = {
-            ...tools,
-            uv4: config.customUv4,
-            keilRoot: config.customRoot || tools.keilRoot || path.dirname(path.dirname(config.customUv4)),
-        };
-    }
-    if (config.customC251 && fs.existsSync(config.customC251)) {
-        tools = {
-            ...tools,
-            c251: config.customC251,
-            keilRoot: tools.keilRoot || config.customRoot || path.dirname(path.dirname(path.dirname(config.customC251))),
-        };
-    }
-
-    // 手动只给了 uv4 时，允许 found 以 uv4 为主（C251 由 UV4 工程间接使用）
     const hasManual = Boolean(config.customUv4 || config.customRoot || config.customC251);
+    const preferManual = Boolean(options.preferManual && hasManual);
+    const bundledOnly = Boolean(options.bundledOnly);
+
+    const bundled = resolveBundledToolchain();
+
+    /** @type {{ uv4: string|null, c251: string|null, keilRoot: string|null }} */
+    let tools = { uv4: null, c251: null, keilRoot: null };
+    /** @type {'bundled'|'manual'|'auto'|'none'} */
+    let source = 'none';
+
+    // 内置优先；用户配置了手动路径时尊重手动（便于覆盖内置问题）
+    const pickBundled = bundled.ready && !hasManual && !preferManual;
+
+    if (bundledOnly) {
+        if (bundled.ready) {
+            tools = { uv4: bundled.uv4, c251: bundled.c251, keilRoot: bundled.keilRoot };
+            source = 'bundled';
+        }
+    } else if (pickBundled) {
+        tools = { uv4: bundled.uv4, c251: bundled.c251, keilRoot: bundled.keilRoot };
+        source = 'bundled';
+    } else {
+        const roots = [...DEFAULT_KEIL_ROOTS];
+        const c251Reg = await readKeilRegistryPath('C251');
+        if (c251Reg) {
+            roots.unshift(path.dirname(c251Reg));
+            roots.unshift(c251Reg);
+        }
+        if (config.customRoot) roots.unshift(config.customRoot);
+
+        tools = findToolsInRoots(roots);
+
+        if (config.customUv4 && fs.existsSync(config.customUv4)) {
+            tools = {
+                ...tools,
+                uv4: config.customUv4,
+                keilRoot:
+                    config.customRoot ||
+                    tools.keilRoot ||
+                    path.dirname(path.dirname(config.customUv4)),
+            };
+        }
+        if (config.customC251 && fs.existsSync(config.customC251)) {
+            tools = {
+                ...tools,
+                c251: config.customC251,
+                keilRoot:
+                    tools.keilRoot ||
+                    config.customRoot ||
+                    path.dirname(path.dirname(path.dirname(config.customC251))),
+            };
+        }
+
+        if (hasManual && tools.uv4) {
+            source = 'manual';
+        } else if (tools.uv4) {
+            source = 'auto';
+        } else if (bundled.ready) {
+            // 手动无效时回退内置
+            tools = { uv4: bundled.uv4, c251: bundled.c251, keilRoot: bundled.keilRoot };
+            source = 'bundled';
+        }
+    }
+
     const c251Version = await readC251Version(tools.c251);
 
     const projectReady =
@@ -329,24 +544,30 @@ export async function detectKeil() {
         fs.existsSync(paths.mainC) &&
         fs.existsSync(path.dirname(paths.mainC));
 
-    // 批编译硬需求是 UV4；C251 建议存在
     const found = Boolean(tools.uv4 && fs.existsSync(tools.uv4));
     const c251Ok = Boolean(tools.c251 && fs.existsSync(tools.c251));
 
     let message = '';
     if (!found) {
-        message = hasManual
-            ? '已配置手动路径，但未找到可用的 UV4.exe，请重新选择。'
-            : '未检测到 Keil μVision / C251。可点击「Keil 路径」手动选择安装目录或 UV4.exe。';
+        if (bundledOnly) {
+            message = bundled.message || '未找到内置 Keil 工具链';
+        } else if (hasManual) {
+            message = '已配置手动路径，但未找到可用的 UV4.exe，请重新选择。';
+        } else {
+            message =
+                '未检测到内置或本机 Keil。可运行 prepare 脚本准备内置工具链，或点击「Keil 路径」选择 UV4.exe。';
+        }
     } else if (!projectReady) {
         message = `工程模板不完整：${paths.projectRoot}`;
     } else if (!c251Ok) {
-        message = hasManual
-            ? `UV4 已就绪（手动），未找到 C251.EXE，编译可能失败。`
-            : `UV4 已就绪，未找到 C251.EXE。`;
+        message =
+            source === 'manual'
+                ? 'UV4 已就绪（手动），未找到 C251.EXE，编译可能失败。'
+                : 'UV4 已就绪，未找到 C251.EXE。';
     } else {
-        const src = hasManual ? '手动' : '自动';
-        message = `已就绪（${src}）：C251 ${c251Version || '已安装'}`;
+        const tag =
+            source === 'bundled' ? '内置' : source === 'manual' ? '手动' : '自动';
+        message = `已就绪（${tag}）：C251 ${c251Version || '已安装'}`;
     }
 
     return {
@@ -361,7 +582,15 @@ export async function detectKeil() {
         mainC: paths.mainC,
         hexPath: paths.hexPath,
         message,
-        source: hasManual ? 'manual' : found ? 'auto' : 'none',
+        source: found ? source : 'none',
+        bundled: {
+            root: bundled.keilRoot || getBundledKeilRoot(),
+            ready: bundled.ready,
+            uv4: bundled.uv4,
+            c251: bundled.c251,
+            toolsIni: bundled.toolsIni,
+            message: bundled.message,
+        },
         config: {
             customRoot: config.customRoot || null,
             customUv4: config.customUv4 || null,
@@ -415,9 +644,10 @@ export function writeMainC(code) {
  * @param {string} uvprojPath
  * @param {string} logPath
  * @param {number} [timeoutMs]
+ * @param {{ keilRoot?: string|null }} [envOpts]
  * @returns {Promise<{ exitCode: number, log: string }>}
  */
-function runUv4Build(uv4Path, uvprojPath, logPath, timeoutMs = 120000) {
+function runUv4Build(uv4Path, uvprojPath, logPath, timeoutMs = 120000, envOpts = {}) {
     return new Promise((resolve, reject) => {
         try {
             if (fs.existsSync(logPath)) fs.unlinkSync(logPath);
@@ -425,10 +655,18 @@ function runUv4Build(uv4Path, uvprojPath, logPath, timeoutMs = 120000) {
             /* ignore */
         }
 
+        /** @type {NodeJS.ProcessEnv} */
+        const env = { ...process.env };
+        if (envOpts.keilRoot) {
+            env.KEIL_ROOT = envOpts.keilRoot;
+            env.UV2_ROOT = envOpts.keilRoot;
+        }
+
         const child = spawn(uv4Path, ['-b', uvprojPath, '-o', logPath], {
             cwd: path.dirname(uvprojPath),
             windowsHide: true,
             stdio: 'ignore',
+            env,
         });
 
         const timer = setTimeout(() => {
@@ -475,10 +713,12 @@ function summarizeLog(log) {
 /**
  * 完整编译流程：写 main.c → UV4 批编译 → 返回 hex / 日志。
  * @param {string} code 生成的 C 源码
- * @param {{ uv4?: string|null }} [options]
+ * @param {{ uv4?: string|null, bundledOnly?: boolean }} [options]
  */
 export async function compileWithKeil(code, options = {}) {
-    const info = await detectKeil();
+    const info = await detectKeil({
+        bundledOnly: Boolean(options.bundledOnly),
+    });
     const uv4 = options.uv4 || info.uv4;
     const paths = getProjectPaths();
 
@@ -486,11 +726,16 @@ export async function compileWithKeil(code, options = {}) {
         return {
             success: false,
             stage: 'detect',
-            message: '未找到 UV4.exe。请点击「Keil 路径」手动选择安装目录或 UV4.exe。',
+            message:
+                info.source === 'none' && info.bundled && !info.bundled.ready
+                    ? info.bundled.message ||
+                    '未找到 UV4.exe。请准备内置工具链或点击「Keil 路径」手动选择。'
+                    : '未找到 UV4.exe。请点击「Keil 路径」手动选择安装目录或 UV4.exe。',
             log: '',
             hexPath: null,
             mainC: null,
             summary: null,
+            source: info.source,
         };
     }
     if (!info.projectReady) {
@@ -502,6 +747,7 @@ export async function compileWithKeil(code, options = {}) {
             hexPath: null,
             mainC: null,
             summary: null,
+            source: info.source,
         };
     }
     if (!code || !String(code).trim()) {
@@ -513,7 +759,12 @@ export async function compileWithKeil(code, options = {}) {
             hexPath: null,
             mainC: null,
             summary: null,
+            source: info.source,
         };
+    }
+
+    if (info.source === 'bundled' && info.keilRoot) {
+        ensureBundledToolsIni(info.keilRoot);
     }
 
     let mainCPath;
@@ -528,6 +779,7 @@ export async function compileWithKeil(code, options = {}) {
             hexPath: null,
             mainC: null,
             summary: null,
+            source: info.source,
         };
     }
 
@@ -535,7 +787,9 @@ export async function compileWithKeil(code, options = {}) {
     /** @type {{ exitCode: number, log: string }} */
     let buildResult;
     try {
-        buildResult = await runUv4Build(uv4, paths.uvproj, logPath);
+        buildResult = await runUv4Build(uv4, paths.uvproj, logPath, 120000, {
+            keilRoot: info.keilRoot,
+        });
     } catch (err) {
         return {
             success: false,
@@ -545,6 +799,7 @@ export async function compileWithKeil(code, options = {}) {
             hexPath: null,
             mainC: mainCPath,
             summary: null,
+            source: info.source,
         };
     }
 
@@ -559,12 +814,13 @@ export async function compileWithKeil(code, options = {}) {
         message: ok
             ? `编译成功：${path.basename(paths.hexPath)}`
             : summary.summaryLine ||
-              (hexExists ? '编译可能存在错误，请查看日志。' : '编译失败，未生成 hex 文件。'),
+            (hexExists ? '编译可能存在错误，请查看日志。' : '编译失败，未生成 hex 文件。'),
         log: buildResult.log,
         hexPath: hexExists ? paths.hexPath : null,
         mainC: mainCPath,
         exitCode: buildResult.exitCode,
         uv4Used: uv4,
+        source: info.source,
         summary: {
             ...summary,
             success: ok,

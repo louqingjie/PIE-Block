@@ -61,8 +61,8 @@ void main(void)
     /* ===== 主循环 ===== */
     while (1)
     {
-        _base_spd = RcRockerValueRead(ROCKER_LEFT_VERTICAL);
-        _turn_spd = RcRockerValueRead(ROCKER_LEFT_HORIZONTAL);
+        _base_spd = 0;
+        _turn_spd = 0;
         _wheel[0] = -_base_spd - _turn_spd;
         _wheel[1] = -_base_spd - _turn_spd;
         _wheel[2] = _base_spd - _turn_spd;

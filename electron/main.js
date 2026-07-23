@@ -134,9 +134,9 @@ function registerIpc() {
             properties: chooseFile ? ['openFile'] : ['openDirectory'],
             filters: chooseFile
                 ? [
-                      { name: '可执行文件', extensions: ['exe'] },
-                      { name: '所有文件', extensions: ['*'] },
-                  ]
+                    { name: '可执行文件', extensions: ['exe'] },
+                    { name: '所有文件', extensions: ['*'] },
+                ]
                 : undefined,
         });
 

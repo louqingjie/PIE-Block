@@ -138,7 +138,9 @@ function setCompileUiBusy(busy) {
  * @param {object|null|undefined} info
  */
 function applyKeilInfo(info) {
-    const hasManual = info?.source === 'manual' || Boolean(info?.config?.customUv4 || info?.config?.customRoot);
+    const hasManual =
+        info?.source === 'manual' ||
+        Boolean(info?.config?.customUv4 || info?.config?.customRoot);
     if (btnKeilClear) {
         btnKeilClear.classList.toggle('hidden', !hasManual);
     }
@@ -146,12 +148,16 @@ function applyKeilInfo(info) {
     if (!info?.found) {
         setCompileStatus(info?.message || '未检测到 Keil', 'is-error');
         if (btnCompile) {
-            btnCompile.title = info?.message || '未找到 UV4.exe，可点击「Keil 路径」手动选择';
+            btnCompile.title =
+                info?.message ||
+                '未找到 UV4.exe。可准备内置工具链，或点击「Keil 路径」手动选择';
         }
         if (btnKeilPath && info?.config?.customUv4) {
             btnKeilPath.title = `当前手动：${info.config.customUv4}`;
         } else if (btnKeilPath) {
-            btnKeilPath.title = '手动选择 Keil 安装目录或 UV4.exe';
+            btnKeilPath.title = info?.bundled?.ready
+                ? '已检测到内置工具链；也可手动覆盖路径'
+                : '手动选择 Keil 安装目录或 UV4.exe';
         }
         return;
     }
@@ -162,15 +168,24 @@ function applyKeilInfo(info) {
     }
 
     const ver = info.c251Version ? `C251 ${info.c251Version}` : 'Keil 已就绪';
-    const tag = hasManual ? '手动' : '自动';
+    const tag =
+        info.source === 'bundled'
+            ? '内置'
+            : info.source === 'manual'
+                ? '手动'
+                : '自动';
     setCompileStatus(`${ver} · ${tag}`, 'is-ok');
     if (btnCompile) {
         btnCompile.title = info.uv4 ? `使用：${info.uv4}` : '使用 Keil C251 编译';
     }
     if (btnKeilPath) {
-        btnKeilPath.title = info.uv4
-            ? `当前 UV4：${info.uv4}（点击可重新选择）`
-            : '手动选择 Keil 安装目录或 UV4.exe';
+        if (info.source === 'bundled') {
+            btnKeilPath.title = `当前使用内置工具链：${info.uv4 || ''}（点击可改用外部 Keil）`;
+        } else {
+            btnKeilPath.title = info.uv4
+                ? `当前 UV4：${info.uv4}（点击可重新选择）`
+                : '手动选择 Keil 安装目录或 UV4.exe';
+        }
     }
 }
 
