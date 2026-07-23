@@ -29,16 +29,21 @@ export const toolbox = {
             kind: 'category', name: 'RoboMaster', colour: '#e91e63',
             contents: [
                 { kind: 'block', type: 'rm_robot_init' },
-                { kind: 'block', type: 'rm_expansion_set_duty' },
                 { kind: 'block', type: 'rm_expansion_set_dir' },
                 { kind: 'block', type: 'rm_chassis_drive' },
                 { kind: 'block', type: 'rm_chassis_stop' },
-                { kind: 'block', type: 'rm_servo_init' },
-                { kind: 'block', type: 'rm_servo_set' },
-                { kind: 'block', type: 'rm_booster_set' },
                 { kind: 'block', type: 'rm_limit_value' },
                 { kind: 'block', type: 'rm_abs' },
                 { kind: 'block', type: 'rm_angle_to_duty' },
+            ],
+        },
+        {
+            kind: 'category', name: 'RoboMaster 高级', colour: '#880e4f',
+            contents: [
+                { kind: 'block', type: 'rm_expansion_set_duty' },
+                { kind: 'block', type: 'rm_servo_init' },
+                { kind: 'block', type: 'rm_servo_set' },
+                { kind: 'block', type: 'rm_booster_set' },
             ],
         },
         {
