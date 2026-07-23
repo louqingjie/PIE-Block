@@ -18,41 +18,11 @@ export const toolbox = {
             ],
         },
         {
-            kind: 'category', name: 'OLED 屏', colour: '#4caf50',
-            contents: [
-                { kind: 'block', type: 'stc_oled_init' },
-                { kind: 'block', type: 'stc_oled_cls' },
-                { kind: 'block', type: 'stc_oled_big_str' },
-                { kind: 'block', type: 'stc_oled_small_str' },
-                { kind: 'block', type: 'stc_oled_float' },
-                { kind: 'block', type: 'stc_oled_onoff' },
-            ],
-        },
-        {
-            kind: 'category', name: 'LCD 屏', colour: '#8bc34a',
-            contents: [
-                { kind: 'block', type: 'stc_lcd_init' },
-                { kind: 'block', type: 'stc_lcd_cls' },
-                { kind: 'block', type: 'stc_lcd_str' },
-                { kind: 'block', type: 'stc_lcd_big_str' },
-                { kind: 'block', type: 'stc_lcd_uint' },
-                { kind: 'block', type: 'stc_lcd_float' },
-            ],
-        },
-        {
             kind: 'category', name: '遥控器', colour: '#ab47bc',
             contents: [
                 { kind: 'block', type: 'stc_rc_init' },
                 { kind: 'block', type: 'stc_rc_key_read' },
                 { kind: 'block', type: 'stc_rc_rocker_read' },
-            ],
-        },
-        {
-            kind: 'category', name: '无线通信', colour: '#1e88e5',
-            contents: [
-                { kind: 'block', type: 'stc_wireless_init' },
-                { kind: 'block', type: 'stc_wireless_link_check' },
-                { kind: 'block', type: 'stc_wireless_handler' },
             ],
         },
         {
@@ -181,6 +151,36 @@ export const toolbox = {
                         { kind: 'block', type: 'stc_bmi088_init' },
                         { kind: 'block', type: 'stc_bmi088_temp' },
                         { kind: 'block', type: 'stc_bmi088_time' },
+                    ],
+                },
+                {
+                    kind: 'category', name: '无线通信（已废弃）', colour: '#9e9e9e',
+                    contents: [
+                        { kind: 'block', type: 'stc_wireless_init' },
+                        { kind: 'block', type: 'stc_wireless_link_check' },
+                        { kind: 'block', type: 'stc_wireless_handler' },
+                    ],
+                },
+                {
+                    kind: 'category', name: 'OLED 屏（已废弃）', colour: '#9e9e9e',
+                    contents: [
+                        { kind: 'block', type: 'stc_oled_init' },
+                        { kind: 'block', type: 'stc_oled_cls' },
+                        { kind: 'block', type: 'stc_oled_big_str' },
+                        { kind: 'block', type: 'stc_oled_small_str' },
+                        { kind: 'block', type: 'stc_oled_float' },
+                        { kind: 'block', type: 'stc_oled_onoff' },
+                    ],
+                },
+                {
+                    kind: 'category', name: 'LCD 屏（引脚冲突）', colour: '#ff5722',
+                    contents: [
+                        { kind: 'block', type: 'stc_lcd_init' },
+                        { kind: 'block', type: 'stc_lcd_cls' },
+                        { kind: 'block', type: 'stc_lcd_str' },
+                        { kind: 'block', type: 'stc_lcd_big_str' },
+                        { kind: 'block', type: 'stc_lcd_uint' },
+                        { kind: 'block', type: 'stc_lcd_float' },
                     ],
                 },
             ],
