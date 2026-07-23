@@ -1,7 +1,13 @@
 import { app, BrowserWindow, shell, ipcMain, dialog } from 'electron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { compileWithKeil, detectKeil } from './keil-build.js';
+import {
+    compileWithKeil,
+    detectKeil,
+    applyKeilSelection,
+    clearKeilConfig,
+    loadKeilConfig,
+} from './keil-build.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = !app.isPackaged;
@@ -25,7 +31,7 @@ function createWindow() {
             preload: path.join(__dirname, 'preload.cjs'),
             contextIsolation: true,
             nodeIntegration: false,
-            sandbox: false, // preload 为 CommonJS；保持 contextIsolation
+            sandbox: false,
         },
     });
 
@@ -41,7 +47,6 @@ function createWindow() {
         mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
     }
 
-    // 外链用系统浏览器打开
     mainWindow.webContents.setWindowOpenHandler(({ url }) => {
         shell.openExternal(url);
         return { action: 'deny' };
@@ -91,6 +96,94 @@ function registerIpc() {
         }
     });
 
+    /** 打开对话框选择 Keil 目录或 UV4.exe，并保存配置 */
+    ipcMain.handle('keil:choosePath', async () => {
+        const win = BrowserWindow.getFocusedWindow() || mainWindow;
+        const cfg = loadKeilConfig();
+        const defaultPath =
+            cfg.customRoot ||
+            cfg.customUv4 ||
+            path.join(process.env.LOCALAPPDATA || 'C:\\', 'Keil_v5');
+
+        // Windows 不能同时 openFile + openDirectory，先让用户选类型
+        const pick = await dialog.showMessageBox(win ?? undefined, {
+            type: 'question',
+            title: '选择 Keil 路径',
+            message: '请选择要指定的路径类型',
+            detail:
+                '推荐选择 UV4.exe（…\\Keil_v5\\UV4\\UV4.exe），\n也可选择整个 Keil 安装根目录（…\\Keil_v5）。',
+            buttons: ['选择 UV4.exe', '选择安装目录', '取消'],
+            defaultId: 0,
+            cancelId: 2,
+            noLink: true,
+        });
+
+        if (pick.response === 2) {
+            return {
+                canceled: true,
+                success: false,
+                message: '已取消选择',
+                info: await detectKeil(),
+            };
+        }
+
+        const chooseFile = pick.response === 0;
+        const result = await dialog.showOpenDialog(win ?? undefined, {
+            title: chooseFile ? '选择 UV4.exe 或 C251.EXE' : '选择 Keil 安装根目录',
+            defaultPath,
+            properties: chooseFile ? ['openFile'] : ['openDirectory'],
+            filters: chooseFile
+                ? [
+                      { name: '可执行文件', extensions: ['exe'] },
+                      { name: '所有文件', extensions: ['*'] },
+                  ]
+                : undefined,
+        });
+
+        if (result.canceled || !result.filePaths?.length) {
+            return {
+                canceled: true,
+                success: false,
+                message: '已取消选择',
+                info: await detectKeil(),
+            };
+        }
+
+        try {
+            const applied = await applyKeilSelection(result.filePaths[0]);
+            return {
+                canceled: false,
+                ...applied,
+            };
+        } catch (err) {
+            return {
+                canceled: false,
+                success: false,
+                message: err?.message || String(err),
+                info: await detectKeil(),
+            };
+        }
+    });
+
+    /** 清除手动路径，恢复自动探测 */
+    ipcMain.handle('keil:clearPath', async () => {
+        try {
+            clearKeilConfig();
+            const info = await detectKeil();
+            return {
+                success: true,
+                message: '已清除手动路径，恢复自动探测',
+                info,
+            };
+        } catch (err) {
+            return {
+                success: false,
+                message: err?.message || String(err),
+                info: null,
+            };
+        }
+    });
+
     ipcMain.handle('shell:showItemInFolder', async (_event, filePath) => {
         if (typeof filePath !== 'string' || !filePath) {
             return { ok: false, message: '无效路径' };
@@ -134,7 +227,6 @@ app.on('window-all-closed', () => {
     }
 });
 
-// 未捕获异常时避免静默退出，便于排查编译相关问题
 process.on('uncaughtException', (err) => {
     console.error('[main] uncaughtException', err);
     if (mainWindow && !mainWindow.isDestroyed()) {

@@ -94,6 +94,8 @@ document.getElementById('btn-download').addEventListener('click', () => {
 
 // ========== Keil C251 编译（仅 Electron 桌面端）==========
 const btnCompile = document.getElementById('btn-compile');
+const btnKeilPath = document.getElementById('btn-keil-path');
+const btnKeilClear = document.getElementById('btn-keil-clear');
 const btnOpenHex = document.getElementById('btn-open-hex');
 const compileStatus = document.getElementById('compile-status');
 const buildLogEl = document.getElementById('build-log');
@@ -112,6 +114,7 @@ function setCompileStatus(text, kind = '') {
     compileStatus.textContent = text || '';
     compileStatus.classList.remove('is-ok', 'is-error', 'is-busy');
     if (kind) compileStatus.classList.add(kind);
+    if (text) compileStatus.title = text;
 }
 
 function setBuildLog(text) {
@@ -126,6 +129,49 @@ function setCompileUiBusy(busy) {
         btnCompile.disabled = busy || !canCompile;
         btnCompile.textContent = busy ? '编译中…' : '编译';
     }
+    if (btnKeilPath) btnKeilPath.disabled = busy || !canCompile;
+    if (btnKeilClear) btnKeilClear.disabled = busy || !canCompile;
+}
+
+/**
+ * 根据 detectKeil 结果刷新状态栏与「重置路径」按钮。
+ * @param {object|null|undefined} info
+ */
+function applyKeilInfo(info) {
+    const hasManual = info?.source === 'manual' || Boolean(info?.config?.customUv4 || info?.config?.customRoot);
+    if (btnKeilClear) {
+        btnKeilClear.classList.toggle('hidden', !hasManual);
+    }
+
+    if (!info?.found) {
+        setCompileStatus(info?.message || '未检测到 Keil', 'is-error');
+        if (btnCompile) {
+            btnCompile.title = info?.message || '未找到 UV4.exe，可点击「Keil 路径」手动选择';
+        }
+        if (btnKeilPath && info?.config?.customUv4) {
+            btnKeilPath.title = `当前手动：${info.config.customUv4}`;
+        } else if (btnKeilPath) {
+            btnKeilPath.title = '手动选择 Keil 安装目录或 UV4.exe';
+        }
+        return;
+    }
+
+    if (!info.projectReady) {
+        setCompileStatus('工程模板缺失', 'is-error');
+        return;
+    }
+
+    const ver = info.c251Version ? `C251 ${info.c251Version}` : 'Keil 已就绪';
+    const tag = hasManual ? '手动' : '自动';
+    setCompileStatus(`${ver} · ${tag}`, 'is-ok');
+    if (btnCompile) {
+        btnCompile.title = info.uv4 ? `使用：${info.uv4}` : '使用 Keil C251 编译';
+    }
+    if (btnKeilPath) {
+        btnKeilPath.title = info.uv4
+            ? `当前 UV4：${info.uv4}（点击可重新选择）`
+            : '手动选择 Keil 安装目录或 UV4.exe';
+    }
 }
 
 if (!canCompile) {
@@ -134,24 +180,19 @@ if (!canCompile) {
         btnCompile.disabled = true;
         btnCompile.title = '请在 Electron 桌面端使用 Keil 编译';
     }
+    if (btnKeilPath) {
+        btnKeilPath.disabled = true;
+        btnKeilPath.title = '请在 Electron 桌面端配置 Keil 路径';
+    }
+    btnKeilClear?.classList.add('hidden');
     setCompileStatus('浏览器模式：编译不可用', '');
 } else {
     // 启动时探测工具链
-    native.detectKeil?.().then((info) => {
-        if (!info?.found) {
-            setCompileStatus('未检测到 Keil C251', 'is-error');
-            if (btnCompile) btnCompile.title = info?.message || '未安装 Keil C251';
-        } else if (!info.projectReady) {
-            setCompileStatus('工程模板缺失', 'is-error');
-        } else {
-            setCompileStatus(
-                info.c251Version ? `C251 ${info.c251Version}` : 'Keil 已就绪',
-                'is-ok',
-            );
-        }
-    }).catch(() => {
-        setCompileStatus('Keil 探测失败', 'is-error');
-    });
+    native.detectKeil?.()
+        .then((info) => applyKeilInfo(info))
+        .catch(() => {
+            setCompileStatus('Keil 探测失败', 'is-error');
+        });
 }
 
 btnCompile?.addEventListener('click', async () => {
@@ -196,6 +237,56 @@ btnCompile?.addEventListener('click', async () => {
         setChipState('error');
     } finally {
         setCompileUiBusy(false);
+        // 编译后刷新路径状态（不覆盖成功/失败文案时仅更新 title）
+        try {
+            const info = await native.detectKeil?.();
+            if (info?.uv4 && btnCompile) btnCompile.title = `使用：${info.uv4}`;
+            if (info) {
+                const hasManual = info.source === 'manual';
+                btnKeilClear?.classList.toggle('hidden', !hasManual);
+            }
+        } catch {
+            /* ignore */
+        }
+    }
+});
+
+btnKeilPath?.addEventListener('click', async () => {
+    if (!canCompile || isCompiling || !native?.chooseKeilPath) return;
+    setCompileStatus('选择 Keil 路径…', 'is-busy');
+    try {
+        const result = await native.chooseKeilPath();
+        if (result?.canceled) {
+            // 取消时恢复当前探测状态
+            const info = result.info || (await native.detectKeil?.());
+            applyKeilInfo(info);
+            return;
+        }
+        if (result?.info) applyKeilInfo(result.info);
+        else applyKeilInfo(await native.detectKeil?.());
+
+        if (result?.success) {
+            setBuildLog(
+                `已设置 Keil 路径\n${result.message || ''}\nUV4: ${result.info?.uv4 || ''}\nC251: ${result.info?.c251 || ''}\n`,
+            );
+        } else {
+            setBuildLog(result?.message || '路径无效');
+            setCompileStatus(result?.message || '路径无效', 'is-error');
+        }
+    } catch (err) {
+        setCompileStatus(err?.message || '选择路径失败', 'is-error');
+        setBuildLog(String(err?.stack || err));
+    }
+});
+
+btnKeilClear?.addEventListener('click', async () => {
+    if (!canCompile || isCompiling || !native?.clearKeilPath) return;
+    try {
+        const result = await native.clearKeilPath();
+        applyKeilInfo(result?.info || (await native.detectKeil?.()));
+        setBuildLog(result?.message || '已清除手动路径');
+    } catch (err) {
+        setCompileStatus(err?.message || '重置失败', 'is-error');
     }
 });
 

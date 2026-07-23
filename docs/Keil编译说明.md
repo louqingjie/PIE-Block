@@ -21,6 +21,19 @@
 3. 点击顶栏 **编译**
 4. 下方「Keil 编译日志」显示 UV4 输出；成功后可点 **打开 hex** 定位固件
 
+### 手动指定 Keil 路径
+
+若自动探测失败（安装在非常规目录）：
+
+1. 点击顶栏 **Keil 路径**
+2. 选择其一：
+   - Keil 安装根目录（例如 `...\Keil_v5`，内含 `UV4`、`C251`）
+   - 或直接选 `UV4.exe` / `C251.EXE`
+3. 配置会写入应用 `userData/keil-config.json`，下次启动仍生效
+4. 需要恢复自动探测时，点击 **重置路径**
+
+状态栏会显示 `自动` / `手动` 来源。
+
 浏览器里单独 `npm run dev` 时没有 Node/Keil，**编译**按钮会禁用。
 
 ## 编译流程（内部）
@@ -38,9 +51,10 @@
 
 | 路径 | 作用 |
 |------|------|
-| `electron/keil-build.js` | 探测工具链、写源码、调用 UV4 |
-| `electron/main.js` | IPC：`keil:detect` / `keil:compile` |
+| `electron/keil-build.js` | 探测工具链、手动路径配置、写源码、调用 UV4 |
+| `electron/main.js` | IPC：`keil:detect` / `keil:compile` / `keil:choosePath` / `keil:clearPath` |
 | `electron/preload.cjs` | 暴露 `window.pieNative` |
+| `%APPDATA%/…/keil-config.json` | 用户手动 Keil 路径（`userData`） |
 | `src/main.js` | 编译按钮与日志 UI |
 | `stc32g/Projects/0000.培训模板/MDK/Project_Template.uvproj` | Keil 工程 |
 

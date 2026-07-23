@@ -1,9 +1,8 @@
 import { app } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
@@ -22,6 +21,60 @@ const DEFAULT_KEIL_ROOTS = [
     'C:\\Keil',
     'D:\\Keil',
 ];
+
+const CONFIG_FILE_NAME = 'keil-config.json';
+
+/**
+ * 用户配置文件路径（userData/keil-config.json）。
+ * @returns {string}
+ */
+export function getConfigPath() {
+    return path.join(app.getPath('userData'), CONFIG_FILE_NAME);
+}
+
+/**
+ * @typedef {{ customRoot?: string|null, customUv4?: string|null, customC251?: string|null }} KeilConfig
+ */
+
+/**
+ * 读取用户手动配置的 Keil 路径。
+ * @returns {KeilConfig}
+ */
+export function loadKeilConfig() {
+    try {
+        const p = getConfigPath();
+        if (!fs.existsSync(p)) return {};
+        const raw = JSON.parse(fs.readFileSync(p, 'utf8'));
+        return {
+            customRoot: typeof raw.customRoot === 'string' ? raw.customRoot : null,
+            customUv4: typeof raw.customUv4 === 'string' ? raw.customUv4 : null,
+            customC251: typeof raw.customC251 === 'string' ? raw.customC251 : null,
+        };
+    } catch {
+        return {};
+    }
+}
+
+/**
+ * 保存用户 Keil 路径配置。
+ * @param {KeilConfig} config
+ */
+export function saveKeilConfig(config) {
+    const p = getConfigPath();
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    const next = {
+        customRoot: config.customRoot || null,
+        customUv4: config.customUv4 || null,
+        customC251: config.customC251 || null,
+    };
+    fs.writeFileSync(p, JSON.stringify(next, null, 2), 'utf8');
+    return next;
+}
+
+/** 清除手动路径，恢复自动探测。 */
+export function clearKeilConfig() {
+    return saveKeilConfig({});
+}
 
 /**
  * 解析 stc32g 固件库根目录（开发态用仓库内路径，打包态用 extraResources）。
@@ -99,58 +152,201 @@ function findToolsInRoots(roots) {
 }
 
 /**
+ * 从用户选择的路径解析工具链。
+ * 支持：
+ * - UV4.exe 文件
+ * - C251.EXE 文件
+ * - Keil 根目录（含 UV4/、C251/）
+ * - C251 目录（.../C251）
+ * - UV4 目录（.../UV4）
+ * @param {string} selectedPath
+ * @returns {{ ok: boolean, customRoot?: string|null, customUv4?: string|null, customC251?: string|null, message: string }}
+ */
+export function resolveSelection(selectedPath) {
+    if (!selectedPath || typeof selectedPath !== 'string') {
+        return { ok: false, message: '未选择路径' };
+    }
+    const selected = path.resolve(selectedPath.trim());
+    if (!fs.existsSync(selected)) {
+        return { ok: false, message: `路径不存在：${selected}` };
+    }
+
+    const base = path.basename(selected).toLowerCase();
+    const stat = fs.statSync(selected);
+
+    /** @type {string|null} */
+    let customUv4 = null;
+    /** @type {string|null} */
+    let customC251 = null;
+    /** @type {string|null} */
+    let customRoot = null;
+
+    if (stat.isFile()) {
+        if (base === 'uv4.exe') {
+            customUv4 = selected;
+            // .../Keil_v5/UV4/UV4.exe → root = Keil_v5
+            customRoot = path.dirname(path.dirname(selected));
+        } else if (base === 'c251.exe') {
+            customC251 = selected;
+            // .../Keil_v5/C251/BIN/C251.EXE → root = Keil_v5
+            customRoot = path.dirname(path.dirname(path.dirname(selected)));
+        } else {
+            return {
+                ok: false,
+                message: '请选择 UV4.exe、C251.EXE，或 Keil 安装目录（Keil_v5）。',
+            };
+        }
+    } else {
+        // 目录
+        if (fs.existsSync(path.join(selected, 'UV4.exe'))) {
+            // 选中了 UV4 目录
+            customUv4 = path.join(selected, 'UV4.exe');
+            customRoot = path.dirname(selected);
+        } else if (fs.existsSync(path.join(selected, 'BIN', 'C251.EXE'))) {
+            // 选中了 C251 目录
+            customC251 = path.join(selected, 'BIN', 'C251.EXE');
+            customRoot = path.dirname(selected);
+        } else if (
+            fs.existsSync(path.join(selected, 'UV4', 'UV4.exe')) ||
+            fs.existsSync(path.join(selected, 'C251', 'BIN', 'C251.EXE'))
+        ) {
+            // 选中了 Keil 根目录
+            customRoot = selected;
+        } else {
+            // 再向上/向下试一层常见结构
+            const parent = path.dirname(selected);
+            if (fs.existsSync(path.join(parent, 'UV4', 'UV4.exe'))) {
+                customRoot = parent;
+            } else {
+                return {
+                    ok: false,
+                    message:
+                        '无法识别为 Keil 目录。请选择含 UV4 与 C251 的安装根目录，或直接选 UV4.exe。',
+                };
+            }
+        }
+    }
+
+    // 用 root 补全另一侧工具
+    if (customRoot) {
+        const found = findToolsInRoots([customRoot]);
+        if (!customUv4 && found.uv4) customUv4 = found.uv4;
+        if (!customC251 && found.c251) customC251 = found.c251;
+    }
+
+    // 若只有 uv4，尝试从同级找 c251
+    if (customUv4 && !customRoot) {
+        customRoot = path.dirname(path.dirname(customUv4));
+        const found = findToolsInRoots([customRoot]);
+        if (!customC251 && found.c251) customC251 = found.c251;
+    }
+
+    if (!customUv4 && !customC251 && !customRoot) {
+        return { ok: false, message: '未能解析 Keil 工具路径' };
+    }
+
+    // 至少要有 UV4 才能批编译
+    if (!customUv4 || !fs.existsSync(customUv4)) {
+        return {
+            ok: false,
+            message: '已识别路径，但未找到 UV4.exe。请选择 Keil 根目录或 UV4.exe。',
+            customRoot,
+            customUv4,
+            customC251,
+        };
+    }
+
+    return {
+        ok: true,
+        customRoot,
+        customUv4,
+        customC251: customC251 && fs.existsSync(customC251) ? customC251 : null,
+        message: `已设置：${customUv4}`,
+    };
+}
+
+/**
+ * 读取 C251 版本号（尽力而为）。
+ * @param {string|null} c251Path
+ * @returns {Promise<string|null>}
+ */
+async function readC251Version(c251Path) {
+    if (!c251Path || !fs.existsSync(c251Path)) return null;
+    try {
+        await execFileAsync(c251Path, [], { windowsHide: true, timeout: 5000 });
+    } catch (err) {
+        const text = `${err.stdout || ''}\n${err.stderr || ''}\n${err.message || ''}`;
+        const m = text.match(/C251 COMPILER\s+(V[\d.]+)/i);
+        if (m) return m[1];
+    }
+    return null;
+}
+
+/**
  * 探测本机 Keil μVision / C251 工具链。
- * @returns {Promise<{
- *   found: boolean,
- *   uv4: string|null,
- *   c251: string|null,
- *   keilRoot: string|null,
- *   c251Version: string|null,
- *   projectReady: boolean,
- *   projectRoot: string,
- *   uvproj: string,
- *   mainC: string,
- *   hexPath: string,
- *   message: string,
- * }>}
+ * 优先级：用户手动路径 > 注册表 > 常见安装目录。
  */
 export async function detectKeil() {
     const paths = getProjectPaths();
+    const config = loadKeilConfig();
     const roots = [...DEFAULT_KEIL_ROOTS];
 
     const c251Reg = await readKeilRegistryPath('C251');
     if (c251Reg) {
-        // 注册表 Path 指向 ...\C251，上一级才是 Keil_v5 根
         roots.unshift(path.dirname(c251Reg));
         roots.unshift(c251Reg);
     }
 
-    const tools = findToolsInRoots(roots);
-    let c251Version = null;
-    if (tools.c251) {
-        try {
-            // C251 无参数会报 FATAL-ERROR，但 stdout/stderr 含版本行
-            await execFileAsync(tools.c251, [], { windowsHide: true, timeout: 5000 });
-        } catch (err) {
-            const text = `${err.stdout || ''}\n${err.stderr || ''}\n${err.message || ''}`;
-            const m = text.match(/C251 COMPILER\s+(V[\d.]+)/i);
-            if (m) c251Version = m[1];
-        }
+    // 用户手动根目录优先
+    if (config.customRoot) {
+        roots.unshift(config.customRoot);
     }
+
+    let tools = findToolsInRoots(roots);
+
+    // 用户直接指定的 exe 覆盖自动结果
+    if (config.customUv4 && fs.existsSync(config.customUv4)) {
+        tools = {
+            ...tools,
+            uv4: config.customUv4,
+            keilRoot: config.customRoot || tools.keilRoot || path.dirname(path.dirname(config.customUv4)),
+        };
+    }
+    if (config.customC251 && fs.existsSync(config.customC251)) {
+        tools = {
+            ...tools,
+            c251: config.customC251,
+            keilRoot: tools.keilRoot || config.customRoot || path.dirname(path.dirname(path.dirname(config.customC251))),
+        };
+    }
+
+    // 手动只给了 uv4 时，允许 found 以 uv4 为主（C251 由 UV4 工程间接使用）
+    const hasManual = Boolean(config.customUv4 || config.customRoot || config.customC251);
+    const c251Version = await readC251Version(tools.c251);
 
     const projectReady =
         fs.existsSync(paths.uvproj) &&
         fs.existsSync(paths.mainC) &&
         fs.existsSync(path.dirname(paths.mainC));
 
-    const found = Boolean(tools.uv4 && tools.c251);
+    // 批编译硬需求是 UV4；C251 建议存在
+    const found = Boolean(tools.uv4 && fs.existsSync(tools.uv4));
+    const c251Ok = Boolean(tools.c251 && fs.existsSync(tools.c251));
+
     let message = '';
     if (!found) {
-        message = '未检测到 Keil μVision / C251。请安装 Keil C251 工具链后重试。';
+        message = hasManual
+            ? '已配置手动路径，但未找到可用的 UV4.exe，请重新选择。'
+            : '未检测到 Keil μVision / C251。可点击「Keil 路径」手动选择安装目录或 UV4.exe。';
     } else if (!projectReady) {
         message = `工程模板不完整：${paths.projectRoot}`;
+    } else if (!c251Ok) {
+        message = hasManual
+            ? `UV4 已就绪（手动），未找到 C251.EXE，编译可能失败。`
+            : `UV4 已就绪，未找到 C251.EXE。`;
     } else {
-        message = `已就绪：C251 ${c251Version || '已安装'}，工程模板可用。`;
+        const src = hasManual ? '手动' : '自动';
+        message = `已就绪（${src}）：C251 ${c251Version || '已安装'}`;
     }
 
     return {
@@ -165,6 +361,39 @@ export async function detectKeil() {
         mainC: paths.mainC,
         hexPath: paths.hexPath,
         message,
+        source: hasManual ? 'manual' : found ? 'auto' : 'none',
+        config: {
+            customRoot: config.customRoot || null,
+            customUv4: config.customUv4 || null,
+            customC251: config.customC251 || null,
+            configPath: getConfigPath(),
+        },
+    };
+}
+
+/**
+ * 应用用户选择的路径并保存。
+ * @param {string} selectedPath
+ */
+export async function applyKeilSelection(selectedPath) {
+    const resolved = resolveSelection(selectedPath);
+    if (!resolved.ok) {
+        return {
+            success: false,
+            message: resolved.message,
+            info: await detectKeil(),
+        };
+    }
+    saveKeilConfig({
+        customRoot: resolved.customRoot || null,
+        customUv4: resolved.customUv4 || null,
+        customC251: resolved.customC251 || null,
+    });
+    const info = await detectKeil();
+    return {
+        success: info.found,
+        message: resolved.message,
+        info,
     };
 }
 
@@ -175,7 +404,6 @@ export async function detectKeil() {
 export function writeMainC(code) {
     const { mainC } = getProjectPaths();
     fs.mkdirSync(path.dirname(mainC), { recursive: true });
-    // Keil / 源库习惯使用 CRLF；保留 UTF-8 内容
     const normalized = String(code ?? '').replace(/\r?\n/g, '\r\n');
     fs.writeFileSync(mainC, normalized, 'utf8');
     return mainC;
@@ -197,7 +425,6 @@ function runUv4Build(uv4Path, uvprojPath, logPath, timeoutMs = 120000) {
             /* ignore */
         }
 
-        // UV4 -b <project> -o <logfile>  ：无界面批编译
         const child = spawn(uv4Path, ['-b', uvprojPath, '-o', logPath], {
             cwd: path.dirname(uvprojPath),
             windowsHide: true,
@@ -218,7 +445,6 @@ function runUv4Build(uv4Path, uvprojPath, logPath, timeoutMs = 120000) {
             clearTimeout(timer);
             let log = '';
             if (fs.existsSync(logPath)) {
-                // 构建日志多为系统 ANSI/本地编码，先按 utf8 读，失败再 latin1 兜底
                 try {
                     log = fs.readFileSync(logPath, 'utf8');
                 } catch {
@@ -260,7 +486,7 @@ export async function compileWithKeil(code, options = {}) {
         return {
             success: false,
             stage: 'detect',
-            message: '未找到 UV4.exe，无法调用 Keil 编译器。',
+            message: '未找到 UV4.exe。请点击「Keil 路径」手动选择安装目录或 UV4.exe。',
             log: '',
             hexPath: null,
             mainC: null,
@@ -324,7 +550,6 @@ export async function compileWithKeil(code, options = {}) {
 
     const summary = summarizeLog(buildResult.log);
     const hexExists = fs.existsSync(paths.hexPath);
-    // 以日志 “0 Error(s)” + hex 文件存在作为成功判据（UV4 退出码有时也为 0）
     const ok = /0 Error\(s\)/i.test(buildResult.log) && hexExists;
     const sizeMatch = buildResult.log.match(/Program Size:[^\r\n]+/i);
 
@@ -339,6 +564,7 @@ export async function compileWithKeil(code, options = {}) {
         hexPath: hexExists ? paths.hexPath : null,
         mainC: mainCPath,
         exitCode: buildResult.exitCode,
+        uv4Used: uv4,
         summary: {
             ...summary,
             success: ok,
