@@ -14,6 +14,7 @@ const required = [
     ['C251', 'BIN', 'L251.EXE'],
     ['C251', 'BIN', 'OH251.EXE'],
     ['TOOLS.INI'],
+    ['TOOLS.INI.template'],
 ];
 
 if (!fs.existsSync(root)) {

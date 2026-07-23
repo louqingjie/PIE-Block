@@ -135,34 +135,34 @@ function copyTree(src, dest, opts = {}) {
 }
 
 /**
- * 生成便携 TOOLS.INI：只保留 [UV2] + [C251]。
+ * 生成便携 TOOLS.INI / TOOLS.INI.template：只保留 [UV2] + [C251]。
  * 关键：μVision 要求 [C251] 段的第一项必须是 PATH=（与官方文件一致）。
- * PATH 先写占位符 {{KEIL_ROOT}}，运行时由 keil-build.js 改写为绝对路径。
+ * PATH 使用占位符 {{KEIL_ROOT}}，编译时临时改写，结束后从 template 恢复。
+ * 保留 LIC0 等许可证字段，否则会变成评估版 2KB 限制。
  *
  * @param {string} srcIni
- * @param {string} destIni
+ * @param {string} destDir vendor/keil-toolchain
  */
-function writePortableToolsIni(srcIni, destIni) {
+function writePortableToolsIni(srcIni, destDir) {
     const raw = fs.readFileSync(srcIni, 'utf8');
     const uv2 = extractSection(raw, 'UV2');
     const c251 = extractSection(raw, 'C251');
 
-    // UV2 官方通常不写 PATH；保留 CDB 等。去掉本机绝对路径项。
+    // UV2：去掉本机绝对路径项；保留 CDB / 组织信息
     const uv2Body = filterSectionBody(uv2, [
         'PATH',
         'RTEPATH',
         'CMSIS_TOOLBOX',
         'ARMSEL',
         'USERTE',
-        'TOOL_VARIANT',
     ]);
-    // C251：去掉旧 PATH，运行时/此处写在段首
+    // C251：去掉旧 PATH，占位 PATH 写在段首；保留 VERSION/LIC0/TDRV 等
     const c251Body = filterSectionBody(c251, ['PATH']);
 
     const rebuilt = [
-        '; pie-block bundled Keil C251/UV4 toolchain',
-        '; C251 section PATH must be the first entry (required by uVision)',
-        '; PATH is rewritten to absolute paths at runtime by electron/keil-build.js',
+        '; pie-block bundled Keil C251/UV4 toolchain (portable)',
+        '; Do not commit machine-absolute PATH. Use {{KEIL_ROOT}} placeholder.',
+        '; Runtime compile rewrites TOOLS.INI; restore from TOOLS.INI.template after build.',
         '[UV2]',
         ...uv2Body,
         '[C251]',
@@ -171,8 +171,11 @@ function writePortableToolsIni(srcIni, destIni) {
         '',
     ].join('\r\n');
 
-    ensureDir(path.dirname(destIni));
+    ensureDir(destDir);
+    const destIni = path.join(destDir, 'TOOLS.INI');
+    const destTpl = path.join(destDir, 'TOOLS.INI.template');
     fs.writeFileSync(destIni, rebuilt, 'utf8');
+    fs.writeFileSync(destTpl, rebuilt, 'utf8');
 }
 
 /**
@@ -357,9 +360,9 @@ async function main() {
         totalFiles += 1;
     }
 
-    log('生成便携 TOOLS.INI…');
-    writePortableToolsIni(toolsIni, path.join(destRoot, 'TOOLS.INI'));
-    totalFiles += 1;
+    log('生成便携 TOOLS.INI + TOOLS.INI.template…');
+    writePortableToolsIni(toolsIni, destRoot);
+    totalFiles += 2;
 
     // 清单
     const manifest = {

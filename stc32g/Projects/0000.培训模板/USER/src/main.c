@@ -42,6 +42,10 @@ void ExpansionBoradControl(uint8_t control_cmd, uint16_t data_p60, uint16_t data
     for (i = 0; i < 21; i++)
         UART_PutChar(UART_1, control_frame_pack[i]);
 }
+int pie_abs(int x)
+{
+    return (x < 0) ? -x : x;
+}
 int _base_spd, _turn_spd, _wheel[4];
 
 /* ===== 主函数 ===== */
@@ -50,13 +54,7 @@ void main(void)
     Board_Init();
 
     /* ===== 初始化区 ===== */
-    GPIO_Init(GPIO_P3, GPIO_Pin_4, GPIO_OUT_PP);
-    GPIO_Write_Bit(GPIO_P3, GPIO_Pin_4, 0);
-    remote_control_init();
-    GPIO_Write_Bit(GPIO_P3, GPIO_Pin_4, 1);
-    UART_Init(UART_1, UART1_RX_P30, UART1_TX_P31, 230400, TIM1);
-    ExpansionBoradControl(Init_Order, 10000, 0, 50, 50, 10000, 10000, 10000, 10000);
-    Ms_Delay(20);
+    /* 无 */
 
     /* ===== 主循环 ===== */
     while (1)
@@ -69,7 +67,7 @@ void main(void)
         _wheel[3] = _base_spd - _turn_spd;
         ExpansionBoradControl(Dir_Change_Order, (_wheel[3] >= 0), 1, 1, 1, 1, 1, 1, 1);
         Ms_Delay(5);
-        ExpansionBoradControl(Duty_Change_Order, (uint16_t)abs(_wheel[3]), 0, 0, 0, 0, 0, 0, 0);
+        ExpansionBoradControl(Duty_Change_Order, (uint16_t)pie_abs(_wheel[3]), 0, 0, 0, 0, 0, 0, 0);
         Ms_Delay(5);
     }
 }

@@ -102,7 +102,7 @@ Blockly.Blocks['rm_abs'] = {
         this.appendValueInput('VAL').setCheck(null).appendField('绝对值');
         this.setOutput(true, null);
         this.setColour(350);
-        this.setTooltip('取绝对值 abs()');
+        this.setTooltip('取绝对值（整数，生成 pie_abs）');
     },
 };
 

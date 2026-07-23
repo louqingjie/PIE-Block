@@ -3,9 +3,19 @@ import { javascriptGenerator, Order } from 'blockly/javascript';
 // 确保 ExpansionBoradControl 已定义（从 init 生成器导入逻辑）
 import { ensureExpansionBoardDef } from './stc_rm_init_gen.js';
 
+// Keil C251 的库 abs 为 reentrant，未声明会链接失败；用自包含实现避免依赖 MATH.H/STDLIB
+function ensurePieAbs(gen) {
+    gen.definitions_['pie_abs'] =
+        'int pie_abs(int x)\n' +
+        '{\n' +
+        '    return (x < 0) ? -x : x;\n' +
+        '}';
+}
+
 // 底盘行驶：四轮差速控制
 javascriptGenerator.forBlock['rm_chassis_drive'] = (block, gen) => {
     ensureExpansionBoardDef(gen);
+    ensurePieAbs(gen);
     const lf = parseInt(block.getFieldValue('LF'));
     const lb = parseInt(block.getFieldValue('LB'));
     const rf = parseInt(block.getFieldValue('RF'));
@@ -34,12 +44,12 @@ javascriptGenerator.forBlock['rm_chassis_drive'] = (block, gen) => {
     code += `ExpansionBoradControl(Dir_Change_Order, ${dirArgs.join(', ')});\n`;
     code += 'Ms_Delay(5);\n';
 
-    // 占空比指令
+    // 占空比指令（pie_abs 避免 Keil C251 库 abs 链接问题）
     const dutyArgs = ['0', '0', '0', '0', '0', '0', '0', '0'];
-    dutyArgs[lf] = '(uint16_t)abs(_wheel[0])';
-    dutyArgs[lb] = '(uint16_t)abs(_wheel[1])';
-    dutyArgs[rf] = '(uint16_t)abs(_wheel[2])';
-    dutyArgs[rb] = '(uint16_t)abs(_wheel[3])';
+    dutyArgs[lf] = '(uint16_t)pie_abs(_wheel[0])';
+    dutyArgs[lb] = '(uint16_t)pie_abs(_wheel[1])';
+    dutyArgs[rf] = '(uint16_t)pie_abs(_wheel[2])';
+    dutyArgs[rb] = '(uint16_t)pie_abs(_wheel[3])';
     code += `ExpansionBoradControl(Duty_Change_Order, ${dutyArgs.join(', ')});\n`;
     code += 'Ms_Delay(5);\n';
 
@@ -97,10 +107,11 @@ javascriptGenerator.forBlock['rm_limit_value'] = (block, gen) => {
     return [`((${val}) < (${min}) ? (${min}) : ((${val}) > (${max}) ? (${max}) : (${val})))`, Order.NONE];
 };
 
-// 取绝对值
+// 取绝对值（自包含 pie_abs，不依赖 Keil 库 abs）
 javascriptGenerator.forBlock['rm_abs'] = (block, gen) => {
+    ensurePieAbs(gen);
     const val = gen.valueToCode(block, 'VAL', Order.NONE) || '0';
-    return [`abs(${val})`, Order.FUNCTION_CALL];
+    return [`pie_abs(${val})`, Order.FUNCTION_CALL];
 };
 
 // 角度转占空比: duty = mid + angle * (500/90), 限幅250~1250
@@ -111,3 +122,4 @@ javascriptGenerator.forBlock['rm_angle_to_duty'] = (block, gen) => {
     const expr = `(${mid} + (int)((${angle}) * 5.5556f))`;
     return [`((${expr}) < 250 ? 250 : ((${expr}) > 1250 ? 1250 : (${expr})))`, Order.NONE];
 };
+
