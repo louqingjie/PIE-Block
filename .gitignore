@@ -1,0 +1,28 @@
+.vscode/
+
+# Keil MDK build output
+**/Objects/
+**/Listings/
+
+# Keil user and workspace state
+*.uvopt
+*.uvoptx
+*.uvgui.*
+
+# Keil and embedded build artifacts
+*.axf
+*.bin
+*.hex
+*.map
+*.lst
+*.obj
+*.o
+*.crf
+*.__i
+*.lnp
+*.build_log.htm
+
+# Temporary and backup files
+*.bak
+*.tmp
+*~
