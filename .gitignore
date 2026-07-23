@@ -26,3 +26,6 @@
 *.bak
 *.tmp
 *~
+
+# Dependencies
+node_modules/
