@@ -1,4 +1,5 @@
 import { app, BrowserWindow, shell, ipcMain, dialog } from 'electron';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -8,6 +9,13 @@ import {
     clearKeilConfig,
     loadKeilConfig,
 } from './keil-build.js';
+
+/** 图形化项目文件扩展名（JSON，存 Blockly 工作区，非 main.c） */
+const PROJECT_EXT = 'pieblock';
+const PROJECT_FILTERS = [
+    { name: 'STC32G 图形化项目', extensions: [PROJECT_EXT] },
+    { name: '所有文件', extensions: ['*'] },
+];
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = !app.isPackaged;
@@ -208,6 +216,94 @@ function registerIpc() {
             return { ok: false, message: err?.message || String(err) };
         }
     });
+
+    /** 打开项目：选择 .pieblock 并读取文本 */
+    ipcMain.handle('project:open', async () => {
+        const win = BrowserWindow.getFocusedWindow() || mainWindow;
+        try {
+            const result = await dialog.showOpenDialog(win ?? undefined, {
+                title: '打开图形化项目',
+                filters: PROJECT_FILTERS,
+                properties: ['openFile'],
+            });
+            if (result.canceled || !result.filePaths?.length) {
+                return { canceled: true };
+            }
+            const filePath = result.filePaths[0];
+            const content = fs.readFileSync(filePath, 'utf8');
+            return { canceled: false, filePath, content };
+        } catch (err) {
+            return {
+                canceled: false,
+                success: false,
+                message: err?.message || String(err),
+            };
+        }
+    });
+
+    /**
+     * 保存项目。
+     * payload: { content: string, filePath?: string|null, suggestedName?: string }
+     * 无 filePath 时弹出另存为对话框。
+     */
+    ipcMain.handle('project:save', async (_event, payload) => {
+        return saveProjectFile(payload, { forceDialog: false });
+    });
+
+    /** 另存为（始终弹出对话框） */
+    ipcMain.handle('project:saveAs', async (_event, payload) => {
+        return saveProjectFile(payload, { forceDialog: true });
+    });
+}
+
+/**
+ * @param {{ content?: string, filePath?: string|null, suggestedName?: string }} payload
+ * @param {{ forceDialog?: boolean }} opts
+ */
+async function saveProjectFile(payload, opts = {}) {
+    const win = BrowserWindow.getFocusedWindow() || mainWindow;
+    const content = typeof payload?.content === 'string' ? payload.content : '';
+    let filePath =
+        typeof payload?.filePath === 'string' && payload.filePath
+            ? payload.filePath
+            : null;
+
+    try {
+        if (opts.forceDialog || !filePath) {
+            const suggestedRaw =
+                payload?.suggestedName ||
+                (filePath ? path.basename(filePath) : `未命名项目.${PROJECT_EXT}`);
+            const suggested = suggestedRaw.endsWith(`.${PROJECT_EXT}`)
+                ? suggestedRaw
+                : `${suggestedRaw}.${PROJECT_EXT}`;
+            const defaultPath = filePath
+                ? filePath
+                : path.join(app.getPath('documents'), suggested);
+
+            const result = await dialog.showSaveDialog(win ?? undefined, {
+                title: opts.forceDialog ? '项目另存为' : '保存图形化项目',
+                defaultPath,
+                filters: PROJECT_FILTERS,
+            });
+            if (result.canceled || !result.filePath) {
+                return { canceled: true };
+            }
+            filePath = result.filePath;
+            if (!filePath.toLowerCase().endsWith(`.${PROJECT_EXT}`)) {
+                filePath = `${filePath}.${PROJECT_EXT}`;
+            }
+        }
+
+        fs.writeFileSync(filePath, content, 'utf8');
+        return { canceled: false, success: true, filePath };
+    } catch (err) {
+        return {
+            canceled: false,
+            success: false,
+            message: err?.message || String(err),
+            filePath: filePath || null,
+        };
+    }
 }
 
 app.whenReady().then(() => {

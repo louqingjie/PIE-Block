@@ -6,6 +6,16 @@ import './blocks/index.js';               // 注册自定义积木
 import './generators/index.js';           // 注册 C 代码生成器
 import { toolbox } from './toolbox.js';
 import { generateC } from './generators/c_generator.js';
+import {
+    PROJECT_EXTENSION,
+    buildProjectDocument,
+    parseProjectDocument,
+    nameFromPath,
+    loadDefaultWorkspace,
+    applyProjectToWorkspace,
+    downloadTextFile,
+    pickAndReadTextFile,
+} from './project.js';
 import './styles.css';
 
 // 1. 注入工作区
@@ -31,14 +41,7 @@ const workspace = Blockly.inject('blockly-div', {
 });
 
 // 2. 默认放置"初始化区"与"主循环区"两个不可删除容器，上下连接
-const setupBlock = Blockly.serialization.blocks.append(
-    { type: 'stc_setup', x: 20, y: 20 }, workspace,
-);
-const loopBlock = Blockly.serialization.blocks.append(
-    { type: 'stc_loop', x: 20, y: 160 }, workspace,
-);
-// 直接连接 API 确保两个容器堆叠在一起
-loopBlock.previousConnection.connect(setupBlock.nextConnection);
+loadDefaultWorkspace(workspace, Blockly);
 
 // 3. 代码生成与展示
 const codeArea = document.getElementById('code-preview');
@@ -324,6 +327,259 @@ codeToggle.addEventListener('click', () => {
     setTimeout(() => Blockly.svgResize(workspace), 250);
 });
 
+// ========== 项目保存 / 打开（.pieblock，积木 JSON，非 main.c）==========
+const projectNameEl = document.getElementById('project-name');
+const btnNewProject = document.getElementById('btn-new-project');
+const btnOpenProject = document.getElementById('btn-open-project');
+const btnSaveProject = document.getElementById('btn-save-project');
+const btnSaveProjectAs = document.getElementById('btn-save-project-as');
+
+/** @type {string|null} 当前已关联的项目文件路径（仅 Electron） */
+let currentProjectPath = null;
+/** 当前项目显示名 */
+let currentProjectName = '未命名项目';
+/** 磁盘上对应的创建时间（另存/覆盖时保留） */
+let currentProjectCreatedAt = null;
+/** 自上次保存后是否有未保存修改 */
+let projectDirty = false;
+/** 抑制加载时产生的 change 事件把 dirty 置位 */
+let suppressDirty = false;
+
+function updateProjectTitle() {
+    const label = projectDirty ? `${currentProjectName} *` : currentProjectName;
+    if (projectNameEl) {
+        projectNameEl.textContent = label;
+        projectNameEl.title = currentProjectPath
+            ? currentProjectPath
+            : '尚未保存到文件';
+    }
+    const base = 'STC32G 图形化编程';
+    document.title = projectDirty ? `${label} — ${base}` : `${currentProjectName} — ${base}`;
+}
+
+function markDirty() {
+    if (suppressDirty) return;
+    if (!projectDirty) {
+        projectDirty = true;
+        updateProjectTitle();
+    }
+}
+
+function markClean() {
+    projectDirty = false;
+    updateProjectTitle();
+}
+
+function setProjectIdentity({ name, filePath, createdAt, clean = true } = {}) {
+    if (name != null) currentProjectName = name || '未命名项目';
+    if (filePath !== undefined) currentProjectPath = filePath || null;
+    if (createdAt !== undefined) currentProjectCreatedAt = createdAt || null;
+    if (clean) markClean();
+    else updateProjectTitle();
+}
+
+function serializeCurrentProject() {
+    const doc = buildProjectDocument(workspace, {
+        name: currentProjectName,
+        createdAt: currentProjectCreatedAt || undefined,
+    });
+    return {
+        doc,
+        text: `${JSON.stringify(doc, null, 2)}\n`,
+    };
+}
+
+/**
+ * 若有未保存修改，询问是否继续。
+ * @returns {Promise<boolean>} true 表示可以继续
+ */
+async function confirmDiscardIfDirty() {
+    if (!projectDirty) return true;
+    return window.confirm(
+        `「${currentProjectName}」有未保存的修改。\n继续将丢失这些修改，是否继续？`,
+    );
+}
+
+async function newProject() {
+    if (!(await confirmDiscardIfDirty())) return;
+    suppressDirty = true;
+    try {
+        loadDefaultWorkspace(workspace, Blockly);
+        setProjectIdentity({
+            name: '未命名项目',
+            filePath: null,
+            createdAt: null,
+            clean: true,
+        });
+        refresh();
+    } finally {
+        suppressDirty = false;
+    }
+}
+
+/**
+ * @param {string} content
+ * @param {{ filePath?: string|null, fallbackName?: string }} [opts]
+ */
+function loadProjectFromContent(content, opts = {}) {
+    const parsed = parseProjectDocument(content);
+    if (!parsed.ok) {
+        window.alert(`无法打开项目：${parsed.message}`);
+        return false;
+    }
+    const { doc } = parsed;
+    suppressDirty = true;
+    try {
+        applyProjectToWorkspace(workspace, Blockly, doc);
+        const name =
+            (typeof doc.name === 'string' && doc.name.trim()) ||
+            (opts.filePath ? nameFromPath(opts.filePath) : '') ||
+            opts.fallbackName ||
+            '未命名项目';
+        setProjectIdentity({
+            name,
+            filePath: opts.filePath ?? null,
+            createdAt: typeof doc.createdAt === 'string' ? doc.createdAt : null,
+            clean: true,
+        });
+        refresh();
+        return true;
+    } catch (err) {
+        window.alert(`加载项目失败：${err?.message || err}`);
+        return false;
+    } finally {
+        suppressDirty = false;
+    }
+}
+
+async function openProject() {
+    if (!(await confirmDiscardIfDirty())) return;
+
+    if (native?.openProject) {
+        try {
+            const result = await native.openProject();
+            if (result?.canceled) return;
+            if (result?.message && result.content == null) {
+                window.alert(result.message);
+                return;
+            }
+            loadProjectFromContent(result.content, {
+                filePath: result.filePath || null,
+            });
+        } catch (err) {
+            window.alert(`打开项目失败：${err?.message || err}`);
+        }
+        return;
+    }
+
+    // 浏览器降级：input[type=file]
+    const picked = await pickAndReadTextFile({
+        accept: `.${PROJECT_EXTENSION},application/json,.json`,
+    });
+    if (!picked) return;
+    loadProjectFromContent(picked.content, {
+        filePath: null,
+        fallbackName: nameFromPath(picked.name),
+    });
+}
+
+/**
+ * @param {{ saveAs?: boolean }} [opts]
+ */
+async function saveProject(opts = {}) {
+    const saveAs = Boolean(opts.saveAs);
+    const { doc, text } = serializeCurrentProject();
+
+    if (native?.saveProject) {
+        try {
+            const needDialog = saveAs || !currentProjectPath;
+            const api = needDialog
+                ? (native.saveProjectAs || native.saveProject)
+                : native.saveProject;
+            const result = await api({
+                content: text,
+                // 另存为时仍传入当前路径，供对话框默认目录；写入由 forceDialog 控制
+                filePath: currentProjectPath,
+                suggestedName: `${currentProjectName}.${PROJECT_EXTENSION}`,
+            });
+            if (result?.canceled) return false;
+            if (result?.success === false) {
+                window.alert(result.message || '保存失败');
+                return false;
+            }
+            const filePath = result.filePath || currentProjectPath;
+            setProjectIdentity({
+                name: nameFromPath(filePath) || doc.name,
+                filePath,
+                createdAt: doc.createdAt,
+                clean: true,
+            });
+            return true;
+        } catch (err) {
+            window.alert(`保存失败：${err?.message || err}`);
+            return false;
+        }
+    }
+
+    // 浏览器降级：下载 .pieblock
+    const name = currentProjectName || '未命名项目';
+    downloadTextFile(text, `${name}.${PROJECT_EXTENSION}`);
+    setProjectIdentity({
+        name,
+        filePath: null,
+        createdAt: doc.createdAt,
+        clean: true,
+    });
+    return true;
+}
+
+workspace.addChangeListener((event) => {
+    if (suppressDirty) return;
+    if (event.type === Blockly.Events.UI) return;
+    if (event.isUiEvent) return;
+    // 加载/清空等批量事件结束后再标脏
+    if (event.type === Blockly.Events.FINISHED_LOADING) return;
+    markDirty();
+});
+
+btnNewProject?.addEventListener('click', () => {
+    void newProject();
+});
+btnOpenProject?.addEventListener('click', () => {
+    void openProject();
+});
+btnSaveProject?.addEventListener('click', () => {
+    void saveProject({ saveAs: false });
+});
+btnSaveProjectAs?.addEventListener('click', () => {
+    void saveProject({ saveAs: true });
+});
+
+// 快捷键：Ctrl/Cmd+N/O/S，Ctrl+Shift+S
+window.addEventListener('keydown', (e) => {
+    const mod = e.ctrlKey || e.metaKey;
+    if (!mod) return;
+    const key = e.key.toLowerCase();
+    if (key === 's') {
+        e.preventDefault();
+        void saveProject({ saveAs: e.shiftKey });
+    } else if (key === 'o') {
+        e.preventDefault();
+        void openProject();
+    } else if (key === 'n') {
+        e.preventDefault();
+        void newProject();
+    }
+});
+
+// 关闭页面前提示未保存（浏览器 / Electron 渲染进程）
+window.addEventListener('beforeunload', (e) => {
+    if (!projectDirty) return;
+    e.preventDefault();
+    e.returnValue = '';
+});
+
+updateProjectTitle();
 refresh();
 
 // 调试用：开发环境暴露工作区到全局对象

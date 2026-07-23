@@ -147,6 +147,44 @@ body.state-error .status-led:nth-child(1) {
     padding-left: 12px;
 }
 
+.project-name {
+    font-family: 'Space Grotesk', 'Microsoft YaHei', sans-serif;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    border-left: 1px solid var(--border);
+    padding-left: 12px;
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.action-sep {
+    width: 1px;
+    height: 18px;
+    background: var(--border);
+    margin: 0 4px;
+    flex-shrink: 0;
+}
+
+#btn-new-project,
+#btn-open-project,
+#btn-save-project,
+#btn-save-project-as {
+    color: var(--text-primary);
+}
+
+#btn-save-project {
+    color: var(--active-teal);
+    border-color: rgba(78, 205, 196, 0.3);
+}
+
+#btn-save-project:hover {
+    background: rgba(78, 205, 196, 0.1);
+    border-color: rgba(78, 205, 196, 0.55);
+}
+
 /* ========== Action Buttons ========== */
 .actions {
     display: flex;
