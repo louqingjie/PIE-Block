@@ -23,6 +23,18 @@ export const toolbox = {
                 { kind: 'block', type: 'stc_rc_init' },
                 { kind: 'block', type: 'stc_rc_key_read' },
                 { kind: 'block', type: 'stc_rc_rocker_read' },
+                {
+                    kind: 'block',
+                    type: 'stc_rc_rocker_to_speed',
+                    inputs: {
+                        MAX_SPEED: {
+                            shadow: {
+                                type: 'math_number',
+                                fields: { NUM: 4000 },
+                            },
+                        },
+                    },
+                },
             ],
         },
         {

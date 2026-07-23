@@ -32,3 +32,15 @@ Blockly.Blocks['stc_rc_rocker_read'] = {
         this.setTooltip('读取遥控摇杆 ADC 值 RcRockerValueRead()');
     },
 };
+
+// 摇杆值 -> 速度映射：speed = rocker * maxSpeed / 2047
+Blockly.Blocks['stc_rc_rocker_to_speed'] = {
+    init() {
+        this.appendValueInput('ROCKER').setCheck(null).appendField('摇杆值');
+        this.appendValueInput('MAX_SPEED').setCheck(null).appendField('映射速度 最大');
+        this.setOutput(true, null);
+        this.setColour(260);
+        this.setInputsInline(true);
+        this.setTooltip('将摇杆 ADC 值映射为速度：(int)((float)摇杆 * 最大速度 / 2047)，摇杆范围约 -2047~2047');
+    },
+};
