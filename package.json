@@ -1,15 +1,59 @@
 {
   "name": "pie-block",
+  "version": "1.0.0",
+  "description": "STC32G 图形化编程桌面端",
+  "author": "CNU PIE",
   "type": "module",
+  "main": "electron/main.js",
   "scripts": {
     "dev": "vite",
+    "dev:electron": "concurrently -k \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "electron": "electron .",
+    "pack": "vite build && electron-builder --dir",
+    "dist": "vite build && electron-builder --win"
   },
   "dependencies": {
     "blockly": "^13.1.1"
   },
   "devDependencies": {
-    "vite": "^8.1.5"
+    "concurrently": "^9.2.1",
+    "electron": "^37.2.6",
+    "electron-builder": "^26.0.12",
+    "vite": "^8.1.5",
+    "wait-on": "^8.0.5"
+  },
+  "build": {
+    "appId": "com.cnupie.pieblock",
+    "productName": "STC32G图形化编程",
+    "copyright": "Copyright © CNU PIE",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "STC32G图形化编程"
+    }
   }
 }
