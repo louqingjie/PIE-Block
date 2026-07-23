@@ -102,3 +102,12 @@ javascriptGenerator.forBlock['rm_abs'] = (block, gen) => {
     const val = gen.valueToCode(block, 'VAL', Order.NONE) || '0';
     return [`abs(${val})`, Order.FUNCTION_CALL];
 };
+
+// 角度转占空比: duty = mid + angle * (500/90), 限幅250~1250
+javascriptGenerator.forBlock['rm_angle_to_duty'] = (block, gen) => {
+    const angle = gen.valueToCode(block, 'ANGLE', Order.NONE) || '0';
+    const mid = block.getFieldValue('MID');
+    // 500/90 ≈ 5.5556，±90°对应±500占空比变化
+    const expr = `(${mid} + (int)((${angle}) * 5.5556f))`;
+    return [`((${expr}) < 250 ? 250 : ((${expr}) > 1250 ? 1250 : (${expr})))`, Order.NONE];
+};

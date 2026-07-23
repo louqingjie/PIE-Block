@@ -105,3 +105,16 @@ Blockly.Blocks['rm_abs'] = {
         this.setTooltip('取绝对值 abs()');
     },
 };
+
+// 角度转占空比（值积木）：输入角度和中值，输出限幅后的占空比
+Blockly.Blocks['rm_angle_to_duty'] = {
+    init() {
+        this.appendValueInput('ANGLE').setCheck(null).appendField('角度');
+    this.appendDummyInput()
+      .appendField('° 中值')
+      .appendField(new Blockly.FieldNumber(750, 250, 1250), 'MID');
+    this.setOutput(true, null);
+    this.setColour(350);
+    this.setTooltip('将角度(-90~90°)转换为舵机占空比：占空比 = 中值 + 角度×5.56，结果限幅250~1250');
+  },
+};

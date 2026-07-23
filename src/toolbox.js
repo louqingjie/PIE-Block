@@ -68,6 +68,7 @@ export const toolbox = {
                 { kind: 'block', type: 'rm_booster_set' },
                 { kind: 'block', type: 'rm_limit_value' },
                 { kind: 'block', type: 'rm_abs' },
+                { kind: 'block', type: 'rm_angle_to_duty' },
             ],
         },
         {
