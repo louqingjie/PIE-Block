@@ -1,5 +1,5 @@
 import * as Blockly from 'blockly';
-import { EXPANSION_PORT_OPTIONS, PWM_PIN_OPTIONS } from '../enums.js';
+import { EXPANSION_PORT_OPTIONS, PWM_PIN_OPTIONS, KEY_OPTIONS } from '../enums.js';
 
 // 底盘行驶：四轮端口可选，自动封装差速运算
 Blockly.Blocks['rm_chassis_drive'] = {
@@ -17,6 +17,34 @@ Blockly.Blocks['rm_chassis_drive'] = {
         this.setNextStatement(true, null);
         this.setColour(350);
         this.setTooltip('底盘差速控制：自动计算四轮速度并发送方向+占空比指令');
+    },
+};
+
+// 底盘控制（一键模块）：左摇杆映射速度 + 四轮差速
+// 参数：四轮 IO、最大速度
+Blockly.Blocks['rm_chassis_control'] = {
+    init() {
+        this.appendDummyInput()
+            .appendField('底盘单左摇杆控制')
+            .appendField(' 左前').appendField(new Blockly.FieldDropdown(EXPANSION_PORT_OPTIONS), 'LF')
+            .appendField(' 左后').appendField(new Blockly.FieldDropdown(EXPANSION_PORT_OPTIONS), 'LB');
+        this.appendDummyInput()
+            .appendField(' 右前').appendField(new Blockly.FieldDropdown(EXPANSION_PORT_OPTIONS), 'RF')
+            .appendField(' 右后').appendField(new Blockly.FieldDropdown(EXPANSION_PORT_OPTIONS), 'RB');
+        this.appendValueInput('MAX_SPEED').setCheck(null).appendField('最大速度');
+        // 步兵默认端口：左前P74 左后P75 右前P76 右后P77
+        this.setFieldValue('4', 'LF');
+        this.setFieldValue('5', 'LB');
+        this.setFieldValue('6', 'RF');
+        this.setFieldValue('7', 'RB');
+        this.setPreviousStatement(true, null);
+        this.setNextStatement(true, null);
+        this.setColour(350);
+        this.setTooltip(
+            '一键底盘控制：读取左摇杆（垂直=前进/后退，水平=转向），'
+            + '按 摇杆*最大速度/2047 映射后差速驱动四轮。'
+            + '默认端口步兵：P74/P75/P76/P77'
+        );
     },
 };
 
@@ -80,6 +108,30 @@ Blockly.Blocks['rm_booster_set'] = {
         this.setNextStatement(true, null);
         this.setColour(350);
         this.setTooltip('设置摩擦轮占空比。警告：上限1100，必须渐变启动，否则损坏电机');
+    },
+};
+
+// 射击（单点拨弹）：触发按键上升沿 → 拨弹电机以指定速度运行「单点时长」后停止
+Blockly.Blocks['rm_shoot'] = {
+    init() {
+        this.appendDummyInput()
+            .appendField('射击')
+            .appendField(' 拨弹电机')
+            .appendField(new Blockly.FieldDropdown(EXPANSION_PORT_OPTIONS), 'PORT')
+            .appendField(' 触发按键')
+            .appendField(new Blockly.FieldDropdown(KEY_OPTIONS), 'KEY');
+        this.appendValueInput('SPEED').setCheck(null).appendField('拨弹速度');
+        this.appendValueInput('DURATION').setCheck(null).appendField('单点时长(ms)');
+        // 步兵默认：拨弹 P60、扳机键
+        this.setFieldValue('0', 'PORT');
+        this.setFieldValue('KEY_OFFSET_1', 'KEY');
+        this.setPreviousStatement(true, null);
+        this.setNextStatement(true, null);
+        this.setColour(350);
+        this.setTooltip(
+            '单点射击：检测触发按键上升沿，拨弹电机以指定速度(0~10000)运行「单点时长」毫秒后停止。'
+            + '默认拨弹口 P60、扳机键。注意：阻塞延时期间不会执行其它控制。'
+        );
     },
 };
 

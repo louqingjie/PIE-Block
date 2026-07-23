@@ -121,7 +121,7 @@ export const WDT_SCALE_OPTIONS = [
 
 // ===== 遥控 (KEY_OFFSET_t / ROCKER_OFFSET_t) =====
 export const KEY_OPTIONS = [
-  ['唤醒键', 'KEY_OFFSET_WKUP'], ['数字1', 'KEY_OFFSET_1'],
+  ['唤醒键', 'KEY_OFFSET_WKUP'], ['扳机键', 'KEY_OFFSET_1'],
   ['上', 'KEY_OFFSET_UP'], ['下', 'KEY_OFFSET_DOWN'],
   ['左', 'KEY_OFFSET_LEFT'], ['右', 'KEY_OFFSET_RIGHT'],
   ['A', 'KEY_OFFSET_A'], ['B', 'KEY_OFFSET_B'], ['C', 'KEY_OFFSET_C'], ['D', 'KEY_OFFSET_D'],

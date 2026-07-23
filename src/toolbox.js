@@ -42,8 +42,48 @@ export const toolbox = {
             contents: [
                 { kind: 'block', type: 'rm_robot_init' },
                 { kind: 'block', type: 'rm_expansion_set_dir' },
+                {
+                    kind: 'block',
+                    type: 'rm_chassis_control',
+                    fields: {
+                        LF: '4', // P74
+                        LB: '5', // P75
+                        RF: '6', // P76
+                        RB: '7', // P77
+                    },
+                    inputs: {
+                        MAX_SPEED: {
+                            shadow: {
+                                type: 'math_number',
+                                fields: { NUM: 4000 },
+                            },
+                        },
+                    },
+                },
                 { kind: 'block', type: 'rm_chassis_drive' },
                 { kind: 'block', type: 'rm_chassis_stop' },
+                {
+                    kind: 'block',
+                    type: 'rm_shoot',
+                    fields: {
+                        PORT: '0', // P60 拨弹
+                        KEY: 'KEY_OFFSET_1', // 扳机键
+                    },
+                    inputs: {
+                        SPEED: {
+                            shadow: {
+                                type: 'math_number',
+                                fields: { NUM: 3000 },
+                            },
+                        },
+                        DURATION: {
+                            shadow: {
+                                type: 'math_number',
+                                fields: { NUM: 100 },
+                            },
+                        },
+                    },
+                },
                 { kind: 'block', type: 'rm_limit_value' },
                 { kind: 'block', type: 'rm_abs' },
                 { kind: 'block', type: 'rm_angle_to_duty' },

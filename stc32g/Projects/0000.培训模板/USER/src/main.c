@@ -47,6 +47,7 @@ int pie_abs(int x)
     return (x < 0) ? -x : x;
 }
 int _base_spd, _turn_spd, _wheel[4];
+uint8_t _rm_shoot_last_key = 0;
 
 /* ===== 主函数 ===== */
 void main(void)
@@ -54,20 +55,32 @@ void main(void)
     Board_Init();
 
     /* ===== 初始化区 ===== */
-    /* 无 */
+    GPIO_Init(GPIO_P3, GPIO_Pin_4, GPIO_OUT_PP);
+    GPIO_Write_Bit(GPIO_P3, GPIO_Pin_4, 0);
+    remote_control_init();
+    GPIO_Write_Bit(GPIO_P3, GPIO_Pin_4, 1);
+    UART_Init(UART_1, UART1_RX_P30, UART1_TX_P31, 230400, TIM1);
+    ExpansionBoradControl(Init_Order, 10000, 10000, 50, 50, 10000, 10000, 10000, 10000);
+    Ms_Delay(20);
 
     /* ===== 主循环 ===== */
     while (1)
     {
-        _base_spd = 0;
-        _turn_spd = 0;
+        _base_spd = (int)((float)RcRockerValueRead(ROCKER_LEFT_VERTICAL) * (4000) / 2047);
+        _turn_spd = -(int)((float)RcRockerValueRead(ROCKER_LEFT_HORIZONTAL) * (4000) / 2047);
         _wheel[0] = -_base_spd - _turn_spd;
         _wheel[1] = -_base_spd - _turn_spd;
         _wheel[2] = _base_spd - _turn_spd;
         _wheel[3] = _base_spd - _turn_spd;
-        ExpansionBoradControl(Dir_Change_Order, (_wheel[3] >= 0), 1, 1, 1, 1, 1, 1, 1);
+        ExpansionBoradControl(Dir_Change_Order, 1, 1, 1, 1, (_wheel[0] >= 0), (_wheel[1] >= 0), (_wheel[2] >= 0), (_wheel[3] >= 0));
         Ms_Delay(5);
-        ExpansionBoradControl(Duty_Change_Order, (uint16_t)pie_abs(_wheel[3]), 0, 0, 0, 0, 0, 0, 0);
+        ExpansionBoradControl(Duty_Change_Order, 0, 0, 0, 0, (uint16_t)pie_abs(_wheel[0]), (uint16_t)pie_abs(_wheel[1]), (uint16_t)pie_abs(_wheel[2]), (uint16_t)pie_abs(_wheel[3]));
         Ms_Delay(5);
+        if (RcKeyValueRead(KEY_OFFSET_1) && !_rm_shoot_last_key) {
+          ExpansionBoradControl(Duty_Change_Order, ((3000) < 0 ? 0 : ((3000) > 10000 ? 10000 : (3000))), 0, 0, 0, 0, 0, 0, 0);
+          Ms_Delay(100);
+          ExpansionBoradControl(Duty_Change_Order, 0, 0, 0, 0, 0, 0, 0, 0);
+        }
+        _rm_shoot_last_key = RcKeyValueRead(KEY_OFFSET_1);
     }
 }
