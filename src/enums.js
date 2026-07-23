@@ -135,3 +135,26 @@ export const ROCKER_OPTIONS = [
 
 // ===== MCP23017 端口 =====
 export const MCP_PORT_OPTIONS = [['端口A', 'portA'], ['端口B', 'portB']];
+
+// ===== RM 机械拓展板端口 (值为 ExpansionBoradControl 参数位置索引) =====
+export const EXPANSION_PORT_OPTIONS = [
+  ['P60', '0'], ['P62', '1'], ['P64', '2'], ['P66', '3'],
+  ['P74', '4'], ['P75', '5'], ['P76', '6'], ['P77', '7'],
+];
+
+// 拓展板端口频率（决定该端口是电机还是舵机/摩擦轮）
+export const EXPANSION_FREQ_OPTIONS = [
+  ['电机 (10000Hz)', '10000'],
+  ['舵机/摩擦轮 (50Hz)', '50'],
+  ['不使用', '0'],
+];
+
+// 机器人类型
+export const ROBOT_TYPE_OPTIONS = [
+  ['步兵（预设）', 'infantry'],
+  ['工程（预设）', 'engineer'],
+  ['自定义', 'custom'],
+];
+
+// 方向
+export const DIR_OPTIONS = [['正转', '1'], ['反转', '0']];

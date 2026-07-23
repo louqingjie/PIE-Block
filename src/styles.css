@@ -80,6 +80,12 @@ body {
     display: none;
 }
 
+/* 工具箱二级分类彩色条向右缩进 */
+.blocklyToolboxCategoryGroup [role="treeitem"][aria-level="2"] > .blocklyToolboxCategory {
+    margin-left: 19px;
+    padding-left: 0px !important;
+}
+
 /* 顶栏折叠/展开按钮，与其他操作按钮风格统一 */
 .toggle-btn {
     background: #313244;

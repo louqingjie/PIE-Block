@@ -27,5 +27,5 @@ javascriptGenerator.forBlock['stc_i2c_read_reg'] = (block, gen) => {
     const addr = block.getFieldValue('ADDR');
     const reg = block.getFieldValue('REG');
     gen.definitions_['i2c_read_buf'] = 'volatile uint8_t _i2c_read_buf;';
-  return [`(I2C_ReadNbyte(${addr}, ${reg}, &_i2c_read_buf, 1), _i2c_read_buf)`, Order.ATOMIC];
+    return [`(I2C_ReadNbyte(${addr}, ${reg}, &_i2c_read_buf, 1), _i2c_read_buf)`, Order.ATOMIC];
 };

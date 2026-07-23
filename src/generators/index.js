@@ -16,3 +16,5 @@ import './stc_encoder_gen.js';
 import './stc_bmi088_gen.js';
 import './stc_remote_gen.js';
 import './stc_wireless_gen.js';
+import './stc_rm_init_gen.js';
+import './stc_rm_control_gen.js';

@@ -16,5 +16,5 @@ javascriptGenerator.forBlock['stc_eeprom_write_byte'] = (block, gen) => {
 javascriptGenerator.forBlock['stc_eeprom_read_byte'] = (block, gen) => {
     const addr = block.getFieldValue('ADDR');
     gen.definitions_['eeprom_read_buf'] = 'volatile uint8_t _eeprom_read_buf;';
-  return [`(EEPROM_read_n(${addr}, &_eeprom_read_buf, 1), _eeprom_read_buf)`, Order.ATOMIC];
+    return [`(EEPROM_read_n(${addr}, &_eeprom_read_buf, 1), _eeprom_read_buf)`, Order.ATOMIC];
 };
