@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>STC32G Blockly 图形化编程</title>
+  <script type="module" crossorigin src="/assets/index-COxcVNEu.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-Cjs-HCVG.css">
+</head>
+<body>
+  <header class="app-header">
+    <h1>STC32G 图形化编程</h1>
+    <div class="actions">
+      <button id="btn-generate">生成代码</button>
+      <button id="btn-copy">复制</button>
+      <button id="btn-download">下载 main.c</button>
+    </div>
+  </header>
+  <main class="app-body">
+    <div id="blockly-div"></div>
+    <section class="code-panel">
+      <div class="code-title">生成的 C 代码</div>
+      <pre id="code-preview"></pre>
+    </section>
+  </main>
+</body>
+</html>
