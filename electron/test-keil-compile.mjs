@@ -24,44 +24,34 @@ const logPath = path.join(projectRoot, 'MDK', 'pie_block_build.log');
 const bundledRoot = path.join(root, 'vendor', 'keil-toolchain');
 
 /**
- * 编译前写绝对 PATH；编译后从 TOOLS.INI.template 恢复占位符。
+ * 改写内置 TOOLS.INI：μVision 要求 [C251] 段首项为 PATH=。
  * @param {string} keilRoot
- * @param {'runtime'|'portable'} mode
  */
-function writeToolsIni(keilRoot, mode) {
+function ensureToolsIni(keilRoot) {
     const iniPath = path.join(keilRoot, 'TOOLS.INI');
-    const tplPath = path.join(keilRoot, 'TOOLS.INI.template');
-    const sourcePath = fs.existsSync(tplPath) ? tplPath : iniPath;
-    if (!fs.existsSync(sourcePath)) return { ok: false, message: `缺少 ${sourcePath}` };
-
-    let raw = fs.readFileSync(sourcePath, 'utf8');
+    if (!fs.existsSync(iniPath)) return { ok: false, message: `缺少 ${iniPath}` };
+    let raw = fs.readFileSync(iniPath, 'utf8');
     if (raw.charCodeAt(0) === 0xfeff) raw = raw.slice(1);
-
-    if (mode === 'portable') {
-        // 始终按 template 恢复，避免 UV4 回写后丢 LIC0
-        const portable = fs.existsSync(tplPath)
-            ? fs.readFileSync(tplPath, 'utf8')
-            : raw.replace(
-                  /^\s*PATH\s*=\s*".*?"\s*$/im,
-                  'PATH="{{KEIL_ROOT}}\\C251\\"',
-              );
-        const out = portable.replace(/\r?\n/g, '\r\n');
-        fs.writeFileSync(iniPath, out.endsWith('\r\n') ? out : `${out}\r\n`, 'utf8');
-        return { ok: true, iniPath };
-    }
 
     let c251Slash = path.resolve(path.join(keilRoot, 'C251'));
     if (!c251Slash.endsWith('\\')) c251Slash += '\\';
-    let text = raw.replace(/\{\{KEIL_ROOT\}\}/g, keilRoot);
-    if (/^[ \t]*\[C251\][ \t]*\r?\nPATH="/im.test(text)) {
-        text = text.replace(
-            /^[ \t]*\[C251\][ \t]*\r?\nPATH="[^"]*"/im,
-            `[C251]\r\nPATH="${c251Slash}"`,
-        );
+    const pathLine = `PATH="${c251Slash}"`;
+
+    raw = raw.replace(/\{\{KEIL_ROOT\}\}/g, keilRoot);
+    // 仅匹配行首段名，避免注释里的 [C251] 被误改
+    const secRe = /^[ \t]*\[C251\][ \t]*\r?\n([\s\S]*?)(?=^[ \t]*\[|\s*$)/im;
+    if (secRe.test(raw)) {
+        raw = raw.replace(secRe, (_m, body) => {
+            const lines = String(body)
+                .split(/\r?\n/)
+                .filter((l) => l.trim() !== '' && !/^\s*PATH\s*=/i.test(l));
+            return `[C251]\r\n${pathLine}\r\n${lines.join('\r\n')}${lines.length ? '\r\n' : ''}`;
+        });
     } else {
-        text = `${text.trimEnd()}\r\n[C251]\r\nPATH="${c251Slash}"\r\n`;
+        raw = `${raw.trimEnd()}\r\n[C251]\r\n${pathLine}\r\n`;
     }
-    const out = text.replace(/\r?\n/g, '\r\n');
+
+    const out = raw.replace(/\r?\n/g, '\r\n');
     fs.writeFileSync(iniPath, out.endsWith('\r\n') ? out : `${out}\r\n`, 'utf8');
     return { ok: true, iniPath };
 }
@@ -145,6 +135,11 @@ if (!selected?.uv4 || !fs.existsSync(uvproj)) {
     process.exit(1);
 }
 
+if (selected.source === 'bundled') {
+    const ini = ensureToolsIni(selected.keilRoot);
+    console.log('TOOLS.INI:', ini.ok ? ini.iniPath : ini.message);
+}
+
 fs.writeFileSync(mainC, SAMPLE.replace(/\r?\n/g, '\r\n'), 'utf8');
 console.log('Wrote main.c');
 
@@ -157,44 +152,30 @@ if (fs.existsSync(hexPath)) {
     }
 }
 
-/** @type {number} */
-let code;
-try {
-    if (selected.source === 'bundled') {
-        const ini = writeToolsIni(selected.keilRoot, 'runtime');
-        console.log('TOOLS.INI runtime:', ini.ok ? ini.iniPath : ini.message);
-    }
-
-    code = await new Promise((resolve, reject) => {
-        const child = spawn(selected.uv4, ['-b', uvproj, '-o', logPath], {
-            cwd: path.dirname(uvproj),
-            windowsHide: true,
-            stdio: 'ignore',
-            env: {
-                ...process.env,
-                KEIL_ROOT: selected.keilRoot || '',
-                UV2_ROOT: selected.keilRoot || '',
-            },
-        });
-        const t = setTimeout(() => {
-            child.kill();
-            reject(new Error('timeout'));
-        }, 120000);
-        child.on('error', (e) => {
-            clearTimeout(t);
-            reject(e);
-        });
-        child.on('close', (c) => {
-            clearTimeout(t);
-            resolve(c ?? 1);
-        });
+const code = await new Promise((resolve, reject) => {
+    const child = spawn(selected.uv4, ['-b', uvproj, '-o', logPath], {
+        cwd: path.dirname(uvproj),
+        windowsHide: true,
+        stdio: 'ignore',
+        env: {
+            ...process.env,
+            KEIL_ROOT: selected.keilRoot || '',
+            UV2_ROOT: selected.keilRoot || '',
+        },
     });
-} finally {
-    if (selected.source === 'bundled') {
-        const restored = writeToolsIni(selected.keilRoot, 'portable');
-        console.log('TOOLS.INI portable:', restored.ok ? restored.iniPath : restored.message);
-    }
-}
+    const t = setTimeout(() => {
+        child.kill();
+        reject(new Error('timeout'));
+    }, 120000);
+    child.on('error', (e) => {
+        clearTimeout(t);
+        reject(e);
+    });
+    child.on('close', (c) => {
+        clearTimeout(t);
+        resolve(c ?? 1);
+    });
+});
 
 const log = fs.existsSync(logPath) ? fs.readFileSync(logPath, 'utf8') : '';
 const ok = /0 Error\(s\)/i.test(log) && fs.existsSync(hexPath);
@@ -202,14 +183,5 @@ console.log('exitCode:', code);
 console.log('hex:', fs.existsSync(hexPath) ? hexPath : 'MISSING');
 console.log('--- log tail ---');
 console.log(log.split(/\r?\n/).slice(-15).join('\n'));
-if (selected.source === 'bundled') {
-    const iniNow = fs.readFileSync(path.join(selected.keilRoot, 'TOOLS.INI'), 'utf8');
-    const portable = /PATH="\{\{KEIL_ROOT\}\}\\C251\\"/i.test(iniNow);
-    console.log('TOOLS.INI uses placeholder:', portable);
-    if (!portable) {
-        console.log('FAIL: TOOLS.INI still has machine path');
-        process.exit(3);
-    }
-}
 console.log(ok ? 'PASS' : 'FAIL');
 process.exit(ok ? 0 : 2);

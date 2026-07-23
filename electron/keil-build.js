@@ -132,165 +132,46 @@ export function isBundledToolchainPresent(root = getBundledKeilRoot()) {
 }
 
 /**
- * Keil TOOLS.INI PATH 值：绝对路径 + 尾随反斜杠。
- * @param {string} dir
- */
-function normalizeKeilIniPath(dir) {
-    let p = path.resolve(dir);
-    if (!p.endsWith('\\') && !p.endsWith('/')) p += '\\';
-    return p;
-}
-
-/**
- * 读取 TOOLS.INI 文本（去 BOM）。
- * @param {string} iniPath
- */
-function readToolsIniText(iniPath) {
-    let raw = fs.readFileSync(iniPath, 'utf8');
-    if (raw.charCodeAt(0) === 0xfeff) raw = raw.slice(1);
-    return raw;
-}
-
-/**
- * 提取 INI 段体（不含 [section] 行）。
- * @param {string} text
- * @param {string} section
- */
-function extractIniSectionBody(text, section) {
-    const re = new RegExp(
-        `^[ \\t]*\\[${section}\\][ \\t]*\\r?\\n([\\s\\S]*?)(?=^[ \\t]*\\[|\\s*$)`,
-        'im',
-    );
-    const m = text.match(re);
-    return m ? m[1] : '';
-}
-
-/**
- * 过滤段体内的键（及空行）。
- * @param {string} body
- * @param {string[]} dropKeys
- */
-function filterIniSectionBody(body, dropKeys = []) {
-    const drop = new Set(dropKeys.map((k) => k.toUpperCase()));
-    return String(body || '')
-        .split(/\r?\n/)
-        .map((l) => l.trimEnd())
-        .filter((l) => {
-            if (!l.trim()) return false;
-            if (l.trim().startsWith(';')) return true;
-            const key = l.split('=')[0]?.trim().toUpperCase();
-            if (key && drop.has(key)) return false;
-            return true;
-        });
-}
-
-/**
- * 便携模板路径（仓库提交的是占位符版本；UV4 可能改写 TOOLS.INI）。
- * @param {string} keilRoot
- */
-function getToolsIniTemplatePath(keilRoot) {
-    return path.join(keilRoot, 'TOOLS.INI.template');
-}
-
-/**
- * 读取便携模板（优先 TOOLS.INI.template，否则从当前 TOOLS.INI 推导并尽量保留 LIC0）。
- * @param {string} keilRoot
- */
-function readPortableTemplateText(keilRoot) {
-    const tpl = getToolsIniTemplatePath(keilRoot);
-    if (fs.existsSync(tpl)) return readToolsIniText(tpl);
-
-    const ini = path.join(keilRoot, 'TOOLS.INI');
-    const text = fs.existsSync(ini) ? readToolsIniText(ini) : '';
-    const uv2Body = filterIniSectionBody(extractIniSectionBody(text, 'UV2'), [
-        'PATH',
-        'RTEPATH',
-        'CMSIS_TOOLBOX',
-        'ARMSEL',
-        'USERTE',
-    ]);
-    const c251Body = filterIniSectionBody(extractIniSectionBody(text, 'C251'), ['PATH']);
-    return [
-        '; pie-block bundled Keil C251/UV4 toolchain (portable)',
-        '; Do not commit machine-absolute PATH. Use {{KEIL_ROOT}} placeholder.',
-        '[UV2]',
-        ...(uv2Body.length ? uv2Body : ['CDB0=UV4\\STC.CDB ("STC MCU Database")']),
-        '[C251]',
-        'PATH="{{KEIL_ROOT}}\\C251\\"',
-        ...(c251Body.length ? c251Body : ['VERSION=5.60']),
-        '',
-    ].join('\r\n');
-}
-
-/**
- * 运行时 TOOLS.INI：基于模板把 {{KEIL_ROOT}} 换成当前绝对路径。
- * @param {string} keilRoot
- */
-export function buildRuntimeToolsIniText(keilRoot) {
-    const root = path.resolve(keilRoot);
-    const c251Slash = normalizeKeilIniPath(path.join(root, 'C251'));
-    let text = readPortableTemplateText(root);
-    text = text.replace(/\{\{KEIL_ROOT\}\}/g, root);
-    // 双保险：段首 PATH 必须是绝对路径
-    if (!/^[ \t]*\[C251\][ \t]*\r?\nPATH="/im.test(text)) {
-        text = `${text.trimEnd()}\r\n[C251]\r\nPATH="${c251Slash}"\r\n`;
-    } else {
-        text = text.replace(
-            /^[ \t]*\[C251\][ \t]*\r?\nPATH="[^"]*"/im,
-            `[C251]\r\nPATH="${c251Slash}"`,
-        );
-    }
-    return text.endsWith('\r\n') ? text : `${text}\r\n`;
-}
-
-/**
- * 写 TOOLS.INI（CRLF）。失败时返回 false。
- * @param {string} iniPath
- * @param {string} content
- */
-function writeToolsIniFile(iniPath, content) {
-    const out = content.replace(/\r?\n/g, '\r\n');
-    fs.writeFileSync(iniPath, out.endsWith('\r\n') ? out : `${out}\r\n`, 'utf8');
-}
-
-/**
- * 编译前：把 PATH 临时写成当前机器绝对路径（UV4 需要）。
- * 探测阶段请勿调用，以免把本机路径写进仓库文件。
+ * 将 TOOLS.INI 中的 PATH 改写为当前绝对路径。
+ * 优先写回工具链目录；若只读（安装目录），则写到 userData 并复制一份可写 TOOLS.INI，
+ * 同时尽量把 UV4 工作环境指回内置根（UV4 通常从安装根读 TOOLS.INI）。
  *
- * @param {string} keilRoot
+ * @param {string} keilRoot 内置或便携 Keil 根目录
  * @returns {{ ok: boolean, toolsIni: string|null, message: string, writableRoot: string }}
  */
 export function ensureBundledToolsIni(keilRoot) {
-    return applyRuntimeToolsIni(keilRoot);
-}
-
-/**
- * @param {string} keilRoot
- */
-export function applyRuntimeToolsIni(keilRoot) {
     const root = path.resolve(keilRoot);
     const srcIni = path.join(root, 'TOOLS.INI');
-    // 允许仅有 template 时首次生成 TOOLS.INI
-    if (!fs.existsSync(srcIni) && !fs.existsSync(getToolsIniTemplatePath(root))) {
+    if (!fs.existsSync(srcIni)) {
         return {
             ok: false,
             toolsIni: null,
-            message: `内置工具链缺少 TOOLS.INI / TOOLS.INI.template：${root}`,
+            message: `内置工具链缺少 TOOLS.INI：${srcIni}`,
             writableRoot: root,
         };
     }
 
-    const out = buildRuntimeToolsIniText(root);
+    const c251Slash = normalizeKeilIniPath(path.join(root, 'C251'));
+
+    let raw = fs.readFileSync(srcIni, 'utf8');
+    // 去掉 UTF-8 BOM，避免 UV4 解析失败
+    if (raw.charCodeAt(0) === 0xfeff) raw = raw.slice(1);
+    raw = raw.replace(/\{\{KEIL_ROOT\}\}/g, root);
+    // μVision 要求 [C251] 段内必须有 PATH，且必须紧跟段名（与官方 TOOLS.INI 一致）
+    raw = ensureSectionPathFirst(raw, 'C251', c251Slash);
+
+    /** 尝试写回原位置（CRLF，与 Keil 官方文件一致） */
+    const out = raw.replace(/\r?\n/g, '\r\n');
     try {
-        writeToolsIniFile(srcIni, out);
+        fs.writeFileSync(srcIni, out.endsWith('\r\n') ? out : `${out}\r\n`, 'utf8');
         return {
             ok: true,
             toolsIni: srcIni,
-            message: 'TOOLS.INI 已写入运行时绝对 PATH',
+            message: 'TOOLS.INI 已更新',
             writableRoot: root,
         };
     } catch {
-        /* 只读 */
+        /* 只读资源目录：写到 userData */
     }
 
     let userDataDir;
@@ -303,12 +184,14 @@ export function applyRuntimeToolsIni(keilRoot) {
     const fallbackIni = path.join(fallbackDir, 'TOOLS.INI');
     try {
         fs.mkdirSync(fallbackDir, { recursive: true });
-        writeToolsIniFile(fallbackIni, out);
+        // UV4 需要 TOOLS.INI 与 UV4/C251 同根；只读时无法改写安装目录。
+        // 仍写入 fallback 供诊断；实际编译依赖源目录若已含正确 PATH，或系统已注册。
+        fs.writeFileSync(fallbackIni, out.endsWith('\r\n') ? out : `${out}\r\n`, 'utf8');
         return {
             ok: true,
             toolsIni: fallbackIni,
             message:
-                '内置 TOOLS.INI 只读，已写入 userData 副本；若批编译失败请使用可写 vendor/keil-toolchain。',
+                '内置 TOOLS.INI 只读，已写入 userData 副本；若批编译找不到 C251，请以可写目录准备 vendor/keil-toolchain 或使用手动路径。',
             writableRoot: root,
         };
     } catch (err) {
@@ -322,44 +205,38 @@ export function applyRuntimeToolsIni(keilRoot) {
 }
 
 /**
- * 编译后：恢复便携占位符，避免本机绝对路径残留在仓库/安装包中。
- * UV4 运行期间也可能回写 TOOLS.INI，因此结束后必须再规范化一次。
- *
- * @param {string} keilRoot
- * @returns {{ ok: boolean, toolsIni: string|null, message: string }}
+ * Keil TOOLS.INI PATH 值：绝对路径 + 尾随反斜杠，并用双引号包裹。
+ * @param {string} dir
  */
-export function restorePortableToolsIni(keilRoot) {
-    const root = path.resolve(keilRoot);
-    const srcIni = path.join(root, 'TOOLS.INI');
-    try {
-        const portable = readPortableTemplateText(root);
-        // 确保 template 也存在（旧包升级时补一份）
-        const tpl = getToolsIniTemplatePath(root);
-        if (!fs.existsSync(tpl)) {
-            try {
-                writeToolsIniFile(tpl, portable);
-            } catch {
-                /* ignore */
-            }
-        }
-        writeToolsIniFile(srcIni, portable);
-        return {
-            ok: true,
-            toolsIni: srcIni,
-            message: 'TOOLS.INI 已从 template 恢复为便携占位符',
-        };
-    } catch (err) {
-        return {
-            ok: false,
-            toolsIni: srcIni,
-            message: `无法恢复便携 TOOLS.INI：${err.message}`,
-        };
-    }
+function normalizeKeilIniPath(dir) {
+    let p = path.resolve(dir);
+    if (!p.endsWith('\\') && !p.endsWith('/')) p += '\\';
+    return p;
 }
 
 /**
- * 解析内置工具链 UV4/C251。
- * 探测时只检查文件存在，不把绝对路径写入 TOOLS.INI。
+ * 确保 INI 某段存在，且 PATH= 为该段第一项（μVision 对 [C251] 会强制检查 PATH）。
+ * @param {string} text
+ * @param {string} section
+ * @param {string} pathValue 已带尾随 \ 的绝对路径
+ */
+function ensureSectionPathFirst(text, section, pathValue) {
+    const pathLine = `PATH="${pathValue}"`;
+    // 仅匹配行首的段名，避免注释中的 [C251] 被误改
+    const secRe = new RegExp(`^[ \\t]*\\[${section}\\][ \\t]*\\r?\\n([\\s\\S]*?)(?=^[ \\t]*\\[|\\s*$)`, 'im');
+    if (!secRe.test(text)) {
+        return `${String(text).replace(/\s*$/, '')}\r\n[${section}]\r\n${pathLine}\r\n`;
+    }
+    return text.replace(secRe, (_m, body) => {
+        const lines = String(body)
+            .split(/\r?\n/)
+            .filter((l) => l.trim() !== '' && !/^\s*PATH\s*=/i.test(l));
+        return `[${section}]\r\n${pathLine}\r\n${lines.join('\r\n')}${lines.length ? '\r\n' : ''}`;
+    });
+}
+
+/**
+ * 解析内置工具链 UV4/C251，并确保 TOOLS.INI。
  * @returns {{ uv4: string|null, c251: string|null, keilRoot: string|null, toolsIni: string|null, ready: boolean, message: string }}
  */
 export function resolveBundledToolchain() {
@@ -374,19 +251,18 @@ export function resolveBundledToolchain() {
             message: `未找到内置工具链（期望 ${keilRoot}）。开发态请运行 node scripts/prepare-keil-toolchain.mjs`,
         };
     }
+    const ini = ensureBundledToolsIni(keilRoot);
     const uv4 = path.join(keilRoot, 'UV4', 'UV4.exe');
     const c251 = path.join(keilRoot, 'C251', 'BIN', 'C251.EXE');
-    const toolsIni = path.join(keilRoot, 'TOOLS.INI');
-    const hasIni = fs.existsSync(toolsIni);
     return {
         uv4,
         c251,
         keilRoot,
-        toolsIni: hasIni ? toolsIni : null,
-        ready: Boolean(fs.existsSync(uv4) && fs.existsSync(c251) && hasIni),
-        message: hasIni
+        toolsIni: ini.toolsIni,
+        ready: Boolean(ini.ok && fs.existsSync(uv4)),
+        message: ini.ok
             ? `内置工具链就绪：${keilRoot}`
-            : `内置工具链缺少 TOOLS.INI：${toolsIni}`,
+            : ini.message || '内置工具链 TOOLS.INI 配置失败',
     };
 }
 
@@ -887,6 +763,10 @@ export async function compileWithKeil(code, options = {}) {
         };
     }
 
+    if (info.source === 'bundled' && info.keilRoot) {
+        ensureBundledToolsIni(info.keilRoot);
+    }
+
     let mainCPath;
     try {
         mainCPath = writeMainC(code);
@@ -906,24 +786,7 @@ export async function compileWithKeil(code, options = {}) {
     const logPath = path.join(paths.mdkDir, 'pie_block_build.log');
     /** @type {{ exitCode: number, log: string }} */
     let buildResult;
-    const usedBundled = info.source === 'bundled' && info.keilRoot;
     try {
-        // 仅编译期间写入本机绝对 PATH；结束后恢复 {{KEIL_ROOT}} 占位符
-        if (usedBundled) {
-            const applied = applyRuntimeToolsIni(info.keilRoot);
-            if (!applied.ok) {
-                return {
-                    success: false,
-                    stage: 'tools-ini',
-                    message: applied.message,
-                    log: '',
-                    hexPath: null,
-                    mainC: mainCPath,
-                    summary: null,
-                    source: info.source,
-                };
-            }
-        }
         buildResult = await runUv4Build(uv4, paths.uvproj, logPath, 120000, {
             keilRoot: info.keilRoot,
         });
@@ -938,14 +801,6 @@ export async function compileWithKeil(code, options = {}) {
             summary: null,
             source: info.source,
         };
-    } finally {
-        if (usedBundled) {
-            try {
-                restorePortableToolsIni(info.keilRoot);
-            } catch {
-                /* ignore */
-            }
-        }
     }
 
     const summary = summarizeLog(buildResult.log);

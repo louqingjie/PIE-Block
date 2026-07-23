@@ -23,7 +23,7 @@
 *.build_log.htm
 **/pie_block_build.log
 **/build_test.log
-*.log
+stc32g/Projects/**/MDK/*.log
 
 # Temporary and backup files
 *.bak
@@ -36,16 +36,5 @@ node_modules/
 dist/
 release/
 
-# Bundled Keil toolchain is tracked under vendor/keil-toolchain/
-# (licensed binaries; only commit if you have redistribution rights).
-# Keep prepare script for refresh: npm run prepare:keil
-#
-# Un-ignore any global artifact rules that might hit the bundle:
-!vendor/keil-toolchain/**
-!vendor/keil-toolchain/**/*.bin
-!vendor/keil-toolchain/**/*.hex
-!vendor/keil-toolchain/**/*.map
-!vendor/keil-toolchain/**/*.lst
-!vendor/keil-toolchain/**/*.obj
-!vendor/keil-toolchain/**/*.o
-!vendor/keil-toolchain/**/*.log
+# Bundled Keil toolchain (licensed binaries; prepare via script, do not commit)
+vendor/keil-toolchain/

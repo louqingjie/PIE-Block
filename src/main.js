@@ -172,8 +172,8 @@ function applyKeilInfo(info) {
         info.source === 'bundled'
             ? '内置'
             : info.source === 'manual'
-                ? '手动'
-                : '自动';
+              ? '手动'
+              : '自动';
     setCompileStatus(`${ver} · ${tag}`, 'is-ok');
     if (btnCompile) {
         btnCompile.title = info.uv4 ? `使用：${info.uv4}` : '使用 Keil C251 编译';
