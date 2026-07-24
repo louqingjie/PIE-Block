@@ -94,11 +94,24 @@ javascriptGenerator.forBlock['rm_servo_init'] = (block) => {
     return `PWM_Init(${pin}, 50, ${duty});\n`;
 };
 
-// 设置舵机角度
+// 设置舵机占空比（可接角度转占空比；此处再做一次 250~1250 限幅）
 javascriptGenerator.forBlock['rm_servo_set'] = (block, gen) => {
     const pin = block.getFieldValue('PIN');
     const duty = gen.valueToCode(block, 'DUTY', Order.NONE) || '750';
-    return `PWM_SET_Frequency(${pin}, 50, ${duty});\n`;
+    const limited =
+        `((${duty}) < 250 ? 250 : ((${duty}) > 1250 ? 1250 : (${duty})))`;
+    return `PWM_SET_Frequency(${pin}, 50, ${limited});\n`;
+};
+
+// 设置舵机角度：duty = mid + angle * (500/90)，限幅 250~1250
+javascriptGenerator.forBlock['rm_servo_set_angle'] = (block, gen) => {
+    const pin = block.getFieldValue('PIN');
+    const angle = gen.valueToCode(block, 'ANGLE', Order.NONE) || '0';
+    const mid = block.getFieldValue('MID');
+    const expr = `(${mid} + (int)((${angle}) * 5.5556f))`;
+    const limited =
+        `((${expr}) < 250 ? 250 : ((${expr}) > 1250 ? 1250 : (${expr})))`;
+    return `PWM_SET_Frequency(${pin}, 50, ${limited});\n`;
 };
 
 // 设置摩擦轮占空比

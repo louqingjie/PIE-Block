@@ -22,6 +22,7 @@ export const toolbox = {
             contents: [
                 { kind: 'block', type: 'stc_rc_init' },
                 { kind: 'block', type: 'stc_rc_key_read' },
+                { kind: 'block', type: 'stc_rc_key_falling' },
                 { kind: 'block', type: 'stc_rc_rocker_read' },
                 {
                     kind: 'block',
@@ -86,7 +87,18 @@ export const toolbox = {
                 },
                 { kind: 'block', type: 'rm_limit_value' },
                 { kind: 'block', type: 'rm_abs' },
-                { kind: 'block', type: 'rm_angle_to_duty' },
+                {
+                    kind: 'block',
+                    type: 'rm_angle_to_duty',
+                    inputs: {
+                        ANGLE: {
+                            shadow: {
+                                type: 'math_number',
+                                fields: { NUM: 0 },
+                            },
+                        },
+                    },
+                },
             ],
         },
         {
@@ -94,7 +106,38 @@ export const toolbox = {
             contents: [
                 { kind: 'block', type: 'rm_expansion_set_duty' },
                 { kind: 'block', type: 'rm_servo_init' },
-                { kind: 'block', type: 'rm_servo_set' },
+                {
+                    kind: 'block',
+                    type: 'rm_servo_set',
+                    inputs: {
+                        DUTY: {
+                            block: {
+                                type: 'rm_angle_to_duty',
+                                fields: { MID: 750 },
+                                inputs: {
+                                    ANGLE: {
+                                        shadow: {
+                                            type: 'math_number',
+                                            fields: { NUM: 0 },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+                {
+                    kind: 'block',
+                    type: 'rm_servo_set_angle',
+                    inputs: {
+                        ANGLE: {
+                            shadow: {
+                                type: 'math_number',
+                                fields: { NUM: 0 },
+                            },
+                        },
+                    },
+                },
                 { kind: 'block', type: 'rm_booster_set' },
             ],
         },

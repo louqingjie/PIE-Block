@@ -79,7 +79,7 @@ Blockly.Blocks['rm_servo_init'] = {
     },
 };
 
-// 设置舵机角度（PWM引脚可选）
+// 设置舵机占空比（PWM引脚可选，可接“角度转占空比”）
 Blockly.Blocks['rm_servo_set'] = {
     init() {
         this.appendDummyInput()
@@ -90,7 +90,29 @@ Blockly.Blocks['rm_servo_set'] = {
         this.setPreviousStatement(true, null);
         this.setNextStatement(true, null);
         this.setColour(350);
-        this.setTooltip('设置舵机角度 PWM_SET_Frequency(引脚, 50, duty)，范围250~1250');
+        this.setTooltip('设置舵机占空比 PWM_SET_Frequency(引脚, 50, duty)，建议范围250~1250');
+    },
+};
+
+// 设置舵机角度（一体模块）：目标角度 + 归中(0°)占空比 + IO，占空比自动限幅
+// 结构：设置舵机 [IO]  角度 [°] 中值 [mid]
+Blockly.Blocks['rm_servo_set_angle'] = {
+    init() {
+        this.appendDummyInput()
+            .appendField('设置舵机')
+            .appendField(new Blockly.FieldDropdown(PWM_PIN_OPTIONS), 'PIN');
+        this.appendValueInput('ANGLE').setCheck(null).appendField('角度');
+        this.appendDummyInput()
+            .appendField('° 中值')
+            .appendField(new Blockly.FieldNumber(750, 250, 1250), 'MID');
+        this.setInputsInline(true);
+        this.setPreviousStatement(true, null);
+        this.setNextStatement(true, null);
+        this.setColour(350);
+        this.setTooltip(
+            '舵机角度控制：占空比 = 中值 + 角度×5.56（0°=中值，约±90°对应±500），'
+            + '结果限幅 250~1250 后调用 PWM_SET_Frequency(引脚, 50, duty)'
+        );
     },
 };
 

@@ -22,6 +22,23 @@ Blockly.Blocks['stc_rc_key_read'] = {
     },
 };
 
+// 遥控按键下降沿：轮询检测「按下→松开」，不使用中断
+// 需放在主循环中反复判断；同一循环内对同一按键只应调用一次
+Blockly.Blocks['stc_rc_key_falling'] = {
+    init() {
+        this.appendDummyInput()
+            .appendField('遥控按键')
+            .appendField(new Blockly.FieldDropdown(KEY_OPTIONS), 'KEY')
+            .appendField('下降沿');
+        this.setOutput(true, null);
+        this.setColour(260);
+        this.setTooltip(
+            '轮询检测遥控按键下降沿（按下→松开返回 1，否则 0）。'
+            + '不使用中断；需在主循环中反复调用。同一循环内同一按键请只判断一次。'
+        );
+    },
+};
+
 Blockly.Blocks['stc_rc_rocker_read'] = {
     init() {
         this.appendDummyInput()
