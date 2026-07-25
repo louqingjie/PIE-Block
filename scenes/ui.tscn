@@ -56,7 +56,6 @@ text = "项目名称"
 [node name="Export" type="Button" parent="VBoxContainer/TopPanel" unique_id=205960242]
 layout_mode = 2
 size_flags_horizontal = 8
-toggle_mode = true
 text = "导出 C 代码"
 
 [node name="Build" type="Button" parent="VBoxContainer/TopPanel" unique_id=1581104311]

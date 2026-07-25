@@ -60,7 +60,11 @@ const TOOLCHAIN_DIR: String = "res://stc32g/toolchain"
 const INFANTRY_MDK_DIR: String = "res://stc32g/Projects/ROBOMASTER_INFANTRY/MDK"
 const INFANTRY_MAIN_C: String = "res://stc32g/Projects/ROBOMASTER_INFANTRY/USER/src/main.c"
 const BUILD_LOG_NAME: String = "pie_block_build.log"
-const UV4_EXE_NAME: String = "UV4.exe"
+# UV4 可执行文件候选名，按优先级排序：
+# uVision.com 是控制台子系统版本，-b 批处理时不会弹出 GUI 窗口盖住本程序；
+# UV4.exe 是 GUI 子系统版本，会弹窗抢焦点，仅作回退。
+# 注：PackedStringArray 字面量不是常量表达式，故用 var 而非 const
+var UV4_CANDIDATES: PackedStringArray = PackedStringArray(["uVision.com", "UV4.exe"])
 
 
 # ------------------------------------------------------------------ 生命周期
@@ -916,14 +920,16 @@ func _to_abs(res_path: String) -> String:
 	return ProjectSettings.globalize_path(res_path)
 
 
-## 在 stc32g/toolchain/ 探测 UV4.exe；找不到返回空串
-## 先查根目录，再深度优先递归扫描子目录（容忍 Keil_v5/UV4/UV4.exe 等任意嵌套结构）
+## 在 stc32g/toolchain/ 探测 Keil 命令行编译器；找不到返回空串
+## 优先 uVision.com（控制台子系统，-b 不弹 GUI 窗口），回退 UV4.exe（GUI 子系统，会弹窗）
+## 先查 toolchain 根目录，再深度优先递归扫描子目录
 func _find_uv4() -> String:
 	var dir_abs: String = _to_abs(TOOLCHAIN_DIR)
-	# 优先：根目录直接放 UV4.exe
-	var direct: String = dir_abs.path_join(UV4_EXE_NAME)
-	if FileAccess.file_exists(direct):
-		return direct
+	# 优先：toolchain 根目录直接放编译器
+	for cand in UV4_CANDIDATES:
+		var direct: String = dir_abs.path_join(cand)
+		if FileAccess.file_exists(direct):
+			return direct
 	# 回退：深度优先递归扫描子目录
 	return _find_uv4_recursive(dir_abs)
 
@@ -938,10 +944,12 @@ func _find_uv4_recursive(dir_abs: String) -> String:
 	while name != "" and found == "":
 		if da.current_is_dir() and not name.begins_with("."):
 			var sub_dir: String = dir_abs.path_join(name)
-			var candidate: String = sub_dir.path_join(UV4_EXE_NAME)
-			if FileAccess.file_exists(candidate):
-				found = candidate
-			else:
+			for cand in UV4_CANDIDATES:
+				var candidate: String = sub_dir.path_join(cand)
+				if FileAccess.file_exists(candidate):
+					found = candidate
+					break
+			if found == "":
 				# 递归进入子目录
 				found = _find_uv4_recursive(sub_dir)
 		name = da.get_next()
@@ -949,8 +957,8 @@ func _find_uv4_recursive(dir_abs: String) -> String:
 	return found
 
 
-## 探测 TOOLS.INI：优先 UV4.exe 同目录，其次 UV4 上级目录（Keil_v5 根），再 toolchain 根目录
-## 用户布局常见为 Keil_v5/UV4/UV4.exe + Keil_v5/TOOLS.INI，故需查上级
+## 探测 TOOLS.INI：优先编译器同目录，其次编译器上级目录（Keil_v5 根），再 toolchain 根目录
+## 用户布局常见为 Keil_v5/UV4/uVision.com + Keil_v5/TOOLS.INI，故需查上级
 func _find_tools_ini(uv4_abs: String) -> String:
 	var uv4_dir: String = uv4_abs.replace("\\", "/").get_base_dir()
 	# 1) UV4.exe 同目录
@@ -1021,7 +1029,7 @@ func _on_build_pressed() -> void:
 		btn.disabled = true
 		btn.text = "编译中…"
 	_clear_output()
-	_append_output("正在编译…（已写入 main.c，调用 UV4.exe）")
+	_append_output("正在编译…（已写入 main.c，调用 Keil 编译器）")
 	_build_thread = Thread.new()
 	var err: int = _build_thread.start(_build_worker.bind(uv4_abs))
 	if err != OK:
@@ -1032,12 +1040,12 @@ func _on_build_pressed() -> void:
 		_append_output("[Error] 无法启动编译线程（错误码 %d）" % err)
 
 
-## 编译工作线程：执行 UV4.exe -b，读日志，完成后回主线程
+## 编译工作线程：执行 Keil 编译器 -b，读日志，完成后回主线程
 ## 注意：子线程禁止访问 UI 节点，结果通过 call_deferred 传递
 func _build_worker(uv4_abs: String) -> void:
 	# OS.execute 不支持设置工作目录，且 Godot 进程 cwd 是项目根而非 MDK，
-	# 因此 .uvproj 与日志均用绝对路径传给 UV4；路径转反斜杠以兼容 Windows 原生程序。
-	# UV4 通过自身 exe 位置查找 TOOLS.INI，不依赖 cwd。
+	# 因此 .uvproj 与日志均用绝对路径传给编译器；路径转反斜杠以兼容 Windows 原生程序。
+	# 编译器（uVision.com/UV4.exe）通过自身 exe 位置查找 TOOLS.INI，不依赖 cwd。
 	var mdk_abs: String = _to_abs(INFANTRY_MDK_DIR).replace("/", "\\")
 	var uvproj_abs: String = mdk_abs + "\\Project_Template.uvproj"
 	var log_abs: String = mdk_abs + "\\" + BUILD_LOG_NAME
