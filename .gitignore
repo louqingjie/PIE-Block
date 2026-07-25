@@ -42,3 +42,5 @@ release/
 
 # Bundled Keil toolchain (licensed binaries; prepare via script, do not commit)
 vendor/keil-toolchain/
+
+Keil_v5/

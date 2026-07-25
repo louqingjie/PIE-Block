@@ -1,10 +1,10 @@
-// 步兵机器人操作代码
+// 步兵机器人操作代码（由 Pie-Block 配置生成器自动生成）
 #include "main.h"
 #include "MATH.H"
 // ========================= 参数区 =========================
-uint8_t Channal = 36; // NRF24L01 通信通道（0-125），与遥控器一致
-uint16_t maxSpeed = 4000;
-uint16_t ultraSpeed = 8000;
+uint8_t Channal = 36;                          // NRF24L01 通信通道（0-125），与遥控器一致
+uint16_t maxSpeed = 8000;
+uint16_t ultraSpeed = 10000;
 uint16_t deadBandOfLeft = 10;                   // 左摇杆中心死区
 uint16_t deadBandOfRight = 10;                  // 右摇杆中心死区
 uint16_t midDutyOfServo[2] = {750, 750};        // 分别为云台水平舵机、云台垂直舵机
@@ -42,12 +42,13 @@ uint8_t control_command = 0x00;
 // 自定义变量
 float floatDutyOfServo[2]; // 云台舵机
 uint16_t dutyOfServo[2];
-int dutyOfMotor[5]; // 四个底盘电机，供弹电机
+int dutyOfMotor[5]; // 底盘电机、供弹电机、云台电机（如有）
 uint16_t dutyOfBooster = 0, expectDutyOfBooster = 0;
 uint8_t valueOfKey[3][4];
-uint8_t valueOfRKey, lastValueOfRKey, lastValueOfAKey, statusOfBooster = 0;
+uint8_t triggerKeyValue, lastTriggerKeyValue, boosterKeyValue, lastBoosterKeyValue;
+uint8_t statusOfBooster = 0;
 uint8_t i, j;
-int valueOfRoker[2][2] // 左摇杆水平、竖直；左摇杆水平、竖直
+int valueOfRoker[2][2] // 左摇杆水平、竖直；右摇杆水平、竖直
     ,
     baseSpeed, turnSpeed;
 static const uint8_t keyOffsets[3][4] = {
@@ -90,10 +91,9 @@ void main()
         LIMIT_VALUE(dutyOfMotor[3], -10000, 10000);
         LIMIT_VALUE(dutyOfMotor[4], 0, 10000);
         LIMIT_VALUE(floatDutyOfServo[0], 250, 1250);
-        LIMIT_VALUE(dutyOfServo[1], 250, 1250);
-
-        // R 键单发拨弹：上升沿触发，拨弹电机转动 boosterFeedDelayMs 后停转，期间阻塞主线程
-        if (valueOfRKey && !lastValueOfRKey)
+        LIMIT_VALUE(floatDutyOfServo[1], 250, 1250);
+        // 扳机键单发拨弹：上升沿触发，拨弹电机转动 boosterFeedDelayMs 后停转，期间阻塞主线程
+        if (triggerKeyValue && !lastTriggerKeyValue)
         {
             dutyOfMotor[4] = boosterDutyOfFeed;
             dutyOfBooster = expectDutyOfBooster; // 锁定摩擦轮当前值，平滑过程暂停
@@ -102,7 +102,7 @@ void main()
             dutyOfMotor[4] = 0;
             Main_Countrol(dutyOfMotor, dutyOfServo, dutyOfBooster);
         }
-        lastValueOfRKey = valueOfRKey;
+        lastTriggerKeyValue = triggerKeyValue;
 
         // 平滑占空比变化
         if (expectDutyOfBooster > 500 && dutyOfBooster < 500)
@@ -125,13 +125,6 @@ void main()
     }
 }
 
-// void PIT0_Activated() interrupt TMR0_VECTOR
-// {
-//     PIT_Timer_Clear(TIM0);
-//     // 限幅
-
-// }
-
 uint8_t Get_Dir(int rawdata)
 {
     if (rawdata >= 0)
@@ -152,10 +145,8 @@ void All_Init()
                           10000, 50,
                           50, 50,
                           10000, 10000,
-                          10000, 10000); // 供弹电机、空、摩擦轮L，摩擦轮R、左前轮、左后轮、右前轮、右后轮
+                          10000, 10000); // p60,p62,p64,p66,p74,p75,p76,p77
     Ms_Delay(20);
-    PWM_Init(PWMB_CH1_P74, 50, midDutyOfServo[0]); // 云台水平舵机
-    PWM_Init(PWMB_CH4_P03, 50, midDutyOfServo[1]); // 云台垂直舵机
 }
 
 void ReadControllerInputs()
@@ -184,11 +175,15 @@ void ReadControllerInputs()
             valueOfKey[i][j] = RcKeyValueRead(keyOffsets[i][j]);
         }
     }
-    valueOfRKey = RcKeyValueRead(KEY_OFFSET_1);
+    // 读取扳机键和摩擦轮开关键
+    triggerKeyValue = RcKeyValueRead(KEY_OFFSET_1);
+    boosterKeyValue = RcKeyValueRead(KEY_OFFSET_A);
 }
 
 void CalculateMotorControls()
 {
+
+    // 冲刺模式：按下左摇杆时使用冲刺速度
     if (valueOfKey[2][0])
     {
         baseSpeed = (int)((float)valueOfRoker[0][1] * ultraSpeed / 2047);
@@ -200,21 +195,21 @@ void CalculateMotorControls()
         turnSpeed = -(int)((float)valueOfRoker[0][0] * maxSpeed / 2047);
     }
 
+    // 方向键设为移动
     if (valueOfKey[0][0] == 1)
-        baseSpeed = ultraSpeed;
+        baseSpeed = maxSpeed;
     if (valueOfKey[0][1] == 1)
-        baseSpeed = -ultraSpeed;
+        baseSpeed = -maxSpeed;
     if (valueOfKey[0][2] == 1)
-        turnSpeed = -ultraSpeed;
+        turnSpeed = -maxSpeed;
     if (valueOfKey[0][3] == 1)
-        turnSpeed = ultraSpeed;
-
+        turnSpeed = maxSpeed;
     dutyOfMotor[0] = -baseSpeed - turnSpeed;
     dutyOfMotor[1] = -baseSpeed - turnSpeed;
     dutyOfMotor[2] = baseSpeed - turnSpeed;
     dutyOfMotor[3] = baseSpeed - turnSpeed;
 
-    // 供弹电机控制值计算（A 键已用作摩擦轮开关，此处仅保留 D 键停转）
+    // 供弹电机控制值计算
     if (valueOfKey[1][3])
         dutyOfMotor[4] = 0;
 }
@@ -227,12 +222,12 @@ void CalculateBoosterControl()
     else if (valueOfKey[1][2])
         expectDutyOfBooster -= singleChangeDutyOfBooster;
 
-    // 摩擦轮开关由 A 键上升沿翻转（原先为 R 键）
-    if (valueOfKey[1][0] && !lastValueOfAKey)
+    // 摩擦轮开关由 A 上升沿翻转
+    if (boosterKeyValue && !lastBoosterKeyValue)
     {                                       // 检测上升沿
         statusOfBooster = !statusOfBooster; // 翻转状态
     }
-    lastValueOfAKey = valueOfKey[1][0];
+    lastBoosterKeyValue = boosterKeyValue;
 
     if (statusOfBooster)
         expectDutyOfBooster = maxDutyOfBooster;
@@ -254,28 +249,17 @@ void Main_Countrol(int *dutyOfMotor, uint16_t *dutyOfServo, uint16_t dutyOfBoost
     ExpansionBoradControl(Dir_Change_Order,
                           1, 1,
                           1, 1,
-                          Get_Dir(dutyOfMotor[0]), Get_Dir(dutyOfMotor[1]),
-                          Get_Dir(dutyOfMotor[2]), Get_Dir(dutyOfMotor[3]));
+                          1, 1,
+                          1, Get_Dir(dutyOfMotor[3]));
     Ms_Delay(5);
-    ExpansionBoradControl(Duty_Change_Order, dutyOfMotor[4], 10000,
+    ExpansionBoradControl(Duty_Change_Order, dutyOfMotor[4], dutyOfServo[1],
                           dutyOfBooster, dutyOfBooster,
                           (uint16_t)abs(dutyOfMotor[0]), (uint16_t)abs(dutyOfMotor[1]),
                           (uint16_t)abs(dutyOfMotor[2]), (uint16_t)abs(dutyOfMotor[3]));
     Ms_Delay(5);
-    PWM_SET_Frequency(PWMB_CH1_P74, 50, dutyOfServo[0]);
-    PWM_SET_Frequency(PWMB_CH4_P03, 50, dutyOfServo[1]);
 }
-/**************************************************************************************************************************
- * @brief  板间通信函数，用于主控给拓展版发送
- * @exampleCode
- * ExpansionBoradControl(Init_Order, 50, 50, 50, 50, 10000, 10000, 10000);//初始化模式
- * @explain  初始化模式后是各个引脚的频率，50为舵机或摩擦轮，10000为电机
- *           修改占空比的模式后参数写设置的占空比，以此类推，写NULL则维持之前状态，该引脚的动力源相关参数不被改变
- * @param[in]  control_cmd 发送的内容
- * @param[in]  data_pxx  xx引脚的频率/占空比
- ***************************************************************************************************************************/
 
-/// @brief 板间通信函数，用于主 控给拓展版发送
+/// @brief 板间通信函数，用于主控给拓展版发送
 /// @param control_cmd
 /// @param data_p60 供弹电机
 /// @param data_p62 空
@@ -290,16 +274,12 @@ void ExpansionBoradControl(uint8_t control_cmd, uint16_t data_p60, uint16_t data
                            uint16_t data_p77)
 {
     uint8_t i = 0;
-    // 通信数据帧
     uint8_t control_frame_pack[21] = {0};
-    // 帧头帧尾
     control_frame_pack[0] = COMM_HEADER_1;
     control_frame_pack[1] = COMM_HEADER_2;
     control_frame_pack[19] = COMM_END_1;
     control_frame_pack[20] = COMM_END_2;
-    // 指令
     control_frame_pack[2] = control_cmd;
-    // 数据
     control_frame_pack[3] = (uint8_t)((data_p60 >> 8) & 0xFF);
     control_frame_pack[4] = (uint8_t)(data_p60 & 0xFF);
     control_frame_pack[5] = (uint8_t)((data_p62 >> 8) & 0xFF);
@@ -316,9 +296,6 @@ void ExpansionBoradControl(uint8_t control_cmd, uint16_t data_p60, uint16_t data
     control_frame_pack[16] = (uint8_t)(data_p76 & 0xFF);
     control_frame_pack[17] = (uint8_t)((data_p77 >> 8) & 0xFF);
     control_frame_pack[18] = (uint8_t)(data_p77 & 0xFF);
-
-    // 发送
-    // UART_PutBuff(UART_1, control_frame_pack, 21);
     for (i = 0; i < 21; i++)
         UART_PutChar(UART_1, control_frame_pack[i]);
 }

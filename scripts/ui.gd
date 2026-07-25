@@ -53,9 +53,21 @@ const P_BOOSTER_KEY: NodePath = KEYSET + "/Booster/OptionButton"
 # 输出
 const P_OUTPUT: NodePath = "VBoxContainer/HBoxContainer/HSplitContainer/CodeZone/VSplitContainer/Output/Output"
 const P_CODE_EDIT: NodePath = "VBoxContainer/HBoxContainer/HSplitContainer/CodeZone/VSplitContainer/Code/CodeEdit"
+# 顶栏按钮
+const P_BUILD_BTN: NodePath = "VBoxContainer/TopPanel/Build"
+# Keil 工具链与步兵项目路径（res:// 在导出后只读，开发期通过 globalize_path 转绝对路径）
+const TOOLCHAIN_DIR: String = "res://stc32g/toolchain"
+const INFANTRY_MDK_DIR: String = "res://stc32g/Projects/ROBOMASTER_INFANTRY/MDK"
+const INFANTRY_MAIN_C: String = "res://stc32g/Projects/ROBOMASTER_INFANTRY/USER/src/main.c"
+const BUILD_LOG_NAME: String = "pie_block_build.log"
+const UV4_EXE_NAME: String = "UV4.exe"
 
 
 # ------------------------------------------------------------------ 生命周期
+var _build_thread: Thread = null
+var _build_busy: bool = false
+
+
 func _ready() -> void:
 	# 初始执行一次检查，并在控件变化时实时检查
 	_run_check()
@@ -89,6 +101,10 @@ func _connect_signals() -> void:
 	var sprint_cb: Node = get_node_or_null(P_SPRINT_CB)
 	if sprint_cb is BaseButton:
 		sprint_cb.toggled.connect(_run_check)
+	# 编译按钮
+	var build_btn: Node = get_node_or_null(P_BUILD_BTN)
+	if build_btn is BaseButton:
+		build_btn.pressed.connect(_on_build_pressed)
 
 
 # ------------------------------------------------------------------ 检查入口
@@ -600,9 +616,9 @@ func _generate_main_c(cfg: Dictionary) -> String:
 	code += "// 自定义变量\n"
 	code += "float floatDutyOfServo[2]; // 云台舵机\n"
 	code += "uint16_t dutyOfServo[2];\n"
-	var motor_array_size: int = 5  # 4底盘 + 1供弹
+	var motor_array_size: int = 5 # 4底盘 + 1供弹
 	if not yaw_is_servo:
-		motor_array_size = pitch_motor_idx + 1  # 6 (仅yaw) 或 7 (yaw+pitch)
+		motor_array_size = pitch_motor_idx + 1 # 6 (仅yaw) 或 7 (yaw+pitch)
 	code += "int dutyOfMotor[%d]; // 底盘电机、供弹电机、云台电机（如有）\n" % motor_array_size
 	code += "uint16_t dutyOfBooster = 0, expectDutyOfBooster = 0;\n"
 	code += "uint8_t valueOfKey[3][4];\n"
@@ -882,5 +898,204 @@ func _pin_to_pwm_channel(pin: String) -> String:
 	var ch: String = mapping.get(pin, "")
 	if ch.is_empty():
 		push_warning("_pin_to_pwm_channel: 未知引脚 %s，请确认是主控板舵机端口 MP74 或 MP03" % pin)
-		return "PWMB_CH1_P74"  # 兜底，实际应被静态检查拦截
+		return "PWMB_CH1_P74" # 兜底，实际应被静态检查拦截
 	return ch
+
+
+# ==================================================================
+# 编译功能（Keil C251 集成）
+# ==================================================================
+## 退出时清理编译线程，避免泄漏
+func _exit_tree() -> void:
+	if _build_thread and _build_thread.is_alive():
+		_build_thread.wait_to_finish()
+
+
+## res:// 路径转 OS 绝对路径（供 OS.execute / FileAccess 使用）
+func _to_abs(res_path: String) -> String:
+	return ProjectSettings.globalize_path(res_path)
+
+
+## 在 stc32g/toolchain/ 探测 UV4.exe；找不到返回空串
+## 先查根目录，再深度优先递归扫描子目录（容忍 Keil_v5/UV4/UV4.exe 等任意嵌套结构）
+func _find_uv4() -> String:
+	var dir_abs: String = _to_abs(TOOLCHAIN_DIR)
+	# 优先：根目录直接放 UV4.exe
+	var direct: String = dir_abs.path_join(UV4_EXE_NAME)
+	if FileAccess.file_exists(direct):
+		return direct
+	# 回退：深度优先递归扫描子目录
+	return _find_uv4_recursive(dir_abs)
+
+
+func _find_uv4_recursive(dir_abs: String) -> String:
+	var da: DirAccess = DirAccess.open(dir_abs)
+	if da == null:
+		return ""
+	da.list_dir_begin()
+	var name: String = da.get_next()
+	var found: String = ""
+	while name != "" and found == "":
+		if da.current_is_dir() and not name.begins_with("."):
+			var sub_dir: String = dir_abs.path_join(name)
+			var candidate: String = sub_dir.path_join(UV4_EXE_NAME)
+			if FileAccess.file_exists(candidate):
+				found = candidate
+			else:
+				# 递归进入子目录
+				found = _find_uv4_recursive(sub_dir)
+		name = da.get_next()
+	da.list_dir_end()
+	return found
+
+
+## 探测 TOOLS.INI：优先 UV4.exe 同目录，其次 UV4 上级目录（Keil_v5 根），再 toolchain 根目录
+## 用户布局常见为 Keil_v5/UV4/UV4.exe + Keil_v5/TOOLS.INI，故需查上级
+func _find_tools_ini(uv4_abs: String) -> String:
+	var uv4_dir: String = uv4_abs.replace("\\", "/").get_base_dir()
+	# 1) UV4.exe 同目录
+	var candidate: String = uv4_dir.path_join("TOOLS.INI")
+	if FileAccess.file_exists(candidate):
+		return candidate
+	# 2) UV4.exe 上级目录（Keil_v5 根，常见布局）
+	var parent: String = uv4_dir.get_base_dir()
+	if parent != uv4_dir:
+		var parent_candidate: String = parent.path_join("TOOLS.INI")
+		if FileAccess.file_exists(parent_candidate):
+			return parent_candidate
+	# 3) toolchain 根目录
+	var root_candidate: String = _to_abs(TOOLCHAIN_DIR).replace("\\", "/").path_join("TOOLS.INI")
+	if FileAccess.file_exists(root_candidate):
+		return root_candidate
+	return ""
+
+
+## 把最新生成的 main.c 写入步兵项目磁盘文件
+func _write_main_c_to_disk(code: String) -> bool:
+	var abs_path: String = _to_abs(INFANTRY_MAIN_C)
+	var f: FileAccess = FileAccess.open(abs_path, FileAccess.WRITE)
+	if f == null:
+		push_error("无法写入 main.c: %s（%s）" % [abs_path, FileAccess.get_open_error()])
+		return false
+	f.store_string(code)
+	f.close()
+	return true
+
+
+## 编译按钮回调：写盘 -> 探测工具链 -> 异步编译
+func _on_build_pressed() -> void:
+	if _build_busy:
+		return # 防重入
+	# 1) 取 CodeEdit 中最新生成的 main.c（即 _generate_main_c 产物）
+	var code_edit: Node = get_node_or_null(P_CODE_EDIT)
+	var code: String = ""
+	if code_edit is CodeEdit:
+		code = code_edit.text
+	if code.strip_edges().is_empty():
+		# 预览框为空，先刷新一次
+		_run_check()
+		if code_edit is CodeEdit:
+			code = code_edit.text
+		if code.strip_edges().is_empty():
+			_append_output("[Error] 没有可编译的代码，请先完成配置")
+			return
+	# 2) 写入磁盘
+	if not _write_main_c_to_disk(code):
+		_append_output("[Error] 写入 main.c 失败，请检查项目目录权限")
+		return
+	# 3) 探测 UV4.exe
+	var uv4_abs: String = _find_uv4()
+	if uv4_abs.is_empty():
+		_append_output("[Error] 未在 stc32g/toolchain/ 找到 UV4.exe")
+		_append_output("       请将 Keil 授权的编译器文件（UV4.exe + TOOLS.INI + 依赖 DLL）放入该目录后重试")
+		return
+	# 3.1) 检查 TOOLS.INI（UV4 需要 [C251] 段配置编译器路径）；缺失则提示但不阻断
+	var tools_ini: String = _find_tools_ini(uv4_abs)
+	if tools_ini.is_empty():
+		_append_output("[Warn] 未在 stc32g/toolchain/ 找到 TOOLS.INI，UV4 可能报错")
+		_append_output("       请确保 TOOLS.INI 与 UV4.exe 同目录，且 [C251] 段首行为 PATH=\"...\\C251\\\"")
+	# 4) 启动异步编译
+	_build_busy = true
+	var btn: Node = get_node_or_null(P_BUILD_BTN)
+	if btn is BaseButton:
+		btn.disabled = true
+		btn.text = "编译中…"
+	_clear_output()
+	_append_output("正在编译…（已写入 main.c，调用 UV4.exe）")
+	_build_thread = Thread.new()
+	var err: int = _build_thread.start(_build_worker.bind(uv4_abs))
+	if err != OK:
+		_build_busy = false
+		if btn is BaseButton:
+			btn.disabled = false
+			btn.text = "编译"
+		_append_output("[Error] 无法启动编译线程（错误码 %d）" % err)
+
+
+## 编译工作线程：执行 UV4.exe -b，读日志，完成后回主线程
+## 注意：子线程禁止访问 UI 节点，结果通过 call_deferred 传递
+func _build_worker(uv4_abs: String) -> void:
+	# OS.execute 不支持设置工作目录，且 Godot 进程 cwd 是项目根而非 MDK，
+	# 因此 .uvproj 与日志均用绝对路径传给 UV4；路径转反斜杠以兼容 Windows 原生程序。
+	# UV4 通过自身 exe 位置查找 TOOLS.INI，不依赖 cwd。
+	var mdk_abs: String = _to_abs(INFANTRY_MDK_DIR).replace("/", "\\")
+	var uvproj_abs: String = mdk_abs + "\\Project_Template.uvproj"
+	var log_abs: String = mdk_abs + "\\" + BUILD_LOG_NAME
+	var uv4_win: String = uv4_abs.replace("/", "\\")
+	var output: Array = []
+	var exit_code: int = OS.execute(uv4_win, ["-b", uvproj_abs, "-o", log_abs], output, true)
+	# 读取编译日志（子线程可读文件；反斜杠路径 FileAccess 同样接受）
+	var log_text: String = ""
+	if FileAccess.file_exists(log_abs):
+		log_text = FileAccess.get_file_as_string(log_abs)
+	var result: Dictionary = {
+		"exit": exit_code,
+		"log": log_text,
+	}
+	call_deferred("_on_build_finished", result)
+
+
+## 编译完成回调（主线程）：复位按钮，解析日志，展示结果
+func _on_build_finished(result: Dictionary) -> void:
+	_build_busy = false
+	# 清理线程
+	if _build_thread and _build_thread.is_alive():
+		_build_thread.wait_to_finish()
+	_build_thread = null
+	# 复位按钮
+	var btn: Node = get_node_or_null(P_BUILD_BTN)
+	if btn is BaseButton:
+		btn.disabled = false
+		btn.text = "编译"
+	# 解析结果
+	var log_text: String = result.get("log", "")
+	var exit_code: int = int(result.get("exit", -1))
+	_clear_output()
+	# 成功判据：日志非空且包含 "0 Error(s)"（UV4 批处理退出码不可靠，以日志为准）
+	var ok: bool = (not log_text.is_empty()) and log_text.find("0 Error(s)") >= 0
+	if ok:
+		_append_output("✓ 编译成功")
+	else:
+		# exit_code 可能是 0（UV4 批处理常不返回标准码），故仅作参考
+		_append_output("✗ 编译失败（UV4 退出码 %d，请查看下方日志）" % exit_code)
+	_append_output("")
+	if log_text.is_empty():
+		_append_output("[Warn] 未读取到编译日志（pie_block_build.log），请检查 UV4 是否正常执行")
+	else:
+		# 逐行追加，IssueHighlighter 会自动给 Error/Warning 行着色
+		for line in log_text.split("\n", false):
+			_append_output(line)
+
+
+## 向 Output 框追加一行（复用 output.gd 的 append_line）
+func _append_output(line_text: String) -> void:
+	var out: Node = get_node_or_null(P_OUTPUT)
+	if out and out.has_method("append_line"):
+		out.append_line(line_text)
+
+
+## 清空 Output 框
+func _clear_output() -> void:
+	var out: Node = get_node_or_null(P_OUTPUT)
+	if out and out.has_method("clear_output"):
+		out.clear_output()
