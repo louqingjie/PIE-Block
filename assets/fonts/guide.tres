@@ -1,0 +1,7 @@
+[gd_resource type="LabelSettings" format=3 uid="uid://dkvtbi7yg4dyb"]
+
+[ext_resource type="FontFile" uid="uid://bs174vxb8p5iv" path="res://assets/fonts/NotoSansCJK-Regular.ttc" id="1_op2al"]
+
+[resource]
+font = ExtResource("1_op2al")
+font_size = 46
