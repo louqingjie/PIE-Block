@@ -100,6 +100,7 @@ text = "通道号"
 [node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/RemoteSetting/Channel" unique_id=1805855154]
 layout_mode = 2
 size_flags_horizontal = 8
+placeholder_text = "0-125"
 
 [node name="DeadZone" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/RemoteSetting" unique_id=1423946704]
 layout_mode = 2
@@ -309,6 +310,7 @@ size_flags_horizontal = 3
 
 [node name="TabContainer" type="TabContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow" unique_id=1246727485]
 layout_mode = 2
+size_flags_vertical = 3
 current_tab = 0
 tab_0/title = "步兵"
 tab_1/title = "工程"
@@ -391,6 +393,16 @@ popup/item_4/id = 4
 popup/item_5/text = "P62"
 popup/item_5/id = 5
 
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/GimbalSetting/Booster" unique_id=1749125]
+layout_mode = 2
+size_flags_horizontal = 8
+selected = 0
+item_count = 2
+popup/item_0/text = "正向"
+popup/item_0/id = 0
+popup/item_1/text = "反向"
+popup/item_1/id = 1
+
 [node name="Yaw" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/GimbalSetting" unique_id=1010917048]
 layout_mode = 2
 
@@ -409,15 +421,7 @@ popup/item_0/id = 0
 popup/item_1/text = "舵机"
 popup/item_1/id = 1
 
-[node name="Yaw2" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/GimbalSetting" unique_id=1187464636]
-layout_mode = 2
-
-[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/GimbalSetting/Yaw2" unique_id=2056103434]
-layout_mode = 2
-size_flags_horizontal = 2
-text = "Yaw 轴 IO"
-
-[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/GimbalSetting/Yaw2" unique_id=259885104]
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/GimbalSetting/Yaw" unique_id=259885104]
 layout_mode = 2
 size_flags_horizontal = 8
 selected = 1
@@ -446,6 +450,16 @@ popup/item_10/text = "P25"
 popup/item_10/id = 10
 popup/item_11/text = "P24"
 popup/item_11/id = 11
+
+[node name="OptionButton3" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/GimbalSetting/Yaw" unique_id=1979493966]
+layout_mode = 2
+size_flags_horizontal = 8
+selected = 0
+item_count = 2
+popup/item_0/text = "正向"
+popup/item_0/id = 0
+popup/item_1/text = "反向"
+popup/item_1/id = 1
 
 [node name="Pitch" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/GimbalSetting" unique_id=485340612]
 layout_mode = 2
@@ -465,18 +479,10 @@ popup/item_0/id = 0
 popup/item_1/text = "舵机"
 popup/item_1/id = 1
 
-[node name="Yaw3" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/GimbalSetting" unique_id=1908300271]
-layout_mode = 2
-
-[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/GimbalSetting/Yaw3" unique_id=2052262797]
-layout_mode = 2
-size_flags_horizontal = 2
-text = "Pitch 轴 IO"
-
-[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/GimbalSetting/Yaw3" unique_id=1428144322]
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/GimbalSetting/Pitch" unique_id=1428144322]
 layout_mode = 2
 size_flags_horizontal = 8
-selected = 2
+selected = 4
 item_count = 12
 popup/item_0/text = "P60"
 popup/item_0/id = 0
@@ -502,6 +508,16 @@ popup/item_10/text = "P25"
 popup/item_10/id = 10
 popup/item_11/text = "P24"
 popup/item_11/id = 11
+
+[node name="OptionButton3" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/GimbalSetting/Pitch" unique_id=611027234]
+layout_mode = 2
+size_flags_horizontal = 8
+selected = 0
+item_count = 2
+popup/item_0/text = "正向"
+popup/item_0/id = 0
+popup/item_1/text = "反向"
+popup/item_1/id = 1
 
 [node name="HSeparator" type="HSeparator" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/GimbalSetting" unique_id=926679916]
 layout_mode = 2
@@ -536,36 +552,19 @@ layout_mode = 2
 [node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/KeySetting/ArrowKey" unique_id=1031511629]
 layout_mode = 2
 size_flags_horizontal = 0
-text = "方向键冲刺"
+text = "方向键"
 
-[node name="CheckBox" type="CheckBox" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/KeySetting/ArrowKey" unique_id=1064593911]
+[node name="CheckBox" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/KeySetting/ArrowKey" unique_id=38855880]
 layout_mode = 2
 size_flags_horizontal = 10
-button_pressed = true
-
-[node name="YawReverse" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/KeySetting" unique_id=1570917220]
-layout_mode = 2
-
-[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/KeySetting/YawReverse" unique_id=338416883]
-layout_mode = 2
-size_flags_horizontal = 0
-text = "Yaw 轴反转"
-
-[node name="CheckBox" type="CheckBox" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/KeySetting/YawReverse" unique_id=2025872043]
-layout_mode = 2
-size_flags_horizontal = 10
-
-[node name="PitchReverse" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/KeySetting" unique_id=1640916464]
-layout_mode = 2
-
-[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/KeySetting/PitchReverse" unique_id=460613697]
-layout_mode = 2
-size_flags_horizontal = 0
-text = "Pitch 轴反转"
-
-[node name="CheckBox" type="CheckBox" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/KeySetting/PitchReverse" unique_id=1542723513]
-layout_mode = 2
-size_flags_horizontal = 10
+selected = 1
+item_count = 3
+popup/item_0/text = "移动"
+popup/item_0/id = 0
+popup/item_1/text = "冲刺"
+popup/item_1/id = 1
+popup/item_2/text = "其他"
+popup/item_2/id = 2
 
 [node name="Trigger" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/KeySetting" unique_id=571482090]
 layout_mode = 2
@@ -597,6 +596,16 @@ popup/item_7/text = "C"
 popup/item_7/id = 7
 popup/item_8/text = "D"
 popup/item_8/id = 8
+
+[node name="Speed" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/KeySetting/Trigger" unique_id=19171795]
+custom_minimum_size = Vector2(80, 0)
+layout_mode = 2
+placeholder_text = "拨弹速度"
+
+[node name="Speed2" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/KeySetting/Trigger" unique_id=1348384705]
+custom_minimum_size = Vector2(80, 0)
+layout_mode = 2
+placeholder_text = "时间(ms)"
 
 [node name="Button" type="Button" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/KeySetting" unique_id=1179134669]
 layout_mode = 2
