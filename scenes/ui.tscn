@@ -48,9 +48,15 @@ text = "打开"
 layout_mode = 2
 text = "保存"
 
-[node name="Build" type="Button" parent="VBoxContainer/TopPanel" unique_id=1581104311]
+[node name="Export" type="Button" parent="VBoxContainer/TopPanel" unique_id=205960242]
 layout_mode = 2
 size_flags_horizontal = 10
+toggle_mode = true
+text = "导出 C 代码"
+
+[node name="Build" type="Button" parent="VBoxContainer/TopPanel" unique_id=1581104311]
+layout_mode = 2
+size_flags_horizontal = 8
 toggle_mode = true
 text = "编译"
 
@@ -142,17 +148,17 @@ layout_mode = 2
 size_flags_horizontal = 8
 selected = 0
 item_count = 6
-popup/item_0/text = "P27"
+popup/item_0/text = "P77 P27"
 popup/item_0/id = 0
-popup/item_1/text = "P26"
+popup/item_1/text = "P76 P26"
 popup/item_1/id = 1
-popup/item_2/text = "P25"
+popup/item_2/text = "P75 P25"
 popup/item_2/id = 2
-popup/item_3/text = "P24"
+popup/item_3/text = "P74 P24"
 popup/item_3/id = 3
-popup/item_4/text = "P60"
+popup/item_4/text = "P60 P61"
 popup/item_4/id = 4
-popup/item_5/text = "P62"
+popup/item_5/text = "P62 P63"
 popup/item_5/id = 5
 
 [node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/Chassis/L1" unique_id=852780576]
@@ -173,22 +179,22 @@ layout_mode = 2
 size_flags_horizontal = 2
 text = "左后轮 IO"
 
-[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/Chassis/L2" unique_id=1042691515]
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/Chassis/L2" unique_id=88734850]
 layout_mode = 2
 size_flags_horizontal = 8
 selected = 0
 item_count = 6
-popup/item_0/text = "P27"
+popup/item_0/text = "P77 P27"
 popup/item_0/id = 0
-popup/item_1/text = "P26"
+popup/item_1/text = "P76 P26"
 popup/item_1/id = 1
-popup/item_2/text = "P25"
+popup/item_2/text = "P75 P25"
 popup/item_2/id = 2
-popup/item_3/text = "P24"
+popup/item_3/text = "P74 P24"
 popup/item_3/id = 3
-popup/item_4/text = "P60"
+popup/item_4/text = "P60 P61"
 popup/item_4/id = 4
-popup/item_5/text = "P62"
+popup/item_5/text = "P62 P63"
 popup/item_5/id = 5
 
 [node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/Chassis/L2" unique_id=1511161707]
@@ -209,22 +215,22 @@ layout_mode = 2
 size_flags_horizontal = 2
 text = "右前轮 IO"
 
-[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/Chassis/R1" unique_id=768099369]
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/Chassis/R1" unique_id=932150419]
 layout_mode = 2
 size_flags_horizontal = 8
-selected = 1
+selected = 0
 item_count = 6
-popup/item_0/text = "P27"
+popup/item_0/text = "P77 P27"
 popup/item_0/id = 0
-popup/item_1/text = "P26"
+popup/item_1/text = "P76 P26"
 popup/item_1/id = 1
-popup/item_2/text = "P25"
+popup/item_2/text = "P75 P25"
 popup/item_2/id = 2
-popup/item_3/text = "P24"
+popup/item_3/text = "P74 P24"
 popup/item_3/id = 3
-popup/item_4/text = "P60"
+popup/item_4/text = "P60 P61"
 popup/item_4/id = 4
-popup/item_5/text = "P62"
+popup/item_5/text = "P62 P63"
 popup/item_5/id = 5
 
 [node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/Chassis/R1" unique_id=161761569]
@@ -245,22 +251,22 @@ layout_mode = 2
 size_flags_horizontal = 2
 text = "右后轮 IO"
 
-[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/Chassis/R2" unique_id=867401667]
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/Chassis/R2" unique_id=873006863]
 layout_mode = 2
 size_flags_horizontal = 8
-selected = 1
+selected = 0
 item_count = 6
-popup/item_0/text = "P27"
+popup/item_0/text = "P77 P27"
 popup/item_0/id = 0
-popup/item_1/text = "P26"
+popup/item_1/text = "P76 P26"
 popup/item_1/id = 1
-popup/item_2/text = "P25"
+popup/item_2/text = "P75 P25"
 popup/item_2/id = 2
-popup/item_3/text = "P24"
+popup/item_3/text = "P74 P24"
 popup/item_3/id = 3
-popup/item_4/text = "P60"
+popup/item_4/text = "P60 P61"
 popup/item_4/id = 4
-popup/item_5/text = "P62"
+popup/item_5/text = "P62 P63"
 popup/item_5/id = 5
 
 [node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/Chassis/R2" unique_id=1479638528]
@@ -375,22 +381,22 @@ layout_mode = 2
 size_flags_horizontal = 2
 text = "拨弹电机"
 
-[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/GimbalSetting/Booster" unique_id=48830673]
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/GimbalSetting/Booster" unique_id=1484055772]
 layout_mode = 2
 size_flags_horizontal = 8
-selected = 4
+selected = 0
 item_count = 6
-popup/item_0/text = "P27"
+popup/item_0/text = "P77 P27"
 popup/item_0/id = 0
-popup/item_1/text = "P26"
+popup/item_1/text = "P76 P26"
 popup/item_1/id = 1
-popup/item_2/text = "P25"
+popup/item_2/text = "P75 P25"
 popup/item_2/id = 2
-popup/item_3/text = "P24"
+popup/item_3/text = "P74 P24"
 popup/item_3/id = 3
-popup/item_4/text = "P60"
+popup/item_4/text = "P60 P61"
 popup/item_4/id = 4
-popup/item_5/text = "P62"
+popup/item_5/text = "P62 P63"
 popup/item_5/id = 5
 
 [node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/GimbalSetting/Booster" unique_id=1749125]
@@ -425,7 +431,7 @@ popup/item_1/id = 1
 layout_mode = 2
 size_flags_horizontal = 8
 selected = 1
-item_count = 12
+item_count = 14
 popup/item_0/text = "P60"
 popup/item_0/id = 0
 popup/item_1/text = "P62"
@@ -450,6 +456,10 @@ popup/item_10/text = "P25"
 popup/item_10/id = 10
 popup/item_11/text = "P24"
 popup/item_11/id = 11
+popup/item_12/text = "MP74"
+popup/item_12/id = 12
+popup/item_13/text = "MP03"
+popup/item_13/id = 13
 
 [node name="OptionButton3" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/GimbalSetting/Yaw" unique_id=1979493966]
 layout_mode = 2
@@ -479,11 +489,11 @@ popup/item_0/id = 0
 popup/item_1/text = "舵机"
 popup/item_1/id = 1
 
-[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/GimbalSetting/Pitch" unique_id=1428144322]
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/GimbalSetting/Pitch" unique_id=345705401]
 layout_mode = 2
 size_flags_horizontal = 8
-selected = 4
-item_count = 12
+selected = 1
+item_count = 14
 popup/item_0/text = "P60"
 popup/item_0/id = 0
 popup/item_1/text = "P62"
@@ -508,6 +518,10 @@ popup/item_10/text = "P25"
 popup/item_10/id = 10
 popup/item_11/text = "P24"
 popup/item_11/id = 11
+popup/item_12/text = "MP74"
+popup/item_12/id = 12
+popup/item_13/text = "MP03"
+popup/item_13/id = 13
 
 [node name="OptionButton3" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/GimbalSetting/Pitch" unique_id=611027234]
 layout_mode = 2
@@ -554,7 +568,7 @@ layout_mode = 2
 size_flags_horizontal = 0
 text = "方向键"
 
-[node name="CheckBox" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/KeySetting/ArrowKey" unique_id=38855880]
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/KeySetting/ArrowKey" unique_id=38855880]
 layout_mode = 2
 size_flags_horizontal = 10
 selected = 1
@@ -602,10 +616,41 @@ custom_minimum_size = Vector2(80, 0)
 layout_mode = 2
 placeholder_text = "拨弹速度"
 
-[node name="Speed2" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/KeySetting/Trigger" unique_id=1348384705]
+[node name="Time" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/KeySetting/Trigger" unique_id=1348384705]
 custom_minimum_size = Vector2(80, 0)
 layout_mode = 2
 placeholder_text = "时间(ms)"
+
+[node name="Booster" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/KeySetting" unique_id=1201586274]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/KeySetting/Booster" unique_id=859745806]
+layout_mode = 2
+text = "摩擦轮开关"
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/KeySetting/Booster" unique_id=1011580198]
+layout_mode = 2
+size_flags_horizontal = 10
+selected = 5
+item_count = 9
+popup/item_0/text = "R"
+popup/item_0/id = 0
+popup/item_1/text = "↑"
+popup/item_1/id = 1
+popup/item_2/text = "↓"
+popup/item_2/id = 2
+popup/item_3/text = "←"
+popup/item_3/id = 3
+popup/item_4/text = "→"
+popup/item_4/id = 4
+popup/item_5/text = "A"
+popup/item_5/id = 5
+popup/item_6/text = "B"
+popup/item_6/id = 6
+popup/item_7/text = "C"
+popup/item_7/id = 7
+popup/item_8/text = "D"
+popup/item_8/id = 8
 
 [node name="Button" type="Button" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/KeySetting" unique_id=1179134669]
 layout_mode = 2

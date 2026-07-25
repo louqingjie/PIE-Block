@@ -2,6 +2,7 @@
 #include "main.h"
 #include "MATH.H"
 // ========================= 参数区 =========================
+uint8_t Channal = 36; // NRF24L01 通信通道（0-125），与遥控器一致
 uint16_t maxSpeed = 4000;
 uint16_t ultraSpeed = 8000;
 uint16_t deadBandOfLeft = 10;                   // 左摇杆中心死区
