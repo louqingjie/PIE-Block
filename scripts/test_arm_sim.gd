@@ -271,47 +271,53 @@ func _test_calibration(sim: Node, config_type: int, jc: int, tag: String) -> voi
 	_test_chassis(sim, config_type, jc, tag)
 
 
-## 自定义底盘高度：地面、轮径、悬挂间隙都得跟着走，且不影响机械臂
+## 自定义底盘高度：轮径固定，只有悬挂间隙与地面跟着变，且不影响机械臂
 func _test_chassis_height(sim: Node, config_type: int, tag: String) -> void:
 	var U: float = sim.MM_TO_UNIT
 	var chassis: Node = sim.get_node("Sim/SubViewport/World/Chassis")
+	var wr: float = sim.WHEEL_RADIUS_MM
+	# 车高下限只受板厚限制：机械上离地可以几乎为 0，
+	# 轮子只是示意，不应反向约束车高
+	var min_h: float = sim.CHASSIS_DECK_THICK_MM
 	# 先把安装偏移归零，便于直接核对绝对高度
 	sim._mount = Vector3(0.0, 0.0, 0.0)
-	for h in [60.0, 152.0, 300.0]:
+	for h in [min_h, 152.0, 300.0]:
 		sim._on_chassis_param_changed("chh", h)
 		_check("%s 车高%.0f 写入" % [tag, h], abs(sim._chassis_height - h) < 1e-6)
 		# 地面 = -车高（mount.z 已归零）
 		_check("%s 车高%.0f 地面 == -车高" % [tag, h],
 			abs(sim._ground_level() - (-h)) < 0.01,
 			"ground %.2f 期望 %.2f" % [sim._ground_level(), -h])
-		# 轮径 + 间隙 + 板厚 必须正好等于车高（这是高度基准链的核心恒等式）
-		var total: float = sim._wheel_radius() * 2.0 + sim._wheel_gap() \
-			+ sim.CHASSIS_DECK_THICK_MM
-		_check("%s 车高%.0f 轮径+间隙+板厚 == 车高" % [tag, h], abs(total - h) < 0.01,
-			"实际 %.2f 期望 %.2f" % [total, h])
-		# 轮径与间隙都必须为正，否则几何退化
-		_check("%s 车高%.0f 轮径为正" % [tag, h], sim._wheel_radius() > 0.0)
+		# 车高足够时恒等式成立：轮径 + 间隙 + 板厚 == 车高。
+		# 车高低于「轮径 + 板厚」时轮子跟着板一起沉，间隙钳在 0，恒等式不再适用。
+		var suspended: bool = h >= wr * 2.0 + sim.CHASSIS_DECK_THICK_MM
+		if suspended:
+			var total: float = wr * 2.0 + sim._wheel_gap() + sim.CHASSIS_DECK_THICK_MM
+			_check("%s 车高%.0f 轮径+间隙+板厚 == 车高" % [tag, h], abs(total - h) < 0.01,
+				"实际 %.2f 期望 %.2f" % [total, h])
+		else:
+			_check("%s 车高%.0f 贴地时间隙为 0" % [tag, h], abs(sim._wheel_gap()) < 0.01,
+				"间隙 %.3f" % sim._wheel_gap())
 		_check("%s 车高%.0f 间隙非负" % [tag, h], sim._wheel_gap() >= 0.0)
-		# 实际渲染出来的轮下沿必须落在地面上
-		var wr: float = sim._wheel_radius()
-		var wheel: Node = null
+		# 轮子实际渲染半径必须始终是固定值，不随车高变
+		var wheels: Array = []
 		for c in chassis.get_children():
 			if c is MeshInstance3D and c.mesh is CylinderMesh \
 					and abs(c.mesh.top_radius / U - wr) < 0.01:
-				wheel = c
-				break
-		_check("%s 车高%.0f 找到轮子" % [tag, h], wheel != null)
-		if wheel != null:
-			var wbot: float = wheel.position.y / U - wheel.mesh.top_radius / U
-			_check("%s 车高%.0f 轮下沿落在地面" % [tag, h],
-				abs(wbot - sim._ground_level()) < 0.01,
-				"轮下沿 %.2f ground %.2f" % [wbot, sim._ground_level()])
-		# 高车身下轮径会变大，必须仍放得下前后两个轮子
+				wheels.append(c)
+		_check("%s 车高%.0f 四轮半径均为固定值" % [tag, h], wheels.size() == 4,
+			"半径为 %.1f 的轮子有 %d 个" % [wr, wheels.size()])
+		if wheels.is_empty():
+			continue
+		# 轮下沿必须落在地面上
+		var wbot: float = wheels[0].position.y / U - wheels[0].mesh.top_radius / U
+		_check("%s 车高%.0f 轮下沿落在地面" % [tag, h],
+			abs(wbot - sim._ground_level()) < 0.01,
+			"轮下沿 %.2f ground %.2f" % [wbot, sim._ground_level()])
+		# 轮径固定后前后轮永不相交，但仍守一道防线
 		var fwds: Dictionary = {}
-		for c in chassis.get_children():
-			if c is MeshInstance3D and c.mesh is CylinderMesh \
-					and abs(c.mesh.top_radius / U - wr) < 0.01:
-				fwds["%.3f" % (c.position.x / U)] = true
+		for ww in wheels:
+			fwds["%.3f" % (ww.position.x / U)] = true
 		var keys: Array = fwds.keys()
 		_check("%s 车高%.0f 仍是前后两组轮" % [tag, h], keys.size() == 2,
 			"实际 %d 组" % keys.size())
@@ -319,12 +325,33 @@ func _test_chassis_height(sim: Node, config_type: int, tag: String) -> void:
 			var gap: float = absf(str(keys[0]).to_float() - str(keys[1]).to_float())
 			_check("%s 车高%.0f 前后轮不相交" % [tag, h], gap > wr * 2.0,
 				"轮心间距 %.1f 轮直径 %.1f" % [gap, wr * 2.0])
-	# 极小车高不应让几何炸掉（轮径被夹到下限）
-	sim._on_chassis_param_changed("chh", 30.0)
-	_check("%s 极小车高轮径仍为正" % tag, sim._wheel_radius() > 0.0,
-		"轮径 %.3f" % sim._wheel_radius())
-	_check("%s 极小车高不产生 NaN" % tag,
+	# 车高降到贴地：只夹到板厚，且悬挂支臂应完全消失（示意件没必要硬留着）
+	sim._on_chassis_param_changed("chh", 0.0)
+	_check("%s 车高可降到板厚" % tag, abs(sim._chassis_height - min_h) < 1e-6,
+		"实际 %.2f 期望 %.2f" % [sim._chassis_height, min_h])
+	_check("%s 贴地时间隙为 0" % tag, abs(sim._wheel_gap()) < 0.01,
+		"间隙 %.3f" % sim._wheel_gap())
+	_check("%s 贴地时不产生 NaN" % tag,
 		is_finite(sim._ground_level()) and is_finite(sim._wheel_gap()))
+	# 贴地时 Box 只剩底盘板（+ 可能的安装柱），四根支臂不该再画
+	var low_boxes: int = 0
+	for c in chassis.get_children():
+		if c is MeshInstance3D and c.mesh is BoxMesh:
+			low_boxes += 1
+	_check("%s 贴地时支臂已消失" % tag, low_boxes <= 2,
+		"Box 数 %d（板 + 最多一个安装柱）" % low_boxes)
+	# 轮下沿仍须贴着地面，不能沉到地面以下
+	var low_wheel: Node = null
+	for c in chassis.get_children():
+		if c is MeshInstance3D and c.mesh is CylinderMesh \
+				and abs(c.mesh.top_radius / U - wr) < 0.01:
+			low_wheel = c
+			break
+	if low_wheel != null:
+		var lb: float = low_wheel.position.y / U - low_wheel.mesh.top_radius / U
+		_check("%s 贴地时轮下沿仍在地面" % tag,
+			abs(lb - sim._ground_level()) < 0.01,
+			"轮下沿 %.2f ground %.2f" % [lb, sim._ground_level()])
 	# 改车高不应动关节角与臂长
 	var ang_before: Array = sim._angles.duplicate()
 	var l1_before: float = sim._l1
@@ -424,6 +451,52 @@ func _test_gripper(sim: Node, config_type: int, jc: int, tag: String) -> void:
 	var status: Node = sim.get_node_or_null("StatusPanel/Status")
 	_check("%s 状态行含夹爪读数" % tag,
 		status is Label and status.text.contains("夹爪"))
+	_test_gripper_zero_l3(sim, config_type, jc, tag)
+
+
+## L3=0（4 轴腕部连杆留空）时夹爪必须照样可见。
+## 曾经的 bug：末段长度为 0 导致 approach 算不出来，夹爪被整个隐藏。
+func _test_gripper_zero_l3(sim: Node, config_type: int, jc: int, tag: String) -> void:
+	if jc < 4:
+		return
+	var root: Node = sim.get_node("Sim/SubViewport/World/Gripper")
+	var l3_before: float = sim._l3
+	# L3 置 0：腕心与末端重合，点链最后两点相同
+	sim._on_param_changed(0.0, "L3", null)
+	_check("%s L3=0 已生效" % tag, abs(sim._l3) < 1e-6, "实际 %.3f" % sim._l3)
+	var frames: Array = sim._cg.joint_frames(
+		sim._angles, sim._l1, sim._l2, sim._l3, config_type)
+	var last_seg: float = frames[frames.size() - 1].distance_to(frames[frames.size() - 2])
+	_check("%s L3=0 时末段长度为 0" % tag, last_seg < 1e-6, "实际 %.4f" % last_seg)
+	# 夹爪三个构件都必须仍然可见
+	var all_vis: bool = true
+	for c in root.get_children():
+		if not c.visible:
+			all_vis = false
+	_check("%s L3=0 夹爪仍可见" % tag, all_vis)
+	# 朝向必须仍然有效（不能是零向量或 NaN）
+	var ax: Vector3 = root.get_child(0).transform.basis.x
+	_check("%s L3=0 夹爪朝向有效" % tag,
+		ax.length() > 0.5 and is_finite(ax.x) and is_finite(ax.y) and is_finite(ax.z),
+		"basis.x = %s" % str(ax))
+	# 改姿态角 φ 时朝向须随之转动（证明用的是关节角而非退化的末段）
+	sim._on_mode_selected(0)
+	sim._target = [150.0, 0.0, 40.0, 0.0]
+	sim._recompute()
+	var a1: Vector3 = root.get_child(0).transform.basis.x
+	sim._target[3] = 70.0
+	sim._recompute()
+	var a2: Vector3 = root.get_child(0).transform.basis.x
+	_check("%s L3=0 改 φ 夹爪朝向随之变" % tag, a1.angle_to(a2) > 0.05,
+		"夹角 %.4f rad" % a1.angle_to(a2))
+	# 两指仍须垂直于 approach 且在工作平面内
+	var span: Vector3 = root.get_child(1).position - root.get_child(2).position
+	_check("%s L3=0 两指垂直 approach" % tag,
+		absf(span.normalized().dot(a2.normalized())) < 1e-3,
+		"dot=%.5f" % span.normalized().dot(a2.normalized()))
+	# 还原 L3，避免影响后续断言
+	sim._on_param_changed(l3_before, "L3", null)
+	sim._on_mode_selected(1)
 
 
 ## 底盘几何：高度基准必须自洽，否则"机械臂装在车上哪"就是错的
@@ -447,22 +520,19 @@ func _test_chassis(sim: Node, config_type: int, jc: int, tag: String) -> void:
 		elif c is MeshInstance3D and c.mesh is CylinderMesh:
 			cyls.append(c)
 	# Box 构件：底盘板 + 前后两根支臂 + 安装柱 = 4
-	_check("%s 底盘板/2支臂/安装柱共 4 个 Box" % tag, boxes.size() == 4,
+	_check("%s 底盘板/4支臂/安装柱共 6 个 Box" % tag, boxes.size() == 6,
 		"实际 %d" % boxes.size())
-	# 分离轮子与轮轴：轮半径由底盘高推算，轮轴细得多
-	var wheel_r: float = sim._wheel_radius()
+	# 轮半径是固定常量。不再画轮轴，故所有 Cylinder 都应是轮子
+	var wheel_r: float = sim.WHEEL_RADIUS_MM
 	var wheels: Array = []
-	var axles: Array = []
 	for c in cyls:
 		if abs(c.mesh.top_radius / U - wheel_r) < 0.01:
 			wheels.append(c)
-		else:
-			axles.append(c)
 	# 四轮车：任何构型都是 4 个轮子（2 轴构型的底盘同样有左右维度）
 	_check("%s 轮子数 == 4" % tag, wheels.size() == 4, "实际 %d" % wheels.size())
-	_check("%s 轮轴数 == 2（前后各一根）" % tag, axles.size() == 2,
-		"实际 %d" % axles.size())
-	if wheels.size() != 4 or axles.size() != 2:
+	_check("%s 不再画轮轴（Cylinder 全是轮子）" % tag, cyls.size() == 4,
+		"Cylinder 共 %d 个" % cyls.size())
+	if wheels.size() != 4:
 		return
 	# 底盘板顶面必须正好在机械臂底座下方 mount.z 处
 	var deck: Node = boxes[0]
@@ -470,7 +540,7 @@ func _test_chassis(sim: Node, config_type: int, jc: int, tag: String) -> void:
 	_check("%s 底盘板顶面 == -mount.z" % tag, abs(deck_top - (-90.0)) < 0.01,
 		"实际 %.2f 期望 -90" % deck_top)
 	# 安装柱须从板顶面接到底座（顶=0，底=-mount.z）；它是最后一个 Box
-	var post: Node = boxes[3]
+	var post: Node = boxes[boxes.size() - 1]
 	var post_top: float = post.position.y / U + post.mesh.size.y / U * 0.5
 	var post_bot: float = post.position.y / U - post.mesh.size.y / U * 0.5
 	_check("%s 安装柱顶端接底座(0)" % tag, abs(post_top) < 0.01, "实际 %.2f" % post_top)
@@ -530,25 +600,29 @@ func _test_chassis(sim: Node, config_type: int, jc: int, tag: String) -> void:
 		- w.mesh.height / U * 0.5
 	_check("%s 轮子露出板侧" % tag, wheel_inner >= deck_half_w - 0.01,
 		"轮内沿距板心 %.1f 板半宽 %.1f" % [wheel_inner, deck_half_w])
-	# 两根轮轴：与轮心同高，各自横贯左右，前后位置与两组轮子对齐
-	for ax in axles:
-		_check("%s 轮轴与轮心同高" % tag, abs(ax.position.y - w.position.y) < 1e-6)
-		_check("%s 轮轴横贯左右" % tag,
-			ax.mesh.height / U >= sim._chassis_track - 0.01,
-			"轴长 %.1f 轮距 %.1f" % [ax.mesh.height / U, sim._chassis_track])
-		_check("%s 轮轴前后位置与轮对齐" % tag,
-			fwd_set.has("%.2f" % (ax.position.x / U)),
-			"轴前后 %.2f" % (ax.position.x / U))
-	# 支臂：前后各一根，从板底面接到轮轴
-	for si in [1, 2]:
+
+	# 支臂：每个轮子各一根，从板底面接到轮心高度。
+	# 关键是支臂必须**整根落在板的水平范围内**，否则会悬在板外并穿透板面（踩过）。
+	for si in [1, 2, 3, 4]:
 		var strut: Node = boxes[si]
 		var strut_top: float = strut.position.y / U + strut.mesh.size.y / U * 0.5
 		var strut_bot: float = strut.position.y / U - strut.mesh.size.y / U * 0.5
 		_check("%s 支臂%d 顶端接板底面" % [tag, si], abs(strut_top - deck_bot) < 0.01,
 			"支臂顶 %.2f 板底 %.2f" % [strut_top, deck_bot])
+		# 支臂从板底面一直伸到轮心（不是只到轮上沿）
 		_check("%s 支臂%d 底端到达轮心" % [tag, si],
 			abs(strut_bot - w.position.y / U) < 0.01,
 			"支臂底 %.2f 轮心 %.2f" % [strut_bot, w.position.y / U])
+		# 支臂的左右外缘不得超出板的左右范围
+		var s_side: float = absf(strut.position.z - deck.position.z) / U \
+			+ strut.mesh.size.z / U * 0.5
+		_check("%s 支臂%d 左右在板内" % [tag, si], s_side <= deck_half_w + 0.01,
+			"支臂外缘 %.1f 板半宽 %.1f" % [s_side, deck_half_w])
+		# 前后同理
+		var s_fwd: float = absf(strut.position.x - deck.position.x) / U \
+			+ strut.mesh.size.x / U * 0.5
+		_check("%s 支臂%d 前后在板内" % [tag, si], s_fwd <= deck_half_len + 0.01,
+			"支臂外缘 %.1f 板半长 %.1f" % [s_fwd, deck_half_len])
 	# 轮下沿即地面，须与 _ground_level() 一致（碰地判定依赖这个）
 	_check("%s 轮下沿 == _ground_level()" % tag,
 		abs(wheel_bot - sim._ground_level()) < 0.01,

@@ -151,7 +151,7 @@ var _grip_nodes: Array = []
 var _chassis_deck_len: float = CHASSIS_DECK_LEN_MM
 var _chassis_track: float = CHASSIS_TRACK_MM
 ## 底盘高度：地面到底盘板顶面的距离（mm）。
-## 轮径与悬挂间隙由它推算，见 _wheel_radius() / _wheel_gap()。
+## 轮径固定为 WHEEL_RADIUS_MM，改车高只影响悬挂间隙，见 _wheel_gap()。
 var _chassis_height: float = CHASSIS_HEIGHT_MM
 var _chassis_deck: float = CHASSIS_DECK_MM
 ## 机械臂底座相对底盘中心的偏移 [前后, 左右, 高度]
@@ -445,13 +445,16 @@ func _render_gripper(pts: Array) -> void:
 	var tip: Vector3 = pts[pts.size() - 1]
 	var prev: Vector3 = pts[pts.size() - 2]
 	var seg: Vector3 = tip - prev
-	if seg.length() < 1e-6:
-		# 末段退化（例如 4 轴 L3=0），夹爪无朝向可依，藏起来免得乱转
+	# approach = 末端朝向。正常取末段连杆方向；末段长度为 0 时
+	# （4 轴 L3 留空即 L3=0，腕心与末端重合）改由关节角直接算，
+	# 否则夹爪会整个消失——姿态角本身是有定义的，不该因 L3=0 就不画。
+	var approach: Vector3 = seg.normalized() if seg.length() > 1e-6 \
+		else _approach_from_angles()
+	if approach.length() < 1e-6:
+		# 兜底：连关节角都算不出方向时才隐藏
 		for n in _grip_nodes:
 			n.visible = false
 		return
-	# approach = 末端连杆方向，这正是末端姿态角的几何含义
-	var approach: Vector3 = seg.normalized()
 	var normal: Vector3 = _arm_plane_normal()
 	var open_dir: Vector3 = normal.cross(approach)
 	if open_dir.length() < 1e-6:
@@ -481,6 +484,32 @@ func _render_gripper(pts: Array) -> void:
 		node.transform = Transform3D(basis, tip
 			+ approach * finger_center_x
 			+ open_dir * (side * half_span * MM_TO_UNIT))
+
+
+## 由关节角直接算末端朝向（Godot 坐标，单位向量）。
+## 用于末段连杆长度为 0 的情形：此时点链最后两点重合，减不出方向，
+## 但姿态角依然明确 —— 它就是工作平面内各关节角之和。
+func _approach_from_angles() -> Vector3:
+	if _config_type == 0:
+		# 2 轴：工作平面即 Godot XY，朝向角 = θ1 + θ2
+		var a: float = deg_to_rad(_sum_planar_angles())
+		return Vector3(cos(a), sin(a), 0.0)
+	# 3/4 轴：先在 (r, z) 平面内算朝向，再绕底座转 θ1
+	var phi: float = deg_to_rad(_sum_planar_angles())
+	var t0: float = deg_to_rad(_angles[0] if _angles.size() > 0 else 0.0)
+	# (r, z) 分量 -> 机器人坐标 -> Godot 坐标
+	var r_comp: float = cos(phi)
+	var z_comp: float = sin(phi)
+	return _robot_to_godot(r_comp * cos(t0), r_comp * sin(t0), z_comp).normalized()
+
+
+## 工作平面内各关节角之和（度）。2 轴是 θ1+θ2；3/4 轴跳过底座关节，取其余之和。
+func _sum_planar_angles() -> float:
+	var s: float = 0.0
+	var start: int = 0 if _config_type == 0 else 1
+	for i in range(start, _angles.size()):
+		s += float(_angles[i])
+	return s
 
 
 ## 臂所在工作平面的法向（Godot 坐标，单位向量）。
@@ -524,10 +553,12 @@ func _build_chassis() -> void:
 		return
 	var half_len: float = _chassis_deck_len * 0.5
 	var half_tr: float = _chassis_track * 0.5
-	var wheel_r: float = _wheel_radius()
+	var wheel_r: float = WHEEL_RADIUS_MM
 	# 高度基准：底盘板顶面在机械臂底座下方 _mount.z 处（_chassis_point 已处理）
-	# 轮心高度：板底面再往下留一段间隙，然后是轮半径
-	var axle_up: float = -(CHASSIS_DECK_THICK_MM + _wheel_gap() + wheel_r)
+	# 轮心：从地面往上一个轮半径。地面在板顶面下方 _chassis_height 处，
+	# 故轮心局部高度 = -(车高 - 轮半径)。这样车高降到贴地时轮子也跟着沉，
+	# 而不是固定挂在板下某个深度、把自己埋到地面以下。
+	var axle_up: float = -(_chassis_height - wheel_r)
 	# 前后两根轮轴的位置：让轮子外缘刚好落在板的前后范围内
 	var half_wb: float = maxf(half_len - wheel_r, half_len * 0.25)
 	# 底盘板：左右比轮距窄一些，让四个轮子明确外露。
@@ -552,37 +583,33 @@ func _build_chassis() -> void:
 			cyl.rings = 1
 			wheel.mesh = cyl
 			wheel.material_override = _mat_wheel
-			# CylinderMesh 默认沿 +Y，需把它转到机器人左右轴方向
+			# CylinderMesh 默认沿 +Y，需把它转到机器人左右轴方向。
+			# 轮心 = 板半宽 + 半个轮宽，使轮子内侧面与板侧面**重合无缝**。
+			# 注意 deck_w 必须与这里同源，否则板和轮之间会出现横向空隙。
 			wheel.transform = Transform3D(_wheel_basis(), _chassis_point(
-				sx * half_wb, sy * (half_tr + WHEEL_WIDTH_MM * 0.5), axle_up))
+				sx * half_wb, sy * (deck_w * 0.5 + WHEEL_WIDTH_MM * 0.5), axle_up))
 			root.add_child(wheel)
-	# 前后两根轮轴：各自横贯左右，把同侧两轮连起来
-	for sx in [1.0, -1.0]:
-		var axle: MeshInstance3D = MeshInstance3D.new()
-		var acyl: CylinderMesh = CylinderMesh.new()
-		acyl.top_radius = AXLE_DIA_MM * 0.5 * MM_TO_UNIT
-		acyl.bottom_radius = AXLE_DIA_MM * 0.5 * MM_TO_UNIT
-		# 刚好到两轮内侧，不穿出轮外
-		acyl.height = _chassis_track * MM_TO_UNIT
-		acyl.radial_segments = 12
-		acyl.rings = 1
-		axle.mesh = acyl
-		axle.material_override = _mat_mount
-		axle.transform = Transform3D(_wheel_basis(),
-			_chassis_point(sx * half_wb, 0.0, axle_up))
-		root.add_child(axle)
-	# 支臂：前后各一根，从板底面竖下来接到轮轴，
-	# 把"轮子悬在底盘下方"这段间隙显式画出来
+	# 注：不画横贯左右的轮轴。底盘只是示意，轮子怎么连到车上无需深究，
+	# 而那两根长杆比底盘板本身还抢眼，反而干扰对机械臂的观察。
+	# 支臂：只在有悬挂间隙时才画（间隙为 0 说明轮子已贴着板底，无需连接件）。
+	# 长度 = 悬挂间隙 + 一个轮半径，即从板底面一直伸到轮心（而非只到轮顶）。
+	# 左右位置必须落在**板内**（贴着板侧边缘），不能取轮子的位置——
+	# 板宽比轮距窄，那样支臂会悬在板外并穿透板面（踩过）。
 	var strut_h: float = _wheel_gap() + wheel_r
-	for sx in [1.0, -1.0]:
-		var strut: MeshInstance3D = MeshInstance3D.new()
-		var sbox: BoxMesh = BoxMesh.new()
-		sbox.size = _chassis_box_size(AXLE_DIA_MM, strut_h, AXLE_DIA_MM)
-		strut.mesh = sbox
-		strut.material_override = _mat_mount
-		strut.position = _chassis_point(
-			sx * half_wb, 0.0, -CHASSIS_DECK_THICK_MM - strut_h * 0.5)
-		root.add_child(strut)
+	var strut_side: float = maxf(deck_w * 0.5 - AXLE_DIA_MM * 0.5, 0.0)
+	# 判据用间隙而非支臂总长：支臂含轮半径，贴地时总长仍有一个轮半径，
+	# 但那时轮子已顶着板底，不需要连接件
+	if _wheel_gap() > 0.5:
+		for sx in [1.0, -1.0]:
+			for sy in [1.0, -1.0]:
+				var strut: MeshInstance3D = MeshInstance3D.new()
+				var sbox: BoxMesh = BoxMesh.new()
+				sbox.size = _chassis_box_size(AXLE_DIA_MM, strut_h, AXLE_DIA_MM)
+				strut.mesh = sbox
+				strut.material_override = _mat_mount
+				strut.position = _chassis_point(sx * half_wb, sy * strut_side,
+					-CHASSIS_DECK_THICK_MM - strut_h * 0.5)
+				root.add_child(strut)
 	# 安装座：从底盘板顶面接到机械臂底座，让"装在哪、垫多高"一眼可见
 	if _mount.z > 1.0:
 		var post: MeshInstance3D = MeshInstance3D.new()
@@ -685,7 +712,8 @@ func _build_grid() -> void:
 
 
 ## 悬挂间隙（mm）：车高扣掉固定轮径与板厚后剩下的那段。
-## 它就是“轮子和底盘分开”的可见距离，也是调车高时唯一变化的量。
+## 车高 >= 轮径+板厚 时有悬挂；更低时间隙为 0（支臂消失），
+## 轮子跟着板一起下沉，一直可以降到板贴地。
 func _wheel_gap() -> float:
 	return maxf(_chassis_height - CHASSIS_DECK_THICK_MM - WHEEL_RADIUS_MM * 2.0, 0.0)
 
@@ -1106,7 +1134,8 @@ func _on_chassis_param_changed(key: String, value: float) -> void:
 		"ctr": _chassis_track = value
 		"mx": _mount.x = value
 		"my": _mount.y = value
-		"chh": _chassis_height = value
+		# 低于板厚就没意义了（板本身就那么厚），其余一律允许
+		"chh": _chassis_height = maxf(value, CHASSIS_DECK_THICK_MM)
 		"mz": _mount.z = value
 	_build_chassis()
 	# 安装高度与底盘高都会改变地面位置，网格要跟着重画
@@ -1125,8 +1154,8 @@ func _refresh_chassis_hint() -> void:
 		return
 	var label: Node = params.get_node_or_null("ChassisHint")
 	if label is Label:
-		label.text = "底盘高 = 地面到底盘板顶面，改它就改车高（当前轮径 %.0f、悬挂间隙 %.0f mm）。" \
-			% [_wheel_radius() * 2.0, _wheel_gap()]
+		label.text = "底盘高 = 地面到底盘板顶面；轮径固定 %.0f mm，改车高只动悬挂间隙（当前 %.0f mm）。" \
+			% [WHEEL_RADIUS_MM * 2.0, _wheel_gap()]
 		label.text += "\n底盘只是视觉参照，不参与逆解算：逆解的原点永远是机械臂底座。"
 		label.text += "\n改安装位置就是挪底盘，用来核对臂能不能伸到车外、会不会撞到自己的轮子。"
 
@@ -1264,7 +1293,11 @@ func _build_gripper_rows(parent: Node) -> void:
 func _build_chassis_rows(parent: Node) -> void:
 	_add_section(parent, "底盘尺寸 (mm)")
 	_add_slider_row(parent, "cwb", "底盘板长（前后）", 100.0, 800.0, _chassis_deck_len, 5.0)
-	_add_slider_row(parent, "chh", "底盘高（地面到板面）", 30.0, 400.0, _chassis_height, 5.0)
+	# 下限取板厚：再低就是板贴地了（机械上确实能做到离地几乎为 0）。
+	# 上限压到轮径的 3 倍：轮子只有 50mm，再高支臂就细长得像桌腿了
+	_add_slider_row(parent, "chh", "底盘高（地面到板面）",
+		CHASSIS_DECK_THICK_MM,
+		WHEEL_RADIUS_MM * 6.0 + CHASSIS_DECK_THICK_MM, _chassis_height, 5.0)
 	if _config_type != 0:
 		_add_slider_row(parent, "ctr", "轮距（左右）", 100.0, 800.0, _chassis_track, 5.0)
 	_add_section(parent, "机械臂安装位置（相对底盘中心）")
@@ -1275,8 +1308,8 @@ func _build_chassis_rows(parent: Node) -> void:
 	var hint: Label = Label.new()
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	hint.name = "ChassisHint"
-	hint.text = "底盘高 = 地面到底盘板顶面，改它就改车高（当前轮径 %.0f、悬挂间隙 %.0f mm）。" \
-		% [_wheel_radius() * 2.0, _wheel_gap()]
+	hint.text = "底盘高 = 地面到底盘板顶面；轮径固定 %.0f mm，改车高只动悬挂间隙（当前 %.0f mm）。" \
+		% [WHEEL_RADIUS_MM * 2.0, _wheel_gap()]
 	hint.text += "\n底盘只是视觉参照，不参与逆解算：逆解的原点永远是机械臂底座。"
 	hint.text += "\n改安装位置就是挪底盘，用来核对臂能不能伸到车外、会不会撞到自己的轮子。"
 	parent.add_child(hint)
