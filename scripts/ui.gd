@@ -50,13 +50,6 @@ const P_TRIGGER: NodePath = KEYSET + "/Trigger/OptionButton"
 const P_TRIGGER_SPEED: NodePath = KEYSET + "/Trigger/Speed"
 const P_TRIGGER_TIME: NodePath = KEYSET + "/Trigger/Time"
 const P_BOOSTER_KEY: NodePath = KEYSET + "/Booster/OptionButton"
-# 调试界面
-const DEBUG: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug"
-# 调试界面各行容器名（P60, P62, P64, P66, P74, P75, P76, P77, MP03, MP74）
-const DEBUG_ROWS: Array = [
-	"HBoxContainer",  "HBoxContainer2",  "HBoxContainer3",  "HBoxContainer4",  "HBoxContainer5",
-	"HBoxContainer6", "HBoxContainer7",  "HBoxContainer8",  "HBoxContainer9",  "HBoxContainer10",
-]
 # 输出
 const P_OUTPUT: NodePath = "VBoxContainer/HBoxContainer/HSplitContainer/CodeZone/VSplitContainer/Output/Output"
 const P_CODE_EDIT: NodePath = "VBoxContainer/HBoxContainer/HSplitContainer/CodeZone/VSplitContainer/Code/CodeEdit"
@@ -100,8 +93,6 @@ func _ready() -> void:
 	# 初始执行一次检查，并在控件变化时实时检查
 	_run_check()
 	_connect_signals()
-	# 初始化调试界面输入框占位提示
-	_update_debug_placeholders()
 
 
 # ------------------------------------------------------------------ 信号连接
@@ -135,71 +126,6 @@ func _connect_signals() -> void:
 	var build_btn: Node = get_node_or_null(P_BUILD_BTN)
 	if build_btn is BaseButton:
 		build_btn.pressed.connect(_on_build_pressed)
-	# 调试界面：驱动类型变化时更新占位提示
-	for row_name in DEBUG_ROWS:
-		var drive_btn: Node = get_node_or_null(NodePath(DEBUG + "/" + row_name + "/OptionButton"))
-		if drive_btn is OptionButton:
-			drive_btn.item_selected.connect(_update_debug_placeholders)
-			drive_btn.item_selected.connect(_run_check)
-	# 调试界面：输入框文本变化时触发检查
-	for row_name in DEBUG_ROWS:
-		var debug_le: Node = get_node_or_null(NodePath(DEBUG + "/" + row_name + "/LineEdit"))
-		if debug_le is LineEdit:
-			debug_le.text_changed.connect(_run_check)
-
-
-# ------------------------------------------------------------------ 调试界面占位提示
-## 根据调试界面各行驱动类型（电机/舵机/摩擦轮）更新输入框占位文本
-func _update_debug_placeholders(_idx: int = -1) -> void:
-	for row_name in DEBUG_ROWS:
-		var drive_btn: Node = get_node_or_null(NodePath(DEBUG + "/" + row_name + "/OptionButton"))
-		var line_edit: Node = get_node_or_null(NodePath(DEBUG + "/" + row_name + "/LineEdit"))
-		if not drive_btn is OptionButton or not line_edit is LineEdit:
-			continue
-		var drive_type: String = drive_btn.get_item_text(drive_btn.selected)
-		var placeholder: String = ""
-		match drive_type:
-			"电机":
-				placeholder = "速度 0~10000"
-			"舵机":
-				placeholder = "角度 -180~180"
-			"摩擦轮":
-				placeholder = "速度 0~1100"
-		line_edit.placeholder_text = placeholder
-
-
-# ------------------------------------------------------------------ 规则：调试界面参数范围
-# 舵机角度 ∈ [-180, 180]，电机速度 ∈ [0, 10000]，摩擦轮速度 ∈ [0, 1100]
-func _check_debug_params(issues: Array) -> void:
-	for row_name in DEBUG_ROWS:
-		var drive_btn: Node = get_node_or_null(NodePath(DEBUG + "/" + row_name + "/OptionButton"))
-		var line_edit: Node = get_node_or_null(NodePath(DEBUG + "/" + row_name + "/LineEdit"))
-		var label_node: Node = get_node_or_null(NodePath(DEBUG + "/" + row_name + "/Label"))
-		if not drive_btn is OptionButton or not line_edit is LineEdit:
-			continue
-		var text: String = line_edit.text.strip_edges()
-		if text.is_empty():
-			continue # 留空时不报
-		var pin_name: String = label_node.text if label_node is Label else row_name
-		var drive_type: String = drive_btn.get_item_text(drive_btn.selected)
-		if not text.is_valid_int():
-			issues.append({"type": "Error",
-				"msg": "调试 %s 参数「%s」不是合法整数" % [pin_name, text]})
-			continue
-		var val: int = text.to_int()
-		match drive_type:
-			"电机":
-				if val < 0 or val > 10000:
-					issues.append({"type": "Error",
-						"msg": "调试 %s 电机速度 %d 超出范围（有效范围 0-10000）" % [pin_name, val]})
-			"舵机":
-				if val < -180 or val > 180:
-					issues.append({"type": "Error",
-						"msg": "调试 %s 舵机角度 %d 超出范围（有效范围 -180~180）" % [pin_name, val]})
-			"摩擦轮":
-				if val < 0 or val > 1100:
-					issues.append({"type": "Error",
-						"msg": "调试 %s 摩擦轮速度 %d 超出范围（有效范围 0-1100）" % [pin_name, val]})
 
 
 # ------------------------------------------------------------------ 检查入口
@@ -211,7 +137,6 @@ func _run_check(_a = null, _b = null) -> void:
 	_check_arrow_trigger_conflict(issues)
 	_check_io_duplicate(issues)
 	_check_gimbal_pin_conflict(issues)
-	_check_debug_params(issues)
 	# 将问题展示到 Output
 	var out: Node = get_node_or_null(P_OUTPUT)
 	if out and out.has_method("set_issues"):
