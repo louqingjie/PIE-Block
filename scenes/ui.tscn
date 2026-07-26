@@ -310,6 +310,795 @@ size_flags_horizontal = 8
 text = "10000"
 placeholder_text = "0~1e4"
 
+[node name="VSeparator2" type="VSeparator" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone" unique_id=334814236]
+layout_mode = 2
+
+[node name="InfantryAdvance" type="VBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone" unique_id=1786380384]
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 0
+metadata/_tab_index = 1
+metadata/_tab_name = "工程"
+
+[node name="Label3" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance" unique_id=357345512]
+layout_mode = 2
+size_flags_horizontal = 4
+text = "步兵高级设置"
+
+[node name="HSeparator4" type="HSeparator" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance" unique_id=1713574961]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance" unique_id=1064013674]
+layout_mode = 2
+size_flags_horizontal = 4
+text = "IO初始化"
+
+[node name="HSeparator" type="HSeparator" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance" unique_id=2145271167]
+layout_mode = 2
+
+[node name="P60P62" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance" unique_id=1978942996]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/P60P62" unique_id=18048144]
+layout_mode = 2
+text = "P60"
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/P60P62" unique_id=930277289]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 1
+popup/item_0/text = "舵机"
+popup/item_0/id = 1
+
+[node name="Label2" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/P60P62" unique_id=124025458]
+layout_mode = 2
+text = "P62"
+
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/P60P62" unique_id=948034588]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 1
+popup/item_0/text = "舵机"
+popup/item_0/id = 1
+
+[node name="P64P66" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance" unique_id=1918184244]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/P64P66" unique_id=1966880926]
+layout_mode = 2
+text = "P64"
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/P64P66" unique_id=868676089]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 2
+popup/item_0/text = "电机"
+popup/item_0/id = 0
+popup/item_1/text = "舵机"
+popup/item_1/id = 1
+
+[node name="Label2" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/P64P66" unique_id=961191095]
+layout_mode = 2
+text = "P66"
+
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/P64P66" unique_id=772414631]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 2
+popup/item_0/text = "电机"
+popup/item_0/id = 0
+popup/item_1/text = "舵机"
+popup/item_1/id = 1
+
+[node name="P74P75" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance" unique_id=560295494]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/P74P75" unique_id=1850265001]
+layout_mode = 2
+text = "P74"
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/P74P75" unique_id=840069425]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 2
+popup/item_0/text = "电机"
+popup/item_0/id = 0
+popup/item_1/text = "舵机"
+popup/item_1/id = 1
+
+[node name="Label2" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/P74P75" unique_id=650616273]
+layout_mode = 2
+text = "P75"
+
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/P74P75" unique_id=797187180]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 2
+popup/item_0/text = "电机"
+popup/item_0/id = 0
+popup/item_1/text = "舵机"
+popup/item_1/id = 1
+
+[node name="P76P77" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance" unique_id=801523899]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/P76P77" unique_id=620081148]
+layout_mode = 2
+text = "P76"
+
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/P76P77" unique_id=1333142773]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 2
+popup/item_0/text = "电机"
+popup/item_0/id = 0
+popup/item_1/text = "舵机"
+popup/item_1/id = 1
+
+[node name="Label2" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/P76P77" unique_id=1899434399]
+layout_mode = 2
+text = "P77"
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/P76P77" unique_id=1195991666]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 2
+popup/item_0/text = "电机"
+popup/item_0/id = 0
+popup/item_1/text = "舵机"
+popup/item_1/id = 1
+
+[node name="MP03MP74" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance" unique_id=1945772653]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/MP03MP74" unique_id=2046386990]
+layout_mode = 2
+text = "MP03"
+
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/MP03MP74" unique_id=80360533]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 1
+popup/item_0/text = "舵机"
+popup/item_0/id = 1
+
+[node name="Label2" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/MP03MP74" unique_id=466063986]
+layout_mode = 2
+text = "MP74"
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/MP03MP74" unique_id=963317199]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 1
+popup/item_0/text = "舵机"
+popup/item_0/id = 1
+
+[node name="HSeparator3" type="HSeparator" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance" unique_id=900428582]
+layout_mode = 2
+
+[node name="Label2" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance" unique_id=1112727525]
+layout_mode = 2
+size_flags_horizontal = 4
+text = "按键映射"
+
+[node name="HSeparator2" type="HSeparator" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance" unique_id=1660781164]
+layout_mode = 2
+
+[node name="RightJoystickX" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance" unique_id=309675769]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/RightJoystickX" unique_id=594005142]
+layout_mode = 2
+text = "右摇杆X"
+
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/RightJoystickX" unique_id=1666220422]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 2
+popup/item_0/text = "正"
+popup/item_0/id = 0
+popup/item_1/text = "反"
+popup/item_1/id = 1
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/RightJoystickX" unique_id=1526488645]
+layout_mode = 2
+size_flags_horizontal = 8
+item_count = 4
+popup/item_0/text = "增量"
+popup/item_0/id = 0
+popup/item_1/text = "直接"
+popup/item_1/id = 1
+popup/item_2/text = "速度"
+popup/item_2/id = 2
+popup/item_3/text = "增速"
+popup/item_3/id = 3
+
+[node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/RightJoystickX" unique_id=600501795]
+layout_mode = 2
+
+[node name="OptionButton3" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/RightJoystickX" unique_id=2105977898]
+layout_mode = 2
+item_count = 10
+popup/item_0/text = "P60"
+popup/item_0/id = 0
+popup/item_1/text = "P62"
+popup/item_1/id = 1
+popup/item_2/text = "P64"
+popup/item_2/id = 2
+popup/item_3/text = "P66"
+popup/item_3/id = 3
+popup/item_4/text = "P74"
+popup/item_4/id = 4
+popup/item_5/text = "P75"
+popup/item_5/id = 5
+popup/item_6/text = "P76"
+popup/item_6/id = 6
+popup/item_7/text = "P77"
+popup/item_7/id = 7
+popup/item_8/text = "MP03"
+popup/item_8/id = 8
+popup/item_9/id = 9
+
+[node name="RightJoystickY" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance" unique_id=1776171152]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/RightJoystickY" unique_id=1966141881]
+layout_mode = 2
+text = "右摇杆Y"
+
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/RightJoystickY" unique_id=1714385466]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 2
+popup/item_0/text = "正"
+popup/item_0/id = 0
+popup/item_1/text = "反"
+popup/item_1/id = 1
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/RightJoystickY" unique_id=1817188755]
+layout_mode = 2
+size_flags_horizontal = 8
+item_count = 4
+popup/item_0/text = "增量"
+popup/item_0/id = 0
+popup/item_1/text = "直接"
+popup/item_1/id = 1
+popup/item_2/text = "速度"
+popup/item_2/id = 2
+popup/item_3/text = "增速"
+popup/item_3/id = 3
+
+[node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/RightJoystickY" unique_id=410584888]
+layout_mode = 2
+
+[node name="OptionButton3" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/RightJoystickY" unique_id=1599681039]
+layout_mode = 2
+item_count = 10
+popup/item_0/text = "P60"
+popup/item_0/id = 0
+popup/item_1/text = "P62"
+popup/item_1/id = 1
+popup/item_2/text = "P64"
+popup/item_2/id = 2
+popup/item_3/text = "P66"
+popup/item_3/id = 3
+popup/item_4/text = "P74"
+popup/item_4/id = 4
+popup/item_5/text = "P75"
+popup/item_5/id = 5
+popup/item_6/text = "P76"
+popup/item_6/id = 6
+popup/item_7/text = "P77"
+popup/item_7/id = 7
+popup/item_8/text = "MP03"
+popup/item_8/id = 8
+popup/item_9/text = "MP74"
+popup/item_9/id = 9
+
+[node name="A" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance" unique_id=942312606]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/A" unique_id=1969341738]
+layout_mode = 2
+text = "A"
+
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/A" unique_id=771307059]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 2
+popup/item_0/text = "正"
+popup/item_0/id = 0
+popup/item_1/text = "反"
+popup/item_1/id = 1
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/A" unique_id=742737881]
+layout_mode = 2
+size_flags_horizontal = 8
+item_count = 4
+popup/item_0/text = "增量"
+popup/item_0/id = 0
+popup/item_1/text = "直接"
+popup/item_1/id = 1
+popup/item_2/text = "速度"
+popup/item_2/id = 2
+popup/item_3/text = "增速"
+popup/item_3/id = 3
+
+[node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/A" unique_id=180320726]
+layout_mode = 2
+
+[node name="OptionButton3" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/A" unique_id=176425777]
+layout_mode = 2
+item_count = 10
+popup/item_0/text = "P60"
+popup/item_0/id = 0
+popup/item_1/text = "P62"
+popup/item_1/id = 1
+popup/item_2/text = "P64"
+popup/item_2/id = 2
+popup/item_3/text = "P66"
+popup/item_3/id = 3
+popup/item_4/text = "P74"
+popup/item_4/id = 4
+popup/item_5/text = "P75"
+popup/item_5/id = 5
+popup/item_6/text = "P76"
+popup/item_6/id = 6
+popup/item_7/text = "P77"
+popup/item_7/id = 7
+popup/item_8/text = "MP03"
+popup/item_8/id = 8
+popup/item_9/text = "MP74"
+popup/item_9/id = 9
+
+[node name="B" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance" unique_id=886684716]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/B" unique_id=372408857]
+layout_mode = 2
+text = "B"
+
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/B" unique_id=530422526]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 2
+popup/item_0/text = "正"
+popup/item_0/id = 0
+popup/item_1/text = "反"
+popup/item_1/id = 1
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/B" unique_id=238616592]
+layout_mode = 2
+size_flags_horizontal = 8
+item_count = 4
+popup/item_0/text = "增量"
+popup/item_0/id = 0
+popup/item_1/text = "直接"
+popup/item_1/id = 1
+popup/item_2/text = "速度"
+popup/item_2/id = 2
+popup/item_3/text = "增速"
+popup/item_3/id = 3
+
+[node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/B" unique_id=391708187]
+layout_mode = 2
+
+[node name="OptionButton3" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/B" unique_id=275606508]
+layout_mode = 2
+item_count = 10
+popup/item_0/text = "P60"
+popup/item_0/id = 0
+popup/item_1/text = "P62"
+popup/item_1/id = 1
+popup/item_2/text = "P64"
+popup/item_2/id = 2
+popup/item_3/text = "P66"
+popup/item_3/id = 3
+popup/item_4/text = "P74"
+popup/item_4/id = 4
+popup/item_5/text = "P75"
+popup/item_5/id = 5
+popup/item_6/text = "P76"
+popup/item_6/id = 6
+popup/item_7/text = "P77"
+popup/item_7/id = 7
+popup/item_8/text = "MP03"
+popup/item_8/id = 8
+popup/item_9/text = "MP74"
+popup/item_9/id = 9
+
+[node name="C" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance" unique_id=1434544482]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/C" unique_id=758118437]
+layout_mode = 2
+text = "C"
+
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/C" unique_id=559640470]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 2
+popup/item_0/text = "正"
+popup/item_0/id = 0
+popup/item_1/text = "反"
+popup/item_1/id = 1
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/C" unique_id=1573579009]
+layout_mode = 2
+size_flags_horizontal = 8
+item_count = 4
+popup/item_0/text = "增量"
+popup/item_0/id = 0
+popup/item_1/text = "直接"
+popup/item_1/id = 1
+popup/item_2/text = "速度"
+popup/item_2/id = 2
+popup/item_3/text = "增速"
+popup/item_3/id = 3
+
+[node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/C" unique_id=158393011]
+layout_mode = 2
+
+[node name="OptionButton3" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/C" unique_id=1033970638]
+layout_mode = 2
+item_count = 10
+popup/item_0/text = "P60"
+popup/item_0/id = 0
+popup/item_1/text = "P62"
+popup/item_1/id = 1
+popup/item_2/text = "P64"
+popup/item_2/id = 2
+popup/item_3/text = "P66"
+popup/item_3/id = 3
+popup/item_4/text = "P74"
+popup/item_4/id = 4
+popup/item_5/text = "P75"
+popup/item_5/id = 5
+popup/item_6/text = "P76"
+popup/item_6/id = 6
+popup/item_7/text = "P77"
+popup/item_7/id = 7
+popup/item_8/text = "MP03"
+popup/item_8/id = 8
+popup/item_9/text = "MP74"
+popup/item_9/id = 9
+
+[node name="D" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance" unique_id=1978232753]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/D" unique_id=745867922]
+layout_mode = 2
+text = "D"
+
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/D" unique_id=1555067255]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 2
+popup/item_0/text = "正"
+popup/item_0/id = 0
+popup/item_1/text = "反"
+popup/item_1/id = 1
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/D" unique_id=1330158061]
+layout_mode = 2
+size_flags_horizontal = 8
+item_count = 4
+popup/item_0/text = "增量"
+popup/item_0/id = 0
+popup/item_1/text = "直接"
+popup/item_1/id = 1
+popup/item_2/text = "速度"
+popup/item_2/id = 2
+popup/item_3/text = "增速"
+popup/item_3/id = 3
+
+[node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/D" unique_id=1170239554]
+layout_mode = 2
+
+[node name="OptionButton3" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/D" unique_id=642827147]
+layout_mode = 2
+item_count = 10
+popup/item_0/text = "P60"
+popup/item_0/id = 0
+popup/item_1/text = "P62"
+popup/item_1/id = 1
+popup/item_2/text = "P64"
+popup/item_2/id = 2
+popup/item_3/text = "P66"
+popup/item_3/id = 3
+popup/item_4/text = "P74"
+popup/item_4/id = 4
+popup/item_5/text = "P75"
+popup/item_5/id = 5
+popup/item_6/text = "P76"
+popup/item_6/id = 6
+popup/item_7/text = "P77"
+popup/item_7/id = 7
+popup/item_8/text = "MP03"
+popup/item_8/id = 8
+popup/item_9/text = "MP74"
+popup/item_9/id = 9
+
+[node name="Up" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance" unique_id=1065678633]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/Up" unique_id=1067717230]
+layout_mode = 2
+text = "↑"
+
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/Up" unique_id=1450952185]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 2
+popup/item_0/text = "正"
+popup/item_0/id = 0
+popup/item_1/text = "反"
+popup/item_1/id = 1
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/Up" unique_id=132044806]
+layout_mode = 2
+size_flags_horizontal = 8
+item_count = 4
+popup/item_0/text = "增量"
+popup/item_0/id = 0
+popup/item_1/text = "直接"
+popup/item_1/id = 1
+popup/item_2/text = "速度"
+popup/item_2/id = 2
+popup/item_3/text = "增速"
+popup/item_3/id = 3
+
+[node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/Up" unique_id=1509311621]
+layout_mode = 2
+
+[node name="OptionButton3" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/Up" unique_id=1071207005]
+layout_mode = 2
+item_count = 10
+popup/item_0/text = "P60"
+popup/item_0/id = 0
+popup/item_1/text = "P62"
+popup/item_1/id = 1
+popup/item_2/text = "P64"
+popup/item_2/id = 2
+popup/item_3/text = "P66"
+popup/item_3/id = 3
+popup/item_4/text = "P74"
+popup/item_4/id = 4
+popup/item_5/text = "P75"
+popup/item_5/id = 5
+popup/item_6/text = "P76"
+popup/item_6/id = 6
+popup/item_7/text = "P77"
+popup/item_7/id = 7
+popup/item_8/text = "MP03"
+popup/item_8/id = 8
+popup/item_9/text = "MP74"
+popup/item_9/id = 9
+
+[node name="Down" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance" unique_id=1562092146]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/Down" unique_id=1102719693]
+layout_mode = 2
+text = "↓"
+
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/Down" unique_id=265558444]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 2
+popup/item_0/text = "正"
+popup/item_0/id = 0
+popup/item_1/text = "反"
+popup/item_1/id = 1
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/Down" unique_id=317513115]
+layout_mode = 2
+size_flags_horizontal = 8
+item_count = 4
+popup/item_0/text = "增量"
+popup/item_0/id = 0
+popup/item_1/text = "直接"
+popup/item_1/id = 1
+popup/item_2/text = "速度"
+popup/item_2/id = 2
+popup/item_3/text = "增速"
+popup/item_3/id = 3
+
+[node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/Down" unique_id=2003309129]
+layout_mode = 2
+
+[node name="OptionButton3" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/Down" unique_id=664254656]
+layout_mode = 2
+item_count = 10
+popup/item_0/text = "P60"
+popup/item_0/id = 0
+popup/item_1/text = "P62"
+popup/item_1/id = 1
+popup/item_2/text = "P64"
+popup/item_2/id = 2
+popup/item_3/text = "P66"
+popup/item_3/id = 3
+popup/item_4/text = "P74"
+popup/item_4/id = 4
+popup/item_5/text = "P75"
+popup/item_5/id = 5
+popup/item_6/text = "P76"
+popup/item_6/id = 6
+popup/item_7/text = "P77"
+popup/item_7/id = 7
+popup/item_8/text = "MP03"
+popup/item_8/id = 8
+popup/item_9/text = "MP74"
+popup/item_9/id = 9
+
+[node name="Left" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance" unique_id=613266718]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/Left" unique_id=1421822957]
+layout_mode = 2
+text = "←"
+
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/Left" unique_id=1048137026]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 2
+popup/item_0/text = "正"
+popup/item_0/id = 0
+popup/item_1/text = "反"
+popup/item_1/id = 1
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/Left" unique_id=847379744]
+layout_mode = 2
+size_flags_horizontal = 8
+item_count = 4
+popup/item_0/text = "增量"
+popup/item_0/id = 0
+popup/item_1/text = "直接"
+popup/item_1/id = 1
+popup/item_2/text = "速度"
+popup/item_2/id = 2
+popup/item_3/text = "增速"
+popup/item_3/id = 3
+
+[node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/Left" unique_id=1076344261]
+layout_mode = 2
+
+[node name="OptionButton3" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/Left" unique_id=1063581139]
+layout_mode = 2
+item_count = 10
+popup/item_0/text = "P60"
+popup/item_0/id = 0
+popup/item_1/text = "P62"
+popup/item_1/id = 1
+popup/item_2/text = "P64"
+popup/item_2/id = 2
+popup/item_3/text = "P66"
+popup/item_3/id = 3
+popup/item_4/text = "P74"
+popup/item_4/id = 4
+popup/item_5/text = "P75"
+popup/item_5/id = 5
+popup/item_6/text = "P76"
+popup/item_6/id = 6
+popup/item_7/text = "P77"
+popup/item_7/id = 7
+popup/item_8/text = "MP03"
+popup/item_8/id = 8
+popup/item_9/text = "MP74"
+popup/item_9/id = 9
+
+[node name="Right" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance" unique_id=1466886069]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/Right" unique_id=1569883238]
+layout_mode = 2
+text = "→"
+
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/Right" unique_id=1320066049]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 2
+popup/item_0/text = "正"
+popup/item_0/id = 0
+popup/item_1/text = "反"
+popup/item_1/id = 1
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/Right" unique_id=1079204737]
+layout_mode = 2
+size_flags_horizontal = 8
+item_count = 4
+popup/item_0/text = "增量"
+popup/item_0/id = 0
+popup/item_1/text = "直接"
+popup/item_1/id = 1
+popup/item_2/text = "速度"
+popup/item_2/id = 2
+popup/item_3/text = "增速"
+popup/item_3/id = 3
+
+[node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/Right" unique_id=1392308131]
+layout_mode = 2
+
+[node name="OptionButton3" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/Right" unique_id=2045557114]
+layout_mode = 2
+item_count = 10
+popup/item_0/text = "P60"
+popup/item_0/id = 0
+popup/item_1/text = "P62"
+popup/item_1/id = 1
+popup/item_2/text = "P64"
+popup/item_2/id = 2
+popup/item_3/text = "P66"
+popup/item_3/id = 3
+popup/item_4/text = "P74"
+popup/item_4/id = 4
+popup/item_5/text = "P75"
+popup/item_5/id = 5
+popup/item_6/text = "P76"
+popup/item_6/id = 6
+popup/item_7/text = "P77"
+popup/item_7/id = 7
+popup/item_8/text = "MP03"
+popup/item_8/id = 8
+popup/item_9/text = "MP74"
+popup/item_9/id = 9
+
+[node name="R" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance" unique_id=564377342]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/R" unique_id=1309452366]
+layout_mode = 2
+text = "R"
+
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/R" unique_id=2140452228]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 2
+popup/item_0/text = "正"
+popup/item_0/id = 0
+popup/item_1/text = "反"
+popup/item_1/id = 1
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/R" unique_id=2147382016]
+layout_mode = 2
+size_flags_horizontal = 8
+item_count = 4
+popup/item_0/text = "增量"
+popup/item_0/id = 0
+popup/item_1/text = "直接"
+popup/item_1/id = 1
+popup/item_2/text = "速度"
+popup/item_2/id = 2
+popup/item_3/text = "增速"
+popup/item_3/id = 3
+
+[node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/R" unique_id=513789113]
+layout_mode = 2
+
+[node name="OptionButton3" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/InfantryAdvance/R" unique_id=1415469522]
+layout_mode = 2
+item_count = 10
+popup/item_0/text = "P60"
+popup/item_0/id = 0
+popup/item_1/text = "P62"
+popup/item_1/id = 1
+popup/item_2/text = "P64"
+popup/item_2/id = 2
+popup/item_3/text = "P66"
+popup/item_3/id = 3
+popup/item_4/text = "P74"
+popup/item_4/id = 4
+popup/item_5/text = "P75"
+popup/item_5/id = 5
+popup/item_6/text = "P76"
+popup/item_6/id = 6
+popup/item_7/text = "P77"
+popup/item_7/id = 7
+popup/item_8/text = "MP03"
+popup/item_8/id = 8
+popup/item_9/text = "MP74"
+popup/item_9/id = 9
+
 [node name="VSeparator" type="VSeparator" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone" unique_id=1122104879]
 layout_mode = 2
 
@@ -320,11 +1109,13 @@ size_flags_horizontal = 3
 [node name="TabContainer" type="TabContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow" unique_id=1246727485]
 layout_mode = 2
 size_flags_vertical = 3
-current_tab = 0
+current_tab = 2
 tab_0/title = "步兵"
 tab_1/title = "工程"
+tab_2/title = "调试"
 
 [node name="Infantry" type="VBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer" unique_id=1911259566]
+visible = false
 layout_mode = 2
 metadata/_tab_index = 0
 metadata/_tab_name = "步兵"
@@ -657,13 +1448,1076 @@ popup/item_8/id = 8
 
 [node name="Button" type="Button" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/KeySetting" unique_id=1179134669]
 layout_mode = 2
-text = "添加按键特殊功能"
+text = "添加特殊功能"
 
 [node name="Engineer" type="VBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer" unique_id=526865510]
 visible = false
 layout_mode = 2
+theme_override_constants/separation = 0
 metadata/_tab_index = 1
 metadata/_tab_name = "工程"
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer" unique_id=623635478]
+layout_mode = 2
+size_flags_horizontal = 4
+text = "IO初始化"
+
+[node name="HSeparator" type="HSeparator" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer" unique_id=474474969]
+layout_mode = 2
+
+[node name="P60P62" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer" unique_id=1002637364]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/P60P62" unique_id=377444278]
+layout_mode = 2
+text = "P60"
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/P60P62" unique_id=625568293]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 1
+popup/item_0/text = "舵机"
+popup/item_0/id = 1
+
+[node name="Label2" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/P60P62" unique_id=770154087]
+layout_mode = 2
+text = "P62"
+
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/P60P62" unique_id=1672939349]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 1
+popup/item_0/text = "舵机"
+popup/item_0/id = 1
+
+[node name="P64P66" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer" unique_id=745130046]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/P64P66" unique_id=1754696829]
+layout_mode = 2
+text = "P64"
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/P64P66" unique_id=440439740]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 2
+popup/item_0/text = "电机"
+popup/item_0/id = 0
+popup/item_1/text = "舵机"
+popup/item_1/id = 1
+
+[node name="Label2" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/P64P66" unique_id=1638271901]
+layout_mode = 2
+text = "P66"
+
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/P64P66" unique_id=1072227736]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 2
+popup/item_0/text = "电机"
+popup/item_0/id = 0
+popup/item_1/text = "舵机"
+popup/item_1/id = 1
+
+[node name="P74P75" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer" unique_id=1184155642]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/P74P75" unique_id=1077164621]
+layout_mode = 2
+text = "P74"
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/P74P75" unique_id=352239936]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 2
+popup/item_0/text = "电机"
+popup/item_0/id = 0
+popup/item_1/text = "舵机"
+popup/item_1/id = 1
+
+[node name="Label2" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/P74P75" unique_id=789649362]
+layout_mode = 2
+text = "P75"
+
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/P74P75" unique_id=1365335563]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 2
+popup/item_0/text = "电机"
+popup/item_0/id = 0
+popup/item_1/text = "舵机"
+popup/item_1/id = 1
+
+[node name="P76P77" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer" unique_id=1039910982]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/P76P77" unique_id=1726662093]
+layout_mode = 2
+text = "P76"
+
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/P76P77" unique_id=140380862]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 2
+popup/item_0/text = "电机"
+popup/item_0/id = 0
+popup/item_1/text = "舵机"
+popup/item_1/id = 1
+
+[node name="Label2" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/P76P77" unique_id=276245344]
+layout_mode = 2
+text = "P77"
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/P76P77" unique_id=1313241065]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 2
+popup/item_0/text = "电机"
+popup/item_0/id = 0
+popup/item_1/text = "舵机"
+popup/item_1/id = 1
+
+[node name="MP03MP74" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer" unique_id=1717329997]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/MP03MP74" unique_id=223488034]
+layout_mode = 2
+text = "MP03"
+
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/MP03MP74" unique_id=978667949]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 1
+popup/item_0/text = "舵机"
+popup/item_0/id = 1
+
+[node name="Label2" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/MP03MP74" unique_id=229638729]
+layout_mode = 2
+text = "MP74"
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/MP03MP74" unique_id=256150972]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 1
+popup/item_0/text = "舵机"
+popup/item_0/id = 1
+
+[node name="HSeparator3" type="HSeparator" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer" unique_id=208781827]
+layout_mode = 2
+
+[node name="Label2" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer" unique_id=1550383402]
+layout_mode = 2
+size_flags_horizontal = 4
+text = "按键映射"
+
+[node name="HSeparator2" type="HSeparator" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer" unique_id=1035284642]
+layout_mode = 2
+
+[node name="RightJoystickX" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer" unique_id=1198159386]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/RightJoystickX" unique_id=842298053]
+layout_mode = 2
+text = "右摇杆X"
+
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/RightJoystickX" unique_id=1016650541]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 2
+popup/item_0/text = "正"
+popup/item_0/id = 0
+popup/item_1/text = "反"
+popup/item_1/id = 1
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/RightJoystickX" unique_id=1336814781]
+layout_mode = 2
+size_flags_horizontal = 8
+item_count = 4
+popup/item_0/text = "增量"
+popup/item_0/id = 0
+popup/item_1/text = "直接"
+popup/item_1/id = 1
+popup/item_2/text = "速度"
+popup/item_2/id = 2
+popup/item_3/text = "增速"
+popup/item_3/id = 3
+
+[node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/RightJoystickX" unique_id=1374043530]
+layout_mode = 2
+
+[node name="OptionButton3" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/RightJoystickX" unique_id=501563311]
+layout_mode = 2
+item_count = 10
+popup/item_0/text = "P60"
+popup/item_0/id = 0
+popup/item_1/text = "P62"
+popup/item_1/id = 1
+popup/item_2/text = "P64"
+popup/item_2/id = 2
+popup/item_3/text = "P66"
+popup/item_3/id = 3
+popup/item_4/text = "P74"
+popup/item_4/id = 4
+popup/item_5/text = "P75"
+popup/item_5/id = 5
+popup/item_6/text = "P76"
+popup/item_6/id = 6
+popup/item_7/text = "P77"
+popup/item_7/id = 7
+popup/item_8/text = "MP03"
+popup/item_8/id = 8
+popup/item_9/text = "MP74"
+popup/item_9/id = 9
+
+[node name="RightJoystickY" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer" unique_id=291174991]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/RightJoystickY" unique_id=1200118757]
+layout_mode = 2
+text = "右摇杆Y"
+
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/RightJoystickY" unique_id=96955494]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 2
+popup/item_0/text = "正"
+popup/item_0/id = 0
+popup/item_1/text = "反"
+popup/item_1/id = 1
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/RightJoystickY" unique_id=39050749]
+layout_mode = 2
+size_flags_horizontal = 8
+item_count = 4
+popup/item_0/text = "增量"
+popup/item_0/id = 0
+popup/item_1/text = "直接"
+popup/item_1/id = 1
+popup/item_2/text = "速度"
+popup/item_2/id = 2
+popup/item_3/text = "增速"
+popup/item_3/id = 3
+
+[node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/RightJoystickY" unique_id=1883415203]
+layout_mode = 2
+
+[node name="OptionButton3" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/RightJoystickY" unique_id=1781420613]
+layout_mode = 2
+item_count = 10
+popup/item_0/text = "P60"
+popup/item_0/id = 0
+popup/item_1/text = "P62"
+popup/item_1/id = 1
+popup/item_2/text = "P64"
+popup/item_2/id = 2
+popup/item_3/text = "P66"
+popup/item_3/id = 3
+popup/item_4/text = "P74"
+popup/item_4/id = 4
+popup/item_5/text = "P75"
+popup/item_5/id = 5
+popup/item_6/text = "P76"
+popup/item_6/id = 6
+popup/item_7/text = "P77"
+popup/item_7/id = 7
+popup/item_8/text = "MP03"
+popup/item_8/id = 8
+popup/item_9/text = "MP74"
+popup/item_9/id = 9
+
+[node name="A" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer" unique_id=1201132026]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/A" unique_id=408907805]
+layout_mode = 2
+text = "A"
+
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/A" unique_id=2106564557]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 2
+popup/item_0/text = "正"
+popup/item_0/id = 0
+popup/item_1/text = "反"
+popup/item_1/id = 1
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/A" unique_id=1879771866]
+layout_mode = 2
+size_flags_horizontal = 8
+item_count = 4
+popup/item_0/text = "增量"
+popup/item_0/id = 0
+popup/item_1/text = "直接"
+popup/item_1/id = 1
+popup/item_2/text = "速度"
+popup/item_2/id = 2
+popup/item_3/text = "增速"
+popup/item_3/id = 3
+
+[node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/A" unique_id=1802244611]
+layout_mode = 2
+
+[node name="OptionButton3" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/A" unique_id=300294464]
+layout_mode = 2
+item_count = 10
+popup/item_0/text = "P60"
+popup/item_0/id = 0
+popup/item_1/text = "P62"
+popup/item_1/id = 1
+popup/item_2/text = "P64"
+popup/item_2/id = 2
+popup/item_3/text = "P66"
+popup/item_3/id = 3
+popup/item_4/text = "P74"
+popup/item_4/id = 4
+popup/item_5/text = "P75"
+popup/item_5/id = 5
+popup/item_6/text = "P76"
+popup/item_6/id = 6
+popup/item_7/text = "P77"
+popup/item_7/id = 7
+popup/item_8/text = "MP03"
+popup/item_8/id = 8
+popup/item_9/text = "MP74"
+popup/item_9/id = 9
+
+[node name="B" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer" unique_id=1645249396]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/B" unique_id=1589658906]
+layout_mode = 2
+text = "B"
+
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/B" unique_id=542907164]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 2
+popup/item_0/text = "正"
+popup/item_0/id = 0
+popup/item_1/text = "反"
+popup/item_1/id = 1
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/B" unique_id=960791903]
+layout_mode = 2
+size_flags_horizontal = 8
+item_count = 4
+popup/item_0/text = "增量"
+popup/item_0/id = 0
+popup/item_1/text = "直接"
+popup/item_1/id = 1
+popup/item_2/text = "速度"
+popup/item_2/id = 2
+popup/item_3/text = "增速"
+popup/item_3/id = 3
+
+[node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/B" unique_id=1518190327]
+layout_mode = 2
+
+[node name="OptionButton3" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/B" unique_id=560479055]
+layout_mode = 2
+item_count = 10
+popup/item_0/text = "P60"
+popup/item_0/id = 0
+popup/item_1/text = "P62"
+popup/item_1/id = 1
+popup/item_2/text = "P64"
+popup/item_2/id = 2
+popup/item_3/text = "P66"
+popup/item_3/id = 3
+popup/item_4/text = "P74"
+popup/item_4/id = 4
+popup/item_5/text = "P75"
+popup/item_5/id = 5
+popup/item_6/text = "P76"
+popup/item_6/id = 6
+popup/item_7/text = "P77"
+popup/item_7/id = 7
+popup/item_8/text = "MP03"
+popup/item_8/id = 8
+popup/item_9/text = "MP74"
+popup/item_9/id = 9
+
+[node name="C" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer" unique_id=1873746653]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/C" unique_id=819475097]
+layout_mode = 2
+text = "C"
+
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/C" unique_id=1024594197]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 2
+popup/item_0/text = "正"
+popup/item_0/id = 0
+popup/item_1/text = "反"
+popup/item_1/id = 1
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/C" unique_id=451953319]
+layout_mode = 2
+size_flags_horizontal = 8
+item_count = 4
+popup/item_0/text = "增量"
+popup/item_0/id = 0
+popup/item_1/text = "直接"
+popup/item_1/id = 1
+popup/item_2/text = "速度"
+popup/item_2/id = 2
+popup/item_3/text = "增速"
+popup/item_3/id = 3
+
+[node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/C" unique_id=1864268227]
+layout_mode = 2
+
+[node name="OptionButton3" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/C" unique_id=1181131397]
+layout_mode = 2
+item_count = 10
+popup/item_0/text = "P60"
+popup/item_0/id = 0
+popup/item_1/text = "P62"
+popup/item_1/id = 1
+popup/item_2/text = "P64"
+popup/item_2/id = 2
+popup/item_3/text = "P66"
+popup/item_3/id = 3
+popup/item_4/text = "P74"
+popup/item_4/id = 4
+popup/item_5/text = "P75"
+popup/item_5/id = 5
+popup/item_6/text = "P76"
+popup/item_6/id = 6
+popup/item_7/text = "P77"
+popup/item_7/id = 7
+popup/item_8/text = "MP03"
+popup/item_8/id = 8
+popup/item_9/text = "MP74"
+popup/item_9/id = 9
+
+[node name="D" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer" unique_id=1679597644]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/D" unique_id=916865090]
+layout_mode = 2
+text = "D"
+
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/D" unique_id=690084490]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 2
+popup/item_0/text = "正"
+popup/item_0/id = 0
+popup/item_1/text = "反"
+popup/item_1/id = 1
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/D" unique_id=316737696]
+layout_mode = 2
+size_flags_horizontal = 8
+item_count = 4
+popup/item_0/text = "增量"
+popup/item_0/id = 0
+popup/item_1/text = "直接"
+popup/item_1/id = 1
+popup/item_2/text = "速度"
+popup/item_2/id = 2
+popup/item_3/text = "增速"
+popup/item_3/id = 3
+
+[node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/D" unique_id=1648999118]
+layout_mode = 2
+
+[node name="OptionButton3" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/D" unique_id=674446635]
+layout_mode = 2
+item_count = 10
+popup/item_0/text = "P60"
+popup/item_0/id = 0
+popup/item_1/text = "P62"
+popup/item_1/id = 1
+popup/item_2/text = "P64"
+popup/item_2/id = 2
+popup/item_3/text = "P66"
+popup/item_3/id = 3
+popup/item_4/text = "P74"
+popup/item_4/id = 4
+popup/item_5/text = "P75"
+popup/item_5/id = 5
+popup/item_6/text = "P76"
+popup/item_6/id = 6
+popup/item_7/text = "P77"
+popup/item_7/id = 7
+popup/item_8/text = "MP03"
+popup/item_8/id = 8
+popup/item_9/text = "MP74"
+popup/item_9/id = 9
+
+[node name="Up" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer" unique_id=625180406]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/Up" unique_id=1283252890]
+layout_mode = 2
+text = "↑"
+
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/Up" unique_id=1830670576]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 2
+popup/item_0/text = "正"
+popup/item_0/id = 0
+popup/item_1/text = "反"
+popup/item_1/id = 1
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/Up" unique_id=381023892]
+layout_mode = 2
+size_flags_horizontal = 8
+item_count = 4
+popup/item_0/text = "增量"
+popup/item_0/id = 0
+popup/item_1/text = "直接"
+popup/item_1/id = 1
+popup/item_2/text = "速度"
+popup/item_2/id = 2
+popup/item_3/text = "增速"
+popup/item_3/id = 3
+
+[node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/Up" unique_id=506944006]
+layout_mode = 2
+
+[node name="OptionButton3" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/Up" unique_id=170878628]
+layout_mode = 2
+item_count = 10
+popup/item_0/text = "P60"
+popup/item_0/id = 0
+popup/item_1/text = "P62"
+popup/item_1/id = 1
+popup/item_2/text = "P64"
+popup/item_2/id = 2
+popup/item_3/text = "P66"
+popup/item_3/id = 3
+popup/item_4/text = "P74"
+popup/item_4/id = 4
+popup/item_5/text = "P75"
+popup/item_5/id = 5
+popup/item_6/text = "P76"
+popup/item_6/id = 6
+popup/item_7/text = "P77"
+popup/item_7/id = 7
+popup/item_8/text = "MP03"
+popup/item_8/id = 8
+popup/item_9/text = "MP74"
+popup/item_9/id = 9
+
+[node name="Down" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer" unique_id=1236925167]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/Down" unique_id=813380061]
+layout_mode = 2
+text = "↓"
+
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/Down" unique_id=1740726943]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 2
+popup/item_0/text = "正"
+popup/item_0/id = 0
+popup/item_1/text = "反"
+popup/item_1/id = 1
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/Down" unique_id=1583012171]
+layout_mode = 2
+size_flags_horizontal = 8
+item_count = 4
+popup/item_0/text = "增量"
+popup/item_0/id = 0
+popup/item_1/text = "直接"
+popup/item_1/id = 1
+popup/item_2/text = "速度"
+popup/item_2/id = 2
+popup/item_3/text = "增速"
+popup/item_3/id = 3
+
+[node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/Down" unique_id=672733205]
+layout_mode = 2
+
+[node name="OptionButton3" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/Down" unique_id=587776377]
+layout_mode = 2
+item_count = 10
+popup/item_0/text = "P60"
+popup/item_0/id = 0
+popup/item_1/text = "P62"
+popup/item_1/id = 1
+popup/item_2/text = "P64"
+popup/item_2/id = 2
+popup/item_3/text = "P66"
+popup/item_3/id = 3
+popup/item_4/text = "P74"
+popup/item_4/id = 4
+popup/item_5/text = "P75"
+popup/item_5/id = 5
+popup/item_6/text = "P76"
+popup/item_6/id = 6
+popup/item_7/text = "P77"
+popup/item_7/id = 7
+popup/item_8/text = "MP03"
+popup/item_8/id = 8
+popup/item_9/text = "MP74"
+popup/item_9/id = 9
+
+[node name="Left" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer" unique_id=1792121710]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/Left" unique_id=928587649]
+layout_mode = 2
+text = "←"
+
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/Left" unique_id=588967578]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 2
+popup/item_0/text = "正"
+popup/item_0/id = 0
+popup/item_1/text = "反"
+popup/item_1/id = 1
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/Left" unique_id=1839809395]
+layout_mode = 2
+size_flags_horizontal = 8
+item_count = 4
+popup/item_0/text = "增量"
+popup/item_0/id = 0
+popup/item_1/text = "直接"
+popup/item_1/id = 1
+popup/item_2/text = "速度"
+popup/item_2/id = 2
+popup/item_3/text = "增速"
+popup/item_3/id = 3
+
+[node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/Left" unique_id=974143318]
+layout_mode = 2
+
+[node name="OptionButton3" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/Left" unique_id=213902817]
+layout_mode = 2
+item_count = 10
+popup/item_0/text = "P60"
+popup/item_0/id = 0
+popup/item_1/text = "P62"
+popup/item_1/id = 1
+popup/item_2/text = "P64"
+popup/item_2/id = 2
+popup/item_3/text = "P66"
+popup/item_3/id = 3
+popup/item_4/text = "P74"
+popup/item_4/id = 4
+popup/item_5/text = "P75"
+popup/item_5/id = 5
+popup/item_6/text = "P76"
+popup/item_6/id = 6
+popup/item_7/text = "P77"
+popup/item_7/id = 7
+popup/item_8/text = "MP03"
+popup/item_8/id = 8
+popup/item_9/text = "MP74"
+popup/item_9/id = 9
+
+[node name="Right" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer" unique_id=210499284]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/Right" unique_id=1952461497]
+layout_mode = 2
+text = "→"
+
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/Right" unique_id=55878365]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 2
+popup/item_0/text = "正"
+popup/item_0/id = 0
+popup/item_1/text = "反"
+popup/item_1/id = 1
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/Right" unique_id=1612993735]
+layout_mode = 2
+size_flags_horizontal = 8
+item_count = 4
+popup/item_0/text = "增量"
+popup/item_0/id = 0
+popup/item_1/text = "直接"
+popup/item_1/id = 1
+popup/item_2/text = "速度"
+popup/item_2/id = 2
+popup/item_3/text = "增速"
+popup/item_3/id = 3
+
+[node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/Right" unique_id=772661873]
+layout_mode = 2
+
+[node name="OptionButton3" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/Right" unique_id=689210703]
+layout_mode = 2
+item_count = 10
+popup/item_0/text = "P60"
+popup/item_0/id = 0
+popup/item_1/text = "P62"
+popup/item_1/id = 1
+popup/item_2/text = "P64"
+popup/item_2/id = 2
+popup/item_3/text = "P66"
+popup/item_3/id = 3
+popup/item_4/text = "P74"
+popup/item_4/id = 4
+popup/item_5/text = "P75"
+popup/item_5/id = 5
+popup/item_6/text = "P76"
+popup/item_6/id = 6
+popup/item_7/text = "P77"
+popup/item_7/id = 7
+popup/item_8/text = "MP03"
+popup/item_8/id = 8
+popup/item_9/text = "MP74"
+popup/item_9/id = 9
+
+[node name="R" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer" unique_id=1925323373]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/R" unique_id=789950277]
+layout_mode = 2
+text = "R"
+
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/R" unique_id=2078809086]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 2
+popup/item_0/text = "正"
+popup/item_0/id = 0
+popup/item_1/text = "反"
+popup/item_1/id = 1
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/R" unique_id=764432170]
+layout_mode = 2
+size_flags_horizontal = 8
+item_count = 4
+popup/item_0/text = "增量"
+popup/item_0/id = 0
+popup/item_1/text = "直接"
+popup/item_1/id = 1
+popup/item_2/text = "速度"
+popup/item_2/id = 2
+popup/item_3/text = "增速"
+popup/item_3/id = 3
+
+[node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/R" unique_id=1772169266]
+layout_mode = 2
+
+[node name="OptionButton3" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/R" unique_id=1462624189]
+layout_mode = 2
+item_count = 10
+popup/item_0/text = "P60"
+popup/item_0/id = 0
+popup/item_1/text = "P62"
+popup/item_1/id = 1
+popup/item_2/text = "P64"
+popup/item_2/id = 2
+popup/item_3/text = "P66"
+popup/item_3/id = 3
+popup/item_4/text = "P74"
+popup/item_4/id = 4
+popup/item_5/text = "P75"
+popup/item_5/id = 5
+popup/item_6/text = "P76"
+popup/item_6/id = 6
+popup/item_7/text = "P77"
+popup/item_7/id = 7
+popup/item_8/text = "MP03"
+popup/item_8/id = 8
+popup/item_9/text = "MP74"
+popup/item_9/id = 9
+
+[node name="Debug" type="VBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer" unique_id=1151350573]
+layout_mode = 2
+metadata/_tab_index = 2
+metadata/_tab_name = "调试"
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug" unique_id=820725019]
+layout_mode = 2
+text = "本模式下适用于元器件的测试和舵机的归中，
+请机械在装车前完成所有舵机的归中。
+在最后一个输入框内输入下面的参数：
+舵机角度∈[-180, 180]，电机速度∈[0, 10000]，
+摩擦轮速度∈[0, 1100]。所有参数不带单位。
+控制命令会逐行进行，
+持续3S（除摩擦轮），间隔1S，
+每个命令开始和完成前会有蜂鸣器提醒。"
+
+[node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug" unique_id=1765331189]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug/HBoxContainer" unique_id=1277362455]
+layout_mode = 2
+text = "P60"
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug/HBoxContainer" unique_id=14265312]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 2
+popup/item_0/text = "电机"
+popup/item_0/id = 0
+popup/item_1/text = "舵机"
+popup/item_1/id = 1
+
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug/HBoxContainer" unique_id=818254343]
+layout_mode = 2
+item_count = 2
+popup/item_0/text = "正"
+popup/item_0/id = 0
+popup/item_1/text = "反"
+popup/item_1/id = 1
+
+[node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug/HBoxContainer" unique_id=1017004804]
+layout_mode = 2
+
+[node name="HBoxContainer2" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug" unique_id=2086650495]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug/HBoxContainer2" unique_id=762037739]
+layout_mode = 2
+text = "P62"
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug/HBoxContainer2" unique_id=2006241851]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 2
+popup/item_0/text = "电机"
+popup/item_0/id = 0
+popup/item_1/text = "舵机"
+popup/item_1/id = 1
+
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug/HBoxContainer2" unique_id=1632311661]
+layout_mode = 2
+item_count = 2
+popup/item_0/text = "正"
+popup/item_0/id = 0
+popup/item_1/text = "反"
+popup/item_1/id = 1
+
+[node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug/HBoxContainer2" unique_id=1016551343]
+layout_mode = 2
+
+[node name="HBoxContainer3" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug" unique_id=818926458]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug/HBoxContainer3" unique_id=672732387]
+layout_mode = 2
+text = "P64"
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug/HBoxContainer3" unique_id=44174657]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 3
+popup/item_0/text = "电机"
+popup/item_0/id = 0
+popup/item_1/text = "舵机"
+popup/item_1/id = 1
+popup/item_2/text = "摩擦轮"
+popup/item_2/id = 2
+
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug/HBoxContainer3" unique_id=1673327507]
+layout_mode = 2
+item_count = 2
+popup/item_0/text = "正"
+popup/item_0/id = 0
+popup/item_1/text = "反"
+popup/item_1/id = 1
+
+[node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug/HBoxContainer3" unique_id=490229119]
+layout_mode = 2
+
+[node name="HBoxContainer4" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug" unique_id=977950952]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug/HBoxContainer4" unique_id=761028558]
+layout_mode = 2
+text = "P66"
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug/HBoxContainer4" unique_id=1489502558]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 3
+popup/item_0/text = "电机"
+popup/item_0/id = 0
+popup/item_1/text = "舵机"
+popup/item_1/id = 1
+popup/item_2/text = "摩擦轮"
+popup/item_2/id = 2
+
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug/HBoxContainer4" unique_id=694716957]
+layout_mode = 2
+item_count = 2
+popup/item_0/text = "正"
+popup/item_0/id = 0
+popup/item_1/text = "反"
+popup/item_1/id = 1
+
+[node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug/HBoxContainer4" unique_id=474675494]
+layout_mode = 2
+
+[node name="HBoxContainer5" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug" unique_id=1726544674]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug/HBoxContainer5" unique_id=1527400887]
+layout_mode = 2
+text = "P74"
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug/HBoxContainer5" unique_id=298515360]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 2
+popup/item_0/text = "电机"
+popup/item_0/id = 0
+popup/item_1/text = "舵机"
+popup/item_1/id = 1
+
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug/HBoxContainer5" unique_id=876864013]
+layout_mode = 2
+item_count = 2
+popup/item_0/text = "正"
+popup/item_0/id = 0
+popup/item_1/text = "反"
+popup/item_1/id = 1
+
+[node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug/HBoxContainer5" unique_id=2323701]
+layout_mode = 2
+
+[node name="HBoxContainer6" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug" unique_id=908931887]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug/HBoxContainer6" unique_id=1788205158]
+layout_mode = 2
+text = "P75"
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug/HBoxContainer6" unique_id=569384888]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 2
+popup/item_0/text = "电机"
+popup/item_0/id = 0
+popup/item_1/text = "舵机"
+popup/item_1/id = 1
+
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug/HBoxContainer6" unique_id=404626904]
+layout_mode = 2
+item_count = 2
+popup/item_0/text = "正"
+popup/item_0/id = 0
+popup/item_1/text = "反"
+popup/item_1/id = 1
+
+[node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug/HBoxContainer6" unique_id=644996224]
+layout_mode = 2
+
+[node name="HBoxContainer7" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug" unique_id=62940978]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug/HBoxContainer7" unique_id=5654646]
+layout_mode = 2
+text = "P76"
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug/HBoxContainer7" unique_id=1276061895]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 2
+popup/item_0/text = "电机"
+popup/item_0/id = 0
+popup/item_1/text = "舵机"
+popup/item_1/id = 1
+
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug/HBoxContainer7" unique_id=376543004]
+layout_mode = 2
+item_count = 2
+popup/item_0/text = "正"
+popup/item_0/id = 0
+popup/item_1/text = "反"
+popup/item_1/id = 1
+
+[node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug/HBoxContainer7" unique_id=1717127934]
+layout_mode = 2
+
+[node name="HBoxContainer8" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug" unique_id=1417620388]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug/HBoxContainer8" unique_id=1838484249]
+layout_mode = 2
+text = "P77"
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug/HBoxContainer8" unique_id=769820587]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 2
+popup/item_0/text = "电机"
+popup/item_0/id = 0
+popup/item_1/text = "舵机"
+popup/item_1/id = 1
+
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug/HBoxContainer8" unique_id=2056616477]
+layout_mode = 2
+item_count = 2
+popup/item_0/text = "正"
+popup/item_0/id = 0
+popup/item_1/text = "反"
+popup/item_1/id = 1
+
+[node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug/HBoxContainer8" unique_id=2073075512]
+layout_mode = 2
+
+[node name="HBoxContainer9" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug" unique_id=842047796]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug/HBoxContainer9" unique_id=157960053]
+layout_mode = 2
+text = "MP03"
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug/HBoxContainer9" unique_id=92277233]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 2
+popup/item_0/text = "电机"
+popup/item_0/id = 0
+popup/item_1/text = "舵机"
+popup/item_1/id = 1
+
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug/HBoxContainer9" unique_id=1675707611]
+layout_mode = 2
+item_count = 2
+popup/item_0/text = "正"
+popup/item_0/id = 0
+popup/item_1/text = "反"
+popup/item_1/id = 1
+
+[node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug/HBoxContainer9" unique_id=1146949985]
+layout_mode = 2
+
+[node name="HBoxContainer10" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug" unique_id=1207290988]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug/HBoxContainer10" unique_id=336641621]
+layout_mode = 2
+text = "MP74"
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug/HBoxContainer10" unique_id=1542299331]
+layout_mode = 2
+size_flags_horizontal = 10
+item_count = 2
+popup/item_0/text = "电机"
+popup/item_0/id = 0
+popup/item_1/text = "舵机"
+popup/item_1/id = 1
+
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug/HBoxContainer10" unique_id=1942660137]
+layout_mode = 2
+item_count = 2
+popup/item_0/text = "正"
+popup/item_0/id = 0
+popup/item_1/text = "反"
+popup/item_1/id = 1
+
+[node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug/HBoxContainer10" unique_id=419524154]
+layout_mode = 2
 
 [node name="CodeZone" type="VBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer" unique_id=2064928565]
 layout_mode = 2
@@ -686,6 +2540,7 @@ text = "C 代码预览"
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
+theme_override_colors/font_readonly_color = Color(0.8745098, 0.8745098, 0.8745098, 1)
 editable = false
 gutters_draw_line_numbers = true
 
@@ -702,6 +2557,7 @@ text = "问题 & 输出"
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
+theme_override_colors/font_readonly_color = Color(0.875, 0.875, 0.875, 1)
 editable = false
 script = ExtResource("2_x4jx1")
 

@@ -50,16 +50,35 @@ const P_TRIGGER: NodePath = KEYSET + "/Trigger/OptionButton"
 const P_TRIGGER_SPEED: NodePath = KEYSET + "/Trigger/Speed"
 const P_TRIGGER_TIME: NodePath = KEYSET + "/Trigger/Time"
 const P_BOOSTER_KEY: NodePath = KEYSET + "/Booster/OptionButton"
+# 调试界面
+const DEBUG: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug"
+# 调试界面各行容器名（P60, P62, P64, P66, P74, P75, P76, P77, MP03, MP74）
+const DEBUG_ROWS: Array = [
+	"HBoxContainer",  "HBoxContainer2",  "HBoxContainer3",  "HBoxContainer4",  "HBoxContainer5",
+	"HBoxContainer6", "HBoxContainer7",  "HBoxContainer8",  "HBoxContainer9",  "HBoxContainer10",
+]
 # 输出
 const P_OUTPUT: NodePath = "VBoxContainer/HBoxContainer/HSplitContainer/CodeZone/VSplitContainer/Output/Output"
 const P_CODE_EDIT: NodePath = "VBoxContainer/HBoxContainer/HSplitContainer/CodeZone/VSplitContainer/Code/CodeEdit"
 # 顶栏按钮
 const P_BUILD_BTN: NodePath = "VBoxContainer/TopPanel/Build"
-# Keil 工具链与步兵项目路径（res:// 在导出后只读，开发期通过 globalize_path 转绝对路径）
-const TOOLCHAIN_DIR: String = "res://stc32g/toolchain"
-const INFANTRY_MDK_DIR: String = "res://stc32g/Projects/ROBOMASTER_INFANTRY/MDK"
-const INFANTRY_MAIN_C: String = "res://stc32g/Projects/ROBOMASTER_INFANTRY/USER/src/main.c"
+# Keil 工具链源路径（res://，打包进 pck，只读）
+const TOOLCHAIN_SRC: String = "res://stc32g/toolchain/Keil_noarm"
+# 工具链解压目标路径（user://，可写，TOOLS.INI 需动态生成绝对路径）
+const TOOLCHAIN_DST: String = "user://keil"
+# 项目模板源路径（res://，只读）
+const PROJECT_SRC: String = "res://stc32g/Projects/ROBOMASTER_INFANTRY"
+# 项目模板解压目标路径（user://，可写 main.c 和日志）
+# 保持 stc32g/ 层级结构，因为 uvproj 用相对路径 ..\..\..\Libraries\ 引用库
+const PROJECT_DST: String = "user://stc32g/Projects/ROBOMASTER_INFANTRY"
+# 库文件源路径（res://，只读）— uvproj 通过 ..\..\..\Libraries\ 相对引用
+const LIBRARIES_SRC: String = "res://stc32g/Libraries"
+# 库文件目标路径（user://，只读使用）
+const LIBRARIES_DST: String = "user://stc32g/Libraries"
+# 编译日志文件名
 const BUILD_LOG_NAME: String = "pie_block_build.log"
+# 工具链版本标记文件（内容变更时触发重新解压）
+const TOOLCHAIN_VERSION: String = "keil_noarm_v1"
 # UV4 可执行文件候选名，按优先级排序：
 # uVision.com 是控制台子系统版本，-b 批处理时不会弹出 GUI 窗口盖住本程序；
 # UV4.exe 是 GUI 子系统版本，会弹窗抢焦点，仅作回退。
@@ -73,9 +92,16 @@ var _build_busy: bool = false
 
 
 func _ready() -> void:
+	# 为 C 代码预览框挂载语法高亮器（状态机正则）
+	var code_edit: Node = get_node_or_null(P_CODE_EDIT)
+	if code_edit is CodeEdit:
+		var hl: SyntaxHighlighter = preload("res://scripts/c_highlighter.gd").new()
+		code_edit.syntax_highlighter = hl
 	# 初始执行一次检查，并在控件变化时实时检查
 	_run_check()
 	_connect_signals()
+	# 初始化调试界面输入框占位提示
+	_update_debug_placeholders()
 
 
 # ------------------------------------------------------------------ 信号连接
@@ -109,6 +135,71 @@ func _connect_signals() -> void:
 	var build_btn: Node = get_node_or_null(P_BUILD_BTN)
 	if build_btn is BaseButton:
 		build_btn.pressed.connect(_on_build_pressed)
+	# 调试界面：驱动类型变化时更新占位提示
+	for row_name in DEBUG_ROWS:
+		var drive_btn: Node = get_node_or_null(NodePath(DEBUG + "/" + row_name + "/OptionButton"))
+		if drive_btn is OptionButton:
+			drive_btn.item_selected.connect(_update_debug_placeholders)
+			drive_btn.item_selected.connect(_run_check)
+	# 调试界面：输入框文本变化时触发检查
+	for row_name in DEBUG_ROWS:
+		var debug_le: Node = get_node_or_null(NodePath(DEBUG + "/" + row_name + "/LineEdit"))
+		if debug_le is LineEdit:
+			debug_le.text_changed.connect(_run_check)
+
+
+# ------------------------------------------------------------------ 调试界面占位提示
+## 根据调试界面各行驱动类型（电机/舵机/摩擦轮）更新输入框占位文本
+func _update_debug_placeholders(_idx: int = -1) -> void:
+	for row_name in DEBUG_ROWS:
+		var drive_btn: Node = get_node_or_null(NodePath(DEBUG + "/" + row_name + "/OptionButton"))
+		var line_edit: Node = get_node_or_null(NodePath(DEBUG + "/" + row_name + "/LineEdit"))
+		if not drive_btn is OptionButton or not line_edit is LineEdit:
+			continue
+		var drive_type: String = drive_btn.get_item_text(drive_btn.selected)
+		var placeholder: String = ""
+		match drive_type:
+			"电机":
+				placeholder = "速度 0~10000"
+			"舵机":
+				placeholder = "角度 -180~180"
+			"摩擦轮":
+				placeholder = "速度 0~1100"
+		line_edit.placeholder_text = placeholder
+
+
+# ------------------------------------------------------------------ 规则：调试界面参数范围
+# 舵机角度 ∈ [-180, 180]，电机速度 ∈ [0, 10000]，摩擦轮速度 ∈ [0, 1100]
+func _check_debug_params(issues: Array) -> void:
+	for row_name in DEBUG_ROWS:
+		var drive_btn: Node = get_node_or_null(NodePath(DEBUG + "/" + row_name + "/OptionButton"))
+		var line_edit: Node = get_node_or_null(NodePath(DEBUG + "/" + row_name + "/LineEdit"))
+		var label_node: Node = get_node_or_null(NodePath(DEBUG + "/" + row_name + "/Label"))
+		if not drive_btn is OptionButton or not line_edit is LineEdit:
+			continue
+		var text: String = line_edit.text.strip_edges()
+		if text.is_empty():
+			continue # 留空时不报
+		var pin_name: String = label_node.text if label_node is Label else row_name
+		var drive_type: String = drive_btn.get_item_text(drive_btn.selected)
+		if not text.is_valid_int():
+			issues.append({"type": "Error",
+				"msg": "调试 %s 参数「%s」不是合法整数" % [pin_name, text]})
+			continue
+		var val: int = text.to_int()
+		match drive_type:
+			"电机":
+				if val < 0 or val > 10000:
+					issues.append({"type": "Error",
+						"msg": "调试 %s 电机速度 %d 超出范围（有效范围 0-10000）" % [pin_name, val]})
+			"舵机":
+				if val < -180 or val > 180:
+					issues.append({"type": "Error",
+						"msg": "调试 %s 舵机角度 %d 超出范围（有效范围 -180~180）" % [pin_name, val]})
+			"摩擦轮":
+				if val < 0 or val > 1100:
+					issues.append({"type": "Error",
+						"msg": "调试 %s 摩擦轮速度 %d 超出范围（有效范围 0-1100）" % [pin_name, val]})
 
 
 # ------------------------------------------------------------------ 检查入口
@@ -120,6 +211,7 @@ func _run_check(_a = null, _b = null) -> void:
 	_check_arrow_trigger_conflict(issues)
 	_check_io_duplicate(issues)
 	_check_gimbal_pin_conflict(issues)
+	_check_debug_params(issues)
 	# 将问题展示到 Output
 	var out: Node = get_node_or_null(P_OUTPUT)
 	if out and out.has_method("set_issues"):
@@ -915,22 +1007,157 @@ func _exit_tree() -> void:
 		_build_thread.wait_to_finish()
 
 
-## res:// 路径转 OS 绝对路径（供 OS.execute / FileAccess 使用）
-func _to_abs(res_path: String) -> String:
-	return ProjectSettings.globalize_path(res_path)
+## res:// 或 user:// 路径转 OS 绝对路径（供 OS.execute / FileAccess 使用）
+func _to_abs(virt_path: String) -> String:
+	return ProjectSettings.globalize_path(virt_path)
 
 
-## 在 stc32g/toolchain/ 探测 Keil 命令行编译器；找不到返回空串
+## 确保工具链和项目模板已从 res://（PCK 只读）解压到 user://（可写）。
+## 首次运行或版本变更时执行全量复制；通过版本标记文件判断是否需要重新解压。
+## 返回 true 表示就绪，false 表示失败（错误信息已 append）。
+func _ensure_deployed() -> bool:
+	var ver_file: String = _to_abs("user://keil/.pie_block_version")
+	var need_extract: bool = true
+	if FileAccess.file_exists(ver_file):
+		var cur_ver: String = FileAccess.get_file_as_string(ver_file).strip_edges()
+		if cur_ver == TOOLCHAIN_VERSION:
+			# 工具链已解压且版本一致，检查关键文件是否还在
+			if FileAccess.file_exists(_to_abs(TOOLCHAIN_DST).path_join("UV4/uVision.com")):
+				need_extract = false
+	if need_extract:
+		if not _extract_toolchain():
+			return false
+	# 项目模板始终确保存在（体积小，不做版本检查）
+	if not DirAccess.dir_exists_absolute(_to_abs(PROJECT_DST)):
+		if not _copy_dir_recursive(PROJECT_SRC, PROJECT_DST):
+			_append_output("[Error] 无法复制项目模板到 user://，请检查磁盘空间")
+			return false
+	# 库文件也需复制（uvproj 用相对路径引用 Libraries）
+	if not DirAccess.dir_exists_absolute(_to_abs(LIBRARIES_DST)):
+		if not _copy_dir_recursive(LIBRARIES_SRC, LIBRARIES_DST):
+			_append_output("[Error] 无法复制库文件到 user://，请检查磁盘空间")
+			return false
+	return true
+
+
+## 从 res://stc32g/toolchain/Keil_noarm 递归复制到 user://keil/
+func _extract_toolchain() -> bool:
+	_append_output("首次运行：正在解压 Keil 工具链到 user://（约 68MB，请稍候）…")
+	var src_abs: String = _to_abs(TOOLCHAIN_SRC)
+	var dst_abs: String = _to_abs(TOOLCHAIN_DST)
+	if not DirAccess.dir_exists_absolute(src_abs):
+		_append_output("[Error] 工具链源目录不存在: %s" % src_abs)
+		return false
+	# 清理旧目录
+	if DirAccess.dir_exists_absolute(dst_abs):
+		_remove_dir_recursive(TOOLCHAIN_DST)
+	if not _copy_dir_recursive(TOOLCHAIN_SRC, TOOLCHAIN_DST):
+		_append_output("[Error] 工具链解压失败")
+		return false
+	# 写入版本标记
+	var vf: FileAccess = FileAccess.open("user://keil/.pie_block_version", FileAccess.WRITE)
+	if vf:
+		vf.store_string(TOOLCHAIN_VERSION)
+		vf.close()
+	_append_output("工具链解压完成")
+	return true
+
+
+## 递归复制目录（res:// -> user:// 或任意路径组合）
+func _copy_dir_recursive(src_path: String, dst_path: String) -> bool:
+	var src_abs: String = _to_abs(src_path)
+	var dst_abs: String = _to_abs(dst_path)
+	if not DirAccess.dir_exists_absolute(dst_abs):
+		var err: int = DirAccess.make_dir_recursive_absolute(dst_abs)
+		if err != OK:
+			push_error("无法创建目录 %s（错误码 %d）" % [dst_abs, err])
+			return false
+	var da: DirAccess = DirAccess.open(src_abs)
+	if da == null:
+		push_error("无法打开源目录: %s" % src_abs)
+		return false
+	da.list_dir_begin()
+	var name: String = da.get_next()
+	while name != "":
+		if name.begins_with("."):
+			name = da.get_next()
+			continue
+		var src_item: String = src_path.path_join(name)
+		var dst_item: String = dst_path.path_join(name)
+		if da.current_is_dir():
+			if not _copy_dir_recursive(src_item, dst_item):
+				da.list_dir_end()
+				return false
+		else:
+			if not _copy_file(src_item, dst_item):
+				da.list_dir_end()
+				return false
+		name = da.get_next()
+	da.list_dir_end()
+	return true
+
+
+## 递归删除目录（user:// 路径）
+func _remove_dir_recursive(dir_path: String) -> void:
+	var abs_path: String = _to_abs(dir_path)
+	var da: DirAccess = DirAccess.open(abs_path)
+	if da == null:
+		return
+	da.list_dir_begin()
+	var name: String = da.get_next()
+	while name != "":
+		if name.begins_with("."):
+			name = da.get_next()
+			continue
+		var item_path: String = dir_path.path_join(name)
+		if da.current_is_dir():
+			_remove_dir_recursive(item_path)
+		else:
+			var item_da: DirAccess = DirAccess.open(_to_abs(dir_path))
+			if item_da:
+				item_da.remove(name)
+		name = da.get_next()
+	da.list_dir_end()
+	# 删除空目录本身：打开父目录，用 remove 删本目录名
+	var parent_path: String = dir_path.get_base_dir()
+	var dir_name: String = dir_path.get_file()
+	var parent_da: DirAccess = DirAccess.open(_to_abs(parent_path))
+	if parent_da:
+		parent_da.remove(dir_name)
+
+
+## 复制单个文件
+func _copy_file(src_path: String, dst_path: String) -> bool:
+	var src_abs: String = _to_abs(src_path)
+	var dst_abs: String = _to_abs(dst_path)
+	var src_f: FileAccess = FileAccess.open(src_abs, FileAccess.READ)
+	if src_f == null:
+		push_error("无法读取: %s" % src_abs)
+		return false
+	var dst_f: FileAccess = FileAccess.open(dst_abs, FileAccess.WRITE)
+	if dst_f == null:
+		push_error("无法写入: %s" % dst_abs)
+		src_f.close()
+		return false
+	var buf_size: int = 65536
+	while src_f.get_position() < src_f.get_length():
+		dst_f.store_buffer(src_f.get_buffer(buf_size))
+	src_f.close()
+	dst_f.close()
+	return true
+
+
+## 在 user://keil/ 中探测 Keil 命令行编译器；找不到返回空串
 ## 优先 uVision.com（控制台子系统，-b 不弹 GUI 窗口），回退 UV4.exe（GUI 子系统，会弹窗）
-## 先查 toolchain 根目录，再深度优先递归扫描子目录
 func _find_uv4() -> String:
-	var dir_abs: String = _to_abs(TOOLCHAIN_DIR)
-	# 优先：toolchain 根目录直接放编译器
+	var dir_abs: String = _to_abs(TOOLCHAIN_DST)
+	# UV4 子目录是标准布局
+	var uv4_dir: String = dir_abs.path_join("UV4")
 	for cand in UV4_CANDIDATES:
-		var direct: String = dir_abs.path_join(cand)
-		if FileAccess.file_exists(direct):
-			return direct
-	# 回退：深度优先递归扫描子目录
+		var candidate: String = uv4_dir.path_join(cand)
+		if FileAccess.file_exists(candidate):
+			return candidate
+	# 回退：深度优先递归扫描
 	return _find_uv4_recursive(dir_abs)
 
 
@@ -950,37 +1177,58 @@ func _find_uv4_recursive(dir_abs: String) -> String:
 					found = candidate
 					break
 			if found == "":
-				# 递归进入子目录
 				found = _find_uv4_recursive(sub_dir)
 		name = da.get_next()
 	da.list_dir_end()
 	return found
 
 
-## 探测 TOOLS.INI：优先编译器同目录，其次编译器上级目录（Keil_v5 根），再 toolchain 根目录
-## 用户布局常见为 Keil_v5/UV4/uVision.com + Keil_v5/TOOLS.INI，故需查上级
-func _find_tools_ini(uv4_abs: String) -> String:
-	var uv4_dir: String = uv4_abs.replace("\\", "/").get_base_dir()
-	# 1) UV4.exe 同目录
-	var candidate: String = uv4_dir.path_join("TOOLS.INI")
-	if FileAccess.file_exists(candidate):
-		return candidate
-	# 2) UV4.exe 上级目录（Keil_v5 根，常见布局）
-	var parent: String = uv4_dir.get_base_dir()
-	if parent != uv4_dir:
-		var parent_candidate: String = parent.path_join("TOOLS.INI")
-		if FileAccess.file_exists(parent_candidate):
-			return parent_candidate
-	# 3) toolchain 根目录
-	var root_candidate: String = _to_abs(TOOLCHAIN_DIR).replace("\\", "/").path_join("TOOLS.INI")
-	if FileAccess.file_exists(root_candidate):
-		return root_candidate
-	return ""
+## 动态生成 TOOLS.INI：PATH 用绝对路径指向 user://keil/C251/
+## TOOLS.INI 必须与 uVision.com 同级或在其上级目录（UV4/ 的上级 = keil/）
+## 注意：Keil C251 的 PATH 必须使用反斜杠（\\），正斜杠会导致
+## "failed to execute C251.EXE" 错误。末尾必须以单个反斜杠结尾。
+func _generate_tools_ini() -> bool:
+	var keil_abs: String = _to_abs(TOOLCHAIN_DST).replace("/", "\\")
+	var c251_path: String = keil_abs + "\\C251\\"
+	var ini_abs: String = keil_abs + "\\TOOLS.INI"
+	# 读取原始 TOOLS.INI 模板（res:// 中的），替换 PATH 行
+	var template_path: String = TOOLCHAIN_SRC.path_join("TOOLS.INI")
+	var template_abs: String = _to_abs(template_path)
+	var content: String = ""
+	if FileAccess.file_exists(template_abs):
+		content = FileAccess.get_file_as_string(template_abs)
+	else:
+		# 无模板则用最小配置
+		content = "[C251]\nPATH=\"\"\nVERSION=5.60\n"
+	# 替换 [C251] 段的 PATH 为绝对路径
+	# 注意：源文件可能是 CRLF 换行，split("\n") 后行末残留 \r，
+	# 因此 strip_edges 必须同时去掉首尾空白（left=true, right=true）
+	var lines: PackedStringArray = content.split("\n", false)
+	var in_c251: bool = false
+	var output_lines: PackedStringArray = PackedStringArray()
+	for line in lines:
+		var stripped: String = line.strip_edges(true, true)
+		if stripped.to_upper() == "[C251]":
+			in_c251 = true
+		elif stripped.begins_with("[") and stripped.ends_with("]") and in_c251:
+			in_c251 = false
+		if in_c251 and stripped.to_upper().begins_with("PATH="):
+			output_lines.append('PATH="%s"' % c251_path)
+		else:
+			output_lines.append(line)
+	var f: FileAccess = FileAccess.open(ini_abs, FileAccess.WRITE)
+	if f == null:
+		push_error("无法写入 TOOLS.INI: %s" % ini_abs)
+		return false
+	f.store_string("\n".join(output_lines) + "\n")
+	f.close()
+	return true
 
 
-## 把最新生成的 main.c 写入步兵项目磁盘文件
+## 把最新生成的 main.c 写入 user://projects/infantry/USER/src/main.c
 func _write_main_c_to_disk(code: String) -> bool:
-	var abs_path: String = _to_abs(INFANTRY_MAIN_C)
+	var main_c_path: String = PROJECT_DST.path_join("USER/src/main.c")
+	var abs_path: String = _to_abs(main_c_path)
 	var f: FileAccess = FileAccess.open(abs_path, FileAccess.WRITE)
 	if f == null:
 		push_error("无法写入 main.c: %s（%s）" % [abs_path, FileAccess.get_open_error()])
@@ -990,45 +1238,46 @@ func _write_main_c_to_disk(code: String) -> bool:
 	return true
 
 
-## 编译按钮回调：写盘 -> 探测工具链 -> 异步编译
+## 编译按钮回调：解压工具链 -> 写盘 -> 生成 TOOLS.INI -> 异步编译
 func _on_build_pressed() -> void:
 	if _build_busy:
 		return # 防重入
+	# 0) 确保工具链和项目模板已解压到 user://
+	_clear_output()
+	if not _ensure_deployed():
+		_append_output("[Error] 工具链初始化失败，无法编译")
+		return
 	# 1) 取 CodeEdit 中最新生成的 main.c（即 _generate_main_c 产物）
 	var code_edit: Node = get_node_or_null(P_CODE_EDIT)
 	var code: String = ""
 	if code_edit is CodeEdit:
 		code = code_edit.text
 	if code.strip_edges().is_empty():
-		# 预览框为空，先刷新一次
 		_run_check()
 		if code_edit is CodeEdit:
 			code = code_edit.text
 		if code.strip_edges().is_empty():
 			_append_output("[Error] 没有可编译的代码，请先完成配置")
 			return
-	# 2) 写入磁盘
+	# 2) 写入磁盘（user://projects/infantry/USER/src/main.c）
 	if not _write_main_c_to_disk(code):
-		_append_output("[Error] 写入 main.c 失败，请检查项目目录权限")
+		_append_output("[Error] 写入 main.c 失败，请检查 user:// 目录权限")
 		return
-	# 3) 探测 UV4.exe
+	# 3) 探测编译器
 	var uv4_abs: String = _find_uv4()
 	if uv4_abs.is_empty():
-		_append_output("[Error] 未在 stc32g/toolchain/ 找到 UV4.exe")
-		_append_output("       请将 Keil 授权的编译器文件（UV4.exe + TOOLS.INI + 依赖 DLL）放入该目录后重试")
+		_append_output("[Error] 未在 user://keil/ 找到 uVision.com / UV4.exe")
+		_append_output("       请尝试删除 user://keil/ 后重新编译（触发重新解压）")
 		return
-	# 3.1) 检查 TOOLS.INI（UV4 需要 [C251] 段配置编译器路径）；缺失则提示但不阻断
-	var tools_ini: String = _find_tools_ini(uv4_abs)
-	if tools_ini.is_empty():
-		_append_output("[Warn] 未在 stc32g/toolchain/ 找到 TOOLS.INI，UV4 可能报错")
-		_append_output("       请确保 TOOLS.INI 与 UV4.exe 同目录，且 [C251] 段首行为 PATH=\"...\\C251\\\"")
+	# 3.1) 生成 TOOLS.INI（动态写入绝对路径）
+	if not _generate_tools_ini():
+		_append_output("[Warn] TOOLS.INI 生成失败，编译可能报错")
 	# 4) 启动异步编译
 	_build_busy = true
 	var btn: Node = get_node_or_null(P_BUILD_BTN)
 	if btn is BaseButton:
 		btn.disabled = true
 		btn.text = "编译中…"
-	_clear_output()
 	_append_output("正在编译…（已写入 main.c，调用 Keil 编译器）")
 	_build_thread = Thread.new()
 	var err: int = _build_thread.start(_build_worker.bind(uv4_abs))
@@ -1043,16 +1292,14 @@ func _on_build_pressed() -> void:
 ## 编译工作线程：执行 Keil 编译器 -b，读日志，完成后回主线程
 ## 注意：子线程禁止访问 UI 节点，结果通过 call_deferred 传递
 func _build_worker(uv4_abs: String) -> void:
-	# OS.execute 不支持设置工作目录，且 Godot 进程 cwd 是项目根而非 MDK，
-	# 因此 .uvproj 与日志均用绝对路径传给编译器；路径转反斜杠以兼容 Windows 原生程序。
-	# 编译器（uVision.com/UV4.exe）通过自身 exe 位置查找 TOOLS.INI，不依赖 cwd。
-	var mdk_abs: String = _to_abs(INFANTRY_MDK_DIR).replace("/", "\\")
+	# 项目模板已在 user://projects/infantry/，可写 main.c 和日志
+	var mdk_abs: String = _to_abs(PROJECT_DST).path_join("MDK").replace("/", "\\")
 	var uvproj_abs: String = mdk_abs + "\\Project_Template.uvproj"
 	var log_abs: String = mdk_abs + "\\" + BUILD_LOG_NAME
 	var uv4_win: String = uv4_abs.replace("/", "\\")
 	var output: Array = []
 	var exit_code: int = OS.execute(uv4_win, ["-b", uvproj_abs, "-o", log_abs], output, true)
-	# 读取编译日志（子线程可读文件；反斜杠路径 FileAccess 同样接受）
+	# 读取编译日志
 	var log_text: String = ""
 	if FileAccess.file_exists(log_abs):
 		log_text = FileAccess.get_file_as_string(log_abs)
