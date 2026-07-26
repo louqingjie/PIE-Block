@@ -187,7 +187,7 @@ func _test_gimbal_geometry(packed: PackedScene) -> void:
 	sim._yaw_deg = 0.0
 	sim._pitch_deg = 0.0
 	sim._render_robot()
-	var dir: Vector3 = -sim._muzzle.global_transform.basis.z.normalized()
+	var dir: Vector3 = - sim._muzzle.global_transform.basis.z.normalized()
 	_check("归中时枪口朝车头（-Z）", dir.z < -0.999, "dir=%s" % str(dir))
 	_check("枪口在底盘板之上",
 		sim._muzzle.global_position.y > 0.06 and sim._muzzle.global_position.y < 0.2,
@@ -195,19 +195,19 @@ func _test_gimbal_geometry(packed: PackedScene) -> void:
 	# Pitch 正角度应抬头
 	sim._pitch_deg = 30.0
 	sim._render_robot()
-	dir = -sim._muzzle.global_transform.basis.z.normalized()
+	dir = - sim._muzzle.global_transform.basis.z.normalized()
 	_check("Pitch +30° 抬头", dir.y > 0.4, "dir=%s" % str(dir))
 	_check("Pitch +30° 仰角约 30°", absf(rad_to_deg(asin(dir.y)) - 30.0) < 0.5,
 		"仰角 %.1f°" % rad_to_deg(asin(dir.y)))
 	sim._pitch_deg = -30.0
 	sim._render_robot()
-	dir = -sim._muzzle.global_transform.basis.z.normalized()
+	dir = - sim._muzzle.global_transform.basis.z.normalized()
 	_check("Pitch -30° 低头", dir.y < -0.4, "dir=%s" % str(dir))
 	# Yaw 正角度应向右（+X）
 	sim._pitch_deg = 0.0
 	sim._yaw_deg = 45.0
 	sim._render_robot()
-	dir = -sim._muzzle.global_transform.basis.z.normalized()
+	dir = - sim._muzzle.global_transform.basis.z.normalized()
 	_check("Yaw +45° 云台向右（+X）", dir.x > 0.4, "dir=%s" % str(dir))
 	_check("Yaw +45° 偏角约 45°",
 		absf(rad_to_deg(atan2(dir.x, -dir.z)) - 45.0) < 0.5,
@@ -216,7 +216,7 @@ func _test_gimbal_geometry(packed: PackedScene) -> void:
 	sim._yaw_deg = 0.0
 	sim._heading = deg_to_rad(90.0)
 	sim._render_robot()
-	dir = -sim._muzzle.global_transform.basis.z.normalized()
+	dir = - sim._muzzle.global_transform.basis.z.normalized()
 	_check("车身左转 90° 后枪口朝 -X", dir.x < -0.999, "dir=%s" % str(dir))
 	_despawn(sim)
 
@@ -346,9 +346,10 @@ func _test_turn_direction(packed: PackedScene) -> void:
 			"heading=%.3f" % sim._heading)
 		# 右方向键 -> 向右转（必须与摇杆同向）
 		sim._reset_pose()
+		sim._roker[0][0] = 0
+		sim._roker[0][1] = 0
 		for i in range(60):
-			sim._roker[0][0] = 0
-			sim._roker[0][1] = 0
+			sim._key[0][2] = 0
 			sim._key[0][3] = 1
 			sim._calculate_motor_controls()
 			sim._integrate_chassis()
@@ -358,6 +359,7 @@ func _test_turn_direction(packed: PackedScene) -> void:
 		sim._reset_pose()
 		for i in range(60):
 			sim._key[0][2] = 1
+			sim._key[0][3] = 0
 			sim._calculate_motor_controls()
 			sim._integrate_chassis()
 		_check("%s：左方向键 = 向左转" % tag, sim._heading > 0.01,
@@ -366,6 +368,7 @@ func _test_turn_direction(packed: PackedScene) -> void:
 		sim._reset_pose()
 		for i in range(60):
 			sim._key[0][2] = 0
+			sim._key[0][3] = 0
 			sim._roker[0][1] = 2047
 			sim._calculate_motor_controls()
 			sim._integrate_chassis()

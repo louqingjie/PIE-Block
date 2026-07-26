@@ -608,9 +608,9 @@ func _read_controller_inputs() -> void:
 		var pad: int = pads[0]
 		lx = Input.get_joy_axis(pad, JOY_AXIS_LEFT_X)
 		# Godot 摇杆竖直向下为正，手柄推前应对应 baseSpeed 为正
-		ly = -Input.get_joy_axis(pad, JOY_AXIS_LEFT_Y)
+		ly = - Input.get_joy_axis(pad, JOY_AXIS_LEFT_Y)
 		rx = Input.get_joy_axis(pad, JOY_AXIS_RIGHT_X)
-		ry = -Input.get_joy_axis(pad, JOY_AXIS_RIGHT_Y)
+		ry = - Input.get_joy_axis(pad, JOY_AXIS_RIGHT_Y)
 		for btn in PAD_BUTTON_TO_ID.keys():
 			if Input.is_joy_button_pressed(pad, btn):
 				pressed[PAD_BUTTON_TO_ID[btn]] = true
@@ -852,7 +852,7 @@ func _integrate_chassis() -> void:
 	var dt: float = SIM_STEP_MS / 1000.0
 	var linear: float = float(_base_speed) / 10000.0 * _speed_scale
 	# turnSpeed > 0 = 向右转；heading 绕 +Y，正值 = 向左，故取负
-	var omega: float = -float(_turn_speed) / 10000.0 * deg_to_rad(_turn_rate)
+	var omega: float = - float(_turn_speed) / 10000.0 * deg_to_rad(_turn_rate)
 	_heading += omega * dt
 	_heading = wrapf(_heading, -PI, PI)
 	# 车头朝 -Z
@@ -939,7 +939,7 @@ func _fire() -> void:
 	holder.add_child(body)
 	body.global_transform = Transform3D(Basis(), xf.origin)
 	# 枪口朝向就是 -Z
-	body.linear_velocity = -xf.basis.z.normalized() * speed
+	body.linear_velocity = - xf.basis.z.normalized() * speed
 	var trail: PackedVector3Array = PackedVector3Array()
 	trail.append(xf.origin)
 	_bullets.append({
@@ -1276,29 +1276,29 @@ func _build_operate_params(parent: Node) -> void:
 	_add_slider_row(parent, "level", "目标档位 duty", float(BOOSTER_DUTY_MIN),
 		float(BOOSTER_DUTY_MAX), float(_level_duty_booster), 10.0)
 	_add_note(parent, "对应 C 侧 levelDutyOfBooster，真机用 B/C 键 ±100 调。"
-		+ "上限 1100 是《RM电控指南》规定，不得提高。"
-		+ "\n开关键 %s 上升沿翻转，占空比每秒最多变化 100（10ms 周期步长 1）。"
+		+"上限 1100 是《RM电控指南》规定，不得提高。"
+		+"\n开关键 %s 上升沿翻转，占空比每秒最多变化 100（10ms 周期步长 1）。"
 			% str(_cfg.get("booster_key", "A")))
 	_add_section(parent, "弹丸初速映射")
 	_add_slider_row(parent, "vlo", "duty 500 时 (m/s)", 1.0, 30.0, _muzzle_v_lo, 0.5)
 	_add_slider_row(parent, "vhi", "duty 1100 时 (m/s)", 1.0, 40.0, _muzzle_v_hi, 0.5)
 	_add_note(parent, "17mm 弹丸，直径 %.0fmm、质量 %.1fg。初速按摩擦轮占空比线性插值，"
 		% [BULLET_RADIUS * 2000.0, BULLET_MASS * 1000.0]
-		+ "占空比不到 500 时只会「掉弹」。这两个端点是估值，不是实测标定。")
+		+"占空比不到 500 时只会「掉弹」。这两个端点是估值，不是实测标定。")
 	_add_section(parent, "底盘速度标定")
 	_add_slider_row(parent, "spdscale", "10000 duty → m/s", 0.2, 6.0, _speed_scale, 0.1)
 	_add_slider_row(parent, "turnrate", "10000 duty → °/s", 30.0, 900.0, _turn_rate, 10.0)
 	_add_note(parent, "这两个系数只影响仿真观感，不进代码生成，默认值是估值而非实测。"
-		+ "\n车身 %.0f×%.0f cm，轮径 %.0f cm。"
+		+"\n车身 %.0f×%.0f cm，轮径 %.0f cm。"
 			% [CHASSIS_LEN * 100.0, CHASSIS_WIDTH * 100.0, WHEEL_RADIUS * 200.0])
 	_add_section(parent, "按键映射（手柄 / 键盘）")
 	_add_note(parent, _keymap_text())
 	_add_section(parent, "与真机的对应关系")
 	_add_note(parent, "本模式每 10ms 走一趟，逐字对应生成的 C 主循环："
-		+ "读输入 → 底盘差速 → 云台积分 → 摩擦轮开关 → 限幅 → 单发拨弹 → 摩擦轮渐变。"
-		+ "\n单发拨弹期间 C 端在 Ms_Delay 里阻塞主循环 %d ms，仿真里同样会整车停摆，"
+		+"读输入 → 底盘差速 → 云台积分 → 摩擦轮开关 → 限幅 → 单发拨弹 → 摩擦轮渐变。"
+		+"\n单发拨弹期间 C 端在 Ms_Delay 里阻塞主循环 %d ms，仿真里同样会整车停摆，"
 			% _trigger_time_ms
-		+ "这就是真机连发时手感发顿的原因。")
+		+"这就是真机连发时手感发顿的原因。")
 
 
 func _keymap_text() -> String:
@@ -1321,7 +1321,7 @@ func _build_calib_params(parent: Node) -> void:
 	_add_section(parent, "云台归中角（相对舵机中位的偏移角）")
 	if not _yaw_is_servo and not _pitch_is_servo:
 		_add_note(parent, "Yaw 与 Pitch 都配成了电机驱动，没有归中角可标。"
-			+ "电机没有位置反馈，中位只能靠机械限位。")
+			+"电机没有位置反馈，中位只能靠机械限位。")
 		return
 	var lim: float = float(CodeGenBase.SERVO_MAX_OFFSET_DEG)
 	if _yaw_is_servo:
@@ -1331,11 +1331,11 @@ func _build_calib_params(parent: Node) -> void:
 		_add_slider_row(parent, "pitchmid", "Pitch 归中角 (°)", -lim, lim,
 			float(_gp["pitch_mid_deg"]), 1.0)
 	_add_note(parent, "舵机盘装歪时用：拖滑块把云台摆到「舵机处于中位时它实际的朝向」，"
-		+ "数值会实时回填到配置界面的归中角输入框。"
-		+ "\n摆动幅度 ±%d°，限幅边界 Yaw [%d, %d] / Pitch [%d, %d]（占空比），"
+		+"数值会实时回填到配置界面的归中角输入框。"
+		+"\n摆动幅度 ±%d°，限幅边界 Yaw [%d, %d] / Pitch [%d, %d]（占空比），"
 			% [int(_gp["swing_deg"]), int(_gp["yaw_lo"]), int(_gp["yaw_hi"]),
 				int(_gp["pitch_lo"]), int(_gp["pitch_hi"])]
-		+ "已同时收敛到舵机物理行程 [%d, %d] 之内。"
+		+"已同时收敛到舵机物理行程 [%d, %d] 之内。"
 			% [CodeGenBase.SERVO_DUTY_MIN, CodeGenBase.SERVO_DUTY_MAX])
 
 
@@ -1347,7 +1347,7 @@ func _update_status() -> void:
 	var lines: Array = []
 	lines.append("摇杆 左(%+5d, %+5d) 右(%+5d, %+5d)   死区 %d" % [
 		_roker[0][0], _roker[0][1], _roker[1][0], _roker[1][1], _deadzone])
-	var v: float = (-(float(_duty_motor[0]) + float(_duty_motor[1])) * 0.5
+	var v: float = (- (float(_duty_motor[0]) + float(_duty_motor[1])) * 0.5
 		- (float(_duty_motor[2]) + float(_duty_motor[3])) * 0.5) * 0.5 / 10000.0 * _speed_scale
 	lines.append("baseSpeed=%d turnSpeed=%d  →  车速 %.2f m/s   航向 %.0f°" % [
 		_base_speed, _turn_speed, v, rad_to_deg(_heading)])

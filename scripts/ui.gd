@@ -104,12 +104,15 @@ const ENG_KEY_LABELS: Array = [
 ]
 # 工程逆解算界面（Tab 2）
 const IK: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced"
+## 关节数下拉（选项 0..4 对应 2..6 个关节）。
+## 旧版是「2轴/3轴/4轴」固定构型，现在轴类型由各关节自己选。
 const P_IK_CONFIG_TYPE: NodePath = IK + "/ConfigType/OptionButton"
-const P_IK_L1: NodePath = IK + "/LinkLength/L1"
-const P_IK_L2: NodePath = IK + "/LinkLength/L2"
-const P_IK_L3: NodePath = IK + "/LinkLength/L3"
+## 关节数上下限（上限依据 STC32G 浮点预算实测，见 CodeGenEngineerIK.MAX_JOINTS）
+const IK_MIN_JOINTS: int = 2
+const IK_MAX_JOINTS: int = 6
 # 关节行（Joint1~Joint4），每行子节点：IO/Dir/Zero/Min/Max
-const IK_JOINT_ROWS: Array = ["Joint1", "Joint2", "Joint3", "Joint4"]
+const IK_JOINT_ROWS: Array = ["Joint1", "Joint2", "Joint3", "Joint4",
+	"Joint5", "Joint6"]
 # 预设点位行（Preset1~Preset4），每行子节点：Key/X/Y/Z/Phi
 const IK_PRESET_ROWS: Array = ["Preset1", "Preset2", "Preset3", "Preset4"]
 const P_IK_JOY_X: NodePath = IK + "/JoystickMap/XAxis"
@@ -153,6 +156,8 @@ const PROJECT_GATED_BTNS: Array = [
 const P_AI_EDIT_BTN: NodePath = "VBoxContainer/TopPanel/AIEdit"
 # AI 代码编辑器场景
 const AI_EDIT_SCENE: String = "res://scenes/code_edit.tscn"
+# 启动页（新建 / 打开项目都在那里做）
+const LAUNCHER_SCENE: String = "res://scenes/launcher.tscn"
 # 3D 仿真入口
 const P_ARM_SIM_BTN: NodePath = "VBoxContainer/TopPanel/ArmSim"
 # 3D 仿真场景（作为子节点覆盖显示，避免切场景丢失整页配置状态）
@@ -187,6 +192,8 @@ var _loading: bool = false
 var _dirty: bool = false
 ## 阶段二的只读预览态：任何配置改动都会先回滚再弹确认
 var _stage2_preview: bool = false
+## 阶段二回滚用的基准配置（已与默认值合并过，缺项也能回滚干净）
+var _frozen_config: Dictionary = {}
 ## 已经弹过「继续修改将丢弃 AI 代码」确认框，避免连点堆叠弹窗
 var _discard_dialog_open: bool = false
 
@@ -203,6 +210,8 @@ func _ready() -> void:
 	_update_debug_placeholders()
 	# 初始化工程界面参数框占位提示
 	_update_engineer_placeholders()
+	# 按默认关节数显隐逆解界面的关节行
+	_update_ik_joint_rows()
 	_connect_signals()
 	# 恢复 / 初始化项目上下文（会自行触发 _run_check）
 	_restore_project_context()
@@ -288,24 +297,28 @@ func _connect_signals() -> void:
 		var debug_le: Node = get_node_or_null(NodePath(DEBUG +"/"+ row_name +"/LineEdit"))
 		if debug_le is LineEdit:
 			debug_le.text_changed.connect(_run_check)
-	# 工程逆解算界面：构型/连杆长度变化触发检查
-	for p in [P_IK_CONFIG_TYPE, P_IK_JOY_X, P_IK_JOY_Y, P_IK_JOY_Z]:
+	# 工程逆解算界面：摇杆映射变化触发检查
+	for p in [P_IK_JOY_X, P_IK_JOY_Y, P_IK_JOY_Z]:
 		var ik_opt: Node = get_node_or_null(p)
 		if ik_opt is OptionButton:
 			ik_opt.item_selected.connect(_run_check)
-	for p in [P_IK_L1, P_IK_L2, P_IK_L3, P_IK_JOY_SCALE, P_IK_KEYMOVE_SPEED]:
+	# 关节数变化：除了重跑检查，还要显隐对应的关节行
+	var jc_btn: Node = get_node_or_null(P_IK_CONFIG_TYPE)
+	if jc_btn is OptionButton:
+		jc_btn.item_selected.connect(_on_ik_joint_count_changed)
+	for p in [P_IK_JOY_SCALE, P_IK_KEYMOVE_SPEED]:
 		var ik_le: Node = get_node_or_null(p)
 		if ik_le is LineEdit:
 			ik_le.text_changed.connect(_run_check)
-	# 工程逆解算界面：各关节 IO/方向变化触发检查
+	# 工程逆解算界面：各关节 IO/方向/转轴变化触发检查
 	for row_name in IK_JOINT_ROWS:
-		for child in ["IO", "Dir"]:
+		for child in ["IO", "Dir", "Axis"]:
 			var joint_btn: Node = get_node_or_null(NodePath(IK +"/"+ row_name +"/"+ child))
 			if joint_btn is OptionButton:
 				joint_btn.item_selected.connect(_run_check)
 	# 工程逆解算界面：各关节输入框文本变化触发检查
 	for row_name in IK_JOINT_ROWS:
-		for child in ["Offset", "Zero", "Min", "Max"]:
+		for child in ["Len", "Offset", "Zero", "Min", "Max"]:
 			var joint_le: Node = get_node_or_null(NodePath(IK +"/"+ row_name +"/"+ child))
 			if joint_le is LineEdit:
 				joint_le.text_changed.connect(_run_check)
@@ -371,12 +384,24 @@ func _snapshot_node(node: Node, zone: Node, out: Dictionary) -> void:
 ## OptionButton 同时存索引和文本：选项顺序变了还能按文本找回。
 func _control_value(node: Node) -> Variant:
 	if node is OptionButton:
-		return {"i": node.selected, "s": _option_text(node)}
+		return {"i": _option_index(node), "s": _option_text(node)}
 	if node is LineEdit:
 		return {"t": node.text}
 	if node is BaseButton and node.toggle_mode:
 		return {"b": node.button_pressed}
 	return null
+
+
+## OptionButton 的有效索引。场景没写 selected 属性时它是 -1，
+## 但界面显示的是第 0 项（_option_text 也按第 0 项回退）。
+## 存 -1 会让「快照 -> 回填 -> 再快照」得到 0 而对不上，故这里统一归一化。
+func _option_index(btn: OptionButton) -> int:
+	if btn.item_count <= 0:
+		return -1
+	var idx: int = btn.selected
+	if idx < 0 or idx >= btn.item_count:
+		return 0
+	return idx
 
 
 ## 把配置写回控件。期间 _loading = true，抑制检查与改动判定，
@@ -459,34 +484,34 @@ func _mark_dirty() -> void:
 # ==================================================================
 # 项目生命周期（新建 / 打开 / 保存）
 # ==================================================================
-## 启动或从 AI 编辑器返回时恢复项目上下文
+## 启动或从 AI 编辑器返回时恢复项目上下文。
+##
+## 没有项目上下文时**保持老的自由编辑行为**（全部 Tab 可见、控件可编辑）。
+## 正常流程一定从 launcher.tscn 带着项目进来，走到这个分支只有两种情况：
+## 开发时直接运行 ui.tscn，或项目文件读不出来。两种都不该把界面锁死。
 func _restore_project_context() -> void:
-	# 在 AI 编辑器里点了「新建 / 打开」，切回本场景后继续执行
+	# 在 AI 编辑器里点了「新建 / 打开」：直接回启动页
 	var pending: String = AppState.take_pending_action()
+	if pending == "create" or pending == "open":
+		_go_to_launcher()
+		return
 	if not AppState.has_project():
 		_apply_no_project_state()
-		if pending == "create":
-			_on_create_pressed()
-		elif pending == "open":
-			_on_open_pressed()
 		return
 	var res: Dictionary = PF.load_from(AppState.project_path)
 	if not res["ok"]:
-		_append_output("[Error] 无法读取项目：%s" % res["err"])
 		AppState.reset()
 		_apply_no_project_state()
+		_append_output("[Error] 无法读取项目：%s" % res["err"])
 		return
 	_adopt_project(res["data"], AppState.project_path)
 	if AppState.stage >= 2:
 		# 阶段二回到图形化界面：只能预览
 		_notify_stage2_preview()
-	if pending == "create":
-		_on_create_pressed()
-	elif pending == "open":
-		_on_open_pressed()
 
 
-## 无项目时的界面状态：Tab 全隐藏，顶栏只留 新建 / 打开
+## 无项目上下文时的界面状态 = 老的自由编辑模式。
+## 不禁用任何东西，只是标题上说明一下、编译等操作退化成按 Tab 猜构型。
 func _apply_no_project_state() -> void:
 	_project = {}
 	_stage2_preview = false
@@ -494,14 +519,11 @@ func _apply_no_project_state() -> void:
 	var tab_container: Node = get_node_or_null(P_TAB_CONTAINER)
 	if tab_container is TabContainer:
 		for i in range(tab_container.get_tab_count()):
-			tab_container.set_tab_hidden(i, true)
-	_set_gated_buttons_disabled(true)
+			tab_container.set_tab_hidden(i, false)
+	_set_gated_buttons_disabled(false)
+	_set_config_enabled(true)
 	_update_title()
-	_clear_output()
-	_append_output("请先「新建」或「打开」一个项目")
-	var ce: Node = get_node_or_null(P_CODE_EDIT)
-	if ce is CodeEdit:
-		ce.text = ""
+	_run_check()
 
 
 func _set_gated_buttons_disabled(disabled: bool) -> void:
@@ -509,6 +531,22 @@ func _set_gated_buttons_disabled(disabled: bool) -> void:
 		var btn: Node = get_node_or_null(NodePath(path))
 		if btn is BaseButton:
 			btn.disabled = disabled
+
+
+## 整个配置区可否编辑（无项目时全部禁用）
+func _set_config_enabled(enabled: bool) -> void:
+	var zone: Node = get_node_or_null(P_EDIT_ZONE)
+	if zone != null:
+		_set_node_tree_enabled(zone, enabled)
+
+
+func _set_node_tree_enabled(node: Node, enabled: bool) -> void:
+	for child in node.get_children():
+		if child is LineEdit:
+			child.editable = enabled
+		elif child is BaseButton:
+			child.disabled = not enabled
+		_set_node_tree_enabled(child, enabled)
 
 
 ## 把一份项目数据装载进界面
@@ -521,11 +559,13 @@ func _adopt_project(data: Dictionary, path: String) -> void:
 	AppState.project_dst = AppState.project_dst_for_kind(kind)
 	AppState.source_tab = int(data["active_tab"])
 	_set_gated_buttons_disabled(false)
+	_set_config_enabled(true)
 	_apply_kind_visibility(kind, int(data["active_tab"]))
 	# 配置回填：缺项由默认值兜底，避免旧存档少字段时控件停在上个项目的值
 	var cfg: Dictionary = _default_config.duplicate(true)
 	cfg.merge(data["config"] as Dictionary, true)
 	_apply_config(cfg)
+	_frozen_config = cfg
 	_stage2_preview = int(data["stage"]) >= 2
 	_dirty = false
 	_update_title()
@@ -551,7 +591,7 @@ func _update_title() -> void:
 	if not label is Label:
 		return
 	if _project.is_empty():
-		label.text = "未打开项目"
+		label.text = "未打开项目（自由编辑）"
 		return
 	var kind: String = str(_project["kind"])
 	var stage: int = int(_project["stage"])
@@ -563,92 +603,46 @@ func _update_title() -> void:
 	]
 
 
-# ------------------------------------------------------------------ 新建
+# ------------------------------------------------------------------ 新建 / 打开
+## 新建与打开都在启动页（launcher.tscn）里做，这里只负责回去。
+## 项目管理与图形化配置分层，主界面不必关心项目从哪来。
 func _on_create_pressed() -> void:
-	_confirm_discard_unsaved(_show_kind_picker)
+	_confirm_discard_unsaved(_go_to_launcher)
 
 
-## 项目类型三选一。类型只在这里写入，之后没有任何转换入口。
-func _show_kind_picker() -> void:
-	var dlg := AcceptDialog.new()
-	dlg.title = "新建项目"
-	dlg.dialog_hide_on_ok = true
-	dlg.get_ok_button().text = "取消"
-	var box := VBoxContainer.new()
-	var tip := Label.new()
-	tip.text = "选择项目类型。类型在新建时确定，之后不能更改。"
-	box.add_child(tip)
-	for kind in PF.KINDS:
-		var btn := Button.new()
-		btn.text = PF.kind_label(kind)
-		btn.custom_minimum_size = Vector2(220, 0)
-		btn.pressed.connect(func() -> void:
-			dlg.hide()
-			_create_project_of_kind(kind))
-		box.add_child(btn)
-	dlg.add_child(box)
-	add_child(dlg)
-	dlg.close_requested.connect(dlg.queue_free)
-	dlg.confirmed.connect(dlg.queue_free)
-	dlg.popup_centered()
-
-
-## 选定类型后立即要求选保存位置，落盘成功才算新建完成
-func _create_project_of_kind(kind: String) -> void:
-	_pick_save_path(func(path: String) -> void:
-		var data: Dictionary = PF.new_data(kind)
-		# 新项目从场景默认值开始
-		data["config"] = _default_config.duplicate(true)
-		var res: Dictionary = PF.save_to(path, data)
-		if not res["ok"]:
-			_clear_output()
-			_append_output("[Error] 新建失败：%s" % res["err"])
-			return
-		AppState.reset()
-		_adopt_project(data, path)
-		_clear_output()
-		_append_output("已新建%s项目：%s" % [PF.kind_label(kind), path])
-		# 生成一次代码并回写，让 .pieproj 里立刻有阶段一产物
-		_save_project(false))
-
-
-# ------------------------------------------------------------------ 打开
 func _on_open_pressed() -> void:
-	_confirm_discard_unsaved(func() -> void:
-		var dlg := FileDialog.new()
-		dlg.file_mode = FileDialog.FILE_MODE_OPEN_FILE
-		dlg.access = FileDialog.ACCESS_FILESYSTEM
-		dlg.use_native_dialog = true
-		dlg.title = "打开项目"
-		dlg.add_filter("*." + PF.EXT, "PIE Block 项目")
-		dlg.file_selected.connect(_open_project_at)
-		add_child(dlg)
-		dlg.popup_centered_ratio(0.7))
+	_confirm_discard_unsaved(_go_to_launcher)
 
 
-func _open_project_at(path: String) -> void:
-	var res: Dictionary = PF.load_from(path)
-	_clear_output()
+func _go_to_launcher() -> void:
+	get_tree().change_scene_to_file(LAUNCHER_SCENE)
+
+
+## 在当前界面直接创建项目。仅供测试与直跑本场景时用，
+## 正常流程走 launcher.tscn。
+func _create_project_at(kind: String, path: String) -> bool:
+	var data: Dictionary = PF.new_data(kind)
+	# 新项目从场景默认值开始
+	data["config"] = _default_config.duplicate(true)
+	var res: Dictionary = PF.save_to(path, data)
 	if not res["ok"]:
-		_append_output("[Error] 项目文件无法读取：%s" % res["err"])
-		return
+		_clear_output()
+		_append_output("[Error] 新建失败：%s" % res["err"])
+		return false
 	AppState.reset()
-	_adopt_project(res["data"], path)
-	_append_output("已打开项目：%s" % path)
-	if int(_project["stage"]) >= 2:
-		_notify_stage2_preview()
+	_adopt_project(data, path)
+	_clear_output()
+	_append_output("已新建%s项目：%s" % [PF.kind_label(kind), path])
+	# 生成一次代码并回写，让 .pieproj 里立刻有阶段一产物
+	_save_project(false)
+	return true
 
 
 # ------------------------------------------------------------------ 保存
 func _on_save_pressed() -> void:
 	if _project.is_empty():
 		_clear_output()
-		_append_output("[Warn] 当前没有项目，请先「新建」")
-		return
-	if AppState.project_path.is_empty():
-		_pick_save_path(func(path: String) -> void:
-			AppState.project_path = path
-			_save_project(true))
+		_append_output("[Warn] 当前没有项目，请回到启动页新建或打开")
 		return
 	_save_project(true)
 
@@ -686,21 +680,6 @@ func _current_preview_code() -> String:
 
 
 # ------------------------------------------------------------------ 对话框
-## 弹原生保存对话框选 .pieproj 路径，选定后回调
-func _pick_save_path(on_picked: Callable) -> void:
-	var dlg := FileDialog.new()
-	dlg.file_mode = FileDialog.FILE_MODE_SAVE_FILE
-	dlg.access = FileDialog.ACCESS_FILESYSTEM
-	dlg.use_native_dialog = true
-	dlg.title = "保存项目"
-	dlg.add_filter("*." + PF.EXT, "PIE Block 项目")
-	dlg.current_file = "未命名." + PF.EXT
-	dlg.file_selected.connect(func(path: String) -> void:
-		on_picked.call(PF.ensure_ext(path)))
-	add_child(dlg)
-	dlg.popup_centered_ratio(0.7)
-
-
 ## 有未保存改动时先问一句，再执行后续动作
 func _confirm_discard_unsaved(then: Callable) -> void:
 	if not _dirty or _project.is_empty():
@@ -741,7 +720,7 @@ func _prompt_discard_ai_code() -> void:
 	if _discard_dialog_open:
 		return
 	_discard_dialog_open = true
-	_apply_config(_project["config"] as Dictionary)
+	_apply_config(_frozen_config)
 	var dlg := ConfirmationDialog.new()
 	dlg.title = "确认修改图形化配置"
 	dlg.dialog_text = "继续修改将丢弃 AI 编辑的代码，项目回到图形化配置阶段。\n"\
@@ -1151,32 +1130,46 @@ func _collect_debug_config() -> Array:
 
 
 # ------------------------------------------------------------------ 工程逆解算：配置收集
-## 构型索引 -> 关节数（2/3/4）
-func _ik_joint_count(config_type_idx: int) -> int:
-	match config_type_idx:
-		0: return 2
-		1: return 3
-		2: return 4
-	return 2
+## 下拉选项索引 -> 关节数。0 对应 2 个关节，以此类推至 6。
+func _ik_joint_count(idx: int) -> int:
+	return clampi(idx + IK_MIN_JOINTS, IK_MIN_JOINTS, IK_MAX_JOINTS)
+
+
+## 关节数变化：显隐关节行后重跑检查
+func _on_ik_joint_count_changed(_idx: int = -1) -> void:
+	_update_ik_joint_rows()
+	_run_check()
+
+
+## 只显示当前关节数用到的关节行。多余的行留在场景里但隐藏，
+## 这样切换关节数时用户已填的内容不会丢。
+func _update_ik_joint_rows() -> void:
+	var btn: Node = get_node_or_null(P_IK_CONFIG_TYPE)
+	var jc: int = _ik_joint_count(btn.selected if btn is OptionButton else 1)
+	for i in range(IK_JOINT_ROWS.size()):
+		var row: Node = get_node_or_null(NodePath(IK + "/" + IK_JOINT_ROWS[i]))
+		if row is Control:
+			row.visible = i < jc
 
 
 ## 收集工程逆解算界面配置，返回字典供代码生成使用
 func _collect_ik_config() -> Dictionary:
 	var cfg: Dictionary = {}
 	var type_btn: Node = get_node_or_null(P_IK_CONFIG_TYPE)
-	var type_idx: int = type_btn.selected if type_btn is OptionButton else 0
-	cfg["config_type"] = type_idx # 0=2轴, 1=3轴, 2=4轴
-	cfg["joint_count"] = _ik_joint_count(type_idx)
-	# 连杆长度（mm）
-	cfg["L1"] = _get_line_text(P_IK_L1).strip_edges()
-	cfg["L2"] = _get_line_text(P_IK_L2).strip_edges()
-	cfg["L3"] = _get_line_text(P_IK_L3).strip_edges()
+	var type_idx: int = type_btn.selected if type_btn is OptionButton else 1
+	var jc: int = _ik_joint_count(type_idx)
+	cfg["joint_count"] = jc
+	# config_type 仅供旧解析路径与 axis/len 缺失时的兼容推断，
+	# 不再决定构型：轴类型由各关节自己选
+	cfg["config_type"] = clampi(jc - 2, 0, 2)
 	# 各关节配置
 	var joints: Array = []
-	for i in range(cfg["joint_count"]):
+	for i in range(jc):
 		var row_name: String = IK_JOINT_ROWS[i]
 		var io_btn: Node = get_node_or_null(NodePath(IK +"/"+ row_name +"/IO"))
 		var dir_btn: Node = get_node_or_null(NodePath(IK +"/"+ row_name +"/Dir"))
+		var axis_btn: Node = get_node_or_null(NodePath(IK +"/"+ row_name +"/Axis"))
+		var len_le: Node = get_node_or_null(NodePath(IK +"/"+ row_name +"/Len"))
 		var off_le: Node = get_node_or_null(NodePath(IK +"/"+ row_name +"/Offset"))
 		var zero_le: Node = get_node_or_null(NodePath(IK +"/"+ row_name +"/Zero"))
 		var min_le: Node = get_node_or_null(NodePath(IK +"/"+ row_name +"/Min"))
@@ -1184,6 +1177,10 @@ func _collect_ik_config() -> Dictionary:
 		joints.append({
 			"io": _option_text(io_btn) if io_btn is OptionButton else "P60",
 			"dir": _option_text(dir_btn) if dir_btn is OptionButton else "正向",
+			# 转轴类型：Pitch=上下俯仰 / Yaw=左右摆动 / Roll=绕连杆自转
+			"axis": _option_text(axis_btn) if axis_btn is OptionButton else "",
+			# 该关节到下一关节的连杆长度（mm）；最后一个关节填到夹爪的距离
+			"len": (len_le.text.strip_edges() if len_le is LineEdit else ""),
 			# 安装中位朝向（运动学角）：空白视为 0，即中位与参考方向共线
 			"offset": (off_le.text.strip_edges() if off_le is LineEdit else ""),
 			"zero": (zero_le.text.strip_edges() if zero_le is LineEdit else ""),
@@ -1989,9 +1986,6 @@ func _build_worker(uv4_abs: String, project_dst: String) -> void:
 ## 之后图形化配置只能预览，降回阶段一必须显式丢弃 AI 代码。
 func _on_ai_edit_pressed() -> void:
 	_clear_output()
-	if _project.is_empty():
-		_append_output("[Error] 请先「新建」或「打开」一个项目")
-		return
 	if not _toolchain().ensure_deployed():
 		_append_output("[Error] 工具链初始化失败，无法进入 AI 编辑")
 		return
@@ -2005,7 +1999,11 @@ func _on_ai_edit_pressed() -> void:
 		return
 	var tab_container: Node = get_node_or_null(P_TAB_CONTAINER)
 	var tab: int = tab_container.current_tab if tab_container is TabContainer else 0
-	var kind: String = str(_project["kind"])
+	if _project.is_empty():
+		# 无项目（直跑本场景）：只切场景，没有阶段概念
+		AppState.set_context(project_dst, PF.tab_to_kind(tab), tab)
+		get_tree().change_scene_to_file(AI_EDIT_SCENE)
+		return
 	# 冻结阶段一：配置快照 + 生成代码；AI 从这份代码起步
 	if int(_project["stage"]) < 2:
 		_project["config"] = _snapshot_config()
@@ -2013,7 +2011,7 @@ func _on_ai_edit_pressed() -> void:
 		_project["active_tab"] = tab
 		_project["stage"] = 2
 		_project["main_c_ai"] = code
-	AppState.set_context(project_dst, kind, tab)
+	AppState.set_context(project_dst, str(_project["kind"]), tab)
 	AppState.stage = 2
 	_save_project(false)
 	get_tree().change_scene_to_file(AI_EDIT_SCENE)
@@ -2084,16 +2082,19 @@ func _on_infantry_sim_config_changed(cfg: Dictionary) -> void:
 ## 把 3D 标定台里的编辑结果写回配置界面控件，再重跑检查与代码生成。
 ## 只回填仿真能改的字段，IO/方向/摇杆映射等仍由配置界面独占。
 func _on_arm_sim_config_changed(cfg: Dictionary) -> void:
-	_set_line_text(P_IK_L1, str(cfg.get("L1", "")))
-	_set_line_text(P_IK_L2, str(cfg.get("L2", "")))
-	_set_line_text(P_IK_L3, str(cfg.get("L3", "")))
 	var joints: Array = cfg.get("joints", [])
 	for i in range(min(joints.size(), IK_JOINT_ROWS.size())):
 		var row: String = IK_JOINT_ROWS[i]
-		for field in [["Offset", "offset"], ["Zero", "zero"], ["Min", "min"], ["Max", "max"]]:
+		# 连杆长度现在是逐关节的（原 L1/L2/L3 已迁移）
+		for field in [["Len", "len"], ["Offset", "offset"], ["Zero", "zero"],
+				["Min", "min"], ["Max", "max"]]:
 			var le: Node = get_node_or_null(NodePath(IK +"/"+ row +"/"+ field[0]))
-			if le is LineEdit:
+			if le is LineEdit and joints[i].has(field[1]):
 				le.text = str(joints[i].get(field[1], ""))
+		# 转轴类型
+		var ax: Node = get_node_or_null(NodePath(IK +"/"+ row +"/Axis"))
+		if ax is OptionButton and joints[i].has("axis"):
+			_select_option_by_text(ax, str(joints[i].get("axis", "")))
 	var presets: Array = cfg.get("presets", [])
 	for i in range(min(presets.size(), IK_PRESET_ROWS.size())):
 		var prow: String = IK_PRESET_ROWS[i]

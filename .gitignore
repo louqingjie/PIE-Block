@@ -46,3 +46,5 @@ release/
 vendor/keil-toolchain/
 
 toolchain/
+
+*.pieproj

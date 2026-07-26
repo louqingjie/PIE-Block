@@ -104,10 +104,34 @@ static func normalize(raw: Dictionary) -> Dictionary:
 	var tab: int = int(raw.get("active_tab", data["active_tab"]))
 	data["active_tab"] = tab if tab in kind_tabs(kind) else kind_default_tab(kind)
 	var cfg: Variant = raw.get("config", {})
-	data["config"] = cfg.duplicate(true) if cfg is Dictionary else {}
+	data["config"] = normalize_config(cfg) if cfg is Dictionary else {}
 	data["main_c_stage1"] = str(raw.get("main_c_stage1", ""))
 	data["main_c_ai"] = str(raw.get("main_c_ai", ""))
 	return data
+
+
+## 规整配置快照里每一项的类型。
+## JSON 没有整数概念，`{"i": 3}` 存盘再读回会变成 `3.0`；
+## 不归一化的话「快照 == 读回的配置」这类比较永远不成立。
+static func normalize_config(raw: Dictionary) -> Dictionary:
+	var out: Dictionary = {}
+	for key in raw.keys():
+		var v: Variant = raw[key]
+		if not v is Dictionary:
+			continue
+		var item: Dictionary = v
+		var norm: Dictionary = {}
+		if item.has("i"):
+			norm["i"] = int(item["i"])
+		if item.has("s"):
+			norm["s"] = str(item["s"])
+		if item.has("t"):
+			norm["t"] = str(item["t"])
+		if item.has("b"):
+			norm["b"] = bool(item["b"])
+		if not norm.is_empty():
+			out[str(key)] = norm
+	return out
 
 
 ## 取项目当前应当编译 / 展示的 C 源：阶段二优先用 AI 版本
@@ -174,3 +198,65 @@ static func ensure_ext(path: String) -> String:
 	if path.get_extension().to_lower() == EXT:
 		return path
 	return path + "." + EXT
+
+
+## 新建并落盘一个空项目。config 留空，由图形化界面用场景默认值补齐。
+## 返回 {ok: bool, err: String, data: Dictionary}
+static func create_new(path: String, kind: String) -> Dictionary:
+	var data: Dictionary = new_data(kind)
+	var res: Dictionary = save_to(path, data)
+	if not res["ok"]:
+		return {"ok": false, "err": res["err"], "data": {}}
+	return {"ok": true, "err": "", "data": data}
+
+
+# ------------------------------------------------------------------ 最近打开
+## 最近打开列表存这里（与项目文件本身分离，属于本机偏好）
+const RECENT_PATH: String = "user://recent_projects.json"
+## 最多记住多少个
+const RECENT_MAX: int = 10
+
+
+## 读最近打开列表。已被删除 / 移走的条目会被过滤掉。
+static func recent_list() -> Array:
+	if not FileAccess.file_exists(RECENT_PATH):
+		return []
+	var f: FileAccess = FileAccess.open(RECENT_PATH, FileAccess.READ)
+	if f == null:
+		return []
+	var parsed: Variant = JSON.parse_string(f.get_as_text())
+	f.close()
+	if not parsed is Array:
+		return []
+	var out: Array = []
+	for item in parsed:
+		if item is String and FileAccess.file_exists(item):
+			out.append(item)
+	return out
+
+
+## 把某个项目提到最近列表首位
+static func recent_add(path: String) -> void:
+	if path.is_empty():
+		return
+	var list: Array = recent_list()
+	list.erase(path)
+	list.insert(0, path)
+	if list.size() > RECENT_MAX:
+		list.resize(RECENT_MAX)
+	_recent_write(list)
+
+
+## 从最近列表移除（打不开的项目就别一直摆在那）
+static func recent_remove(path: String) -> void:
+	var list: Array = recent_list()
+	list.erase(path)
+	_recent_write(list)
+
+
+static func _recent_write(list: Array) -> void:
+	var f: FileAccess = FileAccess.open(RECENT_PATH, FileAccess.WRITE)
+	if f == null:
+		return
+	f.store_string(JSON.stringify(list, "\t"))
+	f.close()

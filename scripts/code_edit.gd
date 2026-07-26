@@ -25,6 +25,7 @@ const P_CREATE: NodePath = "VBoxContainer/TopPanel/Create"
 const P_OPEN: NodePath = "VBoxContainer/TopPanel/Open"
 
 const UI_SCENE: String = "res://scenes/ui.tscn"
+const LAUNCHER_SCENE: String = "res://scenes/launcher.tscn"
 
 # 用 preload 而非 class_name 引用：headless / 首次导入时
 # 全局类名缓存可能尚未建立，class_name 会解析失败
@@ -354,13 +355,13 @@ func _save_project(verbose: bool) -> bool:
 	return true
 
 
-## 在 AI 编辑器里点新建 / 打开：先落盘，再回图形化界面继续该动作
+## 在 AI 编辑器里点新建 / 打开：先落盘，再回启动页做项目管理
 func _on_create_pressed() -> void:
-	_leave_for_project_action("create", "新建项目将离开 AI 编辑并返回图形化界面。")
+	_leave_for_project_action("create", "新建项目将离开 AI 编辑，回到启动页。")
 
 
 func _on_open_pressed() -> void:
-	_leave_for_project_action("open", "打开项目将离开 AI 编辑并返回图形化界面。")
+	_leave_for_project_action("open", "打开项目将离开 AI 编辑，回到启动页。")
 
 
 func _leave_for_project_action(action: String, text: String) -> void:
@@ -370,7 +371,7 @@ func _leave_for_project_action(action: String, text: String) -> void:
 	dlg.get_ok_button().text = "继续"
 	dlg.confirmed.connect(func() -> void:
 		AppState.pending_action = action
-		_on_back_pressed())
+		_leave_to_scene(LAUNCHER_SCENE))
 	add_child(dlg)
 	dlg.popup_centered()
 	dlg.close_requested.connect(dlg.queue_free)
@@ -381,7 +382,9 @@ func _on_save_pressed() -> void:
 	if not _flush_to_disk():
 		return
 	_append_output("已保存 main.c")
-	_save_project(true)
+	# 无项目（直跑本场景）时只写磁盘 main.c，不报错
+	if AppState.has_project():
+		_save_project(true)
 
 
 func _on_build_pressed() -> void:
@@ -447,19 +450,26 @@ func _on_build_finished(result: Dictionary) -> void:
 
 # ------------------------------------------------------------------ 返回
 func _on_back_pressed() -> void:
+	_leave_to_scene(UI_SCENE)
+
+
+## 离开本场景：落盘 + 停子进程 + 复位全局设置，最后切到目标场景。
+## 这套清理顺序有实测依据，见下方各条注释，改动前先看注释。
+func _leave_to_scene(scene_path: String) -> void:
 	_flush_to_disk()
 	# AI 成果不能只留在磁盘 main.c 里，项目文件才是真相源
-	_save_project(false)
+	if AppState.has_project():
+		_save_project(false)
 	# webview 是嵌在 OS 窗口里的原生控件，不参与 Godot 渲染顺序。
 	# 切场景前必须先隐藏，否则会在新场景上留残影。
 	if _wv:
 		_wv.set_visible(false)
 	if _client:
 		_client.stop()
-	# auto_accept_quit 是 SceneTree 级别的全局设置。切回 ui.tscn 后
+	# auto_accept_quit 是 SceneTree 级别的全局设置。切回别的场景后
 	# 那边没有 CLOSE_REQUEST 处理，不恢复默认会导致窗口关不掉。
 	get_tree().auto_accept_quit = true
-	get_tree().change_scene_to_file(UI_SCENE)
+	get_tree().change_scene_to_file(scene_path)
 
 
 # ------------------------------------------------------------------ 输出
