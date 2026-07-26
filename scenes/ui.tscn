@@ -58,6 +58,10 @@ layout_mode = 2
 size_flags_horizontal = 8
 text = "导出 C 代码"
 
+[node name="Button" type="Button" parent="VBoxContainer/TopPanel" unique_id=425375253]
+layout_mode = 2
+text = "进入 C 代码后处理"
+
 [node name="Build" type="Button" parent="VBoxContainer/TopPanel" unique_id=1581104311]
 layout_mode = 2
 size_flags_horizontal = 8
@@ -1109,10 +1113,11 @@ size_flags_horizontal = 3
 [node name="TabContainer" type="TabContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow" unique_id=1246727485]
 layout_mode = 2
 size_flags_vertical = 3
-current_tab = 2
+current_tab = 1
 tab_0/title = "步兵"
 tab_1/title = "工程"
-tab_2/title = "调试"
+tab_2/title = "工程逆解算"
+tab_3/title = "调试"
 
 [node name="Infantry" type="VBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer" unique_id=1911259566]
 visible = false
@@ -1209,7 +1214,7 @@ layout_mode = 2
 [node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/GimbalSetting/Yaw" unique_id=2085242962]
 layout_mode = 2
 size_flags_horizontal = 2
-text = "Yaw 轴驱动"
+text = "Yaw 轴"
 
 [node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/GimbalSetting/Yaw" unique_id=1741006126]
 layout_mode = 2
@@ -1265,13 +1270,17 @@ popup/item_0/id = 0
 popup/item_1/text = "反向"
 popup/item_1/id = 1
 
+[node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/GimbalSetting/Yaw" unique_id=1340487816]
+layout_mode = 2
+placeholder_text = "归中角"
+
 [node name="Pitch" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/GimbalSetting" unique_id=485340612]
 layout_mode = 2
 
 [node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/GimbalSetting/Pitch" unique_id=1091321484]
 layout_mode = 2
 size_flags_horizontal = 2
-text = "Pitch 轴驱动"
+text = "Pitch 轴"
 
 [node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/GimbalSetting/Pitch" unique_id=1099246088]
 layout_mode = 2
@@ -1327,6 +1336,10 @@ popup/item_0/id = 0
 popup/item_1/text = "反向"
 popup/item_1/id = 1
 
+[node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/GimbalSetting/Pitch" unique_id=1444026591]
+layout_mode = 2
+placeholder_text = "归中角"
+
 [node name="HSeparator" type="HSeparator" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/GimbalSetting" unique_id=926679916]
 layout_mode = 2
 
@@ -1350,6 +1363,19 @@ size_flags_horizontal = 0
 text = "按下左摇杆冲刺"
 
 [node name="CheckBox" type="CheckBox" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/KeySetting/Sprint" unique_id=300063611]
+layout_mode = 2
+size_flags_horizontal = 10
+button_pressed = true
+
+[node name="Zero" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/KeySetting" unique_id=221237462]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/KeySetting/Zero" unique_id=981261635]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "按下右摇杆云台归中"
+
+[node name="CheckBox" type="CheckBox" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/KeySetting/Zero" unique_id=727225381]
 layout_mode = 2
 size_flags_horizontal = 10
 button_pressed = true
@@ -1451,7 +1477,6 @@ layout_mode = 2
 text = "添加特殊功能"
 
 [node name="Engineer" type="VBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer" unique_id=526865510]
-visible = false
 layout_mode = 2
 theme_override_constants/separation = 0
 metadata/_tab_index = 1
@@ -2229,9 +2254,16 @@ popup/item_8/id = 8
 popup/item_9/text = "MP74"
 popup/item_9/id = 9
 
-[node name="Debug" type="VBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer" unique_id=1151350573]
+[node name="EngineerAdvanced" type="VBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer" unique_id=2017398683]
+visible = false
 layout_mode = 2
 metadata/_tab_index = 2
+metadata/_tab_name = "工程逆解算"
+
+[node name="Debug" type="VBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer" unique_id=1151350573]
+visible = false
+layout_mode = 2
+metadata/_tab_index = 3
 metadata/_tab_name = "调试"
 
 [node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug" unique_id=820725019]

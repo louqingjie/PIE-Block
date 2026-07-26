@@ -59,6 +59,18 @@ func generate(cfg: Dictionary) -> String:
 	var fric_l_dir: int = _dir_to_int(cfg.get("friction_l_dir", "正向"))
 	var fric_r_dir: int = _dir_to_int(cfg.get("friction_r_dir", "正向"))
 
+	# --- 归中角偏移（用于消除静差）---
+	var yaw_mid_str: String = cfg.get("yaw_mid_offset", "0")
+	if yaw_mid_str.is_empty():
+		yaw_mid_str = "0"
+	var pitch_mid_str: String = cfg.get("pitch_mid_offset", "0")
+	if pitch_mid_str.is_empty():
+		pitch_mid_str = "0"
+	var yaw_mid_val: int = 750 + int(yaw_mid_str)
+	var pitch_mid_val: int = 750 + int(pitch_mid_str)
+	# --- 归中功能使能 ---
+	var zero_enabled: bool = cfg.get("zero_enabled", false)
+
 	# --- Yaw/Pitch 驱动类型 ---
 	var yaw_is_servo: bool = cfg.get("yaw_drive", "舵机") == "舵机"
 	var pitch_is_servo: bool = cfg.get("pitch_drive", "舵机") == "舵机"
@@ -205,7 +217,7 @@ func generate(cfg: Dictionary) -> String:
 	code += "uint16_t ultraSpeed = %s;\n" % sprint_spd
 	code += "uint16_t deadBandOfLeft = %s;                   // 左摇杆中心死区\n" % dz
 	code += "uint16_t deadBandOfRight = %s;                  // 右摇杆中心死区\n" % dz
-	code += "uint16_t midDutyOfServo[2] = {750, 750};        // 分别为云台水平舵机、云台垂直舵机\n"
+	code += "uint16_t midDutyOfServo[2] = {%d, %d};        // 云台水平/垂直舵机中值（含归中角偏移）\n" % [yaw_mid_val, pitch_mid_val]
 	code += "uint16_t maxChangeDutyOfServo[2] = {200, 200};  // 同上\n"
 	code += "uint16_t singleChangeDutyOfServo[2] = {10, 10}; // 按下按键单次占空比改变量\n"
 	code += "uint16_t singleChangeDutyOfBooster = 100;       // 按下按键单次占空比改变量\n"
@@ -283,9 +295,9 @@ func generate(cfg: Dictionary) -> String:
 		var pitch_idx: int = 6 if not yaw_is_servo else 5
 		code += "        LIMIT_VALUE(dutyOfMotor[%d], -10000, 10000);\n" % pitch_idx
 	if yaw_is_servo:
-		code += "        LIMIT_VALUE(floatDutyOfServo[0], 250, 1250);\n"
+		code += "        LIMIT_VALUE(floatDutyOfServo[0], midDutyOfServo[0] - maxChangeDutyOfServo[0], midDutyOfServo[0] + maxChangeDutyOfServo[0]);\n"
 	if pitch_is_servo:
-		code += "        LIMIT_VALUE(floatDutyOfServo[1], 250, 1250);\n"
+		code += "        LIMIT_VALUE(floatDutyOfServo[1], midDutyOfServo[1] - maxChangeDutyOfServo[1], midDutyOfServo[1] + maxChangeDutyOfServo[1]);\n"
 	# 单发拨弹：使用 triggerKeyValue 替代 valueOfRKey
 	code += "        // 扳机键单发拨弹：上升沿触发，拨弹电机转动 boosterFeedDelayMs 后停转，期间阻塞主线程\n"
 	code += "        if (triggerKeyValue && !lastTriggerKeyValue)\n"
@@ -407,6 +419,16 @@ func generate(cfg: Dictionary) -> String:
 			code += "    floatDutyOfServo[0] += valueOfRoker[1][0] * changeRateOfServo[0];\n"
 		if pitch_is_servo:
 			code += "    floatDutyOfServo[1] += valueOfRoker[1][1] * changeRateOfServo[1];\n"
+		# 归中功能：按下右摇杆时将舵机复位到中值
+		if zero_enabled:
+			code += "    // 按下右摇杆云台归中\n"
+			code += "    if (valueOfKey[2][1])\n"
+			code += "    {\n"
+			if yaw_is_servo:
+				code += "        floatDutyOfServo[0] = midDutyOfServo[0];\n"
+			if pitch_is_servo:
+				code += "        floatDutyOfServo[1] = midDutyOfServo[1];\n"
+			code += "    }\n"
 		if yaw_is_servo:
 			code += "    dutyOfServo[0] = (uint16_t)floatDutyOfServo[0];\n"
 		if pitch_is_servo:
@@ -479,5 +501,3 @@ func generate(cfg: Dictionary) -> String:
 	code += "}\n"
 
 	return code
-
-
