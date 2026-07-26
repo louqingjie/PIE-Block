@@ -2322,15 +2322,15 @@ text = "机械臂构型"
 [node name="HSeparator" type="HSeparator" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=-1393852794]
 layout_mode = 2
 
-[node name="ConfigType" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced"]
+[node name="ConfigType" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=1254394919]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/ConfigType"]
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/ConfigType" unique_id=1432314796]
 layout_mode = 2
 size_flags_horizontal = 2
 text = "关节数"
 
-[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/ConfigType"]
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/ConfigType" unique_id=1479592505]
 layout_mode = 2
 size_flags_horizontal = 8
 selected = 1
@@ -2346,28 +2346,28 @@ popup/item_3/id = 3
 popup/item_4/text = "6 个关节"
 popup/item_4/id = 4
 
-[node name="ConfigHint" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced"]
+[node name="ConfigHint" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=1745598375]
 layout_mode = 2
-autowrap_mode = 3
 text = "每个关节自己选转轴：Pitch=上下俯仰，Yaw=左右摆动，Roll=绕连杆自身轴自转（只转夹爪朝向，不改变末端位置）。连杆长度填「该关节到下一个关节」的距离，最后一个关节填到夹爪的距离。"
+autowrap_mode = 3
 
-[node name="HSeparator2" type="HSeparator" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced"]
+[node name="HSeparator2" type="HSeparator" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=1330252044]
 layout_mode = 2
 
-[node name="JointsLabel" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced"]
+[node name="JointsLabel" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=43533364]
 layout_mode = 2
 size_flags_horizontal = 4
 text = "关节配置（IO/方向/转轴/连杆mm/中位朝向/初始角/限位角°，角度均为运动学角；舵机行程 = 中位朝向 ±90°）"
 
-[node name="Joint1" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced"]
+[node name="Joint1" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=1793764125]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint1"]
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint1" unique_id=77877059]
 layout_mode = 2
 size_flags_horizontal = 2
 text = "关节1"
 
-[node name="IO" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint1"]
+[node name="IO" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint1" unique_id=893188034]
 layout_mode = 2
 size_flags_horizontal = 3
 selected = 0
@@ -2393,7 +2393,7 @@ popup/item_8/id = 8
 popup/item_9/text = "MP74"
 popup/item_9/id = 9
 
-[node name="Dir" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint1"]
+[node name="Dir" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint1" unique_id=553611398]
 layout_mode = 2
 size_flags_horizontal = 3
 selected = 0
@@ -2403,7 +2403,7 @@ popup/item_0/id = 0
 popup/item_1/text = "反向"
 popup/item_1/id = 1
 
-[node name="Axis" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint1"]
+[node name="Axis" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint1" unique_id=1436999874]
 custom_minimum_size = Vector2(78, 0)
 layout_mode = 2
 size_flags_horizontal = 3
@@ -2416,45 +2416,45 @@ popup/item_1/id = 1
 popup/item_2/text = "Yaw"
 popup/item_2/id = 2
 
-[node name="Len" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint1"]
+[node name="Len" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint1" unique_id=1619811661]
 custom_minimum_size = Vector2(56, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "连杆mm"
 
-[node name="Offset" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint1"]
+[node name="Offset" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint1" unique_id=1952775156]
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "中位°"
 
-[node name="Zero" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint1"]
+[node name="Zero" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint1" unique_id=426487966]
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "初始角°"
 
-[node name="Min" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint1"]
+[node name="Min" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint1" unique_id=1976320204]
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "min°"
 
-[node name="Max" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint1"]
+[node name="Max" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint1" unique_id=1863298208]
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "max°"
 
-[node name="Joint2" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced"]
+[node name="Joint2" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=168444000]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint2"]
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint2" unique_id=1531361102]
 layout_mode = 2
 size_flags_horizontal = 2
 text = "关节2"
 
-[node name="IO" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint2"]
+[node name="IO" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint2" unique_id=184974489]
 layout_mode = 2
 size_flags_horizontal = 3
 selected = 0
@@ -2480,7 +2480,7 @@ popup/item_8/id = 8
 popup/item_9/text = "MP74"
 popup/item_9/id = 9
 
-[node name="Dir" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint2"]
+[node name="Dir" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint2" unique_id=1945981445]
 layout_mode = 2
 size_flags_horizontal = 3
 selected = 0
@@ -2490,7 +2490,7 @@ popup/item_0/id = 0
 popup/item_1/text = "反向"
 popup/item_1/id = 1
 
-[node name="Axis" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint2"]
+[node name="Axis" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint2" unique_id=374928431]
 custom_minimum_size = Vector2(78, 0)
 layout_mode = 2
 size_flags_horizontal = 3
@@ -2503,45 +2503,45 @@ popup/item_1/id = 1
 popup/item_2/text = "Yaw"
 popup/item_2/id = 2
 
-[node name="Len" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint2"]
+[node name="Len" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint2" unique_id=1863462982]
 custom_minimum_size = Vector2(56, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "连杆mm"
 
-[node name="Offset" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint2"]
+[node name="Offset" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint2" unique_id=883864265]
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "中位°"
 
-[node name="Zero" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint2"]
+[node name="Zero" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint2" unique_id=1891396463]
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "初始角°"
 
-[node name="Min" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint2"]
+[node name="Min" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint2" unique_id=403672702]
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "min°"
 
-[node name="Max" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint2"]
+[node name="Max" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint2" unique_id=220311233]
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "max°"
 
-[node name="Joint3" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced"]
+[node name="Joint3" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=1352556582]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint3"]
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint3" unique_id=372483869]
 layout_mode = 2
 size_flags_horizontal = 2
 text = "关节3"
 
-[node name="IO" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint3"]
+[node name="IO" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint3" unique_id=617494379]
 layout_mode = 2
 size_flags_horizontal = 3
 selected = 0
@@ -2567,7 +2567,7 @@ popup/item_8/id = 8
 popup/item_9/text = "MP74"
 popup/item_9/id = 9
 
-[node name="Dir" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint3"]
+[node name="Dir" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint3" unique_id=1301776257]
 layout_mode = 2
 size_flags_horizontal = 3
 selected = 0
@@ -2577,7 +2577,7 @@ popup/item_0/id = 0
 popup/item_1/text = "反向"
 popup/item_1/id = 1
 
-[node name="Axis" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint3"]
+[node name="Axis" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint3" unique_id=1706722834]
 custom_minimum_size = Vector2(78, 0)
 layout_mode = 2
 size_flags_horizontal = 3
@@ -2590,45 +2590,45 @@ popup/item_1/id = 1
 popup/item_2/text = "Yaw"
 popup/item_2/id = 2
 
-[node name="Len" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint3"]
+[node name="Len" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint3" unique_id=1637111921]
 custom_minimum_size = Vector2(56, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "连杆mm"
 
-[node name="Offset" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint3"]
+[node name="Offset" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint3" unique_id=1640099351]
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "中位°"
 
-[node name="Zero" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint3"]
+[node name="Zero" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint3" unique_id=963343285]
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "初始角°"
 
-[node name="Min" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint3"]
+[node name="Min" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint3" unique_id=1359019827]
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "min°"
 
-[node name="Max" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint3"]
+[node name="Max" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint3" unique_id=27362536]
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "max°"
 
-[node name="Joint4" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced"]
+[node name="Joint4" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=1466262372]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint4"]
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint4" unique_id=552496190]
 layout_mode = 2
 size_flags_horizontal = 2
 text = "关节4"
 
-[node name="IO" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint4"]
+[node name="IO" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint4" unique_id=1570325196]
 layout_mode = 2
 size_flags_horizontal = 3
 selected = 0
@@ -2654,7 +2654,7 @@ popup/item_8/id = 8
 popup/item_9/text = "MP74"
 popup/item_9/id = 9
 
-[node name="Dir" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint4"]
+[node name="Dir" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint4" unique_id=118054154]
 layout_mode = 2
 size_flags_horizontal = 3
 selected = 0
@@ -2664,7 +2664,7 @@ popup/item_0/id = 0
 popup/item_1/text = "反向"
 popup/item_1/id = 1
 
-[node name="Axis" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint4"]
+[node name="Axis" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint4" unique_id=339171677]
 custom_minimum_size = Vector2(78, 0)
 layout_mode = 2
 size_flags_horizontal = 3
@@ -2677,45 +2677,45 @@ popup/item_1/id = 1
 popup/item_2/text = "Yaw"
 popup/item_2/id = 2
 
-[node name="Len" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint4"]
+[node name="Len" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint4" unique_id=155207471]
 custom_minimum_size = Vector2(56, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "连杆mm"
 
-[node name="Offset" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint4"]
+[node name="Offset" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint4" unique_id=428241787]
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "中位°"
 
-[node name="Zero" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint4"]
+[node name="Zero" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint4" unique_id=1471167261]
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "初始角°"
 
-[node name="Min" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint4"]
+[node name="Min" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint4" unique_id=1641818769]
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "min°"
 
-[node name="Max" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint4"]
+[node name="Max" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint4" unique_id=1442864252]
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "max°"
 
-[node name="Joint5" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced"]
+[node name="Joint5" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=2100433298]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint5"]
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint5" unique_id=2137911966]
 layout_mode = 2
 size_flags_horizontal = 2
 text = "关节5"
 
-[node name="IO" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint5"]
+[node name="IO" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint5" unique_id=1899994136]
 layout_mode = 2
 size_flags_horizontal = 3
 selected = 0
@@ -2741,7 +2741,7 @@ popup/item_8/id = 8
 popup/item_9/text = "MP74"
 popup/item_9/id = 9
 
-[node name="Dir" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint5"]
+[node name="Dir" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint5" unique_id=1824194253]
 layout_mode = 2
 size_flags_horizontal = 3
 selected = 0
@@ -2751,7 +2751,7 @@ popup/item_0/id = 0
 popup/item_1/text = "反向"
 popup/item_1/id = 1
 
-[node name="Axis" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint5"]
+[node name="Axis" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint5" unique_id=1359865029]
 custom_minimum_size = Vector2(78, 0)
 layout_mode = 2
 size_flags_horizontal = 3
@@ -2764,45 +2764,45 @@ popup/item_1/id = 1
 popup/item_2/text = "Yaw"
 popup/item_2/id = 2
 
-[node name="Len" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint5"]
+[node name="Len" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint5" unique_id=252210203]
 custom_minimum_size = Vector2(56, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "连杆mm"
 
-[node name="Offset" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint5"]
+[node name="Offset" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint5" unique_id=637756908]
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "中位°"
 
-[node name="Zero" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint5"]
+[node name="Zero" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint5" unique_id=646563689]
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "初始角°"
 
-[node name="Min" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint5"]
+[node name="Min" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint5" unique_id=821096451]
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "min°"
 
-[node name="Max" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint5"]
+[node name="Max" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint5" unique_id=1026629839]
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "max°"
 
-[node name="Joint6" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced"]
+[node name="Joint6" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=1280483857]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint6"]
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint6" unique_id=1520367381]
 layout_mode = 2
 size_flags_horizontal = 2
 text = "关节6"
 
-[node name="IO" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint6"]
+[node name="IO" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint6" unique_id=1549759035]
 layout_mode = 2
 size_flags_horizontal = 3
 selected = 0
@@ -2828,7 +2828,7 @@ popup/item_8/id = 8
 popup/item_9/text = "MP74"
 popup/item_9/id = 9
 
-[node name="Dir" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint6"]
+[node name="Dir" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint6" unique_id=1938058928]
 layout_mode = 2
 size_flags_horizontal = 3
 selected = 0
@@ -2838,7 +2838,7 @@ popup/item_0/id = 0
 popup/item_1/text = "反向"
 popup/item_1/id = 1
 
-[node name="Axis" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint6"]
+[node name="Axis" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint6" unique_id=1427473182]
 custom_minimum_size = Vector2(78, 0)
 layout_mode = 2
 size_flags_horizontal = 3
@@ -2851,31 +2851,31 @@ popup/item_1/id = 1
 popup/item_2/text = "Yaw"
 popup/item_2/id = 2
 
-[node name="Len" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint6"]
+[node name="Len" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint6" unique_id=1218203472]
 custom_minimum_size = Vector2(56, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "连杆mm"
 
-[node name="Offset" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint6"]
+[node name="Offset" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint6" unique_id=1806429638]
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "中位°"
 
-[node name="Zero" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint6"]
+[node name="Zero" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint6" unique_id=1954053899]
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "初始角°"
 
-[node name="Min" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint6"]
+[node name="Min" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint6" unique_id=458894881]
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "min°"
 
-[node name="Max" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint6"]
+[node name="Max" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint6" unique_id=475626883]
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 3

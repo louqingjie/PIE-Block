@@ -49,11 +49,15 @@ func _initialize() -> void:
 		await _test_drive_combo(packed, case[0], case[1])
 	await _test_gimbal_clamp(packed)
 	await _test_gimbal_geometry(packed)
+	await _test_friction_geometry(packed)
+	await _test_friction_color(packed)
 	await _test_fire(packed)
+	await _test_bullet_visual(packed)
 	await _test_chassis(packed)
 	await _test_turn_direction(packed)
 	await _test_gimbal_direction(packed)
 	await _test_c_turn_sign_consistency()
+	await _test_camera_follow(packed)
 	await _test_calib_writeback(packed)
 	print("\n=== 结果: %s ===" % ("全部通过 ✓" if _fail == 0 else "%d 项失败 ✗" % _fail))
 	quit(0 if _fail == 0 else 1)
@@ -220,6 +224,105 @@ func _test_gimbal_geometry(packed: PackedScene) -> void:
 	_check("车身左转 90° 后枪口朝 -X", dir.x < -0.999, "dir=%s" % str(dir))
 	_despawn(sim)
 
+## 摩擦轮几何：转轴竖直（Pitch 水平时垂直地面），圆柱面与枪管相切
+func _test_friction_geometry(packed: PackedScene) -> void:
+	var sim: Node = await _spawn(packed, _cfg("舵机", "舵机"))
+	sim._yaw_deg = 0.0
+	sim._pitch_deg = 0.0
+	sim._render_robot()
+	_check("摩擦轮有两个", sim._friction_nodes.size() == 2,
+		"实际 %d" % sim._friction_nodes.size())
+	if sim._friction_nodes.size() != 2:
+		_despawn(sim)
+		return
+	for i in range(2):
+		var fw: MeshInstance3D = sim._friction_nodes[i]
+		# CylinderMesh 的轴是局部 +Y；Pitch 水平时它在世界系里应竖直向上
+		var axis: Vector3 = fw.global_transform.basis.y.normalized()
+		_check("摩擦轮%d 转轴垂直于地面" % (i + 1), absf(axis.y) > 0.999,
+			"axis=%s" % str(axis))
+		# 轮心离枪管轴的距离 = 摩擦轮半径 + 枪管半径（圆柱面相切）
+		var d: float = absf(fw.position.x)
+		var expect: float = fw.mesh.top_radius + 0.012
+		_check("摩擦轮%d 圆柱面与枪管相切" % (i + 1), absf(d - expect) < 1e-6,
+			"轮心距 %.4f 期望 %.4f" % [d, expect])
+		# 两轮应在枪管两侧
+		_check("摩擦轮%d 在枪管侧面（不在轴线上）" % (i + 1), absf(fw.position.x) > 0.01,
+			"x=%.4f" % fw.position.x)
+	_check("两个摩擦轮在枪管两侧对称",
+		absf(sim._friction_nodes[0].position.x + sim._friction_nodes[1].position.x) < 1e-6)
+	# 轮子不能埋进云台盒子里（盒子半宽比轮心距还大，挡得死死的）。
+	# 判据：轮子后缘要越过盒子前壁
+	var fw0: MeshInstance3D = sim._friction_nodes[0]
+	var wheel_back: float = fw0.position.z + fw0.mesh.top_radius
+	var box_front: float = -0.06 * 1.2 * 0.5 # GIMBAL_SIZE * 1.2 / 2
+	_check("摩擦轮露在云台盒子之外（不被埋住）", wheel_back < box_front,
+		"轮后缘 %.4f 盒前壁 %.4f" % [wheel_back, box_front])
+	# Pitch 抬起 30° 后转轴应随之倾斜 30°（跟着云台走，不再垂直地面）
+	sim._pitch_deg = 30.0
+	sim._render_robot()
+	var tilted: Vector3 = sim._friction_nodes[0].global_transform.basis.y.normalized()
+	_check("Pitch +30° 时摩擦轮转轴随云台倾斜 30°",
+		absf(rad_to_deg(acos(clampf(tilted.y, -1.0, 1.0))) - 30.0) < 0.5,
+		"倾角 %.1f°" % rad_to_deg(acos(clampf(tilted.y, -1.0, 1.0))))
+	_despawn(sim)
+
+
+## 摩擦轮颜色随占空比连续渐变：未启动冷色，500 橙色，1100 橙红色
+func _test_friction_color(packed: PackedScene) -> void:
+	var sim: Node = await _spawn(packed, _cfg("舵机", "舵机"))
+	var mat: StandardMaterial3D = sim._mat_friction_wheels[0]
+	# 未启动：冷色、不发光
+	sim._duty_booster = 0
+	sim._update_friction_color()
+	_check("摩擦轮未启动时是冷色", mat.albedo_color.is_equal_approx(sim.FRICTION_COLD),
+		"色 %s" % str(mat.albedo_color))
+	_check("摩擦轮未启动时不发光", not mat.emission_enabled)
+	# 500：橙色
+	sim._duty_booster = 500
+	sim._update_friction_color()
+	var c500: Color = mat.albedo_color
+	_check("占空比 500 时为橙色", c500.is_equal_approx(sim.FRICTION_HOT_LO),
+		"色 %s" % str(c500))
+	_check("占空比 500 时开始发光", mat.emission_enabled)
+	# 1100：橙红色
+	sim._duty_booster = 1100
+	sim._update_friction_color()
+	var c1100: Color = mat.albedo_color
+	_check("占空比 1100 时为橙红色", c1100.is_equal_approx(sim.FRICTION_HOT_HI),
+		"色 %s" % str(c1100))
+	# 橙红比橙色更红：绿通道更低
+	_check("1100 比 500 更偏红", c1100.g < c500.g,
+		"g: %.2f -> %.2f" % [c500.g, c1100.g])
+	# 中间值应落在两端之间，且单调
+	var last_g: float = c500.g
+	var monotonic: bool = true
+	for duty in [600, 700, 800, 900, 1000, 1100]:
+		sim._duty_booster = duty
+		sim._update_friction_color()
+		var g: float = mat.albedo_color.g
+		if g > last_g + 1e-6:
+			monotonic = false
+		last_g = g
+	_check("500->1100 颜色单调渐变（不跳变）", monotonic)
+	sim._duty_booster = 800
+	sim._update_friction_color()
+	var c800: Color = mat.albedo_color
+	_check("占空比 800 的颜色落在橙与橙红之间",
+		c800.g < c500.g and c800.g > c1100.g, "g=%.3f" % c800.g)
+	# 发光强度也应随占空比递增
+	sim._duty_booster = 500
+	sim._update_friction_color()
+	var e_lo: float = mat.emission_energy_multiplier
+	sim._duty_booster = 1100
+	sim._update_friction_color()
+	_check("发光强度随占空比递增", mat.emission_energy_multiplier > e_lo,
+		"%.2f -> %.2f" % [e_lo, mat.emission_energy_multiplier])
+	# 两个轮子都应被上色
+	_check("两个摩擦轮都有材质",
+		sim._friction_nodes[0].material_override != null
+			and sim._friction_nodes[1].material_override != null)
+	_despawn(sim)
 
 ## 扳机上升沿应产出 1 发弹丸，且主循环被阻塞 trigger_time
 func _test_fire(packed: PackedScene) -> void:
@@ -266,6 +369,43 @@ func _test_fire(packed: PackedScene) -> void:
 	sim._duty_booster = 0
 	_check("摩擦轮未启动时只掉弹", absf(sim._muzzle_speed() - 2.0) < 0.01,
 		"实际 %.2f" % sim._muzzle_speed())
+	_despawn(sim)
+
+
+## 弹丸应是绿色自发光，弹道最多同时显示五条
+func _test_bullet_visual(packed: PackedScene) -> void:
+	var sim: Node = await _spawn(packed, _cfg("舵机", "舵机"))
+	var mat: StandardMaterial3D = sim._mat_bullet
+	_check("弹丸材质开启自发光", mat.emission_enabled)
+	_check("弹丸是绿色（绿通道最强）",
+		mat.albedo_color.g > mat.albedo_color.r and mat.albedo_color.g > mat.albedo_color.b,
+		"色 %s" % str(mat.albedo_color))
+	_check("自发光颜色也是绿色",
+		mat.emission.g > mat.emission.r and mat.emission.g > mat.emission.b,
+		"emission %s" % str(mat.emission))
+	_check("自发光强度大于 1（看得出发光）", mat.emission_energy_multiplier > 1.0,
+		"强度 %.2f" % mat.emission_energy_multiplier)
+	# 连打 12 发并全部回收，弹道折线不得超过 5 条
+	sim._status_booster = 1
+	sim._duty_booster = 1100
+	for i in range(12):
+		sim._fire()
+		# 造两个采样点，否则 trail 太短会被 _retire_bullet 丢弃
+		var b: Dictionary = sim._bullets[sim._bullets.size() - 1]
+		var trail: PackedVector3Array = b["trail"]
+		trail.append(trail[0] + Vector3(0.0, 0.0, -1.0))
+		b["trail"] = trail
+		sim._retire_bullet(sim._bullets.size() - 1)
+	_check("弹道只保留最近 5 条", sim._tracers.size() == 5,
+		"实际 %d 条" % sim._tracers.size())
+	# 再算上在飞的，画出来的总条数仍不超过 5
+	for i in range(3):
+		sim._fire()
+	sim._redraw_tracers()
+	var node: MeshInstance3D = sim.get_node("Sim/SubViewport/World/Tracers")
+	_check("含在飞弹丸时画出的弹道也不超过 5 条",
+		node.mesh == null or node.mesh.get_surface_count() <= 5,
+		"实际 %d 条" % (node.mesh.get_surface_count() if node.mesh != null else 0))
 	_despawn(sim)
 
 
@@ -396,6 +536,65 @@ func _test_gimbal_direction(packed: PackedScene) -> void:
 			_check("%s：右摇杆推上 = 云台抬头" % tag, sim._pitch_deg > 0.5,
 				"pitch=%.2f" % sim._pitch_deg)
 			_despawn(sim)
+
+
+## 跟随模式下相机朝向应对齐车头；关掉跟随后相机朝向固定不再跟车转
+func _test_camera_follow(packed: PackedScene) -> void:
+	var sim: Node = await _spawn(packed, _cfg("舵机", "舵机"))
+	var cam: Camera3D = sim.get_node("Sim/SubViewport/World/Camera3D")
+	# 相机看向车身的水平方向（从相机指向枢轴）
+	var look_dir := func() -> Vector2:
+		var d: Vector3 = sim._cam_pivot - cam.position
+		return Vector2(d.x, d.z).normalized()
+	sim._reset_pose()
+	sim._reset_view()
+	var d0: Vector2 = look_dir.call()
+	# 车头朝 -Z，相机正在车尾，故视线水平分量应严格朝 -Z（不带侧偏）
+	_check("跟随模式初始视线沿车头正前方（-Z）", d0.y < -0.999,
+		"look=%s（y 应接近 -1，偏离即说明相机有侧偏角）" % str(d0))
+	# 车原地左转 90°，相机朝向应跟着转到正朝 -X
+	sim._heading = deg_to_rad(90.0)
+	sim._update_camera() # delta=0 表示立即对齐
+	var d1: Vector2 = look_dir.call()
+	_check("跟随模式下车转 90° 后视线正朝 -X", d1.x < -0.999,
+		"look=%s" % str(d1))
+	# 车转了多少度，视线就该转多少度（相机与车头的相对角恒定）
+	_check("相机视线随车头等量旋转",
+		absf(absf(d0.angle_to(d1)) - deg_to_rad(90.0)) < 0.02,
+		"视线转过 %.2f°" % rad_to_deg(absf(d0.angle_to(d1))))
+	# 平滑：delta 很小时不应立刻跳到目标
+	sim._reset_pose()
+	sim._reset_view()
+	sim._heading = deg_to_rad(90.0)
+	sim._update_camera(0.001)
+	_check("相机朝向平滑跟随（不瞬移）",
+		absf(sim._cam_heading) < deg_to_rad(5.0),
+		"cam_heading=%.2f°" % rad_to_deg(sim._cam_heading))
+	# 关掉跟随后车再转，相机朝向不变
+	sim._reset_pose()
+	sim._reset_view()
+	sim._on_follow_toggled(false)
+	var d2: Vector2 = look_dir.call()
+	sim._heading = deg_to_rad(120.0)
+	sim._update_camera(1.0)
+	var d3: Vector2 = look_dir.call()
+	_check("关掉跟随后相机朝向不跟车转", d2.distance_to(d3) < 1e-4,
+		"%s -> %s" % [str(d2), str(d3)])
+	# 切换跟随时视角应连续（不突变）
+	sim._reset_pose()
+	sim._reset_view()
+	sim._heading = deg_to_rad(60.0)
+	sim._update_camera()
+	var d4: Vector2 = look_dir.call()
+	sim._on_follow_toggled(false)
+	var d5: Vector2 = look_dir.call()
+	_check("关跟随瞬间视角连续", d4.distance_to(d5) < 1e-4,
+		"%s -> %s" % [str(d4), str(d5)])
+	sim._on_follow_toggled(true)
+	var d6: Vector2 = look_dir.call()
+	_check("开跟随瞬间视角连续", d4.distance_to(d6) < 1e-4,
+		"%s -> %s" % [str(d4), str(d6)])
+	_despawn(sim)
 
 
 ## 标定模式改归中角，应通过 config_changed 把新值发出去

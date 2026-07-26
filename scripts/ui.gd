@@ -706,10 +706,10 @@ func _notify_stage2_preview() -> void:
 	_append_output("[Warn] 阶段二：图形化配置仅供预览，修改会丢弃 AI 编辑的代码")
 	var dlg := AcceptDialog.new()
 	dlg.title = "只能预览"
-	dlg.dialog_text = "该项目已进入 AI 编辑阶段。\n"\
-		+ "这里的图形化配置只能预览，不能更改。\n"\
-		+ "如果在这里更改，AI 编辑的内容会丢失。\n"\
-		+ "建议把想修改的地方直接告诉 AI。"
+	dlg.dialog_text = "该项目已进入 AI 编辑阶段。\n" \
+		+"这里的图形化配置只能预览，不能更改。\n" \
+		+"如果在这里更改，AI 编辑的内容会丢失。\n" \
+		+"建议把想修改的地方直接告诉 AI。"
 	add_child(dlg)
 	dlg.popup_centered()
 	dlg.confirmed.connect(dlg.queue_free)
@@ -725,8 +725,8 @@ func _prompt_discard_ai_code() -> void:
 	_apply_config(_frozen_config)
 	var dlg := ConfirmationDialog.new()
 	dlg.title = "确认修改图形化配置"
-	dlg.dialog_text = "继续修改将丢弃 AI 编辑的代码，项目回到图形化配置阶段。\n"\
-		+ "更稳妥的做法是把想改的地方告诉 AI。\n确定要继续吗？"
+	dlg.dialog_text = "继续修改将丢弃 AI 编辑的代码，项目回到图形化配置阶段。\n" \
+		+"更稳妥的做法是把想改的地方告诉 AI。\n确定要继续吗？"
 	dlg.get_ok_button().text = "丢弃 AI 代码并继续"
 	dlg.get_cancel_button().text = "保持预览"
 	dlg.confirmed.connect(_downgrade_to_stage1)
@@ -1149,7 +1149,7 @@ func _update_ik_joint_rows() -> void:
 	var btn: Node = get_node_or_null(P_IK_CONFIG_TYPE)
 	var jc: int = _ik_joint_count(btn.selected if btn is OptionButton else 1)
 	for i in range(IK_JOINT_ROWS.size()):
-		var row: Node = get_node_or_null(NodePath(IK + "/" + IK_JOINT_ROWS[i]))
+		var row: Node = get_node_or_null(NodePath(IK +"/"+ IK_JOINT_ROWS[i]))
 		if row is Control:
 			row.visible = i < jc
 
@@ -2003,12 +2003,12 @@ func _on_ai_edit_pressed() -> void:
 			errors += 1
 		else:
 			warns += 1
-	var text: String = "进入 AI 编辑后，图形化配置就定稿了：\n"\
-		+ "之后这边只能预览，想改动必须丢弃 AI 编辑的代码。\n\n"\
-		+ "请确认配置已经全部填好，再继续。"
+	var text: String = "进入 AI 编辑后，图形化配置就定稿了：\n" \
+		+"之后这边只能预览，想改动必须丢弃 AI 编辑的代码。\n\n" \
+		+"请确认配置已经全部填好，再继续。"
 	if errors > 0:
-		text = "当前配置还有 %d 个错误（见下方「问题 & 输出」）。\n" % errors\
-			+ "带着错误进入 AI 编辑，生成的代码很可能编译不过。\n\n" + text
+		text = "当前配置还有 %d 个错误（见下方「问题 & 输出」）。\n" % errors \
+			+"带着错误进入 AI 编辑，生成的代码很可能编译不过。\n\n" + text
 	elif warns > 0:
 		text = "当前配置有 %d 个警告（见下方「问题 & 输出」）。\n\n" % warns + text
 	var dlg := ConfirmationDialog.new()

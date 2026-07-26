@@ -24,6 +24,8 @@ const P_ROBOT: NodePath = "Sim/SubViewport/World/Robot"
 const P_BULLETS: NodePath = "Sim/SubViewport/World/Bullets"
 const P_TRACERS: NodePath = "Sim/SubViewport/World/Tracers"
 const P_PARAMS: NodePath = "SidePanel/Scroll/Params"
+const P_SIDE_PANEL: NodePath = "SidePanel"
+const P_TOP_PANEL: NodePath = "TopPanel"
 const P_STATUS: NodePath = "StatusPanel/Status"
 const P_MODE: NodePath = "TopPanel/HBox/Mode"
 const P_BACK: NodePath = "TopPanel/HBox/Back"
@@ -50,9 +52,21 @@ const GIMBAL_SIZE: float = 0.06
 ## 枪管长度与口径
 const BARREL_LEN: float = 0.20
 const BARREL_RADIUS: float = 0.012
-## 摩擦轮（视觉）
+## 摩擦轮（视觉）。转轴竖直，圆柱面与枪管相切，弹丸从两轮缝隙间被搓出去
 const FRICTION_RADIUS: float = 0.028
+## 摩擦轮厚度（沿转轴方向，即竖直方向）
 const FRICTION_WIDTH: float = 0.014
+## 摩擦轮颜色：未启动时的冷色，以及转速下限/上限对应的橙色 -> 橙红色。
+## 占空比 500~1100 之间线性插值，转速高低一眼可辨
+const FRICTION_COLD: Color = Color(0.35, 0.38, 0.42)
+const FRICTION_HOT_LO: Color = Color(1.0, 0.55, 0.1)
+const FRICTION_HOT_HI: Color = Color(1.0, 0.22, 0.05)
+## 转起来时的自发光强度上限（占空比越高越亮）
+const FRICTION_EMISSION_MAX: float = 1.2
+## 摩擦轮沿枪管轴的位置（负值 = 靠枪口方向）。
+## 必须让轮子后缘（FRICTION_Z + FRICTION_RADIUS）越过云台盒子前壁，
+## 否则轮子会埋进盒子里看不见——盒子半宽 0.042 比轮心距 0.040 还大，挡得死死的
+const FRICTION_Z: float = -0.085
 
 # ------------------------------------------------------------------ 弹丸
 ## RM 17mm 弹丸：直径 17mm，标称质量 3.2g
@@ -62,8 +76,12 @@ const BULLET_MASS: float = 0.0032
 const BULLET_MAX_ALIVE: int = 30
 ## 弹丸存活时间上限（秒）
 const BULLET_LIFE_SEC: float = 4.0
-## 记录弹道的弹丸数（只画最近几发，多了看不清）
+## 同时显示的弹道条数上限（含在飞的）。只看最近五次，多了看不清
 const TRACER_MAX_TRAILS: int = 5
+## 弹丸颜色（绿色发光）与自发光强度。
+## 强度不能开太高：2.5 时红蓝通道会一起顶到 1.0，绿色被洗成淡青白，反而看不出是绿的
+const BULLET_COLOR: Color = Color(0.15, 0.95, 0.3)
+const BULLET_EMISSION_ENERGY: float = 1.2
 ## 单条弹道的采样点上限
 const TRACER_MAX_POINTS: int = 240
 
@@ -99,6 +117,8 @@ const MAX_STEPS_PER_FRAME: int = 20
 
 # ------------------------------------------------------------------ 相机
 const CAM_PITCH_LIMIT: float = 1.45
+## 跟随模式下相机朝向对齐车头的平滑系数（越大越跟手）
+const CAM_FOLLOW_LERP: float = 6.0
 
 # ------------------------------------------------------------------ 输入映射
 ## 内部按键 id。valueOfKey 的三行对应：方向键 / ABCD / 两个摇杆按下
@@ -114,20 +134,21 @@ const CFG_KEY_TO_ID: Dictionary = {
 }
 ## 键盘代打：内部 id -> 键码。
 ## 右摇杆用 IJKL 而不是方向键，因为方向键本身是手柄上的一组功能键。
+## 扳机键（R）不在这里，它绑鼠标左键，见 _read_controller_inputs。
 const KB_KEY_TO_ID: Dictionary = {
 	KEY_UP: "UP", KEY_DOWN: "DOWN", KEY_LEFT: "LEFT", KEY_RIGHT: "RIGHT",
 	KEY_1: "A", KEY_2: "B", KEY_3: "C", KEY_4: "D",
-	KEY_R: "R", KEY_SHIFT: "ROCKER1", KEY_Z: "ROCKER2",
+	KEY_SHIFT: "ROCKER1", KEY_Z: "ROCKER2",
 }
-## 手柄代打：按钮 -> 内部 id
+## 手柄代打：按钮 -> 内部 id。
+## 扳机键（R）绑 RT（右扳机），它是轴而非按钮，单独处理。
 const PAD_BUTTON_TO_ID: Dictionary = {
 	JOY_BUTTON_A: "A", JOY_BUTTON_B: "B", JOY_BUTTON_X: "C", JOY_BUTTON_Y: "D",
 	JOY_BUTTON_DPAD_UP: "UP", JOY_BUTTON_DPAD_DOWN: "DOWN",
 	JOY_BUTTON_DPAD_LEFT: "LEFT", JOY_BUTTON_DPAD_RIGHT: "RIGHT",
-	JOY_BUTTON_RIGHT_SHOULDER: "R",
 	JOY_BUTTON_LEFT_STICK: "ROCKER1", JOY_BUTTON_RIGHT_STICK: "ROCKER2",
 }
-## 手柄扳机也算 R 键（扣扳机发射更直觉）
+## RT 扳机的触发阈值（扳机是 0~1 的模拟轴）
 const PAD_TRIGGER_THRESHOLD: float = 0.5
 
 enum Mode {OPERATE = 0, CALIB = 1}
@@ -202,7 +223,11 @@ var _muzzle_v_lo: float = MUZZLE_V_LO_DEFAULT
 var _muzzle_v_hi: float = MUZZLE_V_HI_DEFAULT
 
 # ------------------------------------------------------------------ 视图状态
-var _cam_yaw: float = -0.7
+## 跟随模式下是「相对车身」的偏移角（0 = 正车尾，视线沿车头正前方），
+## 非跟随模式下是世界系绝对角
+var _cam_yaw: float = 0.0
+## 相机当前跟到的车头朝向（弧度）。平滑追随 _heading，不瞬时对齐
+var _cam_heading: float = 0.0
 var _cam_pitch: float = 0.45
 var _cam_dist: float = 1.6
 var _cam_pivot: Vector3 = Vector3.ZERO
@@ -232,8 +257,10 @@ var _mat_deck: StandardMaterial3D = null
 var _mat_wheel: StandardMaterial3D = null
 var _mat_gimbal: StandardMaterial3D = null
 var _mat_barrel: StandardMaterial3D = null
-var _mat_friction: StandardMaterial3D = null
-var _mat_friction_hot: StandardMaterial3D = null
+## 摩擦轮材质。颜色随占空比逐帧改，因此两个轮子各持一份
+## （共用也行，但分开日后想分别显示左右转速时不用再改）。
+## 切记不要每帧 new 材质，会持续产生垃圾
+var _mat_friction_wheels: Array = []
 var _mat_bullet: StandardMaterial3D = null
 var _mat_ground: StandardMaterial3D = null
 var _mat_nose: StandardMaterial3D = null
@@ -394,9 +421,16 @@ func _build_materials() -> void:
 	_mat_wheel = _make_material(Color(0.13, 0.14, 0.16), 0.85, 0.05)
 	_mat_gimbal = _make_material(Color(0.42, 0.55, 0.72), 0.35, 0.45)
 	_mat_barrel = _make_material(Color(0.83, 0.85, 0.88), 0.2, 0.7)
-	_mat_friction = _make_material(Color(0.35, 0.38, 0.42), 0.5, 0.3)
-	_mat_friction_hot = _make_material(Color(0.92, 0.45, 0.2), 0.35, 0.3)
-	_mat_bullet = _make_material(Color(0.95, 0.92, 0.55), 0.3, 0.1)
+	_mat_friction_wheels = []
+	for i in range(2):
+		var m: StandardMaterial3D = _make_material(FRICTION_COLD, 0.5, 0.3)
+		m.emission = FRICTION_HOT_HI
+		_mat_friction_wheels.append(m)
+	# 弹丸：绿色自发光。不受光照影响，否则飞进阴影里就看不见了
+	_mat_bullet = _make_material(BULLET_COLOR, 0.4, 0.0)
+	_mat_bullet.emission_enabled = true
+	_mat_bullet.emission = BULLET_COLOR
+	_mat_bullet.emission_energy_multiplier = BULLET_EMISSION_ENERGY
 	_mat_ground = _make_material(Color(0.15, 0.16, 0.19), 0.9, 0.0)
 	_mat_nose = StandardMaterial3D.new()
 	_mat_nose.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -563,20 +597,19 @@ func _build_robot() -> void:
 		Basis(Vector3.RIGHT, Vector3.FORWARD, Vector3.UP),
 		Vector3(0.0, 0.0, -BARREL_LEN * 0.5))
 	_pitch_root.add_child(barrel)
-	# 两个摩擦轮，夹在枪管根部两侧
+	# 两个摩擦轮，夹在枪管两侧。
+	# 转轴竖直（Pitch 水平时垂直于地面），即 CylinderMesh 的默认 +Y 朝向，不需旋转。
+	# 轮心离枪管轴 = 摩擦轮半径 + 枪管半径，使圆柱面正好与枪管相切（弹丸从缝里挤过去）。
 	for sx in [-1.0, 1.0]:
 		var fw: MeshInstance3D = MeshInstance3D.new()
 		var fcyl: CylinderMesh = CylinderMesh.new()
 		fcyl.top_radius = FRICTION_RADIUS
 		fcyl.bottom_radius = FRICTION_RADIUS
 		fcyl.height = FRICTION_WIDTH
-		fcyl.radial_segments = 16
+		fcyl.radial_segments = 20
 		fcyl.rings = 1
 		fw.mesh = fcyl
-		fw.material_override = _mat_friction
-		fw.transform = Transform3D(
-			Basis(Vector3.UP, Vector3.RIGHT, Vector3.BACK),
-			Vector3(sx * (FRICTION_WIDTH * 0.5 + BARREL_RADIUS + 0.002), 0.0, -0.05))
+		fw.position = Vector3(sx * (FRICTION_RADIUS + BARREL_RADIUS), 0.0, FRICTION_Z)
 		_pitch_root.add_child(fw)
 		_friction_nodes.append(fw)
 	# 枪口：弹丸出生点
@@ -584,6 +617,8 @@ func _build_robot() -> void:
 	_muzzle.name = "Muzzle"
 	_muzzle.position = Vector3(0.0, 0.0, -BARREL_LEN - BULLET_RADIUS * 2.0)
 	_pitch_root.add_child(_muzzle)
+	# 摩擦轮材质按当前占空比上色（新建时还没有 material_override）
+	_update_friction_color()
 
 
 ## 同帧内可能重建多次（改配置/拖滑块），必须立即释放而非 queue_free，
@@ -614,11 +649,10 @@ func _read_controller_inputs() -> void:
 		for btn in PAD_BUTTON_TO_ID.keys():
 			if Input.is_joy_button_pressed(pad, btn):
 				pressed[PAD_BUTTON_TO_ID[btn]] = true
-		# 两个扳机也当 R 键（扣扳机发射更直觉）
-		if Input.get_joy_axis(pad, JOY_AXIS_TRIGGER_RIGHT) > PAD_TRIGGER_THRESHOLD \
-				or Input.get_joy_axis(pad, JOY_AXIS_TRIGGER_LEFT) > PAD_TRIGGER_THRESHOLD:
+		# RT 扳机 = 扳机键，扣扳机发射最直觉
+		if Input.get_joy_axis(pad, JOY_AXIS_TRIGGER_RIGHT) > PAD_TRIGGER_THRESHOLD:
 			pressed["R"] = true
-	# --- 键盘（与手柄叠加，谁动听谁）---
+	# --- 键盘与鼠标（与手柄叠加，谁动听谁）---
 	if not _text_field_focused():
 		lx += _axis_pair(KEY_D, KEY_A)
 		ly += _axis_pair(KEY_W, KEY_S)
@@ -627,6 +661,11 @@ func _read_controller_inputs() -> void:
 		for code in KB_KEY_TO_ID.keys():
 			if Input.is_key_pressed(code):
 				pressed[KB_KEY_TO_ID[code]] = true
+		# 鼠标左键 = 扳机键。用全局轮询而不是 _gui_input：
+		# 后者会与相机拖拽抢事件，且开火是持续状态而非一次性事件。
+		# 鼠标落在控件上（拖滑块、点按钮）时不算开火，否则调摩擦轮档位会误发弹
+		if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not _mouse_over_ui():
+			pressed["R"] = true
 	# --- 量化到 -2047~2047 并过死区，复现真机的整数摇杆读数 ---
 	_roker[0][0] = _quantize(lx)
 	_roker[0][1] = _quantize(ly)
@@ -667,6 +706,18 @@ func _text_field_focused() -> bool:
 	return f is LineEdit or f is TextEdit
 
 
+## 鼠标是否悬在面板控件上。开火绑了鼠标左键，
+## 故拖侧栏滑块或点顶栏按钮时必须抑制，否则会误发弹
+func _mouse_over_ui() -> bool:
+	var pos: Vector2 = get_global_mouse_position()
+	for path in [P_SIDE_PANEL, P_TOP_PANEL]:
+		var panel: Node = get_node_or_null(path)
+		if panel is Control and panel.visible \
+				and panel.get_global_rect().has_point(pos):
+			return true
+	return false
+
+
 # ------------------------------------------------------------------ 主循环（定步 10ms）
 func _process(delta: float) -> void:
 	_sim_accum += delta * 1000.0
@@ -678,7 +729,7 @@ func _process(delta: float) -> void:
 			_tick()
 	_update_bullets(delta)
 	_render_robot()
-	_update_camera()
+	_update_camera(delta)
 	_update_status()
 
 
@@ -902,10 +953,32 @@ func _render_robot() -> void:
 			Basis(Vector3.RIGHT, Vector3.UP, Vector3.BACK).rotated(
 				Vector3.RIGHT, _wheel_spin[i]) * Basis(Vector3.UP, Vector3.RIGHT, Vector3.BACK),
 			w.position)
-	# 摩擦轮转起来时换成暖色，一眼看出有没有开
-	var hot: bool = _duty_booster >= BOOSTER_DUTY_MIN
-	for fw in _friction_nodes:
-		fw.material_override = _mat_friction_hot if hot else _mat_friction
+	_update_friction_color()
+
+
+## 摩擦轮颜色随占空比连续渐变：
+## 未启动（< 500）冷灰，500 橙色，1100 橙红，中间线性插值。
+## 摩擦轮从 500 爬到 1100 要 6 秒（每秒 +100），渐变正好把这个过程看得见
+func _update_friction_color() -> void:
+	var t: float = -1.0
+	if _duty_booster >= BOOSTER_DUTY_MIN:
+		t = clampf(float(_duty_booster - BOOSTER_DUTY_MIN)
+			/ float(BOOSTER_DUTY_MAX - BOOSTER_DUTY_MIN), 0.0, 1.0)
+	for i in range(_friction_nodes.size()):
+		if i >= _mat_friction_wheels.size():
+			break
+		var m: StandardMaterial3D = _mat_friction_wheels[i]
+		if t < 0.0:
+			m.albedo_color = FRICTION_COLD
+			m.emission_enabled = false
+		else:
+			var c: Color = FRICTION_HOT_LO.lerp(FRICTION_HOT_HI, t)
+			m.albedo_color = c
+			# 转速越高越亮，低速时几乎不发光
+			m.emission_enabled = true
+			m.emission = c
+			m.emission_energy_multiplier = FRICTION_EMISSION_MAX * t
+		_friction_nodes[i].material_override = m
 
 
 # ------------------------------------------------------------------ 弹丸
@@ -1014,11 +1087,15 @@ func _redraw_tracers() -> void:
 	if not _tracer_enabled:
 		node.mesh = null
 		return
+	# 已落地的在前、在飞的在后，即按时间先后排序
 	var lines: Array = []
 	for t in _tracers:
 		lines.append(t)
 	for b in _bullets:
 		lines.append(b["trail"])
+	# 只保留最近五条。_tracers 自身已限长，但加上在飞的仍可能超出
+	if lines.size() > TRACER_MAX_TRAILS:
+		lines = lines.slice(lines.size() - TRACER_MAX_TRAILS)
 	var any: bool = false
 	for l in lines:
 		if l.size() >= 2:
@@ -1040,7 +1117,8 @@ func _redraw_tracers() -> void:
 		var fade: float = 0.25 + 0.65 * (float(li + 1) / float(lines.size()))
 		im.surface_begin(Mesh.PRIMITIVE_LINE_STRIP, mat)
 		for p in pts:
-			im.surface_set_color(Color(0.98, 0.82, 0.35, fade))
+			# 弹道跟弹丸同色，一眼能对上是哪发打出来的
+			im.surface_set_color(Color(BULLET_COLOR.r, BULLET_COLOR.g, BULLET_COLOR.b, fade))
 			im.surface_add_vertex(p)
 		im.surface_end()
 	node.mesh = im
@@ -1061,6 +1139,7 @@ func _on_tracer_toggled(on: bool) -> void:
 func _reset_pose() -> void:
 	_pos = Vector3.ZERO
 	_heading = 0.0
+	_cam_heading = 0.0
 	_wheel_spin = [0.0, 0.0, 0.0, 0.0]
 	for i in range(_bullets.size() - 1, -1, -1):
 		var body: Node = _bullets[i]["body"]
@@ -1073,28 +1152,53 @@ func _reset_pose() -> void:
 
 
 # ------------------------------------------------------------------ 相机
+## 切换跟随时要补偿 _cam_yaw，否则视角会突变：
+## 跟随模式下 _cam_yaw 是「相对车身」的偏移，非跟随时是世界系绝对角。
+## 重新开启跟随时必须先把 _cam_heading 拉到车当前朝向——它在非跟随期间不再更新，
+## 直接拿旧值做补偿会算出错误的偏移（踩过）。
 func _on_follow_toggled(on: bool) -> void:
+	if on == _follow:
+		return
+	if on:
+		_cam_heading = _heading
+		_cam_yaw = wrapf(_cam_yaw - _cam_heading, -PI, PI)
+	else:
+		_cam_yaw = wrapf(_cam_yaw + _cam_heading, -PI, PI)
 	_follow = on
-
-
-func _reset_view() -> void:
-	_cam_yaw = -0.7
-	_cam_pitch = 0.42
-	_cam_dist = 1.6
-	_cam_pivot = _pos + Vector3(0.0, 0.12, 0.0)
 	_update_camera()
 
 
-func _update_camera() -> void:
+func _reset_view() -> void:
+	# 跟随模式下这是相对车尾的偏移角，0 = 相机正在车尾、视线沿车头正前方
+	_cam_yaw = 0.0
+	_cam_pitch = 0.42
+	_cam_dist = 1.6
+	_cam_pivot = _pos + Vector3(0.0, 0.12, 0.0)
+	# 重置视角时相机朝向立即对齐车头，不走平滑
+	_cam_heading = _heading
+	_update_camera()
+
+
+## delta > 0 时相机朝向平滑跟向车头；delta = 0 表示立即对齐。
+## 不平滑的话，原地转向默认 360°/s 会让画面每秒转一整圈，看着很晕
+func _update_camera(delta: float = 0.0) -> void:
 	var cam: Node = get_node_or_null(P_CAMERA)
 	if not cam is Camera3D:
 		return
 	if _follow:
 		_cam_pivot = _pos + Vector3(0.0, 0.12, 0.0)
+		if delta > 0.0:
+			# 指数靠近：每秒补上差值的 CAM_FOLLOW_LERP 倍，与帧率无关
+			var t: float = 1.0 - exp(-CAM_FOLLOW_LERP * delta)
+			_cam_heading = lerp_angle(_cam_heading, _heading, t)
+		else:
+			_cam_heading = _heading
+	# 跟随时相机绕到车尾，朝向与车头一致；非跟随时 _cam_yaw 就是绝对角
+	var yaw: float = (_cam_heading + _cam_yaw) if _follow else _cam_yaw
 	var offset: Vector3 = Vector3(
-		_cam_dist * cos(_cam_pitch) * sin(_cam_yaw),
+		_cam_dist * cos(_cam_pitch) * sin(yaw),
 		_cam_dist * sin(_cam_pitch),
-		_cam_dist * cos(_cam_pitch) * cos(_cam_yaw))
+		_cam_dist * cos(_cam_pitch) * cos(yaw))
 	cam.position = _cam_pivot + offset
 	cam.look_at(_cam_pivot, Vector3.UP)
 
@@ -1165,7 +1269,7 @@ func _update_hint() -> void:
 			if pads.size() > 0:
 				pad_txt = "手柄：%s" % Input.get_joy_name(pads[0])
 			label.text = "%s ｜ WASD 左摇杆(底盘) · IJKL 右摇杆(云台) · 1/2/3/4 = A/B/C/D · %s ｜ %s" % [
-				base, "R 发射 · Shift 冲刺 · Z 归中", pad_txt]
+				base, "鼠标左键/RT 发射 · Shift 冲刺 · Z 归中", pad_txt]
 		Mode.CALIB:
 			label.text = "%s ｜ 标定模式下摇杆不动云台，用滑块摆到实际中位再存" % base
 		_:
@@ -1307,7 +1411,7 @@ func _keymap_text() -> String:
 		"右摇杆（云台）：手柄右摇杆 / 键盘 IJKL",
 		"A/B/C/D：手柄 A/B/X/Y / 键盘 1/2/3/4",
 		"方向键：手柄十字键 / 键盘方向键（当前作用：%s）" % _arrow_key,
-		"扳机 %s：手柄右肩键或扳机 / 键盘 R" % str(_cfg.get("trigger_key", "R")),
+		"扳机 %s：手柄 RT / 鼠标左键" % str(_cfg.get("trigger_key", "R")),
 		"按下左摇杆（冲刺）：手柄按下左摇杆 / 键盘 Shift%s"
 			% ("" if _sprint_enabled else "（配置未勾选冲刺，无效）"),
 		"按下右摇杆（云台归中）：手柄按下右摇杆 / 键盘 Z%s"
