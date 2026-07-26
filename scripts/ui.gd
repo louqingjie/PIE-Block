@@ -132,6 +132,9 @@ const P_OUTPUT: NodePath = "VBoxContainer/HBoxContainer/HSplitContainer/CodeZone
 const P_CODE_EDIT: NodePath = "VBoxContainer/HBoxContainer/HSplitContainer/CodeZone/VSplitContainer/Code/CodeEdit"
 # 顶栏按钮
 const P_BUILD_BTN: NodePath = "VBoxContainer/TopPanel/Build"
+const P_ARM_SIM_BTN: NodePath = "VBoxContainer/TopPanel/ArmSim"
+# 3D 仿真场景（作为子节点覆盖显示，避免切场景丢失整页配置状态）
+const ARM_SIM_SCENE: String = "res://scenes/arm_sim.tscn"
 # AI 编辑入口（跳转到 code_edit.tscn）
 const P_AI_EDIT_BTN: NodePath = "VBoxContainer/TopPanel/AIEdit"
 # AI 代码编辑器场景
@@ -146,6 +149,8 @@ var _build_thread: Thread = null
 var _build_busy: bool = false
 # 当前选中的代码生成器（随 Tab 切换）
 var _codegen: CodeGenBase = null
+# 当前打开的 3D 仿真视图实例（null 表示未打开）
+var _arm_sim: Control = null
 # 工具链管理器（惰性创建，见 _toolchain()）
 var _tc = null
 
@@ -226,6 +231,10 @@ func _connect_signals() -> void:
 	var build_btn: Node = get_node_or_null(P_BUILD_BTN)
 	if build_btn is BaseButton:
 		build_btn.pressed.connect(_on_build_pressed)
+	# 3D 仿真按钮
+	var sim_btn: Node = get_node_or_null(P_ARM_SIM_BTN)
+	if sim_btn is BaseButton:
+		sim_btn.pressed.connect(_on_arm_sim_pressed)
 	# AI 编辑入口
 	var ai_btn: Node = get_node_or_null(P_AI_EDIT_BTN)
 	if ai_btn is BaseButton:
@@ -286,6 +295,42 @@ func _connect_signals() -> void:
 	var tab_container: Node = get_node_or_null(P_TAB_CONTAINER)
 	if tab_container is TabContainer:
 		tab_container.tab_changed.connect(_on_tab_changed)
+
+
+# ------------------------------------------------------------------ 3D 仿真
+## 打开机械臂逆解 3D 仿真视图。
+## 用「加子节点覆盖」而非 change_scene_to_file：整页配置状态留在内存里，
+## 返回时不需要重建任何控件。
+func _on_arm_sim_pressed() -> void:
+	if _arm_sim != null:
+		return
+	# 仿真只对工程逆解算配置有意义，先把 Tab 切过去再取配置
+	var tab_container: Node = get_node_or_null(P_TAB_CONTAINER)
+	if tab_container is TabContainer and tab_container.current_tab != 2:
+		tab_container.current_tab = 2
+	var packed: PackedScene = load(ARM_SIM_SCENE) as PackedScene
+	if packed == null:
+		push_error("无法加载 3D 仿真场景：%s" % ARM_SIM_SCENE)
+		return
+	var sim: Node = packed.instantiate()
+	if not sim is Control:
+		push_error("3D 仿真场景根节点不是 Control")
+		return
+	_arm_sim = sim
+	_arm_sim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	if _arm_sim.has_signal("closed"):
+		_arm_sim.closed.connect(_on_arm_sim_closed)
+	# set_config 在 add_child 之前调用，_ready 里会自行应用
+	if _arm_sim.has_method("set_config"):
+		_arm_sim.set_config(_collect_ik_config())
+	add_child(_arm_sim)
+
+
+func _on_arm_sim_closed() -> void:
+	if _arm_sim == null:
+		return
+	_arm_sim.queue_free()
+	_arm_sim = null
 
 
 # ------------------------------------------------------------------ Tab 切换

@@ -198,8 +198,11 @@ func start(workspace: String) -> bool:
 
 	var ws_abs: String = ProjectSettings.globalize_path(workspace).replace("/", "\\")
 	var exe_win: String = _exe_path.replace("/", "\\")
-	# cd /d 切盘符+目录；set 注入密码；&& 串联
-	var inner: String = 'cd /d "%s" && set OPENCODE_SERVER_PASSWORD=%s && "%s" serve --port %d --hostname 127.0.0.1' % [
+	# cd /d 切盘符+目录；set 注入密码；&& 串联。
+	# 关键：set 必须写成 set "VAR=value" 形式。
+	# 若写 `set VAR=value && ...`，cmd 会把 && 前的空格并入变量值，
+	# 服务端密码变成 "<token> " 而客户端算的是 "<token>"，导致每个请求都 401。
+	var inner: String = 'cd /d "%s" && set "OPENCODE_SERVER_PASSWORD=%s" && "%s" serve --port %d --hostname 127.0.0.1' % [
 		ws_abs, _token, exe_win, _port]
 	_pid = OS.create_process("cmd.exe", ["/c", inner], false)
 	if _pid == -1:
@@ -208,13 +211,19 @@ func start(workspace: String) -> bool:
 	_emit_log("正在启动 AI 服务（端口 %d）…" % _port)
 	_set_status("正在启动 AI 服务…")
 	_health_tries = 0
-	# Timer 必须在场景树内才能计时；不在树里时轮询永不触发，
-	# 进度会静默卡在“正在启动”。这里显式报错而非挂死。
-	if not is_inside_tree():
-		_emit_log("[Error] OpenCodeClient 尚未加入场景树，无法轮询服务状态")
-		return false
-	_health_timer.start()
+	_start_health_poll()
 	return true
+
+
+## 启动健康轮询。Timer 只有在场景树内才会计时，若此刻还没入树
+## （例如刚 add_child 尚未生效），先等入树信号再启动，
+## 否则轮询永不触发、进度会静默卡在“正在启动”。
+func _start_health_poll() -> void:
+	if _health_timer.is_inside_tree():
+		_health_timer.start()
+	else:
+		_health_timer.tree_entered.connect(
+			func() -> void: _health_timer.start(), CONNECT_ONE_SHOT)
 
 
 func _make_token() -> String:
@@ -263,6 +272,11 @@ func _on_health_completed(_result: int, code: int, _headers: PackedStringArray,
 			ver = str(data.get("version", ""))
 		_emit_log("AI 服务已就绪（opencode %s）" % ver)
 		_create_session()
+		return
+	# 401 说明服务已起来但认证不通过，再轮询也不会变好，直接报错止损
+	if code == 401:
+		_emit_log("[Error] AI 服务认证失败（401），无法连接")
+		_set_status("认证失败")
 		return
 	# 未就绪或连接失败，继续轮询
 	_health_timer.start()

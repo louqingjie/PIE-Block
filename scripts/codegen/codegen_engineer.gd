@@ -560,7 +560,7 @@ func _gen_servo_calc_code(rows: Array) -> String:
 				if not is_joystick:
 					# 目标偏移角本身带符号，方向选项对该模式无意义（静态检查会提示）
 					var angle: int = _parse_param(row.param,
-						-SERVO_MAX_OFFSET_DEG, SERVO_MAX_OFFSET_DEG)
+						- SERVO_MAX_OFFSET_DEG, SERVO_MAX_OFFSET_DEG)
 					var target_duty: int = _servo_angle_to_duty(angle)
 					var key_expr2: String = _key_expr(input_info)
 					code += "    if (%s)\n" % key_expr2

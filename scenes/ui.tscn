@@ -67,6 +67,11 @@ layout_mode = 2
 size_flags_horizontal = 8
 text = "AI 编辑"
 
+[node name="ArmSim" type="Button" parent="VBoxContainer/TopPanel"]
+layout_mode = 2
+size_flags_horizontal = 8
+text = "3D 仿真"
+
 [node name="Build" type="Button" parent="VBoxContainer/TopPanel" unique_id=1581104311]
 layout_mode = 2
 size_flags_horizontal = 8
