@@ -364,6 +364,29 @@ func _test_lifecycle() -> void:
 	_check("重开后仍是阶段一", int(ui2._project["stage"]) == 1)
 	_check("重开后不是预览态", not ui2._stage2_preview)
 
+	# 点「AI 编辑」应先弹确认框，此时还没升阶段
+	ui2._on_ai_edit_pressed()
+	await process_frame
+	var confirm: Node = _find_dialog(ui2, "确认进入 AI 编辑")
+	_check("点 AI 编辑先弹确认框", confirm != null)
+	_check("确认框弹出时还没升阶段", int(ui2._project["stage"]) == 1)
+	if confirm != null:
+		# 取消：不该有任何变化
+		confirm.canceled.emit()
+		confirm.hide()
+		await process_frame
+		_check("取消后仍是阶段一", int(ui2._project["stage"]) == 1)
+		var still1: Dictionary = PF.load_from(path)
+		_check("取消后磁盘上仍是阶段一", int(still1["data"]["stage"]) == 1)
+	# 对话框尺寸要显式给，否则多行文本会把它撑到视口高度
+	ui2._on_ai_edit_pressed()
+	await process_frame
+	var confirm2: Node = _find_dialog(ui2, "确认进入 AI 编辑")
+	if confirm2 != null:
+		_check("确认框高度未被撑满视口", confirm2.size.y < 600,
+			"实际 %d" % confirm2.size.y)
+		confirm2.hide()
+
 	# 进入阶段二（不切场景，直接走冻结逻辑）
 	var code: String = ui2._current_preview_code()
 	ui2._project["config"] = ui2._snapshot_config()
@@ -392,6 +415,12 @@ func _test_lifecycle() -> void:
 	await process_frame
 	await process_frame
 	_check("阶段二重开进入预览态", ui3._stage2_preview)
+	# 已在阶段二，再点 AI 编辑不该重复弹确认框（没有新的不可逆动作）
+	var dlg_before: int = _count_dialogs(ui3)
+	ui3._on_ai_edit_pressed()
+	await process_frame
+	_check("阶段二点 AI 编辑不再弹确认框",
+		_find_dialog(ui3, "确认进入 AI 编辑") == null and _count_dialogs(ui3) == dlg_before)
 	# 阶段二在图形化界面保存时，冻结的 config 与 main_c_stage1 都不能被改写
 	var frozen_cfg: Dictionary = (s2d["config"] as Dictionary).duplicate(true)
 	ui3._save_project(false)
@@ -544,6 +573,22 @@ func _test_launcher() -> void:
 func _clear_recent() -> void:
 	for p in PF.recent_list():
 		PF.recent_remove(str(p))
+
+
+## 按标题找运行时 add_child 上去的对话框
+func _find_dialog(node: Node, title: String) -> Window:
+	for child in node.get_children():
+		if child is AcceptDialog and child.title == title:
+			return child
+	return null
+
+
+func _count_dialogs(node: Node) -> int:
+	var n: int = 0
+	for child in node.get_children():
+		if child is AcceptDialog:
+			n += 1
+	return n
 
 
 ## 找出第一处不一致，方便定位

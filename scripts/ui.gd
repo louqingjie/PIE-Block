@@ -196,6 +196,8 @@ var _stage2_preview: bool = false
 var _frozen_config: Dictionary = {}
 ## 已经弹过「继续修改将丢弃 AI 代码」确认框，避免连点堆叠弹窗
 var _discard_dialog_open: bool = false
+## 最近一次静态检查的结果，进入 AI 编辑前的提示要拿它报问题数
+var _last_issues: Array = []
 
 
 func _ready() -> void:
@@ -1484,6 +1486,7 @@ func _run_check(_a = null, _b = null) -> void:
 	elif current_tab == 2:
 		# 工程逆解算模式检查
 		_check_ik_params(issues)
+	_last_issues = issues
 	# 将问题展示到 Output
 	var out: Node = get_node_or_null(P_OUTPUT)
 	if out and out.has_method("set_issues"):
@@ -1981,10 +1984,49 @@ func _build_worker(uv4_abs: String, project_dst: String) -> void:
 	call_deferred("_on_build_finished", result)
 
 
-## AI 编辑入口（阶段一 -> 阶段二）。
-## 进入前先把阶段一的配置与生成代码冻结进 .pieproj，这一步不可逆：
-## 之后图形化配置只能预览，降回阶段一必须显式丢弃 AI 代码。
+## AI 编辑入口（阶段一 -> 阶段二）。先弹一次确认，再真正进入。
+## 这一步不可逆，用户通常意识不到「图形化配置就此定稿」，所以必须显式提醒。
 func _on_ai_edit_pressed() -> void:
+	# 无项目（直跑本场景）时没有阶段概念，不必提醒
+	if _project.is_empty():
+		_enter_ai_edit()
+		return
+	# 阶段二再点一次只是回到 AI 编辑器，没有新的不可逆动作
+	if int(_project["stage"]) >= 2:
+		_enter_ai_edit()
+		return
+	_run_check()
+	var errors: int = 0
+	var warns: int = 0
+	for issue in _last_issues:
+		if str(issue.get("type", "")) == "Error":
+			errors += 1
+		else:
+			warns += 1
+	var text: String = "进入 AI 编辑后，图形化配置就定稿了：\n"\
+		+ "之后这边只能预览，想改动必须丢弃 AI 编辑的代码。\n\n"\
+		+ "请确认配置已经全部填好，再继续。"
+	if errors > 0:
+		text = "当前配置还有 %d 个错误（见下方「问题 & 输出」）。\n" % errors\
+			+ "带着错误进入 AI 编辑，生成的代码很可能编译不过。\n\n" + text
+	elif warns > 0:
+		text = "当前配置有 %d 个警告（见下方「问题 & 输出」）。\n\n" % warns + text
+	var dlg := ConfirmationDialog.new()
+	dlg.title = "确认进入 AI 编辑"
+	dlg.dialog_text = text
+	dlg.get_ok_button().text = "配置已完成，进入"
+	dlg.get_cancel_button().text = "再检查一下"
+	dlg.confirmed.connect(_enter_ai_edit)
+	add_child(dlg)
+	# 不给尺寸的话多行文本会把对话框撑到视口高度
+	dlg.popup_centered(Vector2i(480, 260))
+	dlg.confirmed.connect(dlg.queue_free)
+	dlg.canceled.connect(dlg.queue_free)
+	dlg.close_requested.connect(dlg.queue_free)
+
+
+## 真正进入 AI 编辑：把阶段一的配置与生成代码冻结进 .pieproj，然后切场景
+func _enter_ai_edit() -> void:
 	_clear_output()
 	if not _toolchain().ensure_deployed():
 		_append_output("[Error] 工具链初始化失败，无法进入 AI 编辑")
