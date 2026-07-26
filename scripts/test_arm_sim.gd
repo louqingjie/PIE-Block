@@ -597,7 +597,7 @@ func _test_chassis(sim: Node, config_type: int, jc: int, tag: String) -> void:
 	# 轮子必须露出板的左右侧，否则俯视时被板遮住数不出个数
 	var deck_half_w: float = deck.mesh.size.z / U * 0.5
 	var wheel_inner: float = absf(w.position.z - deck.position.z) / U \
-		- w.mesh.height / U * 0.5
+		-w.mesh.height / U * 0.5
 	_check("%s 轮子露出板侧" % tag, wheel_inner >= deck_half_w - 0.01,
 		"轮内沿距板心 %.1f 板半宽 %.1f" % [wheel_inner, deck_half_w])
 

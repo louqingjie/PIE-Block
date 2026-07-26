@@ -18,6 +18,14 @@ const JOINT_ANGLE_MIN: float = -90.0
 const JOINT_ANGLE_MAX: float = 90.0
 # 逆解可达性判定的最小半径，避免除零（与生成的 C 宏 IK_EPS 同值）
 const IK_EPS: float = 0.001
+# 关节数上限。依据实测的 STC32G 浮点预算：
+# 33.1776MHz 的 8051 内核无硬件 FPU，单关节一次 FK 步骤约
+# 38 次浮点乘 + 20 次加减 + sin/cos 各一次，约 0.2~0.3ms。
+# 主循环 10ms 中扩展板发送占 5ms，留给逆解的约 4ms，
+# 故 6 关节（约 1.5~2ms）是安全上限；且 6 自由度手动遥控已很难操作。
+# 另注：C251 单函数局部变量段上限 128 字节，多关节的 FK 中间结果
+# 必须声明成 static xdata，否则编译报 "segment too big"。
+const MAX_JOINTS: int = 6
 # 主循环周期(ms)：ExpansionBoradControl 之后的延时也计入其中
 const LOOP_PERIOD_MS: int = 10
 # 发送板间指令后必须留给硬件的响应延时(ms)
@@ -450,10 +458,14 @@ func _forward_kinematics(joints: Array, l1: float, l2: float, l3: float, config_
 	return forward_kinematics_angles(_joint_home_angles(joints), l1, l2, l3, config_type)
 
 
-## 从关节配置数组里取出初始角度（度），长度固定为 4，缺失补 0
+## 从关节配置数组里取出初始角度（度）。
+## 长度跟随实际关节数（至少 4，便于旧解析路径直接索引 a[3]），缺失补 0
 func _joint_home_angles(joints: Array) -> Array:
-	var out: Array = [0.0, 0.0, 0.0, 0.0]
-	for i in range(min(joints.size(), 4)):
+	var n: int = maxi(min(joints.size(), MAX_JOINTS), 4)
+	var out: Array = []
+	out.resize(n)
+	out.fill(0.0)
+	for i in range(min(joints.size(), n)):
 		out[i] = _to_float(joints[i].get("zero", "0"), 0.0)
 	return out
 
@@ -510,6 +522,94 @@ func _pad_angles(angles: Array) -> Array:
 	for i in range(min(angles.size(), 4)):
 		out[i] = float(angles[i])
 	return out
+
+
+# ============================================================ 通用正运动学
+# 支持每个关节独立选择 Pitch / Roll / Yaw 转轴，不再假定「底座 Yaw + 共面 Pitch」。
+# 用户是没有机械基础的大一学生，会造出任意构形的臂，写死构形会导致
+# 生成的 C 代码按错误假设算角度却编译通过（静默出错）。
+#
+# 轴向约定（关节局部坐标系，连杆沿局部 +X 伸出）：
+#   Yaw   = 绕局部 Z（竖直轴）  —— 左右摆
+#   Pitch = 绕局部 -Y          —— 上下俯仰；取负号才能让正角度抬升连杆，
+#                                 与历史构型的 zz = L·sin(θ) 一致
+#   Roll  = 绕局部 X（连杆自身轴线）—— 自转，不改变末端位置
+const AXIS_YAW: String = "Yaw"
+const AXIS_PITCH: String = "Pitch"
+const AXIS_ROLL: String = "Roll"
+## 转轴名 -> 局部单位向量
+const AXIS_VECTORS: Dictionary = {
+	AXIS_YAW: Vector3(0.0, 0.0, 1.0),
+	AXIS_PITCH: Vector3(0.0, -1.0, 0.0),
+	AXIS_ROLL: Vector3(1.0, 0.0, 0.0),
+}
+
+
+## 各关节转轴名。缺失 axis 字段时按历史构型推断，保证老配置行为不变：
+##   2 轴 = [Yaw, Yaw]（平面臂，两关节同轴）
+##   3 轴 = [Yaw, Pitch, Pitch]
+##   4 轴 = [Yaw, Pitch, Pitch, Pitch]
+func joint_axes(joints: Array, jc: int, config_type: int) -> Array:
+	var out: Array = []
+	for i in range(jc):
+		var name: String = ""
+		if i < joints.size():
+			name = str(joints[i].get("axis", "")).strip_edges()
+		if not AXIS_VECTORS.has(name):
+			# 未指定：按历史构型推断
+			if config_type == 0:
+				name = AXIS_YAW
+			else:
+				name = AXIS_YAW if i == 0 else AXIS_PITCH
+		out.append(name)
+	return out
+
+
+## 各关节之后的连杆长度（mm）。缺失 len 字段时回退到历史的 L1/L2/L3：
+##   2 轴：[L1, L2]（每个关节后都有连杆）
+##   3/4 轴：[0, L1, L2(, L3)]（底座 Yaw 与肩部 Pitch 同位，之间无连杆）
+func joint_lengths(joints: Array, jc: int, config_type: int,
+		l1: float, l2: float, l3: float) -> Array:
+	var out: Array = []
+	var fallback: Array = ([l1, l2] if config_type == 0 else [0.0, l1, l2, l3])
+	for i in range(jc):
+		var s: String = ""
+		if i < joints.size():
+			s = str(joints[i].get("len", "")).strip_edges()
+		if s.is_valid_float():
+			out.append(s.to_float())
+		else:
+			out.append(fallback[i] if i < fallback.size() else 0.0)
+	return out
+
+
+## 通用正运动学链。逐关节累乘旋转，返回世界系（机器人坐标，mm）下的：
+##   points: 长度 jc+1，各关节位置 + 末端位置
+##   axes:   长度 jc，各关节转轴的世界方向（单位向量），雅可比要用
+##   tip_basis: 末端姿态（局部 +X 即末端朝向），夹爪渲染要用
+## 注意 points 里可能出现重合点（len=0 的关节，如底座 Yaw 与肩部 Pitch 同位）。
+func fk_chain(angles: Array, joints: Array, jc: int, config_type: int,
+		l1: float, l2: float, l3: float) -> Dictionary:
+	var axis_names: Array = joint_axes(joints, jc, config_type)
+	var lens: Array = joint_lengths(joints, jc, config_type, l1, l2, l3)
+	var basis: Basis = Basis.IDENTITY
+	var pos: Vector3 = Vector3.ZERO
+	var points: Array = []
+	var axes: Array = []
+	for i in range(jc):
+		var local_axis: Vector3 = AXIS_VECTORS[axis_names[i]]
+		# 关节 i 的世界转轴：由「该关节之前」的姿态决定。
+		# 绕自身轴旋转不改变该轴方向，故用旋转前后的 basis 结果相同。
+		var world_axis: Vector3 = (basis * local_axis).normalized()
+		axes.append(world_axis)
+		# 关节位置记录在施加自身旋转之前的落点
+		points.append(pos)
+		var ang: float = deg_to_rad(float(angles[i]) if i < angles.size() else 0.0)
+		basis = basis * Basis(local_axis, ang)
+		# 沿旋转后的局部 +X 伸出该关节之后的连杆
+		pos += basis * Vector3(lens[i], 0.0, 0.0)
+	points.append(pos)
+	return {"points": points, "axes": axes, "tip_basis": basis}
 
 
 # ------------------------------------------------------------------ 目标状态变量

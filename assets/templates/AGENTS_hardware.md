@@ -170,11 +170,45 @@ Ms_Delay(1500);
 
 ---
 
-## 修改代码后
+## 如何编译（改完代码务必自己验证）
 
-改完 main.c 后，如果有可用的编译工具就编译验证；
-否则告诉用户去点界面上的「编译」按钮。
-成功标准是日志出现 `0 Error(s)`。
+编译器**已经随本程序附带**，不需要用户安装 Keil，也不要去
+`C:\Keil_v5` 之类的标准安装路径找——那里没有。
+工具链就在工作区的**同级目录** `../keil/` 下。
 
-注意 UV4 的退出码不可靠（有警告时也可能返回 0 或 1），
-**必须**以日志中的 `0 Error(s)` 为准。
+从工作区根目录执行：
+
+```powershell
+# 步兵构型
+../keil/UV4/uVision.com -b Projects/ROBOMASTER_INFANTRY/MDK/Project_Template.uvproj -o build.log
+
+# 工程构型
+../keil/UV4/uVision.com -b Projects/ROBOMASTER_ENGINEER/MDK/Project_Template.uvproj -o build.log
+```
+
+改哪个 main.c 就编哪个工程。
+
+**日志不在当前目录**：`-o` 的路径是相对 uvproj 所在目录解析的，
+所以上面的命令把日志写到了 `Projects/<构型>/MDK/build.log`。
+读的时候要带完整相对路径：
+
+```powershell
+Get-Content Projects/ROBOMASTER_INFANTRY/MDK/build.log -Tail 10
+```
+
+几个必须知道的点：
+
+- **用 `uVision.com`，不要用 `UV4.exe`**。后者是 GUI 程序，批处理时会弹窗抢焦点。
+  两者在同一目录下。
+- **退出码不可靠**，实测编译完全成功（`0 Error(s)`）时它也返回 1。
+  **唯一**的成功判据是日志里出现 `0 Error(s)`。
+- 日志开头那几条 `Registered ARM Compiler Version not found` 警告是**正常的**，
+  本工具链已剔除 ARM 部分，STC32G 用不到，不必理会也不要试图修。
+- 如果报找不到 `C251.EXE`，说明 `../keil/TOOLS.INI` 里的 PATH 不对，
+  这是本程序生成的，不要手改，直接告诉用户。
+- 编译产物（`Objects/` `Listings/` `*.lst`）已在 `.gitignore` 里，不用管。
+
+如果上述路径确实不存在（比如工具链还没部署完），
+再告诉用户去点界面上的「编译」按钮，而不是让他们自己开 Keil。
+本程序的用户是没有编程基础的学生，界面上只有一个「编译」按钮，
+**不要**指导他们「打开 µVision 按 F7」。

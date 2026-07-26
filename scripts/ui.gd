@@ -130,8 +130,25 @@ const P_TAB_CONTAINER: NodePath = "VBoxContainer/HBoxContainer/HSplitContainer/E
 # 输出
 const P_OUTPUT: NodePath = "VBoxContainer/HBoxContainer/HSplitContainer/CodeZone/VSplitContainer/Output/Output"
 const P_CODE_EDIT: NodePath = "VBoxContainer/HBoxContainer/HSplitContainer/CodeZone/VSplitContainer/Code/CodeEdit"
+# 图形化配置区根节点（配置序列化的遍历起点）
+const P_EDIT_ZONE: NodePath = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone"
 # 顶栏按钮
 const P_BUILD_BTN: NodePath = "VBoxContainer/TopPanel/Build"
+# 项目管理按钮
+const P_CREATE_BTN: NodePath = "VBoxContainer/TopPanel/Create"
+const P_OPEN_BTN: NodePath = "VBoxContainer/TopPanel/Open"
+const P_SAVE_BTN: NodePath = "VBoxContainer/TopPanel/Save"
+# 顶栏标题（显示 项目名 · 构型 · 阶段）
+const P_TITLE_LABEL: NodePath = "VBoxContainer/TopPanel/Label"
+# 无项目时需要禁用的按钮（只留 新建 / 打开 可用）
+const PROJECT_GATED_BTNS: Array = [
+	"VBoxContainer/TopPanel/Save",
+	"VBoxContainer/TopPanel/Export",
+	"VBoxContainer/TopPanel/Button",
+	"VBoxContainer/TopPanel/AIEdit",
+	"VBoxContainer/TopPanel/ArmSim",
+	"VBoxContainer/TopPanel/Build",
+]
 # AI 编辑入口（跳转到 code_edit.tscn）
 const P_AI_EDIT_BTN: NodePath = "VBoxContainer/TopPanel/AIEdit"
 # AI 代码编辑器场景
@@ -140,9 +157,13 @@ const AI_EDIT_SCENE: String = "res://scenes/code_edit.tscn"
 const P_ARM_SIM_BTN: NodePath = "VBoxContainer/TopPanel/ArmSim"
 # 3D 仿真场景（作为子节点覆盖显示，避免切场景丢失整页配置状态）
 const ARM_SIM_SCENE: String = "res://scenes/arm_sim.tscn"
+## 步兵整车仿真（底盘 / 云台 / 发射），入口与机械臂仿真共用顶栏按钮
+const INFANTRY_SIM_SCENE: String = "res://scenes/infantry_sim.tscn"
 # 注：工具链路径常量与部署/编译实现已迁到 scripts/toolchain.gd，与 AI 编辑器共用
 # 用 preload 而非 class_name：headless / 首次导入时全局类名缓存可能尚未建立
 const TC = preload("res://scripts/toolchain.gd")
+# 项目文件（.pieproj）读写与「项目类型 <-> Tab」映射表
+const PF = preload("res://scripts/project_file.gd")
 
 
 # ------------------------------------------------------------------ 生命周期
@@ -155,6 +176,20 @@ var _tc = null
 # 当前打开的 3D 仿真视图实例（null 表示未打开）
 var _arm_sim: Control = null
 
+# --- 项目状态 ---
+## 当前 .pieproj 数据（见 project_file.gd），无项目时为空字典
+var _project: Dictionary = {}
+## 场景初始状态的配置快照，新建项目时用它把控件恢复成默认值
+var _default_config: Dictionary = {}
+## 正在批量回填配置：期间抑制检查与「用户改动」判定
+var _loading: bool = false
+## 有未保存的改动
+var _dirty: bool = false
+## 阶段二的只读预览态：任何配置改动都会先回滚再弹确认
+var _stage2_preview: bool = false
+## 已经弹过「继续修改将丢弃 AI 代码」确认框，避免连点堆叠弹窗
+var _discard_dialog_open: bool = false
+
 
 func _ready() -> void:
 	# 为 C 代码预览框挂载语法高亮器（状态机正则）
@@ -162,18 +197,15 @@ func _ready() -> void:
 	if code_edit is CodeEdit:
 		var hl: SyntaxHighlighter = preload("res://scripts/c_highlighter.gd").new()
 		code_edit.syntax_highlighter = hl
-	# 从 AI 编辑器返回时恢复原来的 Tab（配置本身不做序列化，会回到默认值）
-	if not AppState.project_dst.is_empty():
-		var tab_container: Node = get_node_or_null(P_TAB_CONTAINER)
-		if tab_container is TabContainer and AppState.source_tab < tab_container.get_tab_count():
-			tab_container.current_tab = AppState.source_tab
+	# 场景刚实例化，此刻的控件值就是「默认配置」，新建项目时用它复位
+	_default_config = _snapshot_config()
 	# 初始化调试界面占位提示
 	_update_debug_placeholders()
 	# 初始化工程界面参数框占位提示
 	_update_engineer_placeholders()
-	# 初始执行一次检查，并在控件变化时实时检查
-	_run_check()
 	_connect_signals()
+	# 恢复 / 初始化项目上下文（会自行触发 _run_check）
+	_restore_project_context()
 
 
 # ------------------------------------------------------------------ 信号连接
@@ -296,6 +328,448 @@ func _connect_signals() -> void:
 	var tab_container: Node = get_node_or_null(P_TAB_CONTAINER)
 	if tab_container is TabContainer:
 		tab_container.tab_changed.connect(_on_tab_changed)
+	# 项目管理按钮
+	var create_btn: Node = get_node_or_null(P_CREATE_BTN)
+	if create_btn is BaseButton:
+		create_btn.pressed.connect(_on_create_pressed)
+	var open_btn: Node = get_node_or_null(P_OPEN_BTN)
+	if open_btn is BaseButton:
+		open_btn.pressed.connect(_on_open_pressed)
+	var save_btn: Node = get_node_or_null(P_SAVE_BTN)
+	if save_btn is BaseButton:
+		save_btn.pressed.connect(_on_save_pressed)
+	# 配置区所有控件统一挂一个「改动」监听，用于脏标记与阶段二锁定。
+	# 走通用遍历而非逐个列举：上面那些 _run_check 连接是按语义挑的，
+	# 这里要的是「任何控件动了」，漏一个就会让脏标记或锁定失效。
+	_connect_config_watchers()
+
+
+# ==================================================================
+# 配置序列化
+# ==================================================================
+## 递归收集 EditZone 下所有输入控件的当前值。
+## key 用「相对 EditZone 的节点路径」，加控件不用改这里；
+## 但重命名已有节点会让旧存档对不上（届时该项按缺失处理，回落默认值）。
+func _snapshot_config() -> Dictionary:
+	var zone: Node = get_node_or_null(P_EDIT_ZONE)
+	var out: Dictionary = {}
+	if zone == null:
+		return out
+	_snapshot_node(zone, zone, out)
+	return out
+
+
+func _snapshot_node(node: Node, zone: Node, out: Dictionary) -> void:
+	for child in node.get_children():
+		var value: Variant = _control_value(child)
+		if value != null:
+			out[str(zone.get_path_to(child))] = value
+		_snapshot_node(child, zone, out)
+
+
+## 取单个控件的可序列化值，非输入控件返回 null。
+## OptionButton 同时存索引和文本：选项顺序变了还能按文本找回。
+func _control_value(node: Node) -> Variant:
+	if node is OptionButton:
+		return {"i": node.selected, "s": _option_text(node)}
+	if node is LineEdit:
+		return {"t": node.text}
+	if node is BaseButton and node.toggle_mode:
+		return {"b": node.button_pressed}
+	return null
+
+
+## 把配置写回控件。期间 _loading = true，抑制检查与改动判定，
+## 否则上百个控件的信号会触发上百次全量检查 + 代码生成。
+func _apply_config(cfg: Dictionary) -> void:
+	var zone: Node = get_node_or_null(P_EDIT_ZONE)
+	if zone == null:
+		return
+	_loading = true
+	for key in cfg.keys():
+		var node: Node = zone.get_node_or_null(NodePath(str(key)))
+		if node == null:
+			continue
+		_apply_control_value(node, cfg[key])
+	_loading = false
+	_update_debug_placeholders()
+	_update_engineer_placeholders()
+	_run_check()
+
+
+func _apply_control_value(node: Node, value: Variant) -> void:
+	if not value is Dictionary:
+		return
+	var v: Dictionary = value
+	if node is OptionButton:
+		# 先按文本匹配，失败再回退索引（并钳到合法范围，避免 selected=-1 的坑）
+		var text: String = str(v.get("s", ""))
+		var matched: bool = false
+		for i in range(node.item_count):
+			if node.get_item_text(i) == text:
+				node.selected = i
+				matched = true
+				break
+		if not matched and v.has("i"):
+			var idx: int = int(v["i"])
+			if idx >= 0 and idx < node.item_count:
+				node.selected = idx
+	elif node is LineEdit:
+		node.text = str(v.get("t", ""))
+	elif node is BaseButton and node.toggle_mode:
+		node.button_pressed = bool(v.get("b", false))
+
+
+## 给配置区所有输入控件挂「改动」监听（脏标记 + 阶段二锁定）
+func _connect_config_watchers() -> void:
+	var zone: Node = get_node_or_null(P_EDIT_ZONE)
+	if zone == null:
+		return
+	_watch_node(zone)
+
+
+func _watch_node(node: Node) -> void:
+	for child in node.get_children():
+		if child is OptionButton:
+			child.item_selected.connect(_on_config_touched.unbind(1))
+		elif child is LineEdit:
+			child.text_changed.connect(_on_config_touched.unbind(1))
+		elif child is BaseButton and child.toggle_mode:
+			child.toggled.connect(_on_config_touched.unbind(1))
+		_watch_node(child)
+
+
+## 任一配置控件被改动。阶段二要先回滚再问用户，其余情况只打脏标记。
+func _on_config_touched() -> void:
+	if _loading:
+		return
+	if _stage2_preview:
+		_prompt_discard_ai_code()
+		return
+	_mark_dirty()
+
+
+func _mark_dirty() -> void:
+	if _dirty:
+		return
+	_dirty = true
+	_update_title()
+
+
+# ==================================================================
+# 项目生命周期（新建 / 打开 / 保存）
+# ==================================================================
+## 启动或从 AI 编辑器返回时恢复项目上下文
+func _restore_project_context() -> void:
+	# 在 AI 编辑器里点了「新建 / 打开」，切回本场景后继续执行
+	var pending: String = AppState.take_pending_action()
+	if not AppState.has_project():
+		_apply_no_project_state()
+		if pending == "create":
+			_on_create_pressed()
+		elif pending == "open":
+			_on_open_pressed()
+		return
+	var res: Dictionary = PF.load_from(AppState.project_path)
+	if not res["ok"]:
+		_append_output("[Error] 无法读取项目：%s" % res["err"])
+		AppState.reset()
+		_apply_no_project_state()
+		return
+	_adopt_project(res["data"], AppState.project_path)
+	if AppState.stage >= 2:
+		# 阶段二回到图形化界面：只能预览
+		_notify_stage2_preview()
+	if pending == "create":
+		_on_create_pressed()
+	elif pending == "open":
+		_on_open_pressed()
+
+
+## 无项目时的界面状态：Tab 全隐藏，顶栏只留 新建 / 打开
+func _apply_no_project_state() -> void:
+	_project = {}
+	_stage2_preview = false
+	_dirty = false
+	var tab_container: Node = get_node_or_null(P_TAB_CONTAINER)
+	if tab_container is TabContainer:
+		for i in range(tab_container.get_tab_count()):
+			tab_container.set_tab_hidden(i, true)
+	_set_gated_buttons_disabled(true)
+	_update_title()
+	_clear_output()
+	_append_output("请先「新建」或「打开」一个项目")
+	var ce: Node = get_node_or_null(P_CODE_EDIT)
+	if ce is CodeEdit:
+		ce.text = ""
+
+
+func _set_gated_buttons_disabled(disabled: bool) -> void:
+	for path in PROJECT_GATED_BTNS:
+		var btn: Node = get_node_or_null(NodePath(path))
+		if btn is BaseButton:
+			btn.disabled = disabled
+
+
+## 把一份项目数据装载进界面
+func _adopt_project(data: Dictionary, path: String) -> void:
+	_project = data
+	var kind: String = str(data["kind"])
+	AppState.project_path = path
+	AppState.project_kind = kind
+	AppState.stage = int(data["stage"])
+	AppState.project_dst = AppState.project_dst_for_kind(kind)
+	AppState.source_tab = int(data["active_tab"])
+	_set_gated_buttons_disabled(false)
+	_apply_kind_visibility(kind, int(data["active_tab"]))
+	# 配置回填：缺项由默认值兜底，避免旧存档少字段时控件停在上个项目的值
+	var cfg: Dictionary = _default_config.duplicate(true)
+	cfg.merge(data["config"] as Dictionary, true)
+	_apply_config(cfg)
+	_stage2_preview = int(data["stage"]) >= 2
+	_dirty = false
+	_update_title()
+
+
+## 按项目类型隐藏无关的 Tab（类型不可转换的第二道保证）
+func _apply_kind_visibility(kind: String, want_tab: int) -> void:
+	var tab_container: Node = get_node_or_null(P_TAB_CONTAINER)
+	if not tab_container is TabContainer:
+		return
+	var allowed: Array = PF.kind_tabs(kind)
+	for i in range(tab_container.get_tab_count()):
+		tab_container.set_tab_hidden(i, not i in allowed)
+	# current_tab 指向隐藏页会显示空白，必须落在可见页上
+	var target: int = want_tab if want_tab in allowed else PF.kind_default_tab(kind)
+	if target < tab_container.get_tab_count():
+		tab_container.current_tab = target
+
+
+## 顶栏标题：* 项目名 · 构型 · 阶段
+func _update_title() -> void:
+	var label: Node = get_node_or_null(P_TITLE_LABEL)
+	if not label is Label:
+		return
+	if _project.is_empty():
+		label.text = "未打开项目"
+		return
+	var kind: String = str(_project["kind"])
+	var stage: int = int(_project["stage"])
+	label.text = "%s%s · %s · %s" % [
+		"*" if _dirty else "",
+		PF.display_name(AppState.project_path),
+		PF.kind_label(kind),
+		PF.stage_label(stage),
+	]
+
+
+# ------------------------------------------------------------------ 新建
+func _on_create_pressed() -> void:
+	_confirm_discard_unsaved(_show_kind_picker)
+
+
+## 项目类型三选一。类型只在这里写入，之后没有任何转换入口。
+func _show_kind_picker() -> void:
+	var dlg := AcceptDialog.new()
+	dlg.title = "新建项目"
+	dlg.dialog_hide_on_ok = true
+	dlg.get_ok_button().text = "取消"
+	var box := VBoxContainer.new()
+	var tip := Label.new()
+	tip.text = "选择项目类型。类型在新建时确定，之后不能更改。"
+	box.add_child(tip)
+	for kind in PF.KINDS:
+		var btn := Button.new()
+		btn.text = PF.kind_label(kind)
+		btn.custom_minimum_size = Vector2(220, 0)
+		btn.pressed.connect(func() -> void:
+			dlg.hide()
+			_create_project_of_kind(kind))
+		box.add_child(btn)
+	dlg.add_child(box)
+	add_child(dlg)
+	dlg.close_requested.connect(dlg.queue_free)
+	dlg.confirmed.connect(dlg.queue_free)
+	dlg.popup_centered()
+
+
+## 选定类型后立即要求选保存位置，落盘成功才算新建完成
+func _create_project_of_kind(kind: String) -> void:
+	_pick_save_path(func(path: String) -> void:
+		var data: Dictionary = PF.new_data(kind)
+		# 新项目从场景默认值开始
+		data["config"] = _default_config.duplicate(true)
+		var res: Dictionary = PF.save_to(path, data)
+		if not res["ok"]:
+			_clear_output()
+			_append_output("[Error] 新建失败：%s" % res["err"])
+			return
+		AppState.reset()
+		_adopt_project(data, path)
+		_clear_output()
+		_append_output("已新建%s项目：%s" % [PF.kind_label(kind), path])
+		# 生成一次代码并回写，让 .pieproj 里立刻有阶段一产物
+		_save_project(false))
+
+
+# ------------------------------------------------------------------ 打开
+func _on_open_pressed() -> void:
+	_confirm_discard_unsaved(func() -> void:
+		var dlg := FileDialog.new()
+		dlg.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+		dlg.access = FileDialog.ACCESS_FILESYSTEM
+		dlg.use_native_dialog = true
+		dlg.title = "打开项目"
+		dlg.add_filter("*." + PF.EXT, "PIE Block 项目")
+		dlg.file_selected.connect(_open_project_at)
+		add_child(dlg)
+		dlg.popup_centered_ratio(0.7))
+
+
+func _open_project_at(path: String) -> void:
+	var res: Dictionary = PF.load_from(path)
+	_clear_output()
+	if not res["ok"]:
+		_append_output("[Error] 项目文件无法读取：%s" % res["err"])
+		return
+	AppState.reset()
+	_adopt_project(res["data"], path)
+	_append_output("已打开项目：%s" % path)
+	if int(_project["stage"]) >= 2:
+		_notify_stage2_preview()
+
+
+# ------------------------------------------------------------------ 保存
+func _on_save_pressed() -> void:
+	if _project.is_empty():
+		_clear_output()
+		_append_output("[Warn] 当前没有项目，请先「新建」")
+		return
+	if AppState.project_path.is_empty():
+		_pick_save_path(func(path: String) -> void:
+			AppState.project_path = path
+			_save_project(true))
+		return
+	_save_project(true)
+
+
+## 写回 .pieproj。阶段一同时刷新配置快照与 main_c_stage1；
+## 阶段二只在这里保存不覆盖 AI 代码（main_c_ai 归 code_edit.tscn 管），
+## 且 config 保持阶段一冻结的那份不动。
+func _save_project(verbose: bool) -> void:
+	if _project.is_empty() or AppState.project_path.is_empty():
+		return
+	if int(_project["stage"]) < 2:
+		_project["config"] = _snapshot_config()
+		_project["main_c_stage1"] = _current_preview_code()
+		var tab_container: Node = get_node_or_null(P_TAB_CONTAINER)
+		if tab_container is TabContainer:
+			_project["active_tab"] = tab_container.current_tab
+	var res: Dictionary = PF.save_to(AppState.project_path, _project)
+	if not res["ok"]:
+		_append_output("[Error] 保存失败：%s" % res["err"])
+		return
+	_dirty = false
+	_update_title()
+	if verbose:
+		_append_output("已保存项目：%s" % AppState.project_path)
+
+
+## 取 CodeEdit 里当前的 C 代码预览；为空时先跑一次生成
+func _current_preview_code() -> String:
+	var ce: Node = get_node_or_null(P_CODE_EDIT)
+	var code: String = ce.text if ce is CodeEdit else ""
+	if code.strip_edges().is_empty():
+		_run_check()
+		code = ce.text if ce is CodeEdit else ""
+	return code
+
+
+# ------------------------------------------------------------------ 对话框
+## 弹原生保存对话框选 .pieproj 路径，选定后回调
+func _pick_save_path(on_picked: Callable) -> void:
+	var dlg := FileDialog.new()
+	dlg.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+	dlg.access = FileDialog.ACCESS_FILESYSTEM
+	dlg.use_native_dialog = true
+	dlg.title = "保存项目"
+	dlg.add_filter("*." + PF.EXT, "PIE Block 项目")
+	dlg.current_file = "未命名." + PF.EXT
+	dlg.file_selected.connect(func(path: String) -> void:
+		on_picked.call(PF.ensure_ext(path)))
+	add_child(dlg)
+	dlg.popup_centered_ratio(0.7)
+
+
+## 有未保存改动时先问一句，再执行后续动作
+func _confirm_discard_unsaved(then: Callable) -> void:
+	if not _dirty or _project.is_empty():
+		then.call()
+		return
+	var dlg := ConfirmationDialog.new()
+	dlg.title = "未保存的修改"
+	dlg.dialog_text = "当前项目有未保存的修改。继续将丢弃这些修改。"
+	dlg.get_ok_button().text = "丢弃并继续"
+	dlg.get_cancel_button().text = "返回"
+	dlg.confirmed.connect(func() -> void:
+		_dirty = false
+		then.call())
+	add_child(dlg)
+	dlg.popup_centered()
+	dlg.close_requested.connect(dlg.queue_free)
+
+
+# ------------------------------------------------------------------ 阶段二锁定
+## 阶段二回到图形化界面时的一次性说明
+func _notify_stage2_preview() -> void:
+	_append_output("[Warn] 阶段二：图形化配置仅供预览，修改会丢弃 AI 编辑的代码")
+	var dlg := AcceptDialog.new()
+	dlg.title = "只能预览"
+	dlg.dialog_text = "该项目已进入 AI 编辑阶段。\n"\
+		+ "这里的图形化配置只能预览，不能更改。\n"\
+		+ "如果在这里更改，AI 编辑的内容会丢失。\n"\
+		+ "建议把想修改的地方直接告诉 AI。"
+	add_child(dlg)
+	dlg.popup_centered()
+	dlg.confirmed.connect(dlg.queue_free)
+	dlg.close_requested.connect(dlg.queue_free)
+
+
+## 阶段二被改动：先整份回滚，再问是否降回阶段一。
+## 必须整份重放而不是逐控件撤销 —— LineEdit 的 text_changed 拿不到旧值。
+func _prompt_discard_ai_code() -> void:
+	if _discard_dialog_open:
+		return
+	_discard_dialog_open = true
+	_apply_config(_project["config"] as Dictionary)
+	var dlg := ConfirmationDialog.new()
+	dlg.title = "确认修改图形化配置"
+	dlg.dialog_text = "继续修改将丢弃 AI 编辑的代码，项目回到图形化配置阶段。\n"\
+		+ "更稳妥的做法是把想改的地方告诉 AI。\n确定要继续吗？"
+	dlg.get_ok_button().text = "丢弃 AI 代码并继续"
+	dlg.get_cancel_button().text = "保持预览"
+	dlg.confirmed.connect(_downgrade_to_stage1)
+	var cleanup := func() -> void:
+		_discard_dialog_open = false
+		dlg.queue_free()
+	dlg.confirmed.connect(cleanup)
+	dlg.canceled.connect(cleanup)
+	dlg.close_requested.connect(cleanup)
+	add_child(dlg)
+	dlg.popup_centered()
+
+
+## 阶段二 -> 阶段一。这是唯一的降阶入口，代价是丢弃 AI 代码。
+func _downgrade_to_stage1() -> void:
+	_project["stage"] = 1
+	_project["main_c_ai"] = ""
+	AppState.stage = 1
+	_stage2_preview = false
+	_dirty = true
+	_save_project(false)
+	_clear_output()
+	_append_output("已回到阶段一，AI 编辑的代码已丢弃")
+	_run_check()
 
 
 # ------------------------------------------------------------------ Tab 切换
@@ -984,6 +1458,9 @@ func _ik_joy_src(text: String) -> String:
 
 # ------------------------------------------------------------------ 检查入口
 func _run_check(_a = null, _b = null) -> void:
+	# 批量回填配置期间不检查：上百个控件的信号会触发上百次全量检查 + 代码生成
+	if _loading:
+		return
 	var issues: Array = []
 	# 根据当前 Tab 决定执行哪些检查
 	var tab_container: Node = get_node_or_null(P_TAB_CONTAINER)
@@ -1435,15 +1912,17 @@ func _toolchain():
 	return _tc
 
 
-## 根据当前 Tab 获取项目部署路径
-## 注：Tab 1=工程；Tab 2(逆解算) 也是工程构型，但历史实现只认 Tab 1，
-## 会把逆解算代码送去步兵工程编译。此为既有行为，另行确认后再改。
+## 获取项目部署路径。
+## 按**项目类型**判定而非当前 Tab：工程与工程逆解算同属工程项目，
+## 都应送去 ROBOMASTER_ENGINEER 模板编译（旧实现只认 Tab 1，
+## 会把逆解算代码送进步兵工程）。
 func _get_current_project_dst() -> String:
+	if not _project.is_empty():
+		return AppState.project_dst_for_kind(str(_project["kind"]))
+	# 没有项目时（直接运行本场景）退化成按 Tab 猜
 	var tab_container: Node = get_node_or_null(P_TAB_CONTAINER)
 	var current_tab: int = tab_container.current_tab if tab_container is TabContainer else 0
-	if current_tab == 1:
-		return TC.PROJECT_ENGINEER_DST
-	return TC.PROJECT_DST
+	return AppState.project_dst_for_kind(PF.tab_to_kind(current_tab))
 
 
 ## 编译按钮回调：解压工具链 -> 写盘 -> 生成 TOOLS.INI -> 异步编译
@@ -1505,21 +1984,18 @@ func _build_worker(uv4_abs: String, project_dst: String) -> void:
 	call_deferred("_on_build_finished", result)
 
 
-## AI 编辑入口：把当前生成的 main.c 落盘，记录上下文后切场景
-## 注意：第一期不序列化图形化配置，返回后配置控件会回到默认值
+## AI 编辑入口（阶段一 -> 阶段二）。
+## 进入前先把阶段一的配置与生成代码冻结进 .pieproj，这一步不可逆：
+## 之后图形化配置只能预览，降回阶段一必须显式丢弃 AI 代码。
 func _on_ai_edit_pressed() -> void:
 	_clear_output()
+	if _project.is_empty():
+		_append_output("[Error] 请先「新建」或「打开」一个项目")
+		return
 	if not _toolchain().ensure_deployed():
 		_append_output("[Error] 工具链初始化失败，无法进入 AI 编辑")
 		return
-	var code_edit: Node = get_node_or_null(P_CODE_EDIT)
-	var code: String = ""
-	if code_edit is CodeEdit:
-		code = code_edit.text
-	if code.strip_edges().is_empty():
-		_run_check()
-		if code_edit is CodeEdit:
-			code = code_edit.text
+	var code: String = _current_preview_code()
 	if code.strip_edges().is_empty():
 		_append_output("[Error] 没有可编辑的代码，请先完成配置")
 		return
@@ -1529,25 +2005,47 @@ func _on_ai_edit_pressed() -> void:
 		return
 	var tab_container: Node = get_node_or_null(P_TAB_CONTAINER)
 	var tab: int = tab_container.current_tab if tab_container is TabContainer else 0
-	var kind: String = "engineer" if project_dst == TC.PROJECT_ENGINEER_DST else "infantry"
+	var kind: String = str(_project["kind"])
+	# 冻结阶段一：配置快照 + 生成代码；AI 从这份代码起步
+	if int(_project["stage"]) < 2:
+		_project["config"] = _snapshot_config()
+		_project["main_c_stage1"] = code
+		_project["active_tab"] = tab
+		_project["stage"] = 2
+		_project["main_c_ai"] = code
 	AppState.set_context(project_dst, kind, tab)
+	AppState.stage = 2
+	_save_project(false)
 	get_tree().change_scene_to_file(AI_EDIT_SCENE)
 
 
 # ------------------------------------------------------------------ 3D 仿真
-## 打开机械臂逆解 3D 仿真 / 标定视图。
+## 打开 3D 仿真，按当前 Tab 分派：
+##   Tab 0（步兵）      -> 步兵整车仿真（底盘 / 云台 / 发射）
+##   Tab 2（工程逆解算）-> 机械臂逆解仿真与标定台
 ## 用「加子节点覆盖」而非 change_scene_to_file：整页配置状态留在内存里，
 ## 返回时不需要重建任何控件。
 func _on_arm_sim_pressed() -> void:
 	if _arm_sim != null:
 		return
-	# 仿真只对工程逆解算配置有意义，先把 Tab 切过去再取配置
 	var tab_container: Node = get_node_or_null(P_TAB_CONTAINER)
-	if tab_container is TabContainer and tab_container.current_tab != 2:
-		tab_container.current_tab = 2
-	var packed: PackedScene = load(ARM_SIM_SCENE) as PackedScene
+	var tab: int = tab_container.current_tab if tab_container is TabContainer else 0
+	var scene_path: String = ""
+	var cfg: Dictionary = {}
+	match tab:
+		0:
+			scene_path = INFANTRY_SIM_SCENE
+			cfg = _collect_config()
+		2:
+			scene_path = ARM_SIM_SCENE
+			cfg = _collect_ik_config()
+		_:
+			_clear_output()
+			_append_output("[Warn] 当前构型没有 3D 仿真，请切到「步兵」或「工程逆解算」标签页")
+			return
+	var packed: PackedScene = load(scene_path) as PackedScene
 	if packed == null:
-		push_error("无法加载 3D 仿真场景：%s" % ARM_SIM_SCENE)
+		push_error("无法加载 3D 仿真场景：%s" % scene_path)
 		return
 	var sim: Node = packed.instantiate()
 	if not sim is Control:
@@ -1557,12 +2055,15 @@ func _on_arm_sim_pressed() -> void:
 	_arm_sim.set_anchors_preset(Control.PRESET_FULL_RECT)
 	if _arm_sim.has_signal("closed"):
 		_arm_sim.closed.connect(_on_arm_sim_closed)
-	# 仿真里改了臂长/中位朝向/初始角/预设点位时回填到配置界面
+	# 仿真里改了参数时回填到配置界面（两种仿真回填的字段不同）
 	if _arm_sim.has_signal("config_changed"):
-		_arm_sim.config_changed.connect(_on_arm_sim_config_changed)
+		if tab == 0:
+			_arm_sim.config_changed.connect(_on_infantry_sim_config_changed)
+		else:
+			_arm_sim.config_changed.connect(_on_arm_sim_config_changed)
 	# set_config 在 add_child 之前调用，_ready 里会自行应用
 	if _arm_sim.has_method("set_config"):
-		_arm_sim.set_config(_collect_ik_config())
+		_arm_sim.set_config(cfg)
 	add_child(_arm_sim)
 
 
@@ -1571,6 +2072,13 @@ func _on_arm_sim_closed() -> void:
 		return
 	_arm_sim.queue_free()
 	_arm_sim = null
+
+
+## 步兵仿真里标定出来的云台归中角回填到配置界面，再重跑检查与代码生成
+func _on_infantry_sim_config_changed(cfg: Dictionary) -> void:
+	_set_line_text(P_YAW_MID_OFFSET, str(cfg.get("yaw_mid_offset", "")))
+	_set_line_text(P_PITCH_MID_OFFSET, str(cfg.get("pitch_mid_offset", "")))
+	_run_check()
 
 
 ## 把 3D 标定台里的编辑结果写回配置界面控件，再重跑检查与代码生成。

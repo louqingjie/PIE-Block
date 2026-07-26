@@ -25,6 +25,55 @@ func _servo_deg_per_loop_to_rate(deg_per_loop: float) -> float:
 	return deg_per_loop * duty_per_deg / ROCKER_FULL_SCALE
 
 
+# ------------------------------------------------------------------ 云台参数
+## 云台舵机的归中占空比、限幅边界与每周期变化率。
+##
+## 这是云台数值语义的唯一真相源：generate() 与 3D 仿真都调用它，
+## 不允许任何一侧另抄一份公式（历史上工程 IK 抄过一份舵机 duty 常量，
+## 基类改了它不跟着变）。
+##
+## 返回键：
+##   yaw_mid_deg / pitch_mid_deg  归中角（相对舵机中位的偏移角，已钳到 ±90）
+##   yaw_mid / pitch_mid          归中角对应的占空比
+##   yaw_lo / yaw_hi              Yaw 限幅边界（已同时收敛到摆动幅度与舵机行程）
+##   pitch_lo / pitch_hi          Pitch 限幅边界
+##   swing_deg                    摇杆可摆动幅度（度，单侧）
+##   swing_duty                   摆动幅度对应的占空比跨度
+##   rate                         摇杆读数 -> 每周期占空比增量的系数
+##   duty_per_deg                 每度对应的占空比增量
+func gimbal_params(cfg: Dictionary) -> Dictionary:
+	# 归中角偏移（相对舵机中位的偏移角，用于消除静差）。
+	# 舵机总行程 180°，UI 填的是相对中位的偏移角，有效区间 [-90, +90]
+	var yaw_mid_str: String = str(cfg.get("yaw_mid_offset", "0"))
+	if not yaw_mid_str.is_valid_int():
+		yaw_mid_str = "0"
+	var pitch_mid_str: String = str(cfg.get("pitch_mid_offset", "0"))
+	if not pitch_mid_str.is_valid_int():
+		pitch_mid_str = "0"
+	var yaw_mid_deg: int = clampi(int(yaw_mid_str), -SERVO_MAX_OFFSET_DEG, SERVO_MAX_OFFSET_DEG)
+	var pitch_mid_deg: int = clampi(int(pitch_mid_str), -SERVO_MAX_OFFSET_DEG, SERVO_MAX_OFFSET_DEG)
+	var yaw_mid_val: int = _servo_angle_to_duty(yaw_mid_deg)
+	var pitch_mid_val: int = _servo_angle_to_duty(pitch_mid_deg)
+	# 云台摇杆可摆动的角度幅度（相对归中位置），再收敛到舵机物理行程内
+	var servo_swing_deg: int = SERVO_SWING_DEG
+	var servo_swing: int = _servo_deg_to_duty_delta(float(servo_swing_deg))
+	return {
+		"yaw_mid_deg": yaw_mid_deg,
+		"pitch_mid_deg": pitch_mid_deg,
+		"yaw_mid": yaw_mid_val,
+		"pitch_mid": pitch_mid_val,
+		"yaw_lo": maxi(SERVO_DUTY_MIN, yaw_mid_val - servo_swing),
+		"yaw_hi": mini(SERVO_DUTY_MAX, yaw_mid_val + servo_swing),
+		"pitch_lo": maxi(SERVO_DUTY_MIN, pitch_mid_val - servo_swing),
+		"pitch_hi": mini(SERVO_DUTY_MAX, pitch_mid_val + servo_swing),
+		"swing_deg": servo_swing_deg,
+		"swing_duty": servo_swing,
+		"rate": _servo_deg_per_loop_to_rate(SERVO_RATE_DEG_PER_LOOP),
+		"duty_per_deg": float(SERVO_DUTY_MAX - SERVO_DUTY_MIN)
+			/ float(SERVO_MAX_OFFSET_DEG * 2),
+	}
+
+
 # ------------------------------------------------------------------ 代码生成
 ## 基于配置字典生成完整的 main.c 代码字符串
 func generate(cfg: Dictionary) -> String:
@@ -69,26 +118,18 @@ func generate(cfg: Dictionary) -> String:
 	var fric_l_dir: int = _dir_to_int(cfg.get("friction_l_dir", "正向"))
 	var fric_r_dir: int = _dir_to_int(cfg.get("friction_r_dir", "正向"))
 
-	# --- 归中角偏移（相对舵机中位的偏移角，用于消除静差）---
-	# 舵机总行程 180°，UI 填的是相对中位的偏移角，有效区间 [-90, +90]
-	# 换算成 50Hz 下的占空比由 _servo_angle_to_duty 负责（基类常量派生）
-	var yaw_mid_str: String = cfg.get("yaw_mid_offset", "0")
-	if not yaw_mid_str.is_valid_int():
-		yaw_mid_str = "0"
-	var pitch_mid_str: String = cfg.get("pitch_mid_offset", "0")
-	if not pitch_mid_str.is_valid_int():
-		pitch_mid_str = "0"
-	var yaw_mid_deg: int = clampi(int(yaw_mid_str), -SERVO_MAX_OFFSET_DEG, SERVO_MAX_OFFSET_DEG)
-	var pitch_mid_deg: int = clampi(int(pitch_mid_str), -SERVO_MAX_OFFSET_DEG, SERVO_MAX_OFFSET_DEG)
-	var yaw_mid_val: int = _servo_angle_to_duty(yaw_mid_deg)
-	var pitch_mid_val: int = _servo_angle_to_duty(pitch_mid_deg)
-	# 云台摇杆可摆动的角度幅度（相对归中位置），再收敛到舵机物理行程内
-	var servo_swing_deg: int = SERVO_SWING_DEG
-	var servo_swing: int = _servo_deg_to_duty_delta(float(servo_swing_deg))
-	var yaw_lo: int = maxi(SERVO_DUTY_MIN, yaw_mid_val - servo_swing)
-	var yaw_hi: int = mini(SERVO_DUTY_MAX, yaw_mid_val + servo_swing)
-	var pitch_lo: int = maxi(SERVO_DUTY_MIN, pitch_mid_val - servo_swing)
-	var pitch_hi: int = mini(SERVO_DUTY_MAX, pitch_mid_val + servo_swing)
+	# --- 归中角偏移与限幅（唯一真相源见 gimbal_params，3D 仿真共用同一份）---
+	var gp: Dictionary = gimbal_params(cfg)
+	var yaw_mid_deg: int = gp["yaw_mid_deg"]
+	var pitch_mid_deg: int = gp["pitch_mid_deg"]
+	var yaw_mid_val: int = gp["yaw_mid"]
+	var pitch_mid_val: int = gp["pitch_mid"]
+	var servo_swing_deg: int = gp["swing_deg"]
+	var servo_swing: int = gp["swing_duty"]
+	var yaw_lo: int = gp["yaw_lo"]
+	var yaw_hi: int = gp["yaw_hi"]
+	var pitch_lo: int = gp["pitch_lo"]
+	var pitch_hi: int = gp["pitch_hi"]
 	# --- 归中功能使能 ---
 	var zero_enabled: bool = cfg.get("zero_enabled", false)
 
@@ -174,12 +215,15 @@ func generate(cfg: Dictionary) -> String:
 	# --- 冲刺/移动速度逻辑 ---
 	var arrow_key: String = cfg.get("arrow_key", "移动")
 	var sprint_enabled: bool = cfg.get("sprint_enabled", false)
-	# sprint_check: 生成 baseSpeed/turnSpeed 的初始赋值代码块
+	# sprint_check: 生成 baseSpeed/turnSpeed 的初始赋值代码块。
+	# 符号约定：baseSpeed > 0 = 前进，turnSpeed > 0 = 向右转，
+	# 与下面方向键的赋值保持一致（早期版本摇杆多了一个取反，
+	# 导致推杆向右与按右方向键转向相反）
 	var sprint_check: String = ""
 	if sprint_enabled:
-		sprint_check = "\n    // 冲刺模式：按下左摇杆时使用冲刺速度\n    if (valueOfKey[2][0])\n    {\n        baseSpeed = (int)((float)valueOfRoker[0][1] * ultraSpeed / 2047);\n        turnSpeed = -(int)((float)valueOfRoker[0][0] * ultraSpeed / 2047);\n    }\n    else\n    {\n        baseSpeed = (int)((float)valueOfRoker[0][1] * maxSpeed / 2047);\n        turnSpeed = -(int)((float)valueOfRoker[0][0] * maxSpeed / 2047);\n    }\n"
+		sprint_check = "\n    // 冲刺模式：按下左摇杆时使用冲刺速度\n    if (valueOfKey[2][0])\n    {\n        baseSpeed = (int)((float)valueOfRoker[0][1] * ultraSpeed / 2047);\n        turnSpeed = (int)((float)valueOfRoker[0][0] * ultraSpeed / 2047);\n    }\n    else\n    {\n        baseSpeed = (int)((float)valueOfRoker[0][1] * maxSpeed / 2047);\n        turnSpeed = (int)((float)valueOfRoker[0][0] * maxSpeed / 2047);\n    }\n"
 	else:
-		sprint_check = "\n    // 冲刺模式不可用（未勾选），使用普通速度\n    baseSpeed = (int)((float)valueOfRoker[0][1] * maxSpeed / 2047);\n    turnSpeed = -(int)((float)valueOfRoker[0][0] * maxSpeed / 2047);\n"
+		sprint_check = "\n    // 冲刺模式不可用（未勾选），使用普通速度\n    baseSpeed = (int)((float)valueOfRoker[0][1] * maxSpeed / 2047);\n    turnSpeed = (int)((float)valueOfRoker[0][0] * maxSpeed / 2047);\n"
 	# ArrowKey 选"冲刺"时方向键直接触发冲刺
 	var arrow_sprint: String = ""
 	if arrow_key == "冲刺":
@@ -237,7 +281,7 @@ func generate(cfg: Dictionary) -> String:
 	code += "uint16_t boosterFeedDelayMs = %s;              // 拨弹电机单发转动时长(ms)\n" % trig_time
 	# 摇杆读数（±2047）乘以该系数得到每周期的占空比增量。
 	# 摇杆推到底时每个主循环周期转过 SERVO_RATE_DEG_PER_LOOP 度。
-	var servo_rate: float = _servo_deg_per_loop_to_rate(SERVO_RATE_DEG_PER_LOOP)
+	var servo_rate: float = gp["rate"]
 	code += "// 摇杆推到底时云台每周期转过 %.1f°\n" % SERVO_RATE_DEG_PER_LOOP
 	code += "float changeRateOfServo[2] = {%.6f, %.6f};\n\n" % [servo_rate, servo_rate]
 	code += "#define LIMIT_VALUE(x, min, max) \\\n    do                           \\\n    {                            \\\n        if ((x) < (min))         \\\n            (x) = (min);         \\\n        else if ((x) > (max))    \\\n            (x) = (max);         \\\n    } while (0)\n"

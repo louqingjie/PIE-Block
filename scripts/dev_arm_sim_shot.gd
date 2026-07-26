@@ -29,10 +29,11 @@ func _initialize() -> void:
 			sim._chassis_height = 16.0
 		elif case[0] == 2:
 			sim._chassis_height = 130.0
-			# 4 轴用 L3=0 核对夹爪在腕部连杆留空时仍然渲染
-			sim._l3 = 0.0
-			sim._rebuild_arm()
-			sim._recompute()
+			# 4 轴用 L3=0 核对夹爪在腕部连杆留空时仍然渲染。
+			# 注意 L3 变小后可达范围随之缩小，必须把目标拉回范围内，
+			# 否则会触发越界反馈（连杆变红 + 幽灵球），干扰对夹爪的核对。
+			sim._on_param_changed(0.0, "L3", null)
+			sim._on_mode_selected(1) # 标定模式：由关节角推末端，必然可达
 		sim._build_chassis()
 		sim._build_grid()
 		sim._reset_view()

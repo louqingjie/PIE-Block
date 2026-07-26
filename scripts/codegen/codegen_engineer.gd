@@ -192,22 +192,23 @@ func generate(cfg: Dictionary) -> String:
 	var r2_formula: String = "baseSpeed - turnSpeed" if r2_dir == 1 else "-baseSpeed + turnSpeed"
 
 	# --- 冲刺逻辑 ---
+	# 符号约定：baseSpeed > 0 = 前进，turnSpeed > 0 = 向右转，与步兵生成器一致
 	var sprint_code: String = ""
 	if sprint_enabled:
 		sprint_code = "    // 冲刺模式：按下左摇杆时使用冲刺速度\n" \
 			+"    if (valueOfKey[2][0])\n" \
 			+"    {\n" \
 			+"        baseSpeed = (int)((float)valueOfRoker[0][1] * ultraSpeed / 2047);\n" \
-			+"        turnSpeed = -(int)((float)valueOfRoker[0][0] * ultraSpeed / 2047);\n" \
+			+"        turnSpeed = (int)((float)valueOfRoker[0][0] * ultraSpeed / 2047);\n" \
 			+"    }\n" \
 			+"    else\n" \
 			+"    {\n" \
 			+"        baseSpeed = (int)((float)valueOfRoker[0][1] * maxSpeed / 2047);\n" \
-			+"        turnSpeed = -(int)((float)valueOfRoker[0][0] * maxSpeed / 2047);\n" \
+			+"        turnSpeed = (int)((float)valueOfRoker[0][0] * maxSpeed / 2047);\n" \
 			+"    }\n"
 	else:
 		sprint_code = "    baseSpeed = (int)((float)valueOfRoker[0][1] * maxSpeed / 2047);\n" \
-			+"    turnSpeed = -(int)((float)valueOfRoker[0][0] * maxSpeed / 2047);\n"
+			+"    turnSpeed = (int)((float)valueOfRoker[0][0] * maxSpeed / 2047);\n"
 
 	# --- 生成字符串 ---
 	var init_str: String = "%d, %d,\n                          %d, %d,\n                          %d, %d,\n                          %d, %d" % [init_vals[0], init_vals[1], init_vals[2], init_vals[3], init_vals[4], init_vals[5], init_vals[6], init_vals[7]]

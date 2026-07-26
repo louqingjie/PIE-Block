@@ -558,7 +558,7 @@ func _build_chassis() -> void:
 	# 轮心：从地面往上一个轮半径。地面在板顶面下方 _chassis_height 处，
 	# 故轮心局部高度 = -(车高 - 轮半径)。这样车高降到贴地时轮子也跟着沉，
 	# 而不是固定挂在板下某个深度、把自己埋到地面以下。
-	var axle_up: float = -(_chassis_height - wheel_r)
+	var axle_up: float = - (_chassis_height - wheel_r)
 	# 前后两根轮轴的位置：让轮子外缘刚好落在板的前后范围内
 	var half_wb: float = maxf(half_len - wheel_r, half_len * 0.25)
 	# 底盘板：左右比轮距窄一些，让四个轮子明确外露。
@@ -608,7 +608,7 @@ func _build_chassis() -> void:
 				strut.mesh = sbox
 				strut.material_override = _mat_mount
 				strut.position = _chassis_point(sx * half_wb, sy * strut_side,
-					-CHASSIS_DECK_THICK_MM - strut_h * 0.5)
+					- CHASSIS_DECK_THICK_MM - strut_h * 0.5)
 				root.add_child(strut)
 	# 安装座：从底盘板顶面接到机械臂底座，让"装在哪、垫多高"一眼可见
 	if _mount.z > 1.0:
@@ -649,7 +649,7 @@ func _chassis_point(fwd: float, side: float, up: float) -> Vector3:
 		# 2 轴构型里机械臂的工作平面是 Godot XY，高度轴是 Y。
 		# 但底盘仍然是个三维物体：左右方向直接用 Godot Z，
 		# 否则四个轮子会全叠在一起（踩过：看起来只剩一个轮）。
-		return Vector3(fwd - _mount.x, up - _mount.z, -(side - _mount.y)) * MM_TO_UNIT
+		return Vector3(fwd - _mount.x, up - _mount.z, - (side - _mount.y)) * MM_TO_UNIT
 	return _robot_to_godot(fwd - _mount.x, side - _mount.y, up - _mount.z)
 
 
@@ -686,8 +686,8 @@ func _build_grid() -> void:
 	var cx: float = 0.0
 	var cy: float = 0.0
 	if _chassis_visible:
-		cx = -_mount.x
-		cy = -_mount.y
+		cx = - _mount.x
+		cy = - _mount.y
 	var im: ImmediateMesh = ImmediateMesh.new()
 	var mat: StandardMaterial3D = StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -733,7 +733,7 @@ func _ground_level() -> float:
 	if not _chassis_visible:
 		return 0.0
 	# 底盘高度就是地面到板顶面的距离，故直接用它
-	return -(_mount.z + _chassis_height)
+	return - (_mount.z + _chassis_height)
 
 
 func _build_axes() -> void:
@@ -988,7 +988,7 @@ func _chassis_relation_text(tip: Array) -> String:
 	if out_of.size() > 0:
 		parts.append("（超出底盘 " + " / ".join(out_of) + " mm）")
 	# 地面相对板顶面的高度（up 已以板顶面为 0）
-	var ground: float = -_chassis_height
+	var ground: float = - _chassis_height
 	if up < ground:
 		parts.append("⚠ 末端低于地面 %.0f mm（会碰地）" % (ground - up))
 	return "  ".join(parts)
