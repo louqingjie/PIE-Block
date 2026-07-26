@@ -69,20 +69,22 @@ func _dir_to_int(text: String) -> int:
 ## 主控板专用舵机引脚（只能驱动舵机，不在扩展板上）
 const MAIN_BOARD_SERVO_PINS: Array = ["MP74", "MP03"]
 
-## 舵机占空比范围（50Hz 下，万分比）：
-## 500 = 1ms 脉宽 = 行程一端（-90°）
+## 舵机占空比范围（50Hz 下，万分比。PRECISION=10000，duty/10000*20ms 即脉宽）：
+## 250 = 0.5ms 脉宽 = 行程一端（-90°）
 ## 750 = 1.5ms = 中位（0°）
-## 1000 = 2ms = 行程另一端（+90°）
-const SERVO_DUTY_MIN: int = 500
+## 1250 = 2.5ms = 行程另一端（+90°）
+## 注：这是实测的舵机可用行程，不是标准 RC 舵机的 1~2ms 区间。
+## 改这三个常量即可整体调整映射，其余生成器一律由此派生，勿再另写副本。
+const SERVO_DUTY_MIN: int = 250
 const SERVO_DUTY_MID: int = 750
-const SERVO_DUTY_MAX: int = 1000
+const SERVO_DUTY_MAX: int = 1250
 ## 所有舵机角度参数均为「相对中位的偏移角」，有效区间 [-90, +90]
 const SERVO_MAX_OFFSET_DEG: int = 90
 
 
 ## 相对中位的偏移角（-90~90）映射到占空比，0° -> 750
 func _servo_angle_to_duty(angle: int) -> int:
-	# ±90° 共 180° 行程对应 500 duty
+	# ±90° 共 180° 行程对应整个 duty 跨度
 	var span: int = SERVO_DUTY_MAX - SERVO_DUTY_MIN
 	var duty: int = SERVO_DUTY_MID + int(round(
 		float(angle) * float(span) / float(SERVO_MAX_OFFSET_DEG * 2)))

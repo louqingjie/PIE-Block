@@ -57,7 +57,6 @@ void Read_Controller_Inputs();
 void Calculate_Motor_Controls();
 void Calculate_Servo_Controls();
 uint8_t Get_Dir(int rawdata);
-uint16_t Angle_To_Duty(int angle);
 void Main_Countrol(int *dutyOfMotor, uint16_t *dutyOfServo);
 void ExpansionBoradControl(uint8_t control_cmd, uint16_t data_p60, uint16_t data_p62, uint16_t data_p64,
                            uint16_t data_p66, uint16_t data_p74, uint16_t data_p75, uint16_t data_p76,
@@ -91,9 +90,9 @@ void main()
         LIMIT_VALUE(dutyOfMotor[4], -10000, 10000);
         LIMIT_VALUE(dutyOfMotor[5], -10000, 10000);
         for (i = 0; i < 2; i++)
-            LIMIT_VALUE(floatDutyOfServo[i], 500, 1000);
-        LIMIT_VALUE(floatDutyOfMainServo0, 500, 1000);
-        LIMIT_VALUE(floatDutyOfMainServo1, 500, 1000);
+            LIMIT_VALUE(floatDutyOfServo[i], 250, 1250);
+        LIMIT_VALUE(floatDutyOfMainServo0, 250, 1250);
+        LIMIT_VALUE(floatDutyOfMainServo1, 250, 1250);
 
         for (i = 0; i < 2; i++)
             dutyOfServo[i] = (uint16_t)floatDutyOfServo[i];
@@ -111,17 +110,6 @@ uint8_t Get_Dir(int rawdata)
         return 1;
     else
         return 0;
-}
-
-/// @brief 鑸垫満鐩稿涓綅鐨勫亸绉昏锛?90~90锛夎浆鎹负鍗犵┖姣旓紙500~1000锛屼腑浣?750锛?
-uint16_t Angle_To_Duty(int angle)
-{
-    int duty = 750 + angle * 500 / 180;
-    if (duty < 500)
-        duty = 500;
-    if (duty > 1000)
-        duty = 1000;
-    return (uint16_t)duty;
 }
 
 void All_Init()
@@ -198,15 +186,15 @@ void Calculate_Servo_Controls()
     if (valueOfKey[1][1])
         floatDutyOfServo[0] += -500;
     if (valueOfKey[1][2])
-        floatDutyOfServo[1] = (float)Angle_To_Duty(90);
+        floatDutyOfServo[1] = 1250.0f; // +90掳
     if (valueOfKey[1][3])
-        floatDutyOfServo[1] = (float)Angle_To_Duty(-90);
+        floatDutyOfServo[1] = 250.0f; // -90掳
     if (valueOfKey[0][2])
-        floatDutyOfMainServo0 += 250;
+        floatDutyOfMainServo0 += 500;
     if (valueOfKey[0][3])
-        floatDutyOfMainServo0 += -250;
+        floatDutyOfMainServo0 += -500;
     if (valueOfRKey)
-        floatDutyOfMainServo1 = (float)Angle_To_Duty(0);
+        floatDutyOfMainServo1 = 750.0f; // +0掳
 
 }
 

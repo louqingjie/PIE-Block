@@ -10,9 +10,7 @@ extends CodeGenBase
 # 舵机占空比参数（SERVO_DUTY_MIN/MID/MAX 与 SERVO_MAX_OFFSET_DEG 继承自 CodeGenBase）
 # 电机速度上限
 const MOTOR_SPEED_MAX: int = 10000
-# 舵机偏移角 -> 占空比转换系数：±90°（共 180°）对应 (1000-500) duty
-const ANGLE_TO_DUTY_FACTOR: float = float(SERVO_DUTY_MAX - SERVO_DUTY_MIN) \
-	/ float(SERVO_MAX_OFFSET_DEG * 2)
+
 
 # 扩展板引脚名（按槽位顺序）
 const EXP_PINS: Array = ["P60", "P62", "P64", "P66", "P74", "P75", "P76", "P77"]
@@ -21,18 +19,11 @@ const EXP_PINS: Array = ["P60", "P62", "P64", "P66", "P74", "P75", "P76", "P77"]
 # ============================================================ 代码生成
 func generate(cfg: Dictionary) -> String:
 	# --- 解析 FirstRow 共享参数 ---
-	var ch: String = cfg.get("channel", "36")
-	if ch.is_empty():
-		ch = "36"
-	var dz: String = cfg.get("deadzone", "10")
-	if dz.is_empty():
-		dz = "10"
-	var normal_spd: String = cfg.get("normal_speed", "4000")
-	if normal_spd.is_empty():
-		normal_spd = "4000"
-	var sprint_spd: String = cfg.get("sprint_speed", "8000")
-	if sprint_spd.is_empty():
-		sprint_spd = "8000"
+	# 一律走 _int_or_default：非法/越界值回退到默认，保证生成的 C 代码总能编译
+	var ch: String = _int_or_default(cfg.get("channel", ""), 36, 0, 125)
+	var dz: String = _int_or_default(cfg.get("deadzone", ""), 10, 0, 2047)
+	var normal_spd: String = _int_or_default(cfg.get("normal_speed", ""), 4000, 0, MOTOR_SPEED_MAX)
+	var sprint_spd: String = _int_or_default(cfg.get("sprint_speed", ""), 8000, 0, MOTOR_SPEED_MAX)
 	var sprint_enabled: bool = cfg.get("sprint_enabled", false)
 
 	# --- 底盘 IO 槽位 ---
@@ -57,9 +48,9 @@ func generate(cfg: Dictionary) -> String:
 	for i in range(8):
 		var pin_name: String = EXP_PINS[i]
 		var t: String = io_init.get(pin_name, "舵机")
-		# P60/P62 默认舵机，其余默认电机
+		# 缺失或空值统一按舵机处理（与 ui.gd 静态检查的回退保持一致）
 		if t.is_empty():
-			t = "舵机" if i < 2 else "电机"
+			t = "舵机"
 		slot_type.append(t)
 	# 底盘占用的槽位必须按电机初始化，否则该轮永远不动。
 	# 与 IO 初始化区不一致时由静态检查报 Error，此处强制以底盘为准保证代码自洽。
@@ -67,30 +58,46 @@ func generate(cfg: Dictionary) -> String:
 		if cs >= 0:
 			slot_type[cs] = "电机"
 
-	# --- 分配舵机索引（扩展板）---
+	# --- 解析按键映射区 ---
+	# key_map: Array[Dictionary]，每项 {input, dir, mode, param, target}
+	var key_map: Array = cfg.get("key_map", [])
+
+	# --- 统计实际被引用的扩展板槽位 ---
+	# 未被底盘或按键映射引用的槽位一律按「未使用」处理：
+	# Init_Order 发 0（维持原状）、Duty_Change_Order 发 0。
+	# 否则没配任何输入的舵机口会在上电时被强制打到中位，可能撞坏机构。
+	var chassis_slots: Array = [l1_slot, l2_slot, r1_slot, r2_slot]
+	var used_slots: Dictionary = {}
+	for cs2 in chassis_slots:
+		if cs2 >= 0:
+			used_slots[cs2] = true
+	for row0 in key_map:
+		var t_pin: String = row0.get("target", "")
+		if t_pin.is_empty() or t_pin in MAIN_BOARD_SERVO_PINS:
+			continue
+		var t_slot: int = _io_to_exp_slot(t_pin)
+		if t_slot >= 0:
+			used_slots[t_slot] = true
+
+	# --- 分配舵机索引（扩展板，仅被引用的槽位）---
 	# slot_servo_idx: slot -> servo_idx
 	var slot_servo_idx: Dictionary = {}
 	var servo_count: int = 0
 	for i in range(8):
-		if slot_type[i] == "舵机":
+		if slot_type[i] == "舵机" and used_slots.has(i):
 			slot_servo_idx[i] = servo_count
 			servo_count += 1
-	# 至少 1 个避免零长数组
+	# 至少 1 个避免零长数组（C89 禁止零长数组）
 	var servo_array_size: int = max(servo_count, 1)
 
 	# --- 分配电机索引 ---
 	# slot_motor_idx: slot -> motor_idx
 	# 底盘 4 个固定索引 0-3
 	var slot_motor_idx: Dictionary = {}
-	var chassis_slots: Array = [l1_slot, l2_slot, r1_slot, r2_slot]
 	for ci in range(4):
 		if chassis_slots[ci] >= 0:
 			slot_motor_idx[chassis_slots[ci]] = ci
 	var next_motor_idx: int = 4
-
-	# --- 解析按键映射区 ---
-	# key_map: Array[Dictionary]，每项 {input, dir, mode, param, target}
-	var key_map: Array = cfg.get("key_map", [])
 
 	# 为按键映射中涉及的电机槽位分配索引
 	var processed_rows: Array = []
@@ -101,7 +108,11 @@ func generate(cfg: Dictionary) -> String:
 		if target_pin.is_empty():
 			continue # 跳过未配置的行
 		var target_slot: int = _io_to_exp_slot(target_pin)
-		var is_main_servo: bool = target_slot < 0 # MP03/MP74
+		var is_main_servo: bool = target_pin in MAIN_BOARD_SERVO_PINS
+		# 既不在扩展板也不是 MP03/MP74 的引脚无法输出，直接跳过而不是当成主控板舵机
+		if target_slot < 0 and not is_main_servo:
+			push_warning("工程代码生成：未知目标引脚 %s，已忽略该行" % target_pin)
+			continue
 		var target_type: String = ""
 		var motor_idx: int = -1
 		var servo_idx: int = -1
@@ -141,9 +152,12 @@ func generate(cfg: Dictionary) -> String:
 	var motor_array_size: int = next_motor_idx
 
 	# --- 构建 Init_Order 频率参数 ---
+	# 未被任何角色引用的槽位发 0，表示维持原状，不把它配成动力输出
 	var init_vals: Array = []
 	for i in range(8):
-		if slot_type[i] == "电机":
+		if not used_slots.has(i):
+			init_vals.append(0)
+		elif slot_type[i] == "电机":
 			init_vals.append(10000)
 		else:
 			init_vals.append(50)
@@ -159,14 +173,17 @@ func generate(cfg: Dictionary) -> String:
 	# --- 构建 Duty_Change_Order 占空比表达式 ---
 	var duty_vals: Array = []
 	for i in range(8):
-		if slot_type[i] == "电机":
+		if not used_slots.has(i):
+			duty_vals.append("0")
+		elif slot_type[i] == "电机":
 			if slot_motor_idx.has(i):
 				duty_vals.append("(uint16_t)abs(dutyOfMotor[%d])" % slot_motor_idx[i])
 			else:
 				duty_vals.append("0")
+		elif slot_servo_idx.has(i):
+			duty_vals.append("dutyOfServo[%d]" % slot_servo_idx[i])
 		else:
-			var sidx: int = slot_servo_idx.get(i, 0)
-			duty_vals.append("dutyOfServo[%d]" % sidx)
+			duty_vals.append("0")
 
 	# --- 底盘电机公式 ---
 	var l1_formula: String = "-baseSpeed - turnSpeed" if l1_dir == 1 else "baseSpeed + turnSpeed"
@@ -311,7 +328,6 @@ func generate(cfg: Dictionary) -> String:
 	code += "void Calculate_Motor_Controls();\n"
 	code += "void Calculate_Servo_Controls();\n"
 	code += "uint8_t Get_Dir(int rawdata);\n"
-	code += "uint16_t Angle_To_Duty(int angle);\n"
 	code += "void Main_Countrol(int *dutyOfMotor, uint16_t *dutyOfServo);\n"
 	code += "void ExpansionBoradControl(uint8_t control_cmd, uint16_t data_p60, uint16_t data_p62, uint16_t data_p64,\n"
 	code += "                           uint16_t data_p66, uint16_t data_p74, uint16_t data_p75, uint16_t data_p76,\n"
@@ -351,21 +367,10 @@ func generate(cfg: Dictionary) -> String:
 	code += "        return 0;\n"
 	code += "}\n\n"
 
-	# --- Angle_To_Duty ---
-	var duty_span: int = SERVO_DUTY_MAX - SERVO_DUTY_MIN
-	var angle_span: int = SERVO_MAX_OFFSET_DEG * 2
-	code += "/// @brief 舵机相对中位的偏移角（-%d~%d）转换为占空比（%d~%d，中位 %d）\n" \
-		% [SERVO_MAX_OFFSET_DEG, SERVO_MAX_OFFSET_DEG,
-			SERVO_DUTY_MIN, SERVO_DUTY_MAX, SERVO_DUTY_MID]
-	code += "uint16_t Angle_To_Duty(int angle)\n"
-	code += "{\n"
-	code += "    int duty = %d + angle * %d / %d;\n" % [SERVO_DUTY_MID, duty_span, angle_span]
-	code += "    if (duty < %d)\n" % SERVO_DUTY_MIN
-	code += "        duty = %d;\n" % SERVO_DUTY_MIN
-	code += "    if (duty > %d)\n" % SERVO_DUTY_MAX
-	code += "        duty = %d;\n" % SERVO_DUTY_MAX
-	code += "    return (uint16_t)duty;\n"
-	code += "}\n\n"
+	# 注：偏移角 -> 占空比的换算全部在生成期完成（见基类 _servo_angle_to_duty）。
+	# 不在 C 侧算 `角度 * duty跨度 / 角度跨度`：C251 的 int 是 16 位
+	# （common.h: int16_t = signed int），实测编译出 `MUL WR6,WR2` 为 16 位乘法，
+	# 结果不提升到 32 位。duty 跨度 1000 时 angle > 32° 即溢出，且编译器不报警。
 
 	# --- All_Init ---
 	code += "void All_Init()\n"
@@ -480,22 +485,22 @@ func _gen_motor_calc_code(rows: Array) -> String:
 			if _input_to_c_expr(row.input).get("is_joystick", false):
 				has_joystick = true
 				break
-		# 先生成摇杆行
-		for row in group:
-			var info: Dictionary = _input_to_c_expr(row.input)
-			if not info.get("is_joystick", false):
-				continue
-			var sign_j: String = "" if row.dir == "正" else "-"
-			var p_j: int = _parse_param(row.param)
-			var r: int = info["rocker_row"]
-			var c: int = info["rocker_col"]
-			match row.mode:
-				"速度":
-					code += "    dutyOfMotor[%d] = %s(int)((float)valueOfRoker[%d][%d] * %d / 2047);\n" \
-						% [mi, sign_j, r, c, p_j]
-				"增速":
-					code += "    dutyOfMotor[%d] += %s(int)((float)valueOfRoker[%d][%d] * %d / 2047);\n" \
-						% [mi, sign_j, r, c, p_j]
+		# 先生成摇杆行：「速度」是赋值，必须全部排在「增速」（+=）之前，
+		# 否则按 UI 行序输出时速度行会把先前的增速结果整个抹掉
+		for pass_mode in ["速度", "增速"]:
+			for row in group:
+				var info: Dictionary = _input_to_c_expr(row.input)
+				if not info.get("is_joystick", false):
+					continue
+				if row.mode != pass_mode:
+					continue
+				var sign_j: String = "" if row.dir == "正" else "-"
+				var p_j: int = _parse_param(row.param, 0, MOTOR_SPEED_MAX)
+				var r: int = info["rocker_row"]
+				var c: int = info["rocker_col"]
+				var op: String = "=" if pass_mode == "速度" else "+="
+				code += "    dutyOfMotor[%d] %s %s(int)((float)valueOfRoker[%d][%d] * %d / 2047);\n" \
+					% [mi, op, sign_j, r, c, p_j]
 		# 再生成按键「直接」行，串成 if / else if 链
 		var direct_rows: Array = []
 		for row in group:
@@ -506,7 +511,7 @@ func _gen_motor_calc_code(rows: Array) -> String:
 		for idx in range(direct_rows.size()):
 			var drow: Dictionary = direct_rows[idx]
 			var sign_d: String = "" if drow.dir == "正" else "-"
-			var p_d: int = _parse_param(drow.param)
+			var p_d: int = _parse_param(drow.param, 0, MOTOR_SPEED_MAX)
 			var key_expr: String = _key_expr(_input_to_c_expr(drow.input))
 			var kw: String = "if" if idx == 0 else "else if"
 			code += "    %s (%s)\n" % [kw, key_expr]
@@ -527,7 +532,6 @@ func _gen_servo_calc_code(rows: Array) -> String:
 		var mode: String = row.mode
 		var dir_sign: int = 1 if row.dir == "正" else -1
 		var sign_str: String = "" if dir_sign == 1 else "-"
-		var param: int = _parse_param(row.param)
 		var input_info: Dictionary = _input_to_c_expr(row.input)
 		var is_joystick: bool = input_info.get("is_joystick", false)
 
@@ -540,8 +544,10 @@ func _gen_servo_calc_code(rows: Array) -> String:
 
 		match mode:
 			"增量":
-				# 角度增量 -> 占空比增量
-				var duty_inc: int = int(float(param) * ANGLE_TO_DUTY_FACTOR + 0.5)
+				# 步长取正值，方向由「正/反」决定，故限幅到 [0, 90]
+				var step_deg: int = _parse_param(row.param, 0, SERVO_MAX_OFFSET_DEG)
+				# 角度增量 -> 占空比增量（生成期换算，避免 C251 16 位 int 溢出）
+				var duty_inc: int = _servo_deg_to_duty_delta(float(step_deg))
 				if is_joystick:
 					var r: int = input_info["rocker_row"]
 					var c: int = input_info["rocker_col"]
@@ -552,9 +558,13 @@ func _gen_servo_calc_code(rows: Array) -> String:
 					code += "        %s += %s%d;\n" % [target_var, sign_str, duty_inc]
 			"直接":
 				if not is_joystick:
+					# 目标偏移角本身带符号，方向选项对该模式无意义（静态检查会提示）
+					var angle: int = _parse_param(row.param,
+						-SERVO_MAX_OFFSET_DEG, SERVO_MAX_OFFSET_DEG)
+					var target_duty: int = _servo_angle_to_duty(angle)
 					var key_expr2: String = _key_expr(input_info)
 					code += "    if (%s)\n" % key_expr2
-					code += "        %s = (float)Angle_To_Duty(%d);\n" % [target_var, param]
+					code += "        %s = %d.0f; // %+d°\n" % [target_var, target_duty, angle]
 	return code
 
 
@@ -596,12 +606,13 @@ func _key_expr(input_info: Dictionary) -> String:
 	return "valueOfKey[%d][%d]" % [kr, kc]
 
 
-## 解析参数字符串为整数
-func _parse_param(param_str: String) -> int:
+## 解析参数字符串为整数，并限制到 [lo, hi]。
+## 限幅必需：C251 的 int 是 16 位，未限幅的大参数会在 C 侧溢出。
+func _parse_param(param_str: String, lo: int, hi: int) -> int:
 	var s: String = param_str.strip_edges()
-	if s.is_valid_int():
-		return s.to_int()
-	return 0
+	if not s.is_valid_int():
+		return 0
+	return clampi(s.to_int(), lo, hi)
 
 
 ## 生成 ExpansionBoradControl 函数

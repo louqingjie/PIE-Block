@@ -81,8 +81,8 @@ func _test_config(cg, config_type: int, jc: int, label: String) -> void:
 	_check("%s 有 presetPos 表" % label, code.find("const float presetPos[PRESET_COUNT][4]") >= 0)
 	# 舵机方向不得再走 Dir_Change_Order（会与占空比镜像叠加抵消）
 	_check("%s 不发 Dir_Change_Order" % label, code.find("ExpansionBoradControl(Dir_Change_Order") < 0)
-	# 占空比系数：0~180° 必须映射满 500~1000
-	_check("%s 占空比系数 2.7778" % label, code.find("#define SERVO_DUTY_PER_DEG  2.7778f") >= 0)
+	# 占空比系数：0~180° 必须映射满实测行程 250~1250（跨度 1000）
+	_check("%s 占空比系数 5.5556" % label, code.find("#define SERVO_DUTY_PER_DEG  5.5556f") >= 0)
 	# 关节角以中位为 0°：映射式不得再减 90°偏移
 	_check("%s 映射以中位为 0°" % label,
 		code.find("SERVO_MID_DUTY + angle * SERVO_DUTY_PER_DEG") >= 0

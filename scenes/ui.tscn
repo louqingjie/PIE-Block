@@ -62,6 +62,11 @@ text = "导出 C 代码"
 layout_mode = 2
 text = "进入 C 代码后处理"
 
+[node name="AIEdit" type="Button" parent="VBoxContainer/TopPanel"]
+layout_mode = 2
+size_flags_horizontal = 8
+text = "AI 编辑"
+
 [node name="Build" type="Button" parent="VBoxContainer/TopPanel" unique_id=1581104311]
 layout_mode = 2
 size_flags_horizontal = 8

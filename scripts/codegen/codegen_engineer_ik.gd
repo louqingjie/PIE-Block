@@ -8,16 +8,16 @@ extends CodeGenBase
 ## 摇杆实时模式则调用运行时 IK 函数。
 
 
-# 舵机 50Hz 占空比参数（与步兵体系一致）
+# 舵机 50Hz 占空比参数继承自 CodeGenBase（SERVO_DUTY_MIN/MID/MAX）
 # 角度约定：以舵机中位为 0°，行程 ±90°（对应物理 0~180°）
-const SERVO_MID_DUTY: int = 750 # 0° 中位
-const SERVO_MIN_DUTY: int = 500 # -90°
-const SERVO_MAX_DUTY: int = 1000 # +90°
-# duty/度 线性系数：(1000-500)/180
-const SERVO_DUTY_PER_DEG: float = 500.0 / 180.0
+# duty/度 线性系数：整个 duty 跨度对应 180°
+const SERVO_DUTY_PER_DEG: float = float(SERVO_DUTY_MAX - SERVO_DUTY_MIN) \
+	/ float(SERVO_MAX_OFFSET_DEG * 2)
 # 关节角可表达边界（度）
 const JOINT_ANGLE_MIN: float = -90.0
 const JOINT_ANGLE_MAX: float = 90.0
+# 逆解可达性判定的最小半径，避免除零（与生成的 C 宏 IK_EPS 同值）
+const IK_EPS: float = 0.001
 # 主循环周期(ms)：ExpansionBoradControl 之后的延时也计入其中
 const LOOP_PERIOD_MS: int = 10
 # 发送板间指令后必须留给硬件的响应延时(ms)
@@ -60,9 +60,9 @@ func generate(cfg: Dictionary) -> String:
 	code += "#define IK_EPS  0.001f\n"
 	code += "// 舵机占空比参数（50Hz）\n"
 	code += "// 关节角以舵机中位为 0°，行程 ±90°（对应物理 0~180°）\n"
-	code += "#define SERVO_MID_DUTY  750   // 0°\n"
-	code += "#define SERVO_MIN_DUTY  500   // -90°\n"
-	code += "#define SERVO_MAX_DUTY  1000  // +90°\n"
+	code += "#define SERVO_MID_DUTY  %d   // 0°\n" % SERVO_DUTY_MID
+	code += "#define SERVO_MIN_DUTY  %d   // -%d°\n" % [SERVO_DUTY_MIN, SERVO_MAX_OFFSET_DEG]
+	code += "#define SERVO_MAX_DUTY  %d  // +%d°\n" % [SERVO_DUTY_MAX, SERVO_MAX_OFFSET_DEG]
 	code += "#define SERVO_DUTY_PER_DEG  %.4ff\n" % SERVO_DUTY_PER_DEG
 	code += "// 摇杆推到满偏时末端每周期位移(mm)\n"
 	code += "#define JOY_SCALE  %.2ff\n" % joy_scale
@@ -310,6 +310,91 @@ func solve_ik(x: float, y: float, z: float, phi: float, l1: float, l2: float, l3
 	return angles
 
 
+# ------------------------------------------------------------------ 逆解（复现 C 端钳位）
+## 与 C 端 ik_solve 逐行对应的版本：包含半径钳位、IK_EPS 除零保护与可达性标志。
+## 上面的 solve_ik 只夹紧 c2（用于预设点位注释，保持历史产物字节一致），
+## 3D 仿真必须用这一版才能复现真机行为。
+## 返回 {"angles": Array[float], "reachable": bool}
+func solve_ik_checked(x: float, y: float, z: float, phi: float, l1: float, l2: float, l3: float,
+		config_type: int, jc: int, elbow_sign: float) -> Dictionary:
+	var reachable: bool = true
+	var reach_min: float = abs(l1 - l2)
+	var reach_max: float = l1 + l2
+	var angles: Array = []
+	if config_type == 0:
+		# === 2 轴平面逆解 ===
+		var r: float = sqrt(x * x + y * y)
+		if r < reach_min:
+			reachable = false
+			r = reach_min
+		elif r > reach_max:
+			reachable = false
+			r = reach_max
+		var c2: float = clamp((r * r - l1 * l1 - l2 * l2) / (2.0 * l1 * l2), -1.0, 1.0)
+		var t2: float = elbow_sign * acos(c2)
+		var t1: float = atan2(y, x) - atan2(l2 * sin(t2), l1 + l2 * cos(t2))
+		angles = [rad_to_deg(t1), rad_to_deg(t2)]
+	else:
+		# === 3 轴（底座 + 2 连杆）/ 4 轴（再加腕部俯仰）逆解 ===
+		var is4: bool = config_type >= 2
+		var t0: float = atan2(y, x)
+		var r: float = sqrt(x * x + y * y)
+		var zw: float = z
+		var phi_rad: float = 0.0
+		if is4:
+			# 腕心 = 末端沿姿态角 φ 回退 L3
+			phi_rad = deg_to_rad(phi)
+			r -= l3 * cos(phi_rad)
+			zw -= l3 * sin(phi_rad)
+		var rz: float = sqrt(r * r + zw * zw)
+		if rz < IK_EPS:
+			# rz 过小时无方向可依，退到内边界正前方（与 C 端一致）
+			reachable = false
+			r = reach_min
+			zw = 0.0
+			if r < IK_EPS:
+				r = reach_max
+		elif rz < reach_min:
+			reachable = false
+			var scale: float = reach_min / rz
+			r *= scale
+			zw *= scale
+		elif rz > reach_max:
+			reachable = false
+			var scale2: float = reach_max / rz
+			r *= scale2
+			zw *= scale2
+		var c2: float = clamp((r * r + zw * zw - l1 * l1 - l2 * l2) / (2.0 * l1 * l2), -1.0, 1.0)
+		var t2: float = elbow_sign * acos(c2)
+		var t1: float = atan2(zw, r) - atan2(l2 * sin(t2), l1 + l2 * cos(t2))
+		angles = [rad_to_deg(t0), rad_to_deg(t1), rad_to_deg(t2)]
+		if is4:
+			angles.append(rad_to_deg(phi_rad - (t1 + t2)))
+	while angles.size() < jc:
+		angles.append(0.0)
+	return {"angles": angles, "reachable": reachable}
+
+
+# ------------------------------------------------------------------ 关节限位钳位
+## 复现 C 端 angle_to_duty 内的 jointMin/jointMax 夹紧。
+## 钳位发生在逆解之后，故钳位后实际末端 ≠ 目标末端。
+## 返回 {"angles": Array[float], "clamped": Array[bool]}
+func clamp_angles_to_limits(angles: Array, joints: Array) -> Dictionary:
+	var out: Array = []
+	var clamped: Array = []
+	for i in range(angles.size()):
+		var a: float = angles[i]
+		var lo: float = JOINT_ANGLE_MIN
+		var hi: float = JOINT_ANGLE_MAX
+		if i < joints.size():
+			lo = _to_float(joints[i].get("min", ""), JOINT_ANGLE_MIN)
+			hi = _to_float(joints[i].get("max", ""), JOINT_ANGLE_MAX)
+		var c: float = clamp(a, lo, hi)
+		out.append(c)
+		clamped.append(not is_equal_approx(c, a))
+	return {"angles": out, "clamped": clamped}
+
+
 # ------------------------------------------------------------------ 肘部分支
 ## 弯曲关节（2轴=关节2，3/4轴=关节3）的初始角为负时，逆解取负分支，
 ## 否则正运动学起点反解回来会得到镜像姿态，上电首帧关节跳变。
@@ -325,44 +410,69 @@ func _elbow_sign(joints: Array, config_type: int) -> float:
 ## 由各关节初始角度算出末端位置，作为增量模式的起点
 ## 返回 [x, y, z, phi]
 func _forward_kinematics(joints: Array, l1: float, l2: float, l3: float, config_type: int, _jc: int) -> Array:
-	# 取各关节初始角度（度）
-	var z0: float = 0.0
-	var z1: float = 0.0
-	var z2: float = 0.0
-	var z3: float = 0.0
-	if joints.size() > 0:
-		z0 = _to_float(joints[0].get("zero", "0"), 0.0)
-	if joints.size() > 1:
-		z1 = _to_float(joints[1].get("zero", "0"), 0.0)
-	if joints.size() > 2:
-		z2 = _to_float(joints[2].get("zero", "0"), 0.0)
-	if joints.size() > 3:
-		z3 = _to_float(joints[3].get("zero", "0"), 0.0)
+	return forward_kinematics_angles(_joint_home_angles(joints), l1, l2, l3, config_type)
+
+
+## 从关节配置数组里取出初始角度（度），长度固定为 4，缺失补 0
+func _joint_home_angles(joints: Array) -> Array:
+	var out: Array = [0.0, 0.0, 0.0, 0.0]
+	for i in range(min(joints.size(), 4)):
+		out[i] = _to_float(joints[i].get("zero", "0"), 0.0)
+	return out
+
+
+## 正运动学：关节角度（度，长度≥构型所需）-> 末端 [x, y, z, phi]
+## 与 joint_frames 共用同一套连杆链，末端点必然一致
+func forward_kinematics_angles(angles: Array, l1: float, l2: float, l3: float,
+		config_type: int) -> Array:
+	var frames: Array = joint_frames(angles, l1, l2, l3, config_type)
+	var tip: Vector3 = frames[frames.size() - 1]
+	var a: Array = _pad_angles(angles)
 	if config_type == 0:
-		# 2 轴平面：θ1=关节1, θ2=关节2
-		var t1: float = deg_to_rad(z0)
-		var t2: float = deg_to_rad(z1)
-		var x: float = l1 * cos(t1) + l2 * cos(t1 + t2)
-		var y: float = l1 * sin(t1) + l2 * sin(t1 + t2)
-		return [x, y, 0.0, 0.0]
+		# 2 轴平面：末端在 XY 竖直平面内，无姿态角
+		return [tip.x, tip.y, 0.0, 0.0]
 	elif config_type == 1:
-		# 3 轴：θ0=底座, θ1/θ2=2连杆（在 (r,z) 平面）
-		var t0: float = deg_to_rad(z0)
-		var t1: float = deg_to_rad(z1)
-		var t2: float = deg_to_rad(z2)
-		var r: float = l1 * cos(t1) + l2 * cos(t1 + t2)
-		var zz: float = l1 * sin(t1) + l2 * sin(t1 + t2)
-		return [r * cos(t0), r * sin(t0), zz, 0.0]
-	else:
-		# 4 轴：3 轴 + 腕部，φ = θ1+θ2+θ3，末端在腕心外再延伸 L3
-		var t0: float = deg_to_rad(z0)
-		var t1: float = deg_to_rad(z1)
-		var t2: float = deg_to_rad(z2)
-		var t3: float = deg_to_rad(z3)
-		var phi: float = t1 + t2 + t3
-		var r: float = l1 * cos(t1) + l2 * cos(t1 + t2) + l3 * cos(phi)
-		var zz: float = l1 * sin(t1) + l2 * sin(t1 + t2) + l3 * sin(phi)
-		return [r * cos(t0), r * sin(t0), zz, rad_to_deg(phi)]
+		return [tip.x, tip.y, tip.z, 0.0]
+	# 4 轴：φ = θ1+θ2+θ3
+	return [tip.x, tip.y, tip.z, a[1] + a[2] + a[3]]
+
+
+## 关节点链：base -> 肩 -> 肘 -> (腕) -> 末端，机器人坐标系（mm）
+## 2 轴构型 (x, y) 是竖直平面、z 恒 0；3/4 轴 (x, y) 是水平面、z 是高度。
+## 3D 仿真据此逐段绘制连杆，无需自己再推公式。
+func joint_frames(angles: Array, l1: float, l2: float, l3: float, config_type: int) -> Array:
+	var a: Array = _pad_angles(angles)
+	if config_type == 0:
+		# 2 轴平面：θ1=关节1（相对 +X），θ2=关节2（相对大臂）
+		var t1: float = deg_to_rad(a[0])
+		var t12: float = t1 + deg_to_rad(a[1])
+		var p1: Vector3 = Vector3(l1 * cos(t1), l1 * sin(t1), 0.0)
+		var p2: Vector3 = p1 + Vector3(l2 * cos(t12), l2 * sin(t12), 0.0)
+		return [Vector3.ZERO, p1, p2]
+	# 3/4 轴：底座绕 Z 转 θ0，臂在 (r, z) 平面内展开
+	var t0: float = deg_to_rad(a[0])
+	var t1b: float = deg_to_rad(a[1])
+	var t12b: float = t1b + deg_to_rad(a[2])
+	var chain: Array = [Vector2.ZERO] # (r, z) 平面内的点链
+	chain.append(chain[0] + Vector2(l1 * cos(t1b), l1 * sin(t1b)))
+	chain.append(chain[1] + Vector2(l2 * cos(t12b), l2 * sin(t12b)))
+	if config_type >= 2:
+		# 腕部：φ = θ1+θ2+θ3，末端在腕心外沿 φ 延伸 L3
+		var phi: float = t12b + deg_to_rad(a[3])
+		chain.append(chain[2] + Vector2(l3 * cos(phi), l3 * sin(phi)))
+	# (r, z) -> (x, y, z)：绕底座旋转
+	var out: Array = []
+	for p in chain:
+		out.append(Vector3(p.x * cos(t0), p.x * sin(t0), p.y))
+	return out
+
+
+## 角度数组补齐到 4 个元素（float），便于统一索引
+func _pad_angles(angles: Array) -> Array:
+	var out: Array = [0.0, 0.0, 0.0, 0.0]
+	for i in range(min(angles.size(), 4)):
+		out[i] = float(angles[i])
+	return out
 
 
 # ------------------------------------------------------------------ 目标状态变量
@@ -403,7 +513,9 @@ func _gen_angle_to_duty() -> String:
 	s += "/// @param joint 关节索引(0..JOINT_COUNT-1)\n"
 	s += "/// @param angle 角度(度)\n"
 	s += "/// @return 舵机占空比(SERVO_MIN_DUTY~SERVO_MAX_DUTY)\n"
-	s += "/// @note 角度以舵机中位为 0°，行程 ±90°：-90°=500, 0°=750, +90°=1000。\n"
+	s += "/// @note 角度以舵机中位为 0°，行程 ±%d°：-%d°=%d, 0°=%d, +%d°=%d。\n" \
+		% [SERVO_MAX_OFFSET_DEG, SERVO_MAX_OFFSET_DEG, SERVO_DUTY_MIN,
+			SERVO_DUTY_MID, SERVO_MAX_OFFSET_DEG, SERVO_DUTY_MAX]
 	s += "///       反向关节沿中位镜像；舵机方向只由占空比决定，\n"
 	s += "///       故不再向扩展板发 Dir_Change_Order。\n"
 	s += "uint16_t angle_to_duty(int joint, float angle)\n"

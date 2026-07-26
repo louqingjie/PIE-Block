@@ -65,6 +65,12 @@ func _initialize() -> void:
 		_ik(2, 4, 100, 0, 0, 0, 100, 100, 50.0), [0.0, -75.52, 151.05, -75.52], 1.0)
 	# --- 正反解自洽：FK 起点反解回来应还原关节角 ---
 	_test_round_trip()
+	# --- joint_frames 末端必须与 forward_kinematics_angles 一致 ---
+	_test_frames_consistency()
+	# --- solve_ik_checked：可达性标志与钳位行为 ---
+	_test_checked_reachability()
+	# --- clamp_angles_to_limits ---
+	_test_limit_clamp()
 	# --- 可达性由 C 端 ik_solve 钳位，GDScript 端只夹紧 c2 ---
 	# 目标(300,0) 超出 L1+L2=200，c2 被夹到 1 -> θ2=0，θ1=atan2(0,300)-0=0
 	_test("2轴 越界 (300,0) -> c2 夹紧后 θ1=0°, θ2=0°",

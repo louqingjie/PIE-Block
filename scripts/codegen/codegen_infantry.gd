@@ -6,7 +6,7 @@ extends CodeGenBase
 ##
 ## 舵机角度约定（与 CodeGenBase 一致）：
 ## 舵机总行程 180°，所有角度参数都是「相对中位的偏移角」，区间 [-90, +90]。
-## 占空比映射：-90° = 500，0° = 750，+90° = 1000。
+## 占空比映射见 CodeGenBase.SERVO_DUTY_MIN/MID/MAX（实测 250 / 750 / 1250）。
 
 # 云台摇杆可摆动的角度幅度（相对归中位置，单侧），须 <= SERVO_MAX_OFFSET_DEG
 const SERVO_SWING_DEG: int = 60
@@ -71,7 +71,7 @@ func generate(cfg: Dictionary) -> String:
 
 	# --- 归中角偏移（相对舵机中位的偏移角，用于消除静差）---
 	# 舵机总行程 180°，UI 填的是相对中位的偏移角，有效区间 [-90, +90]
-	# 换算成 50Hz 下的占空比：0° -> 750，+90° -> 1000，-90° -> 500
+	# 换算成 50Hz 下的占空比由 _servo_angle_to_duty 负责（基类常量派生）
 	var yaw_mid_str: String = cfg.get("yaw_mid_offset", "0")
 	if not yaw_mid_str.is_valid_int():
 		yaw_mid_str = "0"
@@ -216,7 +216,9 @@ func generate(cfg: Dictionary) -> String:
 	code += "uint16_t ultraSpeed = %s;\n" % sprint_spd
 	code += "uint16_t deadBandOfLeft = %s;                   // 左摇杆中心死区\n" % dz
 	code += "uint16_t deadBandOfRight = %s;                  // 右摇杆中心死区\n" % dz
-	code += "// 舵机占空比：500=-90°，750=中位(0°)，1000=+90°，总行程 180°\n"
+	code += "// 舵机占空比：%d=-%d°，%d=中位(0°)，%d=+%d°，总行程 %d°\n" \
+		% [SERVO_DUTY_MIN, SERVO_MAX_OFFSET_DEG, SERVO_DUTY_MID,
+			SERVO_DUTY_MAX, SERVO_MAX_OFFSET_DEG, SERVO_MAX_OFFSET_DEG * 2]
 	code += "#define SERVO_DUTY_MIN     %d\n" % SERVO_DUTY_MIN
 	code += "#define SERVO_DUTY_MID     %d\n" % SERVO_DUTY_MID
 	code += "#define SERVO_DUTY_MAX     %d\n" % SERVO_DUTY_MAX
@@ -307,7 +309,7 @@ func generate(cfg: Dictionary) -> String:
 		code += "        LIMIT_VALUE(dutyOfMotor[%d], -10000, 10000);\n" % pitch_motor_idx
 	# 舵机限幅用生成期算好的常量：midDutyOfServo 是 uint16_t，
 	# 直接写 mid - maxChange 在偏移为负时会下溢，故不在 C 侧做减法。
-	# 边界已同时收敛到「归中角 ±摆动幅度」和舵机物理行程 500~1000 之内。
+	# 边界已同时收敛到「归中角 ±摆动幅度」和舵机物理行程（基类常量）之内。
 	if yaw_is_servo:
 		code += "        // Yaw 限幅 %d~%d（归中 %+d° ±%d°，已收敛到舵机行程内）\n" \
 			% [yaw_lo, yaw_hi, yaw_mid_deg, servo_swing_deg]

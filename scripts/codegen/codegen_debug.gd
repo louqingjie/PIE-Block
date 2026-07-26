@@ -22,7 +22,7 @@ const FREQ_SERVO: int = 50 # 舵机模式频率
 const FREQ_FRICTION: int = 50 # 摩擦轮模式频率
 
 # 舵机归中占空比（50Hz 下中位值，等于基类 SERVO_DUTY_MID）
-# 舵机总行程 180°，占空比 500=-90°，750=中位(0°)，1000=+90°
+# 舵机总行程 180°，占空比区间见 CodeGenBase.SERVO_DUTY_MIN/MID/MAX
 const SERVO_MID_DUTY: int = SERVO_DUTY_MID
 
 # 摩擦轮渐变参数（参考 RM电控指南）

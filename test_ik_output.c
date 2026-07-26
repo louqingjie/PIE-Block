@@ -14,9 +14,9 @@
 // 舵机占空比参数（50Hz）
 // 关节角以舵机中位为 0°，行程 ±90°（对应物理 0~180°）
 #define SERVO_MID_DUTY  750   // 0°
-#define SERVO_MIN_DUTY  500   // -90°
-#define SERVO_MAX_DUTY  1000  // +90°
-#define SERVO_DUTY_PER_DEG  2.7778f
+#define SERVO_MIN_DUTY  250   // -90°
+#define SERVO_MAX_DUTY  1250  // +90°
+#define SERVO_DUTY_PER_DEG  5.5556f
 // 摇杆推到满偏时末端每周期位移(mm)
 #define JOY_SCALE  5.00f
 // 按键长按时末端每周期位移(mm)
@@ -104,7 +104,7 @@ void main()
 /// @param joint 关节索引(0..JOINT_COUNT-1)
 /// @param angle 角度(度)
 /// @return 舵机占空比(SERVO_MIN_DUTY~SERVO_MAX_DUTY)
-/// @note 角度以舵机中位为 0°，行程 ±90°：-90°=500, 0°=750, +90°=1000。
+/// @note 角度以舵机中位为 0°，行程 ±90°：-90°=250, 0°=750, +90°=1250。
 ///       反向关节沿中位镜像；舵机方向只由占空比决定，
 ///       故不再向扩展板发 Dir_Change_Order。
 uint16_t angle_to_duty(int joint, float angle)

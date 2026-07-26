@@ -59,12 +59,19 @@ func set_issues(issues: Array) -> void:
 		return
 	var errors: int = 0
 	var warns: int = 0
+	var infos: int = 0
 	for i in issues:
-		if i.get("type", "") == "Error":
-			errors += 1
-		else:
-			warns += 1
-	append_line("共发现 %d 个错误，%d 个警告" % [errors, warns])
+		match i.get("type", ""):
+			"Error":
+				errors += 1
+			"Info":
+				infos += 1
+			_:
+				warns += 1
+	if infos > 0:
+		append_line("共发现 %d 个错误，%d 个警告，%d 条提示" % [errors, warns, infos])
+	else:
+		append_line("共发现 %d 个错误，%d 个警告" % [errors, warns])
 	append_line("")
 	for i in issues:
 		append_line("[%s] %s" % [i.get("type", "?"), i.get("msg", "")])
