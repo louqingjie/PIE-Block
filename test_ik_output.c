@@ -49,9 +49,12 @@ int16_t  valueOfRoker[2][2];    // 左摇杆水平、竖直；右摇杆水平、
 uint16_t deadBandOfLeft = 10;
 uint16_t deadBandOfRight = 10;
 uint8_t  i;
-// 各关节初始角度(度)，以舵机中位为 0°
+// 各关节安装中位朝向(度，运动学角)：舵机处于中位时该关节的实际朝向。
+// 舵机盘装歪时填这里，逆解算不受影响，只在 angle_to_duty 里换算掉。
+const float jointOffset[4] = {0.00f, 0.00f, 0.00f, 0.00f};
+// 各关节初始角度(度，运动学角)
 const float jointHome[4] = {45.00f, 45.00f, 45.00f, 45.00f};
-// 各关节限位(度) [min, max]，以舵机中位为 0°，可表达范围 ±90°
+// 各关节限位(度，运动学角) [min, max]，可表达范围 = 中位朝向 ±90°
 const float jointMin[4] = {-90.00f, -90.00f, -90.00f, -90.00f};
 const float jointMax[4] = {90.00f, 90.00f, 90.00f, 90.00f};
 // 各关节方向(1=正向, 0=反向)，仅在 angle_to_duty 中生效
@@ -100,26 +103,31 @@ void main()
     }
 }
 
-/// @brief 关节角度(度) -> 舵机占空比
+/// @brief 关节角度(运动学角，度) -> 舵机占空比
 /// @param joint 关节索引(0..JOINT_COUNT-1)
-/// @param angle 角度(度)
+/// @param angle 运动学角(度)，即连杆的实际朝向
 /// @return 舵机占空比(SERVO_MIN_DUTY~SERVO_MAX_DUTY)
-/// @note 角度以舵机中位为 0°，行程 ±90°：-90°=250, 0°=750, +90°=1250。
+/// @note 两个角度空间：运动学角是连杆朝向（逆解算的输出），
+///       舵机指令角 = 运动学角 - jointOffset[joint]，行程 ±90°：
+///       -90°=250, 0°=750, +90°=1250。
 ///       反向关节沿中位镜像；舵机方向只由占空比决定，
 ///       故不再向扩展板发 Dir_Change_Order。
 uint16_t angle_to_duty(int joint, float angle)
 {
     int duty;
-    // 限位夹紧
+    float servo;
+    // 限位夹紧（限位也是运动学角）
     if (angle < jointMin[joint])
         angle = jointMin[joint];
     if (angle > jointMax[joint])
         angle = jointMax[joint];
-    // 角度 -> 占空比（0° 即中位 750），反向关节沿中位镜像
+    // 运动学角 -> 舵机指令角：扣掉安装中位朝向
+    servo = angle - jointOffset[joint];
+    // 舵机指令角 -> 占空比（0° 即中位 750），反向关节沿中位镜像
     if (jointDir[joint])
-        duty = (int)(SERVO_MID_DUTY + angle * SERVO_DUTY_PER_DEG);
+        duty = (int)(SERVO_MID_DUTY + servo * SERVO_DUTY_PER_DEG);
     else
-        duty = (int)(SERVO_MID_DUTY - angle * SERVO_DUTY_PER_DEG);
+        duty = (int)(SERVO_MID_DUTY - servo * SERVO_DUTY_PER_DEG);
     if (duty < SERVO_MIN_DUTY)
         duty = SERVO_MIN_DUTY;
     if (duty > SERVO_MAX_DUTY)

@@ -178,29 +178,39 @@ func _build_protocol_macros() -> String:
 
 # ------------------------------------------------------------------ 关节配置数组
 func _build_joint_config_arrays(joints: Array, jc: int) -> String:
+	var offsets: Array = joint_offsets(joints, jc)
 	var s: String = ""
-	s += "// 各关节初始角度(度)，以舵机中位为 0°\n"
+	s += "// 各关节安装中位朝向(度，运动学角)：舵机处于中位时该关节的实际朝向。\n"
+	s += "// 舵机盘装歪时填这里，逆解算不受影响，只在 angle_to_duty 里换算掉。\n"
+	s += "const float jointOffset[%d] = {" % jc
+	for i in range(jc):
+		if i > 0:
+			s += ", "
+		s += "%.2ff" % offsets[i]
+	s += "};\n"
+	s += "// 各关节初始角度(度，运动学角)\n"
 	s += "const float jointHome[%d] = {" % jc
 	for i in range(jc):
 		var zero: float = _to_float(joints[i].get("zero", "0"), 0.0)
 		if i > 0:
 			s += ", "
-		s += "%.2ff" % clampf(zero, JOINT_ANGLE_MIN, JOINT_ANGLE_MAX)
+		s += "%.2ff" % clampf(zero, offsets[i] + JOINT_ANGLE_MIN, offsets[i] + JOINT_ANGLE_MAX)
 	s += "};\n"
-	s += "// 各关节限位(度) [min, max]，以舵机中位为 0°，可表达范围 ±90°\n"
+	s += "// 各关节限位(度，运动学角) [min, max]，可表达范围 = 中位朝向 ±%d°\n" \
+		% SERVO_MAX_OFFSET_DEG
 	s += "const float jointMin[%d] = {" % jc
 	for i in range(jc):
 		var mn: float = _to_float(joints[i].get("min", str(JOINT_ANGLE_MIN)), JOINT_ANGLE_MIN)
 		if i > 0:
 			s += ", "
-		s += "%.2ff" % clampf(mn, JOINT_ANGLE_MIN, JOINT_ANGLE_MAX)
+		s += "%.2ff" % clampf(mn, offsets[i] + JOINT_ANGLE_MIN, offsets[i] + JOINT_ANGLE_MAX)
 	s += "};\n"
 	s += "const float jointMax[%d] = {" % jc
 	for i in range(jc):
 		var mx: float = _to_float(joints[i].get("max", str(JOINT_ANGLE_MAX)), JOINT_ANGLE_MAX)
 		if i > 0:
 			s += ", "
-		s += "%.2ff" % clampf(mx, JOINT_ANGLE_MIN, JOINT_ANGLE_MAX)
+		s += "%.2ff" % clampf(mx, offsets[i] + JOINT_ANGLE_MIN, offsets[i] + JOINT_ANGLE_MAX)
 	s += "};\n"
 	s += "// 各关节方向(1=正向, 0=反向)，仅在 angle_to_duty 中生效\n"
 	s += "const uint8_t jointDir[%d] = {" % jc
@@ -395,6 +405,33 @@ func clamp_angles_to_limits(angles: Array, joints: Array) -> Dictionary:
 	return {"angles": out, "clamped": clamped}
 
 
+# ------------------------------------------------------------------ 安装中位朝向
+## 各关节的安装中位朝向（度，运动学角）：舵机处于中位时该关节的实际朝向。
+## 舵机盘装歪时靠它修正，逆解算本身不受影响。
+func joint_offsets(joints: Array, jc: int) -> Array:
+	var out: Array = []
+	for i in range(jc):
+		if i < joints.size():
+			out.append(_to_float(joints[i].get("offset", "0"), 0.0))
+		else:
+			out.append(0.0)
+	return out
+
+
+## 运动学角 -> 舵机指令角（复现 C 端 angle_to_duty 里的减法）。
+## 返回 {"angles": Array[float], "over_travel": Array[bool]}，
+## over_travel 标记该关节超出舵机 ±90° 行程（装歪导致够不到）。
+func servo_angles(angles: Array, joints: Array) -> Dictionary:
+	var offsets: Array = joint_offsets(joints, angles.size())
+	var out: Array = []
+	var over: Array = []
+	for i in range(angles.size()):
+		var s: float = float(angles[i]) - offsets[i]
+		out.append(s)
+		over.append(s < JOINT_ANGLE_MIN or s > JOINT_ANGLE_MAX)
+	return {"angles": out, "over_travel": over}
+
+
 # ------------------------------------------------------------------ 肘部分支
 ## 弯曲关节（2轴=关节2，3/4轴=关节3）的初始角为负时，逆解取负分支，
 ## 否则正运动学起点反解回来会得到镜像姿态，上电首帧关节跳变。
@@ -509,28 +546,34 @@ func _has_exp_slot(joints: Array, jc: int) -> bool:
 # ------------------------------------------------------------------ angle_to_duty
 func _gen_angle_to_duty() -> String:
 	var s: String = ""
-	s += "/// @brief 关节角度(度) -> 舵机占空比\n"
+	s += "/// @brief 关节角度(运动学角，度) -> 舵机占空比\n"
 	s += "/// @param joint 关节索引(0..JOINT_COUNT-1)\n"
-	s += "/// @param angle 角度(度)\n"
+	s += "/// @param angle 运动学角(度)，即连杆的实际朝向\n"
 	s += "/// @return 舵机占空比(SERVO_MIN_DUTY~SERVO_MAX_DUTY)\n"
-	s += "/// @note 角度以舵机中位为 0°，行程 ±%d°：-%d°=%d, 0°=%d, +%d°=%d。\n" \
-		% [SERVO_MAX_OFFSET_DEG, SERVO_MAX_OFFSET_DEG, SERVO_DUTY_MIN,
+	s += "/// @note 两个角度空间：运动学角是连杆朝向（逆解算的输出），\n"
+	s += "///       舵机指令角 = 运动学角 - jointOffset[joint]，行程 ±%d°：\n" \
+		% SERVO_MAX_OFFSET_DEG
+	s += "///       -%d°=%d, 0°=%d, +%d°=%d。\n" \
+		% [SERVO_MAX_OFFSET_DEG, SERVO_DUTY_MIN,
 			SERVO_DUTY_MID, SERVO_MAX_OFFSET_DEG, SERVO_DUTY_MAX]
 	s += "///       反向关节沿中位镜像；舵机方向只由占空比决定，\n"
 	s += "///       故不再向扩展板发 Dir_Change_Order。\n"
 	s += "uint16_t angle_to_duty(int joint, float angle)\n"
 	s += "{\n"
 	s += "    int duty;\n"
-	s += "    // 限位夹紧\n"
+	s += "    float servo;\n"
+	s += "    // 限位夹紧（限位也是运动学角）\n"
 	s += "    if (angle < jointMin[joint])\n"
 	s += "        angle = jointMin[joint];\n"
 	s += "    if (angle > jointMax[joint])\n"
 	s += "        angle = jointMax[joint];\n"
-	s += "    // 角度 -> 占空比（0° 即中位 750），反向关节沿中位镜像\n"
+	s += "    // 运动学角 -> 舵机指令角：扣掉安装中位朝向\n"
+	s += "    servo = angle - jointOffset[joint];\n"
+	s += "    // 舵机指令角 -> 占空比（0° 即中位 %d），反向关节沿中位镜像\n" % SERVO_DUTY_MID
 	s += "    if (jointDir[joint])\n"
-	s += "        duty = (int)(SERVO_MID_DUTY + angle * SERVO_DUTY_PER_DEG);\n"
+	s += "        duty = (int)(SERVO_MID_DUTY + servo * SERVO_DUTY_PER_DEG);\n"
 	s += "    else\n"
-	s += "        duty = (int)(SERVO_MID_DUTY - angle * SERVO_DUTY_PER_DEG);\n"
+	s += "        duty = (int)(SERVO_MID_DUTY - servo * SERVO_DUTY_PER_DEG);\n"
 	s += "    if (duty < SERVO_MIN_DUTY)\n"
 	s += "        duty = SERVO_MIN_DUTY;\n"
 	s += "    if (duty > SERVO_MAX_DUTY)\n"

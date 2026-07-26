@@ -71,6 +71,8 @@ func _initialize() -> void:
 	_test_checked_reachability()
 	# --- clamp_angles_to_limits ---
 	_test_limit_clamp()
+	# --- 安装中位朝向（offset）与舵机指令角换算 ---
+	_test_servo_offset()
 	# --- 可达性由 C 端 ik_solve 钳位，GDScript 端只夹紧 c2 ---
 	# 目标(300,0) 超出 L1+L2=200，c2 被夹到 1 -> θ2=0，θ1=atan2(0,300)-0=0
 	_test("2轴 越界 (300,0) -> c2 夹紧后 θ1=0°, θ2=0°",
@@ -183,3 +185,32 @@ func _test_limit_clamp() -> void:
 	# 限位缺失时回退到舵机行程 ±90
 	var res3: Dictionary = _cg.clamp_angles_to_limits([-120.0, 150.0], [ {}, {}])
 	_test("限位缺失回退 ±90", res3["angles"], [-90.0, 90.0], 0.01)
+
+## 舵机盘装歪时的角度空间分离：
+## 运动学角 θ 是连杆实际朝向，舵机指令角 s = θ - offset
+func _test_servo_offset() -> void:
+	var joints: Array = [
+		{"offset": "30", "min": "-60", "max": "120"},
+		{"offset": "-45", "min": "-135", "max": "45"},
+	]
+	# offset=30 时，臂指向 30° 意味着舵机正好在中位（指令角 0）
+	var r: Dictionary = _cg.servo_angles([30.0, -45.0], joints)
+	_test("offset 换算：θ=offset 时舵机指令角为 0", r["angles"], [0.0, 0.0], 0.01)
+	_test("offset 换算：中位时不超程",
+		[1.0 if r["over_travel"][0] else 0.0, 1.0 if r["over_travel"][1] else 0.0], [0.0, 0.0])
+	# 一般情形：s = θ - offset
+	var r2: Dictionary = _cg.servo_angles([100.0, 0.0], joints)
+	_test("offset 换算 θ=[100,0] -> s=[70,45]", r2["angles"], [70.0, 45.0], 0.01)
+	# 超出舵机 ±90° 行程要被标记出来（装歪导致行程够不到）
+	var r3: Dictionary = _cg.servo_angles([125.0, -140.0], joints)
+	_test("offset 换算 θ=125 (s=95) 标记超程", [1.0 if r3["over_travel"][0] else 0.0], [1.0])
+	_test("offset 换算 θ=-140 (s=-95) 标记超程", [1.0 if r3["over_travel"][1] else 0.0], [1.0])
+	# offset 缺失等价于 0，保证老配置行为不变
+	var r4: Dictionary = _cg.servo_angles([25.0, -25.0], [{}, {}])
+	_test("offset 缺失等价于 0", r4["angles"], [25.0, -25.0], 0.01)
+	# joint_offsets 读取与补齐
+	_test("joint_offsets 读取", _cg.joint_offsets(joints, 2), [30.0, -45.0], 0.01)
+	_test("joint_offsets 越界补 0", _cg.joint_offsets(joints, 4), [30.0, -45.0, 0.0, 0.0], 0.01)
+	# 限位钳位仍在运动学空间：offset 不参与 clamp
+	var r5: Dictionary = _cg.clamp_angles_to_limits([200.0, -200.0], joints)
+	_test("限位钳位不受 offset 影响（仍按 min/max）", r5["angles"], [120.0, -135.0], 0.01)

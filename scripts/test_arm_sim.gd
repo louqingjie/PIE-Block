@@ -87,17 +87,12 @@ func _test_config(packed: PackedScene, config_type: int, jc: int) -> void:
 	_check("%s 末端球位置 == FK" % tag,
 		tip_node is MeshInstance3D and tip_node.position.distance_to(want_pos) < 1e-4,
 		"实际 %s 期望 %s" % [str(tip_node.position), str(want_pos)])
-	# 坐标映射往返：_robot_to_godot -> _target_from_godot 应还原
-	sim._target = [77.0, -33.0, 51.0, 0.0]
+	# 坐标映射：2 轴 (x,y) 是竖直平面，3/4 轴 (x,y) 水平、z 高度
 	var g: Vector3 = sim._robot_to_godot(77.0, -33.0, 51.0)
-	sim._target_from_godot(g)
-	var ok_rt: bool = abs(sim._target[0] - 77.0) < 1e-3
-	if config_type == 0:
-		# 2 轴无 Z，Y 即高度
-		ok_rt = ok_rt and abs(sim._target[1] - (-33.0)) < 1e-3
-	else:
-		ok_rt = ok_rt and abs(sim._target[1] - (-33.0)) < 1e-3 and abs(sim._target[2] - 51.0) < 1e-3
-	_check("%s 坐标映射往返一致" % tag, ok_rt, "实际 %s" % str(sim._target))
+	var want_g: Vector3 = (Vector3(77.0, -33.0, 0.0) if config_type == 0 \
+		else Vector3(77.0, 51.0, 33.0)) * 0.01
+	_check("%s 坐标映射正确" % tag, g.distance_to(want_g) < 1e-6,
+		"实际 %s 期望 %s" % [str(g), str(want_g)])
 	# 四种模式切换都不应报错，且状态行有内容
 	for m in [0, 1, 2, 3]:
 		sim._on_mode_selected(m)
@@ -121,17 +116,44 @@ func _test_config(packed: PackedScene, config_type: int, jc: int) -> void:
 		sim._push_trail(Vector3(float(i) * 0.001, 0, 0))
 	_check("%s 轨迹点数 <= 300" % tag, sim._trail_points.size() <= 300,
 		"实际 %d" % sim._trail_points.size())
+	# 逆解模式的键盘轴映射（不依赖真实按键，直接验证方向向量组装）
+	sim._on_mode_selected(0)
+	_check("%s 无按键时方向为零" % tag, sim._key_move_axis() == Vector3.ZERO)
+	# 速度滑块写入后只影响后续步进，不应改变当前姿态
+	var ang_before: Array = sim._angles.duplicate()
+	sim._on_param_changed(200.0, "movespd", null)
+	_check("%s 速度滑块写入" % tag, abs(sim._ik_move_speed - 200.0) < 1e-6)
+	_check("%s 改速度不动姿态" % tag, sim._angles == ang_before)
 	# 模拟手柄：推满摇杆后目标应发生移动且不产生 NaN
 	sim._on_mode_selected(3)
 	var before: float = sim._target[0]
 	sim._joy = Vector2(1.0, 0.0)
-	sim._step_joystick(0.1) # 100ms -> 10 步
+	sim._step_controller(0.1) # 100ms -> 10 步
 	_check("%s 摇杆推满后目标变化" % tag, abs(sim._target[0] - before) > 1e-6)
 	var finite: bool = true
 	for v in sim._target:
 		if not is_finite(v):
 			finite = false
 	_check("%s 摇杆步进后目标有限" % tag, finite, "实际 %s" % str(sim._target))
+	# 手柄按键 -> 键盘绑定表：每条都得有可用的键码且不与 WASD 撞车
+	var rows: Array = sim._controller_key_rows()
+	_check("%s 按键绑定表非空" % tag, rows.size() > 0)
+	var wasd: Array = [KEY_W, KEY_A, KEY_S, KEY_D]
+	var no_clash: bool = true
+	var named: bool = true
+	for row in rows:
+		if row["kb_code"] in wasd:
+			no_clash = false
+		if str(row["kb_name"]).is_empty():
+			named = false
+	_check("%s 按键绑定不与 WASD 撞车" % tag, no_clash)
+	_check("%s 按键绑定有可读名" % tag, named)
+	# 构型裁剪：2 轴不应出现 Z 轴（4 轴才有 φ）
+	var max_axis: int = 0
+	for row in rows:
+		max_axis = max(max_axis, int(row["axis"]))
+	_check("%s 按键绑定轴不越构型" % tag, max_axis < jc,
+		"最大轴 %d, jc=%d" % [max_axis, jc])
 	# 预设点位巡航不炸
 	sim._on_mode_selected(2)
 	sim._start_play()
@@ -139,5 +161,426 @@ func _test_config(packed: PackedScene, config_type: int, jc: int) -> void:
 		sim._step_play(0.1)
 	_check("%s 巡航后角度有限" % tag,
 		sim._angles.size() == jc and is_finite(sim._angles[0]))
+	await _test_calibration(sim, config_type, jc, tag)
 	root.remove_child(sim)
 	sim.free()
+
+
+## 标定台：臂长编辑、中位朝向标定、预设点位捕获、配置回写
+func _test_calibration(sim: Node, config_type: int, jc: int, tag: String) -> void:
+	# --- 配置变更信号 ---
+	var emitted: Array = []
+	sim.config_changed.connect(func(c: Dictionary) -> void: emitted.append(c))
+	# --- 臂长编辑：几何须跟着重建 ---
+	sim._on_mode_selected(1) # 标定模式
+	var arm_root: Node = sim.get_node("Sim/SubViewport/World/ArmRoot")
+	sim._on_param_changed(200.0, "L1", null)
+	_check("%s 改 L1 写入" % tag, abs(sim._l1 - 200.0) < 1e-6)
+	_check("%s 改 L1 触发 config_changed" % tag, emitted.size() > 0)
+	if emitted.size() > 0:
+		_check("%s config_changed 带新 L1" % tag,
+			str(emitted[-1].get("L1", "")).to_float() == 200.0,
+			"实际 %s" % str(emitted[-1].get("L1", "")))
+	# 第一段连杆长度应等于新 L1（经坐标缩放）
+	var link0: Node = arm_root.get_child(0)
+	var j0: Node = arm_root.get_child(jc if config_type >= 2 else 2)
+	_check("%s 改 L1 后连杆几何更新" % tag,
+		link0 is MeshInstance3D and j0 != null)
+	var frames: Array = sim._cg.joint_frames(sim._angles, sim._l1, sim._l2, sim._l3, config_type)
+	_check("%s 改 L1 后首段长度 == 200" % tag,
+		abs(frames[1].distance_to(frames[0]) - 200.0) < 1e-3,
+		"实际 %.3f" % frames[1].distance_to(frames[0]))
+	# L1 不允许为 0（余弦定理会除零）
+	sim._on_param_changed(0.0, "L1", null)
+	_check("%s L1 被夹到正值" % tag, sim._l1 > 0.0)
+	sim._on_param_changed(120.0, "L1", null)
+	# --- 中位朝向标定 ---
+	sim._fk_angles = [15.0, 25.0, 35.0, 45.0]
+	sim._recompute()
+	var before_ang: Array = sim._angles.duplicate()
+	sim._calibrate_offset_from_current()
+	var ok_off: bool = true
+	for i in range(jc):
+		if abs(sim._joint_offset(i) - before_ang[i]) > 0.01:
+			ok_off = false
+	_check("%s 标定中位朝向写入各关节" % tag, ok_off,
+		"offset=%s 期望=%s" % [str(sim._cg.joint_offsets(sim._joints, jc)), str(before_ang)])
+	# 标定完当前姿态的舵机指令角应全为 0（舵机正处中位）
+	var sv: Dictionary = sim._cg.servo_angles(sim._angles, sim._joints)
+	var all_zero: bool = true
+	for a in sv["angles"]:
+		if abs(a) > 0.01:
+			all_zero = false
+	_check("%s 标定后舵机指令角归零" % tag, all_zero, "实际 %s" % str(sv["angles"]))
+	_check("%s 标定后无超程" % tag, not (true in sv["over_travel"]))
+	# 滑块范围应随中位朝向平移
+	var rng: Array = sim._joint_slider_range(0)
+	_check("%s 滑块范围随中位朝向平移" % tag,
+		rng[0] >= sim._joint_offset(0) - 90.001 and rng[1] <= sim._joint_offset(0) + 90.001,
+		"范围 %s offset=%.1f" % [str(rng), sim._joint_offset(0)])
+	# --- 初始角标定 ---
+	sim._calibrate_home_from_current()
+	var ok_home: bool = true
+	for i in range(jc):
+		if abs(str(sim._joints[i].get("zero", "")).to_float() - sim._angles[i]) > 0.01:
+			ok_home = false
+	_check("%s 标定初始角写入各关节" % tag, ok_home)
+	# --- 中位朝向归零 ---
+	sim._reset_offsets()
+	var all_reset: bool = true
+	for i in range(jc):
+		if abs(sim._joint_offset(i)) > 1e-6:
+			all_reset = false
+	_check("%s 中位朝向归零" % tag, all_reset)
+	# --- 预设点位捕获 ---
+	sim._on_mode_selected(2)
+	sim._target = [100.0, 20.0, 30.0, 0.0]
+	sim._recompute()
+	var tip: Array = sim._cg.forward_kinematics_angles(
+		sim._angles, sim._l1, sim._l2, sim._l3, config_type)
+	sim._save_preset(2)
+	var p: Dictionary = sim._presets[2]
+	_check("%s 存预设后 enabled" % tag, p.get("enabled", false) == true)
+	_check("%s 预设存的是实际末端 X" % tag,
+		abs(str(p.get("x", "")).to_float() - tip[0]) < 0.02,
+		"存了 %s 期望 %.2f" % [str(p.get("x", "")), tip[0]])
+	# 2 轴构型不该写 Z（配置界面会把 0 当成已填）
+	if config_type == 0:
+		_check("%s 2轴预设不写 Z" % tag, str(p.get("z", "")).is_empty())
+	else:
+		_check("%s 预设存的是实际末端 Z" % tag,
+			abs(str(p.get("z", "")).to_float() - tip[2]) < 0.02)
+	# 非 4 轴不该写 φ
+	if jc < 4:
+		_check("%s 非4轴预设不写 φ" % tag, str(p.get("phi", "")).is_empty())
+	_check("%s 存预设自动给按键" % tag, not str(p.get("key", "")).is_empty())
+	# 跳回该预设，末端应回到存的位置
+	sim._target = [10.0, 0.0, 0.0, 0.0]
+	sim._recompute()
+	sim._goto_preset(2)
+	_check("%s 跳转预设还原目标" % tag,
+		abs(sim._target[0] - str(p.get("x", "")).to_float()) < 0.02)
+	# --- 清空预设 ---
+	sim._clear_presets()
+	var any_on: bool = false
+	for pp in sim._presets:
+		if pp.get("enabled", false):
+			any_on = true
+	_check("%s 清空预设" % tag, not any_on)
+	_test_gripper(sim, config_type, jc, tag)
+	_test_chassis(sim, config_type, jc, tag)
+
+
+## 自定义底盘高度：地面、轮径、悬挂间隙都得跟着走，且不影响机械臂
+func _test_chassis_height(sim: Node, config_type: int, tag: String) -> void:
+	var U: float = sim.MM_TO_UNIT
+	var chassis: Node = sim.get_node("Sim/SubViewport/World/Chassis")
+	# 先把安装偏移归零，便于直接核对绝对高度
+	sim._mount = Vector3(0.0, 0.0, 0.0)
+	for h in [60.0, 152.0, 300.0]:
+		sim._on_chassis_param_changed("chh", h)
+		_check("%s 车高%.0f 写入" % [tag, h], abs(sim._chassis_height - h) < 1e-6)
+		# 地面 = -车高（mount.z 已归零）
+		_check("%s 车高%.0f 地面 == -车高" % [tag, h],
+			abs(sim._ground_level() - (-h)) < 0.01,
+			"ground %.2f 期望 %.2f" % [sim._ground_level(), -h])
+		# 轮径 + 间隙 + 板厚 必须正好等于车高（这是高度基准链的核心恒等式）
+		var total: float = sim._wheel_radius() * 2.0 + sim._wheel_gap() \
+			+ sim.CHASSIS_DECK_THICK_MM
+		_check("%s 车高%.0f 轮径+间隙+板厚 == 车高" % [tag, h], abs(total - h) < 0.01,
+			"实际 %.2f 期望 %.2f" % [total, h])
+		# 轮径与间隙都必须为正，否则几何退化
+		_check("%s 车高%.0f 轮径为正" % [tag, h], sim._wheel_radius() > 0.0)
+		_check("%s 车高%.0f 间隙非负" % [tag, h], sim._wheel_gap() >= 0.0)
+		# 实际渲染出来的轮下沿必须落在地面上
+		var wr: float = sim._wheel_radius()
+		var wheel: Node = null
+		for c in chassis.get_children():
+			if c is MeshInstance3D and c.mesh is CylinderMesh \
+					and abs(c.mesh.top_radius / U - wr) < 0.01:
+				wheel = c
+				break
+		_check("%s 车高%.0f 找到轮子" % [tag, h], wheel != null)
+		if wheel != null:
+			var wbot: float = wheel.position.y / U - wheel.mesh.top_radius / U
+			_check("%s 车高%.0f 轮下沿落在地面" % [tag, h],
+				abs(wbot - sim._ground_level()) < 0.01,
+				"轮下沿 %.2f ground %.2f" % [wbot, sim._ground_level()])
+		# 高车身下轮径会变大，必须仍放得下前后两个轮子
+		var fwds: Dictionary = {}
+		for c in chassis.get_children():
+			if c is MeshInstance3D and c.mesh is CylinderMesh \
+					and abs(c.mesh.top_radius / U - wr) < 0.01:
+				fwds["%.3f" % (c.position.x / U)] = true
+		var keys: Array = fwds.keys()
+		_check("%s 车高%.0f 仍是前后两组轮" % [tag, h], keys.size() == 2,
+			"实际 %d 组" % keys.size())
+		if keys.size() == 2:
+			var gap: float = absf(str(keys[0]).to_float() - str(keys[1]).to_float())
+			_check("%s 车高%.0f 前后轮不相交" % [tag, h], gap > wr * 2.0,
+				"轮心间距 %.1f 轮直径 %.1f" % [gap, wr * 2.0])
+	# 极小车高不应让几何炸掉（轮径被夹到下限）
+	sim._on_chassis_param_changed("chh", 30.0)
+	_check("%s 极小车高轮径仍为正" % tag, sim._wheel_radius() > 0.0,
+		"轮径 %.3f" % sim._wheel_radius())
+	_check("%s 极小车高不产生 NaN" % tag,
+		is_finite(sim._ground_level()) and is_finite(sim._wheel_gap()))
+	# 改车高不应动关节角与臂长
+	var ang_before: Array = sim._angles.duplicate()
+	var l1_before: float = sim._l1
+	sim._on_chassis_param_changed("chh", 152.0)
+	_check("%s 改车高不动关节角" % tag, sim._angles == ang_before)
+	_check("%s 改车高不动臂长" % tag, abs(sim._l1 - l1_before) < 1e-6)
+	# 车高变化后网格（地面）须跟着下移
+	var grid: Node = sim.get_node_or_null("Sim/SubViewport/World/Grid")
+	_check("%s 改车高后网格已重建" % tag, grid is MeshInstance3D and grid.mesh != null)
+
+
+## 清掉夹爪子节点，避免 free() 时泄漏
+func _cleanup_gripper(sim: Node) -> void:
+	var grip_root: Node = sim.get_node_or_null("Sim/SubViewport/World/Gripper")
+	if grip_root == null:
+		return
+	for c in grip_root.get_children():
+		grip_root.remove_child(c)
+		c.free()
+
+
+## 夹爪：朝向必须跟着末端连杆走，两指在工作平面内对开
+func _test_gripper(sim: Node, config_type: int, jc: int, tag: String) -> void:
+	var U: float = sim.MM_TO_UNIT
+	var root: Node = sim.get_node_or_null("Sim/SubViewport/World/Gripper")
+	_check("%s Gripper 节点存在" % tag, root != null)
+	if root == null:
+		return
+	_check("%s 夹爪 = 掌座 + 两指" % tag, root.get_child_count() == 3,
+		"实际 %d" % root.get_child_count())
+	# 摆一个明确姿态再核对
+	sim._on_mode_selected(1)
+	for i in range(jc):
+		sim._fk_angles[i] = 0.0
+	sim._recompute()
+	var frames: Array = sim._cg.joint_frames(
+		sim._angles, sim._l1, sim._l2, sim._l3, config_type)
+	var tip: Vector3 = sim._vec_to_godot(frames[frames.size() - 1])
+	var prev: Vector3 = sim._vec_to_godot(frames[frames.size() - 2])
+	var approach: Vector3 = (tip - prev).normalized()
+	var palm: Node = root.get_child(0)
+	var f1: Node = root.get_child(1)
+	var f2: Node = root.get_child(2)
+	_check("%s 夹爪全部可见" % tag, palm.visible and f1.visible and f2.visible)
+	# 掌座应在末端球外侧、沿 approach 方向
+	var palm_off: Vector3 = palm.position - tip
+	_check("%s 掌座在末端外侧沿 approach" % tag,
+		palm_off.normalized().dot(approach) > 0.999,
+		"dot=%.4f" % palm_off.normalized().dot(approach))
+	# 掌座局部 X 轴必须对齐 approach（这就是"夹爪显示末端角度"的核心）
+	_check("%s 掌座 X 轴对齐 approach" % tag,
+		palm.transform.basis.x.normalized().dot(approach) > 0.999,
+		"dot=%.4f" % palm.transform.basis.x.normalized().dot(approach))
+	# 两指应对称分布在 approach 两侧，连线垂直于 approach
+	var span: Vector3 = f1.position - f2.position
+	_check("%s 两指连线垂直 approach" % tag, absf(span.normalized().dot(approach)) < 1e-3,
+		"dot=%.5f" % span.normalized().dot(approach))
+	# 两指连线必须落在臂的工作平面内（即垂直于平面法向）
+	var normal: Vector3 = sim._arm_plane_normal()
+	_check("%s 两指在工作平面内" % tag, absf(span.normalized().dot(normal)) < 1e-3,
+		"dot=%.5f" % span.normalized().dot(normal))
+	# 张开度：加大应让两指间距变大
+	sim._on_param_changed(0.0, "grip", null)
+	var span_closed: float = (root.get_child(1).position - root.get_child(2).position).length()
+	sim._on_param_changed(1.0, "grip", null)
+	var span_open: float = (root.get_child(1).position - root.get_child(2).position).length()
+	_check("%s 张开度加大则两指分开" % tag, span_open > span_closed + 1e-6,
+		"闭=%.4f 开=%.4f" % [span_closed, span_open])
+	_check("%s 最大张开 == GRIP_OPEN_MM*2" % tag,
+		abs(span_open / U - sim.GRIP_OPEN_MM * 2.0) < 0.01,
+		"实际 %.2f" % (span_open / U))
+	# 改张开度不应动关节角（纯可视化）
+	var ang_before: Array = sim._angles.duplicate()
+	sim._on_param_changed(0.5, "grip", null)
+	_check("%s 改张开度不动关节角" % tag, sim._angles == ang_before)
+	# 越界时夹爪也应换告警材质，与连杆保持一致
+	sim._on_mode_selected(0)
+	sim._target = [9999.0, 0.0, 0.0, 0.0]
+	sim._recompute()
+	_check("%s 越界时夹爪用告警材质" % tag,
+		root.get_child(0).material_override == sim._mat_link_bad)
+	sim._target = [120.0, 0.0, 30.0, 0.0]
+	sim._recompute()
+	_check("%s 恢复后夹爪用常规材质" % tag,
+		root.get_child(0).material_override == sim._mat_grip)
+	# 4 轴：改姿态角 φ 必须让夹爪朝向跟着转
+	if jc >= 4:
+		sim._target = [120.0, 0.0, 30.0, 0.0]
+		sim._recompute()
+		var ap_a: Vector3 = root.get_child(0).transform.basis.x
+		sim._target[3] = 60.0
+		sim._recompute()
+		var ap_b: Vector3 = root.get_child(0).transform.basis.x
+		_check("%s 改 φ 夹爪朝向随之变" % tag, ap_a.angle_to(ap_b) > 0.05,
+			"夹角 %.4f rad" % ap_a.angle_to(ap_b))
+	# 状态行须给出夹爪读数
+	var status: Node = sim.get_node_or_null("StatusPanel/Status")
+	_check("%s 状态行含夹爪读数" % tag,
+		status is Label and status.text.contains("夹爪"))
+
+
+## 底盘几何：高度基准必须自洽，否则"机械臂装在车上哪"就是错的
+func _test_chassis(sim: Node, config_type: int, jc: int, tag: String) -> void:
+	var U: float = sim.MM_TO_UNIT
+	var chassis: Node = sim.get_node_or_null("Sim/SubViewport/World/Chassis")
+	_check("%s Chassis 节点存在" % tag, chassis != null)
+	if chassis == null:
+		return
+	# 装到底盘偏前、垫高 90mm 的位置
+	sim._mount = Vector3(60.0, 0.0, 90.0)
+	sim._build_chassis()
+	sim._build_grid()
+	_check("%s 底盘有子节点" % tag, chassis.get_child_count() > 0)
+	# 收集各类构件
+	var boxes: Array = []
+	var cyls: Array = []
+	for c in chassis.get_children():
+		if c is MeshInstance3D and c.mesh is BoxMesh:
+			boxes.append(c)
+		elif c is MeshInstance3D and c.mesh is CylinderMesh:
+			cyls.append(c)
+	# Box 构件：底盘板 + 前后两根支臂 + 安装柱 = 4
+	_check("%s 底盘板/2支臂/安装柱共 4 个 Box" % tag, boxes.size() == 4,
+		"实际 %d" % boxes.size())
+	# 分离轮子与轮轴：轮半径由底盘高推算，轮轴细得多
+	var wheel_r: float = sim._wheel_radius()
+	var wheels: Array = []
+	var axles: Array = []
+	for c in cyls:
+		if abs(c.mesh.top_radius / U - wheel_r) < 0.01:
+			wheels.append(c)
+		else:
+			axles.append(c)
+	# 四轮车：任何构型都是 4 个轮子（2 轴构型的底盘同样有左右维度）
+	_check("%s 轮子数 == 4" % tag, wheels.size() == 4, "实际 %d" % wheels.size())
+	_check("%s 轮轴数 == 2（前后各一根）" % tag, axles.size() == 2,
+		"实际 %d" % axles.size())
+	if wheels.size() != 4 or axles.size() != 2:
+		return
+	# 底盘板顶面必须正好在机械臂底座下方 mount.z 处
+	var deck: Node = boxes[0]
+	var deck_top: float = deck.position.y / U + deck.mesh.size.y / U * 0.5
+	_check("%s 底盘板顶面 == -mount.z" % tag, abs(deck_top - (-90.0)) < 0.01,
+		"实际 %.2f 期望 -90" % deck_top)
+	# 安装柱须从板顶面接到底座（顶=0，底=-mount.z）；它是最后一个 Box
+	var post: Node = boxes[3]
+	var post_top: float = post.position.y / U + post.mesh.size.y / U * 0.5
+	var post_bot: float = post.position.y / U - post.mesh.size.y / U * 0.5
+	_check("%s 安装柱顶端接底座(0)" % tag, abs(post_top) < 0.01, "实际 %.2f" % post_top)
+	_check("%s 安装柱底端接板顶面(-90)" % tag, abs(post_bot - (-90.0)) < 0.01,
+		"实际 %.2f" % post_bot)
+	var w: Node = wheels[0]
+	var wheel_top: float = w.position.y / U + w.mesh.top_radius / U
+	var wheel_bot: float = w.position.y / U - w.mesh.top_radius / U
+	# 四轮必须等高（同一个地面上）
+	var same_height: bool = true
+	for ww in wheels:
+		if abs(ww.position.y - w.position.y) > 1e-6:
+			same_height = false
+	_check("%s 四轮等高" % tag, same_height)
+	# 轮子悬在底盘板下方，与板底面之间必须留出间隙
+	var deck_bot: float = deck.position.y / U - deck.mesh.size.y / U * 0.5
+	_check("%s 轮上沿与板底面留有间隙" % tag,
+		wheel_top < deck_bot - 0.01,
+		"轮上沿 %.1f 板底面 %.1f" % [wheel_top, deck_bot])
+	_check("%s 间隙 == _wheel_gap()" % tag,
+		abs((deck_bot - wheel_top) - sim._wheel_gap()) < 0.01,
+		"实际间隙 %.2f 期望 %.2f" % [deck_bot - wheel_top, sim._wheel_gap()])
+	# 四轮须分布在四个角上：前后各两个、左右各两个，且整体以板心对称
+	var sum_x: float = 0.0
+	var sum_z: float = 0.0
+	var fwd_set: Dictionary = {}
+	var side_set: Dictionary = {}
+	for ww in wheels:
+		sum_x += ww.position.x
+		sum_z += ww.position.z
+		fwd_set["%.2f" % (ww.position.x / U)] = true
+		side_set["%.2f" % (ww.position.z / U)] = true
+	_check("%s 四轮前后各两组" % tag, fwd_set.size() == 2,
+		"不同前后位置 %d 个" % fwd_set.size())
+	_check("%s 四轮左右各两组" % tag, side_set.size() == 2,
+		"不同左右位置 %d 个" % side_set.size())
+	_check("%s 四轮以板心对称" % tag,
+		abs(sum_x / 4.0 - deck.position.x) < 1e-6
+			and abs(sum_z / 4.0 - deck.position.z) < 1e-6)
+	# 轮子的**外缘**（而非轮心）必须落在板的前后范围内，
+	# 否则轮子会探出车头车尾（之前只查轮心，漏掉过这个）
+	var deck_half_len: float = deck.mesh.size.x / U * 0.5
+	var wheel_outer: float = absf(w.position.x - deck.position.x) / U + wheel_r
+	_check("%s 轮子外缘在板前后范围内" % tag, wheel_outer <= deck_half_len + 0.01,
+		"轮外缘距板心 %.1f 板半长 %.1f" % [wheel_outer, deck_half_len])
+	# 前后两轮不得相交：轮心间距必须大于轮直径。
+	# 车高调大时轮径会变大，若不设上限前后轮会叠成一团（踩过）
+	var fwd_positions: Array = []
+	for k in fwd_set.keys():
+		fwd_positions.append(str(k).to_float())
+	var center_gap: float = absf(fwd_positions[0] - fwd_positions[1])
+	_check("%s 前后轮不相交" % tag, center_gap > wheel_r * 2.0,
+		"轮心间距 %.1f 轮直径 %.1f" % [center_gap, wheel_r * 2.0])
+	# 轮子必须露出板的左右侧，否则俯视时被板遮住数不出个数
+	var deck_half_w: float = deck.mesh.size.z / U * 0.5
+	var wheel_inner: float = absf(w.position.z - deck.position.z) / U \
+		- w.mesh.height / U * 0.5
+	_check("%s 轮子露出板侧" % tag, wheel_inner >= deck_half_w - 0.01,
+		"轮内沿距板心 %.1f 板半宽 %.1f" % [wheel_inner, deck_half_w])
+	# 两根轮轴：与轮心同高，各自横贯左右，前后位置与两组轮子对齐
+	for ax in axles:
+		_check("%s 轮轴与轮心同高" % tag, abs(ax.position.y - w.position.y) < 1e-6)
+		_check("%s 轮轴横贯左右" % tag,
+			ax.mesh.height / U >= sim._chassis_track - 0.01,
+			"轴长 %.1f 轮距 %.1f" % [ax.mesh.height / U, sim._chassis_track])
+		_check("%s 轮轴前后位置与轮对齐" % tag,
+			fwd_set.has("%.2f" % (ax.position.x / U)),
+			"轴前后 %.2f" % (ax.position.x / U))
+	# 支臂：前后各一根，从板底面接到轮轴
+	for si in [1, 2]:
+		var strut: Node = boxes[si]
+		var strut_top: float = strut.position.y / U + strut.mesh.size.y / U * 0.5
+		var strut_bot: float = strut.position.y / U - strut.mesh.size.y / U * 0.5
+		_check("%s 支臂%d 顶端接板底面" % [tag, si], abs(strut_top - deck_bot) < 0.01,
+			"支臂顶 %.2f 板底 %.2f" % [strut_top, deck_bot])
+		_check("%s 支臂%d 底端到达轮心" % [tag, si],
+			abs(strut_bot - w.position.y / U) < 0.01,
+			"支臂底 %.2f 轮心 %.2f" % [strut_bot, w.position.y / U])
+	# 轮下沿即地面，须与 _ground_level() 一致（碰地判定依赖这个）
+	_check("%s 轮下沿 == _ground_level()" % tag,
+		abs(wheel_bot - sim._ground_level()) < 0.01,
+		"轮下沿 %.2f ground %.2f" % [wheel_bot, sim._ground_level()])
+	# 安装偏移应让底盘中心落在底座后方 mount.x 处
+	var deck_fwd: float = deck.position.x / U
+	_check("%s 底盘中心在底座后方 mount.x" % tag, abs(deck_fwd - (-60.0)) < 0.01,
+		"实际 %.2f 期望 -60" % deck_fwd)
+	# 隐藏底盘：子节点清空，地面回到底座平面
+	sim._on_chassis_toggled(false)
+	_check("%s 隐藏底盘后无子节点" % tag, chassis.get_child_count() == 0,
+		"实际 %d" % chassis.get_child_count())
+	_check("%s 隐藏底盘后地面回到 0" % tag, abs(sim._ground_level()) < 1e-6)
+	sim._on_chassis_toggled(true)
+	_check("%s 重新显示底盘" % tag, chassis.get_child_count() > 0)
+	# 碰地提示：末端压到地面以下时状态行须警告
+	sim._on_mode_selected(1)
+	for i in range(jc):
+		sim._fk_angles[i] = 0.0
+	# 把第二关节折到最下，尽量让末端低于地面
+	sim._fk_angles[1] = -90.0
+	sim._recompute()
+	var status: Node = sim.get_node_or_null("StatusPanel/Status")
+	_check("%s 状态行含底盘相对位置" % tag,
+		status is Label and status.text.contains("末端相对底盘"))
+	# 安装位置改动不应影响关节角（底盘纯视觉）
+	var ang_before: Array = sim._angles.duplicate()
+	sim._on_chassis_param_changed("mx", -120.0)
+	sim._on_chassis_param_changed("mz", 200.0)
+	_check("%s 改安装位置不动关节角" % tag, sim._angles == ang_before)
+	_check("%s 改安装位置不动臂长" % tag, abs(sim._l1 - 120.0) < 1e-6)
+	_test_chassis_height(sim, config_type, tag)
+	# 收尾：清掉底盘子节点，避免 sim.free() 时留下未释放的 Mesh 实例
+	sim._on_chassis_toggled(false)
+	_cleanup_gripper(sim)

@@ -132,13 +132,14 @@ const P_OUTPUT: NodePath = "VBoxContainer/HBoxContainer/HSplitContainer/CodeZone
 const P_CODE_EDIT: NodePath = "VBoxContainer/HBoxContainer/HSplitContainer/CodeZone/VSplitContainer/Code/CodeEdit"
 # 顶栏按钮
 const P_BUILD_BTN: NodePath = "VBoxContainer/TopPanel/Build"
-const P_ARM_SIM_BTN: NodePath = "VBoxContainer/TopPanel/ArmSim"
-# 3D 仿真场景（作为子节点覆盖显示，避免切场景丢失整页配置状态）
-const ARM_SIM_SCENE: String = "res://scenes/arm_sim.tscn"
 # AI 编辑入口（跳转到 code_edit.tscn）
 const P_AI_EDIT_BTN: NodePath = "VBoxContainer/TopPanel/AIEdit"
 # AI 代码编辑器场景
 const AI_EDIT_SCENE: String = "res://scenes/code_edit.tscn"
+# 3D 仿真入口
+const P_ARM_SIM_BTN: NodePath = "VBoxContainer/TopPanel/ArmSim"
+# 3D 仿真场景（作为子节点覆盖显示，避免切场景丢失整页配置状态）
+const ARM_SIM_SCENE: String = "res://scenes/arm_sim.tscn"
 # 注：工具链路径常量与部署/编译实现已迁到 scripts/toolchain.gd，与 AI 编辑器共用
 # 用 preload 而非 class_name：headless / 首次导入时全局类名缓存可能尚未建立
 const TC = preload("res://scripts/toolchain.gd")
@@ -149,10 +150,10 @@ var _build_thread: Thread = null
 var _build_busy: bool = false
 # 当前选中的代码生成器（随 Tab 切换）
 var _codegen: CodeGenBase = null
-# 当前打开的 3D 仿真视图实例（null 表示未打开）
-var _arm_sim: Control = null
 # 工具链管理器（惰性创建，见 _toolchain()）
 var _tc = null
+# 当前打开的 3D 仿真视图实例（null 表示未打开）
+var _arm_sim: Control = null
 
 
 func _ready() -> void:
@@ -231,14 +232,14 @@ func _connect_signals() -> void:
 	var build_btn: Node = get_node_or_null(P_BUILD_BTN)
 	if build_btn is BaseButton:
 		build_btn.pressed.connect(_on_build_pressed)
-	# 3D 仿真按钮
-	var sim_btn: Node = get_node_or_null(P_ARM_SIM_BTN)
-	if sim_btn is BaseButton:
-		sim_btn.pressed.connect(_on_arm_sim_pressed)
 	# AI 编辑入口
 	var ai_btn: Node = get_node_or_null(P_AI_EDIT_BTN)
 	if ai_btn is BaseButton:
 		ai_btn.pressed.connect(_on_ai_edit_pressed)
+	# 3D 仿真入口
+	var sim_btn: Node = get_node_or_null(P_ARM_SIM_BTN)
+	if sim_btn is BaseButton:
+		sim_btn.pressed.connect(_on_arm_sim_pressed)
 	# 调试界面：驱动类型变化时更新占位提示并触发检查
 	for row_name in DEBUG_ROWS:
 		var drive_btn: Node = get_node_or_null(NodePath(DEBUG +"/"+ row_name +"/OptionButton"))
@@ -272,7 +273,7 @@ func _connect_signals() -> void:
 				joint_btn.item_selected.connect(_run_check)
 	# 工程逆解算界面：各关节输入框文本变化触发检查
 	for row_name in IK_JOINT_ROWS:
-		for child in ["Zero", "Min", "Max"]:
+		for child in ["Offset", "Zero", "Min", "Max"]:
 			var joint_le: Node = get_node_or_null(NodePath(IK +"/"+ row_name +"/"+ child))
 			if joint_le is LineEdit:
 				joint_le.text_changed.connect(_run_check)
@@ -295,42 +296,6 @@ func _connect_signals() -> void:
 	var tab_container: Node = get_node_or_null(P_TAB_CONTAINER)
 	if tab_container is TabContainer:
 		tab_container.tab_changed.connect(_on_tab_changed)
-
-
-# ------------------------------------------------------------------ 3D 仿真
-## 打开机械臂逆解 3D 仿真视图。
-## 用「加子节点覆盖」而非 change_scene_to_file：整页配置状态留在内存里，
-## 返回时不需要重建任何控件。
-func _on_arm_sim_pressed() -> void:
-	if _arm_sim != null:
-		return
-	# 仿真只对工程逆解算配置有意义，先把 Tab 切过去再取配置
-	var tab_container: Node = get_node_or_null(P_TAB_CONTAINER)
-	if tab_container is TabContainer and tab_container.current_tab != 2:
-		tab_container.current_tab = 2
-	var packed: PackedScene = load(ARM_SIM_SCENE) as PackedScene
-	if packed == null:
-		push_error("无法加载 3D 仿真场景：%s" % ARM_SIM_SCENE)
-		return
-	var sim: Node = packed.instantiate()
-	if not sim is Control:
-		push_error("3D 仿真场景根节点不是 Control")
-		return
-	_arm_sim = sim
-	_arm_sim.set_anchors_preset(Control.PRESET_FULL_RECT)
-	if _arm_sim.has_signal("closed"):
-		_arm_sim.closed.connect(_on_arm_sim_closed)
-	# set_config 在 add_child 之前调用，_ready 里会自行应用
-	if _arm_sim.has_method("set_config"):
-		_arm_sim.set_config(_collect_ik_config())
-	add_child(_arm_sim)
-
-
-func _on_arm_sim_closed() -> void:
-	if _arm_sim == null:
-		return
-	_arm_sim.queue_free()
-	_arm_sim = null
 
 
 # ------------------------------------------------------------------ Tab 切换
@@ -738,12 +703,15 @@ func _collect_ik_config() -> Dictionary:
 		var row_name: String = IK_JOINT_ROWS[i]
 		var io_btn: Node = get_node_or_null(NodePath(IK +"/"+ row_name +"/IO"))
 		var dir_btn: Node = get_node_or_null(NodePath(IK +"/"+ row_name +"/Dir"))
+		var off_le: Node = get_node_or_null(NodePath(IK +"/"+ row_name +"/Offset"))
 		var zero_le: Node = get_node_or_null(NodePath(IK +"/"+ row_name +"/Zero"))
 		var min_le: Node = get_node_or_null(NodePath(IK +"/"+ row_name +"/Min"))
 		var max_le: Node = get_node_or_null(NodePath(IK +"/"+ row_name +"/Max"))
 		joints.append({
 			"io": _option_text(io_btn) if io_btn is OptionButton else "P60",
 			"dir": _option_text(dir_btn) if dir_btn is OptionButton else "正向",
+			# 安装中位朝向（运动学角）：空白视为 0，即中位与参考方向共线
+			"offset": (off_le.text.strip_edges() if off_le is LineEdit else ""),
 			"zero": (zero_le.text.strip_edges() if zero_le is LineEdit else ""),
 			"min": (min_le.text.strip_edges() if min_le is LineEdit else ""),
 			"max": (max_le.text.strip_edges() if max_le is LineEdit else ""),
@@ -811,13 +779,25 @@ func _check_ik_params(issues: Array) -> void:
 		var l3: String = cfg.get("L3", "")
 		if not l3.is_empty() and (not l3.is_valid_float() or l3.to_float() < 0):
 			issues.append({"type": "Error", "msg": "工程逆解算 L3「%s」不是合法非负数值" % l3})
-	# 各关节限位与初始角
+	# 各关节限位与初始角（全部是运动学角，即连杆实际朝向）
 	var joints: Array = cfg["joints"]
 	for i in range(joints.size()):
 		var j: Dictionary = joints[i]
 		var min_s: String = j.get("min", "")
 		var max_s: String = j.get("max", "")
 		var zero_s: String = j.get("zero", "")
+		# 安装中位朝向：舵机中位时该关节的运动学角。空白视为 0（中位与参考方向共线）
+		var off_s: String = j.get("offset", "")
+		var off_v: float = 0.0
+		if not off_s.is_empty():
+			if not off_s.is_valid_float():
+				issues.append({"type": "Error",
+					"msg": "工程逆解算 关节%d 中位朝向「%s」不是合法数值" % [i + 1, off_s]})
+			else:
+				off_v = off_s.to_float()
+		# 舵机行程以中位朝向为中心 ±90°
+		var travel_lo: float = off_v + IK_ANGLE_MIN
+		var travel_hi: float = off_v + IK_ANGLE_MAX
 		if min_s.is_empty() or max_s.is_empty():
 			issues.append({"type": "Error", "msg": "工程逆解算 关节%d 限位未设置" % (i + 1)})
 			continue
@@ -830,11 +810,11 @@ func _check_ik_params(issues: Array) -> void:
 		if min_v >= max_v:
 			issues.append({"type": "Error",
 				"msg": "工程逆解算 关节%d 限位 min(%.1f) >= max(%.1f)" % [i + 1, min_v, max_v]})
-		# 舵机角是相对中位的偏移角，行程 ±90°（占空比见 CodeGenBase），超出部分会被钳到端点
-		if min_v < IK_ANGLE_MIN or max_v > IK_ANGLE_MAX:
+		# 限位必须落在舵机能到达的行程内，否则超出部分会被钳到端点
+		if min_v < travel_lo or max_v > travel_hi:
 			issues.append({"type": "Warn",
-				"msg": "工程逆解算 关节%d 限位 [%.1f, %.1f] 超出舵机行程 ±90°（相对中位），超出部分会被钳到端点"
-					% [i + 1, min_v, max_v]})
+				"msg": "工程逆解算 关节%d 限位 [%.1f, %.1f] 超出舵机行程 [%.1f, %.1f]（中位朝向 %.1f° ±90°），超出部分会被钳到端点"
+					% [i + 1, min_v, max_v, travel_lo, travel_hi, off_v]})
 		# 初始角：若填了需在 [min, max] 内
 		if not zero_s.is_empty():
 			if not zero_s.is_valid_float():
@@ -1309,6 +1289,12 @@ func _get_line_text(path: NodePath) -> String:
 	return ""
 
 
+func _set_line_text(path: NodePath, text: String) -> void:
+	var node: Node = get_node_or_null(path)
+	if node is LineEdit:
+		node.text = text
+
+
 # ------------------------------------------------------------------ 配置收集
 ## 从 UI 控件收集所有参数，返回字典供代码生成使用
 func _collect_config() -> Dictionary:
@@ -1546,6 +1532,84 @@ func _on_ai_edit_pressed() -> void:
 	var kind: String = "engineer" if project_dst == TC.PROJECT_ENGINEER_DST else "infantry"
 	AppState.set_context(project_dst, kind, tab)
 	get_tree().change_scene_to_file(AI_EDIT_SCENE)
+
+
+# ------------------------------------------------------------------ 3D 仿真
+## 打开机械臂逆解 3D 仿真 / 标定视图。
+## 用「加子节点覆盖」而非 change_scene_to_file：整页配置状态留在内存里，
+## 返回时不需要重建任何控件。
+func _on_arm_sim_pressed() -> void:
+	if _arm_sim != null:
+		return
+	# 仿真只对工程逆解算配置有意义，先把 Tab 切过去再取配置
+	var tab_container: Node = get_node_or_null(P_TAB_CONTAINER)
+	if tab_container is TabContainer and tab_container.current_tab != 2:
+		tab_container.current_tab = 2
+	var packed: PackedScene = load(ARM_SIM_SCENE) as PackedScene
+	if packed == null:
+		push_error("无法加载 3D 仿真场景：%s" % ARM_SIM_SCENE)
+		return
+	var sim: Node = packed.instantiate()
+	if not sim is Control:
+		push_error("3D 仿真场景根节点不是 Control")
+		return
+	_arm_sim = sim
+	_arm_sim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	if _arm_sim.has_signal("closed"):
+		_arm_sim.closed.connect(_on_arm_sim_closed)
+	# 仿真里改了臂长/中位朝向/初始角/预设点位时回填到配置界面
+	if _arm_sim.has_signal("config_changed"):
+		_arm_sim.config_changed.connect(_on_arm_sim_config_changed)
+	# set_config 在 add_child 之前调用，_ready 里会自行应用
+	if _arm_sim.has_method("set_config"):
+		_arm_sim.set_config(_collect_ik_config())
+	add_child(_arm_sim)
+
+
+func _on_arm_sim_closed() -> void:
+	if _arm_sim == null:
+		return
+	_arm_sim.queue_free()
+	_arm_sim = null
+
+
+## 把 3D 标定台里的编辑结果写回配置界面控件，再重跑检查与代码生成。
+## 只回填仿真能改的字段，IO/方向/摇杆映射等仍由配置界面独占。
+func _on_arm_sim_config_changed(cfg: Dictionary) -> void:
+	_set_line_text(P_IK_L1, str(cfg.get("L1", "")))
+	_set_line_text(P_IK_L2, str(cfg.get("L2", "")))
+	_set_line_text(P_IK_L3, str(cfg.get("L3", "")))
+	var joints: Array = cfg.get("joints", [])
+	for i in range(min(joints.size(), IK_JOINT_ROWS.size())):
+		var row: String = IK_JOINT_ROWS[i]
+		for field in [["Offset", "offset"], ["Zero", "zero"], ["Min", "min"], ["Max", "max"]]:
+			var le: Node = get_node_or_null(NodePath(IK +"/"+ row +"/"+ field[0]))
+			if le is LineEdit:
+				le.text = str(joints[i].get(field[1], ""))
+	var presets: Array = cfg.get("presets", [])
+	for i in range(min(presets.size(), IK_PRESET_ROWS.size())):
+		var prow: String = IK_PRESET_ROWS[i]
+		var p: Dictionary = presets[i]
+		# 未启用的点位一律清空，否则配置界面会把残留坐标当成已启用
+		var on: bool = p.get("enabled", false)
+		for field2 in [["X", "x"], ["Y", "y"], ["Z", "z"], ["Phi", "phi"]]:
+			var ple: Node = get_node_or_null(NodePath(IK +"/"+ prow +"/"+ field2[0]))
+			if ple is LineEdit:
+				ple.text = str(p.get(field2[1], "")) if on else ""
+		var key_btn: Node = get_node_or_null(NodePath(IK +"/"+ prow +"/Key"))
+		if on and key_btn is OptionButton:
+			_select_option_by_text(key_btn, str(p.get("key", "")))
+	_run_check()
+
+
+## 按显示文本选中 OptionButton 的对应项（找不到则保持原选择）
+func _select_option_by_text(btn: OptionButton, text: String) -> void:
+	if text.is_empty():
+		return
+	for i in range(btn.item_count):
+		if btn.get_item_text(i) == text:
+			btn.selected = i
+			return
 
 
 ## 编译完成回调（主线程）：复位按钮，解析日志，展示结果

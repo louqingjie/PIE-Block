@@ -1,8 +1,8 @@
-[gd_scene load_steps=4 format=3 uid="uid://04gwuk3jiyxq"]
+[gd_scene format=3 uid="uid://04gwuk3jiyxq"]
 
 [ext_resource type="Theme" uid="uid://cryqvh2g7gqj" path="res://assets/themes/main.tres" id="1_sdmxl"]
 [ext_resource type="Script" uid="uid://dp6x4avofe57m" path="res://scripts/output.gd" id="2_out"]
-[ext_resource type="Script" path="res://scripts/code_edit.gd" id="3_main"]
+[ext_resource type="Script" uid="uid://b58ii2xd5iin2" path="res://scripts/code_edit.gd" id="3_main"]
 
 [node name="Control" type="Control" unique_id=1016157835]
 layout_mode = 3
@@ -56,46 +56,45 @@ layout_mode = 2
 size_flags_horizontal = 8
 text = "编译"
 
-[node name="HSplitContainer" type="HSplitContainer" parent="VBoxContainer"]
+[node name="HSplitContainer" type="HSplitContainer" parent="VBoxContainer" unique_id=942933507]
 layout_mode = 2
 size_flags_vertical = 3
+split_offsets = PackedInt32Array(900)
 split_offset = 900
 
-[node name="CodeZone" type="VBoxContainer" parent="VBoxContainer/HSplitContainer"]
+[node name="CodeZone" type="VBoxContainer" parent="VBoxContainer/HSplitContainer" unique_id=1471087948]
 layout_mode = 2
-size_flags_horizontal = 3
 
-[node name="VSplitContainer" type="VSplitContainer" parent="VBoxContainer/HSplitContainer/CodeZone"]
+[node name="VSplitContainer" type="VSplitContainer" parent="VBoxContainer/HSplitContainer/CodeZone" unique_id=546080166]
 layout_mode = 2
 size_flags_vertical = 3
+split_offsets = PackedInt32Array(480)
 split_offset = 480
 
-[node name="Code" type="VBoxContainer" parent="VBoxContainer/HSplitContainer/CodeZone/VSplitContainer"]
+[node name="Code" type="VBoxContainer" parent="VBoxContainer/HSplitContainer/CodeZone/VSplitContainer" unique_id=455373769]
 layout_mode = 2
-size_flags_vertical = 3
 
-[node name="Label" type="Label" parent="VBoxContainer/HSplitContainer/CodeZone/VSplitContainer/Code"]
+[node name="Label" type="Label" parent="VBoxContainer/HSplitContainer/CodeZone/VSplitContainer/Code" unique_id=1323366025]
 layout_mode = 2
 size_flags_horizontal = 4
 text = "main.c（可直接编辑）"
 
-[node name="CodeEdit" type="CodeEdit" parent="VBoxContainer/HSplitContainer/CodeZone/VSplitContainer/Code"]
+[node name="CodeEdit" type="CodeEdit" parent="VBoxContainer/HSplitContainer/CodeZone/VSplitContainer/Code" unique_id=682242033]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
-gutters_draw_line_numbers = true
 scroll_smooth = true
+gutters_draw_line_numbers = true
 
-[node name="Output" type="VBoxContainer" parent="VBoxContainer/HSplitContainer/CodeZone/VSplitContainer"]
+[node name="Output" type="VBoxContainer" parent="VBoxContainer/HSplitContainer/CodeZone/VSplitContainer" unique_id=681003645]
 layout_mode = 2
-size_flags_vertical = 3
 
-[node name="Label2" type="Label" parent="VBoxContainer/HSplitContainer/CodeZone/VSplitContainer/Output"]
+[node name="Label2" type="Label" parent="VBoxContainer/HSplitContainer/CodeZone/VSplitContainer/Output" unique_id=1479740825]
 layout_mode = 2
 size_flags_horizontal = 4
 text = "问题 & 输出"
 
-[node name="Output" type="CodeEdit" parent="VBoxContainer/HSplitContainer/CodeZone/VSplitContainer/Output"]
+[node name="Output" type="CodeEdit" parent="VBoxContainer/HSplitContainer/CodeZone/VSplitContainer/Output" unique_id=76873792]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
@@ -103,50 +102,39 @@ theme_override_colors/font_readonly_color = Color(0.875, 0.875, 0.875, 1)
 editable = false
 script = ExtResource("2_out")
 
-[node name="AIPanel" type="VBoxContainer" parent="VBoxContainer/HSplitContainer"]
+[node name="AIPanel" type="VBoxContainer" parent="VBoxContainer/HSplitContainer" unique_id=1733291115]
 custom_minimum_size = Vector2(320, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="Header" type="HBoxContainer" parent="VBoxContainer/HSplitContainer/AIPanel"]
+[node name="Header" type="HBoxContainer" parent="VBoxContainer/HSplitContainer/AIPanel" unique_id=908042392]
 layout_mode = 2
 
-[node name="Title" type="Label" parent="VBoxContainer/HSplitContainer/AIPanel/Header"]
+[node name="Title" type="Label" parent="VBoxContainer/HSplitContainer/AIPanel/Header" unique_id=1126168882]
 layout_mode = 2
 size_flags_horizontal = 3
-text = "AI 助手"
+text = "AI 终端"
 
-[node name="Status" type="Label" parent="VBoxContainer/HSplitContainer/AIPanel/Header"]
+[node name="Restart" type="Button" parent="VBoxContainer/HSplitContainer/AIPanel/Header" unique_id=265215550]
+layout_mode = 2
+disabled = true
+text = "重启终端"
+
+[node name="Status" type="Label" parent="VBoxContainer/HSplitContainer/AIPanel/Header" unique_id=186604752]
 layout_mode = 2
 size_flags_horizontal = 8
 text = "未启动"
 
-[node name="Scroll" type="ScrollContainer" parent="VBoxContainer/HSplitContainer/AIPanel"]
-layout_mode = 2
-size_flags_vertical = 3
-horizontal_scroll_mode = 0
-
-[node name="Messages" type="VBoxContainer" parent="VBoxContainer/HSplitContainer/AIPanel/Scroll"]
+[node name="WebSlot" type="Control" parent="VBoxContainer/HSplitContainer/AIPanel" unique_id=972626888]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
-[node name="Input" type="TextEdit" parent="VBoxContainer/HSplitContainer/AIPanel"]
-custom_minimum_size = Vector2(0, 90)
-layout_mode = 2
-placeholder_text = "描述你想让 AI 做的修改，Ctrl+Enter 发送"
-wrap_mode = 1
-
-[node name="Actions" type="HBoxContainer" parent="VBoxContainer/HSplitContainer/AIPanel"]
-layout_mode = 2
-
-[node name="Send" type="Button" parent="VBoxContainer/HSplitContainer/AIPanel/Actions"]
-layout_mode = 2
-size_flags_horizontal = 3
-disabled = true
-text = "发送"
-
-[node name="Abort" type="Button" parent="VBoxContainer/HSplitContainer/AIPanel/Actions"]
-layout_mode = 2
-disabled = true
-text = "中断"
+[node name="WebView" type="WebView" parent="." unique_id=842435095]
+full_window_size = false
+url = ""
+html = "<html><body style=\"margin:0;padding:24px;font-family:system-ui,sans-serif;background:#1d2229;color:#c8cdd4\">正在启动 AI 终端…</body></html>"
+data_directory = "user://webview"
+layout_mode = 0
+offset_right = 320.0
+offset_bottom = 240.0

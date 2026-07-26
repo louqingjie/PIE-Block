@@ -14,6 +14,7 @@ func _initialize() -> void:
 	_test_angle_clamp(cg)
 	_test_no_preset(cg)
 	_test_negative_elbow(cg)
+	_test_joint_offset(cg)
 	_test_config(cg, 0, 2, "2轴")
 	_test_config(cg, 1, 3, "3轴")
 	_test_config(cg, 2, 4, "4轴")
@@ -83,9 +84,10 @@ func _test_config(cg, config_type: int, jc: int, label: String) -> void:
 	_check("%s 不发 Dir_Change_Order" % label, code.find("ExpansionBoradControl(Dir_Change_Order") < 0)
 	# 占空比系数：0~180° 必须映射满实测行程 250~1250（跨度 1000）
 	_check("%s 占空比系数 5.5556" % label, code.find("#define SERVO_DUTY_PER_DEG  5.5556f") >= 0)
-	# 关节角以中位为 0°：映射式不得再减 90°偏移
+	# 舵机指令角以中位为 0°：先扣中位朝向，映射式不得再减 90°偏移
 	_check("%s 映射以中位为 0°" % label,
-		code.find("SERVO_MID_DUTY + angle * SERVO_DUTY_PER_DEG") >= 0
+		code.find("servo = angle - jointOffset[joint];") >= 0
+		and code.find("SERVO_MID_DUTY + servo * SERVO_DUTY_PER_DEG") >= 0
 		and code.find("angle - 90.0f") < 0)
 	# 不应残留未被读取的 valueOfKey
 	_check("%s 无死变量 valueOfKey" % label, code.find("valueOfKey") < 0)
@@ -154,6 +156,76 @@ func _test_negative_elbow(cg) -> void:
 	var neg_code: String = cg.generate(neg_cfg)
 	_check("负初始角 ELBOW_SIGN 为 -1", neg_code.find("#define ELBOW_SIGN  -1.0f") >= 0)
 	_check("负初始角 正反解自洽", _round_trip(cg, neg_cfg, -1.0))
+
+
+## 安装中位朝向：运动学角与舵机指令角分离
+func _test_joint_offset(cg) -> void:
+	print("\n--- 安装中位朝向 ---")
+	# offset 缺失（老配置）：仍要生成数组，且全为 0，行为与以前一致
+	var base_code: String = cg.generate(_make_cfg(1, 3, []))
+	_check("offset 缺失时仍生成 jointOffset", base_code.find("const float jointOffset[3]") >= 0)
+	_check("offset 缺失时全为 0",
+		base_code.find("jointOffset[3] = {0.00f, 0.00f, 0.00f}") >= 0)
+	# angle_to_duty 必须做减法，且符合 C89 声明靠前
+	_check("angle_to_duty 扣掉中位朝向",
+		base_code.find("servo = angle - jointOffset[joint];") >= 0)
+	_check("angle_to_duty 用 servo 算占空比",
+		base_code.find("SERVO_MID_DUTY + servo * SERVO_DUTY_PER_DEG") >= 0
+			and base_code.find("SERVO_MID_DUTY - servo * SERVO_DUTY_PER_DEG") >= 0)
+	_check("angle_to_duty 声明在块首(C89)", _decl_before_stmt(base_code, "float servo;"))
+	# offset 不为 0：限位钳位区间跟着平移，不再是固定 ±90
+	var cfg: Dictionary = _make_cfg(1, 3, [])
+	for i in range(3):
+		cfg["joints"][i]["offset"] = "30"
+		cfg["joints"][i]["min"] = "-60"
+		cfg["joints"][i]["max"] = "120"
+	var code: String = cg.generate(cfg)
+	_check("offset=30 写入 jointOffset",
+		code.find("jointOffset[3] = {30.00f, 30.00f, 30.00f}") >= 0)
+	# 行程 = 30±90 = [-60, 120]，故 min/max 应原值保留而非被钳到 ±90
+	_check("offset=30 时 min=-60 未被误钳",
+		code.find("jointMin[3] = {-60.00f, -60.00f, -60.00f}") >= 0)
+	_check("offset=30 时 max=120 未被误钳（旧逻辑会钳到 90）",
+		code.find("jointMax[3] = {120.00f, 120.00f, 120.00f}") >= 0)
+	# 初始角 45 在 [-60,120] 内，不应被改
+	_check("offset=30 时 jointHome 保持 45",
+		code.find("jointHome[3] = {45.00f, 45.00f, 45.00f}") >= 0)
+	# ik_solve 不应因 offset 而变（逆解本来就在运动学空间）
+	_check("ik_solve 不引用 jointOffset",
+		not _func_body(code, "void ik_solve(").contains("jointOffset"))
+
+
+## 指定声明是否出现在所属函数体的可执行语句之前（C251 默认 C89）
+func _decl_before_stmt(code: String, decl: String) -> bool:
+	var body: String = _func_body(code, "uint16_t angle_to_duty(")
+	var at: int = body.find(decl)
+	if at < 0:
+		return false
+	# 声明前面只允许出现其他声明（含 int/float）与空白
+	for line in body.substr(0, at).split("\n"):
+		var t: String = line.strip_edges()
+		if t.is_empty() or t == "{" or t.begins_with("//"):
+			continue
+		if not (t.begins_with("int ") or t.begins_with("float ") or t.begins_with("uint")):
+			return false
+	return true
+
+
+## 取出以 signature 开头的函数体文本（到下一个顶层 } 为止）
+func _func_body(code: String, signature: String) -> String:
+	# 可能先命中前置声明（以 ; 结尾），逐个往后找带 { 的那个
+	var from: int = 0
+	while true:
+		var at: int = code.find(signature, from)
+		if at < 0:
+			return ""
+		var brace: int = code.find("{", at)
+		var semi: int = code.find(";", at)
+		if brace >= 0 and (semi < 0 or brace < semi):
+			var end: int = code.find("\n}", brace)
+			return code.substr(at, (end if end >= 0 else code.length()) - at)
+		from = at + signature.length()
+	return ""
 
 
 ## 把生成代码里的 target 初值（正运动学结果）反解回关节角，应还原各关节初始角

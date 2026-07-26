@@ -62,12 +62,12 @@ text = "导出 C 代码"
 layout_mode = 2
 text = "进入 C 代码后处理"
 
-[node name="AIEdit" type="Button" parent="VBoxContainer/TopPanel"]
+[node name="AIEdit" type="Button" parent="VBoxContainer/TopPanel" unique_id=144998210]
 layout_mode = 2
 size_flags_horizontal = 8
 text = "AI 编辑"
 
-[node name="ArmSim" type="Button" parent="VBoxContainer/TopPanel"]
+[node name="ArmSim" type="Button" parent="VBoxContainer/TopPanel" unique_id=1431211771]
 layout_mode = 2
 size_flags_horizontal = 8
 text = "3D 仿真"
@@ -2374,7 +2374,7 @@ layout_mode = 2
 [node name="JointsLabel" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=-1393852784]
 layout_mode = 2
 size_flags_horizontal = 4
-text = "关节配置（IO/方向/初始角/限位角°，相对舵机中位，行程 ±90°）"
+text = "关节配置（IO/方向/中位朝向/初始角/限位角°，均为运动学角；舵机行程 = 中位朝向 ±90°）"
 
 [node name="Joint1" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=-1393852783]
 layout_mode = 2
@@ -2420,6 +2420,12 @@ popup/item_0/id = 0
 popup/item_1/text = "反向"
 popup/item_1/id = 1
 
+[node name="Offset" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint1"]
+custom_minimum_size = Vector2(50, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "中位°"
+
 [node name="Zero" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint1" unique_id=-1393852779]
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
@@ -2430,13 +2436,13 @@ placeholder_text = "初始角°"
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 3
-placeholder_text = "min° ≥-90"
+placeholder_text = "min°"
 
 [node name="Max" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint1" unique_id=-1393852777]
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 3
-placeholder_text = "max° ≤90"
+placeholder_text = "max° "
 
 [node name="Joint2" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=-1393852776]
 layout_mode = 2
@@ -2482,6 +2488,12 @@ popup/item_0/id = 0
 popup/item_1/text = "反向"
 popup/item_1/id = 1
 
+[node name="Offset" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint2"]
+custom_minimum_size = Vector2(50, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "中位°"
+
 [node name="Zero" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint2" unique_id=-1393852772]
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
@@ -2492,13 +2504,13 @@ placeholder_text = "初始角°"
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 3
-placeholder_text = "min° ≥-90"
+placeholder_text = "min° "
 
 [node name="Max" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint2" unique_id=-1393852770]
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 3
-placeholder_text = "max° ≤90"
+placeholder_text = "max° "
 
 [node name="Joint3" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=-1393852769]
 layout_mode = 2
@@ -2544,6 +2556,12 @@ popup/item_0/id = 0
 popup/item_1/text = "反向"
 popup/item_1/id = 1
 
+[node name="Offset" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint3"]
+custom_minimum_size = Vector2(50, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "中位°"
+
 [node name="Zero" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint3" unique_id=-1393852765]
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
@@ -2554,13 +2572,13 @@ placeholder_text = "初始角°"
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 3
-placeholder_text = "min° ≥-90"
+placeholder_text = "min° "
 
 [node name="Max" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint3" unique_id=-1393852763]
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 3
-placeholder_text = "max° ≤90"
+placeholder_text = "max° "
 
 [node name="Joint4" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=-1393852762]
 layout_mode = 2
@@ -2606,6 +2624,12 @@ popup/item_0/id = 0
 popup/item_1/text = "反向"
 popup/item_1/id = 1
 
+[node name="Offset" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint4"]
+custom_minimum_size = Vector2(50, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "中位°"
+
 [node name="Zero" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint4" unique_id=-1393852758]
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
@@ -2616,13 +2640,13 @@ placeholder_text = "初始角°"
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 3
-placeholder_text = "min° ≥-90"
+placeholder_text = "min° "
 
 [node name="Max" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint4" unique_id=-1393852756]
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 3
-placeholder_text = "max° ≤90"
+placeholder_text = "max° "
 
 [node name="HSeparator3" type="HSeparator" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=-1393852755]
 layout_mode = 2

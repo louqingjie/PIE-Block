@@ -22,6 +22,16 @@ func _initialize() -> void:
 		await process_frame
 		await process_frame
 		await process_frame
+		# 把机械臂装到底盘偏前的位置，核对底盘朝向与安装座
+		sim._mount = Vector3(60.0, 0.0, 90.0)
+		# 4 轴那张用高车身，2/3 轴用默认，便于一次核对不同车高
+		if case[0] == 2:
+			sim._chassis_height = 260.0
+		sim._build_chassis()
+		sim._build_grid()
+		sim._reset_view()
+		await process_frame
+		await process_frame
 		var vp: SubViewport = sim.get_node("Sim/SubViewport")
 		var img: Image = vp.get_texture().get_image()
 		var path: String = "res://_tmp_shot_%s.png" % case[2]
