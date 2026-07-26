@@ -60,6 +60,39 @@ const DEBUG_ROWS: Array = [
 	"HBoxContainer", "HBoxContainer2", "HBoxContainer3", "HBoxContainer4", "HBoxContainer5",
 	"HBoxContainer6", "HBoxContainer7", "HBoxContainer8", "HBoxContainer9", "HBoxContainer10",
 ]
+# 工程师界面
+const ENGINEER: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer"
+# IO 初始化区（OptionButton 选 电机/舵机，P60/P62 固定舵机只有1项）
+const P_ENG_P60: NodePath = ENGINEER + "/P60P62/OptionButton"
+const P_ENG_P62: NodePath = ENGINEER + "/P60P62/OptionButton2"
+const P_ENG_P64: NodePath = ENGINEER + "/P64P66/OptionButton"
+const P_ENG_P66: NodePath = ENGINEER + "/P64P66/OptionButton2"
+const P_ENG_P74: NodePath = ENGINEER + "/P74P75/OptionButton"
+const P_ENG_P75: NodePath = ENGINEER + "/P74P75/OptionButton2"
+const P_ENG_P76: NodePath = ENGINEER + "/P76P77/OptionButton2"
+const P_ENG_P77: NodePath = ENGINEER + "/P76P77/OptionButton"
+# 按键映射区各行容器名
+const ENG_KEY_ROWS: Array = [
+	"RightJoystickX", "RightJoystickY", "A", "B", "C", "D", "Up", "Down", "Left", "Right", "R",
+]
+# 按键映射区各行的显示名（与 ENG_KEY_ROWS 一一对应）
+const ENG_KEY_LABELS: Array = [
+	"右摇杆X", "右摇杆Y", "A", "B", "C", "D", "↑", "↓", "←", "->", "R",
+]
+# 工程逆解算界面（Tab 2）
+const IK: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced"
+const P_IK_CONFIG_TYPE: NodePath = IK + "/ConfigType/OptionButton"
+const P_IK_L1: NodePath = IK + "/LinkLength/L1"
+const P_IK_L2: NodePath = IK + "/LinkLength/L2"
+const P_IK_L3: NodePath = IK + "/LinkLength/L3"
+# 关节行（Joint1~Joint4），每行子节点：IO/Dir/Zero/Min/Max
+const IK_JOINT_ROWS: Array = ["Joint1", "Joint2", "Joint3", "Joint4"]
+# 预设点位行（Preset1~Preset4），每行子节点：Key/X/Y/Z/Phi
+const IK_PRESET_ROWS: Array = ["Preset1", "Preset2", "Preset3", "Preset4"]
+const P_IK_JOY_X: NodePath = IK + "/JoystickMap/XAxis"
+const P_IK_JOY_Y: NodePath = IK + "/JoystickMap/YAxis"
+const P_IK_JOY_Z: NodePath = IK + "/JoystickMap/ZAxis"
+const P_IK_JOY_SCALE: NodePath = IK + "/JoystickMap/Scale"
 # TabContainer（用于切换代码生成器）
 const P_TAB_CONTAINER: NodePath = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer"
 # 输出
@@ -76,6 +109,9 @@ const PROJECT_SRC: String = "res://stc32g/Projects/ROBOMASTER_INFANTRY"
 # 项目模板解压目标路径（user://，可写 main.c 和日志）
 # 保持 stc32g/ 层级结构，因为 uvproj 用相对路径 ..\..\..\Libraries\ 引用库
 const PROJECT_DST: String = "user://stc32g/Projects/ROBOMASTER_INFANTRY"
+# 工程师项目模板
+const PROJECT_ENGINEER_SRC: String = "res://stc32g/Projects/ROBOMASTER_ENGINEER"
+const PROJECT_ENGINEER_DST: String = "user://stc32g/Projects/ROBOMASTER_ENGINEER"
 # 库文件源路径（res://，只读）— uvproj 通过 ..\..\..\Libraries\ 相对引用
 const LIBRARIES_SRC: String = "res://stc32g/Libraries"
 # 库文件目标路径（user://，只读使用）
@@ -143,6 +179,22 @@ func _connect_signals() -> void:
 	var zero_cb: Node = get_node_or_null(P_ZERO_CB)
 	if zero_cb is BaseButton:
 		zero_cb.toggled.connect(_run_check)
+	# 工程师界面：IO 初始化区变化触发检查
+	for p in [P_ENG_P60, P_ENG_P62, P_ENG_P64, P_ENG_P66,
+			P_ENG_P74, P_ENG_P75, P_ENG_P76, P_ENG_P77]:
+		var eng_btn: Node = get_node_or_null(p)
+		if eng_btn is OptionButton:
+			eng_btn.item_selected.connect(_run_check)
+	# 工程师界面：按键映射区变化触发检查
+	for row_name in ENG_KEY_ROWS:
+		var row_path: String = ENGINEER + "/" + row_name
+		for child_name in ["OptionButton2", "OptionButton", "OptionButton3"]:
+			var eng_child: Node = get_node_or_null(NodePath(row_path +"/"+ child_name))
+			if eng_child is OptionButton:
+				eng_child.item_selected.connect(_run_check)
+		var eng_le: Node = get_node_or_null(NodePath(row_path +"/LineEdit"))
+		if eng_le is LineEdit:
+			eng_le.text_changed.connect(_run_check)
 	# 编译按钮
 	var build_btn: Node = get_node_or_null(P_BUILD_BTN)
 	if build_btn is BaseButton:
@@ -163,6 +215,36 @@ func _connect_signals() -> void:
 		var debug_le: Node = get_node_or_null(NodePath(DEBUG +"/"+ row_name +"/LineEdit"))
 		if debug_le is LineEdit:
 			debug_le.text_changed.connect(_run_check)
+	# 工程逆解算界面：构型/连杆长度变化触发检查
+	for p in [P_IK_CONFIG_TYPE, P_IK_JOY_X, P_IK_JOY_Y, P_IK_JOY_Z]:
+		var ik_opt: Node = get_node_or_null(p)
+		if ik_opt is OptionButton:
+			ik_opt.item_selected.connect(_run_check)
+	for p in [P_IK_L1, P_IK_L2, P_IK_L3, P_IK_JOY_SCALE]:
+		var ik_le: Node = get_node_or_null(p)
+		if ik_le is LineEdit:
+			ik_le.text_changed.connect(_run_check)
+	# 工程逆解算界面：各关节 IO/方向变化触发检查
+	for row_name in IK_JOINT_ROWS:
+		for child in ["IO", "Dir"]:
+			var joint_btn: Node = get_node_or_null(NodePath(IK +"/"+ row_name +"/"+ child))
+			if joint_btn is OptionButton:
+				joint_btn.item_selected.connect(_run_check)
+	# 工程逆解算界面：各关节输入框文本变化触发检查
+	for row_name in IK_JOINT_ROWS:
+		for child in ["Zero", "Min", "Max"]:
+			var joint_le: Node = get_node_or_null(NodePath(IK +"/"+ row_name +"/"+ child))
+			if joint_le is LineEdit:
+				joint_le.text_changed.connect(_run_check)
+	# 工程逆解算界面：预设点位按键/坐标变化触发检查
+	for row_name in IK_PRESET_ROWS:
+		var key_btn: Node = get_node_or_null(NodePath(IK +"/"+ row_name +"/Key"))
+		if key_btn is OptionButton:
+			key_btn.item_selected.connect(_run_check)
+		for child in ["X", "Y", "Z", "Phi"]:
+			var preset_le: Node = get_node_or_null(NodePath(IK +"/"+ row_name +"/"+ child))
+			if preset_le is LineEdit:
+				preset_le.text_changed.connect(_run_check)
 	# Tab 切换时更新代码生成器
 	var tab_container: Node = get_node_or_null(P_TAB_CONTAINER)
 	if tab_container is TabContainer:
@@ -181,13 +263,15 @@ func _get_current_codegen() -> CodeGenBase:
 	if not tab_container is TabContainer:
 		return CodeGenInfantry.new()
 	var current: int = tab_container.current_tab
-	# Tab 顺序：0=步兵, 1=工程, 2=调试
+	# Tab 顺序：0=步兵, 1=工程, 2=工程逆解算, 3=调试
 	match current:
 		0:
 			return CodeGenInfantry.new()
 		1:
 			return CodeGenEngineer.new()
 		2:
+			return CodeGenEngineerIK.new()
+		3:
 			return CodeGenDebug.new()
 		_:
 			return CodeGenInfantry.new()
@@ -211,6 +295,157 @@ func _update_debug_placeholders(_idx: int = -1) -> void:
 			"摩擦轮":
 				placeholder = "速度 0~1100"
 		line_edit.placeholder_text = placeholder
+
+
+# ------------------------------------------------------------------ 规则：工程师底盘 IO 检查
+# 底盘 L1-L4 之间：同侧（左前/左后 或 右前/右后）允许共用 IO，异侧不可
+# 底盘 IO 与 IO 初始化区一致性：底盘选的槽位在 IO 初始化区必须为「电机」
+func _check_engineer_chassis_io(issues: Array) -> void:
+	# --- 底盘 IO 重复检查 ---
+	var io_entries: Array = [
+		{"path": P_L1_IO, "label": "底盘-左前轮 IO", "group": "left"},
+		{"path": P_L2_IO, "label": "底盘-左后轮 IO", "group": "left"},
+		{"path": P_R1_IO, "label": "底盘-右前轮 IO", "group": "right"},
+		{"path": P_R2_IO, "label": "底盘-右后轮 IO", "group": "right"},
+	]
+	var io_map: Dictionary = {}
+	for entry in io_entries:
+		var btn: Node = get_node_or_null(entry["path"])
+		if not btn is OptionButton:
+			continue
+		var io_text: String = btn.get_item_text(btn.selected)
+		var pin: String = io_text.split(" ")[0] if io_text.contains(" ") else io_text
+		if not io_map.has(pin):
+			io_map[pin] = []
+		io_map[pin].append({"label": entry["label"], "group": entry["group"]})
+	for pin in io_map.keys():
+		var refs: Array = io_map[pin]
+		if refs.size() < 2:
+			continue
+		var groups: Dictionary = {}
+		for r in refs:
+			groups[r["group"]] = true
+		# 同侧（left 或 right）允许共用
+		if groups.size() == 1:
+			var only_group: String = groups.keys()[0]
+			if only_group == "left" or only_group == "right":
+				continue
+		var locs: Array = []
+		for r in refs:
+			locs.append(r["label"])
+		issues.append({"type": "Error",
+			"msg": "工程底盘 IO %s 被多次引用：%s" % [pin, ", ".join(locs)]})
+	# --- 底盘 IO 与 IO 初始化区一致性 ---
+	var cfg: Dictionary = _collect_engineer_config()
+	var io_init: Dictionary = cfg.get("io_init", {})
+	for entry in io_entries:
+		var btn2: Node = get_node_or_null(entry["path"])
+		if not btn2 is OptionButton:
+			continue
+		var io_text2: String = btn2.get_item_text(btn2.selected)
+		var pin2: String = io_text2.split(" ")[0] if io_text2.contains(" ") else io_text2
+		# MP03/MP74 不是底盘电机 IO，跳过
+		if pin2.begins_with("MP"):
+			continue
+		var init_type: String = io_init.get(pin2, "")
+		if not init_type.is_empty() and init_type != "电机":
+			issues.append({"type": "Error",
+				"msg": "工程 %s 选了 %s，但 IO 初始化区将其设为「%s」（底盘电机必须为电机模式）"
+					% [entry["label"], pin2, init_type]})
+
+
+# ------------------------------------------------------------------ 规则：工程师按键映射检查
+func _check_engineer_keymap(issues: Array) -> void:
+	var cfg: Dictionary = _collect_engineer_config()
+	var io_init: Dictionary = cfg.get("io_init", {})
+	var key_map: Array = cfg.get("key_map", [])
+	# IO 类型映射（MP03/MP74 -> 舵机，P60-P77 -> io_init 中的类型）
+	var slot_type: Dictionary = {}
+	for pin in ["P60", "P62", "P64", "P66", "P74", "P75", "P76", "P77"]:
+		slot_type[pin] = io_init.get(pin, "舵机")
+	slot_type["MP03"] = "舵机"
+	slot_type["MP74"] = "舵机"
+	# IO 冲突检查：多个映射行选同一目标 IO
+	var target_used: Dictionary = {}
+	for i in range(key_map.size()):
+		var row: Dictionary = key_map[i]
+		var target: String = row.get("target", "")
+		if target.is_empty():
+			continue
+		var label: String = ENG_KEY_LABELS[i] if i < ENG_KEY_LABELS.size() else str(i)
+		# 检查 target 是否与底盘 IO 冲突（底盘 L1-L4 占用的槽位不可被按键映射重复使用为电机）
+		if target_used.has(target):
+			issues.append({"type": "Error",
+				"msg": "工程按键映射 IO %s 被 %s 和 %s 重复使用" % [target, target_used[target], label]})
+		else:
+			target_used[target] = label
+		# 按键映射目标 IO 与底盘 IO 冲突检查
+		if not target.begins_with("MP"):
+			var l1_io: String = cfg.get("l1_io", "")
+			var l2_io: String = cfg.get("l2_io", "")
+			var r1_io: String = cfg.get("r1_io", "")
+			var r2_io: String = cfg.get("r2_io", "")
+			var l1_pin: String = l1_io.split(" ")[0] if l1_io.contains(" ") else l1_io
+			var l2_pin: String = l2_io.split(" ")[0] if l2_io.contains(" ") else l2_io
+			var r1_pin: String = r1_io.split(" ")[0] if r1_io.contains(" ") else r1_io
+			var r2_pin: String = r2_io.split(" ")[0] if r2_io.contains(" ") else r2_io
+			if target in [l1_pin, l2_pin, r1_pin, r2_pin]:
+				issues.append({"type": "Error",
+					"msg": "工程 %s 目标 IO %s 与底盘电机 IO 冲突" % [label, target]})
+		# IO 初始化区未配置该 IO 时 Warn
+		if not target.begins_with("MP"):
+			var init_t: String = io_init.get(target, "")
+			if init_t.is_empty():
+				issues.append({"type": "Warn",
+					"msg": "工程 %s 目标 IO %s 未在 IO 初始化区配置" % [label, target]})
+		# 控制模式与 IO 类型匹配
+		var mode: String = row.get("mode", "增量")
+		var t_type: String = slot_type.get(target, "舵机")
+		match mode:
+			"增量":
+				if t_type != "舵机":
+					issues.append({"type": "Error",
+						"msg": "工程 %s 增量模式只能用于舵机，但 %s 是 %s" % [label, target, t_type]})
+			"速度", "增速":
+				if t_type != "电机":
+					issues.append({"type": "Error",
+						"msg": "工程 %s %s模式只能用于电机，但 %s 是 %s" % [label, mode, target, t_type]})
+		# 摇杆行不能用「直接」模式
+		var input_name: String = row.get("input", "")
+		var is_joystick: bool = input_name in ["右摇杆X", "右摇杆Y"]
+		if is_joystick and mode == "直接":
+			issues.append({"type": "Error",
+				"msg": "工程 %s 摇杆行不能用直接模式" % label})
+		# 按键行不能用「速度/增速」模式
+		if not is_joystick and mode in ["速度", "增速"]:
+			issues.append({"type": "Error",
+				"msg": "工程 %s 按键行不能用%s模式（需要摇杆值）" % [label, mode]})
+		# 参数范围检查
+		var param: String = row.get("param", "")
+		if not param.is_empty():
+			if not param.is_valid_int():
+				issues.append({"type": "Error",
+					"msg": "工程 %s 参数「%s」不是合法整数" % [label, param]})
+			else:
+				var val: int = param.to_int()
+				match mode:
+					"增量":
+						if val < 0 or val > 180:
+							issues.append({"type": "Error",
+								"msg": "工程 %s 增量参数 %d 超出范围（0-180）" % [label, val]})
+					"直接":
+						if t_type == "舵机":
+							if val < -180 or val > 180:
+								issues.append({"type": "Error",
+									"msg": "工程 %s 舵机角度 %d 超出范围（-180~180）" % [label, val]})
+						else:
+							if val < 0 or val > 10000:
+								issues.append({"type": "Error",
+									"msg": "工程 %s 电机速度 %d 超出范围（0-10000）" % [label, val]})
+					"速度", "增速":
+						if val < 0 or val > 10000:
+							issues.append({"type": "Error",
+								"msg": "工程 %s %s参数 %d 超出范围（0-10000）" % [label, mode, val]})
 
 
 # ------------------------------------------------------------------ 规则：调试界面参数范围
@@ -274,6 +509,169 @@ func _collect_debug_config() -> Array:
 	return rows
 
 
+# ------------------------------------------------------------------ 工程逆解算：配置收集
+## 构型索引 -> 关节数（2/3/4）
+func _ik_joint_count(config_type_idx: int) -> int:
+	match config_type_idx:
+		0: return 2
+		1: return 3
+		2: return 4
+	return 2
+
+
+## 收集工程逆解算界面配置，返回字典供代码生成使用
+func _collect_ik_config() -> Dictionary:
+	var cfg: Dictionary = {}
+	var type_btn: Node = get_node_or_null(P_IK_CONFIG_TYPE)
+	var type_idx: int = type_btn.selected if type_btn is OptionButton else 0
+	cfg["config_type"] = type_idx # 0=2轴, 1=3轴, 2=4轴
+	cfg["joint_count"] = _ik_joint_count(type_idx)
+	# 连杆长度（mm）
+	cfg["L1"] = _get_line_text(P_IK_L1).strip_edges()
+	cfg["L2"] = _get_line_text(P_IK_L2).strip_edges()
+	cfg["L3"] = _get_line_text(P_IK_L3).strip_edges()
+	# 各关节配置
+	var joints: Array = []
+	for i in range(cfg["joint_count"]):
+		var row_name: String = IK_JOINT_ROWS[i]
+		var io_btn: Node = get_node_or_null(NodePath(IK +"/"+ row_name +"/IO"))
+		var dir_btn: Node = get_node_or_null(NodePath(IK +"/"+ row_name +"/Dir"))
+		var zero_le: Node = get_node_or_null(NodePath(IK +"/"+ row_name +"/Zero"))
+		var min_le: Node = get_node_or_null(NodePath(IK +"/"+ row_name +"/Min"))
+		var max_le: Node = get_node_or_null(NodePath(IK +"/"+ row_name +"/Max"))
+		joints.append({
+			"io": io_btn.get_item_text(io_btn.selected) if io_btn is OptionButton else "P60",
+			"dir": dir_btn.get_item_text(dir_btn.selected) if dir_btn is OptionButton else "正向",
+			"zero": (zero_le.text.strip_edges() if zero_le is LineEdit else ""),
+			"min": (min_le.text.strip_edges() if min_le is LineEdit else ""),
+			"max": (max_le.text.strip_edges() if max_le is LineEdit else ""),
+		})
+	cfg["joints"] = joints
+	# 预设点位
+	var presets: Array = []
+	for row_name in IK_PRESET_ROWS:
+		var key_btn: Node = get_node_or_null(NodePath(IK +"/"+ row_name +"/Key"))
+		var x_le: Node = get_node_or_null(NodePath(IK +"/"+ row_name +"/X"))
+		var y_le: Node = get_node_or_null(NodePath(IK +"/"+ row_name +"/Y"))
+		var z_le: Node = get_node_or_null(NodePath(IK +"/"+ row_name +"/Z"))
+		var phi_le: Node = get_node_or_null(NodePath(IK +"/"+ row_name +"/Phi"))
+		var x_text: String = x_le.text.strip_edges() if x_le is LineEdit else ""
+		var y_text: String = y_le.text.strip_edges() if y_le is LineEdit else ""
+		# 判断是否启用：至少 X 和 Y 填了
+		var enabled: bool = not x_text.is_empty() and not y_text.is_empty()
+		presets.append({
+			"key": key_btn.get_item_text(key_btn.selected) if key_btn is OptionButton else "A",
+			"x": x_text,
+			"y": y_text,
+			"z": z_le.text.strip_edges() if z_le is LineEdit else "",
+			"phi": phi_le.text.strip_edges() if phi_le is LineEdit else "",
+			"enabled": enabled,
+		})
+	cfg["presets"] = presets
+	# 摇杆映射
+	cfg["joy_x"] = _get_option_text(P_IK_JOY_X)
+	cfg["joy_y"] = _get_option_text(P_IK_JOY_Y)
+	cfg["joy_z"] = _get_option_text(P_IK_JOY_Z)
+	cfg["joy_scale"] = _get_line_text(P_IK_JOY_SCALE).strip_edges()
+	return cfg
+
+
+# ------------------------------------------------------------------ 工程逆解算：静态检查
+func _check_ik_params(issues: Array) -> void:
+	var cfg: Dictionary = _collect_ik_config()
+	var jc: int = cfg["joint_count"]
+	# 连杆长度
+	for lk in ["L1", "L2"]:
+		var s: String = cfg.get(lk, "")
+		if s.is_empty():
+			issues.append({"type": "Error", "msg": "工程逆解算 %s 未设置（连杆长度）" % lk})
+		elif not s.is_valid_float():
+			issues.append({"type": "Error", "msg": "工程逆解算 %s「%s」不是合法数值" % [lk, s]})
+		elif s.to_float() <= 0:
+			issues.append({"type": "Error", "msg": "工程逆解算 %s = %s 必须 > 0" % [lk, s]})
+	# 4 轴时 L3 可选，填了则需合法
+	if jc == 4:
+		var l3: String = cfg.get("L3", "")
+		if not l3.is_empty() and (not l3.is_valid_float() or l3.to_float() < 0):
+			issues.append({"type": "Error", "msg": "工程逆解算 L3「%s」不是合法非负数值" % l3})
+	# 各关节限位与零点
+	var joints: Array = cfg["joints"]
+	for i in range(joints.size()):
+		var j: Dictionary = joints[i]
+		var min_s: String = j.get("min", "")
+		var max_s: String = j.get("max", "")
+		var zero_s: String = j.get("zero", "")
+		if min_s.is_empty() or max_s.is_empty():
+			issues.append({"type": "Error", "msg": "工程逆解算 关节%d 限位未设置" % (i + 1)})
+			continue
+		if not min_s.is_valid_float() or not max_s.is_valid_float():
+			issues.append({"type": "Error",
+				"msg": "工程逆解算 关节%d 限位不是合法数值" % (i + 1)})
+			continue
+		var min_v: float = min_s.to_float()
+		var max_v: float = max_s.to_float()
+		if min_v >= max_v:
+			issues.append({"type": "Error",
+				"msg": "工程逆解算 关节%d 限位 min(%.1f) >= max(%.1f)" % [i + 1, min_v, max_v]})
+		if min_v < -180 or max_v > 180:
+			issues.append({"type": "Warn",
+				"msg": "工程逆解算 关节%d 限位超出 ±180°" % (i + 1)})
+		# 零点偏移：若填了需在 [min, max] 内
+		if not zero_s.is_empty():
+			if not zero_s.is_valid_float():
+				issues.append({"type": "Error",
+					"msg": "工程逆解算 关节%d 零点「%s」不是合法数值" % [i + 1, zero_s]})
+			elif zero_s.to_float() < min_v or zero_s.to_float() > max_v:
+				issues.append({"type": "Error",
+					"msg": "工程逆解算 关节%d 零点 %.1f 超出限位 [%.1f, %.1f]" % [i + 1, zero_s.to_float(), min_v, max_v]})
+	# IO 不重复
+	var io_map: Dictionary = {}
+	for i in range(joints.size()):
+		var io: String = joints[i].get("io", "")
+		if not io_map.has(io):
+			io_map[io] = []
+		io_map[io].append(i + 1)
+	for io in io_map.keys():
+		if io_map[io].size() > 1:
+			issues.append({"type": "Error",
+				"msg": "工程逆解算 IO %s 被多关节复用：%s" % [io, str(io_map[io])]})
+	# 预设点位可达性检查（仅对启用的点位）
+	var l1: float = cfg.get("L1", "0").to_float()
+	var l2: float = cfg.get("L2", "0").to_float()
+	var presets: Array = cfg["presets"]
+	for i in range(presets.size()):
+		var p: Dictionary = presets[i]
+		if not p.get("enabled", false):
+			continue
+		var x: float = p.get("x", "0").to_float() if p.get("x", "").is_valid_float() else 0
+		var y: float = p.get("y", "0").to_float() if p.get("y", "").is_valid_float() else 0
+		var r: float = sqrt(x * x + y * y)
+		var reach_min: float = abs(l1 - l2)
+		var reach_max: float = l1 + l2
+		if r < reach_min or r > reach_max:
+			issues.append({"type": "Warn",
+				"msg": "工程逆解算 预设点位 P%d (x=%.1f, y=%.1f) 超出可达范围 [%.1f, %.1f]" % [i + 1, x, y, reach_min, reach_max]})
+	# 摇杆轴不能重复
+	var jx: String = cfg.get("joy_x", "")
+	var jy: String = cfg.get("joy_y", "")
+	var jz: String = cfg.get("joy_z", "")
+	var joy_axes: Array = [jx, jy, jz]
+	var seen: Dictionary = {}
+	for i in range(joy_axes.size()):
+		var ax: String = joy_axes[i]
+		if ax.is_empty():
+			continue
+		if seen.has(ax):
+			issues.append({"type": "Error",
+				"msg": "工程逆解算 摇杆映射重复：%s 被多轴使用" % ax})
+		seen[ax] = true
+	# 缩放
+	var scale_s: String = cfg.get("joy_scale", "")
+	if not scale_s.is_empty() and (not scale_s.is_valid_float() or scale_s.to_float() <= 0):
+		issues.append({"type": "Error",
+			"msg": "工程逆解算 摇杆缩放「%s」不是合法正数" % scale_s})
+
+
 # ------------------------------------------------------------------ 检查入口
 func _run_check(_a = null, _b = null) -> void:
 	var issues: Array = []
@@ -288,9 +686,19 @@ func _run_check(_a = null, _b = null) -> void:
 		_check_arrow_trigger_conflict(issues)
 		_check_io_duplicate(issues)
 		_check_gimbal_pin_conflict(issues)
-	elif current_tab == 2:
-		# 调试模式检查
+	elif current_tab == 1:
+		# 工程模式检查
+		_check_channel(issues)
+		_check_deadzone(issues)
+		_check_speeds(issues)
+		_check_engineer_chassis_io(issues)
+		_check_engineer_keymap(issues)
+	elif current_tab == 3:
+		# 调试模式检查（tab 顺序：0=步兵, 1=工程, 2=工程逆解算, 3=调试）
 		_check_debug_params(issues)
+	elif current_tab == 2:
+		# 工程逆解算模式检查
+		_check_ik_params(issues)
 	# 将问题展示到 Output
 	var out: Node = get_node_or_null(P_OUTPUT)
 	if out and out.has_method("set_issues"):
@@ -298,10 +706,15 @@ func _run_check(_a = null, _b = null) -> void:
 	# 实时生成 main.c 并预览到 CodeEdit
 	_codegen = _get_current_codegen()
 	var cfg: Dictionary
-	if current_tab == 2:
-		cfg = {"debug_rows": _collect_debug_config()}
-	else:
-		cfg = _collect_config()
+	match current_tab:
+		3:
+			cfg = {"debug_rows": _collect_debug_config()}
+		1:
+			cfg = _collect_engineer_config()
+		2:
+			cfg = _collect_ik_config()
+		_:
+			cfg = _collect_config()
 	var code: String = _codegen.generate(cfg)
 	var code_edit: Node = get_node_or_null(P_CODE_EDIT)
 	if code_edit is CodeEdit:
@@ -517,6 +930,58 @@ func _collect_config() -> Dictionary:
 	return cfg
 
 
+## 收集工程师界面配置，返回 Dictionary（含 FirstRow 共享参数）
+func _collect_engineer_config() -> Dictionary:
+	var cfg: Dictionary = {}
+	# --- FirstRow 共享参数 ---
+	cfg["channel"] = _get_line_text(P_CHANNEL).strip_edges()
+	cfg["deadzone"] = _get_line_text(P_DEADZONE).strip_edges()
+	cfg["l1_io"] = _get_option_text(P_L1_IO)
+	cfg["l1_dir"] = _get_option_text(P_L1_DIR)
+	cfg["l2_io"] = _get_option_text(P_L2_IO)
+	cfg["l2_dir"] = _get_option_text(P_L2_DIR)
+	cfg["r1_io"] = _get_option_text(P_R1_IO)
+	cfg["r1_dir"] = _get_option_text(P_R1_DIR)
+	cfg["r2_io"] = _get_option_text(P_R2_IO)
+	cfg["r2_dir"] = _get_option_text(P_R2_DIR)
+	cfg["normal_speed"] = _get_line_text(P_NORMAL_SPEED).strip_edges()
+	cfg["sprint_speed"] = _get_line_text(P_SPRINT_SPEED).strip_edges()
+	var sprint_cb: Node = get_node_or_null(P_SPRINT_CB)
+	cfg["sprint_enabled"] = (sprint_cb is BaseButton) and sprint_cb.button_pressed
+	# --- IO 初始化区 ---
+	var io_init: Dictionary = {}
+	io_init["P60"] = _get_option_text(P_ENG_P60)
+	io_init["P62"] = _get_option_text(P_ENG_P62)
+	io_init["P64"] = _get_option_text(P_ENG_P64)
+	io_init["P66"] = _get_option_text(P_ENG_P66)
+	io_init["P74"] = _get_option_text(P_ENG_P74)
+	io_init["P75"] = _get_option_text(P_ENG_P75)
+	io_init["P76"] = _get_option_text(P_ENG_P76)
+	io_init["P77"] = _get_option_text(P_ENG_P77)
+	cfg["io_init"] = io_init
+	# --- 按键映射区 ---
+	var key_map: Array = []
+	for i in range(ENG_KEY_ROWS.size()):
+		var row_name: String = ENG_KEY_ROWS[i]
+		var row_path: String = ENGINEER + "/" + row_name
+		var dir_btn: Node = get_node_or_null(NodePath(row_path +"/OptionButton2"))
+		var mode_btn: Node = get_node_or_null(NodePath(row_path +"/OptionButton"))
+		var param_edit: Node = get_node_or_null(NodePath(row_path +"/LineEdit"))
+		var target_btn: Node = get_node_or_null(NodePath(row_path +"/OptionButton3"))
+		if not dir_btn is OptionButton or not mode_btn is OptionButton or not target_btn is OptionButton:
+			continue
+		var param_text: String = param_edit.text.strip_edges() if param_edit is LineEdit else ""
+		key_map.append({
+			"input": ENG_KEY_LABELS[i],
+			"dir": dir_btn.get_item_text(dir_btn.selected),
+			"mode": mode_btn.get_item_text(mode_btn.selected),
+			"param": param_text,
+			"target": target_btn.get_item_text(target_btn.selected),
+		})
+	cfg["key_map"] = key_map
+	return cfg
+
+
 ## 获取 OptionButton 当前选中的文本
 func _get_option_text(path: NodePath) -> String:
 	var btn: Node = get_node_or_null(path)
@@ -566,6 +1031,11 @@ func _ensure_deployed() -> bool:
 	if not DirAccess.dir_exists_absolute(_to_abs(PROJECT_DST)):
 		if not _copy_dir_recursive(PROJECT_SRC, PROJECT_DST):
 			_append_output("[Error] 无法复制项目模板到 user://，请检查磁盘空间")
+			return false
+	# 工程师项目模板也确保存在
+	if not DirAccess.dir_exists_absolute(_to_abs(PROJECT_ENGINEER_DST)):
+		if not _copy_dir_recursive(PROJECT_ENGINEER_SRC, PROJECT_ENGINEER_DST):
+			_append_output("[Error] 无法复制工程师项目模板到 user://，请检查磁盘空间")
 			return false
 	# 库文件也需复制（uvproj 用相对路径引用 Libraries）
 	if not DirAccess.dir_exists_absolute(_to_abs(LIBRARIES_DST)):
@@ -762,7 +1232,8 @@ func _generate_tools_ini() -> bool:
 
 ## 把最新生成的 main.c 写入 user://projects/infantry/USER/src/main.c
 func _write_main_c_to_disk(code: String) -> bool:
-	var main_c_path: String = PROJECT_DST.path_join("USER/src/main.c")
+	var project_dst: String = _get_current_project_dst()
+	var main_c_path: String = project_dst.path_join("USER/src/main.c")
 	var abs_path: String = _to_abs(main_c_path)
 	var f: FileAccess = FileAccess.open(abs_path, FileAccess.WRITE)
 	if f == null:
@@ -771,6 +1242,16 @@ func _write_main_c_to_disk(code: String) -> bool:
 	f.store_string(code)
 	f.close()
 	return true
+
+
+## 根据当前 Tab 获取项目部署路径
+func _get_current_project_dst() -> String:
+	var tab_container: Node = get_node_or_null(P_TAB_CONTAINER)
+	var current_tab: int = tab_container.current_tab if tab_container is TabContainer else 0
+	# Tab 1=工程 -> ENGINEER 项目；其余 -> INFANTRY 项目
+	if current_tab == 1:
+		return PROJECT_ENGINEER_DST
+	return PROJECT_DST
 
 
 ## 编译按钮回调：解压工具链 -> 写盘 -> 生成 TOOLS.INI -> 异步编译
@@ -827,8 +1308,9 @@ func _on_build_pressed() -> void:
 ## 编译工作线程：执行 Keil 编译器 -b，读日志，完成后回主线程
 ## 注意：子线程禁止访问 UI 节点，结果通过 call_deferred 传递
 func _build_worker(uv4_abs: String) -> void:
-	# 项目模板已在 user://projects/infantry/，可写 main.c 和日志
-	var mdk_abs: String = _to_abs(PROJECT_DST).path_join("MDK").replace("/", "\\")
+	# 根据当前 Tab 选择对应的项目模板路径
+	var project_dst: String = _get_current_project_dst()
+	var mdk_abs: String = _to_abs(project_dst).path_join("MDK").replace("/", "\\")
 	var uvproj_abs: String = mdk_abs + "\\Project_Template.uvproj"
 	var log_abs: String = mdk_abs + "\\" + BUILD_LOG_NAME
 	var uv4_win: String = uv4_abs.replace("/", "\\")

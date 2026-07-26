@@ -13,6 +13,8 @@ config_version=5
 config/name="pie-block"
 run/main_scene="uid://bsby1x4s7pk6"
 config/features=PackedStringArray("4.7", "GL Compatibility")
+boot_splash/stretch_mode=4
+boot_splash/image="uid://d8rccasyb7yp"
 config/icon="res://icon.svg"
 
 [display]

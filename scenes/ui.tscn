@@ -1113,7 +1113,7 @@ size_flags_horizontal = 3
 [node name="TabContainer" type="TabContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow" unique_id=1246727485]
 layout_mode = 2
 size_flags_vertical = 3
-current_tab = 1
+current_tab = 2
 tab_0/title = "步兵"
 tab_1/title = "工程"
 tab_2/title = "工程逆解算"
@@ -1477,6 +1477,7 @@ layout_mode = 2
 text = "添加特殊功能"
 
 [node name="Engineer" type="VBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer" unique_id=526865510]
+visible = false
 layout_mode = 2
 theme_override_constants/separation = 0
 metadata/_tab_index = 1
@@ -2255,10 +2256,611 @@ popup/item_9/text = "MP74"
 popup/item_9/id = 9
 
 [node name="EngineerAdvanced" type="VBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer" unique_id=2017398683]
-visible = false
 layout_mode = 2
 metadata/_tab_index = 2
 metadata/_tab_name = "工程逆解算"
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=-1393852795]
+layout_mode = 2
+size_flags_horizontal = 4
+text = "机械臂构型"
+
+[node name="HSeparator" type="HSeparator" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=-1393852794]
+layout_mode = 2
+
+[node name="ConfigType" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=-1393852793]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/ConfigType" unique_id=-1393852792]
+layout_mode = 2
+size_flags_horizontal = 2
+text = "构型"
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/ConfigType" unique_id=-1393852791]
+layout_mode = 2
+size_flags_horizontal = 8
+selected = 0
+item_count = 3
+popup/item_0/text = "2轴(大臂+小臂)"
+popup/item_0/id = 0
+popup/item_1/text = "3轴(底座旋转+2连杆)"
+popup/item_1/id = 1
+popup/item_2/text = "4轴(3轴+腕部俯仰)"
+popup/item_2/id = 2
+
+[node name="LinkLength" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=-1393852790]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/LinkLength" unique_id=-1393852789]
+layout_mode = 2
+size_flags_horizontal = 2
+text = "连杆长度(mm)"
+
+[node name="L1" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/LinkLength" unique_id=-1393852788]
+custom_minimum_size = Vector2(70, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "L1 大臂"
+
+[node name="L2" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/LinkLength" unique_id=-1393852787]
+custom_minimum_size = Vector2(70, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "L2 小臂"
+
+[node name="L3" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/LinkLength" unique_id=-1393852786]
+custom_minimum_size = Vector2(70, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "L3 腕部(4轴)"
+
+[node name="HSeparator2" type="HSeparator" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=-1393852785]
+layout_mode = 2
+
+[node name="JointsLabel" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=-1393852784]
+layout_mode = 2
+size_flags_horizontal = 4
+text = "关节配置（IO/方向/零点偏移/限位角°）"
+
+[node name="Joint1" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=-1393852783]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint1" unique_id=-1393852782]
+layout_mode = 2
+size_flags_horizontal = 2
+text = "关节1"
+
+[node name="IO" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint1" unique_id=-1393852781]
+layout_mode = 2
+size_flags_horizontal = 3
+selected = 0
+item_count = 10
+popup/item_0/text = "P60"
+popup/item_0/id = 0
+popup/item_1/text = "P62"
+popup/item_1/id = 1
+popup/item_2/text = "P64"
+popup/item_2/id = 2
+popup/item_3/text = "P66"
+popup/item_3/id = 3
+popup/item_4/text = "P74"
+popup/item_4/id = 4
+popup/item_5/text = "P75"
+popup/item_5/id = 5
+popup/item_6/text = "P76"
+popup/item_6/id = 6
+popup/item_7/text = "P77"
+popup/item_7/id = 7
+popup/item_8/text = "MP03"
+popup/item_8/id = 8
+popup/item_9/text = "MP74"
+popup/item_9/id = 9
+
+[node name="Dir" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint1" unique_id=-1393852780]
+layout_mode = 2
+size_flags_horizontal = 3
+selected = 0
+item_count = 2
+popup/item_0/text = "正向"
+popup/item_0/id = 0
+popup/item_1/text = "反向"
+popup/item_1/id = 1
+
+[node name="Zero" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint1" unique_id=-1393852779]
+custom_minimum_size = Vector2(50, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "零点°"
+
+[node name="Min" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint1" unique_id=-1393852778]
+custom_minimum_size = Vector2(50, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "min°"
+
+[node name="Max" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint1" unique_id=-1393852777]
+custom_minimum_size = Vector2(50, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "max°"
+
+[node name="Joint2" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=-1393852776]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint2" unique_id=-1393852775]
+layout_mode = 2
+size_flags_horizontal = 2
+text = "关节2"
+
+[node name="IO" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint2" unique_id=-1393852774]
+layout_mode = 2
+size_flags_horizontal = 3
+selected = 1
+item_count = 10
+popup/item_0/text = "P60"
+popup/item_0/id = 0
+popup/item_1/text = "P62"
+popup/item_1/id = 1
+popup/item_2/text = "P64"
+popup/item_2/id = 2
+popup/item_3/text = "P66"
+popup/item_3/id = 3
+popup/item_4/text = "P74"
+popup/item_4/id = 4
+popup/item_5/text = "P75"
+popup/item_5/id = 5
+popup/item_6/text = "P76"
+popup/item_6/id = 6
+popup/item_7/text = "P77"
+popup/item_7/id = 7
+popup/item_8/text = "MP03"
+popup/item_8/id = 8
+popup/item_9/text = "MP74"
+popup/item_9/id = 9
+
+[node name="Dir" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint2" unique_id=-1393852773]
+layout_mode = 2
+size_flags_horizontal = 3
+selected = 0
+item_count = 2
+popup/item_0/text = "正向"
+popup/item_0/id = 0
+popup/item_1/text = "反向"
+popup/item_1/id = 1
+
+[node name="Zero" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint2" unique_id=-1393852772]
+custom_minimum_size = Vector2(50, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "零点°"
+
+[node name="Min" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint2" unique_id=-1393852771]
+custom_minimum_size = Vector2(50, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "min°"
+
+[node name="Max" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint2" unique_id=-1393852770]
+custom_minimum_size = Vector2(50, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "max°"
+
+[node name="Joint3" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=-1393852769]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint3" unique_id=-1393852768]
+layout_mode = 2
+size_flags_horizontal = 2
+text = "关节3"
+
+[node name="IO" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint3" unique_id=-1393852767]
+layout_mode = 2
+size_flags_horizontal = 3
+selected = 4
+item_count = 10
+popup/item_0/text = "P60"
+popup/item_0/id = 0
+popup/item_1/text = "P62"
+popup/item_1/id = 1
+popup/item_2/text = "P64"
+popup/item_2/id = 2
+popup/item_3/text = "P66"
+popup/item_3/id = 3
+popup/item_4/text = "P74"
+popup/item_4/id = 4
+popup/item_5/text = "P75"
+popup/item_5/id = 5
+popup/item_6/text = "P76"
+popup/item_6/id = 6
+popup/item_7/text = "P77"
+popup/item_7/id = 7
+popup/item_8/text = "MP03"
+popup/item_8/id = 8
+popup/item_9/text = "MP74"
+popup/item_9/id = 9
+
+[node name="Dir" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint3" unique_id=-1393852766]
+layout_mode = 2
+size_flags_horizontal = 3
+selected = 0
+item_count = 2
+popup/item_0/text = "正向"
+popup/item_0/id = 0
+popup/item_1/text = "反向"
+popup/item_1/id = 1
+
+[node name="Zero" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint3" unique_id=-1393852765]
+custom_minimum_size = Vector2(50, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "零点°"
+
+[node name="Min" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint3" unique_id=-1393852764]
+custom_minimum_size = Vector2(50, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "min°"
+
+[node name="Max" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint3" unique_id=-1393852763]
+custom_minimum_size = Vector2(50, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "max°"
+
+[node name="Joint4" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=-1393852762]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint4" unique_id=-1393852761]
+layout_mode = 2
+size_flags_horizontal = 2
+text = "关节4"
+
+[node name="IO" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint4" unique_id=-1393852760]
+layout_mode = 2
+size_flags_horizontal = 3
+selected = 8
+item_count = 10
+popup/item_0/text = "P60"
+popup/item_0/id = 0
+popup/item_1/text = "P62"
+popup/item_1/id = 1
+popup/item_2/text = "P64"
+popup/item_2/id = 2
+popup/item_3/text = "P66"
+popup/item_3/id = 3
+popup/item_4/text = "P74"
+popup/item_4/id = 4
+popup/item_5/text = "P75"
+popup/item_5/id = 5
+popup/item_6/text = "P76"
+popup/item_6/id = 6
+popup/item_7/text = "P77"
+popup/item_7/id = 7
+popup/item_8/text = "MP03"
+popup/item_8/id = 8
+popup/item_9/text = "MP74"
+popup/item_9/id = 9
+
+[node name="Dir" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint4" unique_id=-1393852759]
+layout_mode = 2
+size_flags_horizontal = 3
+selected = 0
+item_count = 2
+popup/item_0/text = "正向"
+popup/item_0/id = 0
+popup/item_1/text = "反向"
+popup/item_1/id = 1
+
+[node name="Zero" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint4" unique_id=-1393852758]
+custom_minimum_size = Vector2(50, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "零点°"
+
+[node name="Min" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint4" unique_id=-1393852757]
+custom_minimum_size = Vector2(50, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "min°"
+
+[node name="Max" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint4" unique_id=-1393852756]
+custom_minimum_size = Vector2(50, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "max°"
+
+[node name="HSeparator3" type="HSeparator" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=-1393852755]
+layout_mode = 2
+
+[node name="PresetsLabel" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=-1393852754]
+layout_mode = 2
+size_flags_horizontal = 4
+text = "预设点位（按键切换，坐标单位mm，姿态°）"
+
+[node name="Preset1" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=-1393852753]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Preset1" unique_id=-1393852752]
+layout_mode = 2
+size_flags_horizontal = 2
+text = "P1"
+
+[node name="Key" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Preset1" unique_id=-1393852751]
+layout_mode = 2
+size_flags_horizontal = 3
+selected = 5
+item_count = 9
+popup/item_0/text = "R"
+popup/item_0/id = 0
+popup/item_1/text = "↑"
+popup/item_1/id = 1
+popup/item_2/text = "↓"
+popup/item_2/id = 2
+popup/item_3/text = "←"
+popup/item_3/id = 3
+popup/item_4/text = "->"
+popup/item_4/id = 4
+popup/item_5/text = "A"
+popup/item_5/id = 5
+popup/item_6/text = "B"
+popup/item_6/id = 6
+popup/item_7/text = "C"
+popup/item_7/id = 7
+popup/item_8/text = "D"
+popup/item_8/id = 8
+
+[node name="X" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Preset1" unique_id=-1393852750]
+custom_minimum_size = Vector2(50, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "x"
+
+[node name="Y" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Preset1" unique_id=-1393852749]
+custom_minimum_size = Vector2(50, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "y"
+
+[node name="Z" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Preset1" unique_id=-1393852748]
+custom_minimum_size = Vector2(50, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "z"
+
+[node name="Phi" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Preset1" unique_id=-1393852747]
+custom_minimum_size = Vector2(50, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "姿态φ°"
+
+[node name="Preset2" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=-1393852746]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Preset2" unique_id=-1393852745]
+layout_mode = 2
+size_flags_horizontal = 2
+text = "P2"
+
+[node name="Key" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Preset2" unique_id=-1393852744]
+layout_mode = 2
+size_flags_horizontal = 3
+selected = 6
+item_count = 9
+popup/item_0/text = "R"
+popup/item_0/id = 0
+popup/item_1/text = "↑"
+popup/item_1/id = 1
+popup/item_2/text = "↓"
+popup/item_2/id = 2
+popup/item_3/text = "←"
+popup/item_3/id = 3
+popup/item_4/text = "->"
+popup/item_4/id = 4
+popup/item_5/text = "A"
+popup/item_5/id = 5
+popup/item_6/text = "B"
+popup/item_6/id = 6
+popup/item_7/text = "C"
+popup/item_7/id = 7
+popup/item_8/text = "D"
+popup/item_8/id = 8
+
+[node name="X" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Preset2" unique_id=-1393852743]
+custom_minimum_size = Vector2(50, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "x"
+
+[node name="Y" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Preset2" unique_id=-1393852742]
+custom_minimum_size = Vector2(50, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "y"
+
+[node name="Z" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Preset2" unique_id=-1393852741]
+custom_minimum_size = Vector2(50, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "z"
+
+[node name="Phi" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Preset2" unique_id=-1393852740]
+custom_minimum_size = Vector2(50, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "姿态φ°"
+
+[node name="Preset3" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=-1393852739]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Preset3" unique_id=-1393852738]
+layout_mode = 2
+size_flags_horizontal = 2
+text = "P3"
+
+[node name="Key" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Preset3" unique_id=-1393852737]
+layout_mode = 2
+size_flags_horizontal = 3
+selected = 7
+item_count = 9
+popup/item_0/text = "R"
+popup/item_0/id = 0
+popup/item_1/text = "↑"
+popup/item_1/id = 1
+popup/item_2/text = "↓"
+popup/item_2/id = 2
+popup/item_3/text = "←"
+popup/item_3/id = 3
+popup/item_4/text = "->"
+popup/item_4/id = 4
+popup/item_5/text = "A"
+popup/item_5/id = 5
+popup/item_6/text = "B"
+popup/item_6/id = 6
+popup/item_7/text = "C"
+popup/item_7/id = 7
+popup/item_8/text = "D"
+popup/item_8/id = 8
+
+[node name="X" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Preset3" unique_id=-1393852736]
+custom_minimum_size = Vector2(50, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "x"
+
+[node name="Y" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Preset3" unique_id=-1393852735]
+custom_minimum_size = Vector2(50, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "y"
+
+[node name="Z" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Preset3" unique_id=-1393852734]
+custom_minimum_size = Vector2(50, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "z"
+
+[node name="Phi" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Preset3" unique_id=-1393852733]
+custom_minimum_size = Vector2(50, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "姿态φ°"
+
+[node name="Preset4" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=-1393852732]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Preset4" unique_id=-1393852731]
+layout_mode = 2
+size_flags_horizontal = 2
+text = "P4"
+
+[node name="Key" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Preset4" unique_id=-1393852730]
+layout_mode = 2
+size_flags_horizontal = 3
+selected = 8
+item_count = 9
+popup/item_0/text = "R"
+popup/item_0/id = 0
+popup/item_1/text = "↑"
+popup/item_1/id = 1
+popup/item_2/text = "↓"
+popup/item_2/id = 2
+popup/item_3/text = "←"
+popup/item_3/id = 3
+popup/item_4/text = "->"
+popup/item_4/id = 4
+popup/item_5/text = "A"
+popup/item_5/id = 5
+popup/item_6/text = "B"
+popup/item_6/id = 6
+popup/item_7/text = "C"
+popup/item_7/id = 7
+popup/item_8/text = "D"
+popup/item_8/id = 8
+
+[node name="X" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Preset4" unique_id=-1393852729]
+custom_minimum_size = Vector2(50, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "x"
+
+[node name="Y" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Preset4" unique_id=-1393852728]
+custom_minimum_size = Vector2(50, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "y"
+
+[node name="Z" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Preset4" unique_id=-1393852727]
+custom_minimum_size = Vector2(50, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "z"
+
+[node name="Phi" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Preset4" unique_id=-1393852726]
+custom_minimum_size = Vector2(50, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "姿态φ°"
+
+[node name="HSeparator4" type="HSeparator" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=-1393852725]
+layout_mode = 2
+
+[node name="JoystickMap" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=-1393852724]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/JoystickMap" unique_id=-1393852723]
+layout_mode = 2
+size_flags_horizontal = 2
+text = "摇杆映射"
+
+[node name="XAxis" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/JoystickMap" unique_id=-1393852722]
+layout_mode = 2
+size_flags_horizontal = 3
+selected = 0
+item_count = 4
+popup/item_0/text = "左X->末端X"
+popup/item_0/id = 0
+popup/item_1/text = "左Y->末端X"
+popup/item_1/id = 1
+popup/item_2/text = "右X->末端X"
+popup/item_2/id = 2
+popup/item_3/text = "右Y->末端X"
+popup/item_3/id = 3
+
+[node name="YAxis" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/JoystickMap" unique_id=-1393852721]
+layout_mode = 2
+size_flags_horizontal = 3
+selected = 1
+item_count = 4
+popup/item_0/text = "左X->末端Y"
+popup/item_0/id = 0
+popup/item_1/text = "左Y->末端Y"
+popup/item_1/id = 1
+popup/item_2/text = "右X->末端Y"
+popup/item_2/id = 2
+popup/item_3/text = "右Y->末端Y"
+popup/item_3/id = 3
+
+[node name="ZAxis" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/JoystickMap" unique_id=-1393852720]
+layout_mode = 2
+size_flags_horizontal = 3
+selected = 2
+item_count = 4
+popup/item_0/text = "左X->末端Z"
+popup/item_0/id = 0
+popup/item_1/text = "左Y->末端Z"
+popup/item_1/id = 1
+popup/item_2/text = "右X->末端Z"
+popup/item_2/id = 2
+popup/item_3/text = "右Y->末端Z"
+popup/item_3/id = 3
+
+[node name="Scale" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/JoystickMap" unique_id=-1393852719]
+custom_minimum_size = Vector2(60, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "200"
+placeholder_text = "缩放(mm)"
 
 [node name="Debug" type="VBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer" unique_id=1151350573]
 visible = false
