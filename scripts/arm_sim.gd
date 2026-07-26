@@ -46,7 +46,7 @@ const SIM_STEP_MS: float = 10.0
 ## 摇杆满偏值（与 C 端 valueOfRoker 量程一致）
 const ROKER_FULL: float = 2047.0
 ## 模式枚举
-enum Mode { IK = 0, FK = 1, PRESET = 2, JOYSTICK = 3 }
+enum Mode {IK = 0, FK = 1, PRESET = 2, JOYSTICK = 3}
 
 # ------------------------------------------------------------------ 运动学求解器
 var _cg: CodeGenEngineerIK = CodeGenEngineerIK.new()
@@ -95,10 +95,10 @@ var _panning: bool = false
 var _dragging_tip: bool = false
 
 # ------------------------------------------------------------------ 场景对象
-var _link_nodes: Array = []      # MeshInstance3D，每段连杆
-var _joint_nodes: Array = []     # MeshInstance3D，每个关节球
+var _link_nodes: Array = [] # MeshInstance3D，每段连杆
+var _joint_nodes: Array = [] # MeshInstance3D，每个关节球
 var _tip_node: MeshInstance3D = null
-var _trail_points: Array = []    # Vector3（Godot 坐标）
+var _trail_points: Array = [] # Vector3（Godot 坐标）
 var _trail_enabled: bool = true
 
 # 材质（在 _ready 里建好复用，避免每帧新建）
@@ -110,9 +110,9 @@ var _mat_tip: StandardMaterial3D = null
 var _mat_ghost: StandardMaterial3D = null
 
 # 参数面板控件（按模式重建）
-var _sliders: Dictionary = {}    # key -> HSlider
-var _spins: Dictionary = {}      # key -> SpinBox
-var _syncing: bool = false       # 滑块 <-> 数值框互相赋值时抑制回环
+var _sliders: Dictionary = {} # key -> HSlider
+var _spins: Dictionary = {} # key -> SpinBox
+var _syncing: bool = false # 滑块 <-> 数值框互相赋值时抑制回环
 
 
 # ------------------------------------------------------------------ 生命周期

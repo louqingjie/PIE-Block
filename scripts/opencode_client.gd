@@ -319,7 +319,7 @@ func send_message(text: String) -> bool:
 		_emit_log("[Warn] 上一条消息还在处理中")
 		return false
 	var body: String = JSON.stringify({
-		"parts": [{"type": "text", "text": text}],
+		"parts": [ {"type": "text", "text": text}],
 	})
 	var err: int = _chat_req.request(
 		_url("/session/%s/message" % _session_id),

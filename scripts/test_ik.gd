@@ -181,5 +181,5 @@ func _test_limit_clamp() -> void:
 	_test("限位内不钳位",
 		[1.0 if res2["clamped"][0] else 0.0, 1.0 if res2["clamped"][1] else 0.0], [0.0, 0.0])
 	# 限位缺失时回退到舵机行程 ±90
-	var res3: Dictionary = _cg.clamp_angles_to_limits([-120.0, 150.0], [{}, {}])
+	var res3: Dictionary = _cg.clamp_angles_to_limits([-120.0, 150.0], [ {}, {}])
 	_test("限位缺失回退 ±90", res3["angles"], [-90.0, 90.0], 0.01)
