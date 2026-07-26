@@ -2817,43 +2817,31 @@ text = "摇杆映射"
 layout_mode = 2
 size_flags_horizontal = 3
 selected = 0
-item_count = 4
-popup/item_0/text = "左X->末端X"
+item_count = 2
+popup/item_0/text = "右X->末端X"
 popup/item_0/id = 0
-popup/item_1/text = "左Y->末端X"
+popup/item_1/text = "右Y->末端X"
 popup/item_1/id = 1
-popup/item_2/text = "右X->末端X"
-popup/item_2/id = 2
-popup/item_3/text = "右Y->末端X"
-popup/item_3/id = 3
 
 [node name="YAxis" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/JoystickMap" unique_id=-1393852721]
 layout_mode = 2
 size_flags_horizontal = 3
 selected = 1
-item_count = 4
-popup/item_0/text = "左X->末端Y"
+item_count = 2
+popup/item_0/text = "右X->末端Y"
 popup/item_0/id = 0
-popup/item_1/text = "左Y->末端Y"
+popup/item_1/text = "右Y->末端Y"
 popup/item_1/id = 1
-popup/item_2/text = "右X->末端Y"
-popup/item_2/id = 2
-popup/item_3/text = "右Y->末端Y"
-popup/item_3/id = 3
 
 [node name="ZAxis" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/JoystickMap" unique_id=-1393852720]
 layout_mode = 2
 size_flags_horizontal = 3
-selected = 2
-item_count = 4
-popup/item_0/text = "左X->末端Z"
+selected = 0
+item_count = 2
+popup/item_0/text = "右X->末端Z"
 popup/item_0/id = 0
-popup/item_1/text = "左Y->末端Z"
+popup/item_1/text = "右Y->末端Z"
 popup/item_1/id = 1
-popup/item_2/text = "右X->末端Z"
-popup/item_2/id = 2
-popup/item_3/text = "右Y->末端Z"
-popup/item_3/id = 3
 
 [node name="Scale" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/JoystickMap" unique_id=-1393852719]
 custom_minimum_size = Vector2(60, 0)
@@ -2861,6 +2849,214 @@ layout_mode = 2
 size_flags_horizontal = 3
 text = "200"
 placeholder_text = "缩放(mm)"
+
+[node name="HSeparator5" type="HSeparator" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=-1393852718]
+layout_mode = 2
+
+[node name="KeyMoveLabel" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=-1393852717]
+layout_mode = 2
+size_flags_horizontal = 4
+text = "按键控制末端移动（长按持续移动）"
+
+[node name="KeyMoveSpeed" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=-1393852716]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/KeyMoveSpeed" unique_id=-1393852715]
+layout_mode = 2
+size_flags_horizontal = 2
+text = "移动速度"
+
+[node name="Speed" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/KeyMoveSpeed" unique_id=-1393852714]
+custom_minimum_size = Vector2(80, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "2"
+placeholder_text = "mm/周期"
+
+[node name="Hint" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/KeyMoveSpeed" unique_id=-1393852713]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "（主循环 10ms/周期）"
+
+[node name="KeyMoveX" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=-1393852712]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/KeyMoveX" unique_id=-1393852711]
+layout_mode = 2
+size_flags_horizontal = 2
+text = "末端X +/-"
+
+[node name="Plus" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/KeyMoveX" unique_id=-1393852710]
+layout_mode = 2
+size_flags_horizontal = 3
+selected = 0
+item_count = 10
+popup/item_0/text = "不使用"
+popup/item_0/id = 0
+popup/item_1/text = "R"
+popup/item_1/id = 1
+popup/item_2/text = "↑"
+popup/item_2/id = 2
+popup/item_3/text = "↓"
+popup/item_3/id = 3
+popup/item_4/text = "←"
+popup/item_4/id = 4
+popup/item_5/text = "->"
+popup/item_5/id = 5
+popup/item_6/text = "A"
+popup/item_6/id = 6
+popup/item_7/text = "B"
+popup/item_7/id = 7
+popup/item_8/text = "C"
+popup/item_8/id = 8
+popup/item_9/text = "D"
+popup/item_9/id = 9
+
+[node name="Minus" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/KeyMoveX" unique_id=-1393852709]
+layout_mode = 2
+size_flags_horizontal = 3
+selected = 0
+item_count = 10
+popup/item_0/text = "不使用"
+popup/item_0/id = 0
+popup/item_1/text = "R"
+popup/item_1/id = 1
+popup/item_2/text = "↑"
+popup/item_2/id = 2
+popup/item_3/text = "↓"
+popup/item_3/id = 3
+popup/item_4/text = "←"
+popup/item_4/id = 4
+popup/item_5/text = "->"
+popup/item_5/id = 5
+popup/item_6/text = "A"
+popup/item_6/id = 6
+popup/item_7/text = "B"
+popup/item_7/id = 7
+popup/item_8/text = "C"
+popup/item_8/id = 8
+popup/item_9/text = "D"
+popup/item_9/id = 9
+
+[node name="KeyMoveY" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=-1393852708]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/KeyMoveY" unique_id=-1393852707]
+layout_mode = 2
+size_flags_horizontal = 2
+text = "末端Y +/-"
+
+[node name="Plus" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/KeyMoveY" unique_id=-1393852706]
+layout_mode = 2
+size_flags_horizontal = 3
+selected = 0
+item_count = 10
+popup/item_0/text = "不使用"
+popup/item_0/id = 0
+popup/item_1/text = "R"
+popup/item_1/id = 1
+popup/item_2/text = "↑"
+popup/item_2/id = 2
+popup/item_3/text = "↓"
+popup/item_3/id = 3
+popup/item_4/text = "←"
+popup/item_4/id = 4
+popup/item_5/text = "->"
+popup/item_5/id = 5
+popup/item_6/text = "A"
+popup/item_6/id = 6
+popup/item_7/text = "B"
+popup/item_7/id = 7
+popup/item_8/text = "C"
+popup/item_8/id = 8
+popup/item_9/text = "D"
+popup/item_9/id = 9
+
+[node name="Minus" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/KeyMoveY" unique_id=-1393852705]
+layout_mode = 2
+size_flags_horizontal = 3
+selected = 0
+item_count = 10
+popup/item_0/text = "不使用"
+popup/item_0/id = 0
+popup/item_1/text = "R"
+popup/item_1/id = 1
+popup/item_2/text = "↑"
+popup/item_2/id = 2
+popup/item_3/text = "↓"
+popup/item_3/id = 3
+popup/item_4/text = "←"
+popup/item_4/id = 4
+popup/item_5/text = "->"
+popup/item_5/id = 5
+popup/item_6/text = "A"
+popup/item_6/id = 6
+popup/item_7/text = "B"
+popup/item_7/id = 7
+popup/item_8/text = "C"
+popup/item_8/id = 8
+popup/item_9/text = "D"
+popup/item_9/id = 9
+
+[node name="KeyMoveZ" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=-1393852704]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/KeyMoveZ" unique_id=-1393852703]
+layout_mode = 2
+size_flags_horizontal = 2
+text = "末端Z +/-"
+
+[node name="Plus" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/KeyMoveZ" unique_id=-1393852702]
+layout_mode = 2
+size_flags_horizontal = 3
+selected = 0
+item_count = 10
+popup/item_0/text = "不使用"
+popup/item_0/id = 0
+popup/item_1/text = "R"
+popup/item_1/id = 1
+popup/item_2/text = "↑"
+popup/item_2/id = 2
+popup/item_3/text = "↓"
+popup/item_3/id = 3
+popup/item_4/text = "←"
+popup/item_4/id = 4
+popup/item_5/text = "->"
+popup/item_5/id = 5
+popup/item_6/text = "A"
+popup/item_6/id = 6
+popup/item_7/text = "B"
+popup/item_7/id = 7
+popup/item_8/text = "C"
+popup/item_8/id = 8
+popup/item_9/text = "D"
+popup/item_9/id = 9
+
+[node name="Minus" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/KeyMoveZ" unique_id=-1393852701]
+layout_mode = 2
+size_flags_horizontal = 3
+selected = 0
+item_count = 10
+popup/item_0/text = "不使用"
+popup/item_0/id = 0
+popup/item_1/text = "R"
+popup/item_1/id = 1
+popup/item_2/text = "↑"
+popup/item_2/id = 2
+popup/item_3/text = "↓"
+popup/item_3/id = 3
+popup/item_4/text = "←"
+popup/item_4/id = 4
+popup/item_5/text = "->"
+popup/item_5/id = 5
+popup/item_6/text = "A"
+popup/item_6/id = 6
+popup/item_7/text = "B"
+popup/item_7/id = 7
+popup/item_8/text = "C"
+popup/item_8/id = 8
+popup/item_9/text = "D"
+popup/item_9/id = 9
 
 [node name="Debug" type="VBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer" unique_id=1151350573]
 visible = false

@@ -93,6 +93,10 @@ const P_IK_JOY_X: NodePath = IK + "/JoystickMap/XAxis"
 const P_IK_JOY_Y: NodePath = IK + "/JoystickMap/YAxis"
 const P_IK_JOY_Z: NodePath = IK + "/JoystickMap/ZAxis"
 const P_IK_JOY_SCALE: NodePath = IK + "/JoystickMap/Scale"
+# 按键控制末端移动（长按持续移动）
+const P_IK_KEYMOVE_SPEED: NodePath = IK + "/KeyMoveSpeed/Speed"
+# 按键移动行（KeyMoveX/Y/Z），每行子节点：Plus/Minus
+const IK_KEYMOVE_ROWS: Array = ["KeyMoveX", "KeyMoveY", "KeyMoveZ"]
 # TabContainer（用于切换代码生成器）
 const P_TAB_CONTAINER: NodePath = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer"
 # 输出
@@ -220,7 +224,7 @@ func _connect_signals() -> void:
 		var ik_opt: Node = get_node_or_null(p)
 		if ik_opt is OptionButton:
 			ik_opt.item_selected.connect(_run_check)
-	for p in [P_IK_L1, P_IK_L2, P_IK_L3, P_IK_JOY_SCALE]:
+	for p in [P_IK_L1, P_IK_L2, P_IK_L3, P_IK_JOY_SCALE, P_IK_KEYMOVE_SPEED]:
 		var ik_le: Node = get_node_or_null(p)
 		if ik_le is LineEdit:
 			ik_le.text_changed.connect(_run_check)
@@ -245,6 +249,12 @@ func _connect_signals() -> void:
 			var preset_le: Node = get_node_or_null(NodePath(IK +"/"+ row_name +"/"+ child))
 			if preset_le is LineEdit:
 				preset_le.text_changed.connect(_run_check)
+	# 工程逆解算界面：按键控制末端移动的按键选择变化触发检查
+	for row_name in IK_KEYMOVE_ROWS:
+		for child in ["Plus", "Minus"]:
+			var km_btn: Node = get_node_or_null(NodePath(IK +"/"+ row_name +"/"+ child))
+			if km_btn is OptionButton:
+				km_btn.item_selected.connect(_run_check)
 	# Tab 切换时更新代码生成器
 	var tab_container: Node = get_node_or_null(P_TAB_CONTAINER)
 	if tab_container is TabContainer:
@@ -573,6 +583,17 @@ func _collect_ik_config() -> Dictionary:
 	cfg["joy_y"] = _get_option_text(P_IK_JOY_Y)
 	cfg["joy_z"] = _get_option_text(P_IK_JOY_Z)
 	cfg["joy_scale"] = _get_line_text(P_IK_JOY_SCALE).strip_edges()
+	# 按键控制末端移动（长按持续移动）
+	cfg["keymove_speed"] = _get_line_text(P_IK_KEYMOVE_SPEED).strip_edges()
+	var keymove: Array = []
+	for row_name in IK_KEYMOVE_ROWS:
+		var plus_btn: Node = get_node_or_null(NodePath(IK +"/"+ row_name +"/Plus"))
+		var minus_btn: Node = get_node_or_null(NodePath(IK +"/"+ row_name +"/Minus"))
+		keymove.append({
+			"plus": plus_btn.get_item_text(plus_btn.selected) if plus_btn is OptionButton else "不使用",
+			"minus": minus_btn.get_item_text(minus_btn.selected) if minus_btn is OptionButton else "不使用",
+		})
+	cfg["keymove"] = keymove
 	return cfg
 
 
@@ -651,25 +672,62 @@ func _check_ik_params(issues: Array) -> void:
 		if r < reach_min or r > reach_max:
 			issues.append({"type": "Warn",
 				"msg": "工程逆解算 预设点位 P%d (x=%.1f, y=%.1f) 超出可达范围 [%.1f, %.1f]" % [i + 1, x, y, reach_min, reach_max]})
-	# 摇杆轴不能重复
+	# 摇杆映射检查（左摇杆固定用于底盘，末端控制只用右摇杆 X/Y 两轴）
+	# X 和 Y 是主要控制维度，不能映射到同一摇杆轴；Z 可与 X 或 Y 共用
 	var jx: String = cfg.get("joy_x", "")
 	var jy: String = cfg.get("joy_y", "")
 	var jz: String = cfg.get("joy_z", "")
-	var joy_axes: Array = [jx, jy, jz]
-	var seen: Dictionary = {}
-	for i in range(joy_axes.size()):
-		var ax: String = joy_axes[i]
-		if ax.is_empty():
-			continue
-		if seen.has(ax):
-			issues.append({"type": "Error",
-				"msg": "工程逆解算 摇杆映射重复：%s 被多轴使用" % ax})
-		seen[ax] = true
+	if not jx.is_empty() and not jy.is_empty() and jx == jy:
+		issues.append({"type": "Error",
+			"msg": "工程逆解算 末端X和末端Y映射到同一摇杆轴「%s」，需区分" % jx})
+	# Z 与 X/Y 共用时给出提示（3/4轴才需要Z，2轴时Z未使用）
+	if jc >= 3 and not jz.is_empty() and (jz == jx or jz == jy):
+		issues.append({"type": "Warn",
+			"msg": "工程逆解算 末端Z与末端%s共用摇杆轴「%s」，Z方向将随该轴联动" % ["X" if jz == jx else "Y", jz]})
 	# 缩放
 	var scale_s: String = cfg.get("joy_scale", "")
 	if not scale_s.is_empty() and (not scale_s.is_valid_float() or scale_s.to_float() <= 0):
 		issues.append({"type": "Error",
 			"msg": "工程逆解算 摇杆缩放「%s」不是合法正数" % scale_s})
+	# 按键控制末端移动检查
+	var km_speed: String = cfg.get("keymove_speed", "")
+	if not km_speed.is_empty() and (not km_speed.is_valid_float() or km_speed.to_float() <= 0):
+		issues.append({"type": "Error",
+			"msg": "工程逆解算 按键移动速度「%s」不是合法正数" % km_speed})
+	var keymove: Array = cfg.get("keymove", [])
+	var axis_names: Array = ["X", "Y", "Z"]
+	# 收集所有按键移动用到的按键，检测冲突
+	var km_used: Dictionary = {}  # 按键名 -> 用途描述
+	for i in range(keymove.size()):
+		var plus_key: String = keymove[i].get("plus", "不使用")
+		var minus_key: String = keymove[i].get("minus", "不使用")
+		var ax_name: String = axis_names[i] if i < axis_names.size() else str(i)
+		# 同轴正负方向不能用同一按键
+		if plus_key != "不使用" and plus_key == minus_key:
+			issues.append({"type": "Error",
+				"msg": "工程逆解算 末端%s 的正/负方向使用了同一按键「%s」" % [ax_name, plus_key]})
+		# 2 轴构型下 Z 轴按键无效
+		if jc < 3 and i == 2 and (plus_key != "不使用" or minus_key != "不使用"):
+			issues.append({"type": "Warn",
+				"msg": "工程逆解算 2轴构型不使用末端Z，已配置的Z轴按键不会生效"})
+		# 跨轴按键冲突
+		for pair in [[plus_key, "末端%s+" % ax_name], [minus_key, "末端%s-" % ax_name]]:
+			var k: String = pair[0]
+			if k == "不使用":
+				continue
+			if km_used.has(k):
+				issues.append({"type": "Error",
+					"msg": "工程逆解算 按键「%s」被重复使用：%s, %s" % [k, km_used[k], pair[1]]})
+			else:
+				km_used[k] = pair[1]
+	# 按键移动与预设点位按键冲突
+	for i in range(presets.size()):
+		if not presets[i].get("enabled", false):
+			continue
+		var pk: String = presets[i].get("key", "")
+		if km_used.has(pk):
+			issues.append({"type": "Error",
+				"msg": "工程逆解算 按键「%s」既用于预设点位 P%d 又用于%s" % [pk, i + 1, km_used[pk]]})
 
 
 # ------------------------------------------------------------------ 检查入口

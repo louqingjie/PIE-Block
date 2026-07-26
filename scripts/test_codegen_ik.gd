@@ -77,9 +77,15 @@ func _test_config(cg, config_type: int, jc: int, name: String) -> bool:
 		"config_type": config_type, "joint_count": jc,
 		"L1": "100", "L2": "80", "L3": "30",
 		"joints": joints,
-		"presets": [{"key": "A", "x": "100", "y": "80", "z": "50", "phi": "90", "enabled": true}],
-		"joy_x": "左X->末端X", "joy_y": "左Y->末端Y", "joy_z": "右X->末端Z",
+		"presets": [ {"key": "A", "x": "100", "y": "80", "z": "50", "phi": "90", "enabled": true}],
+		"joy_x": "右X->末端X", "joy_y": "右Y->末端Y", "joy_z": "右X->末端Z",
 		"joy_scale": "200",
+		"keymove_speed": "2",
+		"keymove": [
+			{"plus": "↑", "minus": "↓"},
+			{"plus": "←", "minus": "->"},
+			{"plus": "B", "minus": "C"},
+		],
 	}
 	var code: String = cg.generate(cfg)
 	var ok: bool = not code.is_empty()
