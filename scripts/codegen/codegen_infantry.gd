@@ -3,29 +3,39 @@ extends CodeGenBase
 
 ## 步兵机器人代码生成器。
 ## 根据配置字典生成完整的步兵机器人 main.c 代码。
+##
+## 舵机角度约定（与 CodeGenBase 一致）：
+## 舵机总行程 180°，所有角度参数都是「相对中位的偏移角」，区间 [-90, +90]。
+## 占空比映射：-90° = 500，0° = 750，+90° = 1000。
+
+# 云台摇杆可摆动的角度幅度（相对归中位置，单侧），须 <= SERVO_MAX_OFFSET_DEG
+const SERVO_SWING_DEG: int = 60
+# 摇杆推到底时云台每个主循环周期转过的角度
+const SERVO_RATE_DEG_PER_LOOP: float = 2.0
+# 摇杆 ADC 满量程读数
+const ROCKER_FULL_SCALE: float = 2047.0
+
+
+## 「每周期转过的角度」换算成 C 侧 changeRateOfServo 系数
+## floatDutyOfServo += rocker * rate，rocker 满量程 2047 时增量应等于该角度对应的占空比
+## 这里保留浮点精度，不走取整的 _servo_deg_to_duty_delta
+func _servo_deg_per_loop_to_rate(deg_per_loop: float) -> float:
+	var duty_per_deg: float = float(SERVO_DUTY_MAX - SERVO_DUTY_MIN) \
+		/ float(SERVO_MAX_OFFSET_DEG * 2)
+	return deg_per_loop * duty_per_deg / ROCKER_FULL_SCALE
+
 
 # ------------------------------------------------------------------ 代码生成
 ## 基于配置字典生成完整的 main.c 代码字符串
 func generate(cfg: Dictionary) -> String:
-	# --- 解析参数（带默认值）---
-	var ch: String = cfg.get("channel", "36")
-	if ch.is_empty():
-		ch = "36"
-	var dz: String = cfg.get("deadzone", "10")
-	if dz.is_empty():
-		dz = "10"
-	var normal_spd: String = cfg.get("normal_speed", "4000")
-	if normal_spd.is_empty():
-		normal_spd = "4000"
-	var sprint_spd: String = cfg.get("sprint_speed", "8000")
-	if sprint_spd.is_empty():
-		sprint_spd = "8000"
-	var trig_spd: String = cfg.get("trigger_speed", "10000")
-	if trig_spd.is_empty():
-		trig_spd = "10000"
-	var trig_time: String = cfg.get("trigger_time", "250")
-	if trig_time.is_empty():
-		trig_time = "250"
+	# --- 解析参数（非法输入回退默认值并限幅，保证产物可编译）---
+	var ch: String = _int_or_default(cfg.get("channel", ""), 36, 0, 125)
+	var dz: String = _int_or_default(cfg.get("deadzone", ""), 10, 0, 2047)
+	var normal_spd: String = _int_or_default(cfg.get("normal_speed", ""), 4000, 0, 10000)
+	var sprint_spd: String = _int_or_default(cfg.get("sprint_speed", ""), 8000, 0, 10000)
+	var trig_spd: String = _int_or_default(cfg.get("trigger_speed", ""), 10000, 0, 10000)
+	# Ms_Delay 参数是 uint16_t，超过 65535 会被静默截断
+	var trig_time: String = _int_or_default(cfg.get("trigger_time", ""), 250, 0, 65535)
 
 	# --- 按键映射 ---
 	var trigger_key_offset: String = _key_name_to_offset(cfg.get("trigger_key", "R"))
@@ -59,15 +69,26 @@ func generate(cfg: Dictionary) -> String:
 	var fric_l_dir: int = _dir_to_int(cfg.get("friction_l_dir", "正向"))
 	var fric_r_dir: int = _dir_to_int(cfg.get("friction_r_dir", "正向"))
 
-	# --- 归中角偏移（用于消除静差）---
+	# --- 归中角偏移（相对舵机中位的偏移角，用于消除静差）---
+	# 舵机总行程 180°，UI 填的是相对中位的偏移角，有效区间 [-90, +90]
+	# 换算成 50Hz 下的占空比：0° -> 750，+90° -> 1000，-90° -> 500
 	var yaw_mid_str: String = cfg.get("yaw_mid_offset", "0")
-	if yaw_mid_str.is_empty():
+	if not yaw_mid_str.is_valid_int():
 		yaw_mid_str = "0"
 	var pitch_mid_str: String = cfg.get("pitch_mid_offset", "0")
-	if pitch_mid_str.is_empty():
+	if not pitch_mid_str.is_valid_int():
 		pitch_mid_str = "0"
-	var yaw_mid_val: int = 750 + int(yaw_mid_str)
-	var pitch_mid_val: int = 750 + int(pitch_mid_str)
+	var yaw_mid_deg: int = clampi(int(yaw_mid_str), -SERVO_MAX_OFFSET_DEG, SERVO_MAX_OFFSET_DEG)
+	var pitch_mid_deg: int = clampi(int(pitch_mid_str), -SERVO_MAX_OFFSET_DEG, SERVO_MAX_OFFSET_DEG)
+	var yaw_mid_val: int = _servo_angle_to_duty(yaw_mid_deg)
+	var pitch_mid_val: int = _servo_angle_to_duty(pitch_mid_deg)
+	# 云台摇杆可摆动的角度幅度（相对归中位置），再收敛到舵机物理行程内
+	var servo_swing_deg: int = SERVO_SWING_DEG
+	var servo_swing: int = _servo_deg_to_duty_delta(float(servo_swing_deg))
+	var yaw_lo: int = maxi(SERVO_DUTY_MIN, yaw_mid_val - servo_swing)
+	var yaw_hi: int = mini(SERVO_DUTY_MAX, yaw_mid_val + servo_swing)
+	var pitch_lo: int = maxi(SERVO_DUTY_MIN, pitch_mid_val - servo_swing)
+	var pitch_hi: int = mini(SERVO_DUTY_MAX, pitch_mid_val + servo_swing)
 	# --- 归中功能使能 ---
 	var zero_enabled: bool = cfg.get("zero_enabled", false)
 
@@ -80,91 +101,69 @@ func generate(cfg: Dictionary) -> String:
 	var yaw_slot: int = _io_to_exp_slot(yaw_pin)
 	var pitch_slot: int = _io_to_exp_slot(pitch_pin)
 	# 舵机在主控板 PWM 引脚上（需要 PWM_Init），还是在扩展板上（走 ExpansionBoradControl）
-	var yaw_servo_on_main: bool = yaw_is_servo and yaw_slot < 0
-	var pitch_servo_on_main: bool = pitch_is_servo and pitch_slot < 0
+	# 只有 MP74 / MP03 是主控板上可用的舵机口，其他非扩展板引脚一律不生成 PWM 代码
+	var yaw_servo_on_main: bool = yaw_is_servo and yaw_pin in MAIN_BOARD_SERVO_PINS
+	var pitch_servo_on_main: bool = pitch_is_servo and pitch_pin in MAIN_BOARD_SERVO_PINS
 
-	# --- 构建 Init_Order 参数（8 个槽位）---
-	# P60=拨弹电机(10000), P62=空(50), P64/P66=摩擦轮(50), P74-P77=底盘电机(10000)
-	var init_vals: Array = [10000, 50, 50, 50, 10000, 10000, 10000, 10000]
-	if feeder_slot >= 0:
-		init_vals[feeder_slot] = 10000 # 拨弹电机
-	# p64/p66 固定摩擦轮（50），底盘电机槽位（10000）已为默认
-	# 如果用户把底盘 IO 选到了 p64/p66 之外的槽位，需要覆盖
-	if l1_slot >= 0:
-		init_vals[l1_slot] = 10000
-	if l2_slot >= 0:
-		init_vals[l2_slot] = 10000
-	if r1_slot >= 0:
-		init_vals[r1_slot] = 10000
-	if r2_slot >= 0:
-		init_vals[r2_slot] = 10000
-	# Yaw/Pitch 在扩展板上时需要初始化：电机=10000，舵机=50
-	if yaw_slot >= 0:
-		init_vals[yaw_slot] = 50 if yaw_is_servo else 10000
-	if pitch_slot >= 0:
-		init_vals[pitch_slot] = 50 if pitch_is_servo else 10000
-
-	# --- 构建 Dir_Change_Order 参数 ---
-	# 每个槽位的方向表达式（字符串）
-	# 底盘/云台电机用 Get_Dir() 动态判断方向，拨弹/摩擦轮用固定值
+	# --- 槽位分配（先全部置「未使用」，再按角色填充）---
+	# 槽位 0-7 依次对应 p60,p62,p64,p66,p74,p75,p76,p77
+	# Init_Order 里 0 表示维持原状（不把该引脚配成任何动力源）
+	# Duty_Change_Order 里未使用槽位固定给 0，避免误驱动
+	var init_vals: Array = [0, 0, 0, 0, 0, 0, 0, 0]
 	var dir_exprs: Array = ["1", "1", "1", "1", "1", "1", "1", "1"]
-	# 拨弹电机
-	if feeder_slot >= 0:
-		dir_exprs[feeder_slot] = str(booster_dir)
-	# 摩擦轮
-	dir_exprs[2] = str(fric_l_dir)
-	dir_exprs[3] = str(fric_r_dir)
-	# 底盘/Yaw/Pitch 电机槽位 -> dutyOfMotor 索引映射
-	var yaw_motor_idx: int = 5
-	var pitch_motor_idx: int = 6 if not yaw_is_servo else 5
-	var slot_motor_map: Dictionary = {}
-	if l1_slot >= 0:
-		slot_motor_map[l1_slot] = 0
-	if l2_slot >= 0:
-		slot_motor_map[l2_slot] = 1
-	if r1_slot >= 0:
-		slot_motor_map[r1_slot] = 2
-	if r2_slot >= 0:
-		slot_motor_map[r2_slot] = 3
-	if not yaw_is_servo and yaw_slot >= 0:
-		slot_motor_map[yaw_slot] = yaw_motor_idx
-	if not pitch_is_servo and pitch_slot >= 0:
-		slot_motor_map[pitch_slot] = pitch_motor_idx
-	# 生成方向表达式
-	for s in range(4, 8):
-		if slot_motor_map.has(s):
-			dir_exprs[s] = "Get_Dir(dutyOfMotor[%d])" % slot_motor_map[s]
+	var duty_vals: Array = ["0", "0", "0", "0", "0", "0", "0", "0"]
 
-	# --- 构建 Duty_Change_Order 参数 ---
-	# P60=拨弹电机(dutyOfMotor[4]), P62=空(10000), P64/P66=摩擦轮(dutyOfBooster), P74-P77=底盘电机
-	var duty_vals: Array = ["dutyOfMotor[4]", "10000", "dutyOfBooster", "dutyOfBooster",
-		"(uint16_t)abs(dutyOfMotor[0])", "(uint16_t)abs(dutyOfMotor[1])",
-		"(uint16_t)abs(dutyOfMotor[2])", "(uint16_t)abs(dutyOfMotor[3])"]
+	# 摩擦轮固定占用 P64 / P66，频率 50Hz
+	init_vals[friction_l_slot] = 50
+	init_vals[friction_r_slot] = 50
+	dir_exprs[friction_l_slot] = str(fric_l_dir)
+	dir_exprs[friction_r_slot] = str(fric_r_dir)
+	duty_vals[friction_l_slot] = "dutyOfBooster"
+	duty_vals[friction_r_slot] = "dutyOfBooster"
+
 	# 拨弹电机 -> dutyOfMotor[4]
 	if feeder_slot >= 0:
+		init_vals[feeder_slot] = 10000
+		dir_exprs[feeder_slot] = str(booster_dir)
 		duty_vals[feeder_slot] = "dutyOfMotor[4]"
-	# 底盘电机按 L1/L2/R1/R2 映射到 dutyOfMotor[0..3]
-	# 蓝本中: dutyOfMotor[0]=L1, [1]=L2, [2]=R1, [3]=R2
-	if l1_slot >= 0:
-		duty_vals[l1_slot] = "(uint16_t)abs(dutyOfMotor[0])"
-	if l2_slot >= 0:
-		duty_vals[l2_slot] = "(uint16_t)abs(dutyOfMotor[1])"
-	if r1_slot >= 0:
-		duty_vals[r1_slot] = "(uint16_t)abs(dutyOfMotor[2])"
-	if r2_slot >= 0:
-		duty_vals[r2_slot] = "(uint16_t)abs(dutyOfMotor[3])"
-	# Yaw: 电机模式 -> abs(dutyOfMotor)，舵机模式(扩展板) -> dutyOfServo[0]
-	if yaw_slot >= 0:
-		if yaw_is_servo:
-			duty_vals[yaw_slot] = "dutyOfServo[0]"
-		else:
-			duty_vals[yaw_slot] = "(uint16_t)abs(dutyOfMotor[%d])" % yaw_motor_idx
-	# Pitch: 同理
-	if pitch_slot >= 0:
-		if pitch_is_servo:
-			duty_vals[pitch_slot] = "dutyOfServo[1]"
-		else:
-			duty_vals[pitch_slot] = "(uint16_t)abs(dutyOfMotor[%d])" % pitch_motor_idx
+
+	# 底盘/云台电机槽位 -> dutyOfMotor 索引映射
+	# 蓝本中: dutyOfMotor[0]=L1, [1]=L2, [2]=R1, [3]=R2, [4]=拨弹
+	var yaw_motor_idx: int = 5
+	var pitch_motor_idx: int = 6 if not yaw_is_servo else 5
+	var motor_slots: Array = [[l1_slot, 0], [l2_slot, 1], [r1_slot, 2], [r2_slot, 3]]
+	if not yaw_is_servo:
+		motor_slots.append([yaw_slot, yaw_motor_idx])
+	if not pitch_is_servo:
+		motor_slots.append([pitch_slot, pitch_motor_idx])
+	# 摩擦轮槽位受硬件保护规则约束，绝不允许被其他角色改写（见《RM电控指南》）
+	var friction_slots: Array = [friction_l_slot, friction_r_slot]
+	for pair in motor_slots:
+		var s: int = pair[0]
+		if s < 0:
+			continue # 不在扩展板上（如主控板引脚），无法作为电机驱动
+		if s in friction_slots:
+			push_warning("步兵代码生成：槽位 %d 已被摩擦轮占用，忽略电机分配" % s)
+			continue
+		init_vals[s] = 10000
+		dir_exprs[s] = "Get_Dir(dutyOfMotor[%d])" % pair[1]
+		duty_vals[s] = "(uint16_t)abs(dutyOfMotor[%d])" % pair[1]
+
+	# Yaw/Pitch 舵机在扩展板上时：50Hz + dutyOfServo
+	if yaw_is_servo and yaw_slot >= 0 and not yaw_slot in friction_slots:
+		init_vals[yaw_slot] = 50
+		duty_vals[yaw_slot] = "dutyOfServo[0]"
+	if pitch_is_servo and pitch_slot >= 0 and not pitch_slot in friction_slots:
+		init_vals[pitch_slot] = 50
+		duty_vals[pitch_slot] = "dutyOfServo[1]"
+
+	# dutyOfMotor 数组长度按实际用到的最大下标计算，避免越界写
+	var max_motor_idx: int = 4 # [0..3] 底盘 + [4] 拨弹
+	if not yaw_is_servo:
+		max_motor_idx = maxi(max_motor_idx, yaw_motor_idx)
+	if not pitch_is_servo:
+		max_motor_idx = maxi(max_motor_idx, pitch_motor_idx)
+	var motor_array_size: int = max_motor_idx + 1
 
 	# --- 底盘电机公式（反向时取反）---
 	var l1_formula: String = "-baseSpeed - turnSpeed" if l1_dir == 1 else "baseSpeed + turnSpeed"
@@ -217,14 +216,28 @@ func generate(cfg: Dictionary) -> String:
 	code += "uint16_t ultraSpeed = %s;\n" % sprint_spd
 	code += "uint16_t deadBandOfLeft = %s;                   // 左摇杆中心死区\n" % dz
 	code += "uint16_t deadBandOfRight = %s;                  // 右摇杆中心死区\n" % dz
-	code += "uint16_t midDutyOfServo[2] = {%d, %d};        // 云台水平/垂直舵机中值（含归中角偏移）\n" % [yaw_mid_val, pitch_mid_val]
-	code += "uint16_t maxChangeDutyOfServo[2] = {200, 200};  // 同上\n"
-	code += "uint16_t singleChangeDutyOfServo[2] = {10, 10}; // 按下按键单次占空比改变量\n"
+	code += "// 舵机占空比：500=-90°，750=中位(0°)，1000=+90°，总行程 180°\n"
+	code += "#define SERVO_DUTY_MIN     %d\n" % SERVO_DUTY_MIN
+	code += "#define SERVO_DUTY_MID     %d\n" % SERVO_DUTY_MID
+	code += "#define SERVO_DUTY_MAX     %d\n" % SERVO_DUTY_MAX
+	code += "// 每度对应的占空比增量（%d duty / %d°）\n" \
+		% [SERVO_DUTY_MAX - SERVO_DUTY_MIN, SERVO_MAX_OFFSET_DEG * 2]
+	code += "#define SERVO_DUTY_PER_DEG %.6ff\n" % (
+		float(SERVO_DUTY_MAX - SERVO_DUTY_MIN) / float(SERVO_MAX_OFFSET_DEG * 2))
+	code += "uint16_t midDutyOfServo[2] = {%d, %d};        // 云台水平/垂直舵机中值（归中角 %+d° / %+d°）\n" \
+		% [yaw_mid_val, pitch_mid_val, yaw_mid_deg, pitch_mid_deg]
+	code += "// 摇杆可摆动幅度 ±%d°（相对归中位置）\n" % servo_swing_deg
+	code += "uint16_t maxChangeDutyOfServo[2] = {%d, %d};\n" % [servo_swing, servo_swing]
 	code += "uint16_t singleChangeDutyOfBooster = 100;       // 按下按键单次占空比改变量\n"
-	code += "uint16_t maxDutyOfBooster = 1100;               // 摩擦轮最大占空比\n"
+	code += "uint16_t maxDutyOfBooster = 1100;               // 摩擦轮最大占空比（指南上限，不得提高）\n"
+	code += "uint16_t minDutyOfBooster = 500;                // 摩擦轮最低有效占空比\n"
 	code += "uint16_t boosterDutyOfFeed = %s;             // 拨弹电机单发转动占空比\n" % trig_spd
 	code += "uint16_t boosterFeedDelayMs = %s;              // 拨弹电机单发转动时长(ms)\n" % trig_time
-	code += "float changeRateOfServo[2] = {0.01, 0.01};\n\n"
+	# 摇杆读数（±2047）乘以该系数得到每周期的占空比增量。
+	# 摇杆推到底时每个主循环周期转过 SERVO_RATE_DEG_PER_LOOP 度。
+	var servo_rate: float = _servo_deg_per_loop_to_rate(SERVO_RATE_DEG_PER_LOOP)
+	code += "// 摇杆推到底时云台每周期转过 %.1f°\n" % SERVO_RATE_DEG_PER_LOOP
+	code += "float changeRateOfServo[2] = {%.6f, %.6f};\n\n" % [servo_rate, servo_rate]
 	code += "#define LIMIT_VALUE(x, min, max) \\\n    do                           \\\n    {                            \\\n        if ((x) < (min))         \\\n            (x) = (min);         \\\n        else if ((x) > (max))    \\\n            (x) = (max);         \\\n    } while (0)\n"
 	code += "/*帧头帧尾，内部调用，无需关心*/\n"
 	code += "#define COMM_HEADER_1 0xAB\n#define COMM_HEADER_2 0xBC\n#define COMM_END_1 0xCD\n#define COMM_END_2 0xDE\n"
@@ -241,13 +254,12 @@ func generate(cfg: Dictionary) -> String:
 	code += "// 自定义变量\n"
 	code += "float floatDutyOfServo[2]; // 云台舵机\n"
 	code += "uint16_t dutyOfServo[2];\n"
-	var motor_array_size: int = 5 # 4底盘 + 1供弹
-	if not yaw_is_servo:
-		motor_array_size = pitch_motor_idx + 1 # 6 (仅yaw) 或 7 (yaw+pitch)
 	code += "int dutyOfMotor[%d]; // 底盘电机、供弹电机、云台电机（如有）\n" % motor_array_size
 	code += "uint16_t dutyOfBooster = 0, expectDutyOfBooster = 0;\n"
+	code += "uint16_t levelDutyOfBooster = 1100; // 摩擦轮目标转速档位（B/C 键微调）\n"
 	code += "uint8_t valueOfKey[3][4];\n"
 	code += "uint8_t triggerKeyValue, lastTriggerKeyValue, boosterKeyValue, lastBoosterKeyValue;\n"
+	code += "uint8_t lastBoosterUpKeyValue = 0, lastBoosterDownKeyValue = 0;\n"
 	code += "uint8_t statusOfBooster = 0;\n"
 	code += "uint8_t i, j;\n"
 	code += "int valueOfRoker[2][2] // 左摇杆水平、竖直；右摇杆水平、竖直\n    ,\n    baseSpeed, turnSpeed;\n"
@@ -290,39 +302,49 @@ func generate(cfg: Dictionary) -> String:
 	code += "        LIMIT_VALUE(dutyOfMotor[3], -10000, 10000);\n"
 	code += "        LIMIT_VALUE(dutyOfMotor[4], 0, 10000);\n"
 	if not yaw_is_servo:
-		code += "        LIMIT_VALUE(dutyOfMotor[5], -10000, 10000);\n"
+		code += "        LIMIT_VALUE(dutyOfMotor[%d], -10000, 10000);\n" % yaw_motor_idx
 	if not pitch_is_servo:
-		var pitch_idx: int = 6 if not yaw_is_servo else 5
-		code += "        LIMIT_VALUE(dutyOfMotor[%d], -10000, 10000);\n" % pitch_idx
+		code += "        LIMIT_VALUE(dutyOfMotor[%d], -10000, 10000);\n" % pitch_motor_idx
+	# 舵机限幅用生成期算好的常量：midDutyOfServo 是 uint16_t，
+	# 直接写 mid - maxChange 在偏移为负时会下溢，故不在 C 侧做减法。
+	# 边界已同时收敛到「归中角 ±摆动幅度」和舵机物理行程 500~1000 之内。
 	if yaw_is_servo:
-		code += "        LIMIT_VALUE(floatDutyOfServo[0], midDutyOfServo[0] - maxChangeDutyOfServo[0], midDutyOfServo[0] + maxChangeDutyOfServo[0]);\n"
+		code += "        // Yaw 限幅 %d~%d（归中 %+d° ±%d°，已收敛到舵机行程内）\n" \
+			% [yaw_lo, yaw_hi, yaw_mid_deg, servo_swing_deg]
+		code += "        LIMIT_VALUE(floatDutyOfServo[0], %d, %d);\n" % [yaw_lo, yaw_hi]
 	if pitch_is_servo:
-		code += "        LIMIT_VALUE(floatDutyOfServo[1], midDutyOfServo[1] - maxChangeDutyOfServo[1], midDutyOfServo[1] + maxChangeDutyOfServo[1]);\n"
+		code += "        // Pitch 限幅 %d~%d（归中 %+d° ±%d°，已收敛到舵机行程内）\n" \
+			% [pitch_lo, pitch_hi, pitch_mid_deg, servo_swing_deg]
+		code += "        LIMIT_VALUE(floatDutyOfServo[1], %d, %d);\n" % [pitch_lo, pitch_hi]
 	# 单发拨弹：使用 triggerKeyValue 替代 valueOfRKey
 	code += "        // 扳机键单发拨弹：上升沿触发，拨弹电机转动 boosterFeedDelayMs 后停转，期间阻塞主线程\n"
 	code += "        if (triggerKeyValue && !lastTriggerKeyValue)\n"
 	code += "        {\n"
 	code += "            dutyOfMotor[4] = boosterDutyOfFeed;\n"
-	code += "            dutyOfBooster = expectDutyOfBooster; // 锁定摩擦轮当前值，平滑过程暂停\n"
+	code += "            // 注意：此处保持 dutyOfBooster 不变，不能跳变到目标值，\n"
+	code += "            // 否则会违反摩擦轮占空比渐变要求\n"
 	code += "            Main_Countrol(dutyOfMotor, dutyOfServo, dutyOfBooster);\n"
 	code += "            Ms_Delay(boosterFeedDelayMs);\n"
 	code += "            dutyOfMotor[4] = 0;\n"
 	code += "            Main_Countrol(dutyOfMotor, dutyOfServo, dutyOfBooster);\n"
 	code += "        }\n"
 	code += "        lastTriggerKeyValue = triggerKeyValue;\n\n"
-	code += "        // 平滑占空比变化\n"
-	code += "        if (expectDutyOfBooster > 500 && dutyOfBooster < 500)\n"
-	code += "            dutyOfBooster = 500;\n\n"
-	code += "        if (dutyOfBooster + 2 <= expectDutyOfBooster)\n"
-	code += "            dutyOfBooster += 2;\n"
+	code += "        // 摩擦轮占空比平滑变化\n"
+	code += "        // 主循环周期 10ms，每周期变化 1 => 每秒 100 占空比，\n"
+	code += "        // 符合《RM电控指南》「每秒增加/减少 100 占空比」的硬性要求，不得提高步长\n"
+	code += "        // 从静止启动时先跳到 500（指南：启停不考虑 0~5% 区间）\n"
+	code += "        if (expectDutyOfBooster >= 500 && dutyOfBooster < 500)\n"
+	code += "            dutyOfBooster = 500;\n"
 	code += "        else if (dutyOfBooster < expectDutyOfBooster)\n"
 	code += "            dutyOfBooster++;\n"
-	code += "        else if (dutyOfBooster - 2 >= expectDutyOfBooster)\n"
-	code += "            dutyOfBooster -= 2;\n"
 	code += "        else if (dutyOfBooster > expectDutyOfBooster)\n"
-	code += "            dutyOfBooster--;\n"
-	code += "        else\n"
-	code += "            dutyOfBooster = expectDutyOfBooster;\n\n"
+	code += "        {\n"
+	code += "            // 降到 500 以下时直接停机，避免在低占空比区间长时间堵转\n"
+	code += "            if (dutyOfBooster <= 500 && expectDutyOfBooster == 0)\n"
+	code += "                dutyOfBooster = 0;\n"
+	code += "            else\n"
+	code += "                dutyOfBooster--;\n"
+	code += "        }\n\n"
 	code += "        // 发送控制函数\n"
 	code += "        Main_Countrol(dutyOfMotor, dutyOfServo, dutyOfBooster);\n"
 	code += "        Ms_Delay(10);\n"
@@ -345,7 +367,8 @@ func generate(cfg: Dictionary) -> String:
 	code += "    UART_Init(UART_1, UART1_RX_P30, UART1_TX_P31, 230400, TIM1);\n"
 	code += "    ExpansionBoradControl(Init_Order,\n"
 	code += "                          %s); // p60,p62,p64,p66,p74,p75,p76,p77\n" % init_str
-	code += "    Ms_Delay(20);\n"
+	code += "    // 摩擦轮初始化后必须留 >=1000ms 硬件反应时间（见《RM电控指南》），不得缩短\n"
+	code += "    Ms_Delay(1000);\n"
 	code += pwm_init_lines
 	code += "}\n\n"
 
@@ -394,11 +417,24 @@ func generate(cfg: Dictionary) -> String:
 
 	# --- CalculateBoosterControl ---
 	code += "void CalculateBoosterControl()\n{\n"
-	code += "    // 摩擦轮占空比计算\n"
-	code += "    if (valueOfKey[1][1])\n"
-	code += "        expectDutyOfBooster += singleChangeDutyOfBooster;\n"
-	code += "    else if (valueOfKey[1][2])\n"
-	code += "        expectDutyOfBooster -= singleChangeDutyOfBooster;\n\n"
+	code += "    // B/C 键上升沿微调摩擦轮目标转速档位（不是直接改 expectDutyOfBooster，\n"
+	code += "    // 否则会被下面的开关逻辑覆盖）。档位限制在 500~1100，上限由指南规定\n"
+	code += "    if (valueOfKey[1][1] && !lastBoosterUpKeyValue)\n"
+	code += "    {\n"
+	code += "        if (levelDutyOfBooster + singleChangeDutyOfBooster <= maxDutyOfBooster)\n"
+	code += "            levelDutyOfBooster += singleChangeDutyOfBooster;\n"
+	code += "        else\n"
+	code += "            levelDutyOfBooster = maxDutyOfBooster;\n"
+	code += "    }\n"
+	code += "    if (valueOfKey[1][2] && !lastBoosterDownKeyValue)\n"
+	code += "    {\n"
+	code += "        if (levelDutyOfBooster >= minDutyOfBooster + singleChangeDutyOfBooster)\n"
+	code += "            levelDutyOfBooster -= singleChangeDutyOfBooster;\n"
+	code += "        else\n"
+	code += "            levelDutyOfBooster = minDutyOfBooster;\n"
+	code += "    }\n"
+	code += "    lastBoosterUpKeyValue = valueOfKey[1][1];\n"
+	code += "    lastBoosterDownKeyValue = valueOfKey[1][2];\n\n"
 	code += "    // 摩擦轮开关由 %s 上升沿翻转\n" % cfg.get("booster_key", "A")
 	code += "    if (boosterKeyValue && !lastBoosterKeyValue)\n"
 	code += "    {                                       // 检测上升沿\n"
@@ -406,7 +442,7 @@ func generate(cfg: Dictionary) -> String:
 	code += "    }\n"
 	code += "    lastBoosterKeyValue = boosterKeyValue;\n\n"
 	code += "    if (statusOfBooster)\n"
-	code += "        expectDutyOfBooster = maxDutyOfBooster;\n"
+	code += "        expectDutyOfBooster = levelDutyOfBooster;\n"
 	code += "    else\n"
 	code += "        expectDutyOfBooster = 0;\n"
 	code += "}\n\n"

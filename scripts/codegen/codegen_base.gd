@@ -20,6 +20,14 @@ func _parse_io_pair(text: String) -> String:
 	return text
 
 
+## 取整数配置项：非法或越界时回退到默认值，保证生成的 C 代码总能编译
+func _int_or_default(text: String, default_val: int, lo: int, hi: int) -> String:
+	var s: String = text.strip_edges()
+	if not s.is_valid_int():
+		return str(default_val)
+	return str(clampi(s.to_int(), lo, hi))
+
+
 ## IO 引脚名映射到拓展板槽位序号
 ## P60->0(拨弹), P62->1(空), P64->2(摩擦L), P66->3(摩擦R),
 ## P74->4(LF), P75->5(LR), P76->6(RF), P77->7(RR)
@@ -32,18 +40,22 @@ func _io_to_exp_slot(pin: String) -> int:
 
 
 ## 按键名称映射到 C 代码中的 KEY_OFFSET 宏名
+## 注意：右方向键在不同界面里分别写作 "→"(U+2192) 和 "->"，两种写法都要覆盖
 func _key_name_to_offset(name: String) -> String:
 	var mapping: Dictionary = {
 		"R": "KEY_OFFSET_1",
 		"↑": "KEY_OFFSET_UP",
 		"↓": "KEY_OFFSET_DOWN",
 		"←": "KEY_OFFSET_LEFT",
+		"→": "KEY_OFFSET_RIGHT",
 		"->": "KEY_OFFSET_RIGHT",
 		"A": "KEY_OFFSET_A",
 		"B": "KEY_OFFSET_B",
 		"C": "KEY_OFFSET_C",
 		"D": "KEY_OFFSET_D",
 	}
+	if not mapping.has(name):
+		push_warning("_key_name_to_offset: 未知按键名 %s，已回退到 R 键" % name)
 	return mapping.get(name, "KEY_OFFSET_1")
 
 
@@ -52,6 +64,36 @@ func _dir_to_int(text: String) -> int:
 	if text == "正向":
 		return 1
 	return 0
+
+
+## 主控板专用舵机引脚（只能驱动舵机，不在扩展板上）
+const MAIN_BOARD_SERVO_PINS: Array = ["MP74", "MP03"]
+
+## 舵机占空比范围（50Hz 下，万分比）：
+## 500 = 1ms 脉宽 = 行程一端（-90°）
+## 750 = 1.5ms = 中位（0°）
+## 1000 = 2ms = 行程另一端（+90°）
+const SERVO_DUTY_MIN: int = 500
+const SERVO_DUTY_MID: int = 750
+const SERVO_DUTY_MAX: int = 1000
+## 所有舵机角度参数均为「相对中位的偏移角」，有效区间 [-90, +90]
+const SERVO_MAX_OFFSET_DEG: int = 90
+
+
+## 相对中位的偏移角（-90~90）映射到占空比，0° -> 750
+func _servo_angle_to_duty(angle: int) -> int:
+	# ±90° 共 180° 行程对应 500 duty
+	var span: int = SERVO_DUTY_MAX - SERVO_DUTY_MIN
+	var duty: int = SERVO_DUTY_MID + int(round(
+		float(angle) * float(span) / float(SERVO_MAX_OFFSET_DEG * 2)))
+	return clampi(duty, SERVO_DUTY_MIN, SERVO_DUTY_MAX)
+
+
+## 角度差（度）换算成占空比差，不做中位偏移。用于限幅幅度、按键步长等
+func _servo_deg_to_duty_delta(deg: float) -> int:
+	var span: int = SERVO_DUTY_MAX - SERVO_DUTY_MIN
+	return int(round(deg * float(span) / float(SERVO_MAX_OFFSET_DEG * 2)))
+
 
 ## IO 引脚名映射到 PWM 通道枚举
 ## MP74 / MP03 是主控板舵机端口，与扩展板 P74 不同

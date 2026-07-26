@@ -153,7 +153,7 @@ text = "左前轮 IO"
 [node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/Chassis/L1" unique_id=955150111]
 layout_mode = 2
 size_flags_horizontal = 8
-selected = 0
+selected = 3
 item_count = 6
 popup/item_0/text = "P77 P27"
 popup/item_0/id = 0
@@ -189,7 +189,7 @@ text = "左后轮 IO"
 [node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/Chassis/L2" unique_id=88734850]
 layout_mode = 2
 size_flags_horizontal = 8
-selected = 0
+selected = 2
 item_count = 6
 popup/item_0/text = "P77 P27"
 popup/item_0/id = 0
@@ -225,7 +225,7 @@ text = "右前轮 IO"
 [node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/Chassis/R1" unique_id=932150419]
 layout_mode = 2
 size_flags_horizontal = 8
-selected = 0
+selected = 1
 item_count = 6
 popup/item_0/text = "P77 P27"
 popup/item_0/id = 0
@@ -313,6 +313,19 @@ layout_mode = 2
 size_flags_horizontal = 8
 text = "10000"
 placeholder_text = "0~1e4"
+
+[node name="Sprint" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/Chassis" unique_id=571092198]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/Chassis/Sprint" unique_id=1027207429]
+layout_mode = 2
+size_flags_horizontal = 2
+text = "按下左摇杆冲刺"
+
+[node name="CheckBox" type="CheckBox" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/Chassis/Sprint" unique_id=300063611]
+layout_mode = 2
+size_flags_horizontal = 10
+button_pressed = true
 
 [node name="VSeparator2" type="VSeparator" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone" unique_id=334814236]
 layout_mode = 2
@@ -1183,7 +1196,7 @@ text = "拨弹电机"
 [node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/GimbalSetting/Booster" unique_id=1484055772]
 layout_mode = 2
 size_flags_horizontal = 8
-selected = 0
+selected = 4
 item_count = 6
 popup/item_0/text = "P77 P27"
 popup/item_0/id = 0
@@ -1229,36 +1242,24 @@ popup/item_1/id = 1
 [node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/GimbalSetting/Yaw" unique_id=259885104]
 layout_mode = 2
 size_flags_horizontal = 8
-selected = 1
-item_count = 14
+selected = 6
+item_count = 8
 popup/item_0/text = "P60"
 popup/item_0/id = 0
 popup/item_1/text = "P62"
 popup/item_1/id = 1
-popup/item_2/text = "P64"
+popup/item_2/text = "P77"
 popup/item_2/id = 2
-popup/item_3/text = "P66"
+popup/item_3/text = "P76"
 popup/item_3/id = 3
-popup/item_4/text = "P77"
+popup/item_4/text = "P75"
 popup/item_4/id = 4
-popup/item_5/text = "P76"
+popup/item_5/text = "P74"
 popup/item_5/id = 5
-popup/item_6/text = "P75"
+popup/item_6/text = "MP74"
 popup/item_6/id = 6
-popup/item_7/text = "P74"
+popup/item_7/text = "MP03"
 popup/item_7/id = 7
-popup/item_8/text = "P27"
-popup/item_8/id = 8
-popup/item_9/text = "P26"
-popup/item_9/id = 9
-popup/item_10/text = "P25"
-popup/item_10/id = 10
-popup/item_11/text = "P24"
-popup/item_11/id = 11
-popup/item_12/text = "MP74"
-popup/item_12/id = 12
-popup/item_13/text = "MP03"
-popup/item_13/id = 13
 
 [node name="OptionButton3" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/GimbalSetting/Yaw" unique_id=1979493966]
 layout_mode = 2
@@ -1272,7 +1273,7 @@ popup/item_1/id = 1
 
 [node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/GimbalSetting/Yaw" unique_id=1340487816]
 layout_mode = 2
-placeholder_text = "归中角"
+placeholder_text = "归中角 -90~90"
 
 [node name="Pitch" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/GimbalSetting" unique_id=485340612]
 layout_mode = 2
@@ -1295,36 +1296,24 @@ popup/item_1/id = 1
 [node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/GimbalSetting/Pitch" unique_id=345705401]
 layout_mode = 2
 size_flags_horizontal = 8
-selected = 1
-item_count = 14
+selected = 7
+item_count = 8
 popup/item_0/text = "P60"
 popup/item_0/id = 0
 popup/item_1/text = "P62"
 popup/item_1/id = 1
-popup/item_2/text = "P64"
+popup/item_2/text = "P77"
 popup/item_2/id = 2
-popup/item_3/text = "P66"
+popup/item_3/text = "P76"
 popup/item_3/id = 3
-popup/item_4/text = "P77"
+popup/item_4/text = "P75"
 popup/item_4/id = 4
-popup/item_5/text = "P76"
+popup/item_5/text = "P74"
 popup/item_5/id = 5
-popup/item_6/text = "P75"
+popup/item_6/text = "MP74"
 popup/item_6/id = 6
-popup/item_7/text = "P74"
+popup/item_7/text = "MP03"
 popup/item_7/id = 7
-popup/item_8/text = "P27"
-popup/item_8/id = 8
-popup/item_9/text = "P26"
-popup/item_9/id = 9
-popup/item_10/text = "P25"
-popup/item_10/id = 10
-popup/item_11/text = "P24"
-popup/item_11/id = 11
-popup/item_12/text = "MP74"
-popup/item_12/id = 12
-popup/item_13/text = "MP03"
-popup/item_13/id = 13
 
 [node name="OptionButton3" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/GimbalSetting/Pitch" unique_id=611027234]
 layout_mode = 2
@@ -1338,7 +1327,7 @@ popup/item_1/id = 1
 
 [node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/GimbalSetting/Pitch" unique_id=1444026591]
 layout_mode = 2
-placeholder_text = "归中角"
+placeholder_text = "归中角 -90~90"
 
 [node name="HSeparator" type="HSeparator" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/GimbalSetting" unique_id=926679916]
 layout_mode = 2
@@ -1353,19 +1342,6 @@ text = "按键映射"
 
 [node name="HSeparator" type="HSeparator" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/KeySetting" unique_id=1669570243]
 layout_mode = 2
-
-[node name="Sprint" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/KeySetting" unique_id=571092198]
-layout_mode = 2
-
-[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/KeySetting/Sprint" unique_id=1027207429]
-layout_mode = 2
-size_flags_horizontal = 0
-text = "按下左摇杆冲刺"
-
-[node name="CheckBox" type="CheckBox" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/KeySetting/Sprint" unique_id=300063611]
-layout_mode = 2
-size_flags_horizontal = 10
-button_pressed = true
 
 [node name="Zero" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/KeySetting" unique_id=221237462]
 layout_mode = 2
@@ -1479,7 +1455,6 @@ text = "添加特殊功能"
 [node name="Engineer" type="VBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer" unique_id=526865510]
 visible = false
 layout_mode = 2
-theme_override_constants/separation = 0
 metadata/_tab_index = 1
 metadata/_tab_name = "工程"
 
@@ -1501,9 +1476,12 @@ text = "P60"
 [node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/P60P62" unique_id=625568293]
 layout_mode = 2
 size_flags_horizontal = 10
-item_count = 1
-popup/item_0/text = "舵机"
-popup/item_0/id = 1
+selected = 1
+item_count = 2
+popup/item_0/text = "电机"
+popup/item_0/id = 0
+popup/item_1/text = "舵机"
+popup/item_1/id = 1
 
 [node name="Label2" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/P60P62" unique_id=770154087]
 layout_mode = 2
@@ -1512,9 +1490,12 @@ text = "P62"
 [node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/P60P62" unique_id=1672939349]
 layout_mode = 2
 size_flags_horizontal = 10
-item_count = 1
-popup/item_0/text = "舵机"
-popup/item_0/id = 1
+selected = 1
+item_count = 2
+popup/item_0/text = "电机"
+popup/item_0/id = 0
+popup/item_1/text = "舵机"
+popup/item_1/id = 1
 
 [node name="P64P66" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer" unique_id=745130046]
 layout_mode = 2
@@ -1526,6 +1507,7 @@ text = "P64"
 [node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/P64P66" unique_id=440439740]
 layout_mode = 2
 size_flags_horizontal = 10
+selected = 0
 item_count = 2
 popup/item_0/text = "电机"
 popup/item_0/id = 0
@@ -1539,6 +1521,7 @@ text = "P66"
 [node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/P64P66" unique_id=1072227736]
 layout_mode = 2
 size_flags_horizontal = 10
+selected = 0
 item_count = 2
 popup/item_0/text = "电机"
 popup/item_0/id = 0
@@ -1555,6 +1538,7 @@ text = "P74"
 [node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/P74P75" unique_id=352239936]
 layout_mode = 2
 size_flags_horizontal = 10
+selected = 0
 item_count = 2
 popup/item_0/text = "电机"
 popup/item_0/id = 0
@@ -1568,6 +1552,7 @@ text = "P75"
 [node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/P74P75" unique_id=1365335563]
 layout_mode = 2
 size_flags_horizontal = 10
+selected = 0
 item_count = 2
 popup/item_0/text = "电机"
 popup/item_0/id = 0
@@ -1584,6 +1569,7 @@ text = "P76"
 [node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/P76P77" unique_id=140380862]
 layout_mode = 2
 size_flags_horizontal = 10
+selected = 0
 item_count = 2
 popup/item_0/text = "电机"
 popup/item_0/id = 0
@@ -1597,6 +1583,7 @@ text = "P77"
 [node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/P76P77" unique_id=1313241065]
 layout_mode = 2
 size_flags_horizontal = 10
+selected = 0
 item_count = 2
 popup/item_0/text = "电机"
 popup/item_0/id = 0
@@ -1613,6 +1600,7 @@ text = "MP03"
 [node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/MP03MP74" unique_id=978667949]
 layout_mode = 2
 size_flags_horizontal = 10
+selected = 0
 item_count = 1
 popup/item_0/text = "舵机"
 popup/item_0/id = 1
@@ -1624,6 +1612,7 @@ text = "MP74"
 [node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/MP03MP74" unique_id=256150972]
 layout_mode = 2
 size_flags_horizontal = 10
+selected = 0
 item_count = 1
 popup/item_0/text = "舵机"
 popup/item_0/id = 1
@@ -1649,6 +1638,7 @@ text = "右摇杆X"
 [node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/RightJoystickX" unique_id=1016650541]
 layout_mode = 2
 size_flags_horizontal = 10
+selected = 0
 item_count = 2
 popup/item_0/text = "正"
 popup/item_0/id = 0
@@ -1658,6 +1648,7 @@ popup/item_1/id = 1
 [node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/RightJoystickX" unique_id=1336814781]
 layout_mode = 2
 size_flags_horizontal = 8
+selected = 0
 item_count = 4
 popup/item_0/text = "增量"
 popup/item_0/id = 0
@@ -1673,27 +1664,30 @@ layout_mode = 2
 
 [node name="OptionButton3" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/RightJoystickX" unique_id=501563311]
 layout_mode = 2
-item_count = 10
-popup/item_0/text = "P60"
+selected = 0
+item_count = 11
+popup/item_0/text = "不使用"
 popup/item_0/id = 0
-popup/item_1/text = "P62"
+popup/item_1/text = "P60"
 popup/item_1/id = 1
-popup/item_2/text = "P64"
+popup/item_2/text = "P62"
 popup/item_2/id = 2
-popup/item_3/text = "P66"
+popup/item_3/text = "P64"
 popup/item_3/id = 3
-popup/item_4/text = "P74"
+popup/item_4/text = "P66"
 popup/item_4/id = 4
-popup/item_5/text = "P75"
+popup/item_5/text = "P74"
 popup/item_5/id = 5
-popup/item_6/text = "P76"
+popup/item_6/text = "P75"
 popup/item_6/id = 6
-popup/item_7/text = "P77"
+popup/item_7/text = "P76"
 popup/item_7/id = 7
-popup/item_8/text = "MP03"
+popup/item_8/text = "P77"
 popup/item_8/id = 8
-popup/item_9/text = "MP74"
+popup/item_9/text = "MP03"
 popup/item_9/id = 9
+popup/item_10/text = "MP74"
+popup/item_10/id = 10
 
 [node name="RightJoystickY" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer" unique_id=291174991]
 layout_mode = 2
@@ -1705,6 +1699,7 @@ text = "右摇杆Y"
 [node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/RightJoystickY" unique_id=96955494]
 layout_mode = 2
 size_flags_horizontal = 10
+selected = 0
 item_count = 2
 popup/item_0/text = "正"
 popup/item_0/id = 0
@@ -1714,6 +1709,7 @@ popup/item_1/id = 1
 [node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/RightJoystickY" unique_id=39050749]
 layout_mode = 2
 size_flags_horizontal = 8
+selected = 0
 item_count = 4
 popup/item_0/text = "增量"
 popup/item_0/id = 0
@@ -1729,27 +1725,30 @@ layout_mode = 2
 
 [node name="OptionButton3" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/RightJoystickY" unique_id=1781420613]
 layout_mode = 2
-item_count = 10
-popup/item_0/text = "P60"
+selected = 0
+item_count = 11
+popup/item_0/text = "不使用"
 popup/item_0/id = 0
-popup/item_1/text = "P62"
+popup/item_1/text = "P60"
 popup/item_1/id = 1
-popup/item_2/text = "P64"
+popup/item_2/text = "P62"
 popup/item_2/id = 2
-popup/item_3/text = "P66"
+popup/item_3/text = "P64"
 popup/item_3/id = 3
-popup/item_4/text = "P74"
+popup/item_4/text = "P66"
 popup/item_4/id = 4
-popup/item_5/text = "P75"
+popup/item_5/text = "P74"
 popup/item_5/id = 5
-popup/item_6/text = "P76"
+popup/item_6/text = "P75"
 popup/item_6/id = 6
-popup/item_7/text = "P77"
+popup/item_7/text = "P76"
 popup/item_7/id = 7
-popup/item_8/text = "MP03"
+popup/item_8/text = "P77"
 popup/item_8/id = 8
-popup/item_9/text = "MP74"
+popup/item_9/text = "MP03"
 popup/item_9/id = 9
+popup/item_10/text = "MP74"
+popup/item_10/id = 10
 
 [node name="A" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer" unique_id=1201132026]
 layout_mode = 2
@@ -1761,6 +1760,7 @@ text = "A"
 [node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/A" unique_id=2106564557]
 layout_mode = 2
 size_flags_horizontal = 10
+selected = 0
 item_count = 2
 popup/item_0/text = "正"
 popup/item_0/id = 0
@@ -1770,6 +1770,7 @@ popup/item_1/id = 1
 [node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/A" unique_id=1879771866]
 layout_mode = 2
 size_flags_horizontal = 8
+selected = 0
 item_count = 4
 popup/item_0/text = "增量"
 popup/item_0/id = 0
@@ -1785,27 +1786,30 @@ layout_mode = 2
 
 [node name="OptionButton3" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/A" unique_id=300294464]
 layout_mode = 2
-item_count = 10
-popup/item_0/text = "P60"
+selected = 0
+item_count = 11
+popup/item_0/text = "不使用"
 popup/item_0/id = 0
-popup/item_1/text = "P62"
+popup/item_1/text = "P60"
 popup/item_1/id = 1
-popup/item_2/text = "P64"
+popup/item_2/text = "P62"
 popup/item_2/id = 2
-popup/item_3/text = "P66"
+popup/item_3/text = "P64"
 popup/item_3/id = 3
-popup/item_4/text = "P74"
+popup/item_4/text = "P66"
 popup/item_4/id = 4
-popup/item_5/text = "P75"
+popup/item_5/text = "P74"
 popup/item_5/id = 5
-popup/item_6/text = "P76"
+popup/item_6/text = "P75"
 popup/item_6/id = 6
-popup/item_7/text = "P77"
+popup/item_7/text = "P76"
 popup/item_7/id = 7
-popup/item_8/text = "MP03"
+popup/item_8/text = "P77"
 popup/item_8/id = 8
-popup/item_9/text = "MP74"
+popup/item_9/text = "MP03"
 popup/item_9/id = 9
+popup/item_10/text = "MP74"
+popup/item_10/id = 10
 
 [node name="B" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer" unique_id=1645249396]
 layout_mode = 2
@@ -1817,6 +1821,7 @@ text = "B"
 [node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/B" unique_id=542907164]
 layout_mode = 2
 size_flags_horizontal = 10
+selected = 0
 item_count = 2
 popup/item_0/text = "正"
 popup/item_0/id = 0
@@ -1826,6 +1831,7 @@ popup/item_1/id = 1
 [node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/B" unique_id=960791903]
 layout_mode = 2
 size_flags_horizontal = 8
+selected = 0
 item_count = 4
 popup/item_0/text = "增量"
 popup/item_0/id = 0
@@ -1841,27 +1847,30 @@ layout_mode = 2
 
 [node name="OptionButton3" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/B" unique_id=560479055]
 layout_mode = 2
-item_count = 10
-popup/item_0/text = "P60"
+selected = 0
+item_count = 11
+popup/item_0/text = "不使用"
 popup/item_0/id = 0
-popup/item_1/text = "P62"
+popup/item_1/text = "P60"
 popup/item_1/id = 1
-popup/item_2/text = "P64"
+popup/item_2/text = "P62"
 popup/item_2/id = 2
-popup/item_3/text = "P66"
+popup/item_3/text = "P64"
 popup/item_3/id = 3
-popup/item_4/text = "P74"
+popup/item_4/text = "P66"
 popup/item_4/id = 4
-popup/item_5/text = "P75"
+popup/item_5/text = "P74"
 popup/item_5/id = 5
-popup/item_6/text = "P76"
+popup/item_6/text = "P75"
 popup/item_6/id = 6
-popup/item_7/text = "P77"
+popup/item_7/text = "P76"
 popup/item_7/id = 7
-popup/item_8/text = "MP03"
+popup/item_8/text = "P77"
 popup/item_8/id = 8
-popup/item_9/text = "MP74"
+popup/item_9/text = "MP03"
 popup/item_9/id = 9
+popup/item_10/text = "MP74"
+popup/item_10/id = 10
 
 [node name="C" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer" unique_id=1873746653]
 layout_mode = 2
@@ -1873,6 +1882,7 @@ text = "C"
 [node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/C" unique_id=1024594197]
 layout_mode = 2
 size_flags_horizontal = 10
+selected = 0
 item_count = 2
 popup/item_0/text = "正"
 popup/item_0/id = 0
@@ -1882,6 +1892,7 @@ popup/item_1/id = 1
 [node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/C" unique_id=451953319]
 layout_mode = 2
 size_flags_horizontal = 8
+selected = 0
 item_count = 4
 popup/item_0/text = "增量"
 popup/item_0/id = 0
@@ -1897,27 +1908,30 @@ layout_mode = 2
 
 [node name="OptionButton3" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/C" unique_id=1181131397]
 layout_mode = 2
-item_count = 10
-popup/item_0/text = "P60"
+selected = 0
+item_count = 11
+popup/item_0/text = "不使用"
 popup/item_0/id = 0
-popup/item_1/text = "P62"
+popup/item_1/text = "P60"
 popup/item_1/id = 1
-popup/item_2/text = "P64"
+popup/item_2/text = "P62"
 popup/item_2/id = 2
-popup/item_3/text = "P66"
+popup/item_3/text = "P64"
 popup/item_3/id = 3
-popup/item_4/text = "P74"
+popup/item_4/text = "P66"
 popup/item_4/id = 4
-popup/item_5/text = "P75"
+popup/item_5/text = "P74"
 popup/item_5/id = 5
-popup/item_6/text = "P76"
+popup/item_6/text = "P75"
 popup/item_6/id = 6
-popup/item_7/text = "P77"
+popup/item_7/text = "P76"
 popup/item_7/id = 7
-popup/item_8/text = "MP03"
+popup/item_8/text = "P77"
 popup/item_8/id = 8
-popup/item_9/text = "MP74"
+popup/item_9/text = "MP03"
 popup/item_9/id = 9
+popup/item_10/text = "MP74"
+popup/item_10/id = 10
 
 [node name="D" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer" unique_id=1679597644]
 layout_mode = 2
@@ -1929,6 +1943,7 @@ text = "D"
 [node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/D" unique_id=690084490]
 layout_mode = 2
 size_flags_horizontal = 10
+selected = 0
 item_count = 2
 popup/item_0/text = "正"
 popup/item_0/id = 0
@@ -1938,6 +1953,7 @@ popup/item_1/id = 1
 [node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/D" unique_id=316737696]
 layout_mode = 2
 size_flags_horizontal = 8
+selected = 0
 item_count = 4
 popup/item_0/text = "增量"
 popup/item_0/id = 0
@@ -1953,27 +1969,30 @@ layout_mode = 2
 
 [node name="OptionButton3" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/D" unique_id=674446635]
 layout_mode = 2
-item_count = 10
-popup/item_0/text = "P60"
+selected = 0
+item_count = 11
+popup/item_0/text = "不使用"
 popup/item_0/id = 0
-popup/item_1/text = "P62"
+popup/item_1/text = "P60"
 popup/item_1/id = 1
-popup/item_2/text = "P64"
+popup/item_2/text = "P62"
 popup/item_2/id = 2
-popup/item_3/text = "P66"
+popup/item_3/text = "P64"
 popup/item_3/id = 3
-popup/item_4/text = "P74"
+popup/item_4/text = "P66"
 popup/item_4/id = 4
-popup/item_5/text = "P75"
+popup/item_5/text = "P74"
 popup/item_5/id = 5
-popup/item_6/text = "P76"
+popup/item_6/text = "P75"
 popup/item_6/id = 6
-popup/item_7/text = "P77"
+popup/item_7/text = "P76"
 popup/item_7/id = 7
-popup/item_8/text = "MP03"
+popup/item_8/text = "P77"
 popup/item_8/id = 8
-popup/item_9/text = "MP74"
+popup/item_9/text = "MP03"
 popup/item_9/id = 9
+popup/item_10/text = "MP74"
+popup/item_10/id = 10
 
 [node name="Up" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer" unique_id=625180406]
 layout_mode = 2
@@ -1985,6 +2004,7 @@ text = "↑"
 [node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/Up" unique_id=1830670576]
 layout_mode = 2
 size_flags_horizontal = 10
+selected = 0
 item_count = 2
 popup/item_0/text = "正"
 popup/item_0/id = 0
@@ -1994,6 +2014,7 @@ popup/item_1/id = 1
 [node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/Up" unique_id=381023892]
 layout_mode = 2
 size_flags_horizontal = 8
+selected = 0
 item_count = 4
 popup/item_0/text = "增量"
 popup/item_0/id = 0
@@ -2009,27 +2030,30 @@ layout_mode = 2
 
 [node name="OptionButton3" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/Up" unique_id=170878628]
 layout_mode = 2
-item_count = 10
-popup/item_0/text = "P60"
+selected = 0
+item_count = 11
+popup/item_0/text = "不使用"
 popup/item_0/id = 0
-popup/item_1/text = "P62"
+popup/item_1/text = "P60"
 popup/item_1/id = 1
-popup/item_2/text = "P64"
+popup/item_2/text = "P62"
 popup/item_2/id = 2
-popup/item_3/text = "P66"
+popup/item_3/text = "P64"
 popup/item_3/id = 3
-popup/item_4/text = "P74"
+popup/item_4/text = "P66"
 popup/item_4/id = 4
-popup/item_5/text = "P75"
+popup/item_5/text = "P74"
 popup/item_5/id = 5
-popup/item_6/text = "P76"
+popup/item_6/text = "P75"
 popup/item_6/id = 6
-popup/item_7/text = "P77"
+popup/item_7/text = "P76"
 popup/item_7/id = 7
-popup/item_8/text = "MP03"
+popup/item_8/text = "P77"
 popup/item_8/id = 8
-popup/item_9/text = "MP74"
+popup/item_9/text = "MP03"
 popup/item_9/id = 9
+popup/item_10/text = "MP74"
+popup/item_10/id = 10
 
 [node name="Down" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer" unique_id=1236925167]
 layout_mode = 2
@@ -2041,6 +2065,7 @@ text = "↓"
 [node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/Down" unique_id=1740726943]
 layout_mode = 2
 size_flags_horizontal = 10
+selected = 0
 item_count = 2
 popup/item_0/text = "正"
 popup/item_0/id = 0
@@ -2050,6 +2075,7 @@ popup/item_1/id = 1
 [node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/Down" unique_id=1583012171]
 layout_mode = 2
 size_flags_horizontal = 8
+selected = 0
 item_count = 4
 popup/item_0/text = "增量"
 popup/item_0/id = 0
@@ -2065,27 +2091,30 @@ layout_mode = 2
 
 [node name="OptionButton3" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/Down" unique_id=587776377]
 layout_mode = 2
-item_count = 10
-popup/item_0/text = "P60"
+selected = 0
+item_count = 11
+popup/item_0/text = "不使用"
 popup/item_0/id = 0
-popup/item_1/text = "P62"
+popup/item_1/text = "P60"
 popup/item_1/id = 1
-popup/item_2/text = "P64"
+popup/item_2/text = "P62"
 popup/item_2/id = 2
-popup/item_3/text = "P66"
+popup/item_3/text = "P64"
 popup/item_3/id = 3
-popup/item_4/text = "P74"
+popup/item_4/text = "P66"
 popup/item_4/id = 4
-popup/item_5/text = "P75"
+popup/item_5/text = "P74"
 popup/item_5/id = 5
-popup/item_6/text = "P76"
+popup/item_6/text = "P75"
 popup/item_6/id = 6
-popup/item_7/text = "P77"
+popup/item_7/text = "P76"
 popup/item_7/id = 7
-popup/item_8/text = "MP03"
+popup/item_8/text = "P77"
 popup/item_8/id = 8
-popup/item_9/text = "MP74"
+popup/item_9/text = "MP03"
 popup/item_9/id = 9
+popup/item_10/text = "MP74"
+popup/item_10/id = 10
 
 [node name="Left" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer" unique_id=1792121710]
 layout_mode = 2
@@ -2097,6 +2126,7 @@ text = "←"
 [node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/Left" unique_id=588967578]
 layout_mode = 2
 size_flags_horizontal = 10
+selected = 0
 item_count = 2
 popup/item_0/text = "正"
 popup/item_0/id = 0
@@ -2106,6 +2136,7 @@ popup/item_1/id = 1
 [node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/Left" unique_id=1839809395]
 layout_mode = 2
 size_flags_horizontal = 8
+selected = 0
 item_count = 4
 popup/item_0/text = "增量"
 popup/item_0/id = 0
@@ -2121,27 +2152,30 @@ layout_mode = 2
 
 [node name="OptionButton3" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/Left" unique_id=213902817]
 layout_mode = 2
-item_count = 10
-popup/item_0/text = "P60"
+selected = 0
+item_count = 11
+popup/item_0/text = "不使用"
 popup/item_0/id = 0
-popup/item_1/text = "P62"
+popup/item_1/text = "P60"
 popup/item_1/id = 1
-popup/item_2/text = "P64"
+popup/item_2/text = "P62"
 popup/item_2/id = 2
-popup/item_3/text = "P66"
+popup/item_3/text = "P64"
 popup/item_3/id = 3
-popup/item_4/text = "P74"
+popup/item_4/text = "P66"
 popup/item_4/id = 4
-popup/item_5/text = "P75"
+popup/item_5/text = "P74"
 popup/item_5/id = 5
-popup/item_6/text = "P76"
+popup/item_6/text = "P75"
 popup/item_6/id = 6
-popup/item_7/text = "P77"
+popup/item_7/text = "P76"
 popup/item_7/id = 7
-popup/item_8/text = "MP03"
+popup/item_8/text = "P77"
 popup/item_8/id = 8
-popup/item_9/text = "MP74"
+popup/item_9/text = "MP03"
 popup/item_9/id = 9
+popup/item_10/text = "MP74"
+popup/item_10/id = 10
 
 [node name="Right" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer" unique_id=210499284]
 layout_mode = 2
@@ -2153,6 +2187,7 @@ text = "→"
 [node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/Right" unique_id=55878365]
 layout_mode = 2
 size_flags_horizontal = 10
+selected = 0
 item_count = 2
 popup/item_0/text = "正"
 popup/item_0/id = 0
@@ -2162,6 +2197,7 @@ popup/item_1/id = 1
 [node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/Right" unique_id=1612993735]
 layout_mode = 2
 size_flags_horizontal = 8
+selected = 0
 item_count = 4
 popup/item_0/text = "增量"
 popup/item_0/id = 0
@@ -2177,27 +2213,30 @@ layout_mode = 2
 
 [node name="OptionButton3" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/Right" unique_id=689210703]
 layout_mode = 2
-item_count = 10
-popup/item_0/text = "P60"
+selected = 0
+item_count = 11
+popup/item_0/text = "不使用"
 popup/item_0/id = 0
-popup/item_1/text = "P62"
+popup/item_1/text = "P60"
 popup/item_1/id = 1
-popup/item_2/text = "P64"
+popup/item_2/text = "P62"
 popup/item_2/id = 2
-popup/item_3/text = "P66"
+popup/item_3/text = "P64"
 popup/item_3/id = 3
-popup/item_4/text = "P74"
+popup/item_4/text = "P66"
 popup/item_4/id = 4
-popup/item_5/text = "P75"
+popup/item_5/text = "P74"
 popup/item_5/id = 5
-popup/item_6/text = "P76"
+popup/item_6/text = "P75"
 popup/item_6/id = 6
-popup/item_7/text = "P77"
+popup/item_7/text = "P76"
 popup/item_7/id = 7
-popup/item_8/text = "MP03"
+popup/item_8/text = "P77"
 popup/item_8/id = 8
-popup/item_9/text = "MP74"
+popup/item_9/text = "MP03"
 popup/item_9/id = 9
+popup/item_10/text = "MP74"
+popup/item_10/id = 10
 
 [node name="R" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer" unique_id=1925323373]
 layout_mode = 2
@@ -2209,6 +2248,7 @@ text = "R"
 [node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/R" unique_id=2078809086]
 layout_mode = 2
 size_flags_horizontal = 10
+selected = 0
 item_count = 2
 popup/item_0/text = "正"
 popup/item_0/id = 0
@@ -2218,6 +2258,7 @@ popup/item_1/id = 1
 [node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/R" unique_id=764432170]
 layout_mode = 2
 size_flags_horizontal = 8
+selected = 0
 item_count = 4
 popup/item_0/text = "增量"
 popup/item_0/id = 0
@@ -2233,27 +2274,30 @@ layout_mode = 2
 
 [node name="OptionButton3" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer/R" unique_id=1462624189]
 layout_mode = 2
-item_count = 10
-popup/item_0/text = "P60"
+selected = 0
+item_count = 11
+popup/item_0/text = "不使用"
 popup/item_0/id = 0
-popup/item_1/text = "P62"
+popup/item_1/text = "P60"
 popup/item_1/id = 1
-popup/item_2/text = "P64"
+popup/item_2/text = "P62"
 popup/item_2/id = 2
-popup/item_3/text = "P66"
+popup/item_3/text = "P64"
 popup/item_3/id = 3
-popup/item_4/text = "P74"
+popup/item_4/text = "P66"
 popup/item_4/id = 4
-popup/item_5/text = "P75"
+popup/item_5/text = "P74"
 popup/item_5/id = 5
-popup/item_6/text = "P76"
+popup/item_6/text = "P75"
 popup/item_6/id = 6
-popup/item_7/text = "P77"
+popup/item_7/text = "P76"
 popup/item_7/id = 7
-popup/item_8/text = "MP03"
+popup/item_8/text = "P77"
 popup/item_8/id = 8
-popup/item_9/text = "MP74"
+popup/item_9/text = "MP03"
 popup/item_9/id = 9
+popup/item_10/text = "MP74"
+popup/item_10/id = 10
 
 [node name="EngineerAdvanced" type="VBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer" unique_id=2017398683]
 layout_mode = 2
@@ -2320,7 +2364,7 @@ layout_mode = 2
 [node name="JointsLabel" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=-1393852784]
 layout_mode = 2
 size_flags_horizontal = 4
-text = "关节配置（IO/方向/零点偏移/限位角°）"
+text = "关节配置（IO/方向/初始角/限位角°，相对舵机中位，行程 ±90°）"
 
 [node name="Joint1" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=-1393852783]
 layout_mode = 2
@@ -2370,19 +2414,19 @@ popup/item_1/id = 1
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 3
-placeholder_text = "零点°"
+placeholder_text = "初始角°"
 
 [node name="Min" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint1" unique_id=-1393852778]
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 3
-placeholder_text = "min°"
+placeholder_text = "min° ≥-90"
 
 [node name="Max" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint1" unique_id=-1393852777]
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 3
-placeholder_text = "max°"
+placeholder_text = "max° ≤90"
 
 [node name="Joint2" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=-1393852776]
 layout_mode = 2
@@ -2432,19 +2476,19 @@ popup/item_1/id = 1
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 3
-placeholder_text = "零点°"
+placeholder_text = "初始角°"
 
 [node name="Min" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint2" unique_id=-1393852771]
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 3
-placeholder_text = "min°"
+placeholder_text = "min° ≥-90"
 
 [node name="Max" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint2" unique_id=-1393852770]
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 3
-placeholder_text = "max°"
+placeholder_text = "max° ≤90"
 
 [node name="Joint3" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=-1393852769]
 layout_mode = 2
@@ -2494,19 +2538,19 @@ popup/item_1/id = 1
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 3
-placeholder_text = "零点°"
+placeholder_text = "初始角°"
 
 [node name="Min" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint3" unique_id=-1393852764]
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 3
-placeholder_text = "min°"
+placeholder_text = "min° ≥-90"
 
 [node name="Max" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint3" unique_id=-1393852763]
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 3
-placeholder_text = "max°"
+placeholder_text = "max° ≤90"
 
 [node name="Joint4" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=-1393852762]
 layout_mode = 2
@@ -2556,19 +2600,19 @@ popup/item_1/id = 1
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 3
-placeholder_text = "零点°"
+placeholder_text = "初始角°"
 
 [node name="Min" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint4" unique_id=-1393852757]
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 3
-placeholder_text = "min°"
+placeholder_text = "min° ≥-90"
 
 [node name="Max" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/Joint4" unique_id=-1393852756]
 custom_minimum_size = Vector2(50, 0)
 layout_mode = 2
 size_flags_horizontal = 3
-placeholder_text = "max°"
+placeholder_text = "max° ≤90"
 
 [node name="HSeparator3" type="HSeparator" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=-1393852755]
 layout_mode = 2
@@ -2847,8 +2891,8 @@ popup/item_1/id = 1
 custom_minimum_size = Vector2(60, 0)
 layout_mode = 2
 size_flags_horizontal = 3
-text = "200"
-placeholder_text = "缩放(mm)"
+text = "5"
+placeholder_text = "满偏mm/周期"
 
 [node name="HSeparator5" type="HSeparator" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=-1393852718]
 layout_mode = 2
@@ -2876,7 +2920,7 @@ placeholder_text = "mm/周期"
 [node name="Hint" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/KeyMoveSpeed" unique_id=-1393852713]
 layout_mode = 2
 size_flags_horizontal = 3
-text = "（主循环 10ms/周期）"
+text = "（主循环 10ms/周期，φ 轴同值按度计）"
 
 [node name="KeyMoveX" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=-1393852712]
 layout_mode = 2
@@ -3033,6 +3077,66 @@ popup/item_9/text = "D"
 popup/item_9/id = 9
 
 [node name="Minus" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/KeyMoveZ" unique_id=-1393852701]
+layout_mode = 2
+size_flags_horizontal = 3
+selected = 0
+item_count = 10
+popup/item_0/text = "不使用"
+popup/item_0/id = 0
+popup/item_1/text = "R"
+popup/item_1/id = 1
+popup/item_2/text = "↑"
+popup/item_2/id = 2
+popup/item_3/text = "↓"
+popup/item_3/id = 3
+popup/item_4/text = "←"
+popup/item_4/id = 4
+popup/item_5/text = "->"
+popup/item_5/id = 5
+popup/item_6/text = "A"
+popup/item_6/id = 6
+popup/item_7/text = "B"
+popup/item_7/id = 7
+popup/item_8/text = "C"
+popup/item_8/id = 8
+popup/item_9/text = "D"
+popup/item_9/id = 9
+
+[node name="KeyMovePhi" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=-1393852700]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/KeyMovePhi" unique_id=-1393852699]
+layout_mode = 2
+size_flags_horizontal = 2
+text = "末端φ +/-(4轴)"
+
+[node name="Plus" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/KeyMovePhi" unique_id=-1393852698]
+layout_mode = 2
+size_flags_horizontal = 3
+selected = 0
+item_count = 10
+popup/item_0/text = "不使用"
+popup/item_0/id = 0
+popup/item_1/text = "R"
+popup/item_1/id = 1
+popup/item_2/text = "↑"
+popup/item_2/id = 2
+popup/item_3/text = "↓"
+popup/item_3/id = 3
+popup/item_4/text = "←"
+popup/item_4/id = 4
+popup/item_5/text = "->"
+popup/item_5/id = 5
+popup/item_6/text = "A"
+popup/item_6/id = 6
+popup/item_7/text = "B"
+popup/item_7/id = 7
+popup/item_8/text = "C"
+popup/item_8/id = 8
+popup/item_9/text = "D"
+popup/item_9/id = 9
+
+[node name="Minus" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/KeyMovePhi" unique_id=-1393852697]
 layout_mode = 2
 size_flags_horizontal = 3
 selected = 0

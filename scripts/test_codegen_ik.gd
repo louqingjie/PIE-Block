@@ -1,99 +1,235 @@
 extends SceneTree
 
-## 代码生成验证脚本：调用 CodeGenEngineerIK 生成 main.c 并输出到文件
+## 代码生成验证脚本：调用 CodeGenEngineerIK 生成 main.c 并做结构断言
 ## 运行方式：godot --headless --script scripts/test_codegen_ik.gd
+## 最后一个构型的输出写入 res://test_ik_output.c 供 Keil 编译验证
+
+var _fail: int = 0
+
 
 func _initialize() -> void:
-	print("=== 工程逆解算代码生成验证 ===\n")
+	print("=== 工程逆解算代码生成验证 ===")
 	var cg = preload("res://scripts/codegen/codegen_engineer_ik.gd").new()
-	# 构造测试配置：2轴，L1=100,L2=100，2个关节
-	var cfg: Dictionary = {
-		"config_type": 0,
-		"joint_count": 2,
-		"L1": "100",
-		"L2": "100",
-		"L3": "0",
-		"joints": [
-			{"io": "P74", "dir": "正向", "zero": "0", "min": "-90", "max": "90"},
-			{"io": "P75", "dir": "正向", "zero": "0", "min": "0", "max": "180"},
-		],
-		"presets": [
-			{"key": "A", "x": "100", "y": "100", "z": "0", "phi": "0", "enabled": true},
-			{"key": "B", "x": "200", "y": "0", "z": "0", "phi": "0", "enabled": true},
-		],
-		"joy_x": "左X->末端X",
-		"joy_y": "左Y->末端Y",
-		"joy_z": "右X->末端Z",
-		"joy_scale": "200",
-	}
-	var code: String = cg.generate(cfg)
-	# 写入文件
-	var f = FileAccess.open("res://test_ik_output.c", FileAccess.WRITE)
-	if f == null:
-		print("[✗ FAIL] 无法写入 test_ik_output.c")
-		quit(1)
-		return
-	f.store_string(code)
-	f.close()
-	print("[✓ PASS] 2轴代码生成成功，长度 %d 字符" % code.length())
-	print("[✓ PASS] 写入 res://test_ik_output.c")
-	# 验证关键内容
-	var checks: Array = [
-		{"name": "包含 main.h", "ok": code.find("#include \"main.h\"") >= 0},
-		{"name": "包含 MATH.H", "ok": code.find("#include \"MATH.H\"") >= 0},
-		{"name": "定义 L1", "ok": code.find("#define L1") >= 0},
-		{"name": "定义 JOINT_COUNT", "ok": code.find("#define JOINT_COUNT 2") >= 0},
-		{"name": "有 angle_to_duty 函数", "ok": code.find("uint16_t angle_to_duty") >= 0},
-		{"name": "有 ik_solve 函数", "ok": code.find("void ik_solve(") >= 0},
-		{"name": "有 ExpansionBoradControl", "ok": code.find("void ExpansionBoradControl(") >= 0},
-		{"name": "有预设点位表", "ok": code.find("presetAngles") >= 0},
-		{"name": "有 main 函数", "ok": code.find("void main()") >= 0},
-		{"name": "有 All_Init 函数", "ok": code.find("void All_Init()") >= 0},
-		{"name": "有 ReadControllerInputs", "ok": code.find("void ReadControllerInputs()") >= 0},
-		{"name": "有 CheckPresetKeys", "ok": code.find("void CheckPresetKeys()") >= 0},
-		{"name": "有 CalculateIK", "ok": code.find("void CalculateIK()") >= 0},
-		{"name": "有 ApplyServoControl", "ok": code.find("void ApplyServoControl()") >= 0},
-	]
-	var all_pass: bool = true
-	# 测试 2 轴
-	all_pass = _test_config(cg, 0, 2, "2轴") and all_pass
-	# 测试 3 轴
-	all_pass = _test_config(cg, 1, 3, "3轴") and all_pass
-	# 测试 4 轴
-	all_pass = _test_config(cg, 2, 4, "4轴") and all_pass
-	print("\n=== 结果: %s ===" % ("全部通过 ✓" if all_pass else "存在失败 ✗"))
-	quit(0 if all_pass else 1)
+	_test_joy_axis(cg)
+	_test_angle_clamp(cg)
+	_test_no_preset(cg)
+	_test_negative_elbow(cg)
+	_test_config(cg, 0, 2, "2轴")
+	_test_config(cg, 1, 3, "3轴")
+	_test_config(cg, 2, 4, "4轴")
+	print("\n=== 结果: %s ===" % ("全部通过 ✓" if _fail == 0 else "%d 项失败 ✗" % _fail))
+	quit(0 if _fail == 0 else 1)
 
 
-func _test_config(cg, config_type: int, jc: int, name: String) -> bool:
+func _check(label: String, ok: bool) -> void:
+	if ok:
+		print("[✓ PASS] %s" % label)
+	else:
+		print("[✗ FAIL] %s" % label)
+		_fail += 1
+
+
+## 构造测试配置
+func _make_cfg(config_type: int, jc: int, presets: Array) -> Dictionary:
 	var joints: Array = []
 	var io_list: Array = ["P74", "P75", "P76", "MP03"]
 	for i in range(jc):
 		joints.append({
-			"io": io_list[i], "dir": "正向", "zero": "0",
+			"io": io_list[i], "dir": "正向", "zero": "45",
 			"min": "-90", "max": "90",
 		})
-	var cfg: Dictionary = {
+	return {
 		"config_type": config_type, "joint_count": jc,
 		"L1": "100", "L2": "80", "L3": "30",
 		"joints": joints,
-		"presets": [ {"key": "A", "x": "100", "y": "80", "z": "50", "phi": "90", "enabled": true}],
+		"presets": presets,
 		"joy_x": "右X->末端X", "joy_y": "右Y->末端Y", "joy_z": "右X->末端Z",
-		"joy_scale": "200",
+		"joy_scale": "5",
 		"keymove_speed": "2",
 		"keymove": [
 			{"plus": "↑", "minus": "↓"},
 			{"plus": "←", "minus": "->"},
 			{"plus": "B", "minus": "C"},
+			{"plus": "D", "minus": "R"},
 		],
 	}
-	var code: String = cg.generate(cfg)
-	var ok: bool = not code.is_empty()
-	# 写入文件供编译验证（最后一个构型覆盖）
+
+
+func _test_config(cg, config_type: int, jc: int, label: String) -> void:
+	print("\n--- %s ---" % label)
+	var presets: Array = [ {"key": "A", "x": "100", "y": "80", "z": "50", "phi": "90", "enabled": true}]
+	var code: String = cg.generate(_make_cfg(config_type, jc, presets))
+	_check("%s 生成非空" % label, not code.is_empty())
+	# 必需的头文件与宏
+	_check("%s 包含 main.h" % label, code.find("#include \"main.h\"") >= 0)
+	_check("%s 包含 MATH.H" % label, code.find("#include \"MATH.H\"") >= 0)
+	_check("%s 定义 L1/L2" % label, code.find("#define L1") >= 0 and code.find("#define L2") >= 0)
+	_check("%s 定义 JOINT_COUNT %d" % [label, jc], code.find("#define JOINT_COUNT %d" % jc) >= 0)
+	_check("%s 定义 ELBOW_SIGN" % label, code.find("#define ELBOW_SIGN") >= 0)
+	# 必需的函数（定义签名须与前置声明一致）
+	_check("%s 有 angle_to_duty" % label, code.find("uint16_t angle_to_duty(int joint, float angle)") >= 0)
+	_check("%s 有 ik_solve" % label, code.find("void ik_solve(%s)" % _ik_sig(jc)) >= 0)
+	_check("%s 有 CheckPresetKeys" % label, code.find("uint8_t CheckPresetKeys()") >= 0)
+	_check("%s 有 CalculateIK" % label, code.find("void CalculateIK(uint8_t hit)") >= 0)
+	_check("%s 有 ApplyServoControl" % label, code.find("void ApplyServoControl()") >= 0)
+	_check("%s 有 ReadControllerInputs" % label, code.find("void ReadControllerInputs()") >= 0)
+	_check("%s 有 All_Init" % label, code.find("void All_Init()") >= 0)
+	_check("%s 有 main" % label, code.find("void main()") >= 0)
+	_check("%s 有 ExpansionBoradControl" % label, code.find("void ExpansionBoradControl(") >= 0)
+	_check("%s 定义 Channal" % label, code.find("uint8_t Channal =") >= 0)
+	# 预设点位表用末端坐标而非关节角度
+	_check("%s 有 presetPos 表" % label, code.find("const float presetPos[PRESET_COUNT][4]") >= 0)
+	# 舵机方向不得再走 Dir_Change_Order（会与占空比镜像叠加抵消）
+	_check("%s 不发 Dir_Change_Order" % label, code.find("ExpansionBoradControl(Dir_Change_Order") < 0)
+	# 占空比系数：0~180° 必须映射满 500~1000
+	_check("%s 占空比系数 2.7778" % label, code.find("#define SERVO_DUTY_PER_DEG  2.7778f") >= 0)
+	# 关节角以中位为 0°：映射式不得再减 90°偏移
+	_check("%s 映射以中位为 0°" % label,
+		code.find("SERVO_MID_DUTY + angle * SERVO_DUTY_PER_DEG") >= 0
+		and code.find("angle - 90.0f") < 0)
+	# 不应残留未被读取的 valueOfKey
+	_check("%s 无死变量 valueOfKey" % label, code.find("valueOfKey") < 0)
+	# 4 轴必须用 L3 做腕部补偿，且姿态角可由按键调整
+	if jc >= 4:
+		_check("4轴 定义 L3", code.find("#define L3") >= 0)
+		_check("4轴 ik_solve 使用 L3", code.find("r = r - L3 * cos(phi_rad)") >= 0)
+		_check("4轴 有 φ 按键增量", code.find("targetPhi += KEYMOVE_PHI_SPEED") >= 0)
+	# 3/4 轴的钳位需防除零
+	if jc >= 3:
+		_check("%s ik_solve 防除零" % label, code.find("if (rz < IK_EPS)") >= 0)
+	# C89：变量声明必须在可执行语句之前
+	_check("%s 符合 C89 声明顺序" % label, _check_c89_decl_order(code))
+	# 写入文件供 Keil 编译验证
 	var f = FileAccess.open("res://test_ik_output.c", FileAccess.WRITE)
 	if f:
 		f.store_string(code)
 		f.close()
-	var status: String = "✓ PASS" if ok else "✗ FAIL"
-	print("[%s] %s 代码生成 (长度 %d)" % [status, name, code.length()])
-	return ok
+
+
+## 预设点位为 0 时不得生成零长数组（C89 禁止）
+func _test_no_preset(cg) -> void:
+	print("\n--- 无预设点位 ---")
+	var code: String = cg.generate(_make_cfg(1, 3, []))
+	_check("PRESET_COUNT 为 0", code.find("#define PRESET_COUNT 0") >= 0)
+	_check("不生成 presetKey 数组", code.find("const uint8_t presetKey[") < 0)
+	_check("不生成 presetPos 数组", code.find("const float presetPos[") < 0)
+	_check("不声明 CheckPresetKeys", code.find("uint8_t CheckPresetKeys();") < 0)
+	_check("不调用 CheckPresetKeys", code.find("CheckPresetKeys()") < 0)
+	_check("presetHit 置 0", code.find("presetHit = 0;") >= 0)
+
+
+## 限位/初始角超出舵机行程 ±90° 时必须夹紧后写入常量数组
+func _test_angle_clamp(cg) -> void:
+	print("\n--- 角度夹紧 ±90° ---")
+	var cfg: Dictionary = _make_cfg(1, 3, [])
+	cfg["joints"][0]["min"] = "-180"
+	cfg["joints"][0]["max"] = "180"
+	cfg["joints"][1]["zero"] = "150"
+	var code: String = cg.generate(cfg)
+	_check("jointMin 夹到 -90", code.find("const float jointMin[3] = {-90.00f") >= 0)
+	_check("jointMax 夹到 90", code.find("const float jointMax[3] = {90.00f") >= 0)
+	_check("jointHome 夹到 90", code.find("90.00f") >= 0 and code.find("150.00f") < 0)
+
+
+## 摇杆轴解析：不能被 "->" 右侧的 X/Y 干扰
+func _test_joy_axis(cg) -> void:
+	print("\n--- 摇杆轴解析 ---")
+	_check("右X->末端X 取水平轴", cg.parse_joy_axis("右X->末端X") == [1, 0])
+	_check("右Y->末端X 取竖直轴", cg.parse_joy_axis("右Y->末端X") == [1, 1])
+	_check("右X->末端Z 取水平轴", cg.parse_joy_axis("右X->末端Z") == [1, 0])
+	_check("右Y->末端Z 取竖直轴", cg.parse_joy_axis("右Y->末端Z") == [1, 1])
+
+
+## 初始角为负的构型须取负肘部分支，保证正解起点与逆解自洽
+func _test_negative_elbow(cg) -> void:
+	print("\n--- 肘部分支自洽性 ---")
+	# 正初始角：正分支
+	var pos_cfg: Dictionary = _make_cfg(1, 3, [])
+	var pos_code: String = cg.generate(pos_cfg)
+	_check("正初始角 ELBOW_SIGN 为 +1", pos_code.find("#define ELBOW_SIGN  1.0f") >= 0)
+	_check("正初始角 正反解自洽", _round_trip(cg, pos_cfg, 1.0))
+	# 负初始角：负分支
+	var neg_cfg: Dictionary = _make_cfg(1, 3, [])
+	neg_cfg["joints"][2]["zero"] = "-60"
+	var neg_code: String = cg.generate(neg_cfg)
+	_check("负初始角 ELBOW_SIGN 为 -1", neg_code.find("#define ELBOW_SIGN  -1.0f") >= 0)
+	_check("负初始角 正反解自洽", _round_trip(cg, neg_cfg, -1.0))
+
+
+## 把生成代码里的 target 初值（正运动学结果）反解回关节角，应还原各关节初始角
+func _round_trip(cg, cfg: Dictionary, elbow: float) -> bool:
+	var code: String = cg.generate(cfg)
+	var home: Array = _parse_home(code)
+	if home.is_empty():
+		print("      未能解析 target 初值")
+		return false
+	var jc: int = cfg["joint_count"]
+	var angles: Array = cg.solve_ik(home[0], home[1], home[2], home[3],
+		cfg["L1"].to_float(), cfg["L2"].to_float(), cfg["L3"].to_float(),
+		cfg["config_type"], jc, elbow)
+	for i in range(jc):
+		var want: float = cfg["joints"][i]["zero"].to_float()
+		if abs(angles[i] - want) > 0.5:
+			print("      关节%d 期望 %.1f 实得 %.1f" % [i + 1, want, angles[i]])
+			return false
+	return true
+
+
+## ik_solve 的形参列表（随构型裁剪，需与生成器保持一致）
+func _ik_sig(jc: int) -> String:
+	var names: Array = ["float x", "float y"]
+	if jc >= 3:
+		names.append("float z")
+	if jc >= 4:
+		names.append("float phi")
+	return ", ".join(names)
+
+
+## 从生成代码里取回 target 初值，不足 4 个分量时补 0
+func _parse_home(code: String) -> Array:
+	var at: int = code.find("    targetX = ")
+	if at < 0:
+		return []
+	var line: String = code.substr(at, code.find("\n", at) - at)
+	var out: Array = []
+	for seg in line.split(";"):
+		var eq: int = seg.find("=")
+		if eq < 0:
+			continue
+		var num: String = seg.substr(eq + 1).strip_edges().trim_suffix("f")
+		out.append(num.to_float())
+	if out.is_empty():
+		return []
+	while out.size() < 4:
+		out.append(0.0)
+	return out
+
+
+## 粗查 C89 声明顺序：函数体内出现可执行语句后不应再有变量声明
+## 逐字符跟踪花括号深度，避免被行内 { } 或宏续行搞乱层级
+func _check_c89_decl_order(code: String) -> bool:
+	var depth: int = 0
+	var seen_stmt: bool = false
+	for raw in code.split("\n"):
+		var line: String = raw.strip_edges()
+		if line.is_empty() or line.begins_with("//") or line.begins_with("#") or line.begins_with("/"):
+			continue
+		var opens: int = line.count("{")
+		var closes: int = line.count("}")
+		# 先按进入本行时的深度判定，再更新深度
+		if depth > 0 and not line.begins_with("}") and not line.begins_with("{"):
+			var is_decl: bool = (line.begins_with("float ") or line.begins_with("int ")
+				or line.begins_with("uint8_t ") or line.begins_with("uint16_t "))
+			if is_decl:
+				if seen_stmt:
+					print("      C89 违规行: %s" % line)
+					return false
+			else:
+				seen_stmt = true
+		if opens > closes:
+			# 进入更深的块，块内重新允许声明
+			seen_stmt = false
+		depth += opens - closes
+		if depth < 0:
+			depth = 0
+	return true

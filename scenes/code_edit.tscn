@@ -1,0 +1,54 @@
+[gd_scene format=3 uid="uid://04gwuk3jiyxq"]
+
+[ext_resource type="Theme" uid="uid://cryqvh2g7gqj" path="res://assets/themes/main.tres" id="1_sdmxl"]
+
+[node name="Control" type="Control" unique_id=1016157835]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme = ExtResource("1_sdmxl")
+
+[node name="VBoxContainer" type="VBoxContainer" parent="." unique_id=287485810]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="TopPanel" type="HBoxContainer" parent="VBoxContainer" unique_id=1742694540]
+layout_mode = 2
+
+[node name="Create" type="Button" parent="VBoxContainer/TopPanel" unique_id=1575421618]
+layout_mode = 2
+text = "新建"
+
+[node name="Open" type="Button" parent="VBoxContainer/TopPanel" unique_id=881702901]
+layout_mode = 2
+text = "打开"
+
+[node name="Save" type="Button" parent="VBoxContainer/TopPanel" unique_id=98352435]
+layout_mode = 2
+text = "保存"
+
+[node name="Label" type="Label" parent="VBoxContainer/TopPanel" unique_id=1156991949]
+layout_mode = 2
+size_flags_horizontal = 6
+text = "项目名称"
+
+[node name="Export" type="Button" parent="VBoxContainer/TopPanel" unique_id=55558203]
+layout_mode = 2
+size_flags_horizontal = 8
+text = "导出 C 代码"
+
+[node name="Button" type="Button" parent="VBoxContainer/TopPanel" unique_id=1993679386]
+layout_mode = 2
+text = "返回图形化编辑"
+
+[node name="Build" type="Button" parent="VBoxContainer/TopPanel" unique_id=1551741014]
+layout_mode = 2
+size_flags_horizontal = 8
+text = "编译"

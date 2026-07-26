@@ -21,8 +21,9 @@ const FREQ_MOTOR: int = 10000 # 电机模式频率
 const FREQ_SERVO: int = 50 # 舵机模式频率
 const FREQ_FRICTION: int = 50 # 摩擦轮模式频率
 
-# 舵机归中占空比（50Hz 下中位值）
-const SERVO_MID_DUTY: int = 750
+# 舵机归中占空比（50Hz 下中位值，等于基类 SERVO_DUTY_MID）
+# 舵机总行程 180°，占空比 500=-90°，750=中位(0°)，1000=+90°
+const SERVO_MID_DUTY: int = SERVO_DUTY_MID
 
 # 摩擦轮渐变参数（参考 RM电控指南）
 const FRICTION_STEP: int = 100 # 每步增加 100 占空比
@@ -50,8 +51,9 @@ func generate(cfg: Dictionary) -> String:
 	code += "#define BUZZER_FREQ_DONE   700   // 命令完成\n"
 	code += "#define TEST_DURATION_MS   3000  // 每个命令持续时间（摩擦轮除外）\n"
 	code += "#define GAP_DURATION_MS    1000  // 命令间隔时间\n"
-	code += "// 舵机归中占空比（50Hz）\n"
-	code += "#define SERVO_MID_DUTY     750\n"
+	code += "// 舵机占空比（50Hz）：%d=-90°，%d=中位(0°)，%d=+90°，总行程 180°\n" \
+		% [SERVO_DUTY_MIN, SERVO_DUTY_MID, SERVO_DUTY_MAX]
+	code += "#define SERVO_MID_DUTY     %d\n" % SERVO_MID_DUTY
 	code += "// 摩擦轮渐变参数\n"
 	code += "#define FRICTION_STEP       100\n"
 	code += "#define FRICTION_STEP_MS   1500\n"
@@ -223,18 +225,6 @@ func _generate_friction_test(slot: int, _dir: int) -> String:
 	code += "    ExpansionBoradControl(Duty_Change_Order, %s); // %s 占空比 0（停止）\n" % [_slot_duty_str(slot, 0), pin_name]
 	code += "    Ms_Delay(FRICTION_STEP_MS);\n"
 	return code
-
-
-## 舵机角度（-180~180）映射到占空比（500~1000，中位 750）
-## 角度 0 -> 750（归中），角度 180 -> 1000，角度 -180 -> 500
-func _servo_angle_to_duty(angle: int) -> int:
-	# 线性映射：[-180, 180] -> [500, 1000]
-	var duty: int = 750 + int(float(angle) * 250.0 / 180.0)
-	if duty < 250:
-		duty = 250
-	if duty > 1250:
-		duty = 1250
-	return duty
 
 
 ## 构建 Init_Order 参数字符串：仅指定 slot 的频率，其余为 0（维持原状）

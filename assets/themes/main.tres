@@ -1,0 +1,14 @@
+[gd_resource type="Theme" format=3 uid="uid://cryqvh2g7gqj"]
+
+[ext_resource type="FontFile" uid="uid://bs174vxb8p5iv" path="res://assets/fonts/NotoSansCJK-Regular.ttc" id="1_aiue4"]
+
+[resource]
+Button/fonts/font = ExtResource("1_aiue4")
+CheckButton/fonts/font = ExtResource("1_aiue4")
+Label/fonts/font = ExtResource("1_aiue4")
+LineEdit/fonts/font = ExtResource("1_aiue4")
+OptionButton/fonts/font = ExtResource("1_aiue4")
+TabBar/fonts/font = ExtResource("1_aiue4")
+TextEdit/fonts/font = ExtResource("1_aiue4")
+Tree/fonts/font = ExtResource("1_aiue4")
+Tree/fonts/title_button_font = ExtResource("1_aiue4")

@@ -7,14 +7,12 @@ extends CodeGenBase
 ## 右摇杆 X/Y 和各按键（A/B/C/D/↑↓←->/R）通过按键映射区分配到任意 IO。
 ## 控制模式：增量（仅舵机）、直接（舵机/电机）、速度（仅电机）、增速（仅电机）。
 
-# 舵机占空比参数
-const SERVO_DUTY_MID: int = 750
-const SERVO_DUTY_MIN: int = 250
-const SERVO_DUTY_MAX: int = 1250
+# 舵机占空比参数（SERVO_DUTY_MIN/MID/MAX 与 SERVO_MAX_OFFSET_DEG 继承自 CodeGenBase）
 # 电机速度上限
 const MOTOR_SPEED_MAX: int = 10000
-# 舵机角度 -> 占空比转换系数（1000/360）
-const ANGLE_TO_DUTY_FACTOR: float = 1000.0 / 360.0
+# 舵机偏移角 -> 占空比转换系数：±90°（共 180°）对应 (1000-500) duty
+const ANGLE_TO_DUTY_FACTOR: float = float(SERVO_DUTY_MAX - SERVO_DUTY_MIN) \
+	/ float(SERVO_MAX_OFFSET_DEG * 2)
 
 # 扩展板引脚名（按槽位顺序）
 const EXP_PINS: Array = ["P60", "P62", "P64", "P66", "P74", "P75", "P76", "P77"]
@@ -63,6 +61,11 @@ func generate(cfg: Dictionary) -> String:
 		if t.is_empty():
 			t = "舵机" if i < 2 else "电机"
 		slot_type.append(t)
+	# 底盘占用的槽位必须按电机初始化，否则该轮永远不动。
+	# 与 IO 初始化区不一致时由静态检查报 Error，此处强制以底盘为准保证代码自洽。
+	for cs in [l1_slot, l2_slot, r1_slot, r2_slot]:
+		if cs >= 0:
+			slot_type[cs] = "电机"
 
 	# --- 分配舵机索引（扩展板）---
 	# slot_servo_idx: slot -> servo_idx
@@ -91,6 +94,8 @@ func generate(cfg: Dictionary) -> String:
 
 	# 为按键映射中涉及的电机槽位分配索引
 	var processed_rows: Array = []
+	# 主控板舵机是否被引用（未引用则不生成 PWM 初始化，避免无谓占用 PWMB 通道）
+	var use_main_servo: Array = [false, false]
 	for row in key_map:
 		var target_pin: String = row.get("target", "")
 		if target_pin.is_empty():
@@ -106,6 +111,7 @@ func generate(cfg: Dictionary) -> String:
 			# 主控板舵机（MP03/MP74）
 			target_type = "舵机"
 			main_servo_idx = 0 if target_pin == "MP03" else 1
+			use_main_servo[main_servo_idx] = true
 		else:
 			target_type = slot_type[target_slot]
 			if target_type == "电机":
@@ -195,14 +201,19 @@ func generate(cfg: Dictionary) -> String:
 	var motor_calc_code: String = _gen_motor_calc_code(processed_rows)
 	var servo_calc_code: String = _gen_servo_calc_code(processed_rows)
 
-	# --- PWM 初始化/设置行（主控板舵机）---
+	# --- PWM 初始化/设置行（主控板舵机，仅在被按键映射引用时生成）---
+	# MP03 = PWMB_CH4_P03，MP74 = PWMB_CH1_P74（与扩展板 P74 是不同的 IO）
+	var main_servo_chn: Array = ["PWMB_CH4_P03", "PWMB_CH1_P74"]
+	var main_servo_name: Array = ["MP03", "MP74"]
 	var pwm_init_lines: String = ""
 	var pwm_set_lines: String = ""
-	# MP03 和 MP74 始终初始化
-	pwm_init_lines += "    PWM_Init(PWMB_CH4_P03, 50, 750); // MP03 舵机归中\n"
-	pwm_init_lines += "    PWM_Init(PWMB_CH1_P74, 50, 750); // MP74 舵机归中\n"
-	pwm_set_lines += "    PWM_SET_Frequency(PWMB_CH4_P03, 50, dutyOfMainServo0);\n"
-	pwm_set_lines += "    PWM_SET_Frequency(PWMB_CH1_P74, 50, dutyOfMainServo1);\n"
+	for si in range(2):
+		if not use_main_servo[si]:
+			continue
+		pwm_init_lines += "    PWM_Init(%s, 50, %d); // %s 舵机归中\n" \
+			% [main_servo_chn[si], SERVO_DUTY_MID, main_servo_name[si]]
+		pwm_set_lines += "    PWM_SET_Frequency(%s, 50, dutyOfMainServo%d);\n" \
+			% [main_servo_chn[si], si]
 
 	# --- 限幅代码 ---
 	var motor_limit_code: String = ""
@@ -211,28 +222,39 @@ func generate(cfg: Dictionary) -> String:
 	var servo_limit_code: String = ""
 	if servo_count > 0:
 		servo_limit_code += "        for (i = 0; i < %d; i++)\n" % servo_count \
-			+"            LIMIT_VALUE(floatDutyOfServo[i], 250, 1250);\n"
-	servo_limit_code += "        LIMIT_VALUE(floatDutyOfMainServo0, 250, 1250);\n"
-	servo_limit_code += "        LIMIT_VALUE(floatDutyOfMainServo1, 250, 1250);\n"
+			+"            LIMIT_VALUE(floatDutyOfServo[i], %d, %d);\n" % [SERVO_DUTY_MIN, SERVO_DUTY_MAX]
+	for si in range(2):
+		if use_main_servo[si]:
+			servo_limit_code += "        LIMIT_VALUE(floatDutyOfMainServo%d, %d, %d);\n" \
+				% [si, SERVO_DUTY_MIN, SERVO_DUTY_MAX]
 
 	# --- 舵机 float->uint16 拷贝 ---
 	var servo_copy_code: String = ""
 	if servo_count > 0:
 		servo_copy_code += "        for (i = 0; i < %d; i++)\n" % servo_count \
 			+"            dutyOfServo[i] = (uint16_t)floatDutyOfServo[i];\n"
-	servo_copy_code += "        dutyOfMainServo0 = (uint16_t)floatDutyOfMainServo0;\n"
-	servo_copy_code += "        dutyOfMainServo1 = (uint16_t)floatDutyOfMainServo1;\n"
+	for si in range(2):
+		if use_main_servo[si]:
+			servo_copy_code += "        dutyOfMainServo%d = (uint16_t)floatDutyOfMainServo%d;\n" % [si, si]
 
 	# --- 舵机初始化代码 ---
 	var servo_init_code: String = ""
 	if servo_count > 0:
 		servo_init_code += "    for (i = 0; i < %d; i++)\n" % servo_count \
 			+"    {\n" \
-			+"        dutyOfServo[i] = 750;\n" \
-			+"        floatDutyOfServo[i] = 750.0f;\n" \
+			+"        dutyOfServo[i] = %d;\n" % SERVO_DUTY_MID \
+			+"        floatDutyOfServo[i] = %d.0f;\n" % SERVO_DUTY_MID \
 			+"    }\n"
-	servo_init_code += "    floatDutyOfMainServo0 = 750.0f;\n"
-	servo_init_code += "    floatDutyOfMainServo1 = 750.0f;\n"
+	for si in range(2):
+		if use_main_servo[si]:
+			servo_init_code += "    floatDutyOfMainServo%d = %d.0f;\n" % [si, SERVO_DUTY_MID]
+
+	# --- 主控板舵机变量声明 ---
+	var main_servo_decl: String = ""
+	for si in range(2):
+		if use_main_servo[si]:
+			main_servo_decl += "float floatDutyOfMainServo%d; // 主控板舵机 %s\n" % [si, main_servo_name[si]]
+			main_servo_decl += "uint16_t dutyOfMainServo%d;\n" % si
 
 	# ================================================================
 	# 组装完整 main.c
@@ -271,10 +293,9 @@ func generate(cfg: Dictionary) -> String:
 	code += "float floatDutyOfServo[%d];   // 扩展板舵机浮点占空比\n" % servo_array_size
 	code += "uint16_t dutyOfServo[%d];      // 扩展板舵机占空比\n" % servo_array_size
 	code += "int dutyOfMotor[%d];          // 电机控制值（底盘+其他）\n" % motor_array_size
-	code += "float floatDutyOfMainServo0, floatDutyOfMainServo1; // 主控板舵机（MP03/MP74）\n"
-	code += "uint16_t dutyOfMainServo0, dutyOfMainServo1;\n"
+	code += main_servo_decl
 	code += "uint8_t valueOfKey[3][4];\n"
-	code += "uint8_t valueOfRKey, lastValueOfRKey;\n"
+	code += "uint8_t valueOfRKey;\n"
 	code += "uint8_t i, j;\n"
 	code += "int valueOfRoker[2][2] // 左摇杆水平、竖直；右摇杆水平、竖直\n"
 	code += "    ,\n"
@@ -331,14 +352,18 @@ func generate(cfg: Dictionary) -> String:
 	code += "}\n\n"
 
 	# --- Angle_To_Duty ---
-	code += "/// @brief 舵机角度（-180~180）转换为占空比（250~1250）\n"
+	var duty_span: int = SERVO_DUTY_MAX - SERVO_DUTY_MIN
+	var angle_span: int = SERVO_MAX_OFFSET_DEG * 2
+	code += "/// @brief 舵机相对中位的偏移角（-%d~%d）转换为占空比（%d~%d，中位 %d）\n" \
+		% [SERVO_MAX_OFFSET_DEG, SERVO_MAX_OFFSET_DEG,
+			SERVO_DUTY_MIN, SERVO_DUTY_MAX, SERVO_DUTY_MID]
 	code += "uint16_t Angle_To_Duty(int angle)\n"
 	code += "{\n"
-	code += "    int duty = 750 + angle * 1000 / 360;\n"
-	code += "    if (duty < 250)\n"
-	code += "        duty = 250;\n"
-	code += "    if (duty > 1250)\n"
-	code += "        duty = 1250;\n"
+	code += "    int duty = %d + angle * %d / %d;\n" % [SERVO_DUTY_MID, duty_span, angle_span]
+	code += "    if (duty < %d)\n" % SERVO_DUTY_MIN
+	code += "        duty = %d;\n" % SERVO_DUTY_MIN
+	code += "    if (duty > %d)\n" % SERVO_DUTY_MAX
+	code += "        duty = %d;\n" % SERVO_DUTY_MAX
 	code += "    return (uint16_t)duty;\n"
 	code += "}\n\n"
 
@@ -430,37 +455,66 @@ func generate(cfg: Dictionary) -> String:
 # ============================================================ 辅助函数
 
 ## 生成按键映射中电机控制代码（速度/增速/直接 模式）
+## 同一电机可被多行驱动：摇杆行先算出基础值，按键「直接」行再按 if / else if 链覆盖。
+## 仅当该电机全部由「直接」行驱动时，才在链尾补 else 归零；
+## 否则归零会把摇杆算出的值抹掉。
 func _gen_motor_calc_code(rows: Array) -> String:
-	var code: String = ""
+	# 按 motor_idx 分组，保留行顺序
+	var order: Array = []
+	var groups: Dictionary = {}
 	for row in rows:
 		if row.target_type != "电机":
 			continue
-		var mode: String = row.mode
-		var motor_idx: int = row.motor_idx
-		var dir_sign: int = 1 if row.dir == "正" else -1
-		var sign_str: String = "" if dir_sign == 1 else "-"
-		var param: int = _parse_param(row.param)
-		var input_info: Dictionary = _input_to_c_expr(row.input)
-		var is_joystick: bool = input_info.get("is_joystick", false)
+		var mi: int = row.motor_idx
+		if not groups.has(mi):
+			groups[mi] = []
+			order.append(mi)
+		groups[mi].append(row)
 
-		match mode:
-			"速度":
-				if is_joystick:
-					var r: int = input_info["rocker_row"]
-					var c: int = input_info["rocker_col"]
-					code += "    dutyOfMotor[%d] = %s(int)((float)valueOfRoker[%d][%d] * %d / 2047);\n" % [motor_idx, sign_str, r, c, param]
-			"增速":
-				if is_joystick:
-					var r2: int = input_info["rocker_row"]
-					var c2: int = input_info["rocker_col"]
-					code += "    dutyOfMotor[%d] += %s(int)((float)valueOfRoker[%d][%d] * %d / 2047);\n" % [motor_idx, sign_str, r2, c2, param]
-			"直接":
-				if not is_joystick:
-					var key_expr: String = _key_expr(input_info)
-					code += "    if (%s)\n" % key_expr
-					code += "        dutyOfMotor[%d] = %s%d;\n" % [motor_idx, sign_str, param]
-					code += "    else\n"
-					code += "        dutyOfMotor[%d] = 0;\n" % motor_idx
+	var code: String = ""
+	for mi in order:
+		var group: Array = groups[mi]
+		# 该电机是否存在摇杆驱动行（速度/增速）
+		var has_joystick: bool = false
+		for row in group:
+			if _input_to_c_expr(row.input).get("is_joystick", false):
+				has_joystick = true
+				break
+		# 先生成摇杆行
+		for row in group:
+			var info: Dictionary = _input_to_c_expr(row.input)
+			if not info.get("is_joystick", false):
+				continue
+			var sign_j: String = "" if row.dir == "正" else "-"
+			var p_j: int = _parse_param(row.param)
+			var r: int = info["rocker_row"]
+			var c: int = info["rocker_col"]
+			match row.mode:
+				"速度":
+					code += "    dutyOfMotor[%d] = %s(int)((float)valueOfRoker[%d][%d] * %d / 2047);\n" \
+						% [mi, sign_j, r, c, p_j]
+				"增速":
+					code += "    dutyOfMotor[%d] += %s(int)((float)valueOfRoker[%d][%d] * %d / 2047);\n" \
+						% [mi, sign_j, r, c, p_j]
+		# 再生成按键「直接」行，串成 if / else if 链
+		var direct_rows: Array = []
+		for row in group:
+			if _input_to_c_expr(row.input).get("is_joystick", false):
+				continue
+			if row.mode == "直接":
+				direct_rows.append(row)
+		for idx in range(direct_rows.size()):
+			var drow: Dictionary = direct_rows[idx]
+			var sign_d: String = "" if drow.dir == "正" else "-"
+			var p_d: int = _parse_param(drow.param)
+			var key_expr: String = _key_expr(_input_to_c_expr(drow.input))
+			var kw: String = "if" if idx == 0 else "else if"
+			code += "    %s (%s)\n" % [kw, key_expr]
+			code += "        dutyOfMotor[%d] = %s%d;\n" % [mi, sign_d, p_d]
+		# 仅在没有摇杆基础值时才归零（松开按键停转）
+		if not direct_rows.is_empty() and not has_joystick:
+			code += "    else\n"
+			code += "        dutyOfMotor[%d] = 0;\n" % mi
 	return code
 
 

@@ -9,11 +9,19 @@ extends CodeGenBase
 
 
 # 舵机 50Hz 占空比参数（与步兵体系一致）
-const SERVO_MID_DUTY: int = 750 # 90° 中位
-const SERVO_MIN_DUTY: int = 500 # 0°
-const SERVO_MAX_DUTY: int = 1000 # 180°
+# 角度约定：以舵机中位为 0°，行程 ±90°（对应物理 0~180°）
+const SERVO_MID_DUTY: int = 750 # 0° 中位
+const SERVO_MIN_DUTY: int = 500 # -90°
+const SERVO_MAX_DUTY: int = 1000 # +90°
 # duty/度 线性系数：(1000-500)/180
-const SERVO_DUTY_PER_DEG: float = 250.0 / 180.0
+const SERVO_DUTY_PER_DEG: float = 500.0 / 180.0
+# 关节角可表达边界（度）
+const JOINT_ANGLE_MIN: float = -90.0
+const JOINT_ANGLE_MAX: float = 90.0
+# 主循环周期(ms)：ExpansionBoradControl 之后的延时也计入其中
+const LOOP_PERIOD_MS: int = 10
+# 发送板间指令后必须留给硬件的响应延时(ms)
+const EXP_SEND_DELAY_MS: int = 5
 
 
 # ------------------------------------------------------------------ 代码生成
@@ -26,8 +34,14 @@ func generate(cfg: Dictionary) -> String:
 	var l3: float = _to_float(cfg.get("L3", "0"), 0.0)
 	var joints: Array = cfg.get("joints", [])
 	var presets: Array = cfg.get("presets", [])
-	var joy_scale: float = _to_float(cfg.get("joy_scale", "200"), 200.0)
+	var joy_scale: float = _to_float(cfg.get("joy_scale", "5"), 5.0)
 	var keymove_speed: float = _to_float(cfg.get("keymove_speed", "2"), 2.0)
+	# 姿态角按键步长：沿用位移步长的数值，单位改为度
+	var keymove_phi_speed: float = keymove_speed
+	# 肘部分支：由「弯曲关节」的初始角正负决定，保证正解起点与逆解自洽
+	var elbow_sign: float = _elbow_sign(joints, config_type)
+	# 启用的预设点位数量（0 时不生成预设相关数组与查询循环）
+	var preset_count: int = _active_presets(presets).size()
 
 	var code: String = ""
 	code += "// 工程机器人逆解算代码（由 Pie-Block 配置生成器自动生成）\n"
@@ -40,65 +54,71 @@ func generate(cfg: Dictionary) -> String:
 	if jc >= 4:
 		code += "#define L3   %.2ff   // 腕部连杆长度(mm)\n" % l3
 	code += "#define JOINT_COUNT %d\n" % jc
+	code += "// 肘部弯曲方向（+1 / -1），与关节初始角符号一致\n"
+	code += "#define ELBOW_SIGN  %.1ff\n" % elbow_sign
+	code += "// 逆解可达性判定的最小半径，避免除零\n"
+	code += "#define IK_EPS  0.001f\n"
 	code += "// 舵机占空比参数（50Hz）\n"
-	code += "#define SERVO_MID_DUTY  750\n"
-	code += "#define SERVO_MIN_DUTY  500\n"
-	code += "#define SERVO_MAX_DUTY  1000\n"
+	code += "// 关节角以舵机中位为 0°，行程 ±90°（对应物理 0~180°）\n"
+	code += "#define SERVO_MID_DUTY  750   // 0°\n"
+	code += "#define SERVO_MIN_DUTY  500   // -90°\n"
+	code += "#define SERVO_MAX_DUTY  1000  // +90°\n"
 	code += "#define SERVO_DUTY_PER_DEG  %.4ff\n" % SERVO_DUTY_PER_DEG
-	code += "// 摇杆末端每周期位移缩放(mm)\n"
+	code += "// 摇杆推到满偏时末端每周期位移(mm)\n"
 	code += "#define JOY_SCALE  %.2ff\n" % joy_scale
 	code += "// 按键长按时末端每周期位移(mm)\n"
 	code += "#define KEYMOVE_SPEED  %.2ff\n" % keymove_speed
-	code += "#define LIMIT_VALUE(x, min, max) \\\n"
-	code += "    do                           \\\n"
-	code += "    {                            \\\n"
-	code += "        if ((x) < (min))         \\\n"
-	code += "            (x) = (min);         \\\n"
-	code += "        else if ((x) > (max))    \\\n"
-	code += "            (x) = (max);         \\\n"
-	code += "    } while (0)\n"
+	if jc >= 4:
+		code += "// 按键长按时末端姿态角每周期变化(度)\n"
+		code += "#define KEYMOVE_PHI_SPEED  %.2ff\n" % keymove_phi_speed
+	# 注：关节限位夹紧在 angle_to_duty 内直接比较，无需 LIMIT_VALUE 宏
 	code += _build_protocol_macros()
 	# NRF24L01 通信通道（nrf24l01.c 通过 extern 引用，必须在此定义）
 	code += "uint8_t Channal = 36;                          // NRF24L01 通信通道（0-125），与遥控器一致\n"
 	code += "// 自定义变量\n"
 	code += "uint16_t dutyOfServo[%d];       // 各关节舵机占空比\n" % jc
 	code += "float    jointAngle[%d];        // 各关节角度(度)\n" % jc
-	code += "float    targetX, targetY, targetZ, targetPhi;\n"
+	code += "float    %s;\n" % ", ".join(_target_vars(jc))
 	code += "uint8_t  ik_reachable;          // 逆解算可达性标志(1=可达,0=越界已钳位)\n"
 	code += "uint8_t  presetHit;             // 本周期是否命中预设点位\n"
-	code += "uint8_t  valueOfKey[3][4];\n"
 	code += "int16_t  valueOfRoker[2][2];    // 左摇杆水平、竖直；右摇杆水平、竖直\n"
 	code += "uint16_t deadBandOfLeft = 10;\n"
 	code += "uint16_t deadBandOfRight = 10;\n"
-	code += "uint8_t  i, j;\n"
-	code += _build_key_offsets_table()
-	# 关节配置常量数组（零点/限位/方向/IO 槽位）
+	code += "uint8_t  i;\n"
+	# 关节配置常量数组（初始角/限位/IO 槽位）
 	code += _build_joint_config_arrays(joints, jc)
-	# 预设点位表（GDScript 端预计算关节角度）
-	code += _build_preset_table(presets, jc, l1, l2, config_type)
+	# 预设点位表（末端坐标，附 GUI 端预计算的关节角度注释）
+	code += _build_preset_table(presets, jc, l1, l2, l3, config_type, elbow_sign)
 	code += "\n"
 	# 函数声明
 	code += "void All_Init();\n"
 	code += "void ReadControllerInputs();\n"
-	code += "void CalculateIK(uint8_t presetHit);\n"
+	code += "void CalculateIK(uint8_t hit);\n"
 	code += "void ApplyServoControl();\n"
-	code += "uint8_t CheckPresetKeys();\n"
+	if preset_count > 0:
+		code += "uint8_t CheckPresetKeys();\n"
 	code += "uint16_t angle_to_duty(int joint, float angle);\n"
-	code += "void ik_solve(float x, float y, float z, float phi);\n"
+	code += "void ik_solve(%s);\n" % _ik_params(jc)
 	code += "void ExpansionBoradControl(uint8_t control_cmd, uint16_t data_p60, uint16_t data_p62, uint16_t data_p64,\n"
 	code += "                           uint16_t data_p66, uint16_t data_p74, uint16_t data_p75, uint16_t data_p76,\n"
 	code += "                           uint16_t data_p77);\n\n"
 
 	# --- main() ---
+	# 增量模式：target 必须初始化为初始姿态对应的末端位置（正运动学预计算）
+	var home: Array = _forward_kinematics(joints, l1, l2, l3, config_type, jc)
+	# 主控板舵机发送耗时可忽略，扩展板每次发送后需 EXP_SEND_DELAY_MS 延时
+	var has_exp: bool = _has_exp_slot(joints, jc)
+	var tail_delay: int = LOOP_PERIOD_MS - (EXP_SEND_DELAY_MS if has_exp else 0)
 	code += "void main()\n{\n"
 	code += "    All_Init();\n"
-	code += "    // 初始化各关节到零点角度\n"
+	code += "    // 初始化各关节到初始角度\n"
 	code += "    for (i = 0; i < JOINT_COUNT; i++)\n"
-	code += "        jointAngle[i] = jointZero[i];\n"
-	# 增量模式：target 必须初始化为零点姿态对应的末端位置（正运动学预计算）
-	var home: Array = _forward_kinematics(joints, l1, l2, config_type, jc)
-	code += "    // 增量模式起点：零点姿态对应的末端位置（GUI 端正运动学预计算）\n"
-	code += "    targetX = %.2ff; targetY = %.2ff; targetZ = %.2ff; targetPhi = %.2ff;\n" % [home[0], home[1], home[2], home[3]]
+	code += "        jointAngle[i] = jointHome[i];\n"
+	code += "    // 增量模式起点：初始姿态对应的末端位置（GUI 端正运动学预计算）\n"
+	var home_inits: Array = []
+	for k in range(_target_vars(jc).size()):
+		home_inits.append("%s = %.2ff;" % [_target_vars(jc)[k], home[k]])
+	code += "    %s\n" % " ".join(home_inits)
 	code += "    ik_reachable = 1;\n"
 	code += "    while (1)\n"
 	code += "    {\n"
@@ -108,25 +128,29 @@ func generate(cfg: Dictionary) -> String:
 	code += "        else\n"
 	code += "            GPIO_Write_Bit(GPIO_P3, GPIO_Pin_7, 1);\n"
 	code += "        ReadControllerInputs();\n"
-	code += "        presetHit = CheckPresetKeys(); // 预设点位按键检测\n"
+	if preset_count > 0:
+		code += "        presetHit = CheckPresetKeys(); // 预设点位按键检测\n"
+	else:
+		code += "        presetHit = 0;                 // 未配置预设点位\n"
 	code += "        CalculateIK(presetHit);        // 摇杆/按键增量 + 逆解算\n"
-	code += "        ApplyServoControl();          // 应用舵机控制\n"
-	code += "        Ms_Delay(10);\n"
+	code += "        ApplyServoControl();           // 应用舵机控制\n"
+	code += "        Ms_Delay(%d);                   // 与舵机发送延时合计 %dms/周期\n" % [tail_delay, LOOP_PERIOD_MS]
 	code += "    }\n"
 	code += "}\n\n"
 
 	# --- angle_to_duty ---
-	code += _gen_angle_to_duty(jc, joints)
+	code += _gen_angle_to_duty()
 	# --- ik_solve ---
 	code += _gen_ik_solve(config_type, jc)
 	# --- ReadControllerInputs ---
-	code += _gen_read_inputs(cfg)
+	code += _gen_read_inputs()
 	# --- CheckPresetKeys ---
-	code += _gen_check_preset_keys(presets, jc)
+	if preset_count > 0:
+		code += _gen_check_preset_keys(jc)
 	# --- CalculateIK ---
 	code += _gen_calculate_ik(cfg)
 	# --- ApplyServoControl ---
-	code += _gen_apply_servo_control(joints, jc)
+	code += _gen_apply_servo_control(joints, jc, has_exp)
 	# --- All_Init ---
 	code += _gen_all_init(joints, jc)
 	# --- ExpansionBoradControl ---
@@ -152,44 +176,33 @@ func _build_protocol_macros() -> String:
 	return s
 
 
-# ------------------------------------------------------------------ 按键偏移表
-func _build_key_offsets_table() -> String:
-	var s: String = ""
-	s += "static const uint8_t keyOffsets[3][4] = {\n"
-	s += "    {KEY_OFFSET_UP, KEY_OFFSET_DOWN, KEY_OFFSET_LEFT, KEY_OFFSET_RIGHT},\n"
-	s += "    {KEY_OFFSET_A, KEY_OFFSET_B, KEY_OFFSET_C, KEY_OFFSET_D},\n"
-	s += "    {KEY_OFFSET_Rocker11, KEY_OFFSET_Rocker21, 0, 0} // 实际只有2个\n"
-	s += "};\n"
-	return s
-
-
 # ------------------------------------------------------------------ 关节配置数组
 func _build_joint_config_arrays(joints: Array, jc: int) -> String:
 	var s: String = ""
-	s += "// 各关节零点角度(度)\n"
-	s += "const float jointZero[%d] = {" % jc
+	s += "// 各关节初始角度(度)，以舵机中位为 0°\n"
+	s += "const float jointHome[%d] = {" % jc
 	for i in range(jc):
 		var zero: float = _to_float(joints[i].get("zero", "0"), 0.0)
 		if i > 0:
 			s += ", "
-		s += "%.2ff" % zero
+		s += "%.2ff" % clampf(zero, JOINT_ANGLE_MIN, JOINT_ANGLE_MAX)
 	s += "};\n"
-	s += "// 各关节限位(度) [min, max]\n"
+	s += "// 各关节限位(度) [min, max]，以舵机中位为 0°，可表达范围 ±90°\n"
 	s += "const float jointMin[%d] = {" % jc
 	for i in range(jc):
-		var mn: float = _to_float(joints[i].get("min", "-180"), -180.0)
+		var mn: float = _to_float(joints[i].get("min", str(JOINT_ANGLE_MIN)), JOINT_ANGLE_MIN)
 		if i > 0:
 			s += ", "
-		s += "%.2ff" % mn
+		s += "%.2ff" % clampf(mn, JOINT_ANGLE_MIN, JOINT_ANGLE_MAX)
 	s += "};\n"
 	s += "const float jointMax[%d] = {" % jc
 	for i in range(jc):
-		var mx: float = _to_float(joints[i].get("max", "180"), 180.0)
+		var mx: float = _to_float(joints[i].get("max", str(JOINT_ANGLE_MAX)), JOINT_ANGLE_MAX)
 		if i > 0:
 			s += ", "
-		s += "%.2ff" % mx
+		s += "%.2ff" % clampf(mx, JOINT_ANGLE_MIN, JOINT_ANGLE_MAX)
 	s += "};\n"
-	s += "// 各关节方向(1=正向, 0=反向)\n"
+	s += "// 各关节方向(1=正向, 0=反向)，仅在 angle_to_duty 中生效\n"
 	s += "const uint8_t jointDir[%d] = {" % jc
 	for i in range(jc):
 		var d: int = 1 if joints[i].get("dir", "正向") == "正向" else 0
@@ -200,18 +213,28 @@ func _build_joint_config_arrays(joints: Array, jc: int) -> String:
 	return s
 
 
-# ------------------------------------------------------------------ 预设点位表
-# GDScript 端预计算每个预设点位对应的关节角度，写入 C const 数组
-func _build_preset_table(presets: Array, jc: int, l1: float, l2: float, config_type: int) -> String:
-	var s: String = ""
-	# 统计启用的预设点位
+# ------------------------------------------------------------------ 预设点位
+## 过滤出启用的预设点位
+func _active_presets(presets: Array) -> Array:
 	var active: Array = []
 	for p in presets:
 		if p.get("enabled", false):
 			active.append(p)
+	return active
+
+
+## 预设点位表：存末端坐标，附 GUI 端预计算的关节角度注释便于人工核对
+func _build_preset_table(presets: Array, jc: int, l1: float, l2: float, l3: float,
+		config_type: int, elbow_sign: float) -> String:
+	var active: Array = _active_presets(presets)
 	var count: int = active.size()
+	var s: String = ""
 	s += "// 预设点位数量\n"
 	s += "#define PRESET_COUNT %d\n" % count
+	if count == 0:
+		# C89 不允许零长数组，未配置预设点位时不生成任何相关数组
+		s += "// 未配置预设点位，故不生成 presetKey / presetPos 数组\n"
+		return s
 	s += "// 预设点位：按键 KEY_OFFSET\n"
 	s += "const uint8_t presetKey[PRESET_COUNT] = {"
 	for i in range(count):
@@ -234,7 +257,7 @@ func _build_preset_table(presets: Array, jc: int, l1: float, l2: float, config_t
 		if i < count - 1:
 			s += ","
 		# 附上 GUI 端预计算的关节角度作为注释，便于人工核对
-		var angles: Array = _solve_ik(x, y, z, phi, l1, l2, config_type, jc)
+		var angles: Array = solve_ik(x, y, z, phi, l1, l2, l3, config_type, jc, elbow_sign)
 		var ang_str: String = ""
 		for k in range(jc):
 			if k > 0:
@@ -246,15 +269,17 @@ func _build_preset_table(presets: Array, jc: int, l1: float, l2: float, config_t
 
 
 # ------------------------------------------------------------------ GDScript 端 IK 预计算
-# 与 C 端 ik_solve 公式保持一致，用于预计算预设点位角度
-func _solve_ik(x: float, y: float, z: float, phi: float, l1: float, l2: float, config_type: int, jc: int) -> Array:
+## 与 C 端 ik_solve 公式保持一致，用于预计算预设点位角度与静态检查
+## 返回各关节角度（度），长度补齐到 jc
+func solve_ik(x: float, y: float, z: float, phi: float, l1: float, l2: float, l3: float,
+		config_type: int, jc: int, elbow_sign: float) -> Array:
 	var angles: Array = []
 	if config_type == 0:
 		# 2 轴平面
 		var r: float = sqrt(x * x + y * y)
 		var c2: float = (r * r - l1 * l1 - l2 * l2) / (2.0 * l1 * l2)
 		c2 = clamp(c2, -1.0, 1.0)
-		var t2: float = acos(c2)
+		var t2: float = elbow_sign * acos(c2)
 		var t1: float = atan2(y, x) - atan2(l2 * sin(t2), l1 + l2 * cos(t2))
 		angles = [rad_to_deg(t1), rad_to_deg(t2)]
 	elif config_type == 1:
@@ -263,18 +288,21 @@ func _solve_ik(x: float, y: float, z: float, phi: float, l1: float, l2: float, c
 		var r: float = sqrt(x * x + y * y)
 		var c2: float = (r * r + z * z - l1 * l1 - l2 * l2) / (2.0 * l1 * l2)
 		c2 = clamp(c2, -1.0, 1.0)
-		var t2: float = acos(c2)
+		var t2: float = elbow_sign * acos(c2)
 		var t1: float = atan2(z, r) - atan2(l2 * sin(t2), l1 + l2 * cos(t2))
 		angles = [rad_to_deg(t0), rad_to_deg(t1), rad_to_deg(t2)]
 	else:
-		# 4 轴：3 轴 + 腕部
+		# 4 轴：先沿末端姿态角 φ 回退 L3 得到腕心，再对腕心做 3 轴逆解
 		var t0: float = atan2(y, x)
-		var r: float = sqrt(x * x + y * y)
-		var c2: float = (r * r + z * z - l1 * l1 - l2 * l2) / (2.0 * l1 * l2)
+		var phi_rad: float = deg_to_rad(phi)
+		var r_end: float = sqrt(x * x + y * y)
+		var r: float = r_end - l3 * cos(phi_rad)
+		var zw: float = z - l3 * sin(phi_rad)
+		var c2: float = (r * r + zw * zw - l1 * l1 - l2 * l2) / (2.0 * l1 * l2)
 		c2 = clamp(c2, -1.0, 1.0)
-		var t2: float = acos(c2)
-		var t1: float = atan2(z, r) - atan2(l2 * sin(t2), l1 + l2 * cos(t2))
-		var t3: float = deg_to_rad(phi) - (t1 + t2)
+		var t2: float = elbow_sign * acos(c2)
+		var t1: float = atan2(zw, r) - atan2(l2 * sin(t2), l1 + l2 * cos(t2))
+		var t3: float = phi_rad - (t1 + t2)
 		angles = [rad_to_deg(t0), rad_to_deg(t1), rad_to_deg(t2), rad_to_deg(t3)]
 	# 补齐到 jc 个元素
 	while angles.size() < jc:
@@ -282,11 +310,22 @@ func _solve_ik(x: float, y: float, z: float, phi: float, l1: float, l2: float, c
 	return angles
 
 
-# ------------------------------------------------------------------ 正运动学（零点姿态末端位置）
-## 由各关节零点角度算出末端位置，作为增量模式的起点
+# ------------------------------------------------------------------ 肘部分支
+## 弯曲关节（2轴=关节2，3/4轴=关节3）的初始角为负时，逆解取负分支，
+## 否则正运动学起点反解回来会得到镜像姿态，上电首帧关节跳变。
+func _elbow_sign(joints: Array, config_type: int) -> float:
+	var idx: int = 1 if config_type == 0 else 2
+	if joints.size() <= idx:
+		return 1.0
+	var zero: float = _to_float(joints[idx].get("zero", "0"), 0.0)
+	return -1.0 if zero < 0.0 else 1.0
+
+
+# ------------------------------------------------------------------ 正运动学（初始姿态末端位置）
+## 由各关节初始角度算出末端位置，作为增量模式的起点
 ## 返回 [x, y, z, phi]
-func _forward_kinematics(joints: Array, l1: float, l2: float, config_type: int, jc: int) -> Array:
-	# 取各关节零点角度（度）
+func _forward_kinematics(joints: Array, l1: float, l2: float, l3: float, config_type: int, _jc: int) -> Array:
+	# 取各关节初始角度（度）
 	var z0: float = 0.0
 	var z1: float = 0.0
 	var z2: float = 0.0
@@ -315,23 +354,58 @@ func _forward_kinematics(joints: Array, l1: float, l2: float, config_type: int, 
 		var zz: float = l1 * sin(t1) + l2 * sin(t1 + t2)
 		return [r * cos(t0), r * sin(t0), zz, 0.0]
 	else:
-		# 4 轴：3 轴 + 腕部，φ = θ1+θ2+θ3
+		# 4 轴：3 轴 + 腕部，φ = θ1+θ2+θ3，末端在腕心外再延伸 L3
 		var t0: float = deg_to_rad(z0)
 		var t1: float = deg_to_rad(z1)
 		var t2: float = deg_to_rad(z2)
 		var t3: float = deg_to_rad(z3)
-		var r: float = l1 * cos(t1) + l2 * cos(t1 + t2)
-		var zz: float = l1 * sin(t1) + l2 * sin(t1 + t2)
-		return [r * cos(t0), r * sin(t0), zz, rad_to_deg(t1 + t2 + t3)]
+		var phi: float = t1 + t2 + t3
+		var r: float = l1 * cos(t1) + l2 * cos(t1 + t2) + l3 * cos(phi)
+		var zz: float = l1 * sin(t1) + l2 * sin(t1 + t2) + l3 * sin(phi)
+		return [r * cos(t0), r * sin(t0), zz, rad_to_deg(phi)]
+
+
+# ------------------------------------------------------------------ 目标状态变量
+## 当前构型实际用到的末端目标变量。只声明用得到的，避免 C251 报未引用参数警告。
+## 2 轴只有 XY；3 轴加 Z；4 轴再加姿态角 φ。
+func _target_vars(jc: int) -> Array:
+	var out: Array = ["targetX", "targetY"]
+	if jc >= 3:
+		out.append("targetZ")
+	if jc >= 4:
+		out.append("targetPhi")
+	return out
+
+
+## ik_solve 的形参列表，与 _target_vars 一一对应
+func _ik_params(jc: int) -> String:
+	var names: Array = ["float x", "float y"]
+	if jc >= 3:
+		names.append("float z")
+	if jc >= 4:
+		names.append("float phi")
+	return ", ".join(names)
+
+
+# ------------------------------------------------------------------ 槽位判定
+## 是否有任一关节挂在扩展板上（决定发送后是否需要额外延时）
+func _has_exp_slot(joints: Array, jc: int) -> bool:
+	for i in range(jc):
+		if _io_to_exp_slot(joints[i].get("io", "P60")) >= 0:
+			return true
+	return false
 
 
 # ------------------------------------------------------------------ angle_to_duty
-func _gen_angle_to_duty(_jc: int, _joints: Array) -> String:
+func _gen_angle_to_duty() -> String:
 	var s: String = ""
 	s += "/// @brief 关节角度(度) -> 舵机占空比\n"
 	s += "/// @param joint 关节索引(0..JOINT_COUNT-1)\n"
 	s += "/// @param angle 角度(度)\n"
 	s += "/// @return 舵机占空比(SERVO_MIN_DUTY~SERVO_MAX_DUTY)\n"
+	s += "/// @note 角度以舵机中位为 0°，行程 ±90°：-90°=500, 0°=750, +90°=1000。\n"
+	s += "///       反向关节沿中位镜像；舵机方向只由占空比决定，\n"
+	s += "///       故不再向扩展板发 Dir_Change_Order。\n"
 	s += "uint16_t angle_to_duty(int joint, float angle)\n"
 	s += "{\n"
 	s += "    int duty;\n"
@@ -340,11 +414,11 @@ func _gen_angle_to_duty(_jc: int, _joints: Array) -> String:
 	s += "        angle = jointMin[joint];\n"
 	s += "    if (angle > jointMax[joint])\n"
 	s += "        angle = jointMax[joint];\n"
-	s += "    // 角度 -> 占空比（中位 750 = 90°）\n"
-	s += "    duty = (int)(SERVO_MID_DUTY + (angle - 90.0f) * SERVO_DUTY_PER_DEG);\n"
-	s += "    // 方向反向\n"
-	s += "    if (!jointDir[joint])\n"
-	s += "        duty = (int)(SERVO_MID_DUTY - (angle - 90.0f) * SERVO_DUTY_PER_DEG);\n"
+	s += "    // 角度 -> 占空比（0° 即中位 750），反向关节沿中位镜像\n"
+	s += "    if (jointDir[joint])\n"
+	s += "        duty = (int)(SERVO_MID_DUTY + angle * SERVO_DUTY_PER_DEG);\n"
+	s += "    else\n"
+	s += "        duty = (int)(SERVO_MID_DUTY - angle * SERVO_DUTY_PER_DEG);\n"
 	s += "    if (duty < SERVO_MIN_DUTY)\n"
 	s += "        duty = SERVO_MIN_DUTY;\n"
 	s += "    if (duty > SERVO_MAX_DUTY)\n"
@@ -355,111 +429,104 @@ func _gen_angle_to_duty(_jc: int, _joints: Array) -> String:
 
 
 # ------------------------------------------------------------------ ik_solve
-func _gen_ik_solve(config_type: int, _jc: int) -> String:
+func _gen_ik_solve(config_type: int, jc: int) -> String:
 	var s: String = ""
-	s += "/// @brief 逆解算：末端(x,y,z,φ) -> 各关节角度\n"
+	s += "/// @brief 逆解算：末端位置 -> 各关节角度\n"
 	s += "/// @param x 末端X(mm)\n"
 	s += "/// @param y 末端Y(mm)\n"
-	s += "/// @param z 末端Z(mm)\n"
-	s += "/// @param phi 末端姿态角(度，仅4轴用)\n"
+	if jc >= 3:
+		s += "/// @param z 末端Z(mm)\n"
+	if jc >= 4:
+		s += "/// @param phi 末端姿态角(度)\n"
 	s += "/// @note 结果写入 jointAngle[]，越界时钳到边界并设 ik_reachable=0\n"
-	s += "void ik_solve(float x, float y, float z, float phi)\n"
+	s += "void ik_solve(%s)\n" % _ik_params(jc)
 	s += "{\n"
-	# C89：所有变量声明在函数开头，可执行语句之后
+	# C89：所有变量声明必须在函数块开头，位于可执行语句之前
 	if config_type == 0:
-		# 2 轴平面
+		# 2 轴平面：末端就在小臂末端
 		s += "    float r, c2, t1, t2;\n"
 		s += "    ik_reachable = 1;\n"
 		s += "    // === 2 轴平面逆解 ===\n"
 		s += "    r = sqrt(x * x + y * y);\n"
-		s += "    // 可达性检查\n"
-		s += "    if (r < fabs(L1 - L2) || r > (L1 + L2))\n"
+		s += "    // 可达性检查：半径需落在 [|L1-L2|, L1+L2] 内\n"
+		s += "    if (r < fabs(L1 - L2))\n"
 		s += "    {\n"
 		s += "        ik_reachable = 0;\n"
-		s += "        if (r < fabs(L1 - L2))\n"
-		s += "            r = fabs(L1 - L2);\n"
-		s += "        if (r > (L1 + L2))\n"
-		s += "            r = L1 + L2;\n"
+		s += "        r = fabs(L1 - L2);\n"
+		s += "    }\n"
+		s += "    else if (r > (L1 + L2))\n"
+		s += "    {\n"
+		s += "        ik_reachable = 0;\n"
+		s += "        r = L1 + L2;\n"
 		s += "    }\n"
 		s += "    c2 = (r * r - L1 * L1 - L2 * L2) / (2.0f * L1 * L2);\n"
 		s += "    if (c2 > 1.0f) c2 = 1.0f;\n"
 		s += "    if (c2 < -1.0f) c2 = -1.0f;\n"
-		s += "    t2 = acos(c2);\n"
+		s += "    t2 = ELBOW_SIGN * acos(c2);\n"
 		s += "    t1 = atan2(y, x) - atan2(L2 * sin(t2), L1 + L2 * cos(t2));\n"
 		s += "    jointAngle[0] = t1 * 180.0f / 3.14159265f;\n"
 		s += "    jointAngle[1] = t2 * 180.0f / 3.14159265f;\n"
-	elif config_type == 1:
-		# 3 轴：底座 + 2 连杆
-		s += "    float r, c2, t1, t2, t0, rz, scale;\n"
-		s += "    ik_reachable = 1;\n"
-		s += "    // === 3 轴逆解（底座旋转 + 2连杆平面）===\n"
-		s += "    t0 = atan2(y, x);\n"
-		s += "    r = sqrt(x * x + y * y);\n"
-		s += "    rz = sqrt(r * r + z * z);\n"
-		s += "    // (r, z) 平面可达性\n"
-		s += "    if (rz < fabs(L1 - L2) || rz > (L1 + L2))\n"
-		s += "    {\n"
-		s += "        ik_reachable = 0;\n"
-		s += "        if (rz < fabs(L1 - L2))\n"
-		s += "        {\n"
-		s += "            scale = fabs(L1 - L2) / rz;\n"
-		s += "            r *= scale; z *= scale; rz = fabs(L1 - L2);\n"
-		s += "        }\n"
-		s += "        if (rz > (L1 + L2))\n"
-		s += "        {\n"
-		s += "            scale = (L1 + L2) / rz;\n"
-		s += "            r *= scale; z *= scale; rz = L1 + L2;\n"
-		s += "        }\n"
-		s += "    }\n"
-		s += "    c2 = (r * r + z * z - L1 * L1 - L2 * L2) / (2.0f * L1 * L2);\n"
-		s += "    if (c2 > 1.0f) c2 = 1.0f;\n"
-		s += "    if (c2 < -1.0f) c2 = -1.0f;\n"
-		s += "    t2 = acos(c2);\n"
-		s += "    t1 = atan2(z, r) - atan2(L2 * sin(t2), L1 + L2 * cos(t2));\n"
-		s += "    jointAngle[0] = t0 * 180.0f / 3.14159265f;\n"
-		s += "    jointAngle[1] = t1 * 180.0f / 3.14159265f;\n"
-		s += "    jointAngle[2] = t2 * 180.0f / 3.14159265f;\n"
 	else:
-		# 4 轴：3 轴 + 腕部
-		s += "    float r, c2, t1, t2, t0, t3, rz, scale, phi_rad;\n"
+		# 3 轴：底座旋转 + 2 连杆；4 轴额外把末端沿 φ 回退 L3 得到腕心
+		var is4: bool = config_type >= 2
+		if is4:
+			s += "    float r, c2, t1, t2, t0, t3, rz, scale, phi_rad;\n"
+		else:
+			s += "    float r, c2, t1, t2, t0, rz, scale;\n"
 		s += "    ik_reachable = 1;\n"
-		s += "    // === 4 轴逆解（底座 + 2连杆 + 腕部俯仰）===\n"
+		if is4:
+			s += "    // === 4 轴逆解（底座 + 2连杆 + 腕部俯仰）===\n"
+		else:
+			s += "    // === 3 轴逆解（底座旋转 + 2连杆平面）===\n"
 		s += "    t0 = atan2(y, x);\n"
 		s += "    r = sqrt(x * x + y * y);\n"
+		if is4:
+			s += "    // 腕心 = 末端沿姿态角 φ 回退 L3，逆解针对腕心而非末端\n"
+			s += "    phi_rad = phi * 3.14159265f / 180.0f;\n"
+			s += "    r = r - L3 * cos(phi_rad);\n"
+			s += "    z = z - L3 * sin(phi_rad);\n"
 		s += "    rz = sqrt(r * r + z * z);\n"
-		s += "    if (rz < fabs(L1 - L2) || rz > (L1 + L2))\n"
+		s += "    // (r, z) 平面可达性；rz 过小时无方向可依，直接退到内边界正上方\n"
+		s += "    if (rz < IK_EPS)\n"
 		s += "    {\n"
 		s += "        ik_reachable = 0;\n"
-		s += "        if (rz < fabs(L1 - L2))\n"
-		s += "        {\n"
-		s += "            scale = fabs(L1 - L2) / rz;\n"
-		s += "            r *= scale; z *= scale; rz = fabs(L1 - L2);\n"
-		s += "        }\n"
-		s += "        if (rz > (L1 + L2))\n"
-		s += "        {\n"
-		s += "            scale = (L1 + L2) / rz;\n"
-		s += "            r *= scale; z *= scale; rz = L1 + L2;\n"
-		s += "        }\n"
+		s += "        r = fabs(L1 - L2);\n"
+		s += "        z = 0.0f;\n"
+		s += "        if (r < IK_EPS)\n"
+		s += "            r = L1 + L2;\n"
+		s += "    }\n"
+		s += "    else if (rz < fabs(L1 - L2))\n"
+		s += "    {\n"
+		s += "        ik_reachable = 0;\n"
+		s += "        scale = fabs(L1 - L2) / rz;\n"
+		s += "        r *= scale; z *= scale;\n"
+		s += "    }\n"
+		s += "    else if (rz > (L1 + L2))\n"
+		s += "    {\n"
+		s += "        ik_reachable = 0;\n"
+		s += "        scale = (L1 + L2) / rz;\n"
+		s += "        r *= scale; z *= scale;\n"
 		s += "    }\n"
 		s += "    c2 = (r * r + z * z - L1 * L1 - L2 * L2) / (2.0f * L1 * L2);\n"
 		s += "    if (c2 > 1.0f) c2 = 1.0f;\n"
 		s += "    if (c2 < -1.0f) c2 = -1.0f;\n"
-		s += "    t2 = acos(c2);\n"
+		s += "    t2 = ELBOW_SIGN * acos(c2);\n"
 		s += "    t1 = atan2(z, r) - atan2(L2 * sin(t2), L1 + L2 * cos(t2));\n"
-		s += "    // 腕部：保持末端姿态角 φ（度）\n"
-		s += "    phi_rad = phi * 3.14159265f / 180.0f;\n"
-		s += "    t3 = phi_rad - (t1 + t2);\n"
 		s += "    jointAngle[0] = t0 * 180.0f / 3.14159265f;\n"
 		s += "    jointAngle[1] = t1 * 180.0f / 3.14159265f;\n"
 		s += "    jointAngle[2] = t2 * 180.0f / 3.14159265f;\n"
-		s += "    jointAngle[3] = t3 * 180.0f / 3.14159265f;\n"
+		if is4:
+			s += "    // 腕部：补足剩余角度以保持末端姿态角 φ\n"
+			s += "    t3 = phi_rad - (t1 + t2);\n"
+			s += "    jointAngle[3] = t3 * 180.0f / 3.14159265f;\n"
 	s += "}\n\n"
 	return s
 
 
 # ------------------------------------------------------------------ ReadControllerInputs
-func _gen_read_inputs(_cfg: Dictionary) -> String:
+func _gen_read_inputs() -> String:
 	var s: String = ""
+	s += "/// @brief 读取摇杆并做死区过滤（按键在使用处直接 RcKeyValueRead 读取）\n"
 	s += "void ReadControllerInputs()\n"
 	s += "{\n"
 	s += "    valueOfRoker[0][0] = RcRockerValueRead(ROCKER_LEFT_HORIZONTAL);\n"
@@ -474,21 +541,12 @@ func _gen_read_inputs(_cfg: Dictionary) -> String:
 	s += "        valueOfRoker[1][0] = 0;\n"
 	s += "    if (abs(valueOfRoker[1][1]) <= deadBandOfRight)\n"
 	s += "        valueOfRoker[1][1] = 0;\n"
-	s += "    for (i = 0; i < 3; i++)\n"
-	s += "    {\n"
-	s += "        for (j = 0; j < 4; j++)\n"
-	s += "        {\n"
-	s += "            if (i == 2 && j >= 2)\n"
-	s += "                break;\n"
-	s += "            valueOfKey[i][j] = RcKeyValueRead(keyOffsets[i][j]);\n"
-	s += "        }\n"
-	s += "    }\n"
 	s += "}\n\n"
 	return s
 
 
 # ------------------------------------------------------------------ CheckPresetKeys
-func _gen_check_preset_keys(_presets: Array, _jc: int) -> String:
+func _gen_check_preset_keys(jc: int) -> String:
 	var s: String = ""
 	s += "/// @brief 预设点位按键检测：按下时把末端目标设为该点位坐标\n"
 	s += "/// @return 1=命中预设点位（本周期跳过摇杆/按键增量），0=未命中\n"
@@ -500,8 +558,10 @@ func _gen_check_preset_keys(_presets: Array, _jc: int) -> String:
 	s += "        {\n"
 	s += "            targetX = presetPos[i][0];\n"
 	s += "            targetY = presetPos[i][1];\n"
-	s += "            targetZ = presetPos[i][2];\n"
-	s += "            targetPhi = presetPos[i][3];\n"
+	if jc >= 3:
+		s += "            targetZ = presetPos[i][2];\n"
+	if jc >= 4:
+		s += "            targetPhi = presetPos[i][3];\n"
 	s += "            return 1;\n"
 	s += "        }\n"
 	s += "    }\n"
@@ -515,25 +575,40 @@ func _gen_calculate_ik(cfg: Dictionary) -> String:
 	var jc: int = cfg.get("joint_count", 2)
 	var s: String = ""
 	s += "/// @brief 摇杆/按键输入末端位置增量 -> 逆解算\n"
-	s += "/// @param presetHit 1=本周期已由预设点位设定目标，跳过增量累加\n"
+	s += "/// @param hit 1=本周期已由预设点位设定目标，跳过增量累加\n"
 	s += "/// @note 采用增量累积模式：摇杆偏移量和长按按键都对 target 做累加，\n"
-	s += "///       松开后末端保持当前位置不动\n"
-	s += "void CalculateIK(uint8_t presetHit)\n"
+	s += "///       松开后末端保持当前位置不动。\n"
+	s += "///       仅当上次目标可达时才回退，避免不可达的预设点位把目标永久卡死。\n"
+	# 备份变量与 ik_solve 实参都随构型裁剪，避免未使用变量
+	var tvars: Array = _target_vars(jc)
+	var backups: Array = []
+	var save_stmts: Array = []
+	var restore_stmts: Array = []
+	for v in tvars:
+		var b: String = "last" + v.substr(6) # targetX -> lastX
+		backups.append(b)
+		save_stmts.append("%s = %s;" % [b, v])
+		restore_stmts.append("%s = %s;" % [v, b])
+	var call_args: String = ", ".join(tvars)
+	s += "void CalculateIK(uint8_t hit)\n"
 	s += "{\n"
-	s += "    float lastX, lastY, lastZ;\n"
+	s += "    float %s;\n" % ", ".join(backups)
+	s += "    uint8_t lastReachable;\n"
 	s += "    // 备份上次目标，越界时回退（防止 target 无限增长导致松手后回不来）\n"
-	s += "    lastX = targetX; lastY = targetY; lastZ = targetZ;\n"
-	s += "    if (!presetHit)\n"
+	s += "    %s\n" % " ".join(save_stmts)
+	s += "    lastReachable = ik_reachable;\n"
+	s += "    if (!hit)\n"
 	s += "    {\n"
 	s += _indent_block(_build_joy_mapping(cfg))
 	s += _indent_block(_build_keymove_mapping(cfg, jc))
 	s += "    }\n"
-	s += "    ik_solve(targetX, targetY, targetZ, targetPhi);\n"
-	s += "    // 越界则回退本周期增量，末端停在可达边界内\n"
-	s += "    if (!ik_reachable && !presetHit)\n"
+	s += "    ik_solve(%s);\n" % call_args
+	s += "    // 越界则回退本周期增量，末端停在上一个可达位置；\n"
+	s += "    // 若上次目标本身就不可达（如预设点位超出量程），保留钳位结果以便摇杆能把末端拉回来\n"
+	s += "    if (!ik_reachable && !hit && lastReachable)\n"
 	s += "    {\n"
-	s += "        targetX = lastX; targetY = lastY; targetZ = lastZ;\n"
-	s += "        ik_solve(targetX, targetY, targetZ, targetPhi);\n"
+	s += "        %s\n" % " ".join(restore_stmts)
+	s += "        ik_solve(%s);\n" % call_args
 	s += "    }\n"
 	s += "}\n\n"
 	return s
@@ -560,87 +635,81 @@ func _build_joy_mapping(cfg: Dictionary) -> String:
 	var joy_y: String = cfg.get("joy_y", "右Y->末端Y")
 	var joy_z: String = cfg.get("joy_z", "右X->末端Z")
 	s += "    // 摇杆增量：摇杆值 -2047~2047 归一化后乘 JOY_SCALE 作为每周期位移\n"
-	s += "    targetX += (float)valueOfRoker[%d][%d] * JOY_SCALE / 2047.0f;\n" % _parse_joy_axis(joy_x)
-	s += "    targetY += (float)valueOfRoker[%d][%d] * JOY_SCALE / 2047.0f;\n" % _parse_joy_axis(joy_y)
+	s += "    targetX += (float)valueOfRoker[%d][%d] * JOY_SCALE / 2047.0f;\n" % parse_joy_axis(joy_x)
+	s += "    targetY += (float)valueOfRoker[%d][%d] * JOY_SCALE / 2047.0f;\n" % parse_joy_axis(joy_y)
 	if jc >= 3:
-		s += "    targetZ += (float)valueOfRoker[%d][%d] * JOY_SCALE / 2047.0f;\n" % _parse_joy_axis(joy_z)
+		s += "    targetZ += (float)valueOfRoker[%d][%d] * JOY_SCALE / 2047.0f;\n" % parse_joy_axis(joy_z)
 	return s
 
 
 ## 按键控制末端移动代码生成（长按持续移动）
+## keymove 索引：0=末端X, 1=末端Y, 2=末端Z, 3=末端姿态角φ
 func _build_keymove_mapping(cfg: Dictionary, jc: int) -> String:
 	var keymove: Array = cfg.get("keymove", [])
 	if keymove.is_empty():
 		return ""
-	var target_names: Array = ["targetX", "targetY", "targetZ"]
-	var axis_labels: Array = ["X", "Y", "Z"]
+	var target_names: Array = ["targetX", "targetY", "targetZ", "targetPhi"]
+	var axis_labels: Array = ["X", "Y", "Z", "姿态角φ"]
+	var step_macros: Array = ["KEYMOVE_SPEED", "KEYMOVE_SPEED", "KEYMOVE_SPEED", "KEYMOVE_PHI_SPEED"]
 	var s: String = ""
 	var has_any: bool = false
-	for i in range(min(keymove.size(), 3)):
-		# 2 轴构型无 Z 轴
+	for i in range(min(keymove.size(), 4)):
+		# 2 轴构型无 Z 轴；仅 4 轴有腕部姿态角
 		if jc < 3 and i == 2:
+			continue
+		if jc < 4 and i == 3:
 			continue
 		var plus_key: String = keymove[i].get("plus", "不使用")
 		var minus_key: String = keymove[i].get("minus", "不使用")
 		if plus_key == "不使用" and minus_key == "不使用":
 			continue
 		if not has_any:
-			s += "    // 按键增量：长按时每周期移动 KEYMOVE_SPEED mm\n"
+			s += "    // 按键增量：长按时每周期移动 KEYMOVE_SPEED mm / KEYMOVE_PHI_SPEED 度\n"
 			has_any = true
 		if plus_key != "不使用":
 			s += "    if (RcKeyValueRead(%s))\n" % _key_name_to_offset(plus_key)
-			s += "        %s += KEYMOVE_SPEED; // 末端%s 正向（按键 %s）\n" % [target_names[i], axis_labels[i], plus_key]
+			s += "        %s += %s; // 末端%s 正向（按键 %s）\n" % [target_names[i], step_macros[i], axis_labels[i], plus_key]
 		if minus_key != "不使用":
 			s += "    if (RcKeyValueRead(%s))\n" % _key_name_to_offset(minus_key)
-			s += "        %s -= KEYMOVE_SPEED; // 末端%s 负向（按键 %s）\n" % [target_names[i], axis_labels[i], minus_key]
+			s += "        %s -= %s; // 末端%s 负向（按键 %s）\n" % [target_names[i], step_macros[i], axis_labels[i], minus_key]
 	return s
 
 
 ## 解析摇杆选项文本 -> [rocker_idx, axis_idx]
 ## 左摇杆固定用于底盘移动，末端控制只用右摇杆（rocker_idx=1）
+## 只看 "->" 左侧的源轴，否则 "右Y->末端X" 会被右侧的 X 误判成水平轴
 ## "右X->末端X" -> [1, 0]; "右Y->末端X" -> [1, 1]
-func _parse_joy_axis(text: String) -> Array:
+func parse_joy_axis(text: String) -> Array:
 	var rocker: int = 1 # 固定右摇杆（左摇杆用于底盘）
-	var axis: int = 0
-	if "X" in text:
-		axis = 0
-	elif "Y" in text:
-		axis = 1
+	var src: String = text
+	var arrow: int = text.find("->")
+	if arrow >= 0:
+		src = text.substr(0, arrow)
+	var axis: int = 1 if "Y" in src else 0
 	return [rocker, axis]
 
 
 # ------------------------------------------------------------------ ApplyServoControl
-func _gen_apply_servo_control(joints: Array, jc: int) -> String:
+func _gen_apply_servo_control(joints: Array, jc: int, has_exp: bool) -> String:
 	var s: String = ""
 	s += "/// @brief 应用舵机控制：关节角度 -> 占空比 -> 发送\n"
 	s += "void ApplyServoControl()\n"
 	s += "{\n"
 	s += "    for (i = 0; i < JOINT_COUNT; i++)\n"
 	s += "        dutyOfServo[i] = angle_to_duty(i, jointAngle[i]);\n"
-	# 构建 ExpansionBoradControl 调用
 	# 扩展板槽位（P60~P77）走 ExpansionBoradControl，主控板 MP03/MP74 走 PWM_SET_Frequency
-	var exp_slots: Dictionary = {} # slot -> joint_idx
-	var main_pwm: Array = [] # [{joint_idx, pwm_ch}]
-	for i in range(jc):
-		var pin: String = joints[i].get("io", "P60")
-		var slot: int = _io_to_exp_slot(pin)
-		if slot >= 0:
-			exp_slots[slot] = i
-		else:
-			# 主控板 PWM（MP03/MP74）
-			var pwm_ch: String = _pin_to_pwm_channel(pin)
-			main_pwm.append({"joint": i, "ch": pwm_ch})
+	var exp_slots: Dictionary = _exp_slot_map(joints, jc)
+	var main_pwm: Array = _main_pwm_list(joints, jc)
 	# 扩展板控制
-	if exp_slots.size() > 0:
-		s += "    // 扩展板舵机控制（频率 50Hz）\n"
+	if has_exp:
+		s += "    // 扩展板舵机控制（频率 50Hz），未占用槽位传 0 表示维持原状\n"
 		# Duty_Change_Order：8 个槽位占空比
 		var duty_vals: Array = ["0", "0", "0", "0", "0", "0", "0", "0"]
 		for slot in exp_slots.keys():
 			duty_vals[slot] = "dutyOfServo[%d]" % exp_slots[slot]
-		var duty_str: String = "%s, %s,\n                          %s, %s,\n                          %s, %s,\n                          %s, %s" % [duty_vals[0], duty_vals[1], duty_vals[2], duty_vals[3], duty_vals[4], duty_vals[5], duty_vals[6], duty_vals[7]]
 		s += "    ExpansionBoradControl(Duty_Change_Order,\n"
-		s += "                          %s);\n" % duty_str
-		s += "    Ms_Delay(5);\n"
+		s += "                          %s);\n" % _exp_args(duty_vals)
+		s += "    Ms_Delay(%d);\n" % EXP_SEND_DELAY_MS
 	# 主控板 PWM 控制
 	if main_pwm.size() > 0:
 		s += "    // 主控板舵机控制（PWM）\n"
@@ -650,6 +719,32 @@ func _gen_apply_servo_control(joints: Array, jc: int) -> String:
 			s += "    PWM_SET_Frequency(%s, 50, dutyOfServo[%d]);\n" % [pwm_ch, ji]
 	s += "}\n\n"
 	return s
+
+
+## 扩展板槽位 -> 关节索引
+func _exp_slot_map(joints: Array, jc: int) -> Dictionary:
+	var m: Dictionary = {}
+	for i in range(jc):
+		var slot: int = _io_to_exp_slot(joints[i].get("io", "P60"))
+		if slot >= 0:
+			m[slot] = i
+	return m
+
+
+## 挂在主控板 PWM 引脚上的关节列表 [{joint, ch}]
+func _main_pwm_list(joints: Array, jc: int) -> Array:
+	var out: Array = []
+	for i in range(jc):
+		var pin: String = joints[i].get("io", "P60")
+		if _io_to_exp_slot(pin) < 0:
+			out.append({"joint": i, "ch": _pin_to_pwm_channel(pin)})
+	return out
+
+
+## 把 8 个槽位参数格式化为 ExpansionBoradControl 的实参列表（每行两个，对齐续行）
+func _exp_args(vals: Array) -> String:
+	return "%s, %s,\n                          %s, %s,\n                          %s, %s,\n                          %s, %s" % [
+		vals[0], vals[1], vals[2], vals[3], vals[4], vals[5], vals[6], vals[7]]
 
 
 # ------------------------------------------------------------------ All_Init
@@ -663,48 +758,37 @@ func _gen_all_init(joints: Array, jc: int) -> String:
 	s += "    remote_control_init();\n"
 	s += "    GPIO_Write_Bit(GPIO_P3, GPIO_Pin_4, 1);\n"
 	s += "    UART_Init(UART_1, UART1_RX_P30, UART1_TX_P31, 230400, TIM1);\n"
-	# 扩展板初始化：各舵机槽位频率 50Hz
-	var exp_slots: Array = []
-	var main_pwm: Array = []
-	for i in range(jc):
-		var pin: String = joints[i].get("io", "P60")
-		var slot: int = _io_to_exp_slot(pin)
-		if slot >= 0:
-			exp_slots.append(slot)
-		else:
-			main_pwm.append({"ch": _pin_to_pwm_channel(pin), "joint": i})
+	# 扩展板槽位（P60~P77）走 ExpansionBoradControl，主控板 MP03/MP74 走 PWM_Init
+	var exp_slots: Dictionary = _exp_slot_map(joints, jc)
+	var main_pwm: Array = _main_pwm_list(joints, jc)
 	if exp_slots.size() > 0:
 		# 构建 Init_Order：舵机槽位频率 50，其余 0（维持原状）
 		var init_vals: Array = ["0", "0", "0", "0", "0", "0", "0", "0"]
-		for slot in exp_slots:
+		for slot in exp_slots.keys():
 			init_vals[slot] = "50"
-		var init_str: String = "%s, %s,\n                          %s, %s,\n                          %s, %s,\n                          %s, %s" % [init_vals[0], init_vals[1], init_vals[2], init_vals[3], init_vals[4], init_vals[5], init_vals[6], init_vals[7]]
-		s += "    // 扩展板舵机初始化（频率 50Hz）\n"
+		s += "    // 扩展板舵机初始化（频率 50Hz），未占用槽位传 0 表示维持原状\n"
 		s += "    ExpansionBoradControl(Init_Order,\n"
-		s += "                          %s);\n" % init_str
+		s += "                          %s);\n" % _exp_args(init_vals)
 		s += "    Ms_Delay(20);\n"
-		# 方向初始化
-		var dir_vals: Array = ["0", "0", "0", "0", "0", "0", "0", "0"]
-		# 按关节方向填充对应槽位
-		for i in range(jc):
-			var pin: String = joints[i].get("io", "P60")
-			var slot: int = _io_to_exp_slot(pin)
-			if slot >= 0:
-				var d: int = 1 if joints[i].get("dir", "正向") == "正向" else 0
-				dir_vals[slot] = str(d)
-		var dir_str: String = "%s, %s,\n                          %s, %s,\n                          %s, %s,\n                          %s, %s" % [dir_vals[0], dir_vals[1], dir_vals[2], dir_vals[3], dir_vals[4], dir_vals[5], dir_vals[6], dir_vals[7]]
-		s += "    // 扩展板方向初始化\n"
-		s += "    ExpansionBoradControl(Dir_Change_Order,\n"
-		s += "                          %s);\n" % dir_str
-		s += "    Ms_Delay(5);\n"
+		# 舵机转向已由 angle_to_duty 的占空比镜像实现，
+		# 若此处再发 Dir_Change_Order 会与之叠加抵消，故不发送。
+		s += "    // 舵机转向已在 angle_to_duty 中以占空比镜像实现，无需 Dir_Change_Order\n"
+		# 上电即推到初始角度，避免舵机停在上次断电位置
+		var home_vals: Array = ["0", "0", "0", "0", "0", "0", "0", "0"]
+		for slot in exp_slots.keys():
+			var idx: int = exp_slots[slot]
+			home_vals[slot] = "angle_to_duty(%d, jointHome[%d])" % [idx, idx]
+		s += "    // 上电先把各关节推到初始角度\n"
+		s += "    ExpansionBoradControl(Duty_Change_Order,\n"
+		s += "                          %s);\n" % _exp_args(home_vals)
+		s += "    Ms_Delay(20);\n"
 	# 主控板 PWM 初始化
 	if main_pwm.size() > 0:
-		s += "    // 主控板舵机 PWM 初始化\n"
+		s += "    // 主控板舵机 PWM 初始化，初始占空比 = 初始角度对应值\n"
 		for entry in main_pwm:
 			var pwm_ch: String = entry["ch"]
 			var ji: int = entry["joint"]
-			# 初始占空比 = 零点角度对应的占空比
-			s += "    PWM_Init(%s, 50, angle_to_duty(%d, jointZero[%d]));\n" % [pwm_ch, ji, ji]
+			s += "    PWM_Init(%s, 50, angle_to_duty(%d, jointHome[%d]));\n" % [pwm_ch, ji, ji]
 	s += "}\n\n"
 	return s
 
