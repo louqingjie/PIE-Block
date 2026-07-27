@@ -167,6 +167,8 @@ const INFANTRY_SIM_SCENE: String = "res://scenes/infantry_sim.tscn"
 # 注：工具链路径常量与部署/编译实现已迁到 scripts/toolchain.gd，与 AI 编辑器共用
 # 用 preload 而非 class_name：headless / 首次导入时全局类名缓存可能尚未建立
 const TC = preload("res://scripts/toolchain.gd")
+## 构形诊断（判定末端可控自由度与俯仰角是否解耦）
+const ARM_DIAG = preload("res://scripts/arm_diagnosis.gd")
 # 项目文件（.pieproj）读写与「项目类型 <-> Tab」映射表
 const PF = preload("res://scripts/project_file.gd")
 
@@ -198,6 +200,11 @@ var _frozen_config: Dictionary = {}
 var _discard_dialog_open: bool = false
 ## 最近一次静态检查的结果，进入 AI 编辑前的提示要拿它报问题数
 var _last_issues: Array = []
+## 末端俯仰角能否在不移动末端位置的前提下单独调（由构形诊断算出）。
+## 不可控时 φ 相关输入没有意义，界面提示与生成器都要据此裁剪。
+var _ik_pitch_dof: bool = false
+## _ik_pitch_dof 为假时的简短理由，显示在界面上避免学生不明所以
+var _ik_pitch_reason: String = ""
 
 
 func _ready() -> void:
@@ -1238,20 +1245,29 @@ func _collect_ik_config() -> Dictionary:
 func _check_ik_params(issues: Array) -> void:
 	var cfg: Dictionary = _collect_ik_config()
 	var jc: int = cfg["joint_count"]
-	# 连杆长度
-	for lk in ["L1", "L2"]:
-		var s: String = cfg.get(lk, "")
-		if s.is_empty():
-			issues.append({"type": "Error", "msg": "工程逆解算 %s 未设置（连杆长度）" % lk})
-		elif not s.is_valid_float():
-			issues.append({"type": "Error", "msg": "工程逆解算 %s「%s」不是合法数值" % [lk, s]})
-		elif s.to_float() <= 0:
-			issues.append({"type": "Error", "msg": "工程逆解算 %s = %s 必须 > 0" % [lk, s]})
-	# 4 轴时 L3 可选，填了则需合法
-	if jc == 4:
-		var l3: String = cfg.get("L3", "")
-		if not l3.is_empty() and (not l3.is_valid_float() or l3.to_float() < 0):
-			issues.append({"type": "Error", "msg": "工程逆解算 L3「%s」不是合法非负数值" % l3})
+	# 先重置：诊断可能因连杆长度非法而跳过，残留上次的值会让提示对不上当前构形
+	_ik_pitch_dof = false
+	_ik_pitch_reason = ""
+	# 连杆长度：已从全局 L1/L2/L3 迁移为逐关节 len
+	var joints_pre: Array = cfg["joints"]
+	var total_len: float = 0.0
+	for i in range(joints_pre.size()):
+		var ls: String = str(joints_pre[i].get("len", "")).strip_edges()
+		if ls.is_empty():
+			continue
+		if not ls.is_valid_float():
+			issues.append({"type": "Error",
+				"msg": "工程逆解算 关节%d 连杆长度「%s」不是合法数值" % [i + 1, ls]})
+		elif ls.to_float() < 0.0:
+			issues.append({"type": "Error",
+				"msg": "工程逆解算 关节%d 连杆长度 %s 不能为负" % [i + 1, ls]})
+		else:
+			total_len += ls.to_float()
+	# 全部为空或全为 0 时末端恒在底座，逆解无意义
+	if total_len <= 0.0:
+		issues.append({"type": "Error",
+			"msg": "工程逆解算 连杆长度未设置：请至少给一个关节填写「连杆mm」"
+				+"（该关节到下一个关节的距离，最后一个关节填到夹爪的距离）"})
 	# 各关节限位与初始角（全部是运动学角，即连杆实际朝向）
 	var joints: Array = cfg["joints"]
 	for i in range(joints.size()):
@@ -1308,9 +1324,22 @@ func _check_ik_params(issues: Array) -> void:
 			issues.append({"type": "Error",
 				"msg": "工程逆解算 IO %s 被多关节复用：%s" % [io, str(io_map[io])]})
 	# 预设点位：数值合法性、按键重复、可达性
-	var l1: float = cfg.get("L1", "0").to_float()
-	var l2: float = cfg.get("L2", "0").to_float()
-	var l3: float = cfg.get("L3", "0").to_float()
+	# 连杆长度由逐关节 len 折算（旧解析路径的可达域仍按 L1/L2 判定）
+	var packed: Array = CodeGenEngineerIK.new().legacy_link_lengths(cfg)
+	var l1: float = packed[0]
+	var l2: float = packed[1]
+	var l3: float = packed[2]
+	# 构形诊断：告诉学生这个臂能干什么、不能干什么。
+	# 连杆长度非法时诊断拿到的 lens 无意义，会刷一堆级联噪声，故仅在长度有效时跑。
+	# 另外 ARM_DIAG 自己也会报「连杆长度全为 0」，与上面那条重复，这里的 guard 顺带去重。
+	if total_len > 0.0:
+		var diag: Dictionary = ARM_DIAG.new().analyze(joints, jc,
+			cfg.get("config_type", 1), l1, l2, l3)
+		for it in diag.get("issues", []):
+			issues.append({"type": it.get("type", "Warn"),
+				"msg": "机械臂构形：%s" % str(it.get("msg", ""))})
+		_ik_pitch_dof = bool(diag.get("pitch_dof", false))
+		_ik_pitch_reason = str(diag.get("pitch_reason", ""))
 	var presets: Array = cfg["presets"]
 	var reach_min: float = abs(l1 - l2)
 	var reach_max: float = l1 + l2
@@ -1407,11 +1436,16 @@ func _check_ik_params(issues: Array) -> void:
 		if plus_key != "不使用" and plus_key == minus_key:
 			issues.append({"type": "Error",
 				"msg": "工程逆解算 末端%s 的正/负方向使用了同一按键「%s」" % [ax_name, plus_key]})
-		# 当前构型不使用的轴：配置了按键也不会生成代码
-		var unused: bool = (jc < 3 and i == 2) or (jc < 4 and i == 3)
+		# 当前构型不使用的轴：配置了按键也不会生成代码。
+		# 第 4 项是末端俯仰角，用诊断结果判断而非关节数——
+		# 关节数够但转轴搭配不对时它同样不可控。
+		var unused: bool = (jc < 3 and i == 2) or (i == 3 and not _ik_pitch_dof)
 		if unused and (plus_key != "不使用" or minus_key != "不使用"):
+			var why: String = "%d轴构型不使用末端%s" % [jc, ax_name]
+			if i == 3 and not _ik_pitch_reason.is_empty():
+				why = "末端%s无法单独控制（%s）" % [ax_name, _ik_pitch_reason]
 			issues.append({"type": "Warn",
-				"msg": "工程逆解算 %d轴构型不使用末端%s，已配置的按键不会生效" % [jc, ax_name]})
+				"msg": "工程逆解算 %s，已配置的按键不会生效" % why})
 			continue
 		# 跨轴按键冲突
 		for pair in [[plus_key, "末端%s+" % ax_name], [minus_key, "末端%s-" % ax_name]]:
@@ -1431,13 +1465,15 @@ func _check_ik_params(issues: Array) -> void:
 		if km_used.has(pk):
 			issues.append({"type": "Error",
 				"msg": "工程逆解算 按键「%s」既用于预设点位 P%d 又用于%s" % [pk, i + 1, km_used[pk]]})
-	# 4 轴时姿态角没有任何输入通道，腕部将固定在初始姿态
-	if jc >= 4 and keymove.size() > 3:
+	# 俯仰角可控却没配按键时提醒；判据用诊断结果而非关节数，
+	# 因为「4 轴」不等于「俯仰角可调」（例如四个关节全是 Pitch 就不行）
+	if _ik_pitch_dof and keymove.size() > 3:
 		var phi_plus: String = keymove[3].get("plus", "不使用")
 		var phi_minus: String = keymove[3].get("minus", "不使用")
 		if phi_plus == "不使用" and phi_minus == "不使用":
 			issues.append({"type": "Warn",
-				"msg": "工程逆解算 4轴构型未配置末端φ的加减按键，腕部姿态只能由预设点位改变"})
+				"msg": "工程逆解算 这个构形的末端俯仰角可以单独调，但没配加减按键，"
+					+"抓取角度只能由预设点位改变"})
 
 
 ## 解析预设坐标文本，非法或留空按 0 处理（合法性另有检查负责报错）

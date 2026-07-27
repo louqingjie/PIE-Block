@@ -64,9 +64,17 @@ func _test_config(cg, config_type: int, jc: int, label: String) -> void:
 	# 必需的头文件与宏
 	_check("%s 包含 main.h" % label, code.find("#include \"main.h\"") >= 0)
 	_check("%s 包含 MATH.H" % label, code.find("#include \"MATH.H\"") >= 0)
-	_check("%s 定义 L1/L2" % label, code.find("#define L1") >= 0 and code.find("#define L2") >= 0)
+	# 连杆长度已改由 jointLen[] 表提供，L1/L2/L3 与 ELBOW_SIGN 已完全不参与计算。
+	# 它们不能再出现在生成代码里：编译器不会为未使用的宏报警，
+	# 但「参数区摆着 #define L1 120.00f、实际逆解读的是 jointLen[]」
+	# 会让学生改错地方。
+	_check("%s 不再定义 L1/L2/L3 死宏" % label,
+		code.find("#define L1") < 0 and code.find("#define L2") < 0
+		and code.find("#define L3") < 0)
+	_check("%s 不再定义 ELBOW_SIGN 死宏" % label,
+		code.find("ELBOW_SIGN") < 0)
 	_check("%s 定义 JOINT_COUNT %d" % [label, jc], code.find("#define JOINT_COUNT %d" % jc) >= 0)
-	_check("%s 定义 ELBOW_SIGN" % label, code.find("#define ELBOW_SIGN") >= 0)
+
 	# 必需的函数（定义签名须与前置声明一致）
 	_check("%s 有 angle_to_duty" % label, code.find("uint16_t angle_to_duty(int joint, float angle)") >= 0)
 	_check("%s 有 ik_solve" % label, code.find("void ik_solve(%s)" % _ik_sig(jc)) >= 0)
@@ -91,14 +99,31 @@ func _test_config(cg, config_type: int, jc: int, label: String) -> void:
 		and code.find("angle - 90.0f") < 0)
 	# 不应残留未被读取的 valueOfKey
 	_check("%s 无死变量 valueOfKey" % label, code.find("valueOfKey") < 0)
+	# 逆解已换成雅可比转置数值解，取代 2/3/4 轴各一套的解析公式。
+	# 转轴与连杆长度两张表是它的全部输入。
+	_check("%s 有 jointAxis 表" % label, code.find("const float jointAxis[") >= 0)
+	_check("%s 有 jointLen 表" % label, code.find("const float jointLen[") >= 0)
+	_check("%s 有矩阵辅助函数" % label,
+		code.find("void mat_vec(") >= 0 and code.find("void axis_rot(") >= 0
+		and code.find("void mat_mul(") >= 0)
+	# FK 中间结果必须在 xdata：C251 单函数局部变量段上限 128 字节
+	_check("%s 中间结果在 xdata" % label,
+		code.find("static float xdata ikPts[") >= 0
+		and code.find("static float xdata ikBasis[") >= 0)
+	# α 必须自适应（分子是关节空间的 |J^T e|²），不能是固定值
+	_check("%s alpha 自适应" % label,
+		code.find("num += ikJte[k] * ikJte[k]") >= 0
+		and code.find("alpha = num / den") >= 0)
+	_check("%s 有单步限幅" % label, code.find("IK_MAX_STEP_DEG / maxStep") >= 0)
 	# 4 轴必须用 L3 做腕部补偿，且姿态角可由按键调整
 	if jc >= 4:
-		_check("4轴 定义 L3", code.find("#define L3") >= 0)
-		_check("4轴 ik_solve 使用 L3", code.find("r = r - L3 * cos(phi_rad)") >= 0)
 		_check("4轴 有 φ 按键增量", code.find("targetPhi += KEYMOVE_PHI_SPEED") >= 0)
-	# 3/4 轴的钳位需防除零
-	if jc >= 3:
-		_check("%s ik_solve 防除零" % label, code.find("if (rz < IK_EPS)") >= 0)
+		# 俯仰角纳入解算：权重宏 + asin 求仰角 + 梯度项
+		_check("4轴 有 PHI_WEIGHT", code.find("#define PHI_WEIGHT") >= 0)
+		_check("4轴 用 asin 求仰角", code.find("asin(az)") >= 0)
+		_check("4轴 有 φ 梯度项", code.find("gk * PHI_WEIGHT") >= 0)
+	# 可达性拦截不能再依赖 ik_reachable（雅可比法下它只表示「这步有没有靠近」）
+	_check("%s 用臂展判超界" % label, code.find("ik_target_too_far(") >= 0)
 	# C89：变量声明必须在可执行语句之前
 	_check("%s 符合 C89 声明顺序" % label, _check_c89_decl_order(code))
 	# 写入文件供 Keil 编译验证
@@ -142,20 +167,36 @@ func _test_joy_axis(cg) -> void:
 	_check("右Y->末端Z 取竖直轴", cg.parse_joy_axis("右Y->末端Z") == [1, 1])
 
 
-## 初始角为负的构型须取负肘部分支，保证正解起点与逆解自洽
+## 上电起点自洽：main() 里 target 的初值必须等于初始角对应的实际末端。
+##
+## 原来这里测的是 ELBOW_SIGN（肘部分支）。那是解析解特有的概念——
+## 余弦定理有两个解，得靠符号挑一个。雅可比法从当前姿态起解，
+## 天然待在初始角所在的那一支，不需要也没有这个参数。
+## 换成测「上电首帧不跳变」：target 初值与初始角末端不符会导致关节猛冲。
 func _test_negative_elbow(cg) -> void:
-	print("\n--- 肘部分支自洽性 ---")
-	# 正初始角：正分支
-	var pos_cfg: Dictionary = _make_cfg(1, 3, [])
-	var pos_code: String = cg.generate(pos_cfg)
-	_check("正初始角 ELBOW_SIGN 为 +1", pos_code.find("#define ELBOW_SIGN  1.0f") >= 0)
-	_check("正初始角 正反解自洽", _round_trip(cg, pos_cfg, 1.0))
-	# 负初始角：负分支
-	var neg_cfg: Dictionary = _make_cfg(1, 3, [])
-	neg_cfg["joints"][2]["zero"] = "-60"
-	var neg_code: String = cg.generate(neg_cfg)
-	_check("负初始角 ELBOW_SIGN 为 -1", neg_code.find("#define ELBOW_SIGN  -1.0f") >= 0)
-	_check("负初始角 正反解自洽", _round_trip(cg, neg_cfg, -1.0))
+	print("\n--- 上电起点自洽性 ---")
+	for zero in ["45", "-60"]:
+		var cfg: Dictionary = _make_cfg(1, 3, [])
+		cfg["joints"][2]["zero"] = zero
+		var code: String = cg.generate(cfg)
+		# 生成代码里的 target 初值
+		var idx: int = code.find("targetX = ")
+		_check("初始角%s 生成 target 初值" % zero, idx >= 0)
+		if idx < 0:
+			continue
+		var line: String = code.substr(idx, code.find("\n", idx) - idx)
+		# 与 GDScript 侧按初始角正推的末端比对
+		var jc: int = cfg["joint_count"]
+		var lens: Array = cg.legacy_link_lengths(cfg)
+		var home_ang: Array = cg._joint_home_angles(cfg["joints"])
+		var chain: Dictionary = cg.fk_chain(home_ang, cfg["joints"], jc,
+			cfg["config_type"], lens[0], lens[1], lens[2])
+		var pts: Array = chain["points"]
+		var tip: Vector3 = pts[pts.size() - 1]
+		var ok: bool = line.contains("%.2ff" % tip.x) and line.contains("%.2ff" % tip.y)
+		if not ok:
+			print("      生成 %s / 期望 x=%.2f y=%.2f" % [line, tip.x, tip.y])
+		_check("初始角%s target 初值 == 初始姿态末端" % zero, ok)
 
 
 ## 安装中位朝向：运动学角与舵机指令角分离

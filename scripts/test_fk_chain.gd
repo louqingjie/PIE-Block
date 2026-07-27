@@ -32,13 +32,14 @@ func _initialize() -> void:
 	_test_axes_are_unit()
 	_test_chain_segment_lengths()
 	_test_up_to_max_joints()
+	_test_legacy_link_lengths()
 	print("\n=== 结果: %s ===" % ("全部通过 ✓" if _fail == 0 else "%d 项失败 ✗" % _fail))
 	quit(0 if _fail == 0 else 1)
 
 
 ## 未填 axis 时须按历史构型推断
 func _test_axis_defaults() -> void:
-	var blank: Array = [{}, {}, {}, {}]
+	var blank: Array = [ {}, {}, {}, {}]
 	_check("2轴默认轴 = [Yaw, Yaw]",
 		_cg.joint_axes(blank, 2, 0) == ["Yaw", "Yaw"],
 		str(_cg.joint_axes(blank, 2, 0)))
@@ -49,12 +50,12 @@ func _test_axis_defaults() -> void:
 		_cg.joint_axes(blank, 4, 2) == ["Yaw", "Pitch", "Pitch", "Pitch"],
 		str(_cg.joint_axes(blank, 4, 2)))
 	# 显式指定应覆盖推断
-	var custom: Array = [{"axis": "Roll"}, {"axis": "Yaw"}, {"axis": "Pitch"}]
+	var custom: Array = [ {"axis": "Roll"}, {"axis": "Yaw"}, {"axis": "Pitch"}]
 	_check("显式 axis 覆盖默认",
 		_cg.joint_axes(custom, 3, 1) == ["Roll", "Yaw", "Pitch"],
 		str(_cg.joint_axes(custom, 3, 1)))
 	# 非法值回退到推断，不应崩
-	var bad: Array = [{"axis": "香蕉"}, {"axis": ""}]
+	var bad: Array = [ {"axis": "香蕉"}, {"axis": ""}]
 	_check("非法 axis 回退到推断",
 		_cg.joint_axes(bad, 2, 0) == ["Yaw", "Yaw"],
 		str(_cg.joint_axes(bad, 2, 0)))
@@ -62,7 +63,7 @@ func _test_axis_defaults() -> void:
 
 ## 未填 len 时须回退到 L1/L2/L3
 func _test_length_defaults() -> void:
-	var blank: Array = [{}, {}, {}, {}]
+	var blank: Array = [ {}, {}, {}, {}]
 	# 2 轴：每个关节后都有连杆
 	_check("2轴默认连杆 = [L1, L2]",
 		_cg.joint_lengths(blank, 2, 0, 100.0, 80.0, 30.0) == [100.0, 80.0],
@@ -75,7 +76,7 @@ func _test_length_defaults() -> void:
 		_cg.joint_lengths(blank, 4, 2, 100.0, 80.0, 30.0) == [0.0, 100.0, 80.0, 30.0],
 		str(_cg.joint_lengths(blank, 4, 2, 100.0, 80.0, 30.0)))
 	# 显式 len 覆盖
-	var custom: Array = [{"len": "11"}, {"len": "22"}]
+	var custom: Array = [ {"len": "11"}, {"len": "22"}]
 	_check("显式 len 覆盖默认",
 		_cg.joint_lengths(custom, 2, 0, 100.0, 80.0, 30.0) == [11.0, 22.0],
 		str(_cg.joint_lengths(custom, 2, 0, 100.0, 80.0, 30.0)))
@@ -83,7 +84,7 @@ func _test_length_defaults() -> void:
 
 ## 【核心】退化验证：老构型下 fk_chain 末端必须与现有 FK 逐位一致
 func _test_degeneracy() -> void:
-	var blank: Array = [{}, {}, {}, {}]
+	var blank: Array = [ {}, {}, {}, {}]
 	var cases: Array = [
 		{"t": 0, "jc": 2, "ang": [0.0, 0.0]},
 		{"t": 0, "jc": 2, "ang": [30.0, 60.0]},
@@ -120,7 +121,7 @@ func _test_degeneracy() -> void:
 ## Roll 是绕连杆自身轴自转，不应改变末端位置
 func _test_roll_no_position_change() -> void:
 	# 单个 Roll 关节：无论转多少度，末端都在 +X 方向 len 处
-	var joints: Array = [{"axis": "Roll", "len": "100"}]
+	var joints: Array = [ {"axis": "Roll", "len": "100"}]
 	var base: Vector3 = _cg.fk_chain([0.0], joints, 1, 1, 0.0, 0.0, 0.0)["points"][1]
 	for a in [30.0, 90.0, 180.0, -60.0]:
 		var p: Vector3 = _cg.fk_chain([a], joints, 1, 1, 0.0, 0.0, 0.0)["points"][1]
@@ -128,7 +129,7 @@ func _test_roll_no_position_change() -> void:
 			"实际 %s 期望 %s" % [str(p), str(base)])
 	# Roll 在链中间：它会改变后续关节的转轴朝向，但自身不移动末端。
 	# Roll=0 与 Roll=90 时，若后续是 Pitch，末端位置应当不同（证明 Roll 有效）
-	var chain2: Array = [{"axis": "Roll", "len": "0"}, {"axis": "Pitch", "len": "100"}]
+	var chain2: Array = [ {"axis": "Roll", "len": "0"}, {"axis": "Pitch", "len": "100"}]
 	var p0: Vector3 = _cg.fk_chain([0.0, 45.0], chain2, 2, 1, 0.0, 0.0, 0.0)["points"][2]
 	var p90: Vector3 = _cg.fk_chain([90.0, 45.0], chain2, 2, 1, 0.0, 0.0, 0.0)["points"][2]
 	_check("Roll 改变后续关节的转动平面", p0.distance_to(p90) > 1.0,
@@ -137,7 +138,7 @@ func _test_roll_no_position_change() -> void:
 
 ## Yaw 绕竖直轴转，末端应在水平面内画圆（高度不变）
 func _test_yaw_swings_horizontally() -> void:
-	var joints: Array = [{"axis": "Yaw", "len": "100"}]
+	var joints: Array = [ {"axis": "Yaw", "len": "100"}]
 	for a in [0.0, 45.0, 90.0, 180.0]:
 		var p: Vector3 = _cg.fk_chain([a], joints, 1, 1, 0.0, 0.0, 0.0)["points"][1]
 		_check("Yaw %.0f° 高度不变" % a, _near(p.z, 0.0),
@@ -151,7 +152,7 @@ func _test_yaw_swings_horizontally() -> void:
 
 ## Pitch 绕水平轴转，正角度应抬升末端（与历史构型一致）
 func _test_pitch_lifts() -> void:
-	var joints: Array = [{"axis": "Pitch", "len": "100"}]
+	var joints: Array = [ {"axis": "Pitch", "len": "100"}]
 	var p90: Vector3 = _cg.fk_chain([90.0], joints, 1, 1, 0.0, 0.0, 0.0)["points"][1]
 	_check("Pitch +90° 末端朝上", _near(p90.z, 100.0), "z=%.4f（应为 +100）" % p90.z)
 	var p45: Vector3 = _cg.fk_chain([45.0], joints, 1, 1, 0.0, 0.0, 0.0)["points"][1]
@@ -184,6 +185,83 @@ func _test_axes_are_unit() -> void:
 	_check("末端姿态是正交基",
 		abs(tb.x.dot(tb.y)) < 1e-5 and abs(tb.y.dot(tb.z)) < 1e-5
 			and abs(tb.x.length() - 1.0) < 1e-5)
+
+
+## 逐关节 len -> L1/L2/L3 的折算。
+## 配置界面已删掉全局 L1/L2/L3，若下游仍读 cfg["L1"] 就会拿不到值、
+## 静默回退到默认 100mm——用户填的长度不生效。这组断言守住这条链路。
+func _test_legacy_link_lengths() -> void:
+	# 2 关节：两段直接对应 L1/L2
+	var c2: Dictionary = {"joint_count": 2, "joints": [
+		{"len": "150"}, {"len": "90"}]}
+	_check("折算 2关节 -> [150, 90, 0]",
+		_cg.legacy_link_lengths(c2) == [150.0, 90.0, 0.0],
+		str(_cg.legacy_link_lengths(c2)))
+	# 3 关节：跳过底座那段（len[0]=0）
+	var c3: Dictionary = {"joint_count": 3, "joints": [
+		{"len": "0"}, {"len": "120"}, {"len": "80"}]}
+	_check("折算 3关节 -> [120, 80, 0]",
+		_cg.legacy_link_lengths(c3) == [120.0, 80.0, 0.0],
+		str(_cg.legacy_link_lengths(c3)))
+	# 4 关节：多一段腕部
+	var c4: Dictionary = {"joint_count": 4, "joints": [
+		{"len": "0"}, {"len": "120"}, {"len": "90"}, {"len": "40"}]}
+	_check("折算 4关节 -> [120, 90, 40]",
+		_cg.legacy_link_lengths(c4) == [120.0, 90.0, 40.0],
+		str(_cg.legacy_link_lengths(c4)))
+	# 与 joint_lengths 互为逆运算：折算出的 L 再喂回去应还原原始 len
+	var packed: Array = _cg.legacy_link_lengths(c4)
+	var back: Array = _cg.joint_lengths([ {}, {}, {}, {}], 4, 2,
+		packed[0], packed[1], packed[2])
+	_check("折算与 joint_lengths 互逆", back == [0.0, 120.0, 90.0, 40.0], str(back))
+	# 一个 len 都没填时回退到旧的 L1/L2/L3 字段（保证老项目文件仍能打开）
+	var old: Dictionary = {"joint_count": 3, "joints": [ {}, {}, {}],
+		"L1": "111", "L2": "77", "L3": "22"}
+	_check("无 len 时回退旧 L1/L2/L3",
+		_cg.legacy_link_lengths(old) == [111.0, 77.0, 22.0],
+		str(_cg.legacy_link_lengths(old)))
+	# 两者都没有时给出可用默认值，不能返回 0（会导致余弦定理除零）
+	var empty: Dictionary = {"joint_count": 3, "joints": [ {}, {}, {}]}
+	var e: Array = _cg.legacy_link_lengths(empty)
+	_check("全空时 L1/L2 为正", e[0] > 0.0 and e[1] > 0.0, str(e))
+	# 6 关节：旧路径只取前几段，但不能崩
+	var c6: Dictionary = {"joint_count": 6, "joints": [
+		{"len": "0"}, {"len": "100"}, {"len": "80"}, {"len": "0"},
+		{"len": "40"}, {"len": "25"}]}
+	var r6: Array = _cg.legacy_link_lengths(c6)
+	_check("折算 6关节 不崩且 L1/L2 为正",
+		r6.size() == 3 and r6[0] > 0.0 and r6[1] > 0.0, str(r6))
+	# generate() 必须真的用上逐关节 len。
+	# 连杆长度现在由 jointLen[] 表提供（L1/L2/L3 宏已随旧解析解一起删除），
+	# 故改断言这张表的内容会跟着 len 变。
+	var cfg_a: Dictionary = _mk_gen_cfg(150.0)
+	var cfg_b: Dictionary = _mk_gen_cfg(220.0)
+	var code_a: String = _cg.generate(cfg_a)
+	var code_b: String = _cg.generate(cfg_b)
+	_check("generate 使用逐关节 len（150 进 jointLen）",
+		code_a.contains("150.00f") and code_a.contains("const float jointLen["),
+		"jointLen 表里没有 150")
+	_check("generate 使用逐关节 len（220 进 jointLen）",
+		code_b.contains("220.00f") and not code_b.contains("150.00f"),
+		"jointLen 表未跟着改")
+
+
+## 构造一份最小可生成的 3 轴配置，第 2 关节连杆长度为 first_len
+func _mk_gen_cfg(first_len: float) -> Dictionary:
+	return {
+		"joint_count": 3, "config_type": 1,
+		"joints": [
+			{"io": "P74", "dir": "正向", "axis": "Yaw", "len": "0",
+				"zero": "0", "min": "-90", "max": "90"},
+			{"io": "P75", "dir": "正向", "axis": "Pitch", "len": "%.2f" % first_len,
+				"zero": "20", "min": "-90", "max": "90"},
+			{"io": "P76", "dir": "正向", "axis": "Pitch", "len": "80",
+				"zero": "30", "min": "-90", "max": "90"},
+		],
+		"presets": [],
+		"joy_x": "右X->末端X", "joy_y": "右Y->末端Y", "joy_z": "右X->末端Z",
+		"joy_scale": "5", "keymove_speed": "2", "keymove": [],
+	}
 
 
 ## 5/6 关节（超出旧解析路径的 4 关节上限）必须正常工作。

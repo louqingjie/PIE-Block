@@ -99,6 +99,12 @@ var _l3: float = 0.0
 var _elbow: float = 1.0
 var _joints: Array = []
 var _presets: Array = []
+## 末端俯仰角在当前构形上能否「位置不动、只转 φ」。
+## 与生成器的 _phi_controllable 同一判据，不可控时 φ 不参与逆解。
+var _phi_dof: bool = false
+## 判定「末端到位」的容差(mm)。数值解不会精确命中，
+## 超过这个距离才认为目标够不着（连杆染红 + 状态行提示）。
+const IK_REACHED_TOL: float = 2.0
 
 # ------------------------------------------------------------------ 运行状态
 var _mode: int = Mode.IK
@@ -229,9 +235,14 @@ func _on_back_pressed() -> void:
 ## 把仿真里的编辑结果同步回 _cfg 并通知 ui.gd。
 ## 只写用户能在这里改的字段，IO/方向/摇杆映射等仍归配置界面管。
 func _emit_config_changed() -> void:
-	_cfg["L1"] = "%.2f" % _l1
-	_cfg["L2"] = "%.2f" % _l2
-	_cfg["L3"] = "%.2f" % _l3
+	# 连杆长度写回逐关节 len（配置界面已不再有全局 L1/L2/L3）。
+	# 映射与 legacy_link_lengths 互为逆运算：
+	#   2 关节：len[0]=L1, len[1]=L2
+	#   3 关节以上：底座那段为 0，len[1]=L1, len[2]=L2, len[3]=L3
+	var seg: Array = ([_l1, _l2] if _jc <= 2 else [0.0, _l1, _l2, _l3])
+	for i in range(min(_jc, _joints.size())):
+		if i < seg.size():
+			_joints[i]["len"] = "%.2f" % float(seg[i])
 	_cfg["joints"] = _joints.duplicate(true)
 	_cfg["presets"] = _presets.duplicate(true)
 	config_changed.emit(_cfg.duplicate(true))
@@ -241,9 +252,12 @@ func _emit_config_changed() -> void:
 func _apply_config() -> void:
 	_config_type = int(_cfg.get("config_type", 0))
 	_jc = int(_cfg.get("joint_count", _jc_from_type(_config_type)))
-	_l1 = _cfg_float("L1", 100.0)
-	_l2 = _cfg_float("L2", 100.0)
-	_l3 = _cfg_float("L3", 0.0)
+	# 连杆长度已从全局 L1/L2/L3 迁移为逐关节 len，
+	# 这里折算回旧解析路径要用的三个量（阶段二换雅可比后一并去掉）
+	var packed_lens: Array = _cg.legacy_link_lengths(_cfg)
+	_l1 = packed_lens[0]
+	_l2 = packed_lens[1]
+	_l3 = packed_lens[2]
 	# 连杆长度必须为正，否则余弦定理除零
 	if _l1 <= 0.0:
 		_l1 = 100.0
@@ -265,10 +279,15 @@ func _apply_config() -> void:
 	while _presets.size() < 4:
 		_presets.append({"key": "A", "x": "", "y": "", "z": "", "phi": "", "enabled": false})
 	_elbow = _cg._elbow_sign(_joints, _config_type)
+	# 末端俯仰角能否单独控制。与生成器同一判据，
+	# 不可控时 φ 不参与逆解，界面上也不该让学生以为能调。
+	var diag = load("res://scripts/arm_diagnosis.gd").new()
+	var d: Dictionary = diag.analyze(_joints, _jc, _config_type, _l1, _l2, _l3)
+	_phi_dof = bool(d.get("pitch_dof", false))
 	# 初始姿态：与生成的 C 代码上电起点一致
 	_fk_angles = _cg._joint_home_angles(_joints)
-	var home: Array = _cg.forward_kinematics_angles(_fk_angles, _l1, _l2, _l3, _config_type)
-	_target = [home[0], home[1], home[2], home[3]]
+	_target = _tip_targets(_fk_angles.slice(0, _jc))
+	_angles = _fk_angles.slice(0, _jc)
 	_clear_trail()
 	_rebuild_arm()
 	_rebuild_static_geometry()
@@ -765,6 +784,38 @@ func _build_axes() -> void:
 
 
 # ------------------------------------------------------------------ 求解 & 渲染
+## 由关节角算出末端目标 [x, y, z, φ]，与 _target 的布局一致。
+## φ 是末端朝向的仰角（与生成的 C 代码同一定义），不是 θ1+θ2+θ3。
+func _tip_targets(angles: Array) -> Array:
+	var chain: Dictionary = _cg.fk_chain(angles, _joints, _jc, _config_type,
+		_l1, _l2, _l3)
+	var pts: Array = chain["points"]
+	var tip: Vector3 = pts[pts.size() - 1]
+	return [tip.x, tip.y, tip.z, _cg.tip_pitch_deg(chain)]
+
+
+## 传给逆解的目标俯仰角。φ 在当前构形上不可控时返回 NAN，
+## 逆解据此只解位置 —— 与生成的 C 代码「不声明 targetPhi」的裁剪一致。
+func _target_phi() -> float:
+	if not _phi_dof:
+		return NAN
+	return _target[3]
+
+
+## 目标是否超出臂展。复现生成代码里的 ik_target_too_far：
+## 摇杆是增量累加的，不拦住的话长推会让目标无限飘远，
+## 松手后末端要很久才能追回来。
+func _target_too_far() -> bool:
+	var lens: Array = _cg.joint_lengths(_joints, _jc, _config_type, _l1, _l2, _l3)
+	var reach: float = 0.0
+	for v in lens:
+		reach += absf(float(v))
+	var limit: float = reach * _cg.IK_REACH_MARGIN
+	var d: Vector3 = Vector3(_target[0], _target[1],
+		_target[2] if _jc >= 3 else 0.0)
+	return d.length_squared() > limit * limit
+
+
 ## 依据当前模式算出关节角，钳位，然后更新 3D
 func _recompute() -> void:
 	if _mode == Mode.FK:
@@ -773,17 +824,24 @@ func _recompute() -> void:
 		_angles = lim["angles"]
 		_clamped = lim["clamped"]
 		_reachable = true
-		var fk: Array = _cg.forward_kinematics_angles(_angles, _l1, _l2, _l3, _config_type)
-		_target = [fk[0], fk[1], fk[2], fk[3]]
+		_target = _tip_targets(_angles)
 	else:
-		var res: Dictionary = _cg.solve_ik_checked(_target[0], _target[1], _target[2], _target[3],
-			_l1, _l2, _l3, _config_type, _jc, _elbow)
-		_reachable = res["reachable"]
+		# 雅可比数值逆解：从当前姿态起解，与真机 ik_solve 同一套数学。
+		# 仿真里迭代到收敛（真机是每周期走一步，靠连续周期逼近）。
+		var res: Dictionary = _cg.solve_ik_jacobian_converge(
+			Vector3(_target[0], _target[1], _target[2]), _target_phi(),
+			_angles, _joints, _jc, _config_type, _l1, _l2, _l3)
 		var lim2: Dictionary = _cg.clamp_angles_to_limits(res["angles"], _joints)
 		_angles = lim2["angles"]
 		_clamped = lim2["clamped"]
+		# 「可达」= 钳位后的实际末端确实落在目标附近。
+		# 不能用逆解返回的 reachable：那表示「这一步有没有靠近目标」，
+		# 收敛完成时反而是假；也不能用钳位前的误差，限位会把末端推开。
+		var actual: Array = _tip_targets(_angles)
+		_reachable = Vector3(actual[0] - _target[0], actual[1] - _target[1],
+			(actual[2] - _target[2]) if _jc >= 3 else 0.0).length() < IK_REACHED_TOL
 		# FK 滑块跟着走，切模式时姿态连续
-		for i in range(min(_angles.size(), 4)):
+		for i in range(min(_angles.size(), _fk_angles.size())):
 			_fk_angles[i] = _angles[i]
 	_render_arm()
 	_sync_param_widgets()
@@ -1609,7 +1667,7 @@ func _step_controller(delta: float) -> void:
 	var moved: bool = false
 	for _s in range(steps):
 		var last: Array = _target.duplicate()
-		var last_reachable: bool = _reachable
+
 		# 摇杆增量：与 C 端 valueOfRoker[..]/2047 * JOY_SCALE 等价
 		var joy_vals: Array = [
 			_joy_axis_value(str(_cfg.get("joy_x", "右X->末端X"))),
@@ -1627,10 +1685,10 @@ func _step_controller(delta: float) -> void:
 				if _keys_down.has("%d:%d" % [i, int(sv)]):
 					# φ 用 KEYMOVE_PHI_SPEED，生成器里其数值等于 keymove_speed
 					_target[i] += sv * key_speed
-		var res: Dictionary = _cg.solve_ik_checked(_target[0], _target[1], _target[2], _target[3],
-			_l1, _l2, _l3, _config_type, _jc, _elbow)
-		# 越界回退：仅当上次目标可达时才退，否则不可达的起点会把目标永久卡死
-		if not res["reachable"] and last_reachable:
+		# 目标超出臂展就撤回本次增量，复现生成代码里的 ik_target_too_far。
+		# 不能用逆解返回的 reachable 判断：雅可比法下它表示「这一步有没有靠近」，
+		# 正常收敛途中也会为假，拿它回退会让末端根本动不了。
+		if _target_too_far():
 			_target = last
 		moved = true
 	if moved:

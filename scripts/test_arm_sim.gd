@@ -106,11 +106,19 @@ func _test_config(packed: PackedScene, config_type: int, jc: int) -> void:
 	var link0: Node = arm_root.get_child(0)
 	_check("%s 越界 -> 连杆用告警材质" % tag,
 		link0 is MeshInstance3D and link0.material_override == sim._mat_link_bad)
-	# 回到可达目标后材质恢复
-	sim._target = [120.0, 0.0, 30.0, 0.0]
+	# 回到可达目标后材质恢复。
+	# 目标点由 FK 正推得出，保证它在限位内确实达得到 —— 手写坐标容易
+	# 挑到「几何上够得着但需要关节超出 ±90° 限位」的点（踩过：
+	# (120,0,30) 对 L1=L2=100 需要肘部弯超 90°，数值解会停在 17mm 外）
+	var reach_pose: Array = ([30.0, -40.0] if config_type == 0 else [0.0, 20.0, -50.0])
+	while reach_pose.size() < sim._jc:
+		reach_pose.append(0.0)
+	var reach_tip: Array = sim._tip_targets(reach_pose.slice(0, sim._jc))
+	sim._target = [reach_tip[0], reach_tip[1], reach_tip[2], reach_tip[3]]
 	sim._recompute()
 	_check("%s 恢复可达 -> 连杆用常规材质" % tag,
-		link0 is MeshInstance3D and link0.material_override == sim._mat_link)
+		link0 is MeshInstance3D and link0.material_override == sim._mat_link,
+		"末端误差 %s" % str(sim._target))
 	# 轨迹缓冲不超上限
 	for i in range(400):
 		sim._push_trail(Vector3(float(i) * 0.001, 0, 0))
@@ -178,9 +186,15 @@ func _test_calibration(sim: Node, config_type: int, jc: int, tag: String) -> voi
 	_check("%s 改 L1 写入" % tag, abs(sim._l1 - 200.0) < 1e-6)
 	_check("%s 改 L1 触发 config_changed" % tag, emitted.size() > 0)
 	if emitted.size() > 0:
-		_check("%s config_changed 带新 L1" % tag,
-			str(emitted[-1].get("L1", "")).to_float() == 200.0,
-			"实际 %s" % str(emitted[-1].get("L1", "")))
+		# 连杆长度已迁移为逐关节 len（配置界面不再有全局 L1/L2/L3）。
+		# 2 关节时 L1 落在 len[0]，3 关节以上落在 len[1]（底座那段为 0）。
+		var em_joints: Array = emitted[-1].get("joints", [])
+		var li: int = 0 if jc <= 2 else 1
+		var got_len: float = -1.0
+		if em_joints.size() > li:
+			got_len = str(em_joints[li].get("len", "")).to_float()
+		_check("%s config_changed 带新连杆长度" % tag, abs(got_len - 200.0) < 0.01,
+			"len[%d]=%s" % [li, str(got_len)])
 	# 第一段连杆长度应等于新 L1（经坐标缩放）
 	var link0: Node = arm_root.get_child(0)
 	var j0: Node = arm_root.get_child(jc if config_type >= 2 else 2)
@@ -433,7 +447,12 @@ func _test_gripper(sim: Node, config_type: int, jc: int, tag: String) -> void:
 	sim._recompute()
 	_check("%s 越界时夹爪用告警材质" % tag,
 		root.get_child(0).material_override == sim._mat_link_bad)
-	sim._target = [120.0, 0.0, 30.0, 0.0]
+	# 目标由 FK 正推，保证限位内确实达得到（手写坐标易挑到需超限位的点）
+	var ok_pose: Array = ([30.0, -40.0] if jc <= 2 else [0.0, 20.0, -50.0])
+	while ok_pose.size() < sim._jc:
+		ok_pose.append(0.0)
+	var ok_tip: Array = sim._tip_targets(ok_pose.slice(0, sim._jc))
+	sim._target = [ok_tip[0], ok_tip[1], ok_tip[2], ok_tip[3]]
 	sim._recompute()
 	_check("%s 恢复后夹爪用常规材质" % tag,
 		root.get_child(0).material_override == sim._mat_grip)

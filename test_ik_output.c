@@ -2,15 +2,19 @@
 #include "main.h"
 #include "MATH.H"
 // ========================= 参数区 =========================
-// 机械臂构型：4轴（3轴+腕部俯仰）
-#define L1   100.00f   // 大臂长度(mm)
-#define L2   80.00f   // 小臂长度(mm)
-#define L3   30.00f   // 腕部连杆长度(mm)
+// 关节数：4。各关节的转轴与连杆长度见下方 jointAxis / jointLen 两张表。
+// 逆解算是通用的雅可比法，不假定任何特定构型。
 #define JOINT_COUNT 4
-// 肘部弯曲方向（+1 / -1），与关节初始角符号一致
-#define ELBOW_SIGN  1.0f
-// 逆解可达性判定的最小半径，避免除零
+// 逆解算除零保护阈值
 #define IK_EPS  0.001f
+// 弧度与度的换算
+#define DEG_TO_RAD  0.0174532925f
+#define RAD_TO_DEG  57.29577951f
+// 逆解单步最大转动量(度)：防大误差时末端猛冲，也避免线性近似失效
+#define IK_MAX_STEP_DEG  4.0f
+// 姿态误差权重(mm/rad)，取连杆总长：
+// 让 1 弧度的俯仰角误差与一个臂长的位置误差等重，两者才能相加
+#define PHI_WEIGHT  210.00f
 // 舵机占空比参数（50Hz）
 // 关节角以舵机中位为 0°，行程 ±90°（对应物理 0~180°）
 #define SERVO_MID_DUTY  750   // 0°
@@ -21,7 +25,7 @@
 #define JOY_SCALE  5.00f
 // 按键长按时末端每周期位移(mm)
 #define KEYMOVE_SPEED  2.00f
-// 按键长按时末端姿态角每周期变化(度)
+// 按键长按时末端俯仰角每周期变化(度)
 #define KEYMOVE_PHI_SPEED  2.00f
 /*帧头帧尾，内部调用，无需关心*/
 #define COMM_HEADER_1 0xAB
@@ -43,7 +47,7 @@ uint8_t Channal = 36;                          // NRF24L01 通信通道（0-125�
 uint16_t dutyOfServo[4];       // 各关节舵机占空比
 float    jointAngle[4];        // 各关节角度(度)
 float    targetX, targetY, targetZ, targetPhi;
-uint8_t  ik_reachable;          // 逆解算可达性标志(1=可达,0=越界已钳位)
+uint8_t  ik_reachable;          // 逆解算可达性标志(1=本步在靠近目标,0=已贴到极限)
 uint8_t  presetHit;             // 本周期是否命中预设点位
 int16_t  valueOfRoker[2][2];    // 左摇杆水平、竖直；右摇杆水平、竖直
 uint16_t deadBandOfLeft = 10;
@@ -59,13 +63,31 @@ const float jointMin[4] = {-90.00f, -90.00f, -90.00f, -90.00f};
 const float jointMax[4] = {90.00f, 90.00f, 90.00f, 90.00f};
 // 各关节方向(1=正向, 0=反向)，仅在 angle_to_duty 中生效
 const uint8_t jointDir[4] = {1, 1, 1, 1};
+// 各关节转轴（关节局部坐标系，连杆沿局部 +X 伸出）：
+//   Yaw=(0,0,1) 左右摆 / Pitch=(0,-1,0) 上下俯仰 / Roll=(1,0,0) 绕自身轴自转
+const float jointAxis[4][3] = {
+    {0.0f, 0.0f, 1.0f},   // 关节1 Yaw
+    {0.0f, -1.0f, 0.0f},   // 关节2 Pitch
+    {0.0f, -1.0f, 0.0f},   // 关节3 Pitch
+    {0.0f, -1.0f, 0.0f}   // 关节4 Pitch
+};
+// 各关节之后的连杆长度(mm)。最后一个是末端到夹爪的距离。
+const float jointLen[4] = {0.00f, 100.00f, 80.00f, 30.00f};
+// 逆解算中间结果。放 xdata 而非栈上：C251 单函数局部变量段上限 128 字节，
+// 这几个数组加起来远超上限，声明成局部变量会报 segment too big。
+static float xdata ikBasis[3][3], ikRot[3][3], ikTmp[3][3];
+static float xdata ikPts[5][3];      // 各关节位置 + 末端位置
+static float xdata ikAxes[4][3];     // 各关节转轴的世界方向
+static float xdata ikCols[4][3];     // 雅可比各列 a_i x (tip - o_i)
+static float xdata ikJte[4];         // J^T e
+static float xdata ikLa[3], ikLv[3], ikWv[3], ikEv[3];
 // 预设点位数量
 #define PRESET_COUNT 1
 // 预设点位：按键 KEY_OFFSET
 const uint8_t presetKey[PRESET_COUNT] = {KEY_OFFSET_A};
 // 预设点位末端坐标 {x, y, z, phi}
 const float presetPos[PRESET_COUNT][4] = {
-    {100.00f, 80.00f, 50.00f, 90.00f}  // P1 关节角度: [38.7, -29.2, 88.6, 30.7]
+    {100.00f, 80.00f, 50.00f, 90.00f}  // P1 关节角度: [38.7, -29.1, 88.3, 31.4] 误差 0.0mm
 };
 
 void All_Init();
@@ -74,7 +96,12 @@ void CalculateIK(uint8_t hit);
 void ApplyServoControl();
 uint8_t CheckPresetKeys();
 uint16_t angle_to_duty(int joint, float angle);
+void mat_vec(float m[3][3], float v[3], float out[3]);
+void axis_rot(float a[3], float ang, float m[3][3]);
+void mat_mul(float x[3][3], float y[3][3], float out[3][3]);
+void ik_fk();
 void ik_solve(float x, float y, float z, float phi);
+uint8_t ik_target_too_far(float x, float y, float z);
 void ExpansionBoradControl(uint8_t control_cmd, uint16_t data_p60, uint16_t data_p62, uint16_t data_p64,
                            uint16_t data_p66, uint16_t data_p74, uint16_t data_p75, uint16_t data_p76,
                            uint16_t data_p77);
@@ -86,7 +113,7 @@ void main()
     for (i = 0; i < JOINT_COUNT; i++)
         jointAngle[i] = jointHome[i];
     // 增量模式起点：初始姿态对应的末端位置（GUI 端正运动学预计算）
-    targetX = 35.00f; targetY = 35.00f; targetZ = 171.92f; targetPhi = 135.00f;
+    targetX = 35.00f; targetY = 35.00f; targetZ = 171.92f; targetPhi = 45.00f;
     ik_reachable = 1;
     while (1)
     {
@@ -135,56 +162,182 @@ uint16_t angle_to_duty(int joint, float angle)
     return (uint16_t)duty;
 }
 
-/// @brief 逆解算：末端位置 -> 各关节角度
+/// @brief 矩阵乘向量 out = m * v
+void mat_vec(float m[3][3], float v[3], float out[3])
+{
+    out[0] = m[0][0] * v[0] + m[0][1] * v[1] + m[0][2] * v[2];
+    out[1] = m[1][0] * v[0] + m[1][1] * v[1] + m[1][2] * v[2];
+    out[2] = m[2][0] * v[0] + m[2][1] * v[1] + m[2][2] * v[2];
+}
+
+/// @brief 绕任意单位轴 a 转 ang 弧度的旋转矩阵（罗德里格斯公式）
+/// @note 转轴是 Pitch/Roll/Yaw 只影响传进来的 a，公式本身通用
+void axis_rot(float a[3], float ang, float m[3][3])
+{
+    float c, s, t;
+    c = cos(ang);
+    s = sin(ang);
+    t = 1.0f - c;
+    m[0][0] = t * a[0] * a[0] + c;
+    m[0][1] = t * a[0] * a[1] - s * a[2];
+    m[0][2] = t * a[0] * a[2] + s * a[1];
+    m[1][0] = t * a[0] * a[1] + s * a[2];
+    m[1][1] = t * a[1] * a[1] + c;
+    m[1][2] = t * a[1] * a[2] - s * a[0];
+    m[2][0] = t * a[0] * a[2] - s * a[1];
+    m[2][1] = t * a[1] * a[2] + s * a[0];
+    m[2][2] = t * a[2] * a[2] + c;
+}
+
+/// @brief 矩阵乘矩阵 out = x * y
+void mat_mul(float x[3][3], float y[3][3], float out[3][3])
+{
+    uint8_t r, c;
+    for (r = 0; r < 3; r++)
+        for (c = 0; c < 3; c++)
+            out[r][c] = x[r][0] * y[0][c] + x[r][1] * y[1][c] + x[r][2] * y[2][c];
+}
+
+/// @brief 按当前 jointAngle[] 算正运动学链
+/// @note 结果写入：ikPts[]=各关节位置+末端，ikAxes[]=各关节世界转轴，
+///       ikBasis=末端姿态（第一列即末端朝向）
+void ik_fk()
+{
+    uint8_t k, r, c;
+    float ang;
+    for (r = 0; r < 3; r++)
+        for (c = 0; c < 3; c++)
+            ikBasis[r][c] = (r == c) ? 1.0f : 0.0f;
+    ikPts[0][0] = 0.0f; ikPts[0][1] = 0.0f; ikPts[0][2] = 0.0f;
+    for (k = 0; k < JOINT_COUNT; k++)
+    {
+        ikLa[0] = jointAxis[k][0];
+        ikLa[1] = jointAxis[k][1];
+        ikLa[2] = jointAxis[k][2];
+        // 关节 k 的世界转轴由它之前的姿态决定
+        // （绕自身轴转不改变该轴方向，故用旋转前的 basis）
+        mat_vec(ikBasis, ikLa, ikWv);
+        ikAxes[k][0] = ikWv[0]; ikAxes[k][1] = ikWv[1]; ikAxes[k][2] = ikWv[2];
+        ang = jointAngle[k] * DEG_TO_RAD;
+        axis_rot(ikLa, ang, ikRot);
+        mat_mul(ikBasis, ikRot, ikTmp);
+        for (r = 0; r < 3; r++)
+            for (c = 0; c < 3; c++)
+                ikBasis[r][c] = ikTmp[r][c];
+        // 沿旋转后的局部 +X 伸出该关节之后的连杆
+        ikLv[0] = jointLen[k]; ikLv[1] = 0.0f; ikLv[2] = 0.0f;
+        mat_vec(ikBasis, ikLv, ikWv);
+        ikPts[k + 1][0] = ikPts[k][0] + ikWv[0];
+        ikPts[k + 1][1] = ikPts[k][1] + ikWv[1];
+        ikPts[k + 1][2] = ikPts[k][2] + ikWv[2];
+    }
+}
+
+/// @brief 逆解算：末端目标 -> 各关节角度（雅可比转置增量法）
 /// @param x 末端X(mm)
 /// @param y 末端Y(mm)
 /// @param z 末端Z(mm)
-/// @param phi 末端姿态角(度)
-/// @note 结果写入 jointAngle[]，越界时钳到边界并设 ik_reachable=0
+/// @param phi 末端俯仰角(度)，末端朝向的仰角
+/// @note 每次调用只走一步，靠 10ms 主循环连续收敛。
+///       结果写入 jointAngle[]，已按 jointMin/jointMax 钳位。
+///       ik_reachable=0 表示这一步没能靠近目标（已贴到可达域边界）。
 void ik_solve(float x, float y, float z, float phi)
 {
-    float r, c2, t1, t2, t0, t3, rz, scale, phi_rad;
-    ik_reachable = 1;
-    // === 4 轴逆解（底座 + 2连杆 + 腕部俯仰）===
-    t0 = atan2(y, x);
-    r = sqrt(x * x + y * y);
-    // 腕心 = 末端沿姿态角 φ 回退 L3，逆解针对腕心而非末端
-    phi_rad = phi * 3.14159265f / 180.0f;
-    r = r - L3 * cos(phi_rad);
-    z = z - L3 * sin(phi_rad);
-    rz = sqrt(r * r + z * z);
-    // (r, z) 平面可达性；rz 过小时无方向可依，直接退到内边界正上方
-    if (rz < IK_EPS)
+    uint8_t k;
+    float alpha, num, den, step, maxStep, errBefore, errAfter;
+    float az, denom, phiErr, gk, gDot;
+    // === 正运动学：得到各关节位置、世界转轴、末端姿态 ===
+    ik_fk();
+    // === 位置误差 ===
+    ikEv[0] = x - ikPts[JOINT_COUNT][0];
+    ikEv[1] = y - ikPts[JOINT_COUNT][1];
+    ikEv[2] = z - ikPts[JOINT_COUNT][2];
+    // === 末端俯仰角误差 ===
+    // phi = asin(a_z)，a = 末端朝向（tip_basis 的局部 +X）
+    az = ikBasis[2][0];
+    if (az > 1.0f) az = 1.0f;
+    if (az < -1.0f) az = -1.0f;
+    denom = 1.0f - az * az;
+    phiErr = 0.0f;
+    // 末端竖直时 asin 导数发散、phi 也不再区分朝向，本周期只管位置
+    if (denom > 0.000100f)
     {
-        ik_reachable = 0;
-        r = fabs(L1 - L2);
-        z = 0.0f;
-        if (r < IK_EPS)
-            r = L1 + L2;
+        denom = sqrt(denom);
+        phiErr = (phi - asin(az) * RAD_TO_DEG) * DEG_TO_RAD;
     }
-    else if (rz < fabs(L1 - L2))
+    else
+        denom = 0.0f;   // 0 表示本周期不参与姿态解算
+    // === 雅可比各列与 J^T e ===
+    gDot = 0.0f;
+    for (k = 0; k < JOINT_COUNT; k++)
     {
-        ik_reachable = 0;
-        scale = fabs(L1 - L2) / rz;
-        r *= scale; z *= scale;
+        ikLv[0] = ikPts[JOINT_COUNT][0] - ikPts[k][0];
+        ikLv[1] = ikPts[JOINT_COUNT][1] - ikPts[k][1];
+        ikLv[2] = ikPts[JOINT_COUNT][2] - ikPts[k][2];
+        ikCols[k][0] = ikAxes[k][1] * ikLv[2] - ikAxes[k][2] * ikLv[1];
+        ikCols[k][1] = ikAxes[k][2] * ikLv[0] - ikAxes[k][0] * ikLv[2];
+        ikCols[k][2] = ikAxes[k][0] * ikLv[1] - ikAxes[k][1] * ikLv[0];
+        ikJte[k] = ikCols[k][0] * ikEv[0] + ikCols[k][1] * ikEv[1]
+                 + ikCols[k][2] * ikEv[2];
+        if (denom > 0.0f)
+        {
+            // phi 梯度 g_k = (a_k x approach)_z / sqrt(1 - a_z^2)
+            gk = (ikAxes[k][0] * ikBasis[1][0]
+                - ikAxes[k][1] * ikBasis[0][0]) / denom;
+            // 两项量纲统一到 mm：g 是 rad/rad，乘权重后与位置项可加
+            ikJte[k] += gk * PHI_WEIGHT * (phiErr * PHI_WEIGHT);
+            gDot += gk * PHI_WEIGHT * ikJte[k];
+        }
     }
-    else if (rz > (L1 + L2))
+    // === 步长 alpha（最速下降的精确解）===
+    // alpha = |J^T e|^2 / |J J^T e|^2。分子是**关节空间**的模长，
+    // 用任务空间的 |e|^2 会小好几个数量级，末端几乎不动。
+    num = 0.0f;
+    ikWv[0] = 0.0f; ikWv[1] = 0.0f; ikWv[2] = 0.0f;
+    for (k = 0; k < JOINT_COUNT; k++)
     {
-        ik_reachable = 0;
-        scale = (L1 + L2) / rz;
-        r *= scale; z *= scale;
+        num += ikJte[k] * ikJte[k];
+        ikWv[0] += ikCols[k][0] * ikJte[k];
+        ikWv[1] += ikCols[k][1] * ikJte[k];
+        ikWv[2] += ikCols[k][2] * ikJte[k];
     }
-    c2 = (r * r + z * z - L1 * L1 - L2 * L2) / (2.0f * L1 * L2);
-    if (c2 > 1.0f) c2 = 1.0f;
-    if (c2 < -1.0f) c2 = -1.0f;
-    t2 = ELBOW_SIGN * acos(c2);
-    t1 = atan2(z, r) - atan2(L2 * sin(t2), L1 + L2 * cos(t2));
-    jointAngle[0] = t0 * 180.0f / 3.14159265f;
-    jointAngle[1] = t1 * 180.0f / 3.14159265f;
-    jointAngle[2] = t2 * 180.0f / 3.14159265f;
-    // 腕部：补足剩余角度以保持末端姿态角 φ
-    t3 = phi_rad - (t1 + t2);
-    jointAngle[3] = t3 * 180.0f / 3.14159265f;
+    den = ikWv[0] * ikWv[0] + ikWv[1] * ikWv[1] + ikWv[2] * ikWv[2];
+    den += gDot * gDot;
+    alpha = 0.0f;
+    if (den > IK_EPS)
+        alpha = num / den;
+    // 单步限幅：防止大误差时末端猛冲，也避免线性近似在大角度下失效
+    maxStep = 0.0f;
+    for (k = 0; k < JOINT_COUNT; k++)
+    {
+        step = alpha * ikJte[k] * RAD_TO_DEG;
+        if (step < 0.0f) step = -step;
+        if (step > maxStep) maxStep = step;
+    }
+    if (maxStep > IK_MAX_STEP_DEG)
+        alpha *= IK_MAX_STEP_DEG / maxStep;
+    // === 走一步并按限位钳位 ===
+    errBefore = ikEv[0] * ikEv[0] + ikEv[1] * ikEv[1] + ikEv[2] * ikEv[2];
+    errBefore += (phiErr * PHI_WEIGHT) * (phiErr * PHI_WEIGHT);
+    for (k = 0; k < JOINT_COUNT; k++)
+    {
+        jointAngle[k] += alpha * ikJte[k] * RAD_TO_DEG;
+        if (jointAngle[k] < jointMin[k]) jointAngle[k] = jointMin[k];
+        if (jointAngle[k] > jointMax[k]) jointAngle[k] = jointMax[k];
+    }
+    // === 可达性：这一步有没有真的靠近目标 ===
+    // 姿态误差要一起算进总误差，否则纯粹在调 phi 的步会被误判成停滞
+    ik_fk();
+    ikEv[0] = x - ikPts[JOINT_COUNT][0];
+    ikEv[1] = y - ikPts[JOINT_COUNT][1];
+    ikEv[2] = z - ikPts[JOINT_COUNT][2];
+    errAfter = ikEv[0] * ikEv[0] + ikEv[1] * ikEv[1] + ikEv[2] * ikEv[2];
+    az = ikBasis[2][0];
+    if (az > 1.0f) az = 1.0f;
+    if (az < -1.0f) az = -1.0f;
+    phiErr = (phi - asin(az) * RAD_TO_DEG) * DEG_TO_RAD;
+    errAfter += (phiErr * PHI_WEIGHT) * (phiErr * PHI_WEIGHT);
+    ik_reachable = (errAfter < errBefore) ? 1 : 0;
 }
 
 /// @brief 读取摇杆并做死区过滤（按键在使用处直接 RcKeyValueRead 读取）
@@ -222,18 +375,27 @@ uint8_t CheckPresetKeys()
     return 0;
 }
 
+/// @brief 目标点是否超出臂展（连杆总长）
+/// @note 只拦「明显够不着」，留 2% 余量避免边界处反复抖动
+uint8_t ik_target_too_far(float x, float y, float z)
+{
+    float d2;
+    d2 = x * x + y * y + z * z;
+    // 与 (臂展 * 0.98)^2 比，省一次开方
+    return (d2 > 42353.64f) ? 1 : 0;
+}
+
 /// @brief 摇杆/按键输入末端位置增量 -> 逆解算
 /// @param hit 1=本周期已由预设点位设定目标，跳过增量累加
 /// @note 采用增量累积模式：摇杆偏移量和长按按键都对 target 做累加，
 ///       松开后末端保持当前位置不动。
-///       仅当上次目标可达时才回退，避免不可达的预设点位把目标永久卡死。
+///       逆解是雅可比增量法，每周期走一步，连续多个周期逼近目标。
 void CalculateIK(uint8_t hit)
 {
     float lastX, lastY, lastZ, lastPhi;
-    uint8_t lastReachable;
-    // 备份上次目标，越界时回退（防止 target 无限增长导致松手后回不来）
+    // 备份上次目标：目标跑到臂展外时要把这一步的增量撤掉，
+    // 否则长推摇杆会让 target 一直飘远，松手后末端要等很久才追回来
     lastX = targetX; lastY = targetY; lastZ = targetZ; lastPhi = targetPhi;
-    lastReachable = ik_reachable;
     if (!hit)
     {
         // 摇杆增量：摇杆值 -2047~2047 归一化后乘 JOY_SCALE 作为每周期位移
@@ -254,17 +416,18 @@ void CalculateIK(uint8_t hit)
         if (RcKeyValueRead(KEY_OFFSET_C))
             targetZ -= KEYMOVE_SPEED; // 末端Z 负向（按键 C）
         if (RcKeyValueRead(KEY_OFFSET_D))
-            targetPhi += KEYMOVE_PHI_SPEED; // 末端姿态角φ 正向（按键 D）
+            targetPhi += KEYMOVE_PHI_SPEED; // 末端俯仰角 正向（按键 D）
         if (RcKeyValueRead(KEY_OFFSET_1))
-            targetPhi -= KEYMOVE_PHI_SPEED; // 末端姿态角φ 负向（按键 R）
+            targetPhi -= KEYMOVE_PHI_SPEED; // 末端俯仰角 负向（按键 R）
     }
     ik_solve(targetX, targetY, targetZ, targetPhi);
-    // 越界则回退本周期增量，末端停在上一个可达位置；
-    // 若上次目标本身就不可达（如预设点位超出量程），保留钳位结果以便摇杆能把末端拉回来
-    if (!ik_reachable && !hit && lastReachable)
+    // 目标是否落在可达范围内：拿末端到底座的距离与连杆总长比。
+    // 注意不能用 ik_reachable 判断——雅可比法下它表示
+    // 「这一步有没有靠近目标」，正常收敛途中也会因步长限幅而为 0。
+    if (!hit && ik_target_too_far(targetX, targetY, targetZ))
     {
+        // 撤回本周期增量，target 停在上一个够得着的位置
         targetX = lastX; targetY = lastY; targetZ = lastZ; targetPhi = lastPhi;
-        ik_solve(targetX, targetY, targetZ, targetPhi);
     }
 }
 
