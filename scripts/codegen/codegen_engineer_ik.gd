@@ -293,7 +293,7 @@ func _build_kinematics_arrays(joints: Array, jc: int, config_type: int,
 	for i in range(jc):
 		if i > 0:
 			s += ", "
-		s += "%.2ff" % 100.0
+		s += "%.2ff" % float(lens[i])
 	s += "};\n"
 	return s
 
