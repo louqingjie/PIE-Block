@@ -51,6 +51,7 @@ func _initialize() -> void:
 	await _test_gimbal_geometry(packed)
 	await _test_friction_geometry(packed)
 	await _test_friction_color(packed)
+	await _test_audio(packed)
 	await _test_fire(packed)
 	await _test_bullet_visual(packed)
 	await _test_chassis(packed)
@@ -265,6 +266,54 @@ func _test_friction_geometry(packed: PackedScene) -> void:
 	_check("Pitch +30° 时摩擦轮转轴随云台倾斜 30°",
 		absf(rad_to_deg(acos(clampf(tilted.y, -1.0, 1.0))) - 30.0) < 0.5,
 		"倾角 %.1f°" % rad_to_deg(acos(clampf(tilted.y, -1.0, 1.0))))
+	_despawn(sim)
+
+
+## 音效：摩擦轮音高等于占空比数值，开火音效能起播
+func _test_audio(packed: PackedScene) -> void:
+	var sim: Node = await _spawn(packed, _cfg("舵机", "舵机"))
+	var fp: AudioStreamPlayer = sim.get_node("FrictionAudio")
+	var sp: AudioStreamPlayer = sim.get_node("ShotAudio")
+	_check("摩擦轮播放器已装 AudioStreamGenerator", fp.stream is AudioStreamGenerator)
+	_check("开火播放器已装 AudioStreamGenerator", sp.stream is AudioStreamGenerator)
+	# 目标频率 = 占空比数值
+	sim._duty_booster = 0
+	_check("未启动时目标频率为 0（静音）", sim._friction_target_freq() == 0.0,
+		"实际 %.1f" % sim._friction_target_freq())
+	for duty in [500, 700, 900, 1100]:
+		sim._duty_booster = duty
+		_check("占空比 %d 对应 %dHz" % [duty, duty],
+			absf(sim._friction_target_freq() - float(duty)) < 0.01,
+			"实际 %.1f" % sim._friction_target_freq())
+	# 低于 500 不发声（摩擦轮没启动）
+	sim._duty_booster = 499
+	_check("占空比 499 仍静音", sim._friction_target_freq() == 0.0)
+	# 关掉音效后不应起播
+	sim._audio_enabled = false
+	sim._duty_booster = 1100
+	sim._update_friction_audio(0.016)
+	_check("关掉音效后摩擦轮不发声", not fp.playing)
+	sim._play_shot_sound()
+	_check("关掉音效后开火不发声", sim._shot_remain == 0)
+	# 开火音效应排入待填样本
+	sim._audio_enabled = true
+	sim._play_shot_sound()
+	_check("开火音效已排入待填样本", sim._shot_remain > 0,
+		"remain=%d" % sim._shot_remain)
+	_check("开火音效时长约 %.0fms" % (sim.SHOT_DURATION * 1000.0),
+		sim._shot_remain == int(sim.SHOT_DURATION * sim.AUDIO_SAMPLE_RATE))
+	# 停声应清干净
+	sim._stop_audio()
+	_check("停声后播放器停止且缓冲清空",
+		not fp.playing and not sp.playing and sim._shot_remain == 0)
+	# 正弦相位必须留在 [0, TAU)，否则长时间运行会丢精度
+	sim._audio_enabled = true
+	sim._duty_booster = 800
+	for i in range(5):
+		sim._update_friction_audio(0.016)
+	_check("正弦相位保持归一化", sim._friction_phase >= 0.0 and sim._friction_phase < TAU,
+		"phase=%.3f" % sim._friction_phase)
+	sim._stop_audio()
 	_despawn(sim)
 
 

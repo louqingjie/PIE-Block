@@ -1,7 +1,7 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene format=3 uid="uid://dih5q24sxetu5"]
 
 [ext_resource type="Theme" uid="uid://cryqvh2g7gqj" path="res://assets/themes/main.tres" id="1_theme"]
-[ext_resource type="Script" path="res://scripts/infantry_sim.gd" id="2_script"]
+[ext_resource type="Script" uid="uid://bwkm52h3ppbox" path="res://scripts/infantry_sim.gd" id="2_script"]
 
 [sub_resource type="Environment" id="Environment_sim"]
 background_mode = 1
@@ -17,7 +17,7 @@ corner_radius_top_right = 6
 corner_radius_bottom_right = 6
 corner_radius_bottom_left = 6
 
-[node name="InfantrySim" type="Control"]
+[node name="InfantrySim" type="Control" unique_id=61485325]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -27,7 +27,7 @@ grow_vertical = 2
 theme = ExtResource("1_theme")
 script = ExtResource("2_script")
 
-[node name="Sim" type="SubViewportContainer" parent="."]
+[node name="Sim" type="SubViewportContainer" parent="." unique_id=326200878]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -36,108 +36,112 @@ grow_horizontal = 2
 grow_vertical = 2
 stretch = true
 
-[node name="SubViewport" type="SubViewport" parent="Sim"]
+[node name="SubViewport" type="SubViewport" parent="Sim" unique_id=1592989239]
 own_world_3d = true
 handle_input_locally = false
 size = Vector2i(1600, 900)
 render_target_update_mode = 4
 
-[node name="World" type="Node3D" parent="Sim/SubViewport"]
+[node name="World" type="Node3D" parent="Sim/SubViewport" unique_id=57477257]
 
-[node name="WorldEnvironment" type="WorldEnvironment" parent="Sim/SubViewport/World"]
+[node name="WorldEnvironment" type="WorldEnvironment" parent="Sim/SubViewport/World" unique_id=1112488913]
 environment = SubResource("Environment_sim")
 
-[node name="Camera3D" type="Camera3D" parent="Sim/SubViewport/World"]
+[node name="Camera3D" type="Camera3D" parent="Sim/SubViewport/World" unique_id=81924373]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 3)
 near = 0.01
 far = 200.0
 
-[node name="DirectionalLight3D" type="DirectionalLight3D" parent="Sim/SubViewport/World"]
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="Sim/SubViewport/World" unique_id=1398510864]
 transform = Transform3D(0.8, 0, -0.6, -0.42, 0.71, -0.56, 0.42, 0.71, 0.56, 0, 6, 4)
 light_energy = 1.1
 
-[node name="FillLight" type="DirectionalLight3D" parent="Sim/SubViewport/World"]
+[node name="FillLight" type="DirectionalLight3D" parent="Sim/SubViewport/World" unique_id=883525221]
 transform = Transform3D(-0.7, 0, 0.71, 0.35, 0.87, 0.35, -0.61, 0.5, -0.61, 0, 4, -4)
 light_energy = 0.35
 
-[node name="Ground" type="StaticBody3D" parent="Sim/SubViewport/World"]
+[node name="Ground" type="StaticBody3D" parent="Sim/SubViewport/World" unique_id=1059485039]
 
-[node name="Grid" type="MeshInstance3D" parent="Sim/SubViewport/World"]
+[node name="Grid" type="MeshInstance3D" parent="Sim/SubViewport/World" unique_id=2081506978]
 
-[node name="Robot" type="Node3D" parent="Sim/SubViewport/World"]
+[node name="Robot" type="Node3D" parent="Sim/SubViewport/World" unique_id=836037793]
 
-[node name="Bullets" type="Node3D" parent="Sim/SubViewport/World"]
+[node name="Bullets" type="Node3D" parent="Sim/SubViewport/World" unique_id=368646977]
 
-[node name="Tracers" type="MeshInstance3D" parent="Sim/SubViewport/World"]
+[node name="Tracers" type="MeshInstance3D" parent="Sim/SubViewport/World" unique_id=1352058876]
 
-[node name="TopPanel" type="PanelContainer" parent="."]
+[node name="FrictionAudio" type="AudioStreamPlayer" parent="."]
+
+[node name="ShotAudio" type="AudioStreamPlayer" parent="."]
+
+[node name="TopPanel" type="PanelContainer" parent="." unique_id=774869799]
 layout_mode = 1
 anchors_preset = 10
 anchor_right = 1.0
 grow_horizontal = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
 
-[node name="HBox" type="HBoxContainer" parent="TopPanel"]
+[node name="HBox" type="HBoxContainer" parent="TopPanel" unique_id=2113972743]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="Back" type="Button" parent="TopPanel/HBox"]
+[node name="Back" type="Button" parent="TopPanel/HBox" unique_id=160918311]
 layout_mode = 2
 text = "← 返回配置"
 
-[node name="VSeparator" type="VSeparator" parent="TopPanel/HBox"]
+[node name="VSeparator" type="VSeparator" parent="TopPanel/HBox" unique_id=1119878740]
 layout_mode = 2
 
-[node name="ModeLabel" type="Label" parent="TopPanel/HBox"]
+[node name="ModeLabel" type="Label" parent="TopPanel/HBox" unique_id=1007880870]
 layout_mode = 2
 text = "模式"
 
-[node name="Mode" type="OptionButton" parent="TopPanel/HBox"]
+[node name="Mode" type="OptionButton" parent="TopPanel/HBox" unique_id=845121491]
 layout_mode = 2
-item_count = 2
 selected = 0
+item_count = 2
 popup/item_0/text = "操控（手柄/键盘）"
 popup/item_0/id = 0
 popup/item_1/text = "云台标定（归中角）"
 popup/item_1/id = 1
 
-[node name="VSeparator2" type="VSeparator" parent="TopPanel/HBox"]
+[node name="VSeparator2" type="VSeparator" parent="TopPanel/HBox" unique_id=51815476]
 layout_mode = 2
 
-[node name="FollowToggle" type="CheckButton" parent="TopPanel/HBox"]
+[node name="FollowToggle" type="CheckButton" parent="TopPanel/HBox" unique_id=867513316]
 layout_mode = 2
 button_pressed = true
 text = "跟随"
 
-[node name="TracerToggle" type="CheckButton" parent="TopPanel/HBox"]
+[node name="TracerToggle" type="CheckButton" parent="TopPanel/HBox" unique_id=1663498840]
 layout_mode = 2
 button_pressed = true
 text = "弹道"
 
-[node name="TracerClear" type="Button" parent="TopPanel/HBox"]
+[node name="TracerClear" type="Button" parent="TopPanel/HBox" unique_id=1932900271]
 layout_mode = 2
 text = "清空弹道"
 
-[node name="VSeparator3" type="VSeparator" parent="TopPanel/HBox"]
+[node name="VSeparator3" type="VSeparator" parent="TopPanel/HBox" unique_id=1621323359]
 layout_mode = 2
 
-[node name="ResetPose" type="Button" parent="TopPanel/HBox"]
+[node name="ResetPose" type="Button" parent="TopPanel/HBox" unique_id=461277584]
 layout_mode = 2
 text = "车归位"
 
-[node name="ResetView" type="Button" parent="TopPanel/HBox"]
+[node name="ResetView" type="Button" parent="TopPanel/HBox" unique_id=1500265865]
 layout_mode = 2
 text = "重置视角"
 
-[node name="Spacer" type="Control" parent="TopPanel/HBox"]
+[node name="Spacer" type="Control" parent="TopPanel/HBox" unique_id=166440235]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="ConfigLabel" type="Label" parent="TopPanel/HBox"]
+[node name="ConfigLabel" type="Label" parent="TopPanel/HBox" unique_id=2038415229]
 layout_mode = 2
 text = "配置"
 
-[node name="SidePanel" type="PanelContainer" parent="."]
+[node name="SidePanel" type="PanelContainer" parent="." unique_id=1227991856]
 layout_mode = 1
 anchors_preset = 11
 anchor_left = 1.0
@@ -150,16 +154,16 @@ grow_horizontal = 0
 grow_vertical = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
 
-[node name="Scroll" type="ScrollContainer" parent="SidePanel"]
+[node name="Scroll" type="ScrollContainer" parent="SidePanel" unique_id=883014468]
 layout_mode = 2
 horizontal_scroll_mode = 0
 
-[node name="Params" type="VBoxContainer" parent="SidePanel/Scroll"]
+[node name="Params" type="VBoxContainer" parent="SidePanel/Scroll" unique_id=1247392204]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 6
 
-[node name="StatusPanel" type="PanelContainer" parent="."]
+[node name="StatusPanel" type="PanelContainer" parent="." unique_id=1234439566]
 layout_mode = 1
 anchors_preset = 2
 anchor_top = 1.0
@@ -171,19 +175,19 @@ offset_bottom = -8.0
 grow_vertical = 0
 theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
 
-[node name="Status" type="Label" parent="StatusPanel"]
+[node name="Status" type="Label" parent="StatusPanel" unique_id=1495076159]
 layout_mode = 2
 text = "就绪"
 
-[node name="HintLabel" type="Label" parent="."]
+[node name="HintLabel" type="Label" parent="." unique_id=655834634]
 layout_mode = 1
 anchors_preset = 2
 anchor_top = 1.0
 anchor_bottom = 1.0
-offset_left = 8.0
-offset_top = -164.0
-offset_right = 900.0
-offset_bottom = -144.0
+offset_left = 4.0
+offset_top = -860.0
+offset_right = 896.0
+offset_bottom = -836.0
 grow_vertical = 0
 theme_override_colors/font_color = Color(0.6666667, 0.7019608, 0.7529412, 1)
 text = "右键拖拽旋转视角 · 滚轮缩放 · 中键平移"

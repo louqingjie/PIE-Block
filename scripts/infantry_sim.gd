@@ -23,6 +23,8 @@ const P_GRID: NodePath = "Sim/SubViewport/World/Grid"
 const P_ROBOT: NodePath = "Sim/SubViewport/World/Robot"
 const P_BULLETS: NodePath = "Sim/SubViewport/World/Bullets"
 const P_TRACERS: NodePath = "Sim/SubViewport/World/Tracers"
+const P_FRICTION_AUDIO: NodePath = "FrictionAudio"
+const P_SHOT_AUDIO: NodePath = "ShotAudio"
 const P_PARAMS: NodePath = "SidePanel/Scroll/Params"
 const P_SIDE_PANEL: NodePath = "SidePanel"
 const P_TOP_PANEL: NodePath = "TopPanel"
@@ -114,6 +116,21 @@ const BOOSTER_DUTY_MAX: int = 1100
 const BOOSTER_STEP: int = 100
 ## 一帧最多补的步数，掉帧时不至于一次跳很远
 const MAX_STEPS_PER_FRAME: int = 20
+
+# ------------------------------------------------------------------ 音效
+## 摩擦轮音调直接等于占空比数值（500 duty -> 500Hz，1100 duty -> 1100Hz），
+## 于是「听到的音高」就是「发给硬件的占空比」，调档位时耳朵能直接读数
+const AUDIO_SAMPLE_RATE: float = 44100.0
+## 摩擦轮音量（线性，0~1）。常驻音不宜太响
+const FRICTION_VOLUME: float = 0.16
+## 音高平滑系数：占空比每 10ms 变 1，直接跟会有台阶感
+const FRICTION_PITCH_LERP: float = 12.0
+## 开火音效时长（秒）与音量
+const SHOT_DURATION: float = 0.09
+const SHOT_VOLUME: float = 0.5
+## 开火音效的扫频区间（Hz）：从高扫到低，模拟「啪」的一声
+const SHOT_FREQ_HI: float = 1800.0
+const SHOT_FREQ_LO: float = 260.0
 
 # ------------------------------------------------------------------ 相机
 const CAM_PITCH_LIMIT: float = 1.45
@@ -250,6 +267,21 @@ var _tracers: Array = []
 ## 最近一发的统计，状态行用
 var _last_shot: Dictionary = {}
 
+# ------------------------------------------------------------------ 音效状态
+## 摩擦轮常驻音的播放缓冲。正弦波实时合成，音高 = 当前占空比
+var _friction_playback: AudioStreamGeneratorPlayback = null
+## 正弦波相位（弧度）。跨缓冲区必须连续，否则每帧接缝处会「咔哒」响
+var _friction_phase: float = 0.0
+## 当前实际发声的频率（Hz），平滑趋近目标频率
+var _friction_freq: float = 0.0
+## 开火音效播放缓冲与剩余待填样本数
+var _shot_playback: AudioStreamGeneratorPlayback = null
+var _shot_remain: int = 0
+var _shot_phase: float = 0.0
+var _shot_total: int = 0
+## 音效总开关
+var _audio_enabled: bool = true
+
 # ------------------------------------------------------------------ 复用资源
 var _bullet_shape: SphereShape3D = null
 var _bullet_mesh: SphereMesh = null
@@ -287,6 +319,7 @@ func _ready() -> void:
 	_bullet_mesh.height = BULLET_RADIUS * 2.0
 	_bullet_mesh.radial_segments = 10
 	_bullet_mesh.rings = 6
+	_setup_audio()
 	_connect_ui()
 	# set_config 可能在 _ready 之前被调用（外部先 instantiate 再赋配置）
 	if _cfg.is_empty():
@@ -320,7 +353,13 @@ func _connect_ui() -> void:
 
 
 func _on_back_pressed() -> void:
+	_stop_audio()
 	closed.emit()
+
+
+## 场景被移除时也要停声（ui.gd 走 queue_free，不一定经过返回按钮）
+func _exit_tree() -> void:
+	_stop_audio()
 
 
 # ------------------------------------------------------------------ 外部接口
@@ -730,6 +769,8 @@ func _process(delta: float) -> void:
 	_update_bullets(delta)
 	_render_robot()
 	_update_camera(delta)
+	_update_friction_audio(delta)
+	_update_shot_audio()
 	_update_status()
 
 
@@ -1027,6 +1068,7 @@ func _fire() -> void:
 		"speed": speed, "duty": _duty_booster,
 		"range": 0.0, "flight": 0.0, "peak": 0.0,
 	}
+	_play_shot_sound()
 	# 超出上限时释放最旧的一发
 	while _bullets.size() > BULLET_MAX_ALIVE:
 		_retire_bullet(0)
@@ -1135,6 +1177,126 @@ func _on_tracer_toggled(on: bool) -> void:
 		_clear_tracers()
 
 
+func _on_audio_toggled(on: bool) -> void:
+	_audio_enabled = on
+	if not on:
+		_stop_audio()
+
+
+# ------------------------------------------------------------------ 音效
+## 两个 AudioStreamGenerator：摩擦轮常驻音 + 开火短音。
+## 用实时合成而非音频文件，是因为音高要精确等于占空比数值。
+func _setup_audio() -> void:
+	var fp: Node = get_node_or_null(P_FRICTION_AUDIO)
+	if fp is AudioStreamPlayer:
+		var gen: AudioStreamGenerator = AudioStreamGenerator.new()
+		gen.mix_rate = AUDIO_SAMPLE_RATE
+		# 缓冲越短延迟越低；0.1s 足够平滑又不会让音高变化拖尾
+		gen.buffer_length = 0.1
+		fp.stream = gen
+		fp.volume_db = linear_to_db(FRICTION_VOLUME)
+	var sp: Node = get_node_or_null(P_SHOT_AUDIO)
+	if sp is AudioStreamPlayer:
+		var gen2: AudioStreamGenerator = AudioStreamGenerator.new()
+		gen2.mix_rate = AUDIO_SAMPLE_RATE
+		gen2.buffer_length = 0.2
+		sp.stream = gen2
+		sp.volume_db = linear_to_db(SHOT_VOLUME)
+
+
+## 摩擦轮目标频率（Hz）= 当前占空比数值。未启动时为 0（静音）
+func _friction_target_freq() -> float:
+	if _duty_booster < BOOSTER_DUTY_MIN:
+		return 0.0
+	return float(_duty_booster)
+
+
+## 每帧推进摩擦轮常驻音：按占空比调音高，填满可用缓冲
+func _update_friction_audio(delta: float) -> void:
+	var player: Node = get_node_or_null(P_FRICTION_AUDIO)
+	if not player is AudioStreamPlayer:
+		return
+	var target: float = _friction_target_freq() if _audio_enabled else 0.0
+	if target <= 0.0:
+		# 停机：直接停播，避免残留缓冲继续发声
+		if player.playing:
+			player.stop()
+		_friction_playback = null
+		_friction_freq = 0.0
+		return
+	if not player.playing:
+		player.play()
+		_friction_playback = player.get_stream_playback()
+		# 从目标频率起步，不然开机瞬间会从 0Hz 扫上来
+		_friction_freq = target
+		_friction_phase = 0.0
+	if _friction_playback == null:
+		_friction_playback = player.get_stream_playback()
+	if _friction_playback == null:
+		return
+	# 平滑趋近：占空比每 10ms 变 1，直接跟会有台阶感
+	var t: float = 1.0 - exp(-FRICTION_PITCH_LERP * delta)
+	_friction_freq = lerpf(_friction_freq, target, t)
+	_fill_sine(_friction_playback, _friction_freq)
+
+
+## 往缓冲里填正弦波。相位跨调用连续，否则接缝处会「咔哒」响
+func _fill_sine(pb: AudioStreamGeneratorPlayback, freq: float) -> void:
+	var frames: int = pb.get_frames_available()
+	if frames <= 0:
+		return
+	var step: float = TAU * freq / AUDIO_SAMPLE_RATE
+	for i in range(frames):
+		var v: float = sin(_friction_phase)
+		pb.push_frame(Vector2(v, v))
+		_friction_phase += step
+	_friction_phase = fmod(_friction_phase, TAU)
+
+
+## 开火：起一段从高到低的扫频短音，带指数衰减包络，听着像「啪」
+func _play_shot_sound() -> void:
+	if not _audio_enabled:
+		return
+	var player: Node = get_node_or_null(P_SHOT_AUDIO)
+	if not player is AudioStreamPlayer:
+		return
+	player.stop()
+	player.play()
+	_shot_playback = player.get_stream_playback()
+	_shot_total = int(SHOT_DURATION * AUDIO_SAMPLE_RATE)
+	_shot_remain = _shot_total
+	_shot_phase = 0.0
+
+
+## 每帧把开火音效剩余部分填进缓冲
+func _update_shot_audio() -> void:
+	if _shot_playback == null or _shot_remain <= 0:
+		return
+	var frames: int = mini(_shot_playback.get_frames_available(), _shot_remain)
+	for i in range(frames):
+		# 进度 0->1 对应频率从 HI 扫到 LO、音量指数衰减
+		var p: float = 1.0 - float(_shot_remain) / float(_shot_total)
+		var freq: float = lerpf(SHOT_FREQ_HI, SHOT_FREQ_LO, p)
+		var env: float = exp(-5.0 * p)
+		var v: float = sin(_shot_phase) * env
+		_shot_playback.push_frame(Vector2(v, v))
+		_shot_phase = fmod(_shot_phase + TAU * freq / AUDIO_SAMPLE_RATE, TAU)
+		_shot_remain -= 1
+	if _shot_remain <= 0:
+		_shot_playback = null
+
+
+## 离开仿真时必须停声，否则返回配置界面后摩擦轮还在响
+func _stop_audio() -> void:
+	for path in [P_FRICTION_AUDIO, P_SHOT_AUDIO]:
+		var p: Node = get_node_or_null(path)
+		if p is AudioStreamPlayer and p.playing:
+			p.stop()
+	_friction_playback = null
+	_shot_playback = null
+	_shot_remain = 0
+
+
 # ------------------------------------------------------------------ 归位
 func _reset_pose() -> void:
 	_pos = Vector3.ZERO
@@ -1203,6 +1365,17 @@ func _update_camera(delta: float = 0.0) -> void:
 	cam.look_at(_cam_pivot, Vector3.UP)
 
 
+## 在 GUI 处理之前吞掉手柄事件。
+##
+## 手柄输入全走 Input 单例轮询（见 _read_controller_inputs），不靠事件，
+## 而 Godot 默认把摇杆/十字键映射成 ui_left/ui_right 等 UI 导航动作：
+## 不拦的话推摇杆会同时改动侧栏滑块、按 A 键会误触按钮。
+## _input 在 GUI 事件分发之前调用，在这里标已处理即可隔绝。
+func _input(event: InputEvent) -> void:
+	if event is InputEventJoypadButton or event is InputEventJoypadMotion:
+		get_viewport().set_input_as_handled()
+
+
 func _gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		_handle_mouse_button(event)
@@ -1211,6 +1384,10 @@ func _gui_input(event: InputEvent) -> void:
 
 
 func _handle_mouse_button(e: InputEventMouseButton) -> void:
+	# 鼠标在侧栏/顶栏上时不动相机：侧栏滑到头时 ScrollContainer 不再消耗滚轮，
+	# 事件会冒泡到根节点，导致滚列表的同时把镜头拉远拉近
+	if e.pressed and _mouse_over_ui():
+		return
 	match e.button_index:
 		MOUSE_BUTTON_RIGHT:
 			_orbiting = e.pressed
@@ -1383,6 +1560,15 @@ func _build_operate_params(parent: Node) -> void:
 		+"上限 1100 是《RM电控指南》规定，不得提高。"
 		+"\n开关键 %s 上升沿翻转，占空比每秒最多变化 100（10ms 周期步长 1）。"
 			% str(_cfg.get("booster_key", "A")))
+	_add_section(parent, "音效")
+	var audio_cb: CheckButton = CheckButton.new()
+	audio_cb.text = "音效"
+	audio_cb.button_pressed = _audio_enabled
+	audio_cb.toggled.connect(_on_audio_toggled)
+	parent.add_child(audio_cb)
+	_add_note(parent, "摩擦轮音高 = 当前占空比：500 duty 就是 500Hz，1100 duty 就是 1100Hz，"
+		+"所以听音高就能判断转速档位，爬升过程也听得出来。"
+		+"\n开火是一段从高扫到低的短音。")
 	_add_section(parent, "弹丸初速映射")
 	_add_slider_row(parent, "vlo", "duty 500 时 (m/s)", 1.0, 30.0, _muzzle_v_lo, 0.5)
 	_add_slider_row(parent, "vhi", "duty 1100 时 (m/s)", 1.0, 40.0, _muzzle_v_hi, 0.5)
