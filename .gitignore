@@ -54,3 +54,28 @@ stc32g/toolchain/**
 stc32g/toolchain/stcflash/__pycache__/
 
 *.pieproj
+
+# Local ISP/flash debug scratch (do not commit)
+STC32G.pdf
+_probe_*
+_rxdebug*
+extract_*.py
+flash_test*.log
+flash_try*
+stcgal_*.txt
+stcgal_*.out
+stcgal_*.err
+test_isp_*.py
+test_fast_isp.py
+test_combined.py
+test_debug_rx.py
+test_trigger*.py
+test_uart_isp_diag.py
+trigger_test.py
+raw_listen.py
+dep2.txt
+dep2err.txt
+gen2.txt
+gen2err.txt
+p_err.txt
+p_out.txt
