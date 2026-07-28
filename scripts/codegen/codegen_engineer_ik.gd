@@ -780,22 +780,22 @@ const AXIS_VECTORS: Dictionary = {
 const PITCH_DEGEN_EPS: float = 1.0e-4
 
 
-## 各关节转轴名。缺失 axis 字段时按历史构型推断，保证老配置行为不变：
-##   2 轴 = [Yaw, Yaw]（平面臂，两关节同轴）
-##   3 轴 = [Yaw, Pitch, Pitch]
-##   4 轴 = [Yaw, Pitch, Pitch, Pitch]
-func joint_axes(joints: Array, jc: int, config_type: int) -> Array:
+## 各关节转轴名。缺失 axis 字段时回落到配置界面的默认值：
+##   第 1 个关节 = Yaw（底座左右摆），其余 = Pitch（上下俯仰）
+##
+## 这个回落必须与 ui.tscn 里各 Axis 下拉的 selected 一致，否则
+## 「不填 axis」的调用方（测试夹具、老存档）算出来的臂与界面上的不是同一个臂。
+## 曾经 2 关节回落成 [Yaw, Yaw]（两轴同绕世界 Z、末端只能在水平面画圆），
+## 而界面默认是 [Yaw, Pitch]，两者差一个维度。
+## config_type 已退化成关节数的别名，不再参与判断，保留形参只为兼容调用点。
+func joint_axes(joints: Array, jc: int, _config_type: int) -> Array:
 	var out: Array = []
 	for i in range(jc):
 		var name: String = ""
 		if i < joints.size():
 			name = str(joints[i].get("axis", "")).strip_edges()
 		if not AXIS_VECTORS.has(name):
-			# 未指定：按历史构型推断
-			if config_type == 0:
-				name = AXIS_YAW
-			else:
-				name = AXIS_YAW if i == 0 else AXIS_PITCH
+			name = AXIS_YAW if i == 0 else AXIS_PITCH
 		out.append(name)
 	return out
 

@@ -37,11 +37,11 @@ func _initialize() -> void:
 	quit(0 if _fail == 0 else 1)
 
 
-## 未填 axis 时须按历史构型推断
+## 未填 axis 时须回落到配置界面的默认（第 1 关节 Yaw，其余 Pitch）
 func _test_axis_defaults() -> void:
 	var blank: Array = [ {}, {}, {}, {}]
-	_check("2轴默认轴 = [Yaw, Yaw]",
-		_cg.joint_axes(blank, 2, 0) == ["Yaw", "Yaw"],
+	_check("2关节默认轴 = [Yaw, Pitch]（与界面默认一致）",
+		_cg.joint_axes(blank, 2, 0) == ["Yaw", "Pitch"],
 		str(_cg.joint_axes(blank, 2, 0)))
 	_check("3轴默认轴 = [Yaw, Pitch, Pitch]",
 		_cg.joint_axes(blank, 3, 1) == ["Yaw", "Pitch", "Pitch"],
@@ -54,11 +54,15 @@ func _test_axis_defaults() -> void:
 	_check("显式 axis 覆盖默认",
 		_cg.joint_axes(custom, 3, 1) == ["Roll", "Yaw", "Pitch"],
 		str(_cg.joint_axes(custom, 3, 1)))
-	# 非法值回退到推断，不应崩
+	# 非法值回退到默认，不应崩
 	var bad: Array = [ {"axis": "香蕉"}, {"axis": ""}]
-	_check("非法 axis 回退到推断",
-		_cg.joint_axes(bad, 2, 0) == ["Yaw", "Yaw"],
+	_check("非法 axis 回退到默认",
+		_cg.joint_axes(bad, 2, 0) == ["Yaw", "Pitch"],
 		str(_cg.joint_axes(bad, 2, 0)))
+	# config_type 已退化成关节数的别名，不应再影响轴推断
+	_check("轴默认与 config_type 无关",
+		_cg.joint_axes(blank, 3, 0) == _cg.joint_axes(blank, 3, 2),
+		str(_cg.joint_axes(blank, 3, 0)) + " vs " + str(_cg.joint_axes(blank, 3, 2)))
 
 
 ## 未填 len 时须回退到 L1/L2/L3
