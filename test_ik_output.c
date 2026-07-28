@@ -106,6 +106,39 @@ void ExpansionBoradControl(uint8_t control_cmd, uint16_t data_p60, uint16_t data
                            uint16_t data_p66, uint16_t data_p74, uint16_t data_p75, uint16_t data_p76,
                            uint16_t data_p77);
 
+// ========================= ISP 自烧录监听 =========================
+// 串口收到 "@STCISP#" 命令时触发软复位进入 ISP 模式
+static const char isp_cmd[] = {'@','S','T','C','I','S','P','#'};
+static uint8_t isp_match_idx = 0;
+static uint8_t isp_rx_buf[8];
+void CheckISPCommand(void);
+void CheckISPCommand(void)
+{
+    uint8_t ch;
+    while (uart1_rx_head != uart1_rx_tail)
+    {
+        ch = uart1_rx_buff[uart1_rx_tail];
+        uart1_rx_tail = (uart1_rx_tail + 1) % UART1_RX_BUFFER_SIZE;
+        isp_rx_buf[isp_match_idx] = ch;
+        if (isp_rx_buf[isp_match_idx] == isp_cmd[isp_match_idx])
+        {
+            isp_match_idx++;
+            if (isp_match_idx >= 8)
+            {
+                // 收到完整 @STCISP#，触发软复位进入 ISP
+                IAP_CONTR = 0x60; // SWBS=1, SWRST=1
+            }
+        }
+        else
+        {
+            // 不匹配，重置（但当前字符可能是新序列的起始）
+            isp_match_idx = 0;
+            if (ch == '@')
+                isp_match_idx = 1;
+        }
+    }
+}
+
 void main()
 {
     All_Init();
@@ -117,6 +150,7 @@ void main()
     ik_reachable = 1;
     while (1)
     {
+        CheckISPCommand(); // 检测 ISP 烧录命令
         // 测试手柄连接状态
         if (RcKeyValueRead(KEY_OFFSET_UP))
             GPIO_Write_Bit(GPIO_P3, GPIO_Pin_7, 0);

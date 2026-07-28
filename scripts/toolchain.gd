@@ -33,7 +33,7 @@ const WORKSPACE_DST: String = "user://stc32g"
 ## 编译日志文件名
 const BUILD_LOG_NAME: String = "pie_block_build.log"
 ## 工具链版本标记（内容变更时触发重新解压）
-const TOOLCHAIN_VERSION: String = "keil_noarm_v1"
+const TOOLCHAIN_VERSION: String = "keil_noarm_v2"
 
 ## UV4 可执行文件候选名，按优先级排序：
 ## uVision.com 是控制台子系统版本，-b 批处理时不会弹出 GUI 窗口盖住本程序；

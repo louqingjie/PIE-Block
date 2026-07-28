@@ -11,6 +11,54 @@ func generate(cfg: Dictionary) -> String:
 	return ""
 
 
+# ============================================================ ISP 自烧录
+## 生成 ISP 监听函数与全局变量的 C 代码片段。
+## 在主循环中调用 CheckISPCommand() 即可检测是否收到 @STCISP# 命令，
+## 收到后写 IAP_CONTR=0x60 触发软复位进入 ISP 模式。
+## 返回的字符串包含：全局变量声明 + 函数实现，应放在 main() 之前。
+func _gen_isp_monitor() -> String:
+	var code: String = ""
+	code += "// ========================= ISP 自烧录监听 =========================\n"
+	code += "// 串口收到 \"@STCISP#\" 命令时触发软复位进入 ISP 模式\n"
+	code += "static const char isp_cmd[] = {'@','S','T','C','I','S','P','#'};\n"
+	code += "static uint8_t isp_match_idx = 0;\n"
+	code += "static uint8_t isp_rx_buf[8];\n"
+	code += "void CheckISPCommand(void);\n"
+	code += "void CheckISPCommand(void)\n"
+	code += "{\n"
+	code += "    uint8_t ch;\n"
+	code += "    while (uart1_rx_head != uart1_rx_tail)\n"
+	code += "    {\n"
+	code += "        ch = uart1_rx_buff[uart1_rx_tail];\n"
+	code += "        uart1_rx_tail = (uart1_rx_tail + 1) % UART1_RX_BUFFER_SIZE;\n"
+	code += "        isp_rx_buf[isp_match_idx] = ch;\n"
+	code += "        if (isp_rx_buf[isp_match_idx] == isp_cmd[isp_match_idx])\n"
+	code += "        {\n"
+	code += "            isp_match_idx++;\n"
+	code += "            if (isp_match_idx >= 8)\n"
+	code += "            {\n"
+	code += "                // 收到完整 @STCISP#，触发软复位进入 ISP\n"
+	code += "                IAP_CONTR = 0x60; // SWBS=1, SWRST=1\n"
+	code += "            }\n"
+	code += "        }\n"
+	code += "        else\n"
+	code += "        {\n"
+	code += "            // 不匹配，重置（但当前字符可能是新序列的起始）\n"
+	code += "            isp_match_idx = 0;\n"
+	code += "            if (ch == '@')\n"
+	code += "                isp_match_idx = 1;\n"
+	code += "        }\n"
+	code += "    }\n"
+	code += "}\n\n"
+	return code
+
+
+## 生成主循环中 ISP 监听调用代码（插入 while(1) 循环体开头）
+func _gen_isp_check_call() -> String:
+	return "        CheckISPCommand(); // 检测 ISP 烧录命令\n"
+
+
+
 # ============================================================ 共享工具函数
 ## 从 IO 对字符串中提取通信脚（前半），如 "P77 P27" -> "P77"
 func _parse_io_pair(text: String) -> String:

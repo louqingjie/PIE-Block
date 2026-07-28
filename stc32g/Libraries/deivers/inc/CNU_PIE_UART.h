@@ -31,6 +31,10 @@ extern int uart_receive[4];
 #define UART1_RX_BUFFER_SIZE	100
 #define UART1_TX_BUFFER_SIZE	100
 
+/* UART1 接收环形缓冲区（用于 ISP 监听等需要逐字节读取的场景） */
+extern volatile uint8_t uart1_rx_head;	// 写入指针（ISR 更新）
+extern volatile uint8_t uart1_rx_tail;	// 读取指针（主循环更新）
+
 #define	UART1_CLEAR_RX_FLAG (SCON  &= ~0x01)
 #define	UART2_CLEAR_RX_FLAG (S2CON &= ~0x01)
 #define	UART3_CLEAR_RX_FLAG (S3CON &= ~0x01)

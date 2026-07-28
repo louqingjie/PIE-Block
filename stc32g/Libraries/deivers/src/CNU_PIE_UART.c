@@ -22,6 +22,8 @@ int uart_receive[4];
 uint8_t UART_BUSY[5];				                  //串口接收忙标志位
 uint8_t uart1_tx_buff[UART1_TX_BUFFER_SIZE];	//发送缓冲
 uint8_t uart1_rx_buff[UART1_RX_BUFFER_SIZE];	//接收缓冲
+volatile uint8_t uart1_rx_head = 0;		//环形缓冲区写入指针（ISR 更新）
+volatile uint8_t uart1_rx_tail = 0;		//环形缓冲区读取指针（主循环更新）
 
  /**************************************************************************************************************************
  * @brief  UART引脚初始化

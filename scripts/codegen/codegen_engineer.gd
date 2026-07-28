@@ -334,6 +334,9 @@ func generate(cfg: Dictionary) -> String:
 	code += "                           uint16_t data_p66, uint16_t data_p74, uint16_t data_p75, uint16_t data_p76,\n"
 	code += "                           uint16_t data_p77);\n\n"
 
+	# ISP 自烧录监听代码
+	code += _gen_isp_monitor()
+
 	# --- main() ---
 	code += "void main()\n"
 	code += "{\n"
@@ -341,6 +344,7 @@ func generate(cfg: Dictionary) -> String:
 	code += servo_init_code
 	code += "    while (1)\n"
 	code += "    {\n"
+	code += _gen_isp_check_call()
 	code += "        // 测试手柄连接状态\n"
 	code += "        if (RcKeyValueRead(KEY_OFFSET_UP))\n"
 	code += "            GPIO_Write_Bit(GPIO_P3, GPIO_Pin_7, 0);\n"

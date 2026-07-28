@@ -80,6 +80,9 @@ func generate(cfg: Dictionary) -> String:
 	code += "                           uint16_t data_p77);\n"
 	code += "\n"
 
+	# ISP 自烧录监听代码
+	code += _gen_isp_monitor()
+
 	# --- main() ---
 	code += "void main()\n{\n"
 	code += "    All_Init();\n"
@@ -130,6 +133,7 @@ func generate(cfg: Dictionary) -> String:
 	code += "    // 全部测试完成\n"
 	code += "    while (1)\n"
 	code += "    {\n"
+	code += _gen_isp_check_call()
 	code += "        Buzzer_Play(BUZZER_FREQ_DONE, 500);\n"
 	code += "        Ms_Delay(2000);\n"
 	code += "    }\n"

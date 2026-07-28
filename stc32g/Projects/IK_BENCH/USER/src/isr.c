@@ -36,6 +36,9 @@ void UART1_Isr() interrupt 4
     {
       UART1_CLEAR_RX_FLAG;
 			uart_receive[0]++;
+			//将接收到的字节存入环形缓冲区（用于 ISP 监听等）
+			uart1_rx_buff[uart1_rx_head] = SBUF;
+			uart1_rx_head = (uart1_rx_head + 1) % UART1_RX_BUFFER_SIZE;
 			//接收数据寄存器为：SBUF
     }
 }

@@ -145,6 +145,9 @@ func generate(cfg: Dictionary) -> String:
 	code += "                           uint16_t data_p66, uint16_t data_p74, uint16_t data_p75, uint16_t data_p76,\n"
 	code += "                           uint16_t data_p77);\n\n"
 
+	# ISP 自烧录监听代码
+	code += _gen_isp_monitor()
+
 	# --- main() ---
 	# 增量模式：target 必须初始化为初始姿态对应的末端位置（正运动学预计算）。
 	# 用通用 fk_chain 而非旧的 _forward_kinematics：φ 的定义已改为末端仰角，
@@ -166,6 +169,7 @@ func generate(cfg: Dictionary) -> String:
 	code += "    ik_reachable = 1;\n"
 	code += "    while (1)\n"
 	code += "    {\n"
+	code += _gen_isp_check_call()
 	code += "        // 测试手柄连接状态\n"
 	code += "        if (RcKeyValueRead(KEY_OFFSET_UP))\n"
 	code += "            GPIO_Write_Bit(GPIO_P3, GPIO_Pin_7, 0);\n"
