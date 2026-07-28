@@ -35,6 +35,11 @@ const BUILD_LOG_NAME: String = "pie_block_build.log"
 ## 工具链版本标记（内容变更时触发重新解压）
 const TOOLCHAIN_VERSION: String = "keil_noarm_v2"
 
+## STC 烧录脚本路径（Python）
+const STCFLASH_SRC: String = "res://stc32g/toolchain/stcflash"
+## 烧录脚本部署目标
+const STCFLASH_DST: String = "user://stcflash"
+
 ## UV4 可执行文件候选名，按优先级排序：
 ## uVision.com 是控制台子系统版本，-b 批处理时不会弹出 GUI 窗口盖住本程序；
 ## UV4.exe 是 GUI 子系统版本，会弹窗抢焦点，仅作回退。
@@ -335,13 +340,200 @@ func build_sync(uv4_abs: String, project_dst: String) -> Dictionary:
 ## 返回 {exit, log, ok} 或 {ok: false, log: "<错误说明>"}
 func build_project(project_dst: String, code: String = "") -> Dictionary:
 	if not ensure_deployed():
-		return {"ok": false, "exit": -1, "log": "工具链部署失败"}
+		return {"ok": false, "exit": - 1, "log": "工具链部署失败"}
 	if not code.is_empty():
 		if not write_main_c(project_dst, code):
-			return {"ok": false, "exit": -1, "log": "写入 main.c 失败"}
+			return {"ok": false, "exit": - 1, "log": "写入 main.c 失败"}
 	var uv4_abs: String = find_uv4()
 	if uv4_abs.is_empty():
-		return {"ok": false, "exit": -1, "log": "未找到 uVision.com / UV4.exe"}
+		return {"ok": false, "exit": - 1, "log": "未找到 uVision.com / UV4.exe"}
 	if not generate_tools_ini():
 		_emit("[Warn] TOOLS.INI 生成失败，编译可能报错")
 	return build_sync(uv4_abs, project_dst)
+
+
+# ------------------------------------------------------------------ 烧录
+## 部署烧录脚本到 user://stcflash/
+func ensure_stcflash_deployed() -> bool:
+	var dst_abs: String = to_abs(STCFLASH_DST)
+	if not DirAccess.dir_exists_absolute(dst_abs):
+		if not _copy_dir_recursive(STCFLASH_SRC, STCFLASH_DST):
+			_emit("[Error] 无法复制烧录脚本到 user://stcflash/")
+			return false
+		_emit("烧录脚本已部署")
+	return true
+
+
+## 探测系统 Python 可执行文件路径。
+## 优先级：python3 > python > py
+## 返回绝对路径，找不到返回空串。
+func find_python() -> String:
+	for name in ["python3", "python", "py"]:
+		var output: Array = []
+		var exit_code: int = OS.execute(name, ["--version"], output, true)
+		if exit_code == 0:
+			# 获取绝对路径
+			var which_out: Array = []
+			if name == "py":
+				OS.execute("where", ["py"], which_out, true)
+			else:
+				OS.execute("where", [name], which_out, true)
+			if which_out.size() > 0:
+				var path: String = which_out[0].strip_edges().split("\n")[0].strip_edges()
+				if not path.is_empty() and FileAccess.file_exists(path):
+					return path
+			return name
+	return ""
+
+
+## 获取编译产物 hex 文件路径
+func get_hex_path(project_dst: String) -> String:
+	var mdk_abs: String = to_abs(project_dst).path_join("MDK")
+	return mdk_abs.path_join("Objects").path_join("Project_Template.hex")
+
+
+## 检查 hex 文件是否存在
+func hex_exists(project_dst: String) -> bool:
+	return FileAccess.file_exists(get_hex_path(project_dst))
+
+
+## 向串口发送 @STCISP# 命令触发芯片软复位进 ISP 模式
+## 返回 true 表示发送成功
+func trigger_isp(com_port: String) -> bool:
+	# 使用 Python 发送，因为 Godot 没有内置串口支持
+	var py: String = find_python()
+	if py.is_empty():
+		_emit("[Error] 未找到 Python，无法发送 ISP 触发命令")
+		return false
+	if not ensure_stcflash_deployed():
+		return false
+	
+	var script: String = to_abs(STCFLASH_DST).path_join("trigger_isp.py")
+	# 生成一次性触发脚本
+	var f: FileAccess = FileAccess.open(script, FileAccess.WRITE)
+	if f == null:
+		_emit("[Error] 无法创建 trigger_isp.py")
+		return false
+	f.store_string("""
+import sys
+import time
+try:
+    import serial
+except ImportError:
+    print("ERROR: pyserial not installed")
+    sys.exit(1)
+
+port = sys.argv[1]
+try:
+    ser = serial.Serial(port, 115200, timeout=0.5)
+    ser.write(b"@STCISP#")
+    ser.flush()
+    time.sleep(0.1)
+    ser.close()
+    print("OK")
+except Exception as e:
+    print("ERROR: " + str(e))
+    sys.exit(1)
+""")
+	f.close()
+	
+	var output: Array = []
+	var cmd: String = py.replace("/", "\\")
+	var exit_code: int = OS.execute(cmd, [script, com_port], output, true)
+	var result: String = ""
+	if output.size() > 0:
+		result = output[0].strip_edges()
+	
+	if exit_code != 0 or not result.contains("OK"):
+		_emit("[Error] 发送 ISP 触发命令失败: %s" % result)
+		return false
+	
+	_emit("已发送 @STCISP# 命令，芯片将软复位进 ISP 模式")
+	return true
+
+
+## 通过 UART（串口）烧录 hex 文件
+## 返回 {ok: bool, log: String}
+func download_hex_uart(hex_path: String, com_port: String, handshake_baud: int = 115200, transfer_baud: int = 115200) -> Dictionary:
+	var py: String = find_python()
+	if py.is_empty():
+		return {"ok": false, "log": "未找到 Python"}
+	if not ensure_stcflash_deployed():
+		return {"ok": false, "log": "烧录脚本部署失败"}
+	
+	var script: String = to_abs(STCFLASH_DST).path_join("pie_block_flash.py")
+	var cmd: String = py.replace("/", "\\")
+	var output: Array = []
+	var exit_code: int = OS.execute(cmd, [
+		script, "uart", hex_path, com_port,
+		str(handshake_baud), str(transfer_baud)
+	], output, true)
+	
+	var log_text: String = ""
+	if output.size() > 0:
+		log_text = output[0]
+	
+	return {
+		"ok": exit_code == 0,
+		"exit": exit_code,
+		"log": log_text,
+	}
+
+
+## 通过 USB 烧录 hex 文件
+## 返回 {ok: bool, log: String}
+func download_hex_usb(hex_path: String) -> Dictionary:
+	var py: String = find_python()
+	if py.is_empty():
+		return {"ok": false, "log": "未找到 Python"}
+	if not ensure_stcflash_deployed():
+		return {"ok": false, "log": "烧录脚本部署失败"}
+	
+	var script: String = to_abs(STCFLASH_DST).path_join("pie_block_flash.py")
+	var cmd: String = py.replace("/", "\\")
+	var output: Array = []
+	var exit_code: int = OS.execute(cmd, [
+		script, "usb", hex_path
+	], output, true)
+	
+	var log_text: String = ""
+	if output.size() > 0:
+		log_text = output[0]
+	
+	return {
+		"ok": exit_code == 0,
+		"exit": exit_code,
+		"log": log_text,
+	}
+
+
+## 列举可用串口（返回 COM 口名数组）
+func list_serial_ports() -> PackedStringArray:
+	var py: String = find_python()
+	if py.is_empty():
+		return PackedStringArray()
+	
+	var script: String = to_abs("user://list_ports.py")
+	var f: FileAccess = FileAccess.open(script, FileAccess.WRITE)
+	if f == null:
+		return PackedStringArray()
+	f.store_string("""
+try:
+    import serial.tools.list_ports
+    for p in serial.tools.list_ports.comports():
+        print(p.device)
+except ImportError:
+    pass
+""")
+	f.close()
+	
+	var cmd: String = py.replace("/", "\\")
+	var output: Array = []
+	OS.execute(cmd, [script], output, true)
+	var result: PackedStringArray = PackedStringArray()
+	if output.size() > 0:
+		for line in output[0].split("\n", false):
+			var port: String = line.strip_edges()
+			if not port.is_empty():
+				result.append(port)
+	return result

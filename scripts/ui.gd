@@ -137,6 +137,7 @@ const P_CODE_EDIT: NodePath = "VBoxContainer/HBoxContainer/HSplitContainer/CodeZ
 const P_EDIT_ZONE: NodePath = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone"
 # 顶栏按钮
 const P_BUILD_BTN: NodePath = "VBoxContainer/TopPanel/Build"
+const P_DOWNLOAD_BTN: NodePath = "VBoxContainer/TopPanel/Download"
 # 项目管理按钮
 const P_CREATE_BTN: NodePath = "VBoxContainer/TopPanel/Create"
 const P_OPEN_BTN: NodePath = "VBoxContainer/TopPanel/Open"
@@ -151,6 +152,7 @@ const PROJECT_GATED_BTNS: Array = [
 	"VBoxContainer/TopPanel/AIEdit",
 	"VBoxContainer/TopPanel/ArmSim",
 	"VBoxContainer/TopPanel/Build",
+	"VBoxContainer/TopPanel/Download",
 ]
 # AI 编辑入口（跳转到 code_edit.tscn）
 const P_AI_EDIT_BTN: NodePath = "VBoxContainer/TopPanel/AIEdit"
@@ -176,6 +178,8 @@ const PF = preload("res://scripts/project_file.gd")
 # ------------------------------------------------------------------ 生命周期
 var _build_thread: Thread = null
 var _build_busy: bool = false
+var _download_thread: Thread = null
+var _download_busy: bool = false
 # 当前选中的代码生成器（随 Tab 切换）
 var _codegen: CodeGenBase = null
 # 工具链管理器（惰性创建，见 _toolchain()）
@@ -282,6 +286,10 @@ func _connect_signals() -> void:
 	var build_btn: Node = get_node_or_null(P_BUILD_BTN)
 	if build_btn is BaseButton:
 		build_btn.pressed.connect(_on_build_pressed)
+	# 下载按钮
+	var download_btn: Node = get_node_or_null(P_DOWNLOAD_BTN)
+	if download_btn is BaseButton:
+		download_btn.pressed.connect(_on_download_pressed)
 	# AI 编辑入口
 	var ai_btn: Node = get_node_or_null(P_AI_EDIT_BTN)
 	if ai_btn is BaseButton:
@@ -1938,6 +1946,8 @@ func _get_option_idx(path: NodePath) -> int:
 func _exit_tree() -> void:
 	if _build_thread and _build_thread.is_alive():
 		_build_thread.wait_to_finish()
+	if _download_thread and _download_thread.is_alive():
+		_download_thread.wait_to_finish()
 
 
 ## 工具链管理器（惰性创建，日志接到 Output 框）
@@ -2243,3 +2253,89 @@ func _clear_output() -> void:
 	var out: Node = get_node_or_null(P_OUTPUT)
 	if out and out.has_method("clear_output"):
 		out.clear_output()
+
+
+# ------------------------------------------------------------------ 下载/烧录
+## 退出时清理下载线程，避免泄漏
+func _cleanup_download_thread() -> void:
+	if _download_thread and _download_thread.is_alive():
+		_download_thread.wait_to_finish()
+	_download_thread = null
+
+
+## 下载按钮回调：检查 hex -> 发 @STCISP# -> 调用 stcgal 烧录
+func _on_download_pressed() -> void:
+	if _download_busy:
+		return
+	# 1) 检查 hex 文件是否存在
+	var project_dst: String = _get_current_project_dst()
+	var hex_path: String = _toolchain().get_hex_path(project_dst)
+	if not _toolchain().hex_exists(project_dst):
+		_append_output("[Error] 未找到 hex 文件，请先编译")
+		_append_output("       路径: %s" % hex_path)
+		return
+	# 2) 列举可用串口
+	var ports: PackedStringArray = _toolchain().list_serial_ports()
+	if ports.is_empty():
+		_append_output("[Error] 未检测到可用串口")
+		_append_output("       请确认板子已通过 USB/蓝牙连接到电脑")
+		return
+	# 3) 自动选择串口（优先 COM 口中名字最小的）
+	var com_port: String = ports[0]
+	# 如果有多个端口，选最后一个（通常板子是最后连接的）
+	if ports.size() > 1:
+		com_port = ports[ports.size() - 1]
+	_append_output("使用串口: %s（共检测到 %d 个端口）" % [com_port, ports.size()])
+	# 4) 发送 @STCISP# 触发芯片进 ISP 模式
+	_append_output("正在发送 ISP 触发命令...")
+	if not _toolchain().trigger_isp(com_port):
+		_append_output("[Error] ISP 触发失败，请确认板子已上电且串口正确")
+		return
+	# 5) 等待芯片软复位并重新枚举
+	_append_output("等待芯片进入 ISP 模式（2秒）...")
+	# 6) 启动异步下载（UART 路径）
+	_download_busy = true
+	var btn: Node = get_node_or_null(P_DOWNLOAD_BTN)
+	if btn is BaseButton:
+		btn.disabled = true
+		btn.text = "下载中…"
+	_download_thread = Thread.new()
+	var err: int = _download_thread.start(
+		_download_worker.bind(hex_path, com_port))
+	if err != OK:
+		_download_busy = false
+		if btn is BaseButton:
+			btn.disabled = false
+			btn.text = "下载"
+		_append_output("[Error] 无法启动下载线程（错误码 %d）" % err)
+
+
+## 下载工作线程：通过 UART 执行 ISP 烧录
+func _download_worker(hex_path: String, com_port: String) -> void:
+	# 等待芯片进入 ISP 模式
+	OS.delay_msec(2000)
+	var result: Dictionary = _toolchain().download_hex_uart(hex_path, com_port)
+	call_deferred("_on_download_finished", result)
+
+
+## 下载完成回调（主线程）
+func _on_download_finished(result: Dictionary) -> void:
+	_download_busy = false
+	if _download_thread and _download_thread.is_alive():
+		_download_thread.wait_to_finish()
+	_download_thread = null
+	# 复位按钮
+	var btn: Node = get_node_or_null(P_DOWNLOAD_BTN)
+	if btn is BaseButton:
+		btn.disabled = false
+		btn.text = "下载"
+	# 显示结果
+	var ok: bool = bool(result.get("ok", false))
+	var log_text: String = result.get("log", "")
+	if ok:
+		_append_output("✓ 下载成功！芯片将自动复位运行新程序")
+	else:
+		_append_output("✗ 下载失败")
+	if not log_text.is_empty():
+		for line in log_text.split("\n", false):
+			_append_output(line)

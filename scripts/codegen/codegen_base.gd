@@ -58,7 +58,6 @@ func _gen_isp_check_call() -> String:
 	return "        CheckISPCommand(); // 检测 ISP 烧录命令\n"
 
 
-
 # ============================================================ 共享工具函数
 ## 从 IO 对字符串中提取通信脚（前半），如 "P77 P27" -> "P77"
 func _parse_io_pair(text: String) -> String:
