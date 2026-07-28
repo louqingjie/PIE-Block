@@ -33,7 +33,7 @@ const WORKSPACE_DST: String = "user://stc32g"
 ## 编译日志文件名
 const BUILD_LOG_NAME: String = "pie_block_build.log"
 ## 工具链版本标记（内容变更时触发重新解压）
-const TOOLCHAIN_VERSION: String = "keil_noarm_v2"
+const TOOLCHAIN_VERSION: String = "keil_noarm_v3"
 
 ## STC 烧录脚本路径（Python）
 const STCFLASH_SRC: String = "res://stc32g/toolchain/stcflash"
@@ -356,11 +356,12 @@ func build_project(project_dst: String, code: String = "") -> Dictionary:
 ## 部署烧录脚本到 user://stcflash/
 func ensure_stcflash_deployed() -> bool:
 	var dst_abs: String = to_abs(STCFLASH_DST)
-	if not DirAccess.dir_exists_absolute(dst_abs):
-		if not _copy_dir_recursive(STCFLASH_SRC, STCFLASH_DST):
-			_emit("[Error] 无法复制烧录脚本到 user://stcflash/")
-			return false
-		_emit("烧录脚本已部署")
+	# 每次都覆盖复制，避免旧脚本残留（尤其是协议脚本迭代期）
+	if DirAccess.dir_exists_absolute(dst_abs):
+		_remove_dir_recursive(STCFLASH_DST)
+	if not _copy_dir_recursive(STCFLASH_SRC, STCFLASH_DST):
+		_emit("[Error] 无法复制烧录脚本到 user://stcflash/")
+		return false
 	return true
 
 
@@ -400,16 +401,14 @@ func hex_exists(project_dst: String) -> bool:
 ## 向串口发送 @STCISP# 命令触发芯片软复位进 ISP 模式
 ## 返回 true 表示发送成功
 func trigger_isp(com_port: String) -> bool:
-	# 使用 Python 发送，因为 Godot 没有内置串口支持
 	var py: String = find_python()
 	if py.is_empty():
 		_emit("[Error] 未找到 Python，无法发送 ISP 触发命令")
 		return false
 	if not ensure_stcflash_deployed():
 		return false
-	
+
 	var script: String = to_abs(STCFLASH_DST).path_join("trigger_isp.py")
-	# 生成一次性触发脚本
 	var f: FileAccess = FileAccess.open(script, FileAccess.WRITE)
 	if f == null:
 		_emit("[Error] 无法创建 trigger_isp.py")
@@ -424,8 +423,10 @@ except ImportError:
     sys.exit(1)
 
 port = sys.argv[1]
+baud = int(sys.argv[2]) if len(sys.argv) > 2 else 230400
 try:
-    ser = serial.Serial(port, 115200, timeout=0.5)
+    ser = serial.Serial(port, baud, timeout=0.5, parity=serial.PARITY_NONE)
+    ser.reset_input_buffer()
     ser.write(b"@STCISP#")
     ser.flush()
     time.sleep(0.1)
@@ -436,72 +437,57 @@ except Exception as e:
     sys.exit(1)
 """)
 	f.close()
-	
+
 	var output: Array = []
 	var cmd: String = py.replace("/", "\\")
-	var exit_code: int = OS.execute(cmd, [script, com_port], output, true)
+	# 用户程序 UART1 默认 230400；必须匹配，否则 @STCISP# 收不到
+	var exit_code: int = OS.execute(cmd, [script, com_port, "230400"], output, true)
 	var result: String = ""
 	if output.size() > 0:
 		result = output[0].strip_edges()
-	
+
 	if exit_code != 0 or not result.contains("OK"):
 		_emit("[Error] 发送 ISP 触发命令失败: %s" % result)
 		return false
-	
+
 	_emit("已发送 @STCISP# 命令，芯片将软复位进 ISP 模式")
 	return true
 
 
 ## 通过 UART（串口）烧录 hex 文件
 ## 返回 {ok: bool, log: String}
-func download_hex_uart(hex_path: String, com_port: String, handshake_baud: int = 115200, transfer_baud: int = 115200) -> Dictionary:
+## app_baud: 用户程序串口波特率（发 @STCISP#）
+## isp_baud: ISP 监控程序通信波特率（发 0x7F / 协议包）
+## mode: "uart" 软复位触发；"uart-power" 等待断电上电
+func download_hex_uart(hex_path: String, com_port: String, app_baud: int = 230400, isp_baud: int = 115200, mode: String = "uart") -> Dictionary:
 	var py: String = find_python()
 	if py.is_empty():
 		return {"ok": false, "log": "未找到 Python"}
 	if not ensure_stcflash_deployed():
 		return {"ok": false, "log": "烧录脚本部署失败"}
-	
+
 	var script: String = to_abs(STCFLASH_DST).path_join("pie_block_flash.py")
 	var cmd: String = py.replace("/", "\\")
 	var output: Array = []
-	var exit_code: int = OS.execute(cmd, [
-		script, "uart", hex_path, com_port,
-		str(handshake_baud), str(transfer_baud)
-	], output, true)
-	
+	var args: PackedStringArray = PackedStringArray()
+	if mode == "uart-power":
+		args = PackedStringArray([script, "uart-power", hex_path, com_port, str(isp_baud)])
+	else:
+		args = PackedStringArray([script, "uart", hex_path, com_port, str(app_baud), str(isp_baud)])
+	var exit_code: int = OS.execute(cmd, args, output, true)
+
 	var log_text: String = ""
 	if output.size() > 0:
 		log_text = output[0]
-	
-	return {
-		"ok": exit_code == 0,
-		"exit": exit_code,
-		"log": log_text,
-	}
 
+	# stcgal 在管道场景下退出码可能非 0，但日志含 Disconnected!/Setting options 即视为成功
+	var ok: bool = (exit_code == 0) \
+		or (log_text.find("Disconnected!") >= 0) \
+		or (log_text.find("Setting options: done") >= 0) \
+		or (log_text.find("烧录成功") >= 0)
 
-## 通过 USB 烧录 hex 文件
-## 返回 {ok: bool, log: String}
-func download_hex_usb(hex_path: String) -> Dictionary:
-	var py: String = find_python()
-	if py.is_empty():
-		return {"ok": false, "log": "未找到 Python"}
-	if not ensure_stcflash_deployed():
-		return {"ok": false, "log": "烧录脚本部署失败"}
-	
-	var script: String = to_abs(STCFLASH_DST).path_join("pie_block_flash.py")
-	var cmd: String = py.replace("/", "\\")
-	var output: Array = []
-	var exit_code: int = OS.execute(cmd, [
-		script, "usb", hex_path
-	], output, true)
-	
-	var log_text: String = ""
-	if output.size() > 0:
-		log_text = output[0]
-	
 	return {
-		"ok": exit_code == 0,
+		"ok": ok,
 		"exit": exit_code,
 		"log": log_text,
 	}

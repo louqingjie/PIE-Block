@@ -1,7 +1,7 @@
 /* STC32G 机械臂逆解性能实测 */
 /* 计时：TIM0 1T 自由运行 16 位定时器，每系统时钟 +1，中断累加溢出。 */
 /*       FOSC=33177600，微秒 = 周期数 / 33.1776 */
-/* 输出：UART1 (P30/P31) 115200 8N1，上电即跑，无需遥控器 */
+/* 输出：UART1 (P30/P31) 230400 8N1，上电即跑，无需遥控器 */
 #include "main.h"
 #include "MATH.H"
 
@@ -466,11 +466,16 @@ void bench_fmul(void)
     put_str("\r\n");
 }
 
+// ========================= ISP 自烧录监听 =========================
+// 按照 STC32G 技术手册官方示例：在 UART1 ISR 中直接匹配 @STCISP#
+char code STCISPCMD[] = "@STCISP#"; // 自定义下载命令
+uint8_t isp_cmd_index = 0;           // 命令匹配索引
+
 void main(void)
 {
     uint8_t nj;
     Board_Init();
-    UART_Init(UART_1, UART1_RX_P30, UART1_TX_P31, 115200, TIM1);
+    UART_Init(UART_1, UART1_RX_P30, UART1_TX_P31, 230400, TIM1);
     Timer0_FreeRun_Init();
     Ms_Delay(200);
 

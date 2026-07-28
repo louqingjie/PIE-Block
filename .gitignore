@@ -44,7 +44,13 @@ release/
 
 # Bundled Keil toolchain (licensed binaries; prepare via script, do not commit)
 vendor/keil-toolchain/
-
 toolchain/
+
+# Re-include STC serial flash helpers under stc32g/toolchain (Keil tree still ignored)
+!stc32g/toolchain/
+stc32g/toolchain/**
+!stc32g/toolchain/stcflash/
+!stc32g/toolchain/stcflash/**
+stc32g/toolchain/stcflash/__pycache__/
 
 *.pieproj

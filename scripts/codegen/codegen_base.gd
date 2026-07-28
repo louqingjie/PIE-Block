@@ -12,50 +12,25 @@ func generate(cfg: Dictionary) -> String:
 
 
 # ============================================================ ISP 自烧录
-## 生成 ISP 监听函数与全局变量的 C 代码片段。
-## 在主循环中调用 CheckISPCommand() 即可检测是否收到 @STCISP# 命令，
-## 收到后写 IAP_CONTR=0x60 触发软复位进入 ISP 模式。
-## 返回的字符串包含：全局变量声明 + 函数实现，应放在 main() 之前。
+## 生成 ISP 监听代码。
+## 按照 STC32G 技术手册第 264-266 页的官方示例，@STCISP# 匹配在 UART ISR 中直接完成，
+## 不走环形缓冲区（避免扩展板通信回环数据干扰匹配）。
+## ISR 中直接比较 SBUF 与命令字符串，匹配完成后写 IAP_CONTR=0x60 软复位进 ISP。
+## 返回的字符串包含：全局变量声明，应放在 main() 之前。
 func _gen_isp_monitor() -> String:
 	var code: String = ""
 	code += "// ========================= ISP 自烧录监听 =========================\n"
-	code += "// 串口收到 \"@STCISP#\" 命令时触发软复位进入 ISP 模式\n"
-	code += "static const char isp_cmd[] = {'@','S','T','C','I','S','P','#'};\n"
-	code += "static uint8_t isp_match_idx = 0;\n"
-	code += "static uint8_t isp_rx_buf[8];\n"
-	code += "void CheckISPCommand(void);\n"
-	code += "void CheckISPCommand(void)\n"
-	code += "{\n"
-	code += "    uint8_t ch;\n"
-	code += "    while (uart1_rx_head != uart1_rx_tail)\n"
-	code += "    {\n"
-	code += "        ch = uart1_rx_buff[uart1_rx_tail];\n"
-	code += "        uart1_rx_tail = (uart1_rx_tail + 1) % UART1_RX_BUFFER_SIZE;\n"
-	code += "        isp_rx_buf[isp_match_idx] = ch;\n"
-	code += "        if (isp_rx_buf[isp_match_idx] == isp_cmd[isp_match_idx])\n"
-	code += "        {\n"
-	code += "            isp_match_idx++;\n"
-	code += "            if (isp_match_idx >= 8)\n"
-	code += "            {\n"
-	code += "                // 收到完整 @STCISP#，触发软复位进入 ISP\n"
-	code += "                IAP_CONTR = 0x60; // SWBS=1, SWRST=1\n"
-	code += "            }\n"
-	code += "        }\n"
-	code += "        else\n"
-	code += "        {\n"
-	code += "            // 不匹配，重置（但当前字符可能是新序列的起始）\n"
-	code += "            isp_match_idx = 0;\n"
-	code += "            if (ch == '@')\n"
-	code += "                isp_match_idx = 1;\n"
-	code += "        }\n"
-	code += "    }\n"
-	code += "}\n\n"
+	code += "// 按照 STC32G 技术手册官方示例：在 UART1 ISR 中直接匹配 @STCISP#\n"
+	# 用 code 数组而非指针：避免部分 C251 链接/寻址把命令串放到错误空间
+	code += "char code STCISPCMD[] = \"@STCISP#\"; // 自定义下载命令\n"
+	code += "uint8_t isp_cmd_index = 0;           // 命令匹配索引\n\n"
 	return code
 
 
-## 生成主循环中 ISP 监听调用代码（插入 while(1) 循环体开头）
+## 生成主循环中 ISP 监听调用代码
+## 由于匹配在 ISR 中完成，主循环不需要调用任何函数，返回空串
 func _gen_isp_check_call() -> String:
-	return "        CheckISPCommand(); // 检测 ISP 烧录命令\n"
+	return ""
 
 
 # ============================================================ 共享工具函数

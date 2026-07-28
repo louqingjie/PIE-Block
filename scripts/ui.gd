@@ -2278,22 +2278,18 @@ func _on_download_pressed() -> void:
 	var ports: PackedStringArray = _toolchain().list_serial_ports()
 	if ports.is_empty():
 		_append_output("[Error] 未检测到可用串口")
-		_append_output("       请确认板子已通过 USB/蓝牙连接到电脑")
+		_append_output("       请确认板子已通过 CH340 / 蓝牙串口连接到电脑")
 		return
-	# 3) 自动选择串口（优先 COM 口中名字最小的）
+	# 3) 自动选择串口：多口时取最后一个（通常是刚插上的板子）
 	var com_port: String = ports[0]
-	# 如果有多个端口，选最后一个（通常板子是最后连接的）
 	if ports.size() > 1:
 		com_port = ports[ports.size() - 1]
 	_append_output("使用串口: %s（共检测到 %d 个端口）" % [com_port, ports.size()])
-	# 4) 发送 @STCISP# 触发芯片进 ISP 模式
-	_append_output("正在发送 ISP 触发命令...")
-	if not _toolchain().trigger_isp(com_port):
-		_append_output("[Error] ISP 触发失败，请确认板子已上电且串口正确")
-		return
-	# 5) 等待芯片软复位并重新枚举
-	_append_output("等待芯片进入 ISP 模式（2秒）...")
-	# 6) 启动异步下载（UART 路径）
+	for p in ports:
+		_append_output("  - %s" % p)
+	# 4) 启动异步下载（同会话软触发 + stc8d；trim 强制 33.1776MHz）
+	_append_output("开始串口烧录（同会话 @STCISP# → stc8d，握手 2400，trim 33.1776MHz）...")
+	_append_output("若提示按 Reset：当前固件时钟/波特率可能不对，按一次即可；之后应能自动进 ISP")
 	_download_busy = true
 	var btn: Node = get_node_or_null(P_DOWNLOAD_BTN)
 	if btn is BaseButton:
@@ -2312,9 +2308,8 @@ func _on_download_pressed() -> void:
 
 ## 下载工作线程：通过 UART 执行 ISP 烧录
 func _download_worker(hex_path: String, com_port: String) -> void:
-	# 等待芯片进入 ISP 模式
-	OS.delay_msec(2000)
-	var result: Dictionary = _toolchain().download_hex_uart(hex_path, com_port)
+	# 脚本内同一会话完成触发与烧录，无需额外等待
+	var result: Dictionary = _toolchain().download_hex_uart(hex_path, com_port, 230400, 115200)
 	call_deferred("_on_download_finished", result)
 
 

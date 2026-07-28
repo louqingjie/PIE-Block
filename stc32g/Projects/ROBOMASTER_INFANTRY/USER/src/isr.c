@@ -25,8 +25,11 @@
 
 #include "CNU_PIE_UART.h"
 #include "CNU_PIE_EXTI.h"
+extern char code STCISPCMD[];
+extern uint8_t isp_cmd_index;
 void UART1_Isr() interrupt 4
 {
+	char dat;
 	if (UART1_GET_TX_FLAG)
 	{
 		UART1_CLEAR_TX_FLAG;
@@ -36,9 +39,20 @@ void UART1_Isr() interrupt 4
 	{
 		UART1_CLEAR_RX_FLAG;
 		uart_receive[0]++;
-		// 将接收到的字节存入环形缓冲区（用于 ISP 监听等）
-		uart1_rx_buff[uart1_rx_head] = SBUF;
-		uart1_rx_head = (uart1_rx_head + 1) % UART1_RX_BUFFER_SIZE;
+		// ISP 自烧录监听：在 ISR 中直接匹配 @STCISP#（按 STC32G 技术手册官方示例）
+		dat = SBUF;
+		if (dat == STCISPCMD[isp_cmd_index])
+		{
+			isp_cmd_index++;
+			if (STCISPCMD[isp_cmd_index] == '\0')
+				IAP_CONTR = 0x60; // 匹配完成，软复位到 ISP
+		}
+		else
+		{
+			isp_cmd_index = 0;
+			if (dat == STCISPCMD[isp_cmd_index])
+				isp_cmd_index++;
+		}
 		// 接收数据寄存器为：SBUF
 	}
 }
