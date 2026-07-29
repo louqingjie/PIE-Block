@@ -42,34 +42,49 @@
 
 /* ---------------------------------------------------------------- 内存布局
  *
- * 前提：ISP 下载时必须把 EEPROM 设成 128K，这样整片 flash 都是 IAP 可写区。
- * 实测确认（IAP_PROBE 探针）：
- *   - 128K 模式下 IAP 能读写代码区（0x010000-0x01FFFF）
- *   - 代码仍能从 0xFF0000 正常执行
- *   - 0xFE0000 区【不能取指执行】，调用后芯片复位。所以 App 不放那里。
+ * 布局照 STC 官方《利用STC的IAP单片机开发自己的ISP程序-STC32G12K128系列》
+ * 第 2 页的 flash 规划，不要自创。
  *
- *   物理 0xFF0000  = IAP 0x010000   Bootloader   8K
- *   物理 0xFF2000  = IAP 0x012000   App 代码区
- *   物理 0xFFFE00  = IAP 0x01FE00   元数据扇区
- *   物理 0xFE0000  = IAP 0x000000   EEPROM 数据区（只能存数据）
+ * 前提：ISP 下载 bootloader 时必须把 EEPROM 设成 128K，且【设完要重新上电
+ * 才生效】（官方文档标注"很重要，容易被忽略"）。否则 IAP 全部 CMD_FAIL。
+ *
+ * IAP 地址 = 物理地址 & 0x1FFFF（IAP_ADDRE 只取 bit16，寻址空间 17 位）：
+ *
+ *   物理 0xFE0000-0xFEFFFF = IAP 0x00000-0x0FFFF  低 64K，用户可任意使用
+ *   物理 0xFF0000-0xFF0FFF = IAP 0x10000-0x10FFF  Bootloader 4K（拒绝写）
+ *   物理 0xFF1000-0xFFFFFF = IAP 0x11000-0x1FFFF  App 代码区 60K
+ *
+ * 实测确认（IAP_PROBE 探针）：
+ *   - 128K 模式下 IAP 能读写代码区
+ *   - 代码仍能从 0xFF0000 正常执行
+ *   - 0xFE0000 区【不能取指执行】，调用后芯片复位。所以 App 不放那里，
+ *     而是放在同一代码区的偏移处 0xFF1000。
+ *
+ * App 跑在 0xFF1000 需要三件事配合（缺一不可）：
+ *   1. bootloader 的 isr.asm 中断蹦床，把 0x0003/0x000B/... 转发到 +0x1000
+ *   2. App 的 C251 编译器选项 INTVECTOR(0x1000)
+ *   3. 上位机把 hex 里 0xFF0000-0xFF0002 的复位跳转搬到 0xFF1000-0xFF1002
  */
 
-/* Bootloader 占用范围，App 与下载协议都必须拒绝写这里 */
-#define IAP_BOOT_BASE 0x010000UL
-#define IAP_BOOT_SIZE 0x2000UL
-#define IAP_BOOT_END (IAP_BOOT_BASE + IAP_BOOT_SIZE)
+/* Bootloader 占用范围（IAP 地址），App 与下载协议都必须拒绝写这里 */
+#define IAP_BOOT_BASE 0x10000UL
+#define IAP_LDR_SIZE 0x1000UL
+#define IAP_BOOT_END (IAP_BOOT_BASE + IAP_LDR_SIZE)
 
-/* App 区在 IAP 线性地址空间的起点 */
-#define IAP_APP_BASE 0x012000UL
-/* 元数据扇区：App 区最后一个扇区，存 magic/长度/CRC/下载标志 */
-#define IAP_META_ADDR 0x01FE00UL
-/* App 区可用大小 */
-#define IAP_APP_SIZE (IAP_META_ADDR - IAP_APP_BASE)
+/* App 区在 IAP 地址空间的起点与大小 */
+#define IAP_APP_BASE (IAP_BOOT_BASE + IAP_LDR_SIZE)
+#define IAP_APP_SIZE (0x20000UL - IAP_APP_BASE)
 
-/* EEPROM 数据区（不可执行，只能存参数之类的数据） */
+/* 低 64K 块区，用户可任意使用（不可取指，只能存数据） */
 #define IAP_EEPROM_BASE 0x000000UL
 
 #define IAP_SECTOR_SIZE 512U
+
+/* DFU 下载标志：放 XRAM 最后 4 字节，软复位不清零。
+   App 侧写入 IAP_DFU_TAG 后软复位，bootloader 据此停在下载模式。
+   与 bootloader 的 dfu.c / dfu.h 必须一致。 */
+#define IAP_DFU_FLAG_ADDR 0x1FFCU
+#define IAP_DFU_TAG 0x12abcd34UL
 
 /* ---------------------------------------------------------------- API */
 

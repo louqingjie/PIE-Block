@@ -11,26 +11,59 @@ func generate(cfg: Dictionary) -> String:
 	return ""
 
 
-# ============================================================ ISP 自烧录
-## 生成 ISP 监听代码。
-## 按照 STC32G 技术手册第 264-266 页的官方示例，@STCISP# 匹配在 UART ISR 中直接完成，
-## 不走环形缓冲区（避免扩展板通信回环数据干扰匹配）。
-## ISR 中直接比较 SBUF 与命令字符串，匹配完成后写 IAP_CONTR=0x60 软复位进 ISP。
-## 返回的字符串包含：全局变量声明，应放在 main() 之前。
+# ============================================================ IAP 自升级触发
+## 生成 IAP 下载触发代码（照 STC 官方用户自建 ISP 例程的 DFU 标志方案）。
+##
+## 与旧的 @STCISP# 方案的区别：
+##   旧方案写 IAP_CONTR=0x60（SWBS=1）复位进 ROM ISP，受 IRC trim 与
+##   2400 波特率握手的约束，实测很不稳定。
+##   现方案写 IAP_CONTR=0x20（只置 SWRST）复位到【用户程序】，
+##   也就是常驻在 0xFF0000 的自己的 bootloader，完全绕开 ROM ISP。
+##
+## 标志放在 XRAM 末尾 0x1FFC 而不是 flash：
+##   软复位不会清零 XRAM，所以 bootloader 复位后还能读到这个值。
+##   完全不动 flash，因此无擦写磨损、无掉电写坏风险，也省掉元数据扇区。
+##   地址与取值必须与 bootloader 的 dfu.c / dfu.h 完全一致。
+##
+## 分工：
+##   ISR 只做命令字匹配并置 RAM 标志，主循环再执行复位。
+##   这样 ISR 保持极短，也避免在中断里做时序敏感的操作。
+##
+## 返回的字符串包含全局变量与函数定义，应放在 main() 之前。
 func _gen_isp_monitor() -> String:
 	var code: String = ""
-	code += "// ========================= ISP 自烧录监听 =========================\n"
-	code += "// 按照 STC32G 技术手册官方示例：在 UART1 ISR 中直接匹配 @STCISP#\n"
+	code += "// ==================== IAP 自升级下载触发 ====================\n"
+	code += "// 收到命令字后置 DFU 标志，再软复位到 bootloader。\n"
+	code += "// DfuFlag 的地址与取值必须与 bootloader 的 dfu.c / dfu.h 一致。\n"
 	# 用 code 数组而非指针：避免部分 C251 链接/寻址把命令串放到错误空间
-	code += "char code STCISPCMD[] = \"@STCISP#\"; // 自定义下载命令\n"
-	code += "uint8_t isp_cmd_index = 0;           // 命令匹配索引\n\n"
+	code += "char code STCISPCMD[] = \"@PIEIAP#\"; // 下载触发命令字\n"
+	code += "uint8_t isp_cmd_index = 0;           // 命令匹配索引（ISR 更新）\n"
+	code += "volatile uint8_t iapDownloadReq = 0; // 1 = 请求进入下载模式\n\n"
+
+	code += "// DFU 标志：放 XRAM 最后 4 字节，软复位不清零，bootloader 复位后据此\n"
+	code += "// 停在下载模式而不跳 App。不动 flash，无擦写磨损。\n"
+	code += "#define DFU_TAG 0x12abcd34\n"
+	code += "long xdata DfuFlag _at_ 0x1ffc;\n\n"
+
+	code += "// 置 DFU 标志并软复位到 bootloader。此函数不返回。\n"
+	code += "static void iapEnterDownload(void)\n"
+	code += "{\n"
+	code += "    EA = 0;               // 关中断，避免复位序列被打断\n"
+	code += "    DfuFlag = DFU_TAG;    // 告诉 bootloader 停在下载模式\n"
+	code += "    IAP_CONTR = 0x20;     // SWRST=1, SWBS=0 -> 复位到用户程序(bootloader)\n"
+	code += "    while (1)\n"
+	code += "        ; // 等复位生效\n"
+	code += "}\n\n"
 	return code
 
 
-## 生成主循环中 ISP 监听调用代码
-## 由于匹配在 ISR 中完成，主循环不需要调用任何函数，返回空串
+## 生成主循环开头的下载请求检查。
+## 必须放在主循环内，且要在任何阻塞操作之前，这样点下载后响应及时。
 func _gen_isp_check_call() -> String:
-	return ""
+	var code: String = ""
+	code += "        if (iapDownloadReq)\n"
+	code += "            iapEnterDownload(); // 不返回\n"
+	return code
 
 
 # ============================================================ 共享工具函数

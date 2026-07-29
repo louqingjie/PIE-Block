@@ -1,39 +1,39 @@
 /*********************************************************************************************************************
  * @file       main.c
- * @brief      pie-block IAP Bootloader
+ * @brief      pie-block IAP Bootloader —— 【已弃用，保留作参考】
  *
- * 架构（EEPROM=128K 模式）：
- *   0xFF0000 +---------------+
- *           |  Bootloader   |  8K (0xFF0000 - 0xFF1FFF)
- *           +---------------+
- *           |  App 代码区   |  剩余空间 (0xFF2000 - 0xFFFFFF)
- *           |  ...          |
- *           +---------------+
- *   0xFE0000 |  EEPROM 数据  |  (IAP 可写，不可执行)
- *           +---------------+
+ * 弃用原因：本实现假设 App 能链接到 0xFF2000，但实测【做不到】。
+ *   改 uvproj 的 <IROM>/<Cpu>/<CClasses> 都不会进链接器
+ *   （生成的 .lnp 里始终只有 CLASSES (EDATA..., HDATA...)）。
  *
- * 工作流程：
- *   1. 上电/复位 -> bootloader 启动
- *   2. 读元数据扇区检查"进入下载模式"标志
- *   3. 无标志 -> 直接跳到 App (0xFF2000)
- *   4. 有标志 -> 进下载循环：收帧 -> 擦扇区 -> 写 -> 回 ACK
- *   5. VERIFY 通过后 -> 清标志 -> 跳 App
+ * 正解见 STC 官方例程：App 留在原链接地址，靠 C251 编译器选项
+ *   INTVECTOR(0x1000) + bootloader 侧 isr.asm 中断蹦床
+ *   + 上位机搬复位跳转，三者配合实现 4K bootloader + App@0xFF1000。
+ *   替代实现在 stc32g/Projects/PIE_BOOTLOADER。
  *
- * 安全设计：
- *   - bootloader 只占用 0xFF0000-0xFF1FFF，擦写时拒绝该范围的地址
- *   - 元数据扇区（App 区最后一个 512B 扇区）也不擦
- *   - 写失败/断电 -> 元数据未更新 -> 下次开机 bootloader 会检测到 App 无效，
- *     停在下载循环等重新下载
+ * 本文件里仍然有价值、已在真机验证过的部分：
+ *   - iap_idle / iap_read_byte / iap_write_byte / iap_erase_sector
+ *     直接操作寄存器并检查 CMD_FAIL（库函数 EEPROM_* 不检查，不能用）
+ *   - 收发帧的状态机与超时处理
+ *   真机验证结果：PING/ERASE(111 扇区)/WRITE/VERIFY 全部通过，
+ *   CRC 与 PC 侧一致，bootloader 未自毁。
+ *
+ * 原设计（仅供理解下面代码，勿照此实施）：
+ *   0xFF0000  Bootloader  8K
+ *   0xFF2000  App 代码区
+ *   0xFFFE00  元数据扇区（存 magic/长度/CRC/下载标志）
+ *   0xFE0000  EEPROM 数据（IAP 可写，不可执行）
  ********************************************************************************************************************/
 #include "main.h"
 
 #define BOOT_BAUD 115200
 
-/* 地址布局全部来自 iap_proto.h，不在这里另写一份，
-   免得两处不一致（PC 侧 pie_block_iap.py 也用同一套数值）。 */
-#define BOOT_IAP_END IAP_BOOT_END
-#define APP_IAP_BASE IAP_APP_BASE
-#define META_IAP_ADDR IAP_META_ADDR
+/* 弃用方案的私有地址布局。
+   曾引用 iap_proto.h 的常量，但那些常量已按官方布局改为 4K bootloader
+   + App@0x11000，与本文件的假设不符，故在此自带一份，避免误导。 */
+#define BOOT_IAP_END 0x012000UL
+#define APP_IAP_BASE 0x012000UL
+#define META_IAP_ADDR 0x01FE00UL
 
 /* App 物理入口地址（bootloader 跳转目标） */
 #define APP_PHYS_ENTRY 0xFF2000UL

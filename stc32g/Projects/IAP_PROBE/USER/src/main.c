@@ -497,11 +497,16 @@ static void test_crc(void)
    选 0x000200 作为目标地址，避开 Q3 里写到 0x000000 的测试数据。 */
 
 /* 这个函数只写 SFR P0，返回。不引用任何 RAM/全局变量。
-   放在代码区，作为"原件"。 */
+   放在代码区，作为"原件"。Q6 与 Q7 都复制它。 */
 void target_func(void) large
 {
 	P0 = 0x55;
 }
+
+/* Q6 的结论已经拿到（0xFE0000 不可执行，调用即复位），
+   代码保留但不编译，免得触发未使用函数警告。
+   要复现时把 #if 0 改成 #if 1 并在 main 里恢复调用。 */
+#define PROBE_ENABLE_Q6 0
 
 /* 拷贝目标地址（IAP 线性地址），选 0x000200 避开 Q3 的测试数据 */
 #define TARGET_IAP_ADDR 0x000200UL
@@ -510,6 +515,7 @@ void target_func(void) large
 /* far 函数指针类型。MCS-251 far call 用 24 位地址。 */
 typedef void (*far_func_t)(void);
 
+#if PROBE_ENABLE_Q6
 static void test_exec(void)
 {
 	uint8_t code_buf[64];
@@ -590,6 +596,82 @@ static void test_exec(void)
 		p_str("  VERDICT: 0xFE0000 area is NOT executable (P0 unchanged)\r\n");
 	p_nl();
 }
+#endif /* PROBE_ENABLE_Q6 */
+
+/* Q7：XRAM 能否取指执行。
+
+   这是"方案 1"（bootloader 融进 App）的可行性前提：
+   擦写自己所在的 flash 区域时，正在执行的代码不能待在 flash 里，
+   必须先把下载循环整段搬到 RAM 执行。
+
+   XRAM 范围由 uvproj 配成 0x10000-0x11FFF（8K）。
+   选 0x11000 作目标，离编译器分配的 xdata 变量远一些。
+
+   与 Q6 唯一的区别是目标区换成 XRAM，复制用普通 far 指针写入
+   （XRAM 是 RAM，不需要 IAP）。 */
+
+#define XRAM_EXEC_ADDR 0x011000UL
+
+static void test_xram_exec(void)
+{
+	uint8_t code_buf[64];
+	uint8_t i;
+	uint8_t volatile far *dst;
+	far_func_t fp;
+
+	p_str("[Q7] execute from XRAM (0x011000)\r\n");
+	p_str("  (this decides whether a self-contained downloader is possible)\r\n");
+
+	/* 读原件机器码 */
+	read_far((uint32_t)target_func, code_buf);
+	p_str("  target_func code: ");
+	for (i = 0; i < 8; i++)
+	{
+		p_hex8(code_buf[i]);
+		UART_PutChar(UART_1, ' ');
+	}
+	p_nl();
+
+	/* 拷到 XRAM。XRAM 是 RAM，直接写，不用 IAP。 */
+	dst = (uint8_t volatile far *)XRAM_EXEC_ADDR;
+	for (i = 0; i < 32; i++)
+		dst[i] = code_buf[i];
+
+	/* 读回验证拷贝正确 */
+	p_str("  copy verify: ");
+	for (i = 0; i < 32; i++)
+	{
+		if (dst[i] != code_buf[i])
+		{
+			p_str("MISMATCH at ");
+			p_dec(i);
+			p_nl();
+			return;
+		}
+	}
+	p_str("match\r\n");
+
+	/* 清 P0，调用 XRAM 里的副本 */
+	P0 = 0x00;
+	p_str("  P0 before call = ");
+	p_hex8(P0);
+	p_nl();
+
+	p_str("  calling function at 0x011000... ");
+	fp = (far_func_t)dst;
+	fp();
+	p_str("returned\r\n");
+
+	p_str("  P0 after call  = ");
+	p_hex8(P0);
+	p_nl();
+
+	if (P0 == 0x55)
+		p_str("  VERDICT: XRAM is EXECUTABLE -> self-contained downloader feasible\r\n");
+	else
+		p_str("  VERDICT: XRAM is NOT executable\r\n");
+	p_nl();
+}
 
 void main(void)
 {
@@ -617,7 +699,13 @@ void main(void)
 	test_iap_rw();
 	test_iap_range();
 	test_code_region();
-	test_exec();
+	/* Q7 必须排在 Q6 之前：Q6 调用 0xFE0000 会让芯片复位，
+	   排在它后面的测试永远跑不到。 */
+	test_xram_exec();
+	/* Q6 已确认失败（0xFE0000 不可执行，调用即复位），
+	   现在注释掉，避免复位循环干扰后续读数。
+	   要复现时取消注释即可。 */
+	/* test_exec(); */
 
 	p_str("==== PROBE DONE ====\r\n");
 

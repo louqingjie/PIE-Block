@@ -27,6 +27,7 @@
 #include "CNU_PIE_EXTI.h"
 extern char code STCISPCMD[];
 extern uint8_t isp_cmd_index;
+extern volatile uint8_t iapDownloadReq;
 void UART1_Isr() interrupt 4
 {
 	char dat;
@@ -39,13 +40,18 @@ void UART1_Isr() interrupt 4
 	{
 		UART1_CLEAR_RX_FLAG;
 		uart_receive[0]++;
-		// ISP 自烧录监听：在 ISR 中直接匹配 @STCISP#（按 STC32G 技术手册官方示例）
+		// 下载触发字匹配（@PIEIAP#）。
+		// 匹配到只置请求标志，ISR 保持极短；
+		// 置 DFU 标志 + 软复位由主循环的 iapEnterDownload() 执行。
 		dat = SBUF;
 		if (dat == STCISPCMD[isp_cmd_index])
 		{
 			isp_cmd_index++;
 			if (STCISPCMD[isp_cmd_index] == '\0')
-				IAP_CONTR = 0x60; // 匹配完成，软复位到 ISP
+			{
+				isp_cmd_index = 0;
+				iapDownloadReq = 1; // 请求进入下载模式
+			}
 		}
 		else
 		{
