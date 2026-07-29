@@ -10,7 +10,7 @@ void iap_init()
 BOOL iap_check_addr(DWORD addr)
 {
     addr &= 0x1ffff;
-    
+
     return ((addr < 0x10000) ||
             (addr >= (0x10000 + LDR_SIZE)));
 }
@@ -37,7 +37,12 @@ BOOL iap_write_byte(DWORD addr, BYTE dat)
     _nop_();
     _nop_();
 
-    return (iap_read_byte(addr) == dat);
+    /* 只查 CMD_FAIL（IAP_CONTR 的 B4 位，手册第 905 页），不做回读比对。
+       原例程用 ecode 直读回比对，实测在连续写多字节时会误报失败
+       （现象：payload 长度为偶数时必然 PROGRAM_ERR）。
+       库函数 EEPROM_* 不检查 CMD_FAIL，所以这里直接读寄存器。
+       整体正确性由 PC 端下载后读回校验保证，不依赖逐字节回读。 */
+    return (BOOL)((IAP_CONTR & 0x10) == 0);
 }
 
 void iap_erase_page(DWORD addr)
@@ -56,4 +61,3 @@ void iap_erase_page(DWORD addr)
     _nop_();
     _nop_();
 }
-

@@ -12,9 +12,12 @@
 
 /* 波特率装载值。表达式随 FOSC 自动跟，不要手改成常量。
    33177600/4/115200 = 72 整，实际波特率误差 0%。 */
-#define BAUD                    (65536 - FOSC/4/115200)
+#define BAUD                    (65536 - FOSC / 4 / 115200)
 
-//#define DEBUG
+/* 启用 READ 命令。原例程默认关掉它，但没有 READ 就无法在下载后读回校验，
+   只能靠"PROGRAM 没报错"来推断，那不足以证明写对了。
+   代价是几十字节代码，4K 里放得下。 */
+#define DEBUG
 
 /* bootloader 占用的 flash 大小（物理 0xFF0000 起），App 从 0xFF0000+LDR_SIZE 开始。
    改这个值必须三处同步：
@@ -23,8 +26,5 @@
      3. 所有 App 项目 uvproj 的 INTVECTOR(...) */
 #define LDR_SIZE                0x1000
 #define LDR_VERSION             0x0100
-
-
-
 
 #endif

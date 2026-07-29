@@ -59,6 +59,19 @@ stc32g/toolchain/stcflash/__pycache__/
 STC32G.pdf
 _probe_*
 _rxdebug*
+
+# ---------------------------------------------------------------------------
+# bootloader hex 例外（必须放在文件末尾，否则会被上面的
+# `**/Objects/` 与 `dist/` 规则盖掉；gitignore 后出现的规则优先）
+#
+# 它不是普通编译产物，而是分发套件的一部分：每块板子出厂前要用
+# 官方 STC-ISP 手工烧这一次（工作频率 33.1776MHz、EEPROM 设 128K、
+# 烧完重新上电），之后 App 才能走串口 OTA 升级。
+#
+# 注意目录级忽略的坑：`**/Objects/` 是目录规则，文件级 `!` 例外
+# 穿不过去，所以 hex 得拷到 dist/ 而不能直接保留 MDK/Objects/ 里的。
+!stc32g/Projects/PIE_BOOTLOADER/dist/
+!stc32g/Projects/PIE_BOOTLOADER/dist/*.hex
 extract_*.py
 flash_test*.log
 flash_try*

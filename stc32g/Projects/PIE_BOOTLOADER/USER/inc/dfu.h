@@ -10,7 +10,7 @@
 /* DFU_FORCEPIN 对应的位掩码，dfu.c 配置上拉输入时用 */
 #define DFU_FORCEPIN_MASK       0x04
 
-#define DFU_TAG       	        0x12abcd34
+#define DFU_TAG                 0x12abcd34
 
 #define DFU_CMD_CONNECT         0xa0
 #define DFU_CMD_READ            0xa1
@@ -30,4 +30,3 @@ void dfu_events();
 extern DWORD xdata DfuFlag;
 
 #endif
-

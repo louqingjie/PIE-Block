@@ -1,23 +1,27 @@
 #!/usr/bin/env python3
-"""
-pie_block_iap.py - STC32G 自定义 bootloader 串口下载工具
+"""pie_block_iap.py - STC32G 固件自升级下载工具（对话我们自己的 bootloader）
 
 与 pie_block_flash.py（走 ROM ISP + stcgal）的区别：
-  这个脚本对话的是我们自己写的 bootloader，协议自定，
+  这个脚本对话的是常驻在 0xFF0000 的 PIE_BOOTLOADER，
   不依赖 ROM ISP、不依赖 IRC trim、不需要 2400 波特率握手。
 
+协议与地址布局照 STC 官方例程，不要自创。改动前先读
+`/memories/repo/keil-c251.md` 的「STC32G 用户自建 ISP / IAP 固件自升级」节。
+
 流程：
-  1. 以 App 波特率打开串口，发 @PIEIAP#
-     App 的 UART1 ISR 收到后写下载标志、IAP_CONTR=0x20 软复位到用户程序
-  2. 芯片复位后跑的是 0xFF0000 的 bootloader，切到 bootloader 波特率
-  3. PING 确认 bootloader 在线
-  4. ERASE → 分块 WRITE → VERIFY 比对 CRC → RUN
+  1. 以 App 波特率发 @PIEIAP#
+     App 的 UART1 ISR 收到后置 iapDownloadReq，主循环写 XRAM 的 DfuFlag
+     再 IAP_CONTR=0x20 软复位。XRAM 软复位不清零，bootloader 据此停在下载模式。
+  2. 芯片复位后跑 0xFF0000 的 bootloader，切到 bootloader 波特率
+  3. CONNECT 确认在线 -> ERASE -> 分块 PROGRAM -> REBOOT
 
-帧格式（PC ⇄ bootloader 双向同构）：
-    AA 55 | ver | cmd | addr(3, 小端) | len(2, 小端) | payload... | crc16(2, 小端)
-    crc16 覆盖从 ver 到 payload 末字节（不含 AA 55 帧头本身）
+帧格式（官方，见 PIE_BOOTLOADER/USER/src/uart.c）：
+    主机 -> 芯片:  '#' | len | cmd | payload... | '$' | 累加和
+    芯片 -> 主机:  '@' | status | size | payload... | '$' | 累加和
+    len   = cmd 加 payload 的字节数
+    累加和 = 使整帧字节之和的低 8 位为 0 的那个字节
 
-协议层（build_frame / parse_frame / crc16 / hex_to_app_image）不碰串口，
+协议层（build_frame / parse_response / hex_to_iap_chunks）不碰串口，
 可以脱离硬件自测，见 --selftest。
 """
 
@@ -28,60 +32,86 @@ import time
 
 # ------------------------------------------------------------------ 协议常量
 
-FRAME_MAGIC = b"\xAA\x55"
-PROTO_VER = 0x01
+REQ_HEAD = 0x23    # '#'  主机发出的帧头
+RESP_HEAD = 0x40   # '@'  芯片回应的帧头
+FRAME_TAIL = 0x24  # '$'
 
-CMD_PING = 0x01
-CMD_ERASE = 0x02
-CMD_WRITE = 0x03
-CMD_VERIFY = 0x04
-CMD_RUN = 0x05
-
-# bootloader 的应答码。ACK/NAK 走 cmd 字段高位，便于一眼区分方向。
-RESP_ACK = 0x80
-RESP_NAK = 0x81
+CMD_CONNECT = 0xA0
+CMD_READ = 0xA1
+CMD_PROGRAM = 0xA2
+CMD_ERASE = 0xA3
+CMD_REBOOT = 0xA4
 
 CMD_NAMES = {
-    CMD_PING: "PING",
+    CMD_CONNECT: "CONNECT",
+    CMD_READ: "READ",
+    CMD_PROGRAM: "PROGRAM",
     CMD_ERASE: "ERASE",
-    CMD_WRITE: "WRITE",
-    CMD_VERIFY: "VERIFY",
-    CMD_RUN: "RUN",
-    RESP_ACK: "ACK",
-    RESP_NAK: "NAK",
+    CMD_REBOOT: "REBOOT",
+}
+
+STATUS_OK = 0x00
+STATUS_ERRORCMD = 0x01
+STATUS_OUTOFRANGE = 0x02
+STATUS_PROGRAMERR = 0x03
+STATUS_ERRORWRAP = 0xFF
+
+STATUS_NAMES = {
+    STATUS_OK: "OK",
+    STATUS_ERRORCMD: "命令不支持",
+    STATUS_OUTOFRANGE: "地址越界",
+    STATUS_PROGRAMERR: "写入失败",
+    STATUS_ERRORWRAP: "帧错误",
 }
 
 # 触发命令字。App 的 UART1 ISR 匹配这 8 字节。
 TRIGGER = b"@PIEIAP#"
 
-# 地址布局（EEPROM=128K 模式，实测确认）：
+# ------------------------------------------------------------------ 地址布局
 #
-#   物理 0xFF0000  = IAP 地址 0x010000  Bootloader 8K
-#   物理 0xFF2000  = IAP 地址 0x012000  App 代码区
-#   物理 0xFFFE00  = IAP 地址 0x01FE00  元数据扇区
-#   物理 0xFE0000  = IAP 地址 0x000000  EEPROM 数据区（不可取指）
+# 照 STC 官方 PDF 第 2 页的 flash 规划。
+# IAP 地址 = 物理地址 & 0x1FFFF（IAP_ADDRE 只取 bit16，寻址空间 17 位）：
 #
-# 为何 App 不放 0xFE0000：实测证明该区不能取指执行（调用后芯片复位）。
-# EEPROM=128K 时整片 flash 都是 IAP 可写区，所以 App 可以留在代码区。
+#   物理 0xFE0000-0xFEFFFF = IAP 0x00000-0x0FFFF  低 64K，用户代码放这里
+#   物理 0xFF0000-0xFF0FFF = IAP 0x10000-0x10FFF  Bootloader 4K（拒绝写）
+#   物理 0xFF1000-0xFFFFFF = IAP 0x11000-0x1FFFF  App 入口/向量表/启动代码
+#
+# 0xFE0000 区不能取指执行（探针 Q6 实测复位），所以那里只放通过 far 调用
+# 进入的代码（ECODE 类）；入口与中断向量必须落在 0xFF1000 之后。
 
-# Bootloader 占用的 IAP 地址范围
-BOOT_IAP_BASE = 0x010000
-BOOT_IAP_SIZE = 0x2000  # 8K
+IAP_ADDR_MASK = 0x1FFFF
+"""IAP 地址位宽掩码。物理地址与它相与即得 IAP 地址。"""
 
-# App 区在 IAP 线性地址空间的起点
-APP_IAP_BASE = 0x012000
-# 元数据扇区地址（App 区最后一个扇区，不得写入 App 代码）
-META_IAP_ADDR = 0x01FE00
-# App 区可用大小
-APP_REGION_SIZE = META_IAP_ADDR - APP_IAP_BASE  # 0xDE00 = 56832
-# hex 里 App 代码的链接基址
-APP_LINK_BASE = 0xFF2000
+LDR_SIZE = 0x1000
+"""bootloader 占用大小，必须与 PIE_BOOTLOADER/USER/inc/config.h 一致。"""
+
+PHYS_LOW_BASE = 0xFE0000
+PHYS_HIGH_BASE = 0xFF0000
+
+BOOT_IAP_BASE = 0x10000
+"""bootloader 自身的 IAP 起始地址（= 物理 0xFF0000）。"""
+BOOT_IAP_END = BOOT_IAP_BASE + LDR_SIZE
+"""bootloader 保护区上界（不含）。芯片侧 iap_check_addr 会拒绝写这个区间。"""
+
+RESET_VECTOR_PHYS = PHYS_HIGH_BASE
+"""App hex 里复位跳转所在的物理地址，共 3 字节。"""
+RESET_VECTOR_TARGET = PHYS_HIGH_BASE + LDR_SIZE
+"""复位跳转要搬到的物理地址。搬完 App 首字节才是 0x02，能过 bootloader 校验。"""
+
+FLASH_SIZE = 0x20000
+"""IAP 可寻址的 flash 总量 128K。"""
 
 SECTOR_SIZE = 512
-# 单帧 payload 上限。bootloader 侧收帧缓冲区要能装下。
-MAX_PAYLOAD = 256
 
-DEFAULT_APP_BAUD = 230400
+MAX_PAYLOAD = 128
+"""单帧数据字节上限。
+
+芯片侧 dfu_events 的 size 字段是 BYTE，收缓冲区 UartRxBuffer 为 256 字节，
+帧开销 head+len+cmd+addr(4)+size(1)+tail+sum = 10 字节，理论上限 245。
+取 128 留足余量，也让进度显示更平滑。
+"""
+
+DEFAULT_APP_BAUD = 115200
 DEFAULT_BOOT_BAUD = 115200
 
 
@@ -89,121 +119,79 @@ class ProtocolError(Exception):
     pass
 
 
-# ------------------------------------------------------------------ CRC16
-
-def crc16(data: bytes) -> int:
-    """CRC-16/MODBUS（多项式 0xA001 反向）。
-
-    选它的理由：查表版在 8051 上只要几十字节代码，
-    bootloader 空间紧张，不用 CRC32。
-    """
-    crc = 0xFFFF
-    for byte in data:
-        crc ^= byte
-        for _ in range(8):
-            if crc & 1:
-                crc = (crc >> 1) ^ 0xA001
-            else:
-                crc >>= 1
-    return crc & 0xFFFF
-
-
 # ------------------------------------------------------------------ 帧编解码
 
-def build_frame(cmd: int, addr: int = 0, payload: bytes = b"") -> bytes:
-    """组一个帧。addr 与 len 都是小端，方便 8051 侧直接按字节取。"""
-    if len(payload) > 0xFFFF:
-        raise ValueError("payload too long: %d" % len(payload))
-    if not (0 <= addr <= 0xFFFFFF):
-        raise ValueError("addr out of 24-bit range: 0x%X" % addr)
-
-    body = bytes([
-        PROTO_VER,
-        cmd & 0xFF,
-        addr & 0xFF,
-        (addr >> 8) & 0xFF,
-        (addr >> 16) & 0xFF,
-        len(payload) & 0xFF,
-        (len(payload) >> 8) & 0xFF,
-    ]) + payload
-
-    c = crc16(body)
-    return FRAME_MAGIC + body + bytes([c & 0xFF, (c >> 8) & 0xFF])
+def checksum(data: bytes) -> int:
+    """官方校验：使整帧字节之和的低 8 位归零的那个字节。"""
+    return (-sum(data)) & 0xFF
 
 
-def parse_frame(buf: bytes):
-    """从 buf 头部解一个帧。
+def build_frame(cmd: int, payload: bytes = b"") -> bytes:
+    """组一个主机 -> 芯片的帧。
 
-    返回 (cmd, addr, payload, consumed)。
-    数据不足返回 None —— 调用方继续读串口再试，而不是当成错误。
-    CRC 或帧头不对则抛 ProtocolError。
+    len 字段算的是 cmd 加 payload 的长度，所以是 len(payload) + 1。
     """
-    if len(buf) < 2:
-        return None
-    if buf[0:2] != FRAME_MAGIC:
-        raise ProtocolError("bad frame magic: %s" % buf[0:2].hex())
-    # 帧头 2 + body 头 7 + crc 2
-    if len(buf) < 11:
-        return None
+    if not 0 <= cmd <= 0xFF:
+        raise ValueError("cmd 超出字节范围: %r" % cmd)
+    if len(payload) + 1 > 0xFF:
+        raise ValueError("payload 过长: %d" % len(payload))
+    body = bytes([REQ_HEAD, len(payload) + 1, cmd]) + payload + bytes([FRAME_TAIL])
+    return body + bytes([checksum(body)])
 
-    length = buf[7] | (buf[8] << 8)
-    total = 2 + 7 + length + 2
+
+def build_program_payload(iap_addr: int, data: bytes) -> bytes:
+    """PROGRAM 的 payload：addr(4, 小端) | size(1) | data...
+
+    下标必须与芯片侧 dfu_events() 对齐：
+      addr = *(DWORD *)&UartRxBuffer[2] & 0x1ffff
+      size = UartRxBuffer[6]
+      ptr  = &UartRxBuffer[7]
+    """
+    if not 0 <= iap_addr <= 0xFFFFFFFF:
+        raise ValueError("iap_addr 超出 32 位: 0x%X" % iap_addr)
+    if not 1 <= len(data) <= 0xFF:
+        raise ValueError("data 长度必须在 1..255，实际 %d" % len(data))
+    return bytes([
+        iap_addr & 0xFF,
+        (iap_addr >> 8) & 0xFF,
+        (iap_addr >> 16) & 0xFF,
+        (iap_addr >> 24) & 0xFF,
+        len(data),
+    ]) + data
+
+
+def parse_response(buf: bytes):
+    """从 buf 头部解一个芯片回应帧。
+
+    返回 (status, payload, consumed)。
+    数据不足返回 None —— 调用方继续读串口再试，而不是当成错误。
+    帧头/帧尾/校验和不对则抛 ProtocolError。
+    """
+    if len(buf) < 1:
+        return None
+    if buf[0] != RESP_HEAD:
+        raise ProtocolError("帧头不是 '@': 0x%02X" % buf[0])
+    # head + status + size + tail + sum = 5
+    if len(buf) < 5:
+        return None
+    status, size = buf[1], buf[2]
+    total = 3 + size + 2
     if len(buf) < total:
         return None
-
-    body = buf[2:2 + 7 + length]
-    got = buf[2 + 7 + length] | (buf[2 + 7 + length + 1] << 8)
-    want = crc16(body)
-    if got != want:
-        raise ProtocolError("crc mismatch: got %04X want %04X" % (got, want))
-
-    cmd = body[1]
-    addr = body[2] | (body[3] << 8) | (body[4] << 16)
-    payload = bytes(body[7:])
-    return cmd, addr, payload, total
+    frame = bytes(buf[:total])
+    if frame[3 + size] != FRAME_TAIL:
+        raise ProtocolError("帧尾不是 '$': %s" % frame.hex(" "))
+    if (sum(frame) & 0xFF) != 0:
+        raise ProtocolError("校验和错误: %s" % frame.hex(" "))
+    return status, frame[3:3 + size], total
 
 
 # ------------------------------------------------------------------ hex 处理
 
-def hex_to_app_image(path: str) -> bytes:
-    """读 Intel HEX，抽出 App 区那段，按扇区补齐。
-
-    App 链接在 0xFF2000（bootloader 之后），hex 里会有一条
-    type 04 记录把 linear base 设成 0x00FF。
-    返回的 bytes 下标 0 对应 IAP 地址 APP_IAP_BASE。
-
-    链接到 0xFF0000 的 hex 会被拒绝——那是 bootloader 自己的地盘。
-    """
-    segments = parse_ihex(path)
-    if not segments:
-        raise ProtocolError("hex 里没有任何数据记录: %s" % path)
-
-    lo = min(segments)
-    hi = max(a for a in segments)
-
-    # 落在 App 区之外的地址一律是配置错误，早报比晚报好
-    for addr in (lo, hi):
-        if not (APP_LINK_BASE <= addr < APP_LINK_BASE + APP_REGION_SIZE):
-            raise ProtocolError(
-                "hex 地址 0x%06X 不在 App 区 [0x%06X, 0x%06X) 内。\n"
-                "  App 必须链接到 0x%06X。检查 uvproj 的 IROM 设置。"
-                % (addr, APP_LINK_BASE, APP_LINK_BASE + APP_REGION_SIZE, APP_LINK_BASE)
-            )
-
-    size = hi - APP_LINK_BASE + 1
-    if size % SECTOR_SIZE:
-        size += SECTOR_SIZE - (size % SECTOR_SIZE)
-
-    img = bytearray(b"\xFF" * size)
-    for addr, val in segments.items():
-        img[addr - APP_LINK_BASE] = val
-    return bytes(img)
-
-
 def parse_ihex(path: str) -> dict:
     """最小 Intel HEX 解析，支持 type 00/01/04。
 
-    返回 {绝对地址: 字节值}。不自己拼段，交给调用方决定布局。
+    返回 {绝对物理地址: 字节值}。不自己拼段，交给调用方决定布局。
     """
     out = {}
     base = 0
@@ -242,10 +230,111 @@ def parse_ihex(path: str) -> dict:
     return out
 
 
+def relocate_reset_vector(segs: dict) -> dict:
+    """把 0xFF0000-0xFF0002 的复位跳转搬到 0xFF1000-0xFF1002。
+
+    这一步是必须的，不是可选优化：
+      - bootloader 自己占着 0xFF0000-0xFF0FFF，IAP 会拒绝写那里
+      - bootloader 跳 App 前要检查 *(BYTE code *)(LDR_SIZE) == 0x02，
+        也就是物理 0xFF1000 处必须是 LJMP 指令
+    官方 PDF 原话："重映射的工作上位机应用程序会自动处理，
+    用户在编写 AP 代码时无需关心"。
+
+    返回搬运后的新字典，不改动入参。
+    """
+    out = dict(segs)
+    moved = 0
+    for i in range(3):
+        src = RESET_VECTOR_PHYS + i
+        if src not in out:
+            continue
+        dst = RESET_VECTOR_TARGET + i
+        if dst in out:
+            raise ProtocolError(
+                "复位向量搬运目标 0x%06X 已被占用（值 0x%02X）。\n"
+                "  App 的链接器 MiscControls 应设 "
+                "CLASSES (CODE (0xFF1003-0xFFFFFF))，\n"
+                "  把 CODE 起点抬到 0xFF1003 给这 3 字节让位。" % (dst, out[dst])
+            )
+        out[dst] = out.pop(src)
+        moved += 1
+
+    if moved == 0:
+        raise ProtocolError(
+            "hex 里 0x%06X 处没有复位跳转指令。\n"
+            "  正常的 App hex 应该在那里有 3 字节 LJMP。检查 uvproj 配置。"
+            % RESET_VECTOR_PHYS
+        )
+    if moved != 3:
+        raise ProtocolError(
+            "复位跳转不完整，只找到 %d 字节（应为 3）。hex 可能损坏。" % moved)
+
+    first = out[RESET_VECTOR_TARGET]
+    if first != 0x02:
+        raise ProtocolError(
+            "搬运后 App 首字节是 0x%02X，不是 LJMP(0x02)。\n"
+            "  bootloader 会因此判定 App 无效而拒绝跳转。" % first
+        )
+    target = (out[RESET_VECTOR_TARGET + 1] << 8) | out[RESET_VECTOR_TARGET + 2]
+    if target < LDR_SIZE + 3:
+        raise ProtocolError(
+            "复位跳转目标 0x%04X 落在 bootloader 区内（应 >= 0x%04X）。\n"
+            "  bootloader 的第四重校验会拒绝它。" % (target, LDR_SIZE + 3)
+        )
+    return out
+
+
+def hex_to_iap_chunks(path: str, chunk_size: int = MAX_PAYLOAD):
+    """读 App hex，搬好复位向量，转成按 IAP 地址排列的连续块列表。
+
+    返回 [(iap_addr, bytes), ...]，块内地址连续，块长不超过 chunk_size。
+
+    按块发而不是补齐成一大片：App hex 是稀疏的（中断向量之间有大量空洞），
+    30KB 的 App 若补齐到 0xFF113E 会多写将近 4K 的空洞。
+    """
+    segs = parse_ihex(path)
+    if not segs:
+        raise ProtocolError("hex 里没有任何数据记录: %s" % path)
+
+    segs = relocate_reset_vector(segs)
+
+    # 搬运后不应再有任何字节落在 bootloader 保护区
+    for phys in sorted(segs):
+        iap = phys & IAP_ADDR_MASK
+        if BOOT_IAP_BASE <= iap < BOOT_IAP_END:
+            raise ProtocolError(
+                "物理地址 0x%06X (IAP 0x%05X) 落在 bootloader 保护区 "
+                "[0x%05X, 0x%05X)。\n"
+                "  芯片会拒绝写入。检查 App 的链接器 CLASSES 设置。"
+                % (phys, iap, BOOT_IAP_BASE, BOOT_IAP_END)
+            )
+        if iap >= FLASH_SIZE:
+            raise ProtocolError("IAP 地址 0x%05X 超出 128K flash" % iap)
+
+    # 按 IAP 地址切成连续块
+    items = sorted((phys & IAP_ADDR_MASK, val) for phys, val in segs.items())
+    chunks = []
+    cur_addr = None
+    cur = bytearray()
+    for addr, val in items:
+        if (cur_addr is not None and addr == cur_addr + len(cur)
+                and len(cur) < chunk_size):
+            cur.append(val)
+            continue
+        if cur:
+            chunks.append((cur_addr, bytes(cur)))
+        cur_addr = addr
+        cur = bytearray([val])
+    if cur:
+        chunks.append((cur_addr, bytes(cur)))
+    return chunks
+
+
 # ------------------------------------------------------------------ 串口会话
 
 class IapSession:
-    def __init__(self, port: str, app_baud: int, boot_baud: int, verbose: bool = True):
+    def __init__(self, port: str, app_baud: int = DEFAULT_APP_BAUD,
+                 boot_baud: int = DEFAULT_BOOT_BAUD, verbose: bool = True):
         self.port = port
         self.app_baud = app_baud
         self.boot_baud = boot_baud
@@ -271,14 +360,22 @@ class IapSession:
             finally:
                 self.ser = None
 
+    def __enter__(self):
+        self.open()
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+        return False
+
     def set_baud(self, baud: int) -> None:
         self.ser.baudrate = baud
 
     def trigger(self) -> None:
         """发触发命令让 App 软复位到 bootloader。
 
-        若芯片本来就停在 bootloader（上次下载失败），这一步收不到回应也无妨，
-        后面 PING 会兜住。
+        若芯片本来就停在 bootloader（上次下载失败或 P32 被拉低），
+        这一步没有回应也无妨，后面 CONNECT 会兜住。
         """
         self.log("发送触发命令 %s @ %d baud" % (TRIGGER.decode(), self.app_baud))
         self.set_baud(self.app_baud)
@@ -286,15 +383,14 @@ class IapSession:
         self.ser.write(TRIGGER)
         self.ser.flush()
 
-    def send(self, cmd: int, addr: int = 0, payload: bytes = b"") -> None:
-        frame = build_frame(cmd, addr, payload)
-        self.ser.write(frame)
+    def send(self, cmd: int, payload: bytes = b"") -> None:
+        self.ser.write(build_frame(cmd, payload))
         self.ser.flush()
 
     def recv(self, timeout: float = 1.0):
-        """读一个完整帧。超时返回 None。
+        """读一个完整回应帧。超时返回 None。
 
-        串口是字节流，可能一次读到半个帧或多个帧，所以维护一个累积缓冲区。
+        串口是字节流，可能一次读到半个帧或多个帧，所以维护累积缓冲区。
         帧头之前的垃圾字节（App 复位时的乱码）要跳过而不是报错。
         """
         deadline = time.time() + timeout
@@ -303,46 +399,44 @@ class IapSession:
             if chunk:
                 self._rx.extend(chunk)
 
-            # 丢弃帧头之前的噪声
-            while len(self._rx) >= 2 and self._rx[0:2] != FRAME_MAGIC:
-                # 只有第一个字节可能是 AA 而第二个不是 55，这种情况也要前移
+            while self._rx and self._rx[0] != RESP_HEAD:
                 del self._rx[0]
 
-            if len(self._rx) >= 11:
+            if len(self._rx) >= 5:
                 try:
-                    got = parse_frame(bytes(self._rx))
+                    got = parse_response(bytes(self._rx))
                 except ProtocolError as e:
                     # 坏帧：丢掉这个帧头继续找，别让一次误码毁掉整次下载
                     self.log("  [warn] %s，丢弃并重新同步" % e)
-                    del self._rx[0:2]
+                    del self._rx[0]
                     continue
                 if got is not None:
-                    cmd, addr, payload, consumed = got
+                    status, payload, consumed = got
                     del self._rx[0:consumed]
-                    return cmd, addr, payload
+                    return status, payload
         return None
 
-    def request(self, cmd: int, addr: int = 0, payload: bytes = b"",
-                timeout: float = 1.0, retries: int = 3):
-        """发一帧并等 ACK。返回 ACK 的 payload。"""
+    def request(self, cmd: int, payload: bytes = b"",
+                timeout: float = 1.0, retries: int = 3) -> bytes:
+        """发一帧并等 OK 应答，返回 payload。非 OK 或超时则重试。"""
         name = CMD_NAMES.get(cmd, "0x%02X" % cmd)
+        last = None
         for attempt in range(1, retries + 1):
-            self.send(cmd, addr, payload)
+            self.send(cmd, payload)
             got = self.recv(timeout=timeout)
             if got is None:
+                last = "无应答"
                 self.log("  %s 第 %d 次无应答" % (name, attempt))
                 continue
-            rcmd, raddr, rpayload = got
-            if rcmd == RESP_ACK:
+            status, rpayload = got
+            if status == STATUS_OK:
                 return rpayload
-            if rcmd == RESP_NAK:
-                self.log("  %s 被拒绝（NAK），第 %d 次" % (name, attempt))
-                continue
-            self.log("  %s 收到意外应答 0x%02X，第 %d 次" % (name, rcmd, attempt))
-        raise ProtocolError("%s 连续 %d 次失败" % (name, retries))
+            last = STATUS_NAMES.get(status, "未知状态 0x%02X" % status)
+            self.log("  %s 第 %d 次被拒绝：%s" % (name, attempt, last))
+        raise ProtocolError("%s 连续 %d 次失败（%s）" % (name, retries, last))
 
-    def wait_bootloader(self, total_timeout: float = 5.0) -> None:
-        """切到 bootloader 波特率，反复 PING 直到有回应。"""
+    def connect(self, total_timeout: float = 5.0) -> int:
+        """切到 bootloader 波特率反复 CONNECT，返回 bootloader 版本号。"""
         self.log("等待 bootloader（%d baud）…" % self.boot_baud)
         self.set_baud(self.boot_baud)
         self._rx.clear()
@@ -350,195 +444,307 @@ class IapSession:
 
         deadline = time.time() + total_timeout
         while time.time() < deadline:
-            self.send(CMD_PING)
+            self.send(CMD_CONNECT)
             got = self.recv(timeout=0.3)
-            if got is not None and got[0] == RESP_ACK:
-                ver = got[2]
-                self.log("bootloader 已就绪%s" % (
-                    "（版本 %s）" % ver.hex() if ver else ""))
-                return
+            if got is not None and got[0] == STATUS_OK and len(got[1]) >= 2:
+                ver = (got[1][0] << 8) | got[1][1]
+                self.log("bootloader 就绪，版本 0x%04X" % ver)
+                return ver
         raise ProtocolError(
             "bootloader 没有响应。可能原因：\n"
-            "  - 芯片上还没烧过 bootloader（需要先用 stcgal 刷底一次）\n"
+            "  - 芯片上还没烧过 bootloader（用官方 STC-ISP 刷 PIE_BOOTLOADER，\n"
+            "    工作频率 33.1776MHz，EEPROM 设 128K，烧完必须重新上电）\n"
             "  - App 里没有 %s 监听代码\n"
-            "  - 串口选错了" % TRIGGER.decode()
+            "  - 串口选错了或被别的程序占用" % TRIGGER.decode()
         )
 
-    def download(self, image: bytes) -> None:
-        n_sectors = (len(image) + SECTOR_SIZE - 1) // SECTOR_SIZE
-        self.log("固件 %d 字节，%d 个扇区" % (len(image), n_sectors))
-
+    def erase(self) -> None:
+        """擦除 App 区。bootloader 自身受芯片侧 iap_check_addr 保护。"""
         self.log("擦除 App 区…")
-        self.request(CMD_ERASE, APP_IAP_BASE,
-                     bytes([len(image) & 0xFF, (len(image) >> 8) & 0xFF]),
-                     timeout=5.0)
+        self.request(CMD_ERASE, timeout=10.0)
 
-        self.log("写入…")
-        written = 0
-        while written < len(image):
-            chunk = image[written:written + MAX_PAYLOAD]
-            self.request(CMD_WRITE, APP_IAP_BASE + written, chunk, timeout=2.0)
-            written += len(chunk)
-            pct = written * 100 // len(image)
-            self.log("  %d/%d 字节 (%d%%)" % (written, len(image), pct))
+    def read(self, iap_addr: int, size: int) -> bytes:
+        """读回 flash。需要 bootloader 编译时开了 DEBUG，否则回 ERRORCMD。
 
-        self.log("校验…")
-        want = crc16(image)
-        resp = self.request(
-            CMD_VERIFY, APP_IAP_BASE,
-            bytes([len(image) & 0xFF, (len(image) >> 8) & 0xFF,
-                   (len(image) >> 16) & 0xFF]),
-            timeout=5.0)
-        if len(resp) < 2:
-            raise ProtocolError("VERIFY 应答没带 CRC")
-        got = resp[0] | (resp[1] << 8)
-        if got != want:
+        payload 布局与 PROGRAM 相同：addr(4, 小端) | size(1)。
+        """
+        if not 1 <= size <= 0xFF:
+            raise ValueError("size 必须在 1..255，实际 %d" % size)
+        payload = bytes([
+            iap_addr & 0xFF,
+            (iap_addr >> 8) & 0xFF,
+            (iap_addr >> 16) & 0xFF,
+            (iap_addr >> 24) & 0xFF,
+            size,
+        ])
+        return self.request(CMD_READ, payload, timeout=3.0)
+
+    def verify(self, chunks, sample: int = 0) -> None:
+        """把写进去的内容读回来比对。
+
+        sample=0 全量校验；sample=N 只抽查前 N 个块（快速自查用）。
+        这一步不能省：PROGRAM 只报 CMD_FAIL，不保证内容真的对，
+        而 bootloader 侧的逐字节回读被证明不可靠（见 iap.c 注释）。
+        """
+        todo = chunks if sample <= 0 else chunks[:sample]
+        self.log("读回校验 %d 个块…" % len(todo))
+        bad = 0
+        for iap_addr, want in todo:
+            got = self.read(iap_addr, len(want))
+            if got != want:
+                bad += 1
+                self.log("  [差异] 0x%05X 期望 %s 实际 %s"
+                         % (iap_addr, want[:8].hex(" "), got[:8].hex(" ")))
+                if bad >= 5:
+                    self.log("  差异过多，停止比对")
+                    break
+        if bad:
             raise ProtocolError(
-                "校验失败：芯片算出 %04X，本地算出 %04X。固件未生效，"
-                "bootloader 会保持等待状态，可以重新下载。" % (got, want))
-        self.log("校验通过（CRC %04X）" % got)
+                "读回校验失败：%d 个块内容不符。固件未生效，"
+                "bootloader 会保持等待状态，可以重新下载。" % bad)
+        self.log("读回校验通过")
 
-        self.log("启动新固件…")
-        self.send(CMD_RUN)
+    def program(self, chunks) -> None:
+        total = sum(len(d) for _, d in chunks)
+        done = 0
+        last_pct = -1
+        self.log("写入 %d 字节，分 %d 个块…" % (total, len(chunks)))
+        for iap_addr, data in chunks:
+            self.request(CMD_PROGRAM, build_program_payload(iap_addr, data),
+                         timeout=3.0)
+            done += len(data)
+            pct = done * 100 // total
+            if pct != last_pct:
+                self.log("  %d/%d 字节 (%d%%)" % (done, total, pct))
+                last_pct = pct
+
+    def reboot(self) -> None:
+        """让芯片软复位去跑新 App。这个命令没有回应。"""
+        self.log("重启到新固件…")
+        self.send(CMD_REBOOT)
         self.ser.flush()
+
+    def download(self, chunks, verify: bool = True) -> None:
+        self.erase()
+        self.program(chunks)
+        if verify:
+            self.verify(chunks)
+        self.reboot()
 
 
 # ------------------------------------------------------------------ 自测
 
+def _mk_ihex(records) -> str:
+    """把 [(type, addr, data)] 组成 Intel HEX 文本，供自测用。"""
+    lines = []
+    for rtype, addr, data in records:
+        rec = bytes([len(data), (addr >> 8) & 0xFF, addr & 0xFF, rtype]) + data
+        lines.append(":" + (rec + bytes([checksum(rec)])).hex().upper())
+    lines.append(":00000001FF")
+    return "\n".join(lines) + "\n"
+
+
 def selftest() -> int:
     """协议层自测，不需要串口也不需要板子。"""
-    fails = []
-
-    def check(name, cond, detail=""):
-        if cond:
-            print("  [ok] %s" % name)
-        else:
-            print("  [FAIL] %s %s" % (name, detail))
-            fails.append(name)
-
-    print("crc16")
-    # CRC-16/MODBUS 的标准测试向量
-    check("空输入", crc16(b"") == 0xFFFF, "got %04X" % crc16(b""))
-    check('"123456789"', crc16(b"123456789") == 0x4B37,
-          "got %04X" % crc16(b"123456789"))
-    check("单字节差异会改变结果", crc16(b"\x00") != crc16(b"\x01"))
-
-    print("build_frame / parse_frame 往返")
-    for cmd, addr, payload in [
-        (CMD_PING, 0, b""),
-        (CMD_WRITE, 0x000200, bytes(range(256))),
-        (CMD_ERASE, 0xFFFFFF, b"\x00\xFE"),
-        (RESP_ACK, 0, b"\x01\x00"),
-    ]:
-        frame = build_frame(cmd, addr, payload)
-        got = parse_frame(frame)
-        ok = (got is not None and got[0] == cmd and got[1] == addr
-              and got[2] == payload and got[3] == len(frame))
-        check("往返 %s addr=0x%06X len=%d"
-              % (CMD_NAMES.get(cmd, cmd), addr, len(payload)), ok, repr(got))
-
-    print("parse_frame 的健壮性")
-    frame = build_frame(CMD_WRITE, 0x1234, b"hello")
-    for cut in range(2, len(frame)):
-        got = parse_frame(frame[:cut])
-        if got is not None:
-            check("截断到 %d 字节应返回 None" % cut, False, repr(got))
-            break
-    else:
-        check("任意截断都返回 None（等更多数据）", True)
-
-    bad = bytearray(frame)
-    bad[-1] ^= 0xFF
-    try:
-        parse_frame(bytes(bad))
-        check("CRC 被破坏应抛异常", False)
-    except ProtocolError:
-        check("CRC 被破坏应抛异常", True)
-
-    try:
-        parse_frame(b"\x00\x11" + frame[2:])
-        check("帧头错误应抛异常", False)
-    except ProtocolError:
-        check("帧头错误应抛异常", True)
-
-    got = parse_frame(frame + build_frame(CMD_PING))
-    check("多帧粘连时只消费第一帧",
-          got is not None and got[3] == len(frame), repr(got))
-
-    print("parse_ihex")
     import os
     import tempfile
 
-    def rec(rtype, addr, data):
-        body = bytes([len(data), (addr >> 8) & 0xFF, addr & 0xFF, rtype]) + data
-        return ":" + (body + bytes([(-sum(body)) & 0xFF])).hex().upper() + "\n"
+    fails = []
 
-    tmpdir = tempfile.mkdtemp(prefix="iap_selftest_")
+    def check(name, got, want):
+        if got != want:
+            fails.append("%s: got %r want %r" % (name, got, want))
+
+    def expect_raises(name, fn):
+        try:
+            fn()
+        except (ProtocolError, ValueError):
+            return
+        fails.append("%s: 应该抛异常但没抛" % name)
+
+    # --- 校验和
+    check("checksum 空", checksum(b""), 0)
+    check("checksum 0x01", checksum(b"\x01"), 0xFF)
+    body = b"\x23\x01\xa0\x24"
+    check("checksum 归零", (sum(body) + checksum(body)) & 0xFF, 0)
+
+    # --- 组帧：与 2026-07-29 真机实测抓到的字节序列比对。
+    #     改协议时这三行必须仍然相等，否则芯片侧对不上。
+    check("CONNECT 帧", build_frame(CMD_CONNECT).hex(), "2301a02418")
+    check("ERASE 帧", build_frame(CMD_ERASE).hex(), "2301a32415")
+    check("REBOOT 帧", build_frame(CMD_REBOOT).hex(), "2301a42414")
+    for name, cmd in (("CONNECT", CMD_CONNECT), ("ERASE", CMD_ERASE)):
+        frame = build_frame(cmd)
+        check("%s 整帧和归零" % name, sum(frame) & 0xFF, 0)
+        check("%s len 字段" % name, frame[1], 1)
+        check("%s 帧头" % name, frame[0], REQ_HEAD)
+        check("%s 帧尾" % name, frame[-2], FRAME_TAIL)
+
+    # --- 组帧：带 payload
+    f = build_frame(CMD_PROGRAM, b"\x01\x02\x03")
+    check("PROGRAM len 含 cmd", f[1], 4)
+    check("PROGRAM 整帧和归零", sum(f) & 0xFF, 0)
+    check("PROGRAM 帧尾", f[-2], FRAME_TAIL)
+    expect_raises("payload 过长", lambda: build_frame(CMD_PROGRAM, b"\x00" * 255))
+
+    # --- PROGRAM payload 布局必须与芯片侧 UartRxBuffer 下标对齐
+    p = build_program_payload(0x11234, b"\xAA\xBB")
+    check("program payload 长度", len(p), 7)
+    check("program addr 小端", p[0:4].hex(), "34120100")
+    check("program size 字段", p[4], 2)
+    check("program data", p[5:].hex(), "aabb")
+    expect_raises("program data 空", lambda: build_program_payload(0, b""))
+    expect_raises("program data 过长",
+                  lambda: build_program_payload(0, b"\x00" * 256))
+    # 整帧下标复核：帧内 addr 应落在 buffer[2:6]，size 在 [6]，data 从 [7]
+    full = build_frame(CMD_PROGRAM, p)
+    check("帧内 addr 位置", full[3:7].hex(), "34120100")
+    check("帧内 size 位置", full[7], 2)
+    check("帧内 data 位置", full[8:10].hex(), "aabb")
+
+    # --- 解析回应：真机抓到的两个回应
+    got = parse_response(bytes.fromhex("4000020100" + "24" + "99"))
+    check("CONNECT 回应 status", got[0], STATUS_OK)
+    check("CONNECT 回应 payload", got[1].hex(), "0100")
+    check("CONNECT 回应 consumed", got[2], 7)
+    got = parse_response(bytes.fromhex("400000249c"))
+    check("ERASE 回应 status", got[0], STATUS_OK)
+    check("ERASE 回应 payload 空", got[1], b"")
+
+    # 数据不足应返回 None 而不是抛异常
+    check("回应空", parse_response(b""), None)
+    check("回应不足 5 字节", parse_response(b"\x40\x00\x02"), None)
+    check("回应缺 payload", parse_response(bytes.fromhex("40000201")), None)
+    expect_raises("回应帧头错", lambda: parse_response(b"\x41\x00\x00\x24\x9b"))
+    expect_raises("回应校验错", lambda: parse_response(bytes.fromhex("400000249d")))
+    expect_raises("回应帧尾错", lambda: parse_response(bytes.fromhex("400000259b")))
+
+    # --- 地址换算
+    check("IAP 低块基址", PHYS_LOW_BASE & IAP_ADDR_MASK, 0x00000)
+    check("IAP 高块基址", PHYS_HIGH_BASE & IAP_ADDR_MASK, 0x10000)
+    check("IAP App 入口", (PHYS_HIGH_BASE + LDR_SIZE) & IAP_ADDR_MASK, 0x11000)
+    check("IAP 顶端", 0xFFFFFF & IAP_ADDR_MASK, 0x1FFFF)
+    check("boot 保护区上界", BOOT_IAP_END, 0x11000)
+
+    # --- hex 解析与复位向量搬运
+    tmp = tempfile.mkdtemp(prefix="pieiap_")
     try:
-        p = os.path.join(tmpdir, "t.hex")
-        with open(p, "w", encoding="ascii") as f:
-            # type 04 给的是高 16 位地址，0x00FF << 16 == 0xFF0000
-            # App 从 0xFF2000 开始，所以数据记录偏移是 0x2000
-            f.write(rec(0x04, 0, bytes([0x00, 0xFF])))
-            f.write(rec(0x00, 0x2000, b"\x01\x02\x03\x04"))
-            f.write(rec(0x00, 0x2010, b"\xAA"))
-            f.write(rec(0x01, 0, b""))
+        def write_hex(name, records):
+            path = os.path.join(tmp, name)
+            with open(path, "w", encoding="ascii") as fp:
+                fp.write(_mk_ihex(records))
+            return path
 
-        segs = parse_ihex(p)
-        check("解析出 5 个字节", len(segs) == 5, "got %d" % len(segs))
-        check("基址生效：0xFF2000 处是 0x01",
-              segs.get(0xFF2000) == 0x01, repr(segs.get(0xFF2000)))
-        check("0xFF2010 处是 0xAA",
-              segs.get(0xFF2010) == 0xAA, repr(segs.get(0xFF2010)))
+        # 正常的 App hex：低块代码 + 0xFF0000 复位跳转 + 0xFF1003 起的向量
+        good = write_hex("good.hex", [
+            (0x04, 0, b"\x00\xFE"),
+            (0x00, 0x0000, bytes(range(16))),
+            (0x04, 0, b"\x00\xFF"),
+            (0x00, 0x0000, b"\x02\x10\xA7"),
+            (0x00, 0x1003, b"\x40\x50\x49\x45"),
+        ])
+        segs = parse_ihex(good)
+        check("hex 低块首字节", segs[0xFE0000], 0)
+        check("hex 复位向量", segs[0xFF0000], 0x02)
+        check("hex 0xFF1000 空", 0xFF1000 in segs, False)
 
-        img = hex_to_app_image(p)
-        check("补齐到扇区边界", len(img) == SECTOR_SIZE, "got %d" % len(img))
-        check("镜像下标 0 是 0x01", img[0] == 0x01, repr(img[0]))
-        check("镜像下标 16 是 0xAA", img[16] == 0xAA, repr(img[16]))
-        check("空隙填 0xFF", img[5] == 0xFF, repr(img[5]))
+        moved = relocate_reset_vector(segs)
+        check("搬运后 0xFF0000 已清", 0xFF0000 in moved, False)
+        check("搬运后 0xFF1000", moved[0xFF1000], 0x02)
+        check("搬运后 0xFF1001", moved[0xFF1001], 0x10)
+        check("搬运后 0xFF1002", moved[0xFF1002], 0xA7)
+        check("搬运不动低块", moved[0xFE0000], 0)
+        check("搬运不影响 0xFF1003", moved[0xFF1003], 0x40)
+        check("搬运前后字节总数不变", len(moved), len(segs))
+        check("不改动入参", 0xFF0000 in segs, True)
 
-        # 校验和错误要被抓住
-        bad_p = os.path.join(tmpdir, "bad.hex")
-        with open(bad_p, "w", encoding="ascii") as f:
-            f.write(":0400000001020304FF\n")
-        try:
-            parse_ihex(bad_p)
-            check("坏校验和应抛异常", False)
-        except ProtocolError:
-            check("坏校验和应抛异常", True)
+        chunks = hex_to_iap_chunks(good)
+        addrs = [a for a, _ in chunks]
+        check("块地址已在 IAP 空间", all(a <= IAP_ADDR_MASK for a in addrs), True)
+        check("低块映射到 IAP 0", min(addrs), 0x00000)
+        check("入口映射到 IAP 0x11000", 0x11000 in addrs, True)
+        check("块字节总数", sum(len(d) for _, d in chunks), len(segs))
+        for a, d in chunks:
+            check("块长不超上限 @0x%05X" % a, len(d) <= MAX_PAYLOAD, True)
+            if BOOT_IAP_BASE <= a < BOOT_IAP_END:
+                fails.append("块 0x%05X 落在 bootloader 保护区" % a)
 
-        # 链接到 bootloader 区（0xFF0000）要被拦
-        # 否则会把 bootloader 当成 App 烧，把自己覆盖掉
-        wrong_p = os.path.join(tmpdir, "wrong.hex")
-        with open(wrong_p, "w", encoding="ascii") as f:
-            f.write(rec(0x04, 0, bytes([0x00, 0xFF])))
-            f.write(rec(0x00, 0x0000, b"\x01"))  # 0xFF0000 = bootloader 起始
-            f.write(rec(0x01, 0, b""))
-        try:
-            hex_to_app_image(wrong_p)
-            check("链接到 bootloader 区的 hex 应被拒绍", False)
-        except ProtocolError:
-            check("链接到 bootloader 区的 hex 应被拒绍", True)
+        # 目标已被占用：必须报错而不是静默覆盖
+        occupied = write_hex("occupied.hex", [
+            (0x04, 0, b"\x00\xFF"),
+            (0x00, 0x0000, b"\x02\x10\xA7"),
+            (0x00, 0x1000, b"\x40\x50\x49"),
+        ])
+        expect_raises("搬运目标被占用",
+                      lambda: relocate_reset_vector(parse_ihex(occupied)))
 
-        # 链接到 EEPROM 区（0xFE0000）也要被拦
-        # 实测证明那个区不能取指执行
-        ee_p = os.path.join(tmpdir, "ee.hex")
-        with open(ee_p, "w", encoding="ascii") as f:
-            f.write(rec(0x04, 0, bytes([0x00, 0xFE])))
-            f.write(rec(0x00, 0x0000, b"\x01"))
-            f.write(rec(0x01, 0, b""))
-        try:
-            hex_to_app_image(ee_p)
-            check("链接到 EEPROM 区的 hex 应被拒绍", False)
-        except ProtocolError:
-            check("链接到 EEPROM 区的 hex 应被拒绍", True)
+        novec = write_hex("novec.hex", [
+            (0x04, 0, b"\x00\xFE"),
+            (0x00, 0x0000, b"\x01\x02"),
+        ])
+        expect_raises("缺复位向量",
+                      lambda: relocate_reset_vector(parse_ihex(novec)))
+
+        badop = write_hex("badop.hex", [
+            (0x04, 0, b"\x00\xFF"),
+            (0x00, 0x0000, b"\x12\x10\xA7"),
+        ])
+        expect_raises("首字节非 LJMP",
+                      lambda: relocate_reset_vector(parse_ihex(badop)))
+
+        badtgt = write_hex("badtgt.hex", [
+            (0x04, 0, b"\x00\xFF"),
+            (0x00, 0x0000, b"\x02\x00\x50"),
+        ])
+        expect_raises("跳转目标在 boot 区",
+                      lambda: relocate_reset_vector(parse_ihex(badtgt)))
+
+        overlap = write_hex("overlap.hex", [
+            (0x04, 0, b"\x00\xFF"),
+            (0x00, 0x0000, b"\x02\x10\xA7"),
+            (0x00, 0x0500, b"\xAA\xBB"),
+        ])
+        expect_raises("代码压在 boot 区", lambda: hex_to_iap_chunks(overlap))
+
+        badsum = os.path.join(tmp, "badsum.hex")
+        with open(badsum, "w", encoding="ascii") as fp:
+            fp.write(":0200000400FEFB\n:00000001FF\n")
+        expect_raises("hex 校验和错", lambda: parse_ihex(badsum))
     finally:
-        import shutil
-        shutil.rmtree(tmpdir, ignore_errors=True)
+        for name in os.listdir(tmp):
+            os.remove(os.path.join(tmp, name))
+        os.rmdir(tmp)
 
-    print()
+    # --- 分块：长连续区间要被切成不超过上限的多块，且拼回去与原数据一致
+    src = {}
+    for i in range(MAX_PAYLOAD * 2 + 5):
+        src[PHYS_LOW_BASE + i] = i & 0xFF
+    src[0xFF0000], src[0xFF0001], src[0xFF0002] = 0x02, 0x10, 0xA7
+    moved = relocate_reset_vector(src)
+    items = sorted((p & IAP_ADDR_MASK, v) for p, v in moved.items())
+    rebuilt = {}
+    cur_addr, cur = None, bytearray()
+    out_chunks = []
+    for addr, val in items:
+        if cur_addr is not None and addr == cur_addr + len(cur) and len(cur) < MAX_PAYLOAD:
+            cur.append(val)
+            continue
+        if cur:
+            out_chunks.append((cur_addr, bytes(cur)))
+        cur_addr, cur = addr, bytearray([val])
+    if cur:
+        out_chunks.append((cur_addr, bytes(cur)))
+    for a, d in out_chunks:
+        check("分块长度 @0x%05X" % a, len(d) <= MAX_PAYLOAD, True)
+        for i, v in enumerate(d):
+            rebuilt[a + i] = v
+    check("分块可无损拼回", rebuilt, dict(items))
+    check("分块数", len(out_chunks), 4)
+
     if fails:
-        print("自测失败 %d 项: %s" % (len(fails), ", ".join(fails)))
+        print("自测失败 %d 项:" % len(fails))
+        for msg in fails:
+            print("  [FAIL] %s" % msg)
         return 1
     print("自测全部通过")
     return 0
@@ -572,10 +778,13 @@ def main(argv) -> int:
     boot_baud = int(argv[4]) if len(argv) > 4 else DEFAULT_BOOT_BAUD
 
     try:
-        image = hex_to_app_image(hex_path)
+        chunks = hex_to_iap_chunks(hex_path)
     except (ProtocolError, OSError) as e:
         print("读取固件失败: %s" % e)
         return 1
+
+    total = sum(len(d) for _, d in chunks)
+    print("固件 %d 字节，%d 个块" % (total, len(chunks)))
 
     sess = IapSession(port, app_baud, boot_baud)
     try:
@@ -586,15 +795,12 @@ def main(argv) -> int:
 
     try:
         sess.trigger()
-        sess.wait_bootloader()
-        sess.download(image)
+        sess.connect()
+        sess.download(chunks)
         print("烧录成功")
         return 0
     except ProtocolError as e:
         print("烧录失败: %s" % e)
-        return 1
-    except Exception as e:
-        print("烧录失败（未预期的错误）: %r" % e)
         return 1
     finally:
         sess.close()
