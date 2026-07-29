@@ -41,19 +41,33 @@
 #define IAP_MAX_PAYLOAD 256
 
 /* ---------------------------------------------------------------- 内存布局
+ *
+ * 前提：ISP 下载时必须把 EEPROM 设成 128K，这样整片 flash 都是 IAP 可写区。
+ * 实测确认（IAP_PROBE 探针）：
+ *   - 128K 模式下 IAP 能读写代码区（0x010000-0x01FFFF）
+ *   - 代码仍能从 0xFF0000 正常执行
+ *   - 0xFE0000 区【不能取指执行】，调用后芯片复位。所以 App 不放那里。
+ *
+ *   物理 0xFF0000  = IAP 0x010000   Bootloader   8K
+ *   物理 0xFF2000  = IAP 0x012000   App 代码区
+ *   物理 0xFFFE00  = IAP 0x01FE00   元数据扇区
+ *   物理 0xFE0000  = IAP 0x000000   EEPROM 数据区（只能存数据）
+ */
 
-   物理 0xFE0000 起是 IAP 可擦区，对应 IAP 线性地址 0。
-   物理 0xFF0000 起是代码区，bootloader 常驻此处，IAP 地址 0x010000。
-
-   注：上述映射关系由 Phase 0 探针实测确认后才可依赖。
-*/
+/* Bootloader 占用范围，App 与下载协议都必须拒绝写这里 */
+#define IAP_BOOT_BASE 0x010000UL
+#define IAP_BOOT_SIZE 0x2000UL
+#define IAP_BOOT_END (IAP_BOOT_BASE + IAP_BOOT_SIZE)
 
 /* App 区在 IAP 线性地址空间的起点 */
-#define IAP_APP_BASE 0x000000UL
-/* App 区大小，与 stcgal 的 program_eeprom_split 上限一致（65024 = 127 扇区） */
-#define IAP_APP_SIZE 0xFE00UL
-/* 代码区在 IAP 线性地址空间的起点。bootloader 必须拒绝 >= 此值的地址。 */
-#define IAP_CODE_BASE 0x010000UL
+#define IAP_APP_BASE 0x012000UL
+/* 元数据扇区：App 区最后一个扇区，存 magic/长度/CRC/下载标志 */
+#define IAP_META_ADDR 0x01FE00UL
+/* App 区可用大小 */
+#define IAP_APP_SIZE (IAP_META_ADDR - IAP_APP_BASE)
+
+/* EEPROM 数据区（不可执行，只能存参数之类的数据） */
+#define IAP_EEPROM_BASE 0x000000UL
 
 #define IAP_SECTOR_SIZE 512U
 

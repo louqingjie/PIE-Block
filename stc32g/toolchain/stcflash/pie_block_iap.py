@@ -54,12 +54,28 @@ CMD_NAMES = {
 # 触发命令字。App 的 UART1 ISR 匹配这 8 字节。
 TRIGGER = b"@PIEIAP#"
 
-# App 区在 IAP 线性地址空间的位置。物理 0xFE0000 对应 IAP 地址 0。
-APP_IAP_BASE = 0x000000
-# App 区大小上限（stcgal 的 program_eeprom_split 最大值 65024，即 127 个扇区）
-APP_REGION_SIZE = 0xFE00  # 65024
-# hex 里 App 代码的链接基址（重定位后）
-APP_LINK_BASE = 0xFE0000
+# 地址布局（EEPROM=128K 模式，实测确认）：
+#
+#   物理 0xFF0000  = IAP 地址 0x010000  Bootloader 8K
+#   物理 0xFF2000  = IAP 地址 0x012000  App 代码区
+#   物理 0xFFFE00  = IAP 地址 0x01FE00  元数据扇区
+#   物理 0xFE0000  = IAP 地址 0x000000  EEPROM 数据区（不可取指）
+#
+# 为何 App 不放 0xFE0000：实测证明该区不能取指执行（调用后芯片复位）。
+# EEPROM=128K 时整片 flash 都是 IAP 可写区，所以 App 可以留在代码区。
+
+# Bootloader 占用的 IAP 地址范围
+BOOT_IAP_BASE = 0x010000
+BOOT_IAP_SIZE = 0x2000  # 8K
+
+# App 区在 IAP 线性地址空间的起点
+APP_IAP_BASE = 0x012000
+# 元数据扇区地址（App 区最后一个扇区，不得写入 App 代码）
+META_IAP_ADDR = 0x01FE00
+# App 区可用大小
+APP_REGION_SIZE = META_IAP_ADDR - APP_IAP_BASE  # 0xDE00 = 56832
+# hex 里 App 代码的链接基址
+APP_LINK_BASE = 0xFF2000
 
 SECTOR_SIZE = 512
 # 单帧 payload 上限。bootloader 侧收帧缓冲区要能装下。
@@ -152,9 +168,11 @@ def parse_frame(buf: bytes):
 def hex_to_app_image(path: str) -> bytes:
     """读 Intel HEX，抽出 App 区那段，按扇区补齐。
 
-    重定位后的 App 链接在 0xFE0000，hex 里会有一条
-    type 04 记录把 linear base 设成 0xFE00。
-    返回的 bytes 下标 0 对应 IAP 地址 0。
+    App 链接在 0xFF2000（bootloader 之后），hex 里会有一条
+    type 04 记录把 linear base 设成 0x00FF。
+    返回的 bytes 下标 0 对应 IAP 地址 APP_IAP_BASE。
+
+    链接到 0xFF0000 的 hex 会被拒绝——那是 bootloader 自己的地盘。
     """
     segments = parse_ihex(path)
     if not segments:
@@ -459,18 +477,19 @@ def selftest() -> int:
     try:
         p = os.path.join(tmpdir, "t.hex")
         with open(p, "w", encoding="ascii") as f:
-            # type 04 给的是高 16 位地址，0x00FE << 16 == 0xFE0000
-            f.write(rec(0x04, 0, bytes([0x00, 0xFE])))
-            f.write(rec(0x00, 0x0000, b"\x01\x02\x03\x04"))
-            f.write(rec(0x00, 0x0010, b"\xAA"))
+            # type 04 给的是高 16 位地址，0x00FF << 16 == 0xFF0000
+            # App 从 0xFF2000 开始，所以数据记录偏移是 0x2000
+            f.write(rec(0x04, 0, bytes([0x00, 0xFF])))
+            f.write(rec(0x00, 0x2000, b"\x01\x02\x03\x04"))
+            f.write(rec(0x00, 0x2010, b"\xAA"))
             f.write(rec(0x01, 0, b""))
 
         segs = parse_ihex(p)
         check("解析出 5 个字节", len(segs) == 5, "got %d" % len(segs))
-        check("基址生效：0xFE0000 处是 0x01",
-              segs.get(0xFE0000) == 0x01, repr(segs.get(0xFE0000)))
-        check("0xFE0010 处是 0xAA",
-              segs.get(0xFE0010) == 0xAA, repr(segs.get(0xFE0010)))
+        check("基址生效：0xFF2000 处是 0x01",
+              segs.get(0xFF2000) == 0x01, repr(segs.get(0xFF2000)))
+        check("0xFF2010 处是 0xAA",
+              segs.get(0xFF2010) == 0xAA, repr(segs.get(0xFF2010)))
 
         img = hex_to_app_image(p)
         check("补齐到扇区边界", len(img) == SECTOR_SIZE, "got %d" % len(img))
@@ -488,18 +507,31 @@ def selftest() -> int:
         except ProtocolError:
             check("坏校验和应抛异常", True)
 
-        # 地址不在 App 区要被拦
+        # 链接到 bootloader 区（0xFF0000）要被拦
+        # 否则会把 bootloader 当成 App 烧，把自己覆盖掉
         wrong_p = os.path.join(tmpdir, "wrong.hex")
         with open(wrong_p, "w", encoding="ascii") as f:
-            # 0x00FF << 16 == 0xFF0000，代码区，不得当成 App 镜像
             f.write(rec(0x04, 0, bytes([0x00, 0xFF])))
-            f.write(rec(0x00, 0x0000, b"\x01"))
+            f.write(rec(0x00, 0x0000, b"\x01"))  # 0xFF0000 = bootloader 起始
             f.write(rec(0x01, 0, b""))
         try:
             hex_to_app_image(wrong_p)
-            check("链接到 0xFF0000 的 hex 应被拒绝", False)
+            check("链接到 bootloader 区的 hex 应被拒绍", False)
         except ProtocolError:
-            check("链接到 0xFF0000 的 hex 应被拒绝", True)
+            check("链接到 bootloader 区的 hex 应被拒绍", True)
+
+        # 链接到 EEPROM 区（0xFE0000）也要被拦
+        # 实测证明那个区不能取指执行
+        ee_p = os.path.join(tmpdir, "ee.hex")
+        with open(ee_p, "w", encoding="ascii") as f:
+            f.write(rec(0x04, 0, bytes([0x00, 0xFE])))
+            f.write(rec(0x00, 0x0000, b"\x01"))
+            f.write(rec(0x01, 0, b""))
+        try:
+            hex_to_app_image(ee_p)
+            check("链接到 EEPROM 区的 hex 应被拒绍", False)
+        except ProtocolError:
+            check("链接到 EEPROM 区的 hex 应被拒绍", True)
     finally:
         import shutil
         shutil.rmtree(tmpdir, ignore_errors=True)

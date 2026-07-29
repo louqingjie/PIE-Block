@@ -430,14 +430,20 @@ static void test_iap_range(void)
 
 /* Q4：IAP 能否碰到代码区。
    只做写测试，且目标是代码区高位的空白字节，不擦除。
-   若这里可写，说明硬件不阻止 IAP 改代码区，bootloader 必须自己拒绝这些地址。 */
+   若这里可写，说明 128K EEPROM 模式下 IAP 能写整个 flash，
+   bootloader 方案重新成立。
+   注意：不擦除，只往读回为 FF 的空白字节写 0x5A。
+   flash 写只能 1->0，不会破坏已用代码。 */
 static void test_code_region(void)
 {
-	p_str("[Q4] can IAP reach the CODE region\r\n");
+	p_str("[Q4] can IAP reach the CODE region (EEPROM=128K expected)\r\n");
 	p_str("  (write-only test on blank high addresses, no erase)\r\n");
 
-	probe_one_addr(0x010000UL);
-	probe_one_addr(BLANK_IN_CODE);
+	/* 0x010000 = 物理 0xFF0000 = 代码区起始（探针代码在此），跳过 */
+	/* 探针约 6K，0x012000 以上应该是空白 */
+	probe_one_addr(0x012000UL);
+	probe_one_addr(0x018000UL);
+	probe_one_addr(0x01FE00UL);
 	probe_one_addr(0x01FFFFUL);
 	p_nl();
 }
@@ -479,6 +485,112 @@ static void test_crc(void)
 
 /* ------------------------------------------------------------------ 主流程 */
 
+/* Q6：0xFE0000 能否取指执行。
+
+   思路：写一个只碰 SFR 的最小函数（不引用任何 RAM，天然位置无关），
+   用 far 指针读它的机器码，再用 IAP 复制到 EEPROM 区（IAP 地址 0x000200），
+   然后用 far 函数指针调用副本。如果 P0 口被设成 0x55，说明取指成功。
+
+   选 P0 作目标是因为它不影响串口输出（UART1 在 P30/P31），
+   读 P0 即可确认执行结果。
+
+   选 0x000200 作为目标地址，避开 Q3 里写到 0x000000 的测试数据。 */
+
+/* 这个函数只写 SFR P0，返回。不引用任何 RAM/全局变量。
+   放在代码区，作为"原件"。 */
+void target_func(void) large
+{
+	P0 = 0x55;
+}
+
+/* 拷贝目标地址（IAP 线性地址），选 0x000200 避开 Q3 的测试数据 */
+#define TARGET_IAP_ADDR 0x000200UL
+#define TARGET_FAR_ADDR 0xFE0200UL
+
+/* far 函数指针类型。MCS-251 far call 用 24 位地址。 */
+typedef void (*far_func_t)(void);
+
+static void test_exec(void)
+{
+	uint8_t code_buf[64];
+	uint8_t i;
+	uint8_t got;
+	far_func_t fp;
+
+	p_str("[Q6] execute from 0xFE0000 area\r\n");
+
+	/* 第一步：读 target_func 的机器码 */
+	p_str("  reading target_func code... ");
+	read_far((uint32_t)target_func, code_buf);
+	p_str("done\r\n");
+	p_str("  first 16 bytes: ");
+	for (i = 0; i < 16; i++)
+	{
+		p_hex8(code_buf[i]);
+		UART_PutChar(UART_1, ' ');
+	}
+	p_nl();
+
+	/* 第二步：擦目标扇区 */
+	p_str("  erasing target sector 0x000200... ");
+	got = iap_erase_sector(TARGET_IAP_ADDR);
+	p_str(got ? "CMD_FAIL!" : "ok");
+	p_nl();
+
+	/* 第三步：把机器码写到 EEPROM 区 */
+	p_str("  writing code to EEPROM 0x000200... ");
+	for (i = 0; i < 32; i++)
+	{
+		got = iap_write_byte(TARGET_IAP_ADDR + i, code_buf[i]);
+		if (got)
+		{
+			p_str("CMD_FAIL at byte ");
+			p_dec(i);
+			p_nl();
+			return;
+		}
+	}
+	p_str("done\r\n");
+
+	/* 第四步：读回并比对 */
+	p_str("  verifying copy... ");
+	for (i = 0; i < 32; i++)
+	{
+		if (iap_read_byte(TARGET_IAP_ADDR + i) != code_buf[i])
+		{
+			p_str("MISMATCH at byte ");
+			p_dec(i);
+			p_nl();
+			return;
+		}
+	}
+	p_str("match\r\n");
+
+	/* 第五步：先清 P0，再调用副本，看 P0 是否变 0x55 */
+	P0 = 0x00;
+	p_str("  P0 before call = ");
+	p_hex8(P0);
+	p_nl();
+
+	p_str("  calling function at 0xFE0200... ");
+	{
+		uint8_t volatile far *p = (uint8_t volatile far *)TARGET_FAR_ADDR;
+		fp = (far_func_t)p;
+	}
+	fp();
+	p_str("returned\r\n");
+
+	p_str("  P0 after call  = ");
+	p_hex8(P0);
+	p_nl();
+
+	if (P0 == 0x55)
+		p_str("  VERDICT: 0xFE0000 area is EXECUTABLE\r\n");
+	else
+		p_str("  VERDICT: 0xFE0000 area is NOT executable (P0 unchanged)\r\n");
+	p_nl();
+}
+
 void main(void)
 {
 	Board_Init();
@@ -505,6 +617,7 @@ void main(void)
 	test_iap_rw();
 	test_iap_range();
 	test_code_region();
+	test_exec();
 
 	p_str("==== PROBE DONE ====\r\n");
 
