@@ -188,7 +188,7 @@
           <Target251Misc>
             <MemoryModel>3</MemoryModel>
             <RTOS>0</RTOS>
-            <RomSize>3</RomSize>
+            <RomSize>4</RomSize>
             <NearDataHold>0</NearDataHold>
             <XDataHold>0</XDataHold>
             <FarDataHold>0</FarDataHold>
@@ -225,9 +225,9 @@
                 <Size>0x2000</Size>
               </XRAM>
               <Ocm1>
-                <Type>0</Type>
-                <StartAddress>0x0</StartAddress>
-                <Size>0x0</Size>
+                <Type>1</Type>
+                <StartAddress>0xfe0000</StartAddress>
+                <Size>0x20000</Size>
               </Ocm1>
               <Ocm2>
                 <Type>0</Type>
@@ -269,7 +269,7 @@
             <SizSpd>1</SizSpd>
             <AcaOpt>0</AcaOpt>
             <VariousControls>
-              <MiscControls></MiscControls>
+              <MiscControls>INTVECTOR(0x1000)</MiscControls>
               <Define></Define>
               <Undefine></Undefine>
               <IncludePath>..\..\..\Libraries\boards\inc;..\..\..\Libraries\startup\inc;..\USER\inc;..\..\..\Libraries\deivers\inc</IncludePath>
@@ -295,7 +295,7 @@
             <WarningLevel>2</WarningLevel>
             <DataOverlaying>1</DataOverlaying>
             <OverlayString></OverlayString>
-            <MiscControls></MiscControls>
+            <MiscControls>CLASSES (CODE (0xFF1003-0xFFFFFF))</MiscControls>
             <DisableWarningNumbers>16,57</DisableWarningNumbers>
             <LinkerCmdFile></LinkerCmdFile>
             <Assign></Assign>
