@@ -658,3 +658,17 @@ stc32g/toolchain/stcflash/
 **更换蓝牙模块须核对波特率**：bootloader 的 `BAUD` 在编译期写死
 （当前 115200，由 `config.h` 的 `FOSC` 推导）。模块波特率不一致时需修改
 `config.h` 并重新烧底。
+
+**修改 uvproj 或库文件须同时改 `PROJECT_VERSION`**：位于
+`scripts/toolchain.gd`。该常量不变时已运行过的用户那里 `user://` 不会更新，
+他们会用旧配置编译且无任何提示。此问题实际发生过：给四个 App 打完
+bootloader 共存配置后 `user://` 仍为旧版，表现为下载时报
+"0xFF1000 已被占用"，错误信息距真因很远。
+
+**在项目目录内放 Keil 产物须加 `.gdignore`**：Keil 的目标文件扩展名是
+`.obj`，与 Wavefront OBJ 同名，Godot 会把它当 3D 模型按文本解析，
+刷出上百行 `Unicode parsing error` 并报
+`resource_importer_obj.cpp:691 Condition "meshes.size() != 1" is true`。
+`stc32g/` 下已有 `.gdignore`，但解压官方例程一类临时目录需要自行添加。
+注意 `.gitignore` 与 `.gdignore` 是两套互不相干的机制 —— 前者管版本控制，
+后者管资源导入，都要写。
