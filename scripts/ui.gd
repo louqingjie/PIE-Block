@@ -2297,6 +2297,17 @@ func _on_download_pressed() -> void:
 	var com_port: String = str(pick.get("device", ""))
 	_append_output("串口: %s" % str(pick.get("reason", com_port)))
 
+	# 蓝牙链路无法中途切换波特率，而下载流程需要两段波特率。
+	# 提前告知，免得失败后不知道往哪查。
+	var picked_kind: String = ""
+	for info in candidates:
+		if str(info.get("device", "")) == com_port:
+			picked_kind = str(info.get("kind", ""))
+			break
+	if picked_kind == "bluetooth":
+		for line in _toolchain().bluetooth_baud_note():
+			_append_output("  %s" % line)
+
 	# 3) 异步下载
 	_download_busy = true
 	var btn: Node = get_node_or_null(P_DOWNLOAD_BTN)

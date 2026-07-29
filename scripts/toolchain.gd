@@ -32,6 +32,10 @@ const LIBRARIES_DST: String = "user://stc32g/Libraries"
 const WORKSPACE_DST: String = "user://stc32g"
 ## 编译日志文件名
 const BUILD_LOG_NAME: String = "pie_block_build.log"
+## 下载日志文件名。放在 STCFLASH_DST 下。
+## 走文件而不是 OS.execute 的 output 数组：后者在 Windows 中文环境按 GBK
+## 解码，我们的脚本输出 UTF-8，直接读会乱码。
+const DOWNLOAD_LOG_NAME: String = "pie_block_download.log"
 ## 工具链版本标记（内容变更时触发重新解压）
 const TOOLCHAIN_VERSION: String = "keil_noarm_v3"
 
@@ -57,10 +61,16 @@ const STCFLASH_DST: String = "user://stcflash"
 ## 蓝牙模块也必须配成同一个波特率。
 const DEFAULT_BOOT_BAUD: int = 115200
 ## App 的 UART1 波特率，用于发 @PIEIAP# 触发命令。
-## 生成的固件走 115200（见 codegen_base.gd），与 bootloader 一致，
-## 所以整个下载过程不需要切换波特率 —— 这一点对蓝牙链路尤其重要，
-## 蓝牙模块的波特率是配死的，中途切不了。
-const DEFAULT_APP_BAUD: int = 115200
+##
+## 230400 是项目既有约定（见 docs/RM电控指南.md 与四个生成器的 UART_Init），
+## 不要为了迁就 bootloader 而改它 —— 那个数值可能还牵涉遥控器与调试工具。
+## 触发字必须按这个波特率发，否则 App 的 UART1 中断收不到，
+## 表现为"bootloader 没有响应"（踩过：把它改成 115200 后下载全失败）。
+##
+## 于是下载过程有一次波特率切换：230400 发触发字 → 115200 跟 bootloader 通信。
+## **蓝牙链路上这个切换做不到**（模块波特率配死），所以走蓝牙时必须让
+## App 与 bootloader 同为 115200，见 bluetooth_baud_note()。
+const DEFAULT_APP_BAUD: int = 230400
 
 ## UV4 可执行文件候选名，按优先级排序：
 ## uVision.com 是控制台子系统版本，-b 批处理时不会弹出 GUI 窗口盖住本程序；
@@ -580,13 +590,11 @@ func download_hex_iap(hex_path: String, com_port: String,
 		return {"ok": false, "exit": -1, "log": "烧录脚本部署失败", "stage": "env"}
 
 	var script: String = to_abs(STCFLASH_DST).path_join("pie_block_iap.py")
-	var output: Array = []
-	var exit_code: int = OS.execute(
-		py.replace("/", "\\"),
-		[script, hex_path, com_port, str(app_baud), str(boot_baud)],
-		output, true)
+	var log_abs: String = to_abs(STCFLASH_DST).path_join(DOWNLOAD_LOG_NAME)
+	var exit_code: int = _run_python_logged(
+		py, [script, hex_path, com_port, str(app_baud), str(boot_baud)], log_abs)
+	var log_text: String = _read_log(log_abs)
 
-	var log_text: String = str(output[0]) if output.size() > 0 else ""
 	# 脚本退出码可控，以它为准；日志关键字只作兜底
 	var ok: bool = (exit_code == 0) or log_text.contains("烧录成功")
 
@@ -596,6 +604,32 @@ func download_hex_iap(hex_path: String, com_port: String,
 		"log": log_text,
 		"stage": "done" if ok else _classify_iap_failure(log_text),
 	}
+
+
+## 跑 Python 脚本并把输出重定向到文件，返回退出码。
+##
+## 为什么不用 OS.execute 的 output 参数：那个数组在 Windows 上按系统代码页
+## （中文环境是 GBK）解码，而我们的脚本输出 UTF-8，直接读会得到乱码
+## （实测下载日志全是"鍥轰欢 30252 瀛楄妭"这种）。
+## 编译路径一直是读日志文件所以没这个问题，这里跟它对齐。
+func _run_python_logged(py: String, args: Array, log_abs: String) -> int:
+	# 用 cmd /c 做重定向。PYTHONIOENCODING 保证脚本内的 print 输出 UTF-8，
+	# 不依赖控制台代码页。
+	var parts: PackedStringArray = PackedStringArray()
+	parts.append("\"" + py.replace("/", "\\") + "\"")
+	for a in args:
+		parts.append("\"" + str(a).replace("/", "\\") + "\"")
+	var cmd_line: String = "set PYTHONIOENCODING=utf-8 && " \
+		+ " ".join(parts) + " > \"" + log_abs.replace("/", "\\") + "\" 2>&1"
+	var output: Array = []
+	return OS.execute("cmd.exe", ["/c", cmd_line], output, true)
+
+
+## 读日志文件。Godot 的 get_file_as_string 按 UTF-8 解析，与脚本输出一致。
+func _read_log(log_abs: String) -> String:
+	if not FileAccess.file_exists(log_abs):
+		return ""
+	return FileAccess.get_file_as_string(log_abs)
 
 
 ## 从下载日志判断失败发生在哪一阶段，用于给出针对性提示。
@@ -854,6 +888,25 @@ func _kind_name(kind: String) -> String:
 			return "未知类型串口"
 
 
+## 走蓝牙时的波特率限制说明。
+##
+## 下载过程正常需要两段波特率：230400 发触发字给 App，
+## 115200 跟 bootloader 通信。USB 转串口可以随时切，蓝牙模块不行 ——
+## 它的波特率在配对时就固定了，中途切换会让链路直接失联。
+##
+## 所以蓝牙链路要么把 App 也改成 115200（改四个生成器的 UART_Init），
+## 要么把 bootloader 改成 230400（改 config.h 后重新烧底）。
+## 两者都需要人工决定，不能在下载时自动处理，故只给提示。
+func bluetooth_baud_note() -> PackedStringArray:
+	return PackedStringArray([
+		"检测到走蓝牙链路。注意波特率限制：",
+		"  下载需要先用 %d 发触发命令，再用 %d 与引导程序通信，"
+			% [DEFAULT_APP_BAUD, DEFAULT_BOOT_BAUD],
+		"  而蓝牙模块的波特率是配对时固定的，中途切不了。",
+		"  若下载失败，需要把两端统一成同一个波特率（改代码后重新烧底）。",
+	])
+
+
 ## 探测某个串口上的 bootloader 是否在线。
 ##
 ## 用途：下载前确认端口选对了、板子上有 bootloader，
@@ -911,12 +964,12 @@ finally:
 """)
 	f.close()
 
-	var output: Array = []
-	var exit_code: int = OS.execute(
-		py.replace("/", "\\"),
+	var log_abs: String = to_abs(STCFLASH_DST).path_join("pie_block_probe.log")
+	var exit_code: int = _run_python_logged(
+		py,
 		[script, to_abs(STCFLASH_DST), com_port, str(app_baud), str(boot_baud)],
-		output, true)
-	var log_text: String = str(output[0]) if output.size() > 0 else ""
+		log_abs)
+	var log_text: String = _read_log(log_abs)
 
 	var version: int = 0
 	var marker: String = "PROBE_OK version=0x"

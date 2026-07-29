@@ -486,6 +486,29 @@ func _test_launcher() -> void:
 	_check("启动页清空了项目上下文", not _app().has_project())
 	_check("最近列表为空时显示占位", lau.get_node(lau.P_RECENT_LIST).get_child_count() == 1)
 
+	# 两个文件对话框的 access 都必须是 ACCESS_FILESYSTEM，否则用户只能把项目
+	# 存在程序目录里。这类"默认值恰好不对"的问题看代码看不出来
+	# （踩过：SaveDialog 漏写 access，默认 ACCESS_RESOURCES=0，
+	#  于是能打开任意位置的项目却只能存回程序目录），必须实例化后检查。
+	for dlg_name in ["SaveDialog", "OpenDialog"]:
+		var dlg: Node = lau.get_node_or_null(dlg_name)
+		_check("%s 存在" % dlg_name, dlg != null)
+		if dlg == null:
+			continue
+		_check("%s 可访问整个文件系统" % dlg_name,
+			dlg.access == FileDialog.ACCESS_FILESYSTEM,
+			"access=%d 期望 %d" % [dlg.access, FileDialog.ACCESS_FILESYSTEM])
+	var save_dlg: Node = lau.get_node_or_null("SaveDialog")
+	if save_dlg != null:
+		_check("SaveDialog 是保存模式",
+			save_dlg.file_mode == FileDialog.FILE_MODE_SAVE_FILE,
+			"file_mode=%d 期望 %d" % [save_dlg.file_mode, FileDialog.FILE_MODE_SAVE_FILE])
+	var open_dlg: Node = lau.get_node_or_null("OpenDialog")
+	if open_dlg != null:
+		_check("OpenDialog 是打开单文件模式",
+			open_dlg.file_mode == FileDialog.FILE_MODE_OPEN_FILE,
+			"file_mode=%d 期望 %d" % [open_dlg.file_mode, FileDialog.FILE_MODE_OPEN_FILE])
+
 	# 三种类型各新建一个
 	var paths: Dictionary = {}
 	for kind in PF.KINDS:

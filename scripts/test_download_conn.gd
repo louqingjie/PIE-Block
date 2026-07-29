@@ -92,11 +92,41 @@ func _initialize() -> void:
 		if hint.is_empty():
 			fails.append("阶段 %s 缺排查建议" % st)
 
-	# --- 波特率常量一致性
+	# --- 波特率常量
+	# boot 侧必须与 PIE_BOOTLOADER/USER/inc/config.h 的 BAUD 一致
 	if TC.DEFAULT_BOOT_BAUD != 115200:
 		fails.append("boot 波特率应为 115200（与 config.h 一致）")
+	# App 侧必须与四个生成器的 UART_Init 一致，否则触发字发不进去。
+	# 曾经把它改成 115200 想统一，结果 App 收不到触发字，
+	# 下载全部失败且报错是"bootloader 没有响应"，离真因很远。
+	if TC.DEFAULT_APP_BAUD != 230400:
+		fails.append("App 波特率应为 230400（与生成器的 UART_Init 一致）")
+	# 两者不同意味着下载中途要切波特率，蓝牙链路做不到，必须有提示
 	if TC.DEFAULT_APP_BAUD != TC.DEFAULT_BOOT_BAUD:
-		fails.append("App 与 boot 波特率应相同，否则蓝牙链路中途切不了")
+		if tc.bluetooth_baud_note().is_empty():
+			fails.append("两段波特率不同时必须给蓝牙用户提示")
+
+	# --- 跨文件约束：生成器实际写进 C 代码的波特率必须与常量一致。
+	# 这是 toolchain.gd 与四个生成器之间的隐式契约，改任一边都会静默失效，
+	# 表现为下载时 App 收不到触发字。用断言把它固定住。
+	var gen_paths: Array = [
+		"res://scripts/codegen/codegen_infantry.gd",
+		"res://scripts/codegen/codegen_engineer.gd",
+		"res://scripts/codegen/codegen_engineer_ik.gd",
+		"res://scripts/codegen/codegen_debug.gd",
+	]
+	var want_baud: String = str(TC.DEFAULT_APP_BAUD)
+	for p in gen_paths:
+		var src: String = FileAccess.get_file_as_string(p)
+		if src.is_empty():
+			fails.append("读不到 %s" % p)
+			continue
+		if not src.contains("UART_Init"):
+			fails.append("%s 里没有 UART_Init" % p.get_file())
+			continue
+		if not src.contains(want_baud):
+			fails.append("%s 的 UART_Init 波特率与 DEFAULT_APP_BAUD(%s) 不一致"
+				% [p.get_file(), want_baud])
 
 	# --- 真机：枚举当前串口
 	print("--- 当前系统串口 ---")
