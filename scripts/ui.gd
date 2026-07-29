@@ -2263,38 +2263,48 @@ func _cleanup_download_thread() -> void:
 	_download_thread = null
 
 
-## 下载按钮回调：检查 hex -> 发 @STCISP# -> 调用 stcgal 烧录
+## 下载按钮回调：检查 hex -> 选串口 -> 走自建 bootloader 的 IAP 协议烧录
+##
+## 与旧的 stcgal + ROM ISP 路径的区别：不需要断电、不需要按 Reset、
+## 链路可以是蓝牙。代价是芯片出厂时必须先烧过一次 bootloader。
 func _on_download_pressed() -> void:
 	if _download_busy:
 		return
-	# 1) 检查 hex 文件是否存在
+
+	# 1) hex 是否存在
 	var project_dst: String = _get_current_project_dst()
 	var hex_path: String = _toolchain().get_hex_path(project_dst)
 	if not _toolchain().hex_exists(project_dst):
-		_append_output("[Error] 未找到 hex 文件，请先编译")
-		_append_output("       路径: %s" % hex_path)
+		_append_output("[Error] 没有找到编译好的程序，请先点「编译」")
+		_append_output("       期望路径: %s" % hex_path)
 		return
-	# 2) 列举可用串口
-	var ports: PackedStringArray = _toolchain().list_serial_ports()
-	if ports.is_empty():
-		_append_output("[Error] 未检测到可用串口")
-		_append_output("       请确认板子已通过 CH340 / 蓝牙串口连接到电脑")
+
+	# 2) 选串口。不再"取最后一个"猜 —— 蓝牙场景下系统里常有多个虚拟口，
+	#    连错会把数据发给别的设备。
+	var pick: Dictionary = _toolchain().pick_download_port()
+	var candidates: Array = pick.get("candidates", [])
+	if not bool(pick.get("ok", false)):
+		_append_output("[Error] %s" % str(pick.get("reason", "无法确定串口")))
+		if candidates.is_empty():
+			_append_output("       请确认板子已通过 USB 线或蓝牙连接到电脑")
+		else:
+			_append_output("       检测到这些端口：")
+			for info in candidates:
+				_append_output("         %s" % str(info.get("label", "")))
+			_append_output("       请拔掉不相关的串口设备后重试")
 		return
-	# 3) 自动选择串口：多口时取最后一个（通常是刚插上的板子）
-	var com_port: String = ports[0]
-	if ports.size() > 1:
-		com_port = ports[ports.size() - 1]
-	_append_output("使用串口: %s（共检测到 %d 个端口）" % [com_port, ports.size()])
-	for p in ports:
-		_append_output("  - %s" % p)
-	# 4) 启动异步下载（同会话软触发 + stc8d；trim 强制 33.1776MHz）
-	_append_output("开始串口烧录（同会话 @STCISP# → stc8d，握手 2400，trim 33.1776MHz）...")
-	_append_output("若提示按 Reset：当前固件时钟/波特率可能不对，按一次即可；之后应能自动进 ISP")
+
+	var com_port: String = str(pick.get("device", ""))
+	_append_output("串口: %s" % str(pick.get("reason", com_port)))
+
+	# 3) 异步下载
 	_download_busy = true
 	var btn: Node = get_node_or_null(P_DOWNLOAD_BTN)
 	if btn is BaseButton:
 		btn.disabled = true
 		btn.text = "下载中…"
+
+	_append_output("开始下载，不需要断电或按复位键…")
 	_download_thread = Thread.new()
 	var err: int = _download_thread.start(
 		_download_worker.bind(hex_path, com_port))
@@ -2306,10 +2316,9 @@ func _on_download_pressed() -> void:
 		_append_output("[Error] 无法启动下载线程（错误码 %d）" % err)
 
 
-## 下载工作线程：通过 UART 执行 ISP 烧录
+## 下载工作线程：走 IAP 协议
 func _download_worker(hex_path: String, com_port: String) -> void:
-	# 脚本内同一会话完成触发与烧录，无需额外等待
-	var result: Dictionary = _toolchain().download_hex_uart(hex_path, com_port, 230400, 115200)
+	var result: Dictionary = _toolchain().download_hex_iap(hex_path, com_port)
 	call_deferred("_on_download_finished", result)
 
 
@@ -2319,18 +2328,44 @@ func _on_download_finished(result: Dictionary) -> void:
 	if _download_thread and _download_thread.is_alive():
 		_download_thread.wait_to_finish()
 	_download_thread = null
-	# 复位按钮
+
 	var btn: Node = get_node_or_null(P_DOWNLOAD_BTN)
 	if btn is BaseButton:
 		btn.disabled = false
 		btn.text = "下载"
-	# 显示结果
+
 	var ok: bool = bool(result.get("ok", false))
-	var log_text: String = result.get("log", "")
+	var log_text: String = str(result.get("log", ""))
+
 	if ok:
-		_append_output("✓ 下载成功！芯片将自动复位运行新程序")
-	else:
-		_append_output("✗ 下载失败")
-	if not log_text.is_empty():
-		for line in log_text.split("\n", false):
+		_append_output("✓ 下载完成，板子已经在运行新程序")
+		# 成功时日志只留进度尾巴，几百行百分比对用户没意义
+		_append_download_log(log_text, true)
+		return
+
+	_append_output("✗ 下载失败")
+	# 先给排查建议再贴日志：用户大概率只看前几行
+	for line in _toolchain().iap_failure_hint(str(result.get("stage", "unknown"))):
+		_append_output("  %s" % line)
+	_append_download_log(log_text, false)
+
+
+## 输出下载日志。
+## 成功时折叠掉进度百分比那几百行，失败时全量输出以便排查。
+func _append_download_log(log_text: String, collapse: bool) -> void:
+	if log_text.is_empty():
+		return
+	var lines: PackedStringArray = log_text.split("\n", false)
+	if not collapse:
+		for line in lines:
 			_append_output(line)
+		return
+	var skipped: int = 0
+	for line in lines:
+		# 进度行形如 "  1234/30252 字节 (45%)"
+		if line.contains("字节 (") and line.ends_with("%)"):
+			skipped += 1
+			continue
+		_append_output(line)
+	if skipped > 0:
+		_append_output("  （省略 %d 行进度）" % skipped)

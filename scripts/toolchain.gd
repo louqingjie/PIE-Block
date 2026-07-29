@@ -35,10 +35,32 @@ const BUILD_LOG_NAME: String = "pie_block_build.log"
 ## 工具链版本标记（内容变更时触发重新解压）
 const TOOLCHAIN_VERSION: String = "keil_noarm_v3"
 
+## 项目模板版本。**改动 uvproj 或库文件后必须跡这个字符串**，
+## 否则已经跑过一次的用户那里 user:// 不会更新，他们会拿旧配置编译
+## 而且没有任何提示。
+##
+## 这个机制是踩过坑才加的：原先项目模板“目录存在就跳过”，
+## 给四个 App 打完 bootloader 共存配置后，user:// 里仍是旧版，
+## 表现为下载时报“0xFF1000 已被占用”—— 错误信息距真因很远。
+##
+## v2: 四个 App uvproj 加上 bootloader 共存所需的五项配置
+##     （RomSize=4 / Ocm1 / INTVECTOR / 链接器 CLASSES / HexSelection）
+const PROJECT_VERSION: String = "proj_v2_bootloader_coexist"
+
 ## STC 烧录脚本路径（Python）
 const STCFLASH_SRC: String = "res://stc32g/toolchain/stcflash"
 ## 烧录脚本部署目标
 const STCFLASH_DST: String = "user://stcflash"
+
+## bootloader 的波特率。它在 PIE_BOOTLOADER/USER/inc/config.h 里由
+## `BAUD = 65536 - FOSC/4/115200` 编译期写死，改那边必须同步改这里。
+## 蓝牙模块也必须配成同一个波特率。
+const DEFAULT_BOOT_BAUD: int = 115200
+## App 的 UART1 波特率，用于发 @PIEIAP# 触发命令。
+## 生成的固件走 115200（见 codegen_base.gd），与 bootloader 一致，
+## 所以整个下载过程不需要切换波特率 —— 这一点对蓝牙链路尤其重要，
+## 蓝牙模块的波特率是配死的，中途切不了。
+const DEFAULT_APP_BAUD: int = 115200
 
 ## UV4 可执行文件候选名，按优先级排序：
 ## uVision.com 是控制台子系统版本，-b 批处理时不会弹出 GUI 窗口盖住本程序；
@@ -81,20 +103,55 @@ func ensure_deployed() -> bool:
 	if need_extract:
 		if not _extract_toolchain():
 			return false
-	# 项目模板始终确保存在（体积小，不做版本检查）
-	if not DirAccess.dir_exists_absolute(to_abs(PROJECT_DST)):
-		if not _copy_dir_recursive(PROJECT_SRC, PROJECT_DST):
-			_emit("[Error] 无法复制项目模板到 user://，请检查磁盘空间")
-			return false
-	if not DirAccess.dir_exists_absolute(to_abs(PROJECT_ENGINEER_DST)):
-		if not _copy_dir_recursive(PROJECT_ENGINEER_SRC, PROJECT_ENGINEER_DST):
-			_emit("[Error] 无法复制工程师项目模板到 user://，请检查磁盘空间")
-			return false
-	# 库文件也需复制（uvproj 用相对路径引用 Libraries）
-	if not DirAccess.dir_exists_absolute(to_abs(LIBRARIES_DST)):
+	# 项目模板与库文件：版本不匹配或内容缺失时重新部署。
+	#
+	# 两个判据都必要：
+	#   版本不匹配 —— uvproj 改了但 user:// 仍是旧的（踩过）
+	#   内容缺失 —— 目录在但文件没了（手工清理过、复制中途失败）
+	# 只查目录存在的话，前者会让用户拿旧配置编译且毫无提示，
+	# 后者会卡在“写 main.c 失败”这类下游错误上。
+	var proj_ver_file: String = to_abs(WORKSPACE_DST).path_join(".pie_block_proj_version")
+	var proj_ver: String = ""
+	if FileAccess.file_exists(proj_ver_file):
+		proj_ver = FileAccess.get_file_as_string(proj_ver_file).strip_edges()
+	var need_redeploy: bool = (proj_ver != PROJECT_VERSION)
+	if need_redeploy and not proj_ver.is_empty():
+		_emit("项目模板有更新，正在重新部署（%s → %s）…"
+			% [proj_ver, PROJECT_VERSION])
+
+	for pair in [
+		[PROJECT_SRC, PROJECT_DST, "项目模板"],
+		[PROJECT_ENGINEER_SRC, PROJECT_ENGINEER_DST, "工程项目模板"],
+	]:
+		if need_redeploy or not _project_deployed(str(pair[1])):
+			if not _copy_dir_recursive(str(pair[0]), str(pair[1])):
+				_emit("[Error] 无法复制%s到 user://，请检查磁盘空间" % str(pair[2]))
+				return false
+
+	# 库文件（uvproj 用相对路径引用 Libraries）
+	if need_redeploy or not FileAccess.file_exists(
+			to_abs(LIBRARIES_DST).path_join("startup/inc/STC32Gxx.h")):
 		if not _copy_dir_recursive(LIBRARIES_SRC, LIBRARIES_DST):
 			_emit("[Error] 无法复制库文件到 user://，请检查磁盘空间")
 			return false
+
+	if need_redeploy:
+		var vf: FileAccess = FileAccess.open(proj_ver_file, FileAccess.WRITE)
+		if vf != null:
+			vf.store_string(PROJECT_VERSION)
+			vf.close()
+	return true
+
+
+## 判断一个项目是否完整部署过。
+## 查 uvproj 与 main.c 所在目录 —— 前者是编译入口，后者是写代码的目标，
+## 缺任何一个后续都会失败。
+func _project_deployed(project_dst: String) -> bool:
+	var base: String = to_abs(project_dst)
+	if not FileAccess.file_exists(base.path_join("MDK/Project_Template.uvproj")):
+		return false
+	if not DirAccess.dir_exists_absolute(base.path_join("USER/src")):
+		return false
 	return true
 
 
@@ -454,7 +511,15 @@ except Exception as e:
 	return true
 
 
-## 通过 UART（串口）烧录 hex 文件
+## 走芯片 ROM ISP + stcgal 烧录 hex。**日常下载不要用这个，用 download_hex_iap。**
+##
+## 保留它的理由：ROM ISP 是芯片固化的，任何情况下都能用，
+## 属于兜底手段。但它有三个硬伤，正是我们做自建 bootloader 的动因：
+##   · 依赖 IRC 频率校准，trim 不准就连不上
+##   · 握手固定 2400 波特率，蓝牙模块波特率配死后无法切换
+##   · 必须在上电瞬间介入，意味着每次都要断电或按 Reset
+## 出厂烧底走的是官方 STC-ISP 软件，也不经这个函数。
+##
 ## 返回 {ok: bool, log: String}
 ## app_baud: 用户程序串口波特率（发 @STCISP#）
 ## isp_baud: ISP 监控程序通信波特率（发 0x7F / 协议包）
@@ -493,42 +558,108 @@ func download_hex_uart(hex_path: String, com_port: String, app_baud: int = 23040
 	}
 
 
-## 通过自定义 bootloader 的 IAP 协议烧录 hex（日常下载路径）
+## 通过自建 bootloader 的 IAP 协议烧录 hex（日常下载路径）
 ##
-## 与 download_hex_uart 的区别：对话对象是我们自己写的 bootloader，
-## 不经 ROM ISP，因此不受 IRC trim 与 2400 握手波特率的影响，也不用按 Reset。
-## 前提是芯片上已经用 download_hex_uart 刷过一次 bootloader。
+## 与 download_hex_uart 的区别：对话对象是常驻 0xFF0000 的自己的 bootloader，
+## 不经 ROM ISP，因此不受 IRC trim 与 2400 握手波特率影响，
+## 也不需要断电或按 Reset。物理链路可以是蓝牙串口。
+## 前提是芯片出厂时已用官方 STC-ISP 烧过一次 bootloader
+## （参数见 stc32g/Projects/PIE_BOOTLOADER/dist/README.md）。
 ##
-## app_baud: App 的 UART1 波特率（发 @PIEIAP# 触发命令）
-## boot_baud: bootloader 的固定波特率
-## 返回 {ok: bool, exit: int, log: String}
-func download_hex_iap(hex_path: String, com_port: String, app_baud: int = 230400, boot_baud: int = 115200) -> Dictionary:
+## app_baud: App 的 UART1 波特率（发 @PIEIAP# 触发命令用）
+## boot_baud: bootloader 的波特率，编译期写死在 config.h 里
+## 返回 {ok: bool, exit: int, log: String, stage: String}
+##   stage 用于失败时定位卡在哪一步，取值见 _classify_iap_failure
+func download_hex_iap(hex_path: String, com_port: String,
+		app_baud: int = DEFAULT_APP_BAUD,
+		boot_baud: int = DEFAULT_BOOT_BAUD) -> Dictionary:
 	var py: String = find_python()
 	if py.is_empty():
-		return {"ok": false, "exit": - 1, "log": "未找到 Python"}
+		return {"ok": false, "exit": -1, "log": "未找到 Python", "stage": "env"}
 	if not ensure_stcflash_deployed():
-		return {"ok": false, "exit": - 1, "log": "烧录脚本部署失败"}
+		return {"ok": false, "exit": -1, "log": "烧录脚本部署失败", "stage": "env"}
 
 	var script: String = to_abs(STCFLASH_DST).path_join("pie_block_iap.py")
-	var cmd: String = py.replace("/", "\\")
 	var output: Array = []
-	var args: PackedStringArray = PackedStringArray([
-		script, hex_path, com_port, str(app_baud), str(boot_baud)
-	])
-	var exit_code: int = OS.execute(cmd, args, output, true)
+	var exit_code: int = OS.execute(
+		py.replace("/", "\\"),
+		[script, hex_path, com_port, str(app_baud), str(boot_baud)],
+		output, true)
 
-	var log_text: String = ""
-	if output.size() > 0:
-		log_text = output[0]
-
-	# 自己写的脚本退出码可控，以退出码为准；日志关键字只作兜底
-	var ok: bool = (exit_code == 0) or (log_text.find("烧录成功") >= 0)
+	var log_text: String = str(output[0]) if output.size() > 0 else ""
+	# 脚本退出码可控，以它为准；日志关键字只作兜底
+	var ok: bool = (exit_code == 0) or log_text.contains("烧录成功")
 
 	return {
 		"ok": ok,
 		"exit": exit_code,
 		"log": log_text,
+		"stage": "done" if ok else _classify_iap_failure(log_text),
 	}
+
+
+## 从下载日志判断失败发生在哪一阶段，用于给出针对性提示。
+##
+## 顺序很重要：越靠后的阶段先判，因为日志是累积的 ——
+## 卡在 PROGRAM 时日志里同样有前面 CONNECT 成功的字样。
+func _classify_iap_failure(log_text: String) -> String:
+	if log_text.contains("读回校验失败"):
+		return "verify"
+	if log_text.contains("PROGRAM"):
+		return "program"
+	if log_text.contains("ERASE"):
+		return "erase"
+	if log_text.contains("bootloader 没有响应"):
+		return "connect"
+	if log_text.contains("读取固件失败"):
+		return "hex"
+	if log_text.contains("打开串口"):
+		return "port"
+	return "unknown"
+
+
+## 把失败阶段翻译成给用户看的排查建议。
+## 目标用户没有嵌入式背景，所以每条都给可执行的动作而不是术语。
+func iap_failure_hint(stage: String) -> PackedStringArray:
+	match stage:
+		"port":
+			return PackedStringArray([
+				"串口打不开。可能是：",
+				"  · 端口被别的程序占用（串口助手、另一个 pie-block 窗口）",
+				"  · 蓝牙已断开，重新配对一次",
+			])
+		"connect":
+			return PackedStringArray([
+				"联系不上板子上的引导程序。按顺序检查：",
+				"  · 板子是否通电",
+				"  · 选的串口是否正确（换个端口再试）",
+				"  · 蓝牙模块波特率是否是 115200",
+				"  · 这块板子是否烧过引导程序（新板需要出厂烧录一次）",
+				"救急办法：把 P32 接到 GND 再上电，可强制进入下载模式",
+			])
+		"erase", "program":
+			return PackedStringArray([
+				"写入过程中断。板上的程序已被清除，但这不会损坏板子 ——",
+				"引导程序会停在下载模式，直接再点一次下载即可。",
+				"若反复失败，检查蓝牙信号或换用 USB 线。",
+			])
+		"verify":
+			return PackedStringArray([
+				"写入后读回校验不一致，固件未生效。",
+				"引导程序仍在下载模式，可以直接重试。",
+				"蓝牙链路丢包较多时容易出现，建议改用 USB 线。",
+			])
+		"hex":
+			return PackedStringArray([
+				"固件文件有问题，请重新编译。",
+				"若反复出现，可能是工程配置被改动过。",
+			])
+		"env":
+			return PackedStringArray([
+				"运行环境缺少组件，请联系维护者。",
+			])
+		_:
+			return PackedStringArray()
 
 
 ## 跑 IAP 协议脚本的自测（不需要串口，也不需要板子）
@@ -549,33 +680,252 @@ func run_iap_selftest() -> Dictionary:
 	return {"ok": exit_code == 0, "log": log_text}
 
 
-## 列举可用串口（返回 COM 口名数组）
+## 列举可用串口（只返回 COM 口名，保留给旧调用点）
 func list_serial_ports() -> PackedStringArray:
+	var result: PackedStringArray = PackedStringArray()
+	for info in list_serial_ports_detailed():
+		result.append(str(info.get("device", "")))
+	return result
+
+
+## 列举可用串口并带上识别信息。
+##
+## 返回 Array[Dictionary]，每项含：
+##   device      COM 口名，如 "COM11"
+##   description 描述串，如 "USB-SERIAL CH340 (COM11)"
+##   hwid        硬件 ID，含 VID/PID
+##   kind        我们归类出的类型：见下面 _classify_port
+##   label       给用户看的一行说明
+##
+## 为什么要带识别信息：蓝牙场景下电脑上往往同时存在多个虚拟串口
+## （蓝牙服务自带的、其他设备的），"取最后一个"这种猜法会连错。
+func list_serial_ports_detailed() -> Array:
 	var py: String = find_python()
 	if py.is_empty():
-		return PackedStringArray()
-	
+		return []
+
 	var script: String = to_abs("user://list_ports.py")
 	var f: FileAccess = FileAccess.open(script, FileAccess.WRITE)
 	if f == null:
-		return PackedStringArray()
+		return []
+	# 用 \t 分隔而不是 JSON：描述串里可能有各种符号，
+	# 制表符在 Windows 串口描述里不会出现，解析最省事。
 	f.store_string("""
+import sys
 try:
     import serial.tools.list_ports
-    for p in serial.tools.list_ports.comports():
-        print(p.device)
 except ImportError:
-    pass
+    sys.exit(0)
+for p in serial.tools.list_ports.comports():
+    fields = [
+        p.device or "",
+        p.description or "",
+        p.hwid or "",
+        p.manufacturer or "",
+    ]
+    print("\\t".join(x.replace("\\t", " ") for x in fields))
 """)
 	f.close()
-	
-	var cmd: String = py.replace("/", "\\")
+
 	var output: Array = []
-	OS.execute(cmd, [script], output, true)
-	var result: PackedStringArray = PackedStringArray()
-	if output.size() > 0:
-		for line in output[0].split("\n", false):
-			var port: String = line.strip_edges()
-			if not port.is_empty():
-				result.append(port)
-	return result
+	OS.execute(py.replace("/", "\\"), [script], output, true)
+	if output.is_empty():
+		return []
+
+	var ports: Array = []
+	for line in str(output[0]).split("\n", false):
+		var row: String = line.strip_edges()
+		if row.is_empty():
+			continue
+		var cols: PackedStringArray = row.split("\t")
+		if cols.is_empty() or cols[0].strip_edges().is_empty():
+			continue
+		var device: String = cols[0].strip_edges()
+		var desc: String = cols[1].strip_edges() if cols.size() > 1 else ""
+		var hwid: String = cols[2].strip_edges() if cols.size() > 2 else ""
+		var maker: String = cols[3].strip_edges() if cols.size() > 3 else ""
+		var kind: String = _classify_port(desc, hwid, maker)
+		ports.append({
+			"device": device,
+			"description": desc,
+			"hwid": hwid,
+			"manufacturer": maker,
+			"kind": kind,
+			"label": "%s  %s" % [device, desc if not desc.is_empty() else kind],
+		})
+	return ports
+
+
+## 端口分类。用于把"能烧录的口"与"系统里凑数的虚拟口"分开。
+##
+## 分类值与优先级（数字越小越优先，见 pick_download_port）：
+##   "usb_serial"  USB 转串口芯片，最可靠
+##   "bluetooth"   蓝牙串口，无线烧录走这个
+##   "unknown"     认不出来的，仍可尝试
+##   "virtual"     系统自带的虚拟口，基本不是板子
+func _classify_port(description: String, hwid: String, manufacturer: String) -> String:
+	var hay: String = ("%s %s %s" % [description, hwid, manufacturer]).to_lower()
+
+	# USB 转串口芯片。VID 比描述串可靠（描述会随驱动版本变）。
+	# 1a86=沁恒(CH340/CH341)，0403=FTDI，10c4=SiLabs(CP210x)，
+	# 067b=Prolific(PL2303)，1a86 之外国产板也常见 0403。
+	for vid in ["1a86", "0403", "10c4", "067b"]:
+		if hay.contains("vid_" + vid) or hay.contains("vid:pid=" + vid):
+			return "usb_serial"
+	for kw in ["ch340", "ch341", "cp210", "ft232", "pl2303", "usb-serial", "usb serial"]:
+		if hay.contains(kw):
+			return "usb_serial"
+
+	# 蓝牙串口。Windows 上 HC-05/HC-06 配对后表现为
+	# "标准串行over蓝牙链接"或 "Bluetooth Serial Port"。
+	for kw in ["bluetooth", "蓝牙", "bthenum", "rfcomm", "spp"]:
+		if hay.contains(kw):
+			return "bluetooth"
+
+	# 系统凑数的虚拟口：Windows 自带的通信端口、串行鼠标之类
+	for kw in ["standard port", "communications port", "ports (com & lpt)"]:
+		if hay.contains(kw):
+			return "virtual"
+
+	return "unknown"
+
+
+## 从端口列表里挑一个用于下载。
+##
+## 返回 {ok: bool, device: String, reason: String, candidates: Array}
+##
+## 挑选规则：先按类型优先级过滤，同类型里若只剩一个就直接用；
+## 若同类型有多个则**不猜**，返回 ok=false 让调用方询问用户 ——
+## 连错口可能把数据发给别的设备，猜错的代价比多问一句大。
+func pick_download_port(ports: Array = []) -> Dictionary:
+	var list: Array = ports if not ports.is_empty() else list_serial_ports_detailed()
+	if list.is_empty():
+		return {
+			"ok": false,
+			"device": "",
+			"reason": "未检测到任何串口",
+			"candidates": [],
+		}
+
+	# 按可信度分组
+	var groups: Dictionary = {"usb_serial": [], "bluetooth": [], "unknown": [], "virtual": []}
+	for info in list:
+		var kind: String = str(info.get("kind", "unknown"))
+		if not groups.has(kind):
+			kind = "unknown"
+		groups[kind].append(info)
+
+	for kind in ["usb_serial", "bluetooth", "unknown"]:
+		var bucket: Array = groups[kind]
+		if bucket.is_empty():
+			continue
+		if bucket.size() == 1:
+			return {
+				"ok": true,
+				"device": str(bucket[0].get("device", "")),
+				"reason": "识别为%s：%s" % [_kind_name(kind), bucket[0].get("label", "")],
+				"candidates": bucket,
+			}
+		# 同类型多个，不猜
+		return {
+			"ok": false,
+			"device": "",
+			"reason": "检测到 %d 个%s，无法自动判断用哪个" % [bucket.size(), _kind_name(kind)],
+			"candidates": bucket,
+		}
+
+	return {
+		"ok": false,
+		"device": "",
+		"reason": "只找到系统虚拟串口，未发现板子",
+		"candidates": groups["virtual"],
+	}
+
+
+func _kind_name(kind: String) -> String:
+	match kind:
+		"usb_serial":
+			return "USB 转串口"
+		"bluetooth":
+			return "蓝牙串口"
+		"virtual":
+			return "系统虚拟串口"
+		_:
+			return "未知类型串口"
+
+
+## 探测某个串口上的 bootloader 是否在线。
+##
+## 用途：下载前确认端口选对了、板子上有 bootloader，
+## 这样失败时能给出确切原因，而不是让用户面对一堆下载日志猜。
+##
+## 注意：正常情况下芯片跑的是 App 而不是 bootloader，直接发 CONNECT
+## 会被 App 当成普通串口数据（实测会收到 App 自己的输出）。
+## 所以这里必须先发触发字让 App 交出控制权 —— 与 download_hex_iap
+## 的第一步是同一套逻辑，复用 pie_block_iap.py 的 connect 流程。
+##
+## 副作用：探测成功后芯片停在 bootloader 的下载模式，不再跑 App。
+## 要恢复运行需重新下载固件或断电重启。因此不要在后台轮询调用它。
+##
+## 返回 {ok: bool, version: int, log: String}
+func probe_bootloader(com_port: String, app_baud: int = DEFAULT_APP_BAUD,
+		boot_baud: int = DEFAULT_BOOT_BAUD) -> Dictionary:
+	var py: String = find_python()
+	if py.is_empty():
+		return {"ok": false, "version": 0, "log": "未找到 Python"}
+	if not ensure_stcflash_deployed():
+		return {"ok": false, "version": 0, "log": "烧录脚本部署失败"}
+
+	var script: String = to_abs(STCFLASH_DST).path_join("pie_block_probe.py")
+	var f: FileAccess = FileAccess.open(script, FileAccess.WRITE)
+	if f == null:
+		return {"ok": false, "version": 0, "log": "无法写探测脚本"}
+	# 复用 pie_block_iap 的会话逻辑：trigger 让 App 复位，再 connect。
+	# 写成独立脚本而不是给 pie_block_iap.py 加子命令，是为了让
+	# 那个文件保持"只做下载"的单一职责。
+	f.store_string("""
+import sys
+sys.path.insert(0, sys.argv[1])
+import pie_block_iap as m
+
+port = sys.argv[2]
+app_baud = int(sys.argv[3])
+boot_baud = int(sys.argv[4])
+
+sess = m.IapSession(port, app_baud, boot_baud, verbose=True)
+try:
+    sess.open()
+except Exception as exc:
+    print("打开串口 %s 失败: %s" % (port, exc))
+    sys.exit(1)
+try:
+    sess.trigger()
+    ver = sess.connect()
+    print("PROBE_OK version=0x%04X" % ver)
+    sys.exit(0)
+except m.ProtocolError as exc:
+    print("探测失败: %s" % exc)
+    sys.exit(1)
+finally:
+    sess.close()
+""")
+	f.close()
+
+	var output: Array = []
+	var exit_code: int = OS.execute(
+		py.replace("/", "\\"),
+		[script, to_abs(STCFLASH_DST), com_port, str(app_baud), str(boot_baud)],
+		output, true)
+	var log_text: String = str(output[0]) if output.size() > 0 else ""
+
+	var version: int = 0
+	var marker: String = "PROBE_OK version=0x"
+	var idx: int = log_text.find(marker)
+	if idx >= 0:
+		version = log_text.substr(idx + marker.length(), 4).hex_to_int()
+
+	return {
+		"ok": exit_code == 0 and version > 0,
+		"version": version,
+		"log": log_text,
+	}
