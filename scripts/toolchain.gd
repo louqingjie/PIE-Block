@@ -493,6 +493,62 @@ func download_hex_uart(hex_path: String, com_port: String, app_baud: int = 23040
 	}
 
 
+## 通过自定义 bootloader 的 IAP 协议烧录 hex（日常下载路径）
+##
+## 与 download_hex_uart 的区别：对话对象是我们自己写的 bootloader，
+## 不经 ROM ISP，因此不受 IRC trim 与 2400 握手波特率的影响，也不用按 Reset。
+## 前提是芯片上已经用 download_hex_uart 刷过一次 bootloader。
+##
+## app_baud: App 的 UART1 波特率（发 @PIEIAP# 触发命令）
+## boot_baud: bootloader 的固定波特率
+## 返回 {ok: bool, exit: int, log: String}
+func download_hex_iap(hex_path: String, com_port: String, app_baud: int = 230400, boot_baud: int = 115200) -> Dictionary:
+	var py: String = find_python()
+	if py.is_empty():
+		return {"ok": false, "exit": - 1, "log": "未找到 Python"}
+	if not ensure_stcflash_deployed():
+		return {"ok": false, "exit": - 1, "log": "烧录脚本部署失败"}
+
+	var script: String = to_abs(STCFLASH_DST).path_join("pie_block_iap.py")
+	var cmd: String = py.replace("/", "\\")
+	var output: Array = []
+	var args: PackedStringArray = PackedStringArray([
+		script, hex_path, com_port, str(app_baud), str(boot_baud)
+	])
+	var exit_code: int = OS.execute(cmd, args, output, true)
+
+	var log_text: String = ""
+	if output.size() > 0:
+		log_text = output[0]
+
+	# 自己写的脚本退出码可控，以退出码为准；日志关键字只作兜底
+	var ok: bool = (exit_code == 0) or (log_text.find("烧录成功") >= 0)
+
+	return {
+		"ok": ok,
+		"exit": exit_code,
+		"log": log_text,
+	}
+
+
+## 跑 IAP 协议脚本的自测（不需要串口，也不需要板子）
+## 返回 {ok: bool, log: String}，供开发期回归用
+func run_iap_selftest() -> Dictionary:
+	var py: String = find_python()
+	if py.is_empty():
+		return {"ok": false, "log": "未找到 Python"}
+	if not ensure_stcflash_deployed():
+		return {"ok": false, "log": "烧录脚本部署失败"}
+
+	var script: String = to_abs(STCFLASH_DST).path_join("pie_block_iap.py")
+	var output: Array = []
+	var exit_code: int = OS.execute(py.replace("/", "\\"), [script, "--selftest"], output, true)
+	var log_text: String = ""
+	if output.size() > 0:
+		log_text = output[0]
+	return {"ok": exit_code == 0, "log": log_text}
+
+
 ## 列举可用串口（返回 COM 口名数组）
 func list_serial_ports() -> PackedStringArray:
 	var py: String = find_python()
