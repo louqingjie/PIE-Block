@@ -151,6 +151,7 @@ func _test_roundtrip() -> void:
 			"built_hash": "build-123",
 			"flashed_hash": "flash-123",
 			"hardware_tested": stage >= 2,
+			"guide_completed": [true, true, true, true, true, true, stage >= 2],
 		}
 		var path: String = "%s/%s_%d.%s" % [TMP_DIR, kind, stage, PF.EXT]
 		var w: Dictionary = PF.save_to(path, data)
@@ -238,6 +239,19 @@ func _test_normalize() -> void:
 	_check("越界 active_tab 回落该类型默认页", int(weird["active_tab"]) == 0)
 	_check("config 非字典纠正为空字典", (weird["config"] as Dictionary).is_empty())
 	_check("main_c 非字符串转字符串", weird["main_c_stage1"] == "12345")
+	_check("旧项目补齐七步引导进度",
+		weird["workflow"]["guide_completed"] == [false, false, false, false, false, false, false])
+	var short_progress: Dictionary = PF.normalize({
+		"workflow": {"guide_completed": [true, true, false]},
+	})
+	_check("短引导进度补齐为七步",
+		short_progress["workflow"]["guide_completed"]
+			== [true, true, false, false, false, false, false])
+	var long_progress: Dictionary = PF.normalize({
+		"workflow": {"guide_completed": [true, true, true, true, true, true, true, true]},
+	})
+	_check("超长引导进度截断为七步",
+		(long_progress["workflow"]["guide_completed"] as Array).size() == PF.GUIDE_STEP_COUNT)
 
 	# 工程项目的 active_tab 不能落在步兵页上
 	var eng: Dictionary = PF.normalize({"kind": PF.KIND_ENGINEER, "active_tab": 0})
@@ -392,6 +406,9 @@ func _test_lifecycle() -> void:
 		not str(created["data"]["main_c_stage1"]).strip_edges().is_empty())
 	_check("新建项目带默认工作流状态",
 		created["data"]["workflow"] == PF.normalize_workflow({}))
+	_check("新建项目保存七步引导进度",
+		(created["data"]["workflow"]["guide_completed"] as Array).size()
+			== PF.GUIDE_STEP_COUNT)
 	var guide: Node = ui.get_node(ui.P_PROJECT_GUIDE)
 	_check("主界面实例化独立项目引导", guide.scene_file_path == "res://scenes/project_guide.tscn")
 	_check("主界面显示七步项目引导", guide.get_step_count() == 7)
@@ -414,6 +431,8 @@ func _test_lifecycle() -> void:
 	var confirmed: Dictionary = PF.load_from(path)
 	_check("第一步确认状态已写入项目",
 		bool(confirmed["data"]["workflow"]["hardware_confirmed"]))
+	_check("第一步完成进度已写入项目",
+		bool(confirmed["data"]["workflow"]["guide_completed"][0]))
 
 	# 改配置 -> 脏标记 -> 保存
 	channel.text = "77"
@@ -425,6 +444,7 @@ func _test_lifecycle() -> void:
 	ui._save_project(false)
 	_check("保存后清除脏标记", not ui._dirty)
 	var saved: Dictionary = PF.load_from(path)
+	var saved_guide_progress: Array = saved["data"]["workflow"]["guide_completed"].duplicate()
 	_check("保存写入了改动的配置",
 		str((saved["data"]["config"] as Dictionary)
 			.get(str(ui.P_CHANNEL).trim_prefix("VBoxContainer/HBoxContainer/HSplitContainer/EditZone/"), {})
@@ -447,6 +467,9 @@ func _test_lifecycle() -> void:
 	_check("重开后不是预览态", not ui2._stage2_preview)
 	_check("重开已确认项目不再显示门禁", not ui2.get_node(ui2.P_HARDWARE_GATE).visible)
 	_check("重开已确认项目直接显示主 UI", ui2.get_node(ui2.P_MAIN_UI).visible)
+	var reopened: Dictionary = PF.load_from(path)
+	_check("重开项目保留七步引导进度",
+		reopened["data"]["workflow"]["guide_completed"] == saved_guide_progress)
 
 	# 点「AI 编辑」应先弹确认框，此时还没升阶段
 	ui2._on_ai_edit_pressed()

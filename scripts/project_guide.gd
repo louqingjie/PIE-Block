@@ -69,7 +69,7 @@ func _update_display() -> void:
 		if is_done:
 			completed += 1
 		_buttons[i].text = "%s %d  %s" % [
-			"[完成]" if is_done else "[ ]", i + 1, _titles[i]]
+			"🟢" if is_done else "🔴", i + 1, _titles[i]]
 	var progress: Node = get_node_or_null(P_PROGRESS)
 	if progress is ProgressBar:
 		progress.max_value = _titles.size()

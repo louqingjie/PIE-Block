@@ -8,13 +8,15 @@ extends RefCounted
 ##   - active_tab      TabContainer 索引，工程项目用于区分「工程 / 工程逆解算」
 ##   - main_c_stage1   阶段一图形化生成的 C 源，进入阶段二时冻结
 ##   - main_c_ai       阶段二 AI / 手工编辑后的 C 源
+##   - workflow        七步引导进度，以及检查/编译/烧录对应的代码哈希
 ##
 ## user://stc32g/.../main.c 退化为编译用的工作副本，真相源在 .pieproj 里。
 
 ## 文件扩展名（不含点）
 const EXT: String = "pieproj"
 ## 格式版本，将来迁移用
-const FORMAT_VERSION: int = 2
+const FORMAT_VERSION: int = 3
+const GUIDE_STEP_COUNT: int = 7
 
 # ------------------------------------------------------------------ 项目类型
 const KIND_INFANTRY: String = "infantry"
@@ -99,6 +101,7 @@ static func _default_workflow() -> Dictionary:
 		"built_hash": "",
 		"flashed_hash": "",
 		"hardware_tested": false,
+		"guide_completed": [false, false, false, false, false, false, false],
 	}
 
 
@@ -111,6 +114,12 @@ static func normalize_workflow(raw: Variant) -> Dictionary:
 	workflow["built_hash"] = str(raw.get("built_hash", ""))
 	workflow["flashed_hash"] = str(raw.get("flashed_hash", ""))
 	workflow["hardware_tested"] = bool(raw.get("hardware_tested", false))
+	var raw_progress: Variant = raw.get("guide_completed", [])
+	if raw_progress is Array:
+		var progress: Array[bool] = []
+		for i in range(GUIDE_STEP_COUNT):
+			progress.append(bool(raw_progress[i]) if i < raw_progress.size() else false)
+		workflow["guide_completed"] = progress
 	return workflow
 
 

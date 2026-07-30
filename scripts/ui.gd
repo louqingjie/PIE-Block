@@ -566,7 +566,9 @@ func _setup_guide() -> void:
 	var guide: Node = get_node_or_null(P_PROJECT_GUIDE)
 	if guide == null or not guide.has_method("setup"):
 		return
-	guide.setup(_guide_titles(), GUIDE_HINTS, _guide_done_states())
+	var done: Array[bool] = _guide_done_states()
+	guide.setup(_guide_titles(), GUIDE_HINTS, done)
+	_persist_guide_progress_if_changed(done)
 	if not guide.step_pressed.is_connected(_on_guide_step_pressed):
 		guide.step_pressed.connect(_on_guide_step_pressed)
 

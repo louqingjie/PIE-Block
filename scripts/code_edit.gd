@@ -194,14 +194,35 @@ func _setup_guide() -> void:
 	var guide: Node = get_node_or_null(P_PROJECT_GUIDE)
 	if guide == null or not guide.has_method("setup"):
 		return
-	guide.setup(GUIDE_TITLES, GUIDE_HINTS, _guide_done_states())
+	var done: Array[bool] = _guide_done_states()
+	guide.setup(GUIDE_TITLES, GUIDE_HINTS, done)
+	_persist_guide_progress_if_changed(done)
 	guide.step_pressed.connect(_on_guide_step_pressed)
 
 
 func _update_guide() -> void:
 	var guide: Node = get_node_or_null(P_PROJECT_GUIDE)
 	if guide != null and guide.has_method("set_state"):
-		guide.set_state(GUIDE_TITLES, GUIDE_HINTS, _guide_done_states())
+		var done: Array[bool] = _guide_done_states()
+		guide.set_state(GUIDE_TITLES, GUIDE_HINTS, done)
+		_persist_guide_progress_if_changed(done)
+
+
+func _persist_guide_progress_if_changed(done: Array[bool]) -> void:
+	if AppState.project_path.is_empty():
+		return
+	var result: Dictionary = PF.load_from(AppState.project_path)
+	if not result["ok"]:
+		return
+	var data: Dictionary = result["data"]
+	var workflow: Dictionary = PF.normalize_workflow(data.get("workflow", {}))
+	if workflow.get("guide_completed", []) == done:
+		return
+	workflow["guide_completed"] = done.duplicate()
+	data["workflow"] = workflow
+	var saved: Dictionary = PF.save_to(AppState.project_path, data)
+	if not saved["ok"]:
+		_append_output("[Error] 保存项目引导进度失败：%s" % saved["err"])
 
 
 func _guide_done_states() -> Array[bool]:
