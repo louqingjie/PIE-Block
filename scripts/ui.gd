@@ -139,6 +139,10 @@ const P_EDIT_ZONE: NodePath = "VBoxContainer/HBoxContainer/HSplitContainer/EditZ
 const P_BUILD_BTN: NodePath = "VBoxContainer/TopPanel/Build"
 const P_DOWNLOAD_BTN: NodePath = "VBoxContainer/TopPanel/Download"
 # 项目引导
+const P_MAIN_UI: NodePath = "VBoxContainer"
+const P_HARDWARE_GATE: NodePath = "HardwareGate"
+const P_GATE_CONFIRM: NodePath = "HardwareGate/Center/Content/Actions/Confirm"
+const P_GATE_BACK: NodePath = "HardwareGate/Center/Content/Actions/Back"
 const P_GUIDE_PANEL: NodePath = "VBoxContainer/HBoxContainer/GuidePanel"
 const P_GUIDE_TOGGLE: NodePath = "VBoxContainer/HBoxContainer/GuidePanel/Margin/Content/Header/Toggle"
 const P_GUIDE_PROGRESS: NodePath = "VBoxContainer/HBoxContainer/GuidePanel/Margin/Content/Progress"
@@ -224,7 +228,7 @@ const GUIDE_TITLES: Array[String] = [
 	"编译程序", "烧录主控板", "真机低速测试",
 ]
 const GUIDE_HINTS: Array[String] = [
-	"确认程序只烧录到主控板。机械扩展板不能烧录，并应已与主控板正确连接。",
+	"确认程序只烧录到主控板，绝不向机械扩展板烧录程序。",
 	"填写遥控器通道号（0-125）和死区。不确定死区时可保持默认值 10。",
 	"按机械接线配置底盘、云台、执行机构和按键。P74 是扩展板口，MP74 是主控板舵机口。",
 	"修正“问题与输出”中的错误；步兵和机械臂项目建议再进入 3D 仿真检查方向。",
@@ -256,6 +260,12 @@ func _ready() -> void:
 
 # ------------------------------------------------------------------ 信号连接
 func _connect_signals() -> void:
+	var gate_confirm: Node = get_node_or_null(P_GATE_CONFIRM)
+	if gate_confirm is BaseButton:
+		gate_confirm.pressed.connect(_on_hardware_gate_confirmed)
+	var gate_back: Node = get_node_or_null(P_GATE_BACK)
+	if gate_back is BaseButton:
+		gate_back.pressed.connect(_go_to_launcher)
 	# LineEdit 文本变化
 	for p in [P_CHANNEL, P_DEADZONE, P_NORMAL_SPEED, P_SPRINT_SPEED,
 			P_TRIGGER_SPEED, P_TRIGGER_TIME,
@@ -687,8 +697,8 @@ func _run_guide_build() -> void:
 
 func _confirm_hardware() -> void:
 	var dialog := ConfirmationDialog.new()
-	dialog.title = "确认硬件连接"
-	dialog.dialog_text = "请确认：\n\n1. 机械扩展板已连接主控板。\n2. 程序只烧录到主控板。\n3. 绝不向机械扩展板烧录程序。\n4. 新主控板已经由维护者安装引导程序。"
+	dialog.title = "查看第一步确认"
+	dialog.dialog_text = "请确认：\n\n1. 程序只烧录到主控板。\n2. 绝不向机械扩展板烧录程序。\n3. 新主控板已经由维护者安装引导程序。"
 	dialog.get_ok_button().text = "已确认"
 	dialog.get_cancel_button().text = "返回检查"
 	dialog.confirmed.connect(func() -> void:
@@ -700,6 +710,27 @@ func _confirm_hardware() -> void:
 	add_child(dialog)
 	dialog.popup_centered(Vector2i(520, 300))
 	dialog.close_requested.connect(dialog.queue_free)
+
+
+func _on_hardware_gate_confirmed() -> void:
+	if _project.is_empty():
+		_apply_hardware_gate(false)
+		return
+	var workflow: Dictionary = _workflow()
+	workflow["hardware_confirmed"] = true
+	_project["workflow"] = workflow
+	_save_project(false)
+	_apply_hardware_gate(false)
+	_update_guide()
+
+
+func _apply_hardware_gate(required: bool) -> void:
+	var main_ui: Node = get_node_or_null(P_MAIN_UI)
+	var gate: Node = get_node_or_null(P_HARDWARE_GATE)
+	if main_ui is CanvasItem:
+		main_ui.visible = not required
+	if gate is CanvasItem:
+		gate.visible = required
 
 
 func _confirm_hardware_test() -> void:
@@ -757,6 +788,7 @@ func _restore_project_context() -> void:
 ## 不禁用任何东西，只是标题上说明一下、编译等操作退化成按 Tab 猜构型。
 func _apply_no_project_state() -> void:
 	_project = {}
+	_apply_hardware_gate(false)
 	_stage2_preview = false
 	_dirty = false
 	var tab_container: Node = get_node_or_null(P_TAB_CONTAINER)
@@ -795,6 +827,7 @@ func _set_node_tree_enabled(node: Node, enabled: bool) -> void:
 ## 把一份项目数据装载进界面
 func _adopt_project(data: Dictionary, path: String) -> void:
 	_project = data
+	_apply_hardware_gate(not bool(_workflow().get("hardware_confirmed", false)))
 	var kind: String = str(data["kind"])
 	AppState.project_path = path
 	AppState.project_kind = kind

@@ -26,12 +26,66 @@ theme = SubResource("Theme_g4v7s")
 script = ExtResource("2_yev5y")
 
 [node name="VBoxContainer" type="VBoxContainer" parent="." unique_id=1456694099]
+visible = false
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+
+[node name="HardwareGate" type="PanelContainer" parent="."]
+z_index = 100
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Center" type="CenterContainer" parent="HardwareGate"]
+layout_mode = 2
+
+[node name="Content" type="VBoxContainer" parent="HardwareGate/Center"]
+custom_minimum_size = Vector2(560, 0)
+layout_mode = 2
+theme_override_constants/separation = 18
+
+[node name="Title" type="Label" parent="HardwareGate/Center/Content"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 28
+text = "开始前确认"
+horizontal_alignment = 1
+
+[node name="Subtitle" type="Label" parent="HardwareGate/Center/Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
+text = "完成第一步后才能进入项目配置"
+horizontal_alignment = 1
+
+[node name="Separator" type="HSeparator" parent="HardwareGate/Center/Content"]
+layout_mode = 2
+
+[node name="Checklist" type="Label" parent="HardwareGate/Center/Content"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "1. 程序只烧录到主控板。\n\n2. 绝不向机械扩展板烧录任何程序。\n\n3. 新主控板需要先由维护者安装引导程序。"
+autowrap_mode = 3
+
+[node name="Actions" type="HBoxContainer" parent="HardwareGate/Center/Content"]
+layout_mode = 2
+theme_override_constants/separation = 12
+alignment = 1
+
+[node name="Back" type="Button" parent="HardwareGate/Center/Content/Actions"]
+custom_minimum_size = Vector2(180, 48)
+layout_mode = 2
+text = "返回项目列表"
+
+[node name="Confirm" type="Button" parent="HardwareGate/Center/Content/Actions"]
+custom_minimum_size = Vector2(220, 48)
+layout_mode = 2
+text = "我已了解，进入配置"
 
 [node name="TopPanel" type="HBoxContainer" parent="VBoxContainer" unique_id=847707271]
 layout_mode = 2

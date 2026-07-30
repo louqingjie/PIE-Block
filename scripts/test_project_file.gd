@@ -345,6 +345,14 @@ func _test_lifecycle() -> void:
 		created["data"]["workflow"] == PF.normalize_workflow({}))
 	_check("主界面显示七步项目引导", ui._guide_buttons.size() == 7)
 	_check("烧录按钮明确指向主控板", ui.get_node(ui.P_DOWNLOAD_BTN).text == "烧录主控板")
+	_check("第一步未确认时显示全屏门禁", ui.get_node(ui.P_HARDWARE_GATE).visible)
+	_check("第一步未确认时隐藏主 UI", not ui.get_node(ui.P_MAIN_UI).visible)
+	ui._on_hardware_gate_confirmed()
+	_check("确认第一步后隐藏门禁", not ui.get_node(ui.P_HARDWARE_GATE).visible)
+	_check("确认第一步后显示主 UI", ui.get_node(ui.P_MAIN_UI).visible)
+	var confirmed: Dictionary = PF.load_from(path)
+	_check("第一步确认状态已写入项目",
+		bool(confirmed["data"]["workflow"]["hardware_confirmed"]))
 
 	# 改配置 -> 脏标记 -> 保存
 	channel.text = "77"
@@ -376,6 +384,8 @@ func _test_lifecycle() -> void:
 		"实际 %s" % str(ui2.get_node(ui2.P_CHANNEL).text))
 	_check("重开后仍是阶段一", int(ui2._project["stage"]) == 1)
 	_check("重开后不是预览态", not ui2._stage2_preview)
+	_check("重开已确认项目不再显示门禁", not ui2.get_node(ui2.P_HARDWARE_GATE).visible)
+	_check("重开已确认项目直接显示主 UI", ui2.get_node(ui2.P_MAIN_UI).visible)
 
 	# 点「AI 编辑」应先弹确认框，此时还没升阶段
 	ui2._on_ai_edit_pressed()
