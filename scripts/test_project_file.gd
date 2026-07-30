@@ -74,6 +74,12 @@ func _test_code_edit_focus_setup() -> void:
 	_check("AI 编辑页引导提供七个步骤", guide != null and guide.get_step_count() == 7)
 	_check("AI 编辑页代码框路径有效", editor.get_node_or_null(editor.P_CODE_EDIT) is CodeEdit)
 	_check("AI 编辑页终端槽路径有效", editor.get_node_or_null(editor.P_WEB_SLOT) is Control)
+	var download: Node = editor.get_node_or_null(editor.P_DOWNLOAD)
+	_check("AI 编辑页提供烧录主控板按钮", download is Button
+		and download.text == "烧录主控板")
+	_check("AI 编辑脚本提供烧录入口", editor.has_method("_on_download_pressed"))
+	_check("AI 编辑页使用共享烧录控制器", editor.DC.resource_path
+		== "res://scripts/download_controller.gd")
 	_check("WebView 不在创建时抢焦点", webview != null
 		and not bool(webview.get("focused_when_created")))
 	_check("脚本提供代码面板聚焦入口", editor.has_method("_focus_code_input"))
@@ -384,11 +390,12 @@ func _test_lifecycle() -> void:
 	_check("烧录按钮明确指向主控板", ui.get_node(ui.P_DOWNLOAD_BTN).text == "烧录主控板")
 	var output: Node = ui.get_node(ui.P_OUTPUT)
 	ui._append_output("旧烧录日志")
-	ui._tc = MissingHexToolchain.new()
+	var real_toolchain = ui._tc
+	ui._download_controller.configure(MissingHexToolchain.new(), ui._clear_output, ui._append_output)
 	ui._on_download_pressed()
 	_check("新烧录尝试会清空旧日志", not str(output.text).contains("旧烧录日志"))
 	_check("清空后保留本次烧录错误", str(output.text).contains("没有找到编译好的程序"))
-	ui._tc = null
+	ui._download_controller.configure(real_toolchain, ui._clear_output, ui._append_output)
 	_check("第一步未确认时显示全屏门禁", ui.get_node(ui.P_HARDWARE_GATE).visible)
 	_check("第一步未确认时隐藏主 UI", not ui.get_node(ui.P_MAIN_UI).visible)
 	ui._on_hardware_gate_confirmed()

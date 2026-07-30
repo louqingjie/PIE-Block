@@ -57,6 +57,11 @@ layout_mode = 2
 size_flags_horizontal = 8
 text = "编译"
 
+[node name="Download" type="Button" parent="VBoxContainer/TopPanel"]
+layout_mode = 2
+size_flags_horizontal = 8
+text = "烧录主控板"
+
 [node name="Workspace" type="HBoxContainer" parent="VBoxContainer"]
 layout_mode = 2
 size_flags_vertical = 3

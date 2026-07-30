@@ -20,6 +20,7 @@ const P_WEBVIEW: NodePath = "WebView"
 const P_WEB_SLOT: NodePath = "VBoxContainer/Workspace/HSplitContainer/AIPanel/WebSlot"
 const P_RESTART: NodePath = "VBoxContainer/Workspace/HSplitContainer/AIPanel/Header/Restart"
 const P_BUILD: NodePath = "VBoxContainer/TopPanel/Build"
+const P_DOWNLOAD: NodePath = "VBoxContainer/TopPanel/Download"
 const P_BACK: NodePath = "VBoxContainer/TopPanel/Button"
 const P_SAVE: NodePath = "VBoxContainer/TopPanel/Save"
 const P_TITLE: NodePath = "VBoxContainer/TopPanel/Label"
@@ -32,6 +33,7 @@ const LAUNCHER_SCENE: String = "res://scenes/launcher.tscn"
 # 用 preload 而非 class_name 引用：headless / 首次导入时
 # 全局类名缓存可能尚未建立，class_name 会解析失败
 const TC = preload("res://scripts/toolchain.gd")
+const DC = preload("res://scripts/download_controller.gd")
 const AT = preload("res://scripts/agent_terminal.gd")
 const PF = preload("res://scripts/project_file.gd")
 
@@ -48,7 +50,7 @@ const GUIDE_HINTS: Array[String] = [
 	"执行机构配置已冻结；需要修改时返回图形化编辑并丢弃 AI 代码。",
 	"查看阶段一检查结果；需要重新检查或仿真时返回图形化编辑。",
 	"编译当前 AI 编辑后的 main.c。",
-	"返回图形化界面烧录主控板。",
+	"烧录当前已编译的 AI 代码到主控板。",
 	"烧录后在图形化界面完成真机低速测试确认。",
 ]
 
@@ -60,6 +62,7 @@ var _dirty: bool = false
 var _last_mtime: int = 0
 var _build_thread: Thread = null
 var _build_busy: bool = false
+var _download_controller = null
 var _wv: Control = null
 ## 置 true 可打印 WebView 的 DPI 修正过程，排查偏移时用
 var _wv_debug: bool = false
@@ -73,6 +76,7 @@ func _ready() -> void:
 		# 直接运行本场景（未经 ui.tscn）时兜底到步兵工程
 		_project_dst = TC.PROJECT_DST
 	_tc = TC.new(_append_output)
+	_setup_download_controller()
 
 	var title: Node = get_node_or_null(P_TITLE)
 	if title is Label:
@@ -107,6 +111,8 @@ func _shutdown() -> void:
 	if _build_thread and _build_thread.is_alive():
 		_build_thread.wait_to_finish()
 	_build_thread = null
+	if _download_controller:
+		_download_controller.shutdown()
 	if _client:
 		_client.stop()
 
@@ -118,10 +124,21 @@ func _setup_code_edit() -> void:
 		ce.syntax_highlighter = preload("res://scripts/c_highlighter.gd").new()
 
 
+func _setup_download_controller() -> void:
+	_download_controller = DC.new()
+	add_child(_download_controller)
+	_download_controller.configure(_tc, _clear_output, _append_output)
+	_download_controller.busy_changed.connect(_on_download_busy_changed)
+	_download_controller.succeeded.connect(_on_download_succeeded)
+
+
 func _connect_signals() -> void:
 	var build: Node = get_node_or_null(P_BUILD)
 	if build is BaseButton:
 		build.pressed.connect(_on_build_pressed)
+	var download: Node = get_node_or_null(P_DOWNLOAD)
+	if download is BaseButton:
+		download.pressed.connect(_on_download_pressed)
 	var back: Node = get_node_or_null(P_BACK)
 	if back is BaseButton:
 		back.pressed.connect(_on_back_pressed)
@@ -198,10 +215,12 @@ func _on_guide_step_pressed(step: int) -> void:
 	match step:
 		0:
 			_show_hardware_confirmation()
-		1, 2, 3, 5, 6:
+		1, 2, 3, 6:
 			_on_back_pressed()
 		4:
 			_on_build_pressed()
+		5:
+			_on_download_pressed()
 
 
 func _show_hardware_confirmation() -> void:
@@ -505,7 +524,7 @@ func _on_save_pressed() -> void:
 
 
 func _on_build_pressed() -> void:
-	if _build_busy:
+	if _build_busy or (_download_controller != null and _download_controller.is_busy()):
 		return
 	_clear_output()
 	if not _flush_to_disk():
@@ -524,6 +543,9 @@ func _on_build_pressed() -> void:
 	if btn is BaseButton:
 		btn.disabled = true
 		btn.text = "编译中…"
+	var download_button: Node = get_node_or_null(P_DOWNLOAD)
+	if download_button is BaseButton:
+		download_button.disabled = true
 	_append_output("正在编译…")
 	_build_thread = Thread.new()
 	var err: int = _build_thread.start(_build_worker.bind(uv4_abs, _project_dst))
@@ -532,6 +554,8 @@ func _on_build_pressed() -> void:
 		if btn is BaseButton:
 			btn.disabled = false
 			btn.text = "编译"
+		if download_button is BaseButton:
+			download_button.disabled = false
 		_append_output("[Error] 无法启动编译线程（错误码 %d）" % err)
 
 
@@ -550,6 +574,9 @@ func _on_build_finished(result: Dictionary) -> void:
 	if btn is BaseButton:
 		btn.disabled = false
 		btn.text = "编译"
+	var download_button: Node = get_node_or_null(P_DOWNLOAD)
+	if download_button is BaseButton:
+		download_button.disabled = false
 	var log_text: String = str(result.get("log", ""))
 	_clear_output()
 	if bool(result.get("ok", false)):
@@ -576,6 +603,49 @@ func _update_built_hash() -> void:
 	var data: Dictionary = result["data"]
 	var workflow: Dictionary = PF.normalize_workflow(data.get("workflow", {}))
 	workflow["built_hash"] = _current_code_hash()
+	data["workflow"] = workflow
+	PF.save_to(AppState.project_path, data)
+
+
+# ------------------------------------------------------------------ 下载/烧录
+func _on_download_pressed() -> void:
+	if _download_controller == null or _build_busy or _download_controller.is_busy():
+		return
+	_clear_output()
+
+	var code_hash: String = _current_code_hash()
+	var workflow: Dictionary = _load_workflow()
+	if code_hash.is_empty() or str(workflow.get("built_hash", "")) != code_hash:
+		_append_output("[Error] 当前 AI 代码尚未编译，请先点「编译」")
+		return
+	_download_controller.start(_project_dst)
+
+
+func _on_download_busy_changed(is_busy: bool) -> void:
+	var button: Node = get_node_or_null(P_DOWNLOAD)
+	if button is BaseButton:
+		button.disabled = is_busy
+		button.text = "烧录中…" if is_busy else "烧录主控板"
+	var build_button: Node = get_node_or_null(P_BUILD)
+	if build_button is BaseButton:
+		build_button.disabled = is_busy
+
+
+func _on_download_succeeded() -> void:
+	_update_flashed_hash()
+	_update_guide()
+
+
+func _update_flashed_hash() -> void:
+	if AppState.project_path.is_empty():
+		return
+	var result: Dictionary = PF.load_from(AppState.project_path)
+	if not result["ok"]:
+		return
+	var data: Dictionary = result["data"]
+	var workflow: Dictionary = PF.normalize_workflow(data.get("workflow", {}))
+	workflow["flashed_hash"] = _current_code_hash()
+	workflow["hardware_tested"] = false
 	data["workflow"] = workflow
 	PF.save_to(AppState.project_path, data)
 

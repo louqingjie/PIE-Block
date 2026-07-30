@@ -175,6 +175,7 @@ const INFANTRY_SIM_SCENE: String = "res://scenes/infantry_sim.tscn"
 # 注：工具链路径常量与部署/编译实现已迁到 scripts/toolchain.gd，与 AI 编辑器共用
 # 用 preload 而非 class_name：headless / 首次导入时全局类名缓存可能尚未建立
 const TC = preload("res://scripts/toolchain.gd")
+const DC = preload("res://scripts/download_controller.gd")
 ## 构形诊断（判定末端可控自由度与俯仰角是否解耦）
 const ARM_DIAG = preload("res://scripts/arm_diagnosis.gd")
 # 项目文件（.pieproj）读写与「项目类型 <-> Tab」映射表
@@ -184,8 +185,7 @@ const PF = preload("res://scripts/project_file.gd")
 # ------------------------------------------------------------------ 生命周期
 var _build_thread: Thread = null
 var _build_busy: bool = false
-var _download_thread: Thread = null
-var _download_busy: bool = false
+var _download_controller = null
 # 当前选中的代码生成器（随 Tab 切换）
 var _codegen: CodeGenBase = null
 # 工具链管理器（惰性创建，见 _toolchain()）
@@ -245,9 +245,18 @@ func _ready() -> void:
 	# 按默认关节数显隐逆解界面的关节行
 	_update_ik_joint_rows()
 	_setup_guide()
+	_setup_download_controller()
 	_connect_signals()
 	# 恢复 / 初始化项目上下文（会自行触发 _run_check）
 	_restore_project_context()
+
+
+func _setup_download_controller() -> void:
+	_download_controller = DC.new()
+	add_child(_download_controller)
+	_download_controller.configure(_toolchain(), _clear_output, _append_output)
+	_download_controller.busy_changed.connect(_on_download_busy_changed)
+	_download_controller.succeeded.connect(_on_download_succeeded)
 
 
 # ------------------------------------------------------------------ 信号连接
@@ -2163,8 +2172,8 @@ func _get_option_idx(path: NodePath) -> int:
 func _exit_tree() -> void:
 	if _build_thread and _build_thread.is_alive():
 		_build_thread.wait_to_finish()
-	if _download_thread and _download_thread.is_alive():
-		_download_thread.wait_to_finish()
+	if _download_controller:
+		_download_controller.shutdown()
 
 
 ## 工具链管理器（惰性创建，日志接到 Output 框）
@@ -2479,136 +2488,25 @@ func _clear_output() -> void:
 
 
 # ------------------------------------------------------------------ 下载/烧录
-## 退出时清理下载线程，避免泄漏
-func _cleanup_download_thread() -> void:
-	if _download_thread and _download_thread.is_alive():
-		_download_thread.wait_to_finish()
-	_download_thread = null
-
-
-## 下载按钮回调：检查 hex -> 选串口 -> 走自建 bootloader 的 IAP 协议烧录
-##
-## 与旧的 stcgal + ROM ISP 路径的区别：不需要断电、不需要按 Reset、
-## 链路可以是蓝牙。代价是芯片出厂时必须先烧过一次 bootloader。
 func _on_download_pressed() -> void:
-	if _download_busy:
+	if _download_controller == null:
 		return
-	# 每次烧录只展示本次尝试的串口、进度与结果，避免重复烧录时日志堆积。
-	_clear_output()
+	_download_controller.start(_get_current_project_dst())
 
-	# 1) hex 是否存在
-	var project_dst: String = _get_current_project_dst()
-	var hex_path: String = _toolchain().get_hex_path(project_dst)
-	if not _toolchain().hex_exists(project_dst):
-		_append_output("[Error] 没有找到编译好的程序，请先点「编译」")
-		_append_output("       期望路径: %s" % hex_path)
+
+func _on_download_busy_changed(is_busy: bool) -> void:
+	var button: Node = get_node_or_null(P_DOWNLOAD_BTN)
+	if button is BaseButton:
+		button.disabled = is_busy
+		button.text = "烧录中…" if is_busy else "烧录主控板"
+
+
+func _on_download_succeeded() -> void:
+	if _project.is_empty():
 		return
-
-	# 2) 选串口。不再"取最后一个"猜 —— 蓝牙场景下系统里常有多个虚拟口，
-	#    连错会把数据发给别的设备。
-	var pick: Dictionary = _toolchain().pick_download_port()
-	var candidates: Array = pick.get("candidates", [])
-	if not bool(pick.get("ok", false)):
-		_append_output("[Error] %s" % str(pick.get("reason", "无法确定串口")))
-		if candidates.is_empty():
-			_append_output("       请确认板子已通过 USB 线或蓝牙连接到电脑")
-		else:
-			_append_output("       检测到这些端口：")
-			for info in candidates:
-				_append_output("         %s" % str(info.get("label", "")))
-			_append_output("       请拔掉不相关的串口设备后重试")
-		return
-
-	var com_port: String = str(pick.get("device", ""))
-	_append_output("串口: %s" % str(pick.get("reason", com_port)))
-
-	# 蓝牙链路无法中途切换波特率，而下载流程需要两段波特率。
-	# 提前告知，免得失败后不知道往哪查。
-	var picked_kind: String = ""
-	for info in candidates:
-		if str(info.get("device", "")) == com_port:
-			picked_kind = str(info.get("kind", ""))
-			break
-	if picked_kind == "bluetooth":
-		for line in _toolchain().bluetooth_baud_note():
-			_append_output("  %s" % line)
-
-	# 3) 异步下载
-	_download_busy = true
-	var btn: Node = get_node_or_null(P_DOWNLOAD_BTN)
-	if btn is BaseButton:
-		btn.disabled = true
-		btn.text = "下载中…"
-
-	_append_output("开始下载，不需要断电或按复位键…")
-	_download_thread = Thread.new()
-	var err: int = _download_thread.start(
-		_download_worker.bind(hex_path, com_port))
-	if err != OK:
-		_download_busy = false
-		if btn is BaseButton:
-			btn.disabled = false
-			btn.text = "烧录主控板"
-		_append_output("[Error] 无法启动下载线程（错误码 %d）" % err)
-
-
-## 下载工作线程：走 IAP 协议
-func _download_worker(hex_path: String, com_port: String) -> void:
-	var result: Dictionary = _toolchain().download_hex_iap(hex_path, com_port)
-	call_deferred("_on_download_finished", result)
-
-
-## 下载完成回调（主线程）
-func _on_download_finished(result: Dictionary) -> void:
-	_download_busy = false
-	if _download_thread and _download_thread.is_alive():
-		_download_thread.wait_to_finish()
-	_download_thread = null
-
-	var btn: Node = get_node_or_null(P_DOWNLOAD_BTN)
-	if btn is BaseButton:
-		btn.disabled = false
-		btn.text = "烧录主控板"
-
-	var ok: bool = bool(result.get("ok", false))
-	var log_text: String = str(result.get("log", ""))
-
-	if ok:
-		_append_output("✓ 下载完成，板子已经在运行新程序")
-		if not _project.is_empty():
-			var workflow: Dictionary = _workflow()
-			workflow["flashed_hash"] = _code_hash()
-			workflow["hardware_tested"] = false
-			_project["workflow"] = workflow
-			_save_project(false)
-			_update_guide()
-		# 成功时日志只留进度尾巴，几百行百分比对用户没意义
-		_append_download_log(log_text, true)
-		return
-
-	_append_output("✗ 下载失败")
-	# 先给排查建议再贴日志：用户大概率只看前几行
-	for line in _toolchain().iap_failure_hint(str(result.get("stage", "unknown"))):
-		_append_output("  %s" % line)
-	_append_download_log(log_text, false)
-
-
-## 输出下载日志。
-## 成功时折叠掉进度百分比那几百行，失败时全量输出以便排查。
-func _append_download_log(log_text: String, collapse: bool) -> void:
-	if log_text.is_empty():
-		return
-	var lines: PackedStringArray = log_text.split("\n", false)
-	if not collapse:
-		for line in lines:
-			_append_output(line)
-		return
-	var skipped: int = 0
-	for line in lines:
-		# 进度行形如 "  1234/30252 字节 (45%)"
-		if line.contains("字节 (") and line.ends_with("%)"):
-			skipped += 1
-			continue
-		_append_output(line)
-	if skipped > 0:
-		_append_output("  （省略 %d 行进度）" % skipped)
+	var workflow: Dictionary = _workflow()
+	workflow["flashed_hash"] = _code_hash()
+	workflow["hardware_tested"] = false
+	_project["workflow"] = workflow
+	_save_project(false)
+	_update_guide()

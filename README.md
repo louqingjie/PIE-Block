@@ -109,6 +109,7 @@ flowchart LR
 ### 主控板烧录
 
 - 日常烧录走自建 bootloader 的 IAP 协议，不需要断电或按复位键
+- 图形化配置页与 AI 编辑页共用 `DownloadController`，统一串口选择、下载线程、日志与失败提示
 - 自动识别 USB / 蓝牙串口，失败时按端口、连接、擦除、写入、校验阶段给排查建议
 - 烧录入口与向导都明确限制为主控板；机械扩展板绝不能烧录
 - 新主控板首次仍需由维护者通过 ROM ISP 安装 bootloader
@@ -116,6 +117,7 @@ flowchart LR
 ### AI 代码编辑（阶段二）
 
 - 内嵌 ttyd + WRY WebView，在程序窗口内跑 AI Agent 的原生 TUI（中文输入正常）
+- 复用七步项目引导，可在 AI 编辑页直接编译并通过 IAP 烧录当前代码，无需返回配置页
 - 工作区 = `user://stc32g/`，AI 能读到 `Libraries` 头文件；自动注入
   [assets/templates/AGENTS_hardware.md](assets/templates/AGENTS_hardware.md) 说明硬件约束
 - 磁盘 `main.c` 是唯一真相源：手工编辑打脏标记、发消息前落盘，AI 改完比对 mtime 回读
