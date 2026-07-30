@@ -107,6 +107,7 @@ const IK: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondR
 ## 关节数下拉（选项 0..4 对应 2..6 个关节）。
 ## 旧版是「2轴/3轴/4轴」固定构型，现在轴类型由各关节自己选。
 const P_IK_CONFIG_TYPE: NodePath = IK + "/ConfigType/OptionButton"
+const P_IK_MODE_SWITCH_KEY: NodePath = IK + "/ModeSwitch/OptionButton"
 ## 关节数上下限（上限依据 STC32G 浮点预算实测，见 CodeGenEngineerIK.MAX_JOINTS）
 const IK_MIN_JOINTS: int = 2
 const IK_MAX_JOINTS: int = 6
@@ -368,6 +369,9 @@ func _connect_signals() -> void:
 	var jc_btn: Node = get_node_or_null(P_IK_CONFIG_TYPE)
 	if jc_btn is OptionButton:
 		jc_btn.item_selected.connect(_on_ik_joint_count_changed)
+	var mode_switch_btn: Node = get_node_or_null(P_IK_MODE_SWITCH_KEY)
+	if mode_switch_btn is OptionButton:
+		mode_switch_btn.item_selected.connect(_run_check)
 	for p in [P_IK_JOY_SCALE, P_IK_KEYMOVE_SPEED]:
 		var ik_le: Node = get_node_or_null(p)
 		if ik_le is LineEdit:
@@ -1020,9 +1024,7 @@ func _get_current_codegen() -> CodeGenBase:
 	match current:
 		0:
 			return CodeGenInfantry.new()
-		1:
-			return CodeGenEngineer.new()
-		2:
+		1, 2:
 			return CodeGenEngineerIK.new()
 		3:
 			return CodeGenDebug.new()
@@ -1412,6 +1414,7 @@ func _collect_ik_config() -> Dictionary:
 	var type_idx: int = type_btn.selected if type_btn is OptionButton else 1
 	var jc: int = _ik_joint_count(type_idx)
 	cfg["joint_count"] = jc
+	cfg["mode_switch_key"] = _get_option_text(P_IK_MODE_SWITCH_KEY)
 	# config_type 仅供旧解析路径与 axis/len 缺失时的兼容推断，
 	# 不再决定构型：轴类型由各关节自己选
 	cfg["config_type"] = clampi(jc - 2, 0, 2)
@@ -1483,6 +1486,73 @@ func _collect_ik_config() -> Dictionary:
 		})
 	cfg["keymove"] = keymove
 	return cfg
+
+
+## 两个工程配置页共同描述同一份双模式固件。
+func _collect_engineer_dual_config() -> Dictionary:
+	return {
+		"engineer": _collect_engineer_config(),
+		"ik": _collect_ik_config(),
+	}
+
+
+## 模式切换键在正解与逆解配置中全局独占，避免一次按键同时切换和驱动机构。
+func _check_mode_switch_conflicts(issues: Array) -> void:
+	var eng: Dictionary = _collect_engineer_config()
+	var ik: Dictionary = _collect_ik_config()
+	var switch_key: String = str(ik.get("mode_switch_key", "R"))
+	for row in eng.get("key_map", []):
+		if _normalize_key_name(str(row.get("input", ""))) == _normalize_key_name(switch_key) \
+				and not str(row.get("target", "")).is_empty():
+			issues.append({"type": "Error",
+				"msg": "工程 模式切换键「%s」不能同时用于正解控制 IO %s"
+					% [switch_key, str(row.get("target", ""))]})
+	for i in range((ik.get("presets", []) as Array).size()):
+		var preset: Dictionary = ik["presets"][i]
+		if preset.get("enabled", false) \
+				and _normalize_key_name(str(preset.get("key", ""))) == _normalize_key_name(switch_key):
+			issues.append({"type": "Error",
+				"msg": "工程逆解算 模式切换键「%s」不能同时用于预设点位 P%d"
+					% [switch_key, i + 1]})
+	var axis_names: Array = ["X", "Y", "Z", "φ"]
+	for i in range((ik.get("keymove", []) as Array).size()):
+		var movement: Dictionary = ik["keymove"][i]
+		if _normalize_key_name(str(movement.get("plus", ""))) == _normalize_key_name(switch_key) \
+				or _normalize_key_name(str(movement.get("minus", ""))) == _normalize_key_name(switch_key):
+			issues.append({"type": "Error",
+				"msg": "工程逆解算 模式切换键「%s」不能同时用于末端%s移动"
+					% [switch_key, axis_names[i]]})
+
+
+func _normalize_key_name(key_name: String) -> String:
+	return "→" if key_name == "->" else key_name
+
+
+## 双模式下工程页的舵机映射就是关节正解控制，IO 角色必须与 IK 页一致。
+func _check_engineer_ik_io_conflicts(issues: Array) -> void:
+	var eng: Dictionary = _collect_engineer_config()
+	var ik: Dictionary = _collect_ik_config()
+	var joint_ios: Dictionary = {}
+	for i in range((ik.get("joints", []) as Array).size()):
+		joint_ios[str(ik["joints"][i].get("io", ""))] = i + 1
+	var chassis_ios: Dictionary = {}
+	for key in ["l1_io", "l2_io", "r1_io", "r2_io"]:
+		var pin: String = str(eng.get(key, "")).split(" ")[0]
+		chassis_ios[pin] = true
+	for io in joint_ios.keys():
+		if chassis_ios.has(io):
+			issues.append({"type": "Error",
+				"msg": "工程逆解算 关节%d IO %s 与底盘电机冲突"
+					% [joint_ios[io], io]})
+		if not str(io).begins_with("MP") \
+				and str((eng.get("io_init", {}) as Dictionary).get(io, "舵机")) != "舵机":
+			issues.append({"type": "Error",
+				"msg": "工程逆解算 关节%d IO %s 必须在工程 IO 初始化区设为舵机"
+					% [joint_ios[io], io]})
+	for row in eng.get("key_map", []):
+		var target: String = str(row.get("target", ""))
+		if target.is_empty():
+			continue
 
 
 # ------------------------------------------------------------------ 工程逆解算：静态检查
@@ -1754,18 +1824,28 @@ func _run_check(_a = null, _b = null) -> void:
 		_check_io_duplicate(issues)
 		_check_gimbal_pin_conflict(issues)
 	elif current_tab == 1:
-		# 工程模式检查
+		# 工程双模式：两页共同配置同一份固件
 		_check_channel(issues)
 		_check_deadzone(issues)
 		_check_speeds(issues)
 		_check_engineer_chassis_io(issues)
 		_check_engineer_keymap(issues)
+		_check_ik_params(issues)
+		_check_mode_switch_conflicts(issues)
+		_check_engineer_ik_io_conflicts(issues)
 	elif current_tab == 3:
 		# 调试模式检查（tab 顺序：0=步兵, 1=工程, 2=工程逆解算, 3=调试）
 		_check_debug_params(issues)
 	elif current_tab == 2:
-		# 工程逆解算模式检查
+		# 工程双模式：无论停在哪一页都运行两页检查
+		_check_channel(issues)
+		_check_deadzone(issues)
+		_check_speeds(issues)
+		_check_engineer_chassis_io(issues)
+		_check_engineer_keymap(issues)
 		_check_ik_params(issues)
+		_check_mode_switch_conflicts(issues)
+		_check_engineer_ik_io_conflicts(issues)
 	_last_issues = issues
 	# 将问题展示到 Output
 	var out: Node = get_node_or_null(P_OUTPUT)
@@ -1777,10 +1857,8 @@ func _run_check(_a = null, _b = null) -> void:
 	match current_tab:
 		3:
 			cfg = {"debug_rows": _collect_debug_config()}
-		1:
-			cfg = _collect_engineer_config()
-		2:
-			cfg = _collect_ik_config()
+		1, 2:
+			cfg = _collect_engineer_dual_config()
 		_:
 			cfg = _collect_config()
 	var code: String = _codegen.generate(cfg)

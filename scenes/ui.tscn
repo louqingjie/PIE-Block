@@ -2351,6 +2351,38 @@ popup/item_3/id = 3
 popup/item_4/text = "6 个关节"
 popup/item_4/id = 4
 
+[node name="ModeSwitch" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/ModeSwitch"]
+layout_mode = 2
+size_flags_horizontal = 2
+text = "正解/逆解切换键"
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/ModeSwitch"]
+layout_mode = 2
+size_flags_horizontal = 8
+selected = 8
+item_count = 9
+popup/item_0/text = "A"
+popup/item_0/id = 0
+popup/item_1/text = "B"
+popup/item_1/id = 1
+popup/item_2/text = "C"
+popup/item_2/id = 2
+popup/item_3/text = "D"
+popup/item_3/id = 3
+popup/item_4/text = "↑"
+popup/item_4/id = 4
+popup/item_5/text = "↓"
+popup/item_5/id = 5
+popup/item_6/text = "←"
+popup/item_6/id = 6
+popup/item_7/text = "→"
+popup/item_7/id = 7
+popup/item_8/text = "R"
+popup/item_8/id = 8
+
 [node name="ConfigHint" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=1745598375]
 layout_mode = 2
 text = "每个关节自己选转轴：Pitch=上下俯仰，Yaw=左右摆动，Roll=绕连杆自身轴自转（只转夹爪朝向，不改变末端位置）。连杆长度填「该关节到下一个关节」的距离，最后一个关节填到夹爪的距离。"

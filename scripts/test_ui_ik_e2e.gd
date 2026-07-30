@@ -9,6 +9,7 @@ extends SceneTree
 ## 运行：godot --headless --path . --script scripts/test_ui_ik_e2e.gd
 
 const IK: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced"
+const ENG: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer"
 
 var _fail: int = 0
 
@@ -32,6 +33,7 @@ func _initialize() -> void:
     root.add_child(ui)
     # --script 模式下 root 尚未进树，须等一帧才会跑 _ready
     await process_frame
+    _test_dual_mode_ui(ui)
     await _test_lengths(ui)
     await _test_joint_rows(ui)
     await _test_axis(ui)
@@ -39,6 +41,69 @@ func _initialize() -> void:
     print("=== 结果: %s ===" % ("全部通过" if _fail == 0 else "%d 项失败" % _fail))
     ui.free()
     quit(0 if _fail == 0 else 1)
+
+
+func _test_dual_mode_ui(ui: Node) -> void:
+    var switch_btn: OptionButton = ui.get_node(IK + "/ModeSwitch/OptionButton")
+    _check("模式切换键默认 R", switch_btn.get_item_text(switch_btn.selected) == "R")
+    var dual: Dictionary = ui._collect_engineer_dual_config()
+    _check("统一配置包含工程与 IK", dual.has("engineer") and dual.has("ik"))
+    _check("切换键进入统一配置", str(dual["ik"]["mode_switch_key"]) == "R")
+
+    var tabs: TabContainer = ui.get_node(ui.P_TAB_CONTAINER)
+    tabs.current_tab = 1
+    ui._run_check()
+    var code_engineer: String = ui.get_node(ui.P_CODE_EDIT).text
+    tabs.current_tab = 2
+    ui._run_check()
+    var code_ik: String = ui.get_node(ui.P_CODE_EDIT).text
+    _check("两个工程页生成同一份双模式代码",
+        code_engineer == code_ik and code_ik.contains("inverseMode = 1"))
+
+    var r_target: OptionButton = ui.get_node(ENG + "/R/OptionButton3")
+    var r_param: LineEdit = ui.get_node(ENG + "/R/LineEdit")
+    r_target.selected = 5 # P74
+    r_param.text = "2"
+    var issues: Array = []
+    ui._check_mode_switch_conflicts(issues)
+    _check("R 不能复用于正解映射", _issues_contain(issues, "正解控制 IO"))
+    r_target.selected = 0
+    r_param.text = ""
+
+    var preset_key: OptionButton = ui.get_node(IK + "/Preset1/Key")
+    var preset_x: LineEdit = ui.get_node(IK + "/Preset1/X")
+    preset_key.selected = 0 # R
+    preset_x.text = "10"
+    issues.clear()
+    ui._check_mode_switch_conflicts(issues)
+    _check("R 不能复用于逆解预设", _issues_contain(issues, "预设点位 P1"))
+    preset_x.text = ""
+
+    var move_plus: OptionButton = ui.get_node(IK + "/KeyMoveX/Plus")
+    move_plus.selected = 1 # R
+    issues.clear()
+    ui._check_mode_switch_conflicts(issues)
+    _check("R 不能复用于末端移动", _issues_contain(issues, "末端X移动"))
+    move_plus.selected = 0
+
+    switch_btn.selected = 7 # →；工程页对应行使用文本 ->
+    var right_target: OptionButton = ui.get_node(ENG + "/Right/OptionButton3")
+    var right_param: LineEdit = ui.get_node(ENG + "/Right/LineEdit")
+    right_target.selected = 5
+    right_param.text = "2"
+    issues.clear()
+    ui._check_mode_switch_conflicts(issues)
+    _check("右方向键两种写法仍判定冲突", _issues_contain(issues, "正解控制 IO"))
+    right_target.selected = 0
+    right_param.text = ""
+    switch_btn.selected = 8
+
+
+func _issues_contain(issues: Array, keyword: String) -> bool:
+    for issue in issues:
+        if str(issue.get("msg", "")).contains(keyword):
+            return true
+    return false
 
 
 func _set_joint_count(ui: Node, n: int) -> void:

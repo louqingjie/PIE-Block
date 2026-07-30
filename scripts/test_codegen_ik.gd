@@ -13,6 +13,7 @@ func _initialize() -> void:
 	_test_joy_axis(cg)
 	_test_angle_clamp(cg)
 	_test_no_preset(cg)
+	_test_dual_mode(cg)
 	_test_negative_elbow(cg)
 	_test_joint_offset(cg)
 	_test_config(cg, 0, 2, "2轴")
@@ -54,6 +55,54 @@ func _make_cfg(config_type: int, jc: int, presets: Array) -> Dictionary:
 			{"plus": "D", "minus": "R"},
 		],
 	}
+
+
+func _make_dual_cfg() -> Dictionary:
+	var ik: Dictionary = _make_cfg(1, 3, [])
+	ik["mode_switch_key"] = "R"
+	return {
+		"engineer": {
+			"channel": "42", "deadzone": "12", "normal_speed": "4000",
+			"sprint_speed": "8000", "sprint_enabled": true,
+			"l1_io": "P60 P61", "l2_io": "P62 P63",
+			"r1_io": "P64 P65", "r2_io": "P66 P67",
+			"l1_dir": "正向", "l2_dir": "正向",
+			"r1_dir": "正向", "r2_dir": "正向",
+			"key_map": [
+				{"input": "A", "dir": "正", "mode": "增量", "param": "2", "target": "P74"},
+				{"input": "B", "dir": "反", "mode": "增量", "param": "2", "target": "P74"},
+				{"input": "C", "dir": "正", "mode": "直接", "param": "30", "target": "MP74"},
+			],
+		},
+		"ik": ik,
+	}
+
+
+func _test_dual_mode(cg) -> void:
+	print("\n--- 正解/逆解双模式 ---")
+	var code: String = cg.generate(_make_dual_cfg())
+	_check("上电默认逆解", code.contains("uint8_t   inverseMode = 1"))
+	_check("R 键边沿锁存", code.contains("pressed = RcKeyValueRead(KEY_OFFSET_1)")
+		and code.contains("pressed && !modeKeyHeld")
+		and code.contains("else if (!pressed)"))
+	_check("正逆解分支", code.contains("if (inverseMode)")
+		and code.contains("CalculateForwardControl();"))
+	_check("切回逆解同步 FK 目标", code.contains("SyncIKTargetFromJoints();")
+		and code.contains("targetX = ikPts[JOINT_COUNT][0]"))
+	_check("底盘两种模式常驻", code.contains("CalculateChassisControl();")
+		and code.find("CalculateChassisControl();") < code.find("if (inverseMode)"))
+	_check("读取工程通道和死区", code.contains("uint8_t Channal = 42;")
+		and code.contains("deadBandOfLeft = 12;"))
+	_check("底盘走扩展板统一输出", code.contains("dutyOfChassis[0]")
+		and code.contains("ExpansionBoradControl(Dir_Change_Order"))
+	_check("底盘冲刺和电机限幅", code.contains("KEY_OFFSET_Rocker11")
+		and code.contains("dutyOfChassis[i] > speedLimit")
+		and code.contains("dutyOfAuxMotor[i] > 10000"))
+	_check("辅助主控板舵机复用工程映射", code.contains("dutyOfAuxMainServo[1] = 917.0f")
+		and code.contains("PWM_SET_Frequency(PWMB_CH1_P74, 50, (uint16_t)dutyOfAuxMainServo[1])"))
+	_check("只有一个 main", code.count("void main()") == 1)
+	_check("只有一个扩展板函数定义", code.count("/// @brief 板间通信函数") == 1)
+	_check("双模式符合 C89 声明顺序", _check_c89_decl_order(code))
 
 
 func _test_config(cg, config_type: int, jc: int, label: String) -> void:

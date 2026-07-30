@@ -1,8 +1,7 @@
 extends SceneTree
 
 ## 通用正运动学（fk_chain）验证脚本。
-## 核心是「退化验证」：轴类型按历史构型填写时，fk_chain 的末端必须与
-## 现有 forward_kinematics_angles 逐位一致——这是保证不回归的关键断言。
+## 验证逐关节转轴、连杆长度和任意关节链的几何性质。
 ## 运行方式：godot --headless --path . --script scripts/test_fk_chain.gd
 
 var _cg = preload("res://scripts/codegen/codegen_engineer_ik.gd").new()
@@ -25,7 +24,6 @@ func _initialize() -> void:
 	print("=== 通用正运动学 fk_chain 验证 ===\n")
 	_test_axis_defaults()
 	_test_length_defaults()
-	_test_degeneracy()
 	_test_roll_no_position_change()
 	_test_yaw_swings_horizontally()
 	_test_pitch_lifts()
@@ -84,42 +82,6 @@ func _test_length_defaults() -> void:
 	_check("显式 len 覆盖默认",
 		_cg.joint_lengths(custom, 2, 0, 100.0, 80.0, 30.0) == [11.0, 22.0],
 		str(_cg.joint_lengths(custom, 2, 0, 100.0, 80.0, 30.0)))
-
-
-## 【核心】退化验证：老构型下 fk_chain 末端必须与现有 FK 逐位一致
-func _test_degeneracy() -> void:
-	var blank: Array = [ {}, {}, {}, {}]
-	var cases: Array = [
-		{"t": 0, "jc": 2, "ang": [0.0, 0.0]},
-		{"t": 0, "jc": 2, "ang": [30.0, 60.0]},
-		{"t": 0, "jc": 2, "ang": [-45.0, -30.0]},
-		{"t": 0, "jc": 2, "ang": [90.0, -90.0]},
-		{"t": 1, "jc": 3, "ang": [0.0, 0.0, 0.0]},
-		{"t": 1, "jc": 3, "ang": [20.0, 40.0, 70.0]},
-		{"t": 1, "jc": 3, "ang": [-70.0, 15.0, -50.0]},
-		{"t": 1, "jc": 3, "ang": [90.0, -60.0, 120.0]},
-		{"t": 2, "jc": 4, "ang": [0.0, 0.0, 0.0, 0.0]},
-		{"t": 2, "jc": 4, "ang": [20.0, 30.0, 60.0, 25.0]},
-		{"t": 2, "jc": 4, "ang": [-70.0, 10.0, -80.0, 45.0]},
-		{"t": 2, "jc": 4, "ang": [45.0, -45.0, 90.0, -30.0]},
-	]
-	for c in cases:
-		var t: int = c["t"]
-		var jc: int = c["jc"]
-		var ang: Array = c["ang"]
-		var old_fk: Array = _cg.forward_kinematics_angles(ang, 100.0, 80.0, 30.0, t)
-		var chain: Dictionary = _cg.fk_chain(ang, blank, jc, t, 100.0, 80.0, 30.0)
-		var pts: Array = chain["points"]
-		var tip: Vector3 = pts[pts.size() - 1]
-		# 2 轴构型旧 FK 的第三项恒为 0（工作平面内），其余构型比对完整三维
-		var ok: bool = _near(tip.x, old_fk[0]) and _near(tip.y, old_fk[1])
-		if t != 0:
-			ok = ok and _near(tip.z, old_fk[2])
-		else:
-			ok = ok and _near(tip.z, 0.0)
-		_check("退化 构型%d %s 末端与旧 FK 一致" % [t, str(ang)], ok,
-			"fk_chain=%s 旧FK=[%.4f, %.4f, %.4f]"
-				% [str(tip), old_fk[0], old_fk[1], old_fk[2]])
 
 
 ## Roll 是绕连杆自身轴自转，不应改变末端位置

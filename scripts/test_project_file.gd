@@ -266,6 +266,10 @@ func _test_config_roundtrip() -> void:
 
 	var base: Dictionary = ui._snapshot_config()
 	_check("快照非空", base.size() > 50, "实际 %d 项" % base.size())
+	var switch_path: String = "SecondRow/TabContainer/EngineerAdvanced/ModeSwitch/OptionButton"
+	_check("快照包含正逆解切换键", base.has(switch_path))
+	if base.has(switch_path):
+		_check("新项目切换键默认 R", str(base[switch_path].get("s", "")) == "R")
 
 	# 改一批控件：LineEdit / OptionButton / CheckBox 三类都覆盖
 	var touched: int = 0
@@ -290,6 +294,8 @@ func _test_config_roundtrip() -> void:
 	ui._apply_config(base)
 	var restored: Dictionary = ui._snapshot_config()
 	_check("回填初始快照后完全复原", restored == base, _diff_hint(base, restored))
+	if restored.has(switch_path):
+		_check("回填后切换键恢复 R", str(restored[switch_path].get("s", "")) == "R")
 
 	# 再回填改动后的快照，也应完全复现
 	ui._apply_config(changed)

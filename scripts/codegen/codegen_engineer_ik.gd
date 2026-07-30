@@ -41,6 +41,11 @@ const EXP_SEND_DELAY_MS: int = 5
 # ------------------------------------------------------------------ 代码生成
 ## 基于配置字典生成完整的 main.c 代码字符串
 func generate(cfg: Dictionary) -> String:
+	# 工程 UI 的两个页面共同传入 {engineer, ik}；保留直接传 IK 配置的测试兼容性。
+	var dual_mode: bool = cfg.has("ik")
+	var engineer_cfg: Dictionary = cfg.get("engineer", {}) if dual_mode else {}
+	if dual_mode:
+		cfg = cfg.get("ik", {})
 	var config_type: int = cfg.get("config_type", 0) # 0=2轴, 1=3轴, 2=4轴
 	var jc: int = cfg.get("joint_count", 2)
 	var joints: Array = cfg.get("joints", [])
@@ -67,9 +72,14 @@ func generate(cfg: Dictionary) -> String:
 	# 否则 C251 会报未引用参数警告，学生也会以为这个输入有效。
 	var use_phi: bool = _phi_controllable(joints, jc, config_type, l1, l2, l3)
 	var tvars: Array = _target_vars_for(jc, use_phi)
+	var switch_key: String = str(cfg.get("mode_switch_key", "R"))
+	var switch_offset: String = _key_name_to_offset(switch_key)
+	var channel: String = _int_or_default(engineer_cfg.get("channel", "36"), 36, 0, 125)
+	var deadzone: String = _int_or_default(engineer_cfg.get("deadzone", "10"), 10, 0, 2047)
 
 	var code: String = ""
-	code += "// 工程机器人逆解算代码（由 Pie-Block 配置生成器自动生成）\n"
+	code += "// 工程机器人正解/逆解双模式代码（由 Pie-Block 配置生成器自动生成）\n" if dual_mode \
+		else "// 工程机器人逆解算代码（由 Pie-Block 配置生成器自动生成）\n"
 	code += "#include \"main.h\"\n"
 	code += "#include \"MATH.H\"\n"
 	code += "// ========================= 参数区 =========================\n"
@@ -103,7 +113,7 @@ func generate(cfg: Dictionary) -> String:
 	# 注：关节限位夹紧在 angle_to_duty 内直接比较，无需 LIMIT_VALUE 宏
 	code += _build_protocol_macros()
 	# NRF24L01 通信通道（nrf24l01.c 通过 extern 引用，必须在此定义）
-	code += "uint8_t Channal = 36;                          // NRF24L01 通信通道（0-125），与遥控器一致\n"
+	code += "uint8_t Channal = %s;                          // NRF24L01 通信通道（0-125），与遥控器一致\n" % channel
 	code += "// 自定义变量\n"
 	code += "uint16_t dutyOfServo[%d];       // 各关节舵机占空比\n" % jc
 	code += "float    jointAngle[%d];        // 各关节角度(度)\n" % jc
@@ -111,8 +121,15 @@ func generate(cfg: Dictionary) -> String:
 	code += "uint8_t  ik_reachable;          // 逆解算可达性标志(1=本步在靠近目标,0=已贴到极限)\n"
 	code += "uint8_t  presetHit;             // 本周期是否命中预设点位\n"
 	code += "int16_t  valueOfRoker[2][2];    // 左摇杆水平、竖直；右摇杆水平、竖直\n"
-	code += "uint16_t deadBandOfLeft = 10;\n"
-	code += "uint16_t deadBandOfRight = 10;\n"
+	code += "uint16_t deadBandOfLeft = %s;\n" % deadzone
+	code += "uint16_t deadBandOfRight = %s;\n" % deadzone
+	if dual_mode:
+		code += "int       dutyOfChassis[4];     // 底盘四个电机控制值\n"
+		code += "int       dutyOfAuxMotor[8];     // 正解模式下的其他扩展板电机\n"
+		code += "float     dutyOfAuxServo[8];     // 正解模式下的其他扩展板舵机\n"
+		code += "float     dutyOfAuxMainServo[2]; // 正解模式下的 MP03/MP74 舵机\n"
+		code += "uint8_t   inverseMode = 1;       // 上电默认逆解模式\n"
+		code += "uint8_t   modeKeyHeld = 0;       // 切换键锁存，长按只触发一次\n"
 	code += "uint8_t  i;\n"
 	# 关节配置常量数组（初始角/限位/IO 槽位）
 	code += _build_joint_config_arrays(joints, jc)
@@ -127,6 +144,11 @@ func generate(cfg: Dictionary) -> String:
 	# 函数声明
 	code += "void All_Init();\n"
 	code += "void ReadControllerInputs();\n"
+	if dual_mode:
+		code += "void UpdateControlMode();\n"
+		code += "void SyncIKTargetFromJoints();\n"
+		code += "void CalculateForwardControl();\n"
+		code += "void CalculateChassisControl();\n"
 	code += "void CalculateIK(uint8_t hit);\n"
 	code += "void ApplyServoControl();\n"
 	if preset_count > 0:
@@ -155,7 +177,10 @@ func generate(cfg: Dictionary) -> String:
 	var home: Array = _home_targets(joints, jc, config_type, l1, l2, l3, use_phi)
 	# 主控板舵机发送耗时可忽略，扩展板每次发送后需 EXP_SEND_DELAY_MS 延时
 	var has_exp: bool = _has_exp_slot(joints, jc)
-	var tail_delay: int = LOOP_PERIOD_MS - (EXP_SEND_DELAY_MS if has_exp else 0)
+	var chassis_slots: Array = _chassis_slots(engineer_cfg) if dual_mode else []
+	var exp_send_count: int = (1 if has_exp or not chassis_slots.is_empty() else 0) \
+		+ (1 if not chassis_slots.is_empty() else 0)
+	var tail_delay: int = maxi(0, LOOP_PERIOD_MS - EXP_SEND_DELAY_MS * exp_send_count)
 	code += "void main()\n{\n"
 	code += "    All_Init();\n"
 	code += "    // 初始化各关节到初始角度\n"
@@ -176,11 +201,22 @@ func generate(cfg: Dictionary) -> String:
 	code += "        else\n"
 	code += "            GPIO_Write_Bit(GPIO_P3, GPIO_Pin_7, 1);\n"
 	code += "        ReadControllerInputs();\n"
+	if dual_mode:
+		code += "        UpdateControlMode();         // 单击切换正解/逆解，长按不连跳\n"
+		code += "        CalculateChassisControl();    // 底盘不受机械臂模式影响\n"
+		code += "        if (inverseMode)\n"
+		code += "        {\n"
+		code += "            for (i = 0; i < 8; i++)\n"
+		code += "                dutyOfAuxMotor[i] = 0; // 逆解模式停掉正解专用电机\n"
 	if preset_count > 0:
-		code += "        presetHit = CheckPresetKeys(); // 预设点位按键检测\n"
+		code += ("            " if dual_mode else "        ") + "presetHit = CheckPresetKeys(); // 预设点位按键检测\n"
 	else:
-		code += "        presetHit = 0;                 // 未配置预设点位\n"
-	code += "        CalculateIK(presetHit);        // 摇杆/按键增量 + 逆解算\n"
+		code += ("            " if dual_mode else "        ") + "presetHit = 0;                 // 未配置预设点位\n"
+	code += ("            " if dual_mode else "        ") + "CalculateIK(presetHit);        // 摇杆/按键增量 + 逆解算\n"
+	if dual_mode:
+		code += "        }\n"
+		code += "        else\n"
+		code += "            CalculateForwardControl(); // 直接调整各关节角\n"
 	code += "        ApplyServoControl();           // 应用舵机控制\n"
 	code += "        Ms_Delay(%d);                   // 与舵机发送延时合计 %dms/周期\n" % [tail_delay, LOOP_PERIOD_MS]
 	code += "    }\n"
@@ -194,6 +230,10 @@ func generate(cfg: Dictionary) -> String:
 	code += _gen_ik_solve_jacobian(jc, use_phi, kin_lens)
 	# --- ReadControllerInputs ---
 	code += _gen_read_inputs()
+	if dual_mode:
+		code += _gen_mode_control(switch_offset, jc, use_phi)
+		code += _gen_forward_control(engineer_cfg, joints, jc)
+		code += _gen_chassis_control(engineer_cfg)
 	# --- CheckPresetKeys ---
 	if preset_count > 0:
 		code += _gen_check_preset_keys(jc, use_phi)
@@ -201,9 +241,9 @@ func generate(cfg: Dictionary) -> String:
 	code += _gen_target_too_far(jc, kin_lens)
 	code += _gen_calculate_ik(cfg, use_phi)
 	# --- ApplyServoControl ---
-	code += _gen_apply_servo_control(joints, jc, has_exp)
+	code += _gen_apply_servo_control(joints, jc, has_exp, engineer_cfg if dual_mode else {})
 	# --- All_Init ---
-	code += _gen_all_init(joints, jc)
+	code += _gen_all_init(joints, jc, engineer_cfg if dual_mode else {})
 	# --- ExpansionBoradControl ---
 	code += _gen_expansion_board_func()
 	return code
@@ -1429,6 +1469,165 @@ func _gen_read_inputs() -> String:
 	return s
 
 
+## 模式键按下边沿翻转；回到逆解时用当前关节姿态刷新末端目标，避免追逐旧目标。
+func _gen_mode_control(switch_offset: String, jc: int, use_phi: bool) -> String:
+	var s: String = ""
+	s += "void SyncIKTargetFromJoints()\n"
+	s += "{\n"
+	s += "    ik_fk();\n"
+	s += "    targetX = ikPts[JOINT_COUNT][0];\n"
+	s += "    targetY = ikPts[JOINT_COUNT][1];\n"
+	if jc >= 3:
+		s += "    targetZ = ikPts[JOINT_COUNT][2];\n"
+	if use_phi:
+		s += "    targetPhi = asin(ikBasis[2][0]) * RAD_TO_DEG;\n"
+	s += "}\n\n"
+	s += "void UpdateControlMode()\n"
+	s += "{\n"
+	s += "    uint8_t pressed;\n"
+	s += "    pressed = RcKeyValueRead(%s);\n" % switch_offset
+	s += "    if (pressed && !modeKeyHeld)\n"
+	s += "    {\n"
+	s += "        inverseMode = inverseMode ? 0 : 1;\n"
+	s += "        modeKeyHeld = 1;\n"
+	s += "        if (inverseMode)\n"
+	s += "            SyncIKTargetFromJoints();\n"
+	s += "    }\n"
+	s += "    else if (!pressed)\n"
+	s += "        modeKeyHeld = 0;\n"
+	s += "}\n\n"
+	return s
+
+
+## 工程页映射到关节 IO 的舵机行，在正解模式下直接更新统一 jointAngle[]。
+func _gen_forward_control(engineer_cfg: Dictionary, joints: Array, jc: int) -> String:
+	var joint_by_io: Dictionary = {}
+	for i in range(jc):
+		joint_by_io[str(joints[i].get("io", ""))] = i
+	var body: String = ""
+	for row in engineer_cfg.get("key_map", []):
+		var target: String = str(row.get("target", ""))
+		var expr: String = _engineer_input_expr(str(row.get("input", "")))
+		var direction: float = 1.0 if str(row.get("dir", "正")) == "正" else -1.0
+		var mode: String = str(row.get("mode", "增量"))
+		var param: float = _to_float(row.get("param", "0"), 0.0)
+		if joint_by_io.has(target) and mode == "增量":
+			var joint: int = joint_by_io[target]
+			if str(row.get("input", "")) in ["右摇杆X", "右摇杆Y"]:
+				body += "    jointAngle[%d] += %s * %.2ff / 2047.0f;\n" \
+					% [joint, expr, direction * absf(param)]
+			else:
+				body += "    if (%s)\n" % expr
+				body += "        jointAngle[%d] += %.2ff;\n" % [joint, direction * absf(param)]
+		elif joint_by_io.has(target) and mode == "直接" \
+				and not str(row.get("input", "")) in ["右摇杆X", "右摇杆Y"]:
+			var joint: int = joint_by_io[target]
+			body += "    if (%s)\n" % expr
+			body += "        jointAngle[%d] = %.2ff;\n" % [joint, param]
+		else:
+			var slot: int = _io_to_exp_slot(target)
+			var io_type: String = str((engineer_cfg.get("io_init", {}) as Dictionary).get(target, "舵机"))
+			var main_idx: int = 0 if target == "MP03" else (1 if target == "MP74" else -1)
+			if io_type == "舵机" and (slot >= 0 or main_idx >= 0):
+				var servo_var: String = "dutyOfAuxServo[%d]" % slot if slot >= 0 \
+					else "dutyOfAuxMainServo[%d]" % main_idx
+				if mode == "增量":
+					var duty_step: int = _servo_deg_to_duty_delta(absf(param))
+					if str(row.get("input", "")) in ["右摇杆X", "右摇杆Y"]:
+						body += "    %s += %s * %.2ff / 2047.0f;\n" \
+							% [servo_var, expr, direction * duty_step]
+					else:
+						body += "    if (%s)\n" % expr
+						body += "        %s += %.2ff;\n" % [servo_var, direction * duty_step]
+				elif mode == "直接" and not str(row.get("input", "")) in ["右摇杆X", "右摇杆Y"]:
+					body += "    if (%s)\n" % expr
+					body += "        %s = %d.0f;\n" % [servo_var, _servo_angle_to_duty(int(param))]
+				continue
+			if slot < 0 or io_type != "电机":
+				continue
+			if mode == "速度":
+				body += "    dutyOfAuxMotor[%d] = (int)(%s * %.2ff / 2047.0f);\n" \
+					% [slot, expr, direction * absf(param)]
+			elif mode == "增速":
+				body += "    dutyOfAuxMotor[%d] += (int)(%s * %.2ff / 2047.0f);\n" \
+					% [slot, expr, direction * absf(param)]
+			elif mode == "直接":
+				body += "    if (%s)\n" % expr
+				body += "        dutyOfAuxMotor[%d] = %d;\n" % [slot, int(direction * absf(param))]
+				body += "    else\n"
+				body += "        dutyOfAuxMotor[%d] = 0;\n" % slot
+	if not body.is_empty():
+		body += "    for (i = 0; i < JOINT_COUNT; i++)\n"
+		body += "    {\n"
+		body += "        if (jointAngle[i] < jointMin[i]) jointAngle[i] = jointMin[i];\n"
+		body += "        if (jointAngle[i] > jointMax[i]) jointAngle[i] = jointMax[i];\n"
+		body += "    }\n"
+		body += "    for (i = 0; i < 8; i++)\n"
+		body += "    {\n"
+		body += "        if (dutyOfAuxServo[i] < SERVO_MIN_DUTY) dutyOfAuxServo[i] = SERVO_MIN_DUTY;\n"
+		body += "        if (dutyOfAuxServo[i] > SERVO_MAX_DUTY) dutyOfAuxServo[i] = SERVO_MAX_DUTY;\n"
+		body += "    }\n"
+		body += "    for (i = 0; i < 2; i++)\n"
+		body += "    {\n"
+		body += "        if (dutyOfAuxMainServo[i] < SERVO_MIN_DUTY) dutyOfAuxMainServo[i] = SERVO_MIN_DUTY;\n"
+		body += "        if (dutyOfAuxMainServo[i] > SERVO_MAX_DUTY) dutyOfAuxMainServo[i] = SERVO_MAX_DUTY;\n"
+		body += "    }\n"
+	return "void CalculateForwardControl()\n{\n%s}\n\n" % body
+
+
+func _engineer_input_expr(input_name: String) -> String:
+	match input_name:
+		"右摇杆X": return "(float)valueOfRoker[1][0]"
+		"右摇杆Y": return "(float)valueOfRoker[1][1]"
+		"A": return "RcKeyValueRead(KEY_OFFSET_A)"
+		"B": return "RcKeyValueRead(KEY_OFFSET_B)"
+		"C": return "RcKeyValueRead(KEY_OFFSET_C)"
+		"D": return "RcKeyValueRead(KEY_OFFSET_D)"
+		"↑": return "RcKeyValueRead(KEY_OFFSET_UP)"
+		"↓": return "RcKeyValueRead(KEY_OFFSET_DOWN)"
+		"←": return "RcKeyValueRead(KEY_OFFSET_LEFT)"
+		"->", "→": return "RcKeyValueRead(KEY_OFFSET_RIGHT)"
+		"R": return "RcKeyValueRead(KEY_OFFSET_1)"
+		_: return "0"
+
+
+## 左摇杆底盘控制在正解和逆解模式下都持续运行。
+func _gen_chassis_control(cfg: Dictionary) -> String:
+	var normal_speed: String = _int_or_default(cfg.get("normal_speed", "4000"), 4000, 0, 10000)
+	var sprint_speed: String = _int_or_default(cfg.get("sprint_speed", "8000"), 8000, 0, 10000)
+	var sprint_enabled: bool = cfg.get("sprint_enabled", false)
+	var l1_dir: float = 1.0 if str(cfg.get("l1_dir", "正向")) == "正向" else -1.0
+	var l2_dir: float = 1.0 if str(cfg.get("l2_dir", "正向")) == "正向" else -1.0
+	var r1_dir: float = 1.0 if str(cfg.get("r1_dir", "正向")) == "正向" else -1.0
+	var r2_dir: float = 1.0 if str(cfg.get("r2_dir", "正向")) == "正向" else -1.0
+	var s: String = ""
+	s += "void CalculateChassisControl()\n"
+	s += "{\n"
+	s += "    int baseSpeed, turnSpeed, speedLimit;\n"
+	s += "    speedLimit = %s;\n" % normal_speed
+	if sprint_enabled:
+		s += "    if (RcKeyValueRead(KEY_OFFSET_Rocker11))\n"
+		s += "        speedLimit = %s;\n" % sprint_speed
+	s += "    baseSpeed = (int)((float)valueOfRoker[0][1] * speedLimit / 2047.0f);\n"
+	s += "    turnSpeed = (int)((float)valueOfRoker[0][0] * speedLimit / 2047.0f);\n"
+	s += "    dutyOfChassis[0] = (int)(%.1ff * (-baseSpeed - turnSpeed));\n" % l1_dir
+	s += "    dutyOfChassis[1] = (int)(%.1ff * (-baseSpeed - turnSpeed));\n" % l2_dir
+	s += "    dutyOfChassis[2] = (int)(%.1ff * (baseSpeed - turnSpeed));\n" % r1_dir
+	s += "    dutyOfChassis[3] = (int)(%.1ff * (baseSpeed - turnSpeed));\n" % r2_dir
+	s += "    for (i = 0; i < 4; i++)\n"
+	s += "    {\n"
+	s += "        if (dutyOfChassis[i] > speedLimit) dutyOfChassis[i] = speedLimit;\n"
+	s += "        if (dutyOfChassis[i] < -speedLimit) dutyOfChassis[i] = -speedLimit;\n"
+	s += "    }\n"
+	s += "    for (i = 0; i < 8; i++)\n"
+	s += "    {\n"
+	s += "        if (dutyOfAuxMotor[i] > 10000) dutyOfAuxMotor[i] = 10000;\n"
+	s += "        if (dutyOfAuxMotor[i] < -10000) dutyOfAuxMotor[i] = -10000;\n"
+	s += "    }\n"
+	s += "}\n\n"
+	return s
+
+
 # ------------------------------------------------------------------ CheckPresetKeys
 func _gen_check_preset_keys(jc: int, use_phi: bool = false) -> String:
 	var s: String = ""
@@ -1603,7 +1802,8 @@ func parse_joy_axis(text: String) -> Array:
 
 
 # ------------------------------------------------------------------ ApplyServoControl
-func _gen_apply_servo_control(joints: Array, jc: int, has_exp: bool) -> String:
+func _gen_apply_servo_control(joints: Array, jc: int, has_exp: bool,
+		engineer_cfg: Dictionary = {}) -> String:
 	var s: String = ""
 	s += "/// @brief 应用舵机控制：关节角度 -> 占空比 -> 发送\n"
 	s += "void ApplyServoControl()\n"
@@ -1613,13 +1813,30 @@ func _gen_apply_servo_control(joints: Array, jc: int, has_exp: bool) -> String:
 	# 扩展板槽位（P60~P77）走 ExpansionBoradControl，主控板 MP03/MP74 走 PWM_SET_Frequency
 	var exp_slots: Dictionary = _exp_slot_map(joints, jc)
 	var main_pwm: Array = _main_pwm_list(joints, jc)
-	# 扩展板控制
-	if has_exp:
-		s += "    // 扩展板舵机控制（频率 50Hz），未占用槽位传 0 表示维持原状\n"
-		# Duty_Change_Order：8 个槽位占空比
+	var aux_servo_slots: Array = _aux_servo_slots(engineer_cfg, joints, jc)
+	var aux_main_servos: Array = _aux_main_servo_list(engineer_cfg, joints, jc)
+	# 扩展板控制：底盘电机与关节舵机共用一次方向/占空比发送。
+	var chassis_slots: Array = _chassis_slots(engineer_cfg)
+	var aux_slots: Array = _aux_motor_slots(engineer_cfg)
+	if has_exp or not chassis_slots.is_empty():
 		var duty_vals: Array = ["0", "0", "0", "0", "0", "0", "0", "0"]
+		var dir_vals: Array = ["1", "1", "1", "1", "1", "1", "1", "1"]
 		for slot in exp_slots.keys():
 			duty_vals[slot] = "dutyOfServo[%d]" % exp_slots[slot]
+		for slot in aux_servo_slots:
+			duty_vals[slot] = "(uint16_t)dutyOfAuxServo[%d]" % slot
+		for motor in range(chassis_slots.size()):
+			var slot: int = chassis_slots[motor]
+			if slot >= 0:
+				duty_vals[slot] = "(uint16_t)abs(dutyOfChassis[%d])" % motor
+				dir_vals[slot] = "(dutyOfChassis[%d] >= 0 ? 1 : 0)" % motor
+		for slot in aux_slots:
+			duty_vals[slot] = "(uint16_t)abs(dutyOfAuxMotor[%d])" % slot
+			dir_vals[slot] = "(dutyOfAuxMotor[%d] >= 0 ? 1 : 0)" % slot
+		if not chassis_slots.is_empty() or not aux_slots.is_empty():
+			s += "    ExpansionBoradControl(Dir_Change_Order,\n"
+			s += "                          %s);\n" % _exp_args(dir_vals)
+			s += "    Ms_Delay(%d);\n" % EXP_SEND_DELAY_MS
 		s += "    ExpansionBoradControl(Duty_Change_Order,\n"
 		s += "                          %s);\n" % _exp_args(duty_vals)
 		s += "    Ms_Delay(%d);\n" % EXP_SEND_DELAY_MS
@@ -1630,6 +1847,9 @@ func _gen_apply_servo_control(joints: Array, jc: int, has_exp: bool) -> String:
 			var pwm_ch: String = entry["ch"]
 			var ji: int = entry["joint"]
 			s += "    PWM_SET_Frequency(%s, 50, dutyOfServo[%d]);\n" % [pwm_ch, ji]
+	for entry in aux_main_servos:
+		s += "    PWM_SET_Frequency(%s, 50, (uint16_t)dutyOfAuxMainServo[%d]);\n" \
+			% [entry["ch"], entry["idx"]]
 	s += "}\n\n"
 	return s
 
@@ -1661,7 +1881,7 @@ func _exp_args(vals: Array) -> String:
 
 
 # ------------------------------------------------------------------ All_Init
-func _gen_all_init(joints: Array, jc: int) -> String:
+func _gen_all_init(joints: Array, jc: int, engineer_cfg: Dictionary = {}) -> String:
 	var s: String = ""
 	s += "void All_Init()\n"
 	s += "{\n"
@@ -1674,11 +1894,21 @@ func _gen_all_init(joints: Array, jc: int) -> String:
 	# 扩展板槽位（P60~P77）走 ExpansionBoradControl，主控板 MP03/MP74 走 PWM_Init
 	var exp_slots: Dictionary = _exp_slot_map(joints, jc)
 	var main_pwm: Array = _main_pwm_list(joints, jc)
-	if exp_slots.size() > 0:
+	var chassis_slots: Array = _chassis_slots(engineer_cfg)
+	var aux_servo_slots: Array = _aux_servo_slots(engineer_cfg, joints, jc)
+	var aux_main_servos: Array = _aux_main_servo_list(engineer_cfg, joints, jc)
+	if exp_slots.size() > 0 or not chassis_slots.is_empty():
 		# 构建 Init_Order：舵机槽位频率 50，其余 0（维持原状）
 		var init_vals: Array = ["0", "0", "0", "0", "0", "0", "0", "0"]
 		for slot in exp_slots.keys():
 			init_vals[slot] = "50"
+		for slot in aux_servo_slots:
+			init_vals[slot] = "50"
+		for slot in chassis_slots:
+			if slot >= 0:
+				init_vals[slot] = "10000"
+		for slot in _aux_motor_slots(engineer_cfg):
+			init_vals[slot] = "10000"
 		s += "    // 扩展板舵机初始化（频率 50Hz），未占用槽位传 0 表示维持原状\n"
 		s += "    ExpansionBoradControl(Init_Order,\n"
 		s += "                          %s);\n" % _exp_args(init_vals)
@@ -1691,6 +1921,8 @@ func _gen_all_init(joints: Array, jc: int) -> String:
 		for slot in exp_slots.keys():
 			var idx: int = exp_slots[slot]
 			home_vals[slot] = "angle_to_duty(%d, jointHome[%d])" % [idx, idx]
+		for slot in aux_servo_slots:
+			home_vals[slot] = "SERVO_MID_DUTY"
 		s += "    // 上电先把各关节推到初始角度\n"
 		s += "    ExpansionBoradControl(Duty_Change_Order,\n"
 		s += "                          %s);\n" % _exp_args(home_vals)
@@ -1702,8 +1934,66 @@ func _gen_all_init(joints: Array, jc: int) -> String:
 			var pwm_ch: String = entry["ch"]
 			var ji: int = entry["joint"]
 			s += "    PWM_Init(%s, 50, angle_to_duty(%d, jointHome[%d]));\n" % [pwm_ch, ji, ji]
+	for entry in aux_main_servos:
+		s += "    PWM_Init(%s, 50, SERVO_MID_DUTY);\n" % entry["ch"]
+	if not engineer_cfg.is_empty():
+		s += "    for (i = 0; i < 8; i++) dutyOfAuxServo[i] = SERVO_MID_DUTY;\n"
+		s += "    for (i = 0; i < 2; i++) dutyOfAuxMainServo[i] = SERVO_MID_DUTY;\n"
 	s += "}\n\n"
 	return s
+
+
+func _chassis_slots(cfg: Dictionary) -> Array:
+	if cfg.is_empty():
+		return []
+	return [
+		_io_to_exp_slot(_parse_io_pair(str(cfg.get("l1_io", "P74 P24")))),
+		_io_to_exp_slot(_parse_io_pair(str(cfg.get("l2_io", "P75 P25")))),
+		_io_to_exp_slot(_parse_io_pair(str(cfg.get("r1_io", "P76 P26")))),
+		_io_to_exp_slot(_parse_io_pair(str(cfg.get("r2_io", "P77 P27")))),
+	]
+
+
+func _aux_motor_slots(cfg: Dictionary) -> Array:
+	var slots: Array = []
+	var io_init: Dictionary = cfg.get("io_init", {})
+	for row in cfg.get("key_map", []):
+		var pin: String = str(row.get("target", ""))
+		var slot: int = _io_to_exp_slot(pin)
+		if slot >= 0 and str(io_init.get(pin, "舵机")) == "电机" and not slot in slots:
+			slots.append(slot)
+	return slots
+
+
+func _aux_servo_slots(cfg: Dictionary, joints: Array, jc: int) -> Array:
+	var joint_ios: Array = []
+	for i in range(jc):
+		joint_ios.append(str(joints[i].get("io", "")))
+	var slots: Array = []
+	var io_init: Dictionary = cfg.get("io_init", {})
+	for row in cfg.get("key_map", []):
+		var pin: String = str(row.get("target", ""))
+		var slot: int = _io_to_exp_slot(pin)
+		if slot >= 0 and not pin in joint_ios and str(io_init.get(pin, "舵机")) == "舵机" \
+				and not slot in slots:
+			slots.append(slot)
+	return slots
+
+
+func _aux_main_servo_list(cfg: Dictionary, joints: Array, jc: int) -> Array:
+	var joint_ios: Array = []
+	for i in range(jc):
+		joint_ios.append(str(joints[i].get("io", "")))
+	var out: Array = []
+	for pin in ["MP03", "MP74"]:
+		if pin in joint_ios:
+			continue
+		for row in cfg.get("key_map", []):
+			if str(row.get("target", "")) == pin:
+				out.append({"idx": 0 if pin == "MP03" else 1,
+					"ch": _pin_to_pwm_channel(pin)})
+				break
+	return out
 
 
 # ------------------------------------------------------------------ ExpansionBoradControl
