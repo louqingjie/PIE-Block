@@ -1666,11 +1666,11 @@ func _gen_all_init(joints: Array, jc: int) -> String:
 	s += "void All_Init()\n"
 	s += "{\n"
 	s += "    Board_Init();\n"
+	s += _gen_uart_init_first()
 	s += "    GPIO_Init(GPIO_P3, GPIO_Pin_4, GPIO_OUT_PP);\n"
 	s += "    GPIO_Write_Bit(GPIO_P3, GPIO_Pin_4, 0);\n"
 	s += "    remote_control_init();\n"
 	s += "    GPIO_Write_Bit(GPIO_P3, GPIO_Pin_4, 1);\n"
-	s += "    UART_Init(UART_1, UART1_RX_P30, UART1_TX_P31, 230400, TIM1);\n"
 	# 扩展板槽位（P60~P77）走 ExpansionBoradControl，主控板 MP03/MP74 走 PWM_Init
 	var exp_slots: Dictionary = _exp_slot_map(joints, jc)
 	var main_pwm: Array = _main_pwm_list(joints, jc)

@@ -111,8 +111,22 @@ MAX_PAYLOAD = 128
 取 128 留足余量，也让进度显示更平滑。
 """
 
-DEFAULT_APP_BAUD = 115200
+DEFAULT_APP_BAUD = 230400
+"""App 的 UART1 波特率，用于发 @PIEIAP# 触发命令。
+
+必须与三处保持一致：本常量、scripts/toolchain.gd 的 DEFAULT_APP_BAUD、
+scripts/codegen/codegen_base.gd 的 APP_BAUD（它写进生成的 C 代码）。
+不一致时 App 的 UART1 中断收不到触发字，现象却是"bootloader 没有响应"，
+错误信息离真因很远（踩过两次：先在 GDScript 侧写成 115200，改回后又漏了这里）。
+"""
+
 DEFAULT_BOOT_BAUD = 115200
+"""bootloader 的波特率，由 PIE_BOOTLOADER/USER/inc/config.h 编译期写死。
+
+与 App 波特率不同，所以下载过程有一次切换：
+230400 发触发字 → 115200 与 bootloader 通信。
+蓝牙链路做不到这个切换（模块波特率配对时固定），走蓝牙需把两端统一。
+"""
 
 
 class ProtocolError(Exception):
@@ -284,6 +298,51 @@ def relocate_reset_vector(segs: dict) -> dict:
     return out
 
 
+VECTOR_STRIDE = 8
+"""相邻中断入口的间距（字节）。MCS-251 固定 8。"""
+
+VECTOR_AREA_END = 0xFF11FF
+"""中断向量区上界（含）。
+
+bootloader 的 isr.asm 最后一条 MAPISR 是 01FBH，转发目标 0xFF11FB，占 4 字节。
+App 的链接器 CODE 起点必须落在这之后，当前约定取 0xFF1300。
+"""
+
+
+def check_vector_area(segs: dict) -> None:
+    """检查中断向量区里放的是跳转指令，而不是被普通代码或数据挤占。
+
+    bootloader 的蹦床把硬件中断入口 0x0003+n*8 转发到 0xFF1003+n*8，
+    所以那些地址必须是 App 的中断向量。若链接器把别的段填了进去，
+    对应中断触发时会跳进数据里执行。
+
+    这个检查是踩坑后加的：曾把链接器 CODE 起点设成 0xFF1003，
+    链接器于是把 ?CO?MAIN（内含 "@PIEIAP#" 命令字）放在那里，
+    正好占掉 interrupt 0 的入口。现象是 App 完全不启动，
+    而写入、读回校验、bootloader 的四重校验判据全部正常 —— 极难定位。
+    """
+    bad = []
+    addr = RESET_VECTOR_TARGET + 3
+    while addr <= VECTOR_AREA_END:
+        if addr in segs:
+            op = segs[addr]
+            # LJMP=0x02，EJMP(far)=0x8A（ECODE 区的 ISR 用它）
+            if op not in (0x02, 0x8A):
+                bad.append((addr, op))
+        addr += VECTOR_STRIDE
+
+    if bad:
+        lines = ["中断向量区里有非跳转数据，App 的中断会跳进错误位置："]
+        for phys, op in bad[:5]:
+            idx = (phys - RESET_VECTOR_TARGET - 3) // VECTOR_STRIDE
+            lines.append("  0x%06X (interrupt %d) 首字节 0x%02X，"
+                         "应为 0x02(LJMP) 或 0x8A(EJMP)" % (phys, idx, op))
+        lines.append("原因通常是链接器 CODE 起点设得太低，把普通段挤进了向量区。")
+        lines.append("App 的 Lx51 MiscControls 应设 "
+                     "CLASSES (CODE (0xFF1300-0xFFFFFF))。")
+        raise ProtocolError("\n".join(lines))
+
+
 def hex_to_iap_chunks(path: str, chunk_size: int = MAX_PAYLOAD):
     """读 App hex，搬好复位向量，转成按 IAP 地址排列的连续块列表。
 
@@ -297,6 +356,7 @@ def hex_to_iap_chunks(path: str, chunk_size: int = MAX_PAYLOAD):
         raise ProtocolError("hex 里没有任何数据记录: %s" % path)
 
     segs = relocate_reset_vector(segs)
+    check_vector_area(segs)
 
     # 搬运后不应再有任何字节落在 bootloader 保护区
     for phys in sorted(segs):
@@ -635,13 +695,15 @@ def selftest() -> int:
                 fp.write(_mk_ihex(records))
             return path
 
-        # 正常的 App hex：低块代码 + 0xFF0000 复位跳转 + 0xFF1003 起的向量
+        # 正常的 App hex：低块代码 + 0xFF0000 复位跳转 + 0xFF1300 起的启动代码。
+        # 向量区（0xFF1003-0xFF11FF）留空 —— 那是编译器按 INTVECTOR 放 IV?n 的地方，
+        # 普通段不能落进去（见 check_vector_area）。
         good = write_hex("good.hex", [
             (0x04, 0, b"\x00\xFE"),
             (0x00, 0x0000, bytes(range(16))),
             (0x04, 0, b"\x00\xFF"),
-            (0x00, 0x0000, b"\x02\x10\xA7"),
-            (0x00, 0x1003, b"\x40\x50\x49\x45"),
+            (0x00, 0x0000, b"\x02\x13\x00"),
+            (0x00, 0x1300, b"\x75\x84\x01\x7E"),
         ])
         segs = parse_ihex(good)
         check("hex 低块首字节", segs[0xFE0000], 0)
@@ -651,10 +713,10 @@ def selftest() -> int:
         moved = relocate_reset_vector(segs)
         check("搬运后 0xFF0000 已清", 0xFF0000 in moved, False)
         check("搬运后 0xFF1000", moved[0xFF1000], 0x02)
-        check("搬运后 0xFF1001", moved[0xFF1001], 0x10)
-        check("搬运后 0xFF1002", moved[0xFF1002], 0xA7)
+        check("搬运后 0xFF1001", moved[0xFF1001], 0x13)
+        check("搬运后 0xFF1002", moved[0xFF1002], 0x00)
         check("搬运不动低块", moved[0xFE0000], 0)
-        check("搬运不影响 0xFF1003", moved[0xFF1003], 0x40)
+        check("搬运不影响启动代码", moved[0xFF1300], 0x75)
         check("搬运前后字节总数不变", len(moved), len(segs))
         check("不改动入参", 0xFF0000 in segs, True)
 
@@ -705,6 +767,30 @@ def selftest() -> int:
             (0x00, 0x0500, b"\xAA\xBB"),
         ])
         expect_raises("代码压在 boot 区", lambda: hex_to_iap_chunks(overlap))
+
+        # 中断向量区被普通数据挤占：必须拦住。
+        # 这正是 CODE 起点设成 0xFF1003 时发生的事 —— 链接器把命令字
+        # "@PIEIAP#"(40 50 49 45...) 放进了 interrupt 0 的入口，
+        # 结果 App 完全不启动而所有校验都显示正常。
+        vecbad = write_hex("vecbad.hex", [
+            (0x04, 0, b"\x00\xFF"),
+            (0x00, 0x0000, b"\x02\x13\x00"),
+            (0x00, 0x1003, b"\x40\x50\x49\x45"),
+        ])
+        expect_raises("向量区被数据挤占", lambda: hex_to_iap_chunks(vecbad))
+
+        # 合法向量区：LJMP 与 EJMP 都要接受（后者是 ECODE 区 ISR 用的 far 跳转）
+        vecok = write_hex("vecok.hex", [
+            (0x04, 0, b"\x00\xFF"),
+            (0x00, 0x0000, b"\x02\x13\x00"),
+            (0x00, 0x1003, b"\x02\x13\x34"),
+            (0x00, 0x1023, b"\x8A\xFE\x53\x20"),
+            (0x00, 0x1300, b"\x75\x84\x01"),
+        ])
+        try:
+            hex_to_iap_chunks(vecok)
+        except ProtocolError as exc:
+            fails.append("合法向量区被误拦: %s" % exc)
 
         badsum = os.path.join(tmp, "badsum.hex")
         with open(badsum, "w", encoding="ascii") as fp:

@@ -295,7 +295,7 @@
             <WarningLevel>2</WarningLevel>
             <DataOverlaying>1</DataOverlaying>
             <OverlayString></OverlayString>
-            <MiscControls>CLASSES (CODE (0xFF1003-0xFFFFFF))</MiscControls>
+            <MiscControls>CLASSES (CODE (0xFF1300-0xFFFFFF))</MiscControls>
             <DisableWarningNumbers>16,57</DisableWarningNumbers>
             <LinkerCmdFile></LinkerCmdFile>
             <Assign></Assign>

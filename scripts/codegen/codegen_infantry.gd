@@ -410,11 +410,11 @@ func generate(cfg: Dictionary) -> String:
 	# --- All_Init ---
 	code += "void All_Init()\n{\n"
 	code += "    Board_Init();\n"
+	code += _gen_uart_init_first()
 	code += "    GPIO_Init(GPIO_P3, GPIO_Pin_4, GPIO_OUT_PP);\n"
 	code += "    GPIO_Write_Bit(GPIO_P3, GPIO_Pin_4, 0);\n"
 	code += "    remote_control_init();\n"
 	code += "    GPIO_Write_Bit(GPIO_P3, GPIO_Pin_4, 1);\n"
-	code += "    UART_Init(UART_1, UART1_RX_P30, UART1_TX_P31, 230400, TIM1);\n"
 	code += "    ExpansionBoradControl(Init_Order,\n"
 	code += "                          %s); // p60,p62,p64,p66,p74,p75,p76,p77\n" % init_str
 	code += "    // 摩擦轮初始化后必须留 >=1000ms 硬件反应时间（见《RM电控指南》），不得缩短\n"

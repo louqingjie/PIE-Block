@@ -142,7 +142,7 @@ func generate(cfg: Dictionary) -> String:
 	# --- All_Init() ---
 	code += "void All_Init()\n{\n"
 	code += "    Board_Init();\n"
-	code += "    UART_Init(UART_1, UART1_RX_P30, UART1_TX_P31, 230400, TIM1);\n"
+	code += _gen_uart_init_first()
 	# 蜂鸣器引脚初始化（PWM 模式）
 	code += "    PWM_Init(%s, BUZZER_FREQ_READY, 0); // 蜂鸣器 P33\n" % BUZZER_PWM_CH
 	# 扩展板初始化（所有引脚先置零频率，后续按行重新初始化）

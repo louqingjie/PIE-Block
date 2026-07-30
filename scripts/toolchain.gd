@@ -49,7 +49,11 @@ const TOOLCHAIN_VERSION: String = "keil_noarm_v3"
 ##
 ## v2: 四个 App uvproj 加上 bootloader 共存所需的五项配置
 ##     （RomSize=4 / Ocm1 / INTVECTOR / 链接器 CLASSES / HexSelection）
-const PROJECT_VERSION: String = "proj_v2_bootloader_coexist"
+## v3: 链接器 CODE 起点 0xFF1003 -> 0xFF1200。前者会让链接器把
+##     ?CO?MAIN（命令字常量）填进 0xFF1003，而那里是 interrupt 0
+##     的中断入口（bootloader 蹦床 MAPISR 0003H 的转发目标）。
+##     必须跳过整个中断向量表区（67 个入口 x 8 字节 = 536）。
+const PROJECT_VERSION: String = "proj_v3_code_after_vectors"
 
 ## STC 烧录脚本路径（Python）
 const STCFLASH_SRC: String = "res://stc32g/toolchain/stcflash"

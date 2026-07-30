@@ -5,6 +5,14 @@ extends RefCounted
 ## 定义所有代码生成器共享的接口与工具函数。
 ## 子类必须重写 generate()，根据配置字典生成完整的 main.c 代码字符串。
 
+## App 的 UART1 波特率。**三处必须一致**：
+##   本常量（写进生成的 C 代码）
+##   scripts/toolchain.gd 的 DEFAULT_APP_BAUD（GDScript 侧下载逻辑）
+##   stc32g/toolchain/stcflash/pie_block_iap.py 的 DEFAULT_APP_BAUD（Python 侧）
+## 不一致时触发字发不进 App，现象是"bootloader 没有响应"，离真因很远。
+## scripts/test_download_conn.gd 有断言守着这个约束。
+const APP_BAUD: int = 230400
+
 ## 生成 main.c 代码。子类必须重写此方法。
 func generate(cfg: Dictionary) -> String:
 	push_error("CodeGenBase.generate() 必须由子类重写")
@@ -63,6 +71,28 @@ func _gen_isp_check_call() -> String:
 	var code: String = ""
 	code += "        if (iapDownloadReq)\n"
 	code += "            iapEnterDownload(); // 不返回\n"
+	return code
+
+
+## 生成串口初始化，**必须放在所有外设初始化之前**。
+##
+## 原因：UART1 中断是 OTA 的唯一入口。若串口在外设之后才初始化，
+## 任何一个外设初始化卡住（裸板没接遥控器时 remote_control_init 就会卡、
+## 扩展板没接时 ExpansionBoradControl 也会等），芯片就彻底失联 ——
+## 既跑不到主循环的 iapDownloadReq 检查，也收不到触发字，
+## 只能靠 P32 拉低上电或重新用 STC-ISP 烧录来救。
+##
+## 把串口提前不解决外设本身的问题，但保证了"永远能重新下载程序"这条底线。
+## 这对目标用户尤其重要：他们的接线错误是常态，不该因此就要拆机器。
+##
+## 波特率必须与 toolchain.gd 的 DEFAULT_APP_BAUD、
+## pie_block_iap.py 的 DEFAULT_APP_BAUD 三处一致。
+func _gen_uart_init_first() -> String:
+	var code: String = ""
+	code += "    // 串口必须最先初始化：它是 OTA 下载的唯一入口。\n"
+	code += "    // 放在外设之后的话，一旦某个外设没接好卡住初始化，\n"
+	code += "    // 就再也无法通过串口重新下载程序了。\n"
+	code += "    UART_Init(UART_1, UART1_RX_P30, UART1_TX_P31, %d, TIM1);\n" % APP_BAUD
 	return code
 
 
