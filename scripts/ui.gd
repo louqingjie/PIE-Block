@@ -139,6 +139,8 @@ const P_EDIT_ZONE: NodePath = "VBoxContainer/HBoxContainer/HSplitContainer/EditZ
 # 顶栏按钮
 const P_BUILD_BTN: NodePath = "VBoxContainer/TopPanel/Build"
 const P_DOWNLOAD_BTN: NodePath = "VBoxContainer/TopPanel/Download"
+const P_UPGRADE_BTN: NodePath = "VBoxContainer/TopPanel/Upgrade"
+const P_UPGRADE_PROGRESS: NodePath = "UpgradeProgress"
 # 项目引导
 const P_MAIN_UI: NodePath = "VBoxContainer"
 const P_HARDWARE_GATE: NodePath = "HardwareGate"
@@ -160,6 +162,7 @@ const PROJECT_GATED_BTNS: Array = [
 	"VBoxContainer/TopPanel/ArmSim",
 	"VBoxContainer/TopPanel/Build",
 	"VBoxContainer/TopPanel/Download",
+	"VBoxContainer/TopPanel/Upgrade",
 ]
 # AI 编辑入口（跳转到 code_edit.tscn）
 const P_AI_EDIT_BTN: NodePath = "VBoxContainer/TopPanel/AIEdit"
@@ -178,6 +181,7 @@ const INFANTRY_SIM_SCENE: String = "res://scenes/infantry_sim.tscn"
 const TC = preload("res://scripts/toolchain.gd")
 const BC = preload("res://scripts/build_controller.gd")
 const DC = preload("res://scripts/download_controller.gd")
+const UPGRADE_PROGRESS = preload("res://scripts/upgrade_progress.gd")
 ## 构形诊断（判定末端可控自由度与俯仰角是否解耦）
 const ARM_DIAG = preload("res://scripts/arm_diagnosis.gd")
 # 项目文件（.pieproj）读写与「项目类型 <-> Tab」映射表
@@ -187,6 +191,7 @@ const PF = preload("res://scripts/project_file.gd")
 # ------------------------------------------------------------------ 生命周期
 var _build_controller = null
 var _download_controller = null
+var _upgrade_active: bool = false
 # 当前选中的代码生成器（随 Tab 切换）
 var _codegen: CodeGenBase = null
 # 工具链管理器（惰性创建，见 _toolchain()）
@@ -218,15 +223,15 @@ var _ik_pitch_dof: bool = false
 var _ik_pitch_reason: String = ""
 const GUIDE_TITLES: Array[String] = [
 	"项目与硬件确认", "配置遥控器", "配置执行机构", "检查与仿真",
-	"编译程序", "烧录主控板", "真机低速测试",
+	"升级主控板", "确认升级完成", "真机低速测试",
 ]
 const GUIDE_HINTS: Array[String] = [
 	"确认程序只烧录到主控板，绝不向机械扩展板烧录程序。",
 	"填写遥控器通道号（0-125）和死区。不确定死区时可保持默认值 10。",
 	"按机械接线配置底盘、云台、执行机构和按键。P74 是扩展板口，MP74 是主控板舵机口。",
 	"修正“问题与输出”中的错误；步兵和机械臂项目建议再进入 3D 仿真检查方向。",
-	"静态检查通过后编译。成功标志是输出中显示“编译成功”。",
-	"连接主控板后开始烧录。这里只烧录主控板，绝不要给机械扩展板烧录程序。",
+	"静态检查通过后升级：程序会先编译，再自动烧录到主控板。",
+	"确认升级面板显示完成。这里只升级主控板，绝不要给机械扩展板烧录程序。",
 	"架空底盘或拆下危险机构，逐个低速测试方向和停止功能，确认后完成项目。",
 ]
 
@@ -259,7 +264,9 @@ func _setup_build_controller() -> void:
 	_build_controller.configure(_toolchain(), _clear_output, _append_output)
 	_build_controller.busy_changed.connect(_on_build_busy_changed)
 	_build_controller.succeeded.connect(_on_build_succeeded)
-	_build_controller.finished.connect(func(_result: Dictionary) -> void: _update_guide())
+	_build_controller.finished.connect(func(result: Dictionary) -> void:
+		_update_guide()
+		_on_upgrade_build_finished(result))
 
 
 func _setup_download_controller() -> void:
@@ -268,6 +275,8 @@ func _setup_download_controller() -> void:
 	_download_controller.configure(_toolchain(), _clear_output, _append_output)
 	_download_controller.busy_changed.connect(_on_download_busy_changed)
 	_download_controller.succeeded.connect(_on_download_succeeded)
+	_download_controller.progress_changed.connect(_on_upgrade_progress_changed)
+	_download_controller.finished.connect(_on_upgrade_download_finished)
 
 
 # ------------------------------------------------------------------ 信号连接
@@ -336,6 +345,9 @@ func _connect_signals() -> void:
 	var download_btn: Node = get_node_or_null(P_DOWNLOAD_BTN)
 	if download_btn is BaseButton:
 		download_btn.pressed.connect(_on_download_pressed)
+	var upgrade_btn: Node = get_node_or_null(P_UPGRADE_BTN)
+	if upgrade_btn is BaseButton:
+		upgrade_btn.pressed.connect(_on_upgrade_pressed)
 	# AI 编辑入口
 	var ai_btn: Node = get_node_or_null(P_AI_EDIT_BTN)
 	if ai_btn is BaseButton:
@@ -602,7 +614,23 @@ func _update_guide() -> void:
 	var guide: Node = get_node_or_null(P_PROJECT_GUIDE)
 	if guide == null or not guide.has_method("set_state"):
 		return
-	guide.set_state(_guide_titles(), GUIDE_HINTS, _guide_done_states())
+	var done: Array[bool] = _guide_done_states()
+	guide.set_state(_guide_titles(), GUIDE_HINTS, done)
+	_persist_guide_progress_if_changed(done)
+
+
+func _persist_guide_progress_if_changed(done: Array[bool]) -> void:
+	if _project.is_empty() or AppState.project_path.is_empty():
+		return
+	var workflow: Dictionary = _workflow()
+	var saved: Array = workflow.get("guide_completed", [])
+	if saved == done:
+		return
+	workflow["guide_completed"] = done.duplicate()
+	_project["workflow"] = workflow
+	var result: Dictionary = PF.save_to(AppState.project_path, _project)
+	if not result["ok"]:
+		_append_output("[Error] 保存项目引导进度失败：%s" % result["err"])
 
 
 func _guide_titles() -> Array[String]:
@@ -2312,16 +2340,20 @@ func _on_build_busy_changed(is_busy: bool) -> void:
 	var download_button: Node = get_node_or_null(P_DOWNLOAD_BTN)
 	if download_button is BaseButton:
 		download_button.disabled = is_busy
+	_set_upgrade_button_busy(is_busy)
 
 
 func _on_build_succeeded() -> void:
-	if _project.is_empty():
-		return
-	var workflow: Dictionary = _workflow()
-	workflow["built_hash"] = _code_hash()
-	_project["workflow"] = workflow
-	_save_project(false)
-	_update_guide()
+	if not _project.is_empty():
+		var workflow: Dictionary = _workflow()
+		workflow["built_hash"] = _code_hash()
+		_project["workflow"] = workflow
+		_save_project(false)
+		_update_guide()
+	if _upgrade_active:
+		_set_upgrade_progress("编译完成", 28.0, "正在连接主控板…")
+		if not _download_controller.start(_get_current_project_dst()):
+			_fail_upgrade("无法开始烧录", "请查看下方输出中的串口或固件提示。")
 
 
 ## AI 编辑入口（阶段一 -> 阶段二）。先弹一次确认，再真正进入。
@@ -2533,14 +2565,80 @@ func _on_download_busy_changed(is_busy: bool) -> void:
 	var build_button: Node = get_node_or_null(P_BUILD_BTN)
 	if build_button is BaseButton:
 		build_button.disabled = is_busy
+	_set_upgrade_button_busy(is_busy)
 
 
 func _on_download_succeeded() -> void:
-	if _project.is_empty():
+	if not _project.is_empty():
+		var workflow: Dictionary = _workflow()
+		workflow["flashed_hash"] = _code_hash()
+		workflow["hardware_tested"] = false
+		_project["workflow"] = workflow
+		_save_project(false)
+		_update_guide()
+	if _upgrade_active:
+		_upgrade_active = false
+		var panel: Node = get_node_or_null(P_UPGRADE_PROGRESS)
+		if panel != null and panel.has_method("complete"):
+			panel.complete()
+		_set_upgrade_button_busy(false)
+
+
+func _on_upgrade_pressed() -> void:
+	if _upgrade_active or _build_controller == null or _build_controller.is_busy() \
+			or _download_controller == null or _download_controller.is_busy():
 		return
-	var workflow: Dictionary = _workflow()
-	workflow["flashed_hash"] = _code_hash()
-	workflow["hardware_tested"] = false
-	_project["workflow"] = workflow
-	_save_project(false)
-	_update_guide()
+	var code_edit: Node = get_node_or_null(P_CODE_EDIT)
+	var code: String = code_edit.text if code_edit is CodeEdit else ""
+	if code.strip_edges().is_empty():
+		_run_check()
+		code = code_edit.text if code_edit is CodeEdit else ""
+	if code.strip_edges().is_empty():
+		_append_output("[Error] 没有可升级的代码，请先完成配置")
+		return
+	_upgrade_active = true
+	var panel: Node = get_node_or_null(P_UPGRADE_PROGRESS)
+	if panel != null and panel.has_method("begin"):
+		panel.begin()
+	_set_upgrade_progress("正在编译程序", 8.0, "编译成功后会自动烧录到主控板。")
+	_set_upgrade_button_busy(true)
+	if not _build_controller.start(_get_current_project_dst(), code):
+		_fail_upgrade("无法开始编译", "请查看下方输出中的详细提示。")
+
+
+func _on_upgrade_progress_changed(stage: String, percent: float, detail: String) -> void:
+	if _upgrade_active:
+		_set_upgrade_progress(stage, percent, detail)
+
+
+func _on_upgrade_build_finished(result: Dictionary) -> void:
+	if _upgrade_active and not bool(result.get("ok", false)):
+		var project_stage: int = int(_project.get("stage", AppState.stage))
+		_fail_upgrade("编译失败",
+			UPGRADE_PROGRESS.compile_error_hint(project_stage))
+
+
+func _on_upgrade_download_finished(result: Dictionary) -> void:
+	if _upgrade_active and not bool(result.get("ok", false)):
+		_fail_upgrade("烧录失败", "连接或写入未完成，请查看下方输出。")
+
+
+func _set_upgrade_progress(stage: String, percent: float, detail: String) -> void:
+	var panel: Node = get_node_or_null(P_UPGRADE_PROGRESS)
+	if panel != null and panel.has_method("set_progress"):
+		panel.set_progress(stage, percent, detail)
+
+
+func _fail_upgrade(stage: String, detail: String) -> void:
+	_upgrade_active = false
+	var panel: Node = get_node_or_null(P_UPGRADE_PROGRESS)
+	if panel != null and panel.has_method("fail"):
+		panel.fail(stage, detail)
+	_set_upgrade_button_busy(false)
+
+
+func _set_upgrade_button_busy(is_busy: bool) -> void:
+	var button: Node = get_node_or_null(P_UPGRADE_BTN)
+	if button is BaseButton:
+		button.disabled = is_busy
+		button.text = "升级中…" if is_busy else "升级主控板"

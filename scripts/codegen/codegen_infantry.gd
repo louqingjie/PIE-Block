@@ -326,6 +326,7 @@ func generate(cfg: Dictionary) -> String:
 
 	# ISP 自烧录监听代码
 	code += _gen_isp_monitor()
+	code += CodeGenBase.REMOTE_CONTROL_INIT_CODE
 
 	# --- main() ---
 	code += "void main()\n{\n"
@@ -413,7 +414,7 @@ func generate(cfg: Dictionary) -> String:
 	code += _gen_uart_init_first()
 	code += "    GPIO_Init(GPIO_P3, GPIO_Pin_4, GPIO_OUT_PP);\n"
 	code += "    GPIO_Write_Bit(GPIO_P3, GPIO_Pin_4, 0);\n"
-	code += "    remote_control_init();\n"
+	code += "    remoteControlInitWithTimeout();\n"
 	code += "    GPIO_Write_Bit(GPIO_P3, GPIO_Pin_4, 1);\n"
 	code += "    ExpansionBoradControl(Init_Order,\n"
 	code += "                          %s); // p60,p62,p64,p66,p74,p75,p76,p77\n" % init_str

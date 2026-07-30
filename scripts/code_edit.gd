@@ -21,6 +21,8 @@ const P_WEB_SLOT: NodePath = "VBoxContainer/Workspace/HSplitContainer/AIPanel/We
 const P_RESTART: NodePath = "VBoxContainer/Workspace/HSplitContainer/AIPanel/Header/Restart"
 const P_BUILD: NodePath = "VBoxContainer/TopPanel/Build"
 const P_DOWNLOAD: NodePath = "VBoxContainer/TopPanel/Download"
+const P_UPGRADE: NodePath = "VBoxContainer/TopPanel/Upgrade"
+const P_UPGRADE_PROGRESS: NodePath = "UpgradeProgress"
 const P_BACK: NodePath = "VBoxContainer/TopPanel/Button"
 const P_SAVE: NodePath = "VBoxContainer/TopPanel/Save"
 const P_TITLE: NodePath = "VBoxContainer/TopPanel/Label"
@@ -37,21 +39,22 @@ const BC = preload("res://scripts/build_controller.gd")
 const DC = preload("res://scripts/download_controller.gd")
 const AT = preload("res://scripts/agent_terminal.gd")
 const PF = preload("res://scripts/project_file.gd")
+const UPGRADE_PROGRESS = preload("res://scripts/upgrade_progress.gd")
 
 ## AI 随时会在终端里改盘上的 main.c，靠轮询 mtime 发现
 const RELOAD_POLL_SEC: float = 1.5
 
 const GUIDE_TITLES: Array[String] = [
 	"项目与硬件确认", "配置遥控器", "配置执行机构", "检查与仿真",
-	"编译程序", "烧录主控板", "真机低速测试",
+	"升级主控板", "确认升级完成", "真机低速测试",
 ]
 const GUIDE_HINTS: Array[String] = [
 	"确认程序只烧录到主控板，绝不向机械扩展板烧录程序。",
 	"图形化配置已冻结；需要修改时返回图形化编辑并丢弃 AI 代码。",
 	"执行机构配置已冻结；需要修改时返回图形化编辑并丢弃 AI 代码。",
 	"查看阶段一检查结果；需要重新检查或仿真时返回图形化编辑。",
-	"编译当前 AI 编辑后的 main.c。",
-	"烧录当前已编译的 AI 代码到主控板。",
+	"编译当前 AI 编辑后的 main.c，并自动烧录到主控板。",
+	"确认升级面板显示完成，主控板已经运行新程序。",
 	"烧录后在图形化界面完成真机低速测试确认。",
 ]
 
@@ -63,6 +66,7 @@ var _dirty: bool = false
 var _last_mtime: int = 0
 var _build_controller = null
 var _download_controller = null
+var _upgrade_active: bool = false
 var _wv: Control = null
 ## 置 true 可打印 WebView 的 DPI 修正过程，排查偏移时用
 var _wv_debug: bool = false
@@ -130,7 +134,9 @@ func _setup_build_controller() -> void:
 	_build_controller.configure(_tc, _clear_output, _append_output)
 	_build_controller.busy_changed.connect(_on_build_busy_changed)
 	_build_controller.succeeded.connect(_on_build_succeeded)
-	_build_controller.finished.connect(func(_result: Dictionary) -> void: _update_guide())
+	_build_controller.finished.connect(func(result: Dictionary) -> void:
+		_update_guide()
+		_on_upgrade_build_finished(result))
 
 
 func _setup_download_controller() -> void:
@@ -139,6 +145,8 @@ func _setup_download_controller() -> void:
 	_download_controller.configure(_tc, _clear_output, _append_output)
 	_download_controller.busy_changed.connect(_on_download_busy_changed)
 	_download_controller.succeeded.connect(_on_download_succeeded)
+	_download_controller.progress_changed.connect(_on_upgrade_progress_changed)
+	_download_controller.finished.connect(_on_upgrade_download_finished)
 
 
 func _connect_signals() -> void:
@@ -148,6 +156,12 @@ func _connect_signals() -> void:
 	var download: Node = get_node_or_null(P_DOWNLOAD)
 	if download is BaseButton:
 		download.pressed.connect(_on_download_pressed)
+	var upgrade: Node = get_node_or_null(P_UPGRADE)
+	if upgrade is BaseButton:
+		upgrade.pressed.connect(_on_upgrade_pressed)
+	var upgrade_progress: Node = get_node_or_null(P_UPGRADE_PROGRESS)
+	if upgrade_progress != null and upgrade_progress.has_signal("closed"):
+		upgrade_progress.closed.connect(_on_upgrade_panel_closed)
 	var back: Node = get_node_or_null(P_BACK)
 	if back is BaseButton:
 		back.pressed.connect(_on_back_pressed)
@@ -227,9 +241,9 @@ func _on_guide_step_pressed(step: int) -> void:
 		1, 2, 3, 6:
 			_on_back_pressed()
 		4:
-			_on_build_pressed()
+			_on_upgrade_pressed()
 		5:
-			_on_download_pressed()
+			_on_upgrade_pressed()
 
 
 func _show_hardware_confirmation() -> void:
@@ -551,11 +565,16 @@ func _on_build_busy_changed(is_busy: bool) -> void:
 	var download_button: Node = get_node_or_null(P_DOWNLOAD)
 	if download_button is BaseButton:
 		download_button.disabled = is_busy
+	_set_upgrade_button_busy(is_busy)
 
 
 func _on_build_succeeded() -> void:
 	_update_built_hash()
 	_update_guide()
+	if _upgrade_active:
+		_set_upgrade_progress("编译完成", 28.0, "正在连接主控板…")
+		if not _download_controller.start(_project_dst):
+			_fail_upgrade("无法开始烧录", "请查看下方输出中的串口或固件提示。")
 
 
 func _update_built_hash() -> void:
@@ -594,11 +613,83 @@ func _on_download_busy_changed(is_busy: bool) -> void:
 	var build_button: Node = get_node_or_null(P_BUILD)
 	if build_button is BaseButton:
 		build_button.disabled = is_busy
+	_set_upgrade_button_busy(is_busy)
 
 
 func _on_download_succeeded() -> void:
 	_update_flashed_hash()
 	_update_guide()
+	if _upgrade_active:
+		_upgrade_active = false
+		var panel: Node = get_node_or_null(P_UPGRADE_PROGRESS)
+		if panel != null and panel.has_method("complete"):
+			panel.complete()
+		_set_upgrade_button_busy(false)
+
+
+func _on_upgrade_pressed() -> void:
+	if _upgrade_active or _build_controller == null or _build_controller.is_busy() \
+			or _download_controller == null or _download_controller.is_busy():
+		return
+	if not _flush_to_disk():
+		return
+	var code_edit: Node = get_node_or_null(P_CODE_EDIT)
+	var code: String = code_edit.text if code_edit is CodeEdit else ""
+	if code.strip_edges().is_empty():
+		_append_output("[Error] 没有可升级的代码")
+		return
+	_upgrade_active = true
+	var panel: Node = get_node_or_null(P_UPGRADE_PROGRESS)
+	if panel != null and panel.has_method("begin"):
+		panel.begin()
+	if _wv != null:
+		_wv.hide()
+	_set_upgrade_progress("正在编译程序", 8.0, "编译成功后会自动烧录到主控板。")
+	_set_upgrade_button_busy(true)
+	if not _build_controller.start(_project_dst, code):
+		_fail_upgrade("无法开始编译", "请查看下方输出中的详细提示。")
+
+
+func _on_upgrade_progress_changed(stage: String, percent: float, detail: String) -> void:
+	if _upgrade_active:
+		_set_upgrade_progress(stage, percent, detail)
+
+
+func _on_upgrade_download_finished(result: Dictionary) -> void:
+	if _upgrade_active and not bool(result.get("ok", false)):
+		_fail_upgrade("烧录失败", "连接或写入未完成，请查看下方输出。")
+
+
+func _on_upgrade_build_finished(result: Dictionary) -> void:
+	if _upgrade_active and not bool(result.get("ok", false)):
+		_fail_upgrade("编译失败",
+			UPGRADE_PROGRESS.compile_error_hint(AppState.stage))
+
+
+func _set_upgrade_progress(stage: String, percent: float, detail: String) -> void:
+	var panel: Node = get_node_or_null(P_UPGRADE_PROGRESS)
+	if panel != null and panel.has_method("set_progress"):
+		panel.set_progress(stage, percent, detail)
+
+
+func _fail_upgrade(stage: String, detail: String) -> void:
+	_upgrade_active = false
+	var panel: Node = get_node_or_null(P_UPGRADE_PROGRESS)
+	if panel != null and panel.has_method("fail"):
+		panel.fail(stage, detail)
+	_set_upgrade_button_busy(false)
+
+
+func _set_upgrade_button_busy(is_busy: bool) -> void:
+	var button: Node = get_node_or_null(P_UPGRADE)
+	if button is BaseButton:
+		button.disabled = is_busy
+		button.text = "升级中…" if is_busy else "升级主控板"
+
+
+func _on_upgrade_panel_closed() -> void:
+	if _wv != null:
+		_wv.show()
 
 
 func _update_flashed_hash() -> void:

@@ -169,6 +169,7 @@ func generate(cfg: Dictionary) -> String:
 
 	# ISP 自烧录监听代码
 	code += _gen_isp_monitor()
+	code += CodeGenBase.REMOTE_CONTROL_INIT_CODE
 
 	# --- main() ---
 	# 增量模式：target 必须初始化为初始姿态对应的末端位置（正运动学预计算）。
@@ -1889,7 +1890,7 @@ func _gen_all_init(joints: Array, jc: int, engineer_cfg: Dictionary = {}) -> Str
 	s += _gen_uart_init_first()
 	s += "    GPIO_Init(GPIO_P3, GPIO_Pin_4, GPIO_OUT_PP);\n"
 	s += "    GPIO_Write_Bit(GPIO_P3, GPIO_Pin_4, 0);\n"
-	s += "    remote_control_init();\n"
+	s += "    remoteControlInitWithTimeout();\n"
 	s += "    GPIO_Write_Bit(GPIO_P3, GPIO_Pin_4, 1);\n"
 	# 扩展板槽位（P60~P77）走 ExpansionBoradControl，主控板 MP03/MP74 走 PWM_Init
 	var exp_slots: Dictionary = _exp_slot_map(joints, jc)

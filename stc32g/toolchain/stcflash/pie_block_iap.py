@@ -128,6 +128,14 @@ DEFAULT_BOOT_BAUD = 115200
 蓝牙链路做不到这个切换（模块波特率配对时固定），走蓝牙需把两端统一。
 """
 
+TRIGGER_SETTLE_MIN = 0.05
+"""触发字发送完成后、切换波特率前的最短等待时间。
+
+Windows CH340 的 flush() 只保证数据已交给驱动，不保证 USB 串口芯片已经把
+最后几个字节按旧波特率发完。实测 flush 后立刻从 230400 切到 115200 会让
+@PIEIAP# 尾部损坏，App 收不到完整命令；等待 50ms 后稳定进入 bootloader。
+"""
+
 
 class ProtocolError(Exception):
     pass
@@ -409,7 +417,7 @@ class IapSession:
     def open(self) -> None:
         import serial
         self.ser = serial.Serial(
-            self.port, self.app_baud, timeout=0.2,
+            self.port, self.app_baud, timeout=0,
             parity=serial.PARITY_NONE, stopbits=1, bytesize=8,
         )
 
@@ -442,6 +450,8 @@ class IapSession:
         self.ser.reset_input_buffer()
         self.ser.write(TRIGGER)
         self.ser.flush()
+        wire_time = len(TRIGGER) * 10.0 / self.app_baud
+        time.sleep(max(TRIGGER_SETTLE_MIN, wire_time * 4.0))
 
     def send(self, cmd: int, payload: bytes = b"") -> None:
         self.ser.write(build_frame(cmd, payload))
@@ -452,10 +462,15 @@ class IapSession:
 
         串口是字节流，可能一次读到半个帧或多个帧，所以维护累积缓冲区。
         帧头之前的垃圾字节（App 复位时的乱码）要跳过而不是报错。
+
+        Windows CH340 驱动偶尔不会按 pyserial 的 timeout 结束大块重叠读取，
+        结果校验阶段永久卡在 read(256)。串口保持非阻塞，只读取驱动已经报告
+        到达的字节，外层 deadline 才能成为可靠的硬截止时间。
         """
         deadline = time.time() + timeout
         while time.time() < deadline:
-            chunk = self.ser.read(256)
+            waiting = self.ser.in_waiting
+            chunk = self.ser.read(min(waiting, 256)) if waiting else b""
             if chunk:
                 self._rx.extend(chunk)
 
@@ -474,6 +489,8 @@ class IapSession:
                     status, payload, consumed = got
                     del self._rx[0:consumed]
                     return status, payload
+            if not chunk:
+                time.sleep(0.005)
         return None
 
     def request(self, cmd: int, payload: bytes = b"",
@@ -549,7 +566,8 @@ class IapSession:
         todo = chunks if sample <= 0 else chunks[:sample]
         self.log("读回校验 %d 个块…" % len(todo))
         bad = 0
-        for iap_addr, want in todo:
+        last_pct = -1
+        for index, (iap_addr, want) in enumerate(todo, 1):
             got = self.read(iap_addr, len(want))
             if got != want:
                 bad += 1
@@ -558,6 +576,10 @@ class IapSession:
                 if bad >= 5:
                     self.log("  差异过多，停止比对")
                     break
+            pct = index * 100 // len(todo)
+            if pct != last_pct:
+                self.log("  %d/%d 个块 (%d%%)" % (index, len(todo), pct))
+                last_pct = pct
         if bad:
             raise ProtocolError(
                 "读回校验失败：%d 个块内容不符。固件未生效，"
@@ -622,11 +644,41 @@ def selftest() -> int:
             return
         fails.append("%s: 应该抛异常但没抛" % name)
 
+    class FakeSerial:
+        def __init__(self, chunks):
+            self.chunks = list(chunks)
+
+        @property
+        def in_waiting(self):
+            return len(self.chunks[0]) if self.chunks else 0
+
+        def read(self, size):
+            if not self.chunks:
+                return b""
+            chunk = self.chunks.pop(0)
+            if len(chunk) <= size:
+                return chunk
+            self.chunks.insert(0, chunk[size:])
+            return chunk[:size]
+
     # --- 校验和
     check("checksum 空", checksum(b""), 0)
     check("checksum 0x01", checksum(b"\x01"), 0xFF)
     body = b"\x23\x01\xa0\x24"
     check("checksum 归零", (sum(body) + checksum(body)) & 0xFF, 0)
+
+    # --- 串口接收：无数据必须按 deadline 返回，分段帧必须能拼起来
+    sess = IapSession("FAKE", verbose=False)
+    sess.ser = FakeSerial([])
+    started = time.monotonic()
+    check("无数据接收返回 None", sess.recv(timeout=0.02), None)
+    check("无数据接收不会永久阻塞", time.monotonic() - started < 0.2, True)
+
+    response_body = bytes([RESP_HEAD, STATUS_OK, 2, 0x01, 0x00, FRAME_TAIL])
+    response = response_body + bytes([checksum(response_body)])
+    sess.ser = FakeSerial([response[:2], response[2:5], response[5:]])
+    check("分段回应可重组", sess.recv(timeout=0.1), (STATUS_OK, b"\x01\x00"))
+    check("触发切换等待至少 50ms", TRIGGER_SETTLE_MIN >= 0.05, True)
 
     # --- 组帧：与 2026-07-29 真机实测抓到的字节序列比对。
     #     改协议时这三行必须仍然相等，否则芯片侧对不上。
@@ -885,7 +937,7 @@ def main(argv) -> int:
         sess.download(chunks)
         print("烧录成功")
         return 0
-    except ProtocolError as e:
+    except (ProtocolError, OSError) as e:
         print("烧录失败: %s" % e)
         return 1
     finally:

@@ -28,6 +28,7 @@
 extern char code STCISPCMD[];
 extern uint8_t isp_cmd_index;
 extern volatile uint8_t iapDownloadReq;
+extern void iapEnterDownload(void);
 void UART1_Isr() interrupt 4
 {
 	char dat;
@@ -41,8 +42,8 @@ void UART1_Isr() interrupt 4
 		UART1_CLEAR_RX_FLAG;
 		uart_receive[0]++;
 		// 下载触发字匹配（@PIEIAP#）。
-		// 匹配到只置请求标志，ISR 保持极短；
-		// 置 DFU 标志 + 软复位由主循环的 iapEnterDownload() 执行。
+		// 匹配后立即置 DFU 标志并软复位；外设初始化可能阻塞，
+		// 不能依赖主循环处理下载请求。
 		dat = SBUF;
 		if (dat == STCISPCMD[isp_cmd_index])
 		{
@@ -50,7 +51,8 @@ void UART1_Isr() interrupt 4
 			if (STCISPCMD[isp_cmd_index] == '\0')
 			{
 				isp_cmd_index = 0;
-				iapDownloadReq = 1; // 请求进入下载模式
+				iapDownloadReq = 1;
+				iapEnterDownload(); // 初始化可能阻塞，必须在 ISR 内立即进入 bootloader
 			}
 		}
 		else

@@ -8,12 +8,13 @@ extends SceneTree
 ## 运行：godot --headless --path . --script scripts/test_download_conn.gd
 
 const TC = preload("res://scripts/toolchain.gd")
+const CODEGEN_BASE = preload("res://scripts/codegen/codegen_base.gd")
 
 
 func _initialize() -> void:
 	var fails: Array = []
 
-	var tc = TC.new(func(s): pass)
+	var tc = TC.new(func(s): pass )
 
 	# --- 端口分类
 	var cases: Array = [
@@ -37,7 +38,7 @@ func _initialize() -> void:
 		return {"device": dev, "kind": kind, "label": dev + " test"}
 
 	# 空列表
-	var r: Dictionary = tc.pick_download_port([{"device": "", "kind": "x"}])
+	var r: Dictionary = tc.pick_download_port([ {"device": "", "kind": "x"}])
 	# 单个 USB 串口 -> 直接选中
 	r = tc.pick_download_port([mk.call("COM11", "usb_serial")])
 	if not r["ok"] or r["device"] != "COM11":
@@ -77,6 +78,7 @@ func _initialize() -> void:
 		{"log": "bootloader 就绪\nPROGRAM 连续 3 次失败", "want": "program"},
 		{"log": "擦除 App 区…\nERASE 连续 3 次失败", "want": "erase"},
 		{"log": "写入…\n读回校验失败：3 个块内容不符", "want": "verify"},
+		{"log": "读回校验 238 个块…\n烧录失败: 串口设备断开", "want": "verify"},
 		{"log": "读取固件失败: hex 里没有数据", "want": "hex"},
 		{"log": "什么都没有", "want": "unknown"},
 	]
@@ -91,6 +93,12 @@ func _initialize() -> void:
 		var hint: PackedStringArray = tc.iap_failure_hint(st)
 		if hint.is_empty():
 			fails.append("阶段 %s 缺排查建议" % st)
+	var usb_connect_hint: String = "\n".join(tc.iap_failure_hint("connect", "usb_serial"))
+	if usb_connect_hint.contains("蓝牙"):
+		fails.append("USB 串口的连接提示不应提蓝牙")
+	var bluetooth_connect_hint: String = "\n".join(tc.iap_failure_hint("connect", "bluetooth"))
+	if not bluetooth_connect_hint.contains("蓝牙模块波特率"):
+		fails.append("蓝牙连接提示应检查模块波特率")
 
 	# --- 波特率常量
 	# boot 侧必须与 PIE_BOOTLOADER/USER/inc/config.h 的 BAUD 一致
@@ -105,28 +113,44 @@ func _initialize() -> void:
 	if TC.DEFAULT_APP_BAUD != TC.DEFAULT_BOOT_BAUD:
 		if tc.bluetooth_baud_note().is_empty():
 			fails.append("两段波特率不同时必须给蓝牙用户提示")
+	var iap_src: String = FileAccess.get_file_as_string(
+		"res://stc32g/toolchain/stcflash/pie_block_iap.py")
+	if not iap_src.contains("TRIGGER_SETTLE_MIN") \
+			or not iap_src.contains("time.sleep(max(TRIGGER_SETTLE_MIN"):
+		fails.append("发送触发字后必须等待 CH340 发完再切换波特率")
 
-	# --- 跨文件约束：生成器实际写进 C 代码的波特率必须与常量一致。
-	# 这是 toolchain.gd 与四个生成器之间的隐式契约，改任一边都会静默失效，
-	# 表现为下载时 App 收不到触发字。用断言把它固定住。
+	# --- 跨文件约束：共享生成器写进 C 代码的波特率必须与工具链一致，
+	# 四个具体生成器则必须调用共享初始化函数。
+	if CODEGEN_BASE.APP_BAUD != TC.DEFAULT_APP_BAUD:
+		fails.append("CodeGenBase.APP_BAUD 与 DEFAULT_APP_BAUD 不一致")
+	var base_src: String = FileAccess.get_file_as_string(
+		"res://scripts/codegen/codegen_base.gd")
+	if not base_src.contains('code += "void iapEnterDownload(void)'):
+		fails.append("iapEnterDownload 必须可供 UART ISR 调用，不能是 static")
 	var gen_paths: Array = [
 		"res://scripts/codegen/codegen_infantry.gd",
 		"res://scripts/codegen/codegen_engineer.gd",
 		"res://scripts/codegen/codegen_engineer_ik.gd",
 		"res://scripts/codegen/codegen_debug.gd",
 	]
-	var want_baud: String = str(TC.DEFAULT_APP_BAUD)
 	for p in gen_paths:
 		var src: String = FileAccess.get_file_as_string(p)
 		if src.is_empty():
 			fails.append("读不到 %s" % p)
 			continue
-		if not src.contains("UART_Init"):
-			fails.append("%s 里没有 UART_Init" % p.get_file())
-			continue
-		if not src.contains(want_baud):
-			fails.append("%s 的 UART_Init 波特率与 DEFAULT_APP_BAUD(%s) 不一致"
-				% [p.get_file(), want_baud])
+		if not src.contains("_gen_uart_init_first()"):
+			fails.append("%s 没有调用共享串口初始化函数" % p.get_file())
+
+	# 外设初始化可能永久等待硬件，不能只在主循环检查下载请求。
+	# UART ISR 收齐触发字后必须直接进入 bootloader。
+	for p in [
+		"res://stc32g/Projects/ROBOMASTER_INFANTRY/USER/src/isr.c",
+		"res://stc32g/Projects/ROBOMASTER_ENGINEER/USER/src/isr.c",
+	]:
+		var isr_src: String = FileAccess.get_file_as_string(p)
+		if not isr_src.contains("extern void iapEnterDownload(void);") \
+				or not isr_src.contains("iapEnterDownload();"):
+			fails.append("%s 没有在 UART ISR 内立即进入 bootloader" % p)
 
 	# --- 真机：枚举当前串口
 	print("--- 当前系统串口 ---")

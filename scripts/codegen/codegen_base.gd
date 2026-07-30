@@ -33,9 +33,9 @@ func generate(cfg: Dictionary) -> String:
 ##   完全不动 flash，因此无擦写磨损、无掉电写坏风险，也省掉元数据扇区。
 ##   地址与取值必须与 bootloader 的 dfu.c / dfu.h 完全一致。
 ##
-## 分工：
-##   ISR 只做命令字匹配并置 RAM 标志，主循环再执行复位。
-##   这样 ISR 保持极短，也避免在中断里做时序敏感的操作。
+## 收齐触发字后，UART ISR 直接调用 iapEnterDownload()。
+## 不能只置请求标志等主循环处理：remote_control_init() 等外设初始化可能
+## 永久等待未连接的硬件，主循环可能根本不会开始。主循环检查保留为兜底。
 ##
 ## 返回的字符串包含全局变量与函数定义，应放在 main() 之前。
 func _gen_isp_monitor() -> String:
@@ -46,7 +46,7 @@ func _gen_isp_monitor() -> String:
 	# 用 code 数组而非指针：避免部分 C251 链接/寻址把命令串放到错误空间
 	code += "char code STCISPCMD[] = \"@PIEIAP#\"; // 下载触发命令字\n"
 	code += "uint8_t isp_cmd_index = 0;           // 命令匹配索引（ISR 更新）\n"
-	code += "volatile uint8_t iapDownloadReq = 0; // 1 = 请求进入下载模式\n\n"
+	code += "volatile uint8_t iapDownloadReq = 0; // 主循环兜底请求标志\n\n"
 
 	code += "// DFU 标志：放 XRAM 最后 4 字节，软复位不清零，bootloader 复位后据此\n"
 	code += "// 停在下载模式而不跳 App。不动 flash，无擦写磨损。\n"
@@ -54,7 +54,7 @@ func _gen_isp_monitor() -> String:
 	code += "long xdata DfuFlag _at_ 0x1ffc;\n\n"
 
 	code += "// 置 DFU 标志并软复位到 bootloader。此函数不返回。\n"
-	code += "static void iapEnterDownload(void)\n"
+	code += "void iapEnterDownload(void)\n"
 	code += "{\n"
 	code += "    EA = 0;               // 关中断，避免复位序列被打断\n"
 	code += "    DfuFlag = DFU_TAG;    // 告诉 bootloader 停在下载模式\n"
@@ -72,6 +72,25 @@ func _gen_isp_check_call() -> String:
 	code += "        if (iapDownloadReq)\n"
 	code += "            iapEnterDownload(); // 不返回\n"
 	return code
+
+
+## 不会永久阻塞启动流程的 NRF24L01 初始化函数。
+## 库里的 remote_control_init() 使用无限循环，模块未接或故障时整个 App
+## 永远无法进入主循环。这里有限重试约 200ms，失败后让其余功能继续启动。
+const REMOTE_CONTROL_INIT_CODE: String = \
+	"static void remoteControlInitWithTimeout(void)\n" \
+	+"{\n" \
+	+"    uint8_t retry;\n\n" \
+	+"    for (retry = 0; retry < 20; retry++)\n" \
+	+"    {\n" \
+	+"        if (NRF24L01_Init())\n" \
+	+"        {\n" \
+	+"            Ms_Delay(200);\n" \
+	+"            return;\n" \
+	+"        }\n" \
+	+"        Ms_Delay(10);\n" \
+	+"    }\n" \
+	+"}\n\n"
 
 
 ## 生成串口初始化，**必须放在所有外设初始化之前**。

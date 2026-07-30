@@ -53,7 +53,7 @@ const TOOLCHAIN_VERSION: String = "keil_noarm_v3"
 ##     ?CO?MAIN（命令字常量）填进 0xFF1003，而那里是 interrupt 0
 ##     的中断入口（bootloader 蹦床 MAPISR 0003H 的转发目标）。
 ##     必须跳过整个中断向量表区（67 个入口 x 8 字节 = 536）。
-const PROJECT_VERSION: String = "proj_v3_code_after_vectors"
+const PROJECT_VERSION: String = "proj_v5_nrf_init_timeout"
 
 ## STC 烧录脚本路径（Python）
 const STCFLASH_SRC: String = "res://stc32g/toolchain/stcflash"
@@ -586,17 +586,19 @@ func download_hex_uart(hex_path: String, com_port: String, app_baud: int = 23040
 ##   stage 用于失败时定位卡在哪一步，取值见 _classify_iap_failure
 func download_hex_iap(hex_path: String, com_port: String,
 		app_baud: int = DEFAULT_APP_BAUD,
-		boot_baud: int = DEFAULT_BOOT_BAUD) -> Dictionary:
+		boot_baud: int = DEFAULT_BOOT_BAUD,
+		on_log_line: Callable = Callable()) -> Dictionary:
 	var py: String = find_python()
 	if py.is_empty():
-		return {"ok": false, "exit": -1, "log": "未找到 Python", "stage": "env"}
+		return {"ok": false, "exit": - 1, "log": "未找到 Python", "stage": "env"}
 	if not ensure_stcflash_deployed():
-		return {"ok": false, "exit": -1, "log": "烧录脚本部署失败", "stage": "env"}
+		return {"ok": false, "exit": - 1, "log": "烧录脚本部署失败", "stage": "env"}
 
 	var script: String = to_abs(STCFLASH_DST).path_join("pie_block_iap.py")
 	var log_abs: String = to_abs(STCFLASH_DST).path_join(DOWNLOAD_LOG_NAME)
 	var exit_code: int = _run_python_logged(
-		py, [script, hex_path, com_port, str(app_baud), str(boot_baud)], log_abs)
+		py, [script, hex_path, com_port, str(app_baud), str(boot_baud)], log_abs,
+		on_log_line)
 	var log_text: String = _read_log(log_abs)
 
 	# 脚本退出码可控，以它为准；日志关键字只作兜底
@@ -607,6 +609,7 @@ func download_hex_iap(hex_path: String, com_port: String,
 		"exit": exit_code,
 		"log": log_text,
 		"stage": "done" if ok else _classify_iap_failure(log_text),
+		"streamed": on_log_line.is_valid(),
 	}
 
 
@@ -616,7 +619,8 @@ func download_hex_iap(hex_path: String, com_port: String,
 ## （中文环境是 GBK）解码，而我们的脚本输出 UTF-8，直接读会得到乱码
 ## （实测下载日志全是"鍥轰欢 30252 瀛楄妭"这种）。
 ## 编译路径一直是读日志文件所以没这个问题，这里跟它对齐。
-func _run_python_logged(py: String, args: Array, log_abs: String) -> int:
+func _run_python_logged(py: String, args: Array, log_abs: String,
+		on_log_line: Callable = Callable()) -> int:
 	# 用 cmd /c 做重定向。PYTHONIOENCODING 保证脚本内的 print 输出 UTF-8，
 	# 不依赖控制台代码页。
 	var parts: PackedStringArray = PackedStringArray()
@@ -624,9 +628,39 @@ func _run_python_logged(py: String, args: Array, log_abs: String) -> int:
 	for a in args:
 		parts.append("\"" + str(a).replace("/", "\\") + "\"")
 	var cmd_line: String = "set PYTHONIOENCODING=utf-8 && " \
-		+ " ".join(parts) + " > \"" + log_abs.replace("/", "\\") + "\" 2>&1"
-	var output: Array = []
-	return OS.execute("cmd.exe", ["/c", cmd_line], output, true)
+		+" ".join(parts) + " > \"" + log_abs.replace("/", "\\") + "\" 2>&1"
+	if FileAccess.file_exists(log_abs):
+		DirAccess.remove_absolute(log_abs)
+	var pid: int = OS.create_process("cmd.exe", ["/c", cmd_line], false)
+	if pid <= 0:
+		return -1
+
+	var log_offset: int = 0
+	while OS.is_process_running(pid):
+		log_offset = _emit_complete_log_lines(log_abs, log_offset, on_log_line, false)
+		OS.delay_msec(30)
+	_emit_complete_log_lines(log_abs, log_offset, on_log_line, true)
+	return OS.get_process_exit_code(pid)
+
+
+## 增量发送日志中的完整行。每次从上一个换行位置重新读取完整 UTF-8 文件，
+## 避免恰好读到一个中文字符的半个字节时产生乱码。
+func _emit_complete_log_lines(log_abs: String, offset: int,
+		on_log_line: Callable, flush_tail: bool) -> int:
+	if not on_log_line.is_valid() or not FileAccess.file_exists(log_abs):
+		return offset
+	var content: String = FileAccess.get_file_as_string(log_abs)
+	var next_offset: int = offset
+	var newline: int = content.find("\n", next_offset)
+	while newline >= 0:
+		var line: String = content.substr(next_offset, newline - next_offset).trim_suffix("\r")
+		on_log_line.call(line)
+		next_offset = newline + 1
+		newline = content.find("\n", next_offset)
+	if flush_tail and next_offset < content.length():
+		on_log_line.call(content.substr(next_offset).trim_suffix("\r"))
+		return content.length()
+	return next_offset
 
 
 ## 读日志文件。Godot 的 get_file_as_string 按 UTF-8 解析，与脚本输出一致。
@@ -641,7 +675,7 @@ func _read_log(log_abs: String) -> String:
 ## 顺序很重要：越靠后的阶段先判，因为日志是累积的 ——
 ## 卡在 PROGRAM 时日志里同样有前面 CONNECT 成功的字样。
 func _classify_iap_failure(log_text: String) -> String:
-	if log_text.contains("读回校验失败"):
+	if log_text.contains("读回校验"):
 		return "verify"
 	if log_text.contains("PROGRAM"):
 		return "program"
@@ -658,7 +692,7 @@ func _classify_iap_failure(log_text: String) -> String:
 
 ## 把失败阶段翻译成给用户看的排查建议。
 ## 目标用户没有嵌入式背景，所以每条都给可执行的动作而不是术语。
-func iap_failure_hint(stage: String) -> PackedStringArray:
+func iap_failure_hint(stage: String, port_kind: String = "") -> PackedStringArray:
 	match stage:
 		"port":
 			return PackedStringArray([
@@ -667,14 +701,16 @@ func iap_failure_hint(stage: String) -> PackedStringArray:
 				"  · 蓝牙已断开，重新配对一次",
 			])
 		"connect":
-			return PackedStringArray([
+			var hints := PackedStringArray([
 				"联系不上板子上的引导程序。按顺序检查：",
 				"  · 板子是否通电",
 				"  · 选的串口是否正确（换个端口再试）",
-				"  · 蓝牙模块波特率是否是 115200",
-				"  · 这块板子是否烧过引导程序（新板需要出厂烧录一次）",
-				"救急办法：把 P32 接到 GND 再上电，可强制进入下载模式",
 			])
+			if port_kind == "bluetooth":
+				hints.append("  · 蓝牙模块波特率是否与程序一致")
+			hints.append("把 P32 接到 GND 后重新上电，再点一次烧录。")
+			hints.append("若仍无响应，需用官方 STC-ISP 烧一次 PIE_BOOTLOADER。")
+			return hints
 		"erase", "program":
 			return PackedStringArray([
 				"写入过程中断。板上的程序已被清除，但这不会损坏板子 ——",
@@ -683,9 +719,9 @@ func iap_failure_hint(stage: String) -> PackedStringArray:
 			])
 		"verify":
 			return PackedStringArray([
-				"写入后读回校验不一致，固件未生效。",
+				"固件已经写入，但读回校验没有完成。",
 				"引导程序仍在下载模式，可以直接重试。",
-				"蓝牙链路丢包较多时容易出现，建议改用 USB 线。",
+				"请保持串口连接；若反复停在这里，重新插拔 USB 后再试。",
 			])
 		"hex":
 			return PackedStringArray([

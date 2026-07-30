@@ -4,6 +4,7 @@
 [ext_resource type="Script" uid="uid://dp6x4avofe57m" path="res://scripts/output.gd" id="2_x4jx1"]
 [ext_resource type="Script" uid="uid://d4e4choqekw3p" path="res://scripts/ui.gd" id="2_yev5y"]
 [ext_resource type="PackedScene" path="res://scenes/project_guide.tscn" id="4_guide"]
+[ext_resource type="PackedScene" path="res://scenes/upgrade_progress.tscn" id="5_upgrade"]
 
 [sub_resource type="Theme" id="Theme_g4v7s"]
 Button/fonts/font = ExtResource("1_nt7q6")
@@ -74,20 +75,27 @@ size_flags_horizontal = 8
 text = "3D 仿真"
 
 [node name="Build" type="Button" parent="VBoxContainer/TopPanel" unique_id=1581104311]
+visible = false
 layout_mode = 2
 size_flags_horizontal = 8
 text = "编译"
 
 [node name="Download" type="Button" parent="VBoxContainer/TopPanel" unique_id=1581104312]
+visible = false
 layout_mode = 2
 size_flags_horizontal = 8
 text = "烧录主控板"
+
+[node name="Upgrade" type="Button" parent="VBoxContainer/TopPanel" unique_id=1567772102]
+layout_mode = 2
+size_flags_horizontal = 8
+text = "升级主控板"
 
 [node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer" unique_id=1859188522]
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="ProjectGuide" parent="VBoxContainer/HBoxContainer" instance=ExtResource("4_guide")]
+[node name="ProjectGuide" parent="VBoxContainer/HBoxContainer" unique_id=17249098 instance=ExtResource("4_guide")]
 
 [node name="HSplitContainer" type="HSplitContainer" parent="VBoxContainer/HBoxContainer" unique_id=1279386792]
 layout_mode = 2
@@ -2351,15 +2359,15 @@ popup/item_3/id = 3
 popup/item_4/text = "6 个关节"
 popup/item_4/id = 4
 
-[node name="ModeSwitch" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced"]
+[node name="ModeSwitch" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=1749226380]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/ModeSwitch"]
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/ModeSwitch" unique_id=870372637]
 layout_mode = 2
 size_flags_horizontal = 2
 text = "正解/逆解切换键"
 
-[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/ModeSwitch"]
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/ModeSwitch" unique_id=185060917]
 layout_mode = 2
 size_flags_horizontal = 8
 selected = 8
@@ -3859,3 +3867,7 @@ text = "返回项目列表"
 custom_minimum_size = Vector2(220, 48)
 layout_mode = 2
 text = "我已了解，进入配置"
+
+[node name="UpgradeProgress" parent="." unique_id=1740709440 instance=ExtResource("5_upgrade")]
+visible = false
+layout_mode = 1

@@ -4,6 +4,7 @@
 [ext_resource type="Script" uid="uid://dp6x4avofe57m" path="res://scripts/output.gd" id="2_out"]
 [ext_resource type="Script" uid="uid://b58ii2xd5iin2" path="res://scripts/code_edit.gd" id="3_main"]
 [ext_resource type="PackedScene" path="res://scenes/project_guide.tscn" id="4_guide"]
+[ext_resource type="PackedScene" path="res://scenes/upgrade_progress.tscn" id="5_upgrade"]
 
 [node name="Control" type="Control" unique_id=1016157835]
 layout_mode = 3
@@ -53,14 +54,21 @@ layout_mode = 2
 text = "返回图形化编辑"
 
 [node name="Build" type="Button" parent="VBoxContainer/TopPanel" unique_id=1551741014]
+visible = false
 layout_mode = 2
 size_flags_horizontal = 8
 text = "编译"
 
 [node name="Download" type="Button" parent="VBoxContainer/TopPanel"]
+visible = false
 layout_mode = 2
 size_flags_horizontal = 8
 text = "烧录主控板"
+
+[node name="Upgrade" type="Button" parent="VBoxContainer/TopPanel"]
+layout_mode = 2
+size_flags_horizontal = 8
+text = "升级主控板"
 
 [node name="Workspace" type="HBoxContainer" parent="VBoxContainer"]
 layout_mode = 2
@@ -152,3 +160,5 @@ data_directory = "user://webview"
 layout_mode = 0
 offset_right = 320.0
 offset_bottom = 240.0
+
+[node name="UpgradeProgress" parent="." instance=ExtResource("5_upgrade")]
