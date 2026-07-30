@@ -80,6 +80,8 @@ func _test_code_edit_focus_setup() -> void:
 	_check("AI 编辑脚本提供烧录入口", editor.has_method("_on_download_pressed"))
 	_check("AI 编辑页使用共享烧录控制器", editor.DC.resource_path
 		== "res://scripts/download_controller.gd")
+	_check("AI 编辑页使用共享编译控制器", editor.BC.resource_path
+		== "res://scripts/build_controller.gd")
 	_check("WebView 不在创建时抢焦点", webview != null
 		and not bool(webview.get("focused_when_created")))
 	_check("脚本提供代码面板聚焦入口", editor.has_method("_focus_code_input"))
@@ -388,6 +390,8 @@ func _test_lifecycle() -> void:
 	_check("主界面实例化独立项目引导", guide.scene_file_path == "res://scenes/project_guide.tscn")
 	_check("主界面显示七步项目引导", guide.get_step_count() == 7)
 	_check("烧录按钮明确指向主控板", ui.get_node(ui.P_DOWNLOAD_BTN).text == "烧录主控板")
+	_check("主界面使用共享编译控制器", ui.BC.resource_path
+		== "res://scripts/build_controller.gd")
 	var output: Node = ui.get_node(ui.P_OUTPUT)
 	ui._append_output("旧烧录日志")
 	var real_toolchain = ui._tc

@@ -33,6 +33,7 @@ const LAUNCHER_SCENE: String = "res://scenes/launcher.tscn"
 # 用 preload 而非 class_name 引用：headless / 首次导入时
 # 全局类名缓存可能尚未建立，class_name 会解析失败
 const TC = preload("res://scripts/toolchain.gd")
+const BC = preload("res://scripts/build_controller.gd")
 const DC = preload("res://scripts/download_controller.gd")
 const AT = preload("res://scripts/agent_terminal.gd")
 const PF = preload("res://scripts/project_file.gd")
@@ -60,8 +61,7 @@ var _client = null
 var _project_dst: String = ""
 var _dirty: bool = false
 var _last_mtime: int = 0
-var _build_thread: Thread = null
-var _build_busy: bool = false
+var _build_controller = null
 var _download_controller = null
 var _wv: Control = null
 ## 置 true 可打印 WebView 的 DPI 修正过程，排查偏移时用
@@ -76,6 +76,7 @@ func _ready() -> void:
 		# 直接运行本场景（未经 ui.tscn）时兜底到步兵工程
 		_project_dst = TC.PROJECT_DST
 	_tc = TC.new(_append_output)
+	_setup_build_controller()
 	_setup_download_controller()
 
 	var title: Node = get_node_or_null(P_TITLE)
@@ -108,9 +109,8 @@ func _notification(what: int) -> void:
 
 ## 清理子进程与编译线程。可能被调用多次，需幂等
 func _shutdown() -> void:
-	if _build_thread and _build_thread.is_alive():
-		_build_thread.wait_to_finish()
-	_build_thread = null
+	if _build_controller:
+		_build_controller.shutdown()
 	if _download_controller:
 		_download_controller.shutdown()
 	if _client:
@@ -122,6 +122,15 @@ func _setup_code_edit() -> void:
 	var ce: Node = get_node_or_null(P_CODE_EDIT)
 	if ce is CodeEdit:
 		ce.syntax_highlighter = preload("res://scripts/c_highlighter.gd").new()
+
+
+func _setup_build_controller() -> void:
+	_build_controller = BC.new()
+	add_child(_build_controller)
+	_build_controller.configure(_tc, _clear_output, _append_output)
+	_build_controller.busy_changed.connect(_on_build_busy_changed)
+	_build_controller.succeeded.connect(_on_build_succeeded)
+	_build_controller.finished.connect(func(_result: Dictionary) -> void: _update_guide())
 
 
 func _setup_download_controller() -> void:
@@ -462,7 +471,7 @@ func _on_restart_pressed() -> void:
 ## 定时回读：AI 在终端里改盘上的 main.c 后刷新编辑器。
 ## 用户有未保存改动时不覆盖，避免吞掉手工编辑。
 func _on_reload_tick() -> void:
-	if _dirty or _build_busy:
+	if _dirty or (_build_controller != null and _build_controller.is_busy()):
 		return
 	if _reload_if_changed():
 		_append_output("检测到 main.c 已被 AI 修改，编辑器已刷新")
@@ -524,73 +533,28 @@ func _on_save_pressed() -> void:
 
 
 func _on_build_pressed() -> void:
-	if _build_busy or (_download_controller != null and _download_controller.is_busy()):
+	if _build_controller == null or _build_controller.is_busy() \
+			or (_download_controller != null and _download_controller.is_busy()):
 		return
-	_clear_output()
 	if not _flush_to_disk():
 		return
-	if not _tc.ensure_deployed():
-		_append_output("[Error] 工具链初始化失败，无法编译")
-		return
-	var uv4_abs: String = _tc.find_uv4()
-	if uv4_abs.is_empty():
-		_append_output("[Error] 未找到 uVision.com / UV4.exe")
-		return
-	if not _tc.generate_tools_ini():
-		_append_output("[Warn] TOOLS.INI 生成失败，编译可能报错")
-	_build_busy = true
+	var code_edit: Node = get_node_or_null(P_CODE_EDIT)
+	var code: String = code_edit.text if code_edit is CodeEdit else ""
+	_build_controller.start(_project_dst, code)
+
+
+func _on_build_busy_changed(is_busy: bool) -> void:
 	var btn: Node = get_node_or_null(P_BUILD)
 	if btn is BaseButton:
-		btn.disabled = true
-		btn.text = "编译中…"
+		btn.disabled = is_busy
+		btn.text = "编译中…" if is_busy else "编译"
 	var download_button: Node = get_node_or_null(P_DOWNLOAD)
 	if download_button is BaseButton:
-		download_button.disabled = true
-	_append_output("正在编译…")
-	_build_thread = Thread.new()
-	var err: int = _build_thread.start(_build_worker.bind(uv4_abs, _project_dst))
-	if err != OK:
-		_build_busy = false
-		if btn is BaseButton:
-			btn.disabled = false
-			btn.text = "编译"
-		if download_button is BaseButton:
-			download_button.disabled = false
-		_append_output("[Error] 无法启动编译线程（错误码 %d）" % err)
+		download_button.disabled = is_busy
 
 
-## 子线程禁止访问 UI 节点，结果通过 call_deferred 回主线程
-func _build_worker(uv4_abs: String, project_dst: String) -> void:
-	var result: Dictionary = _tc.build_sync(uv4_abs, project_dst)
-	call_deferred("_on_build_finished", result)
-
-
-func _on_build_finished(result: Dictionary) -> void:
-	_build_busy = false
-	if _build_thread and _build_thread.is_alive():
-		_build_thread.wait_to_finish()
-	_build_thread = null
-	var btn: Node = get_node_or_null(P_BUILD)
-	if btn is BaseButton:
-		btn.disabled = false
-		btn.text = "编译"
-	var download_button: Node = get_node_or_null(P_DOWNLOAD)
-	if download_button is BaseButton:
-		download_button.disabled = false
-	var log_text: String = str(result.get("log", ""))
-	_clear_output()
-	if bool(result.get("ok", false)):
-		_append_output("✓ 编译成功")
-		_update_built_hash()
-	else:
-		_append_output("✗ 编译失败（UV4 退出码 %d，详见下方日志）"
-			% int(result.get("exit", -1)))
-	_append_output("")
-	if log_text.is_empty():
-		_append_output("[Warn] 未读取到编译日志")
-	else:
-		for line in log_text.split("\n", false):
-			_append_output(line)
+func _on_build_succeeded() -> void:
+	_update_built_hash()
 	_update_guide()
 
 
@@ -609,7 +573,8 @@ func _update_built_hash() -> void:
 
 # ------------------------------------------------------------------ 下载/烧录
 func _on_download_pressed() -> void:
-	if _download_controller == null or _build_busy or _download_controller.is_busy():
+	if _download_controller == null or _download_controller.is_busy() \
+			or (_build_controller != null and _build_controller.is_busy()):
 		return
 	_clear_output()
 

@@ -67,7 +67,7 @@ func start(project_dst: String) -> bool:
 
 
 func shutdown() -> void:
-	if _thread and _thread.is_alive():
+	if _thread:
 		_thread.wait_to_finish()
 	_thread = null
 	if _busy:
@@ -84,7 +84,7 @@ func _worker(hex_path: String, com_port: String) -> void:
 
 
 func _on_worker_finished(result: Dictionary) -> void:
-	if _thread and _thread.is_alive():
+	if _thread:
 		_thread.wait_to_finish()
 	_thread = null
 	_set_busy(false)

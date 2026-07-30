@@ -175,6 +175,7 @@ const INFANTRY_SIM_SCENE: String = "res://scenes/infantry_sim.tscn"
 # 注：工具链路径常量与部署/编译实现已迁到 scripts/toolchain.gd，与 AI 编辑器共用
 # 用 preload 而非 class_name：headless / 首次导入时全局类名缓存可能尚未建立
 const TC = preload("res://scripts/toolchain.gd")
+const BC = preload("res://scripts/build_controller.gd")
 const DC = preload("res://scripts/download_controller.gd")
 ## 构形诊断（判定末端可控自由度与俯仰角是否解耦）
 const ARM_DIAG = preload("res://scripts/arm_diagnosis.gd")
@@ -183,8 +184,7 @@ const PF = preload("res://scripts/project_file.gd")
 
 
 # ------------------------------------------------------------------ 生命周期
-var _build_thread: Thread = null
-var _build_busy: bool = false
+var _build_controller = null
 var _download_controller = null
 # 当前选中的代码生成器（随 Tab 切换）
 var _codegen: CodeGenBase = null
@@ -245,10 +245,20 @@ func _ready() -> void:
 	# 按默认关节数显隐逆解界面的关节行
 	_update_ik_joint_rows()
 	_setup_guide()
+	_setup_build_controller()
 	_setup_download_controller()
 	_connect_signals()
 	# 恢复 / 初始化项目上下文（会自行触发 _run_check）
 	_restore_project_context()
+
+
+func _setup_build_controller() -> void:
+	_build_controller = BC.new()
+	add_child(_build_controller)
+	_build_controller.configure(_toolchain(), _clear_output, _append_output)
+	_build_controller.busy_changed.connect(_on_build_busy_changed)
+	_build_controller.succeeded.connect(_on_build_succeeded)
+	_build_controller.finished.connect(func(_result: Dictionary) -> void: _update_guide())
 
 
 func _setup_download_controller() -> void:
@@ -2170,8 +2180,8 @@ func _get_option_idx(path: NodePath) -> int:
 # ==================================================================
 ## 退出时清理编译线程，避免泄漏
 func _exit_tree() -> void:
-	if _build_thread and _build_thread.is_alive():
-		_build_thread.wait_to_finish()
+	if _build_controller:
+		_build_controller.shutdown()
 	if _download_controller:
 		_download_controller.shutdown()
 
@@ -2199,14 +2209,9 @@ func _get_current_project_dst() -> String:
 
 ## 编译按钮回调：解压工具链 -> 写盘 -> 生成 TOOLS.INI -> 异步编译
 func _on_build_pressed() -> void:
-	if _build_busy:
+	if _build_controller == null or _build_controller.is_busy() \
+			or (_download_controller != null and _download_controller.is_busy()):
 		return # 防重入
-	# 0) 确保工具链和项目模板已解压到 user://
-	_clear_output()
-	if not _toolchain().ensure_deployed():
-		_append_output("[Error] 工具链初始化失败，无法编译")
-		return
-	# 1) 取 CodeEdit 中最新生成的 main.c（即 _codegen.generate() 产物）
 	var code_edit: Node = get_node_or_null(P_CODE_EDIT)
 	var code: String = ""
 	if code_edit is CodeEdit:
@@ -2218,42 +2223,27 @@ func _on_build_pressed() -> void:
 		if code.strip_edges().is_empty():
 			_append_output("[Error] 没有可编译的代码，请先完成配置")
 			return
-	# 2) 写入磁盘（user://stc32g/Projects/<构型>/USER/src/main.c）
-	if not _toolchain().write_main_c(_get_current_project_dst(), code):
-		_append_output("[Error] 写入 main.c 失败，请检查 user:// 目录权限")
-		return
-	# 3) 探测编译器
-	var uv4_abs: String = _toolchain().find_uv4()
-	if uv4_abs.is_empty():
-		_append_output("[Error] 未在 user://keil/ 找到 uVision.com / UV4.exe")
-		_append_output("       请尝试删除 user://keil/ 后重新编译（触发重新解压）")
-		return
-	# 3.1) 生成 TOOLS.INI（动态写入绝对路径）
-	if not _toolchain().generate_tools_ini():
-		_append_output("[Warn] TOOLS.INI 生成失败，编译可能报错")
-	# 4) 启动异步编译
-	_build_busy = true
+	_build_controller.start(_get_current_project_dst(), code)
+
+
+func _on_build_busy_changed(is_busy: bool) -> void:
 	var btn: Node = get_node_or_null(P_BUILD_BTN)
 	if btn is BaseButton:
-		btn.disabled = true
-		btn.text = "编译中…"
-	_append_output("正在编译…（已写入 main.c，调用 Keil 编译器）")
-	_build_thread = Thread.new()
-	var err: int = _build_thread.start(
-		_build_worker.bind(uv4_abs, _get_current_project_dst()))
-	if err != OK:
-		_build_busy = false
-		if btn is BaseButton:
-			btn.disabled = false
-			btn.text = "编译"
-		_append_output("[Error] 无法启动编译线程（错误码 %d）" % err)
+		btn.disabled = is_busy
+		btn.text = "编译中…" if is_busy else "编译"
+	var download_button: Node = get_node_or_null(P_DOWNLOAD_BTN)
+	if download_button is BaseButton:
+		download_button.disabled = is_busy
 
 
-## 编译工作线程：执行 Keil 编译器 -b，读日志，完成后回主线程
-## 注意：子线程禁止访问 UI 节点，结果通过 call_deferred 传递
-func _build_worker(uv4_abs: String, project_dst: String) -> void:
-	var result: Dictionary = _toolchain().build_sync(uv4_abs, project_dst)
-	call_deferred("_on_build_finished", result)
+func _on_build_succeeded() -> void:
+	if _project.is_empty():
+		return
+	var workflow: Dictionary = _workflow()
+	workflow["built_hash"] = _code_hash()
+	_project["workflow"] = workflow
+	_save_project(false)
+	_update_guide()
 
 
 ## AI 编辑入口（阶段一 -> 阶段二）。先弹一次确认，再真正进入。
@@ -2435,44 +2425,6 @@ func _select_option_by_text(btn: OptionButton, text: String) -> void:
 			return
 
 
-## 编译完成回调（主线程）：复位按钮，解析日志，展示结果
-func _on_build_finished(result: Dictionary) -> void:
-	_build_busy = false
-	# 清理线程
-	if _build_thread and _build_thread.is_alive():
-		_build_thread.wait_to_finish()
-	_build_thread = null
-	# 复位按钮
-	var btn: Node = get_node_or_null(P_BUILD_BTN)
-	if btn is BaseButton:
-		btn.disabled = false
-		btn.text = "编译"
-	# 解析结果
-	var log_text: String = result.get("log", "")
-	var exit_code: int = int(result.get("exit", -1))
-	_clear_output()
-	# 成功判据：日志非空且包含 "0 Error(s)"（UV4 批处理退出码不可靠，以日志为准）
-	var ok: bool = (not log_text.is_empty()) and log_text.find("0 Error(s)") >= 0
-	if ok:
-		_append_output("✓ 编译成功")
-		if not _project.is_empty():
-			var workflow: Dictionary = _workflow()
-			workflow["built_hash"] = _code_hash()
-			_project["workflow"] = workflow
-			_save_project(false)
-	else:
-		# exit_code 可能是 0（UV4 批处理常不返回标准码），故仅作参考
-		_append_output("✗ 编译失败（UV4 退出码 %d，请查看下方日志）" % exit_code)
-	_append_output("")
-	if log_text.is_empty():
-		_append_output("[Warn] 未读取到编译日志（pie_block_build.log），请检查 UV4 是否正常执行")
-	else:
-		# 逐行追加，IssueHighlighter 会自动给 Error/Warning 行着色
-		for line in log_text.split("\n", false):
-			_append_output(line)
-	_update_guide()
-
-
 ## 向 Output 框追加一行（复用 output.gd 的 append_line）
 func _append_output(line_text: String) -> void:
 	var out: Node = get_node_or_null(P_OUTPUT)
@@ -2489,7 +2441,8 @@ func _clear_output() -> void:
 
 # ------------------------------------------------------------------ 下载/烧录
 func _on_download_pressed() -> void:
-	if _download_controller == null:
+	if _download_controller == null or _download_controller.is_busy() \
+			or (_build_controller != null and _build_controller.is_busy()):
 		return
 	_download_controller.start(_get_current_project_dst())
 
@@ -2499,6 +2452,9 @@ func _on_download_busy_changed(is_busy: bool) -> void:
 	if button is BaseButton:
 		button.disabled = is_busy
 		button.text = "烧录中…" if is_busy else "烧录主控板"
+	var build_button: Node = get_node_or_null(P_BUILD_BTN)
+	if build_button is BaseButton:
+		build_button.disabled = is_busy
 
 
 func _on_download_succeeded() -> void:
