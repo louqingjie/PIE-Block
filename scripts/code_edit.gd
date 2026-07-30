@@ -9,15 +9,16 @@ extends Control
 ## 不做内存态双向同步 —— 那样两边会互相覆盖。
 
 # ------------------------------------------------------------------ 节点路径
-const P_CODE_EDIT: NodePath = "VBoxContainer/HSplitContainer/CodeZone/VSplitContainer/Code/CodeEdit"
-const P_CODE_PANEL: NodePath = "VBoxContainer/HSplitContainer/CodeZone/VSplitContainer/Code"
-const P_OUTPUT: NodePath = "VBoxContainer/HSplitContainer/CodeZone/VSplitContainer/Output/Output"
-const P_STATUS: NodePath = "VBoxContainer/HSplitContainer/AIPanel/Header/Status"
+const P_PROJECT_GUIDE: NodePath = "VBoxContainer/Workspace/ProjectGuide"
+const P_CODE_EDIT: NodePath = "VBoxContainer/Workspace/HSplitContainer/CodeZone/VSplitContainer/Code/CodeEdit"
+const P_CODE_PANEL: NodePath = "VBoxContainer/Workspace/HSplitContainer/CodeZone/VSplitContainer/Code"
+const P_OUTPUT: NodePath = "VBoxContainer/Workspace/HSplitContainer/CodeZone/VSplitContainer/Output/Output"
+const P_STATUS: NodePath = "VBoxContainer/Workspace/HSplitContainer/AIPanel/Header/Status"
 ## WebView 必须挂在根节点下、脱离容器管辖，理由见 _sync_webview_rect()
 const P_WEBVIEW: NodePath = "WebView"
 ## 容器里的占位节点，WebView 的目标矩形以它为准
-const P_WEB_SLOT: NodePath = "VBoxContainer/HSplitContainer/AIPanel/WebSlot"
-const P_RESTART: NodePath = "VBoxContainer/HSplitContainer/AIPanel/Header/Restart"
+const P_WEB_SLOT: NodePath = "VBoxContainer/Workspace/HSplitContainer/AIPanel/WebSlot"
+const P_RESTART: NodePath = "VBoxContainer/Workspace/HSplitContainer/AIPanel/Header/Restart"
 const P_BUILD: NodePath = "VBoxContainer/TopPanel/Build"
 const P_BACK: NodePath = "VBoxContainer/TopPanel/Button"
 const P_SAVE: NodePath = "VBoxContainer/TopPanel/Save"
@@ -36,6 +37,20 @@ const PF = preload("res://scripts/project_file.gd")
 
 ## AI 随时会在终端里改盘上的 main.c，靠轮询 mtime 发现
 const RELOAD_POLL_SEC: float = 1.5
+
+const GUIDE_TITLES: Array[String] = [
+	"项目与硬件确认", "配置遥控器", "配置执行机构", "检查与仿真",
+	"编译程序", "烧录主控板", "真机低速测试",
+]
+const GUIDE_HINTS: Array[String] = [
+	"确认程序只烧录到主控板，绝不向机械扩展板烧录程序。",
+	"图形化配置已冻结；需要修改时返回图形化编辑并丢弃 AI 代码。",
+	"执行机构配置已冻结；需要修改时返回图形化编辑并丢弃 AI 代码。",
+	"查看阶段一检查结果；需要重新检查或仿真时返回图形化编辑。",
+	"编译当前 AI 编辑后的 main.c。",
+	"返回图形化界面烧录主控板。",
+	"烧录后在图形化界面完成真机低速测试确认。",
+]
 
 # ------------------------------------------------------------------ 状态
 var _tc = null
@@ -71,6 +86,7 @@ func _ready() -> void:
 
 	_setup_code_edit()
 	_load_from_disk()
+	_setup_guide()
 	_connect_signals()
 	_start_ai()
 
@@ -123,13 +139,79 @@ func _connect_signals() -> void:
 		restart.pressed.connect(_on_restart_pressed)
 	var ce: Node = get_node_or_null(P_CODE_EDIT)
 	if ce is CodeEdit:
-		ce.text_changed.connect(func() -> void: _dirty = true)
+		ce.text_changed.connect(func() -> void:
+			_dirty = true
+			_update_guide())
 	# AI 会在终端里改盘上的 main.c，定时回读
 	var t: Timer = Timer.new()
 	t.wait_time = RELOAD_POLL_SEC
 	t.autostart = true
 	t.timeout.connect(_on_reload_tick)
 	add_child(t)
+
+
+func _setup_guide() -> void:
+	var guide: Node = get_node_or_null(P_PROJECT_GUIDE)
+	if guide == null or not guide.has_method("setup"):
+		return
+	guide.setup(GUIDE_TITLES, GUIDE_HINTS, _guide_done_states())
+	guide.step_pressed.connect(_on_guide_step_pressed)
+
+
+func _update_guide() -> void:
+	var guide: Node = get_node_or_null(P_PROJECT_GUIDE)
+	if guide != null and guide.has_method("set_state"):
+		guide.set_state(GUIDE_TITLES, GUIDE_HINTS, _guide_done_states())
+
+
+func _guide_done_states() -> Array[bool]:
+	var workflow: Dictionary = _load_workflow()
+	var code_hash: String = _current_code_hash()
+	return [
+		bool(workflow.get("hardware_confirmed", false)),
+		AppState.stage >= 2,
+		AppState.stage >= 2,
+		not str(workflow.get("checked_hash", "")).is_empty(),
+		str(workflow.get("built_hash", "")) == code_hash and not code_hash.is_empty(),
+		str(workflow.get("flashed_hash", "")) == code_hash and not code_hash.is_empty(),
+		bool(workflow.get("hardware_tested", false))
+			and str(workflow.get("flashed_hash", "")) == code_hash and not code_hash.is_empty(),
+	]
+
+
+func _load_workflow() -> Dictionary:
+	if AppState.project_path.is_empty():
+		return PF.normalize_workflow({})
+	var result: Dictionary = PF.load_from(AppState.project_path)
+	if not result["ok"]:
+		return PF.normalize_workflow({})
+	return PF.normalize_workflow(result["data"].get("workflow", {}))
+
+
+func _current_code_hash() -> String:
+	var ce: Node = get_node_or_null(P_CODE_EDIT)
+	var code: String = ce.text if ce is CodeEdit else ""
+	return code.sha256_text() if not code.strip_edges().is_empty() else ""
+
+
+func _on_guide_step_pressed(step: int) -> void:
+	match step:
+		0:
+			_show_hardware_confirmation()
+		1, 2, 3, 5, 6:
+			_on_back_pressed()
+		4:
+			_on_build_pressed()
+
+
+func _show_hardware_confirmation() -> void:
+	var dialog := AcceptDialog.new()
+	dialog.title = "查看第一步确认"
+	dialog.dialog_text = "1. 程序只烧录到主控板。\n\n2. 绝不向机械扩展板烧录程序。\n\n3. 新主控板已经由维护者安装引导程序。"
+	dialog.ok_button_text = "已了解"
+	add_child(dialog)
+	dialog.popup_centered(Vector2i(520, 280))
+	dialog.close_requested.connect(dialog.queue_free)
 
 
 ## 高 DPI 下修正 WebView 的位置与尺寸。
@@ -472,6 +554,7 @@ func _on_build_finished(result: Dictionary) -> void:
 	_clear_output()
 	if bool(result.get("ok", false)):
 		_append_output("✓ 编译成功")
+		_update_built_hash()
 	else:
 		_append_output("✗ 编译失败（UV4 退出码 %d，详见下方日志）"
 			% int(result.get("exit", -1)))
@@ -481,6 +564,20 @@ func _on_build_finished(result: Dictionary) -> void:
 	else:
 		for line in log_text.split("\n", false):
 			_append_output(line)
+	_update_guide()
+
+
+func _update_built_hash() -> void:
+	if AppState.project_path.is_empty():
+		return
+	var result: Dictionary = PF.load_from(AppState.project_path)
+	if not result["ok"]:
+		return
+	var data: Dictionary = result["data"]
+	var workflow: Dictionary = PF.normalize_workflow(data.get("workflow", {}))
+	workflow["built_hash"] = _current_code_hash()
+	data["workflow"] = workflow
+	PF.save_to(AppState.project_path, data)
 
 
 # ------------------------------------------------------------------ 返回

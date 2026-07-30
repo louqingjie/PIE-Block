@@ -56,15 +56,24 @@ func _cleanup() -> void:
 	DirAccess.open("user://").remove("_test_pieproj")
 
 
-# ------------------------------------------------------------------ AI 编辑焦点配置
+# ------------------------------------------------------------------ AI 编辑引导与焦点配置
 func _test_code_edit_focus_setup() -> void:
-	print("--- AI 编辑面板焦点配置 ---")
+	print("--- AI 编辑引导与焦点配置 ---")
 	var packed: PackedScene = load("res://scenes/code_edit.tscn") as PackedScene
 	_check("code_edit.tscn 可加载", packed != null)
 	if packed == null:
 		return
 	var editor: Node = packed.instantiate()
 	var webview: Node = editor.get_node_or_null("WebView")
+	var guide: Node = editor.get_node_or_null(editor.P_PROJECT_GUIDE)
+	_check("AI 编辑页实例化独立项目引导", guide != null
+		and guide.scene_file_path == "res://scenes/project_guide.tscn")
+	if guide != null:
+		guide.setup(editor.GUIDE_TITLES, editor.GUIDE_HINTS,
+			[true, true, true, true, false, false, false])
+	_check("AI 编辑页引导提供七个步骤", guide != null and guide.get_step_count() == 7)
+	_check("AI 编辑页代码框路径有效", editor.get_node_or_null(editor.P_CODE_EDIT) is CodeEdit)
+	_check("AI 编辑页终端槽路径有效", editor.get_node_or_null(editor.P_WEB_SLOT) is Control)
 	_check("WebView 不在创建时抢焦点", webview != null
 		and not bool(webview.get("focused_when_created")))
 	_check("脚本提供代码面板聚焦入口", editor.has_method("_focus_code_input"))
@@ -369,7 +378,9 @@ func _test_lifecycle() -> void:
 		not str(created["data"]["main_c_stage1"]).strip_edges().is_empty())
 	_check("新建项目带默认工作流状态",
 		created["data"]["workflow"] == PF.normalize_workflow({}))
-	_check("主界面显示七步项目引导", ui._guide_buttons.size() == 7)
+	var guide: Node = ui.get_node(ui.P_PROJECT_GUIDE)
+	_check("主界面实例化独立项目引导", guide.scene_file_path == "res://scenes/project_guide.tscn")
+	_check("主界面显示七步项目引导", guide.get_step_count() == 7)
 	_check("烧录按钮明确指向主控板", ui.get_node(ui.P_DOWNLOAD_BTN).text == "烧录主控板")
 	var output: Node = ui.get_node(ui.P_OUTPUT)
 	ui._append_output("旧烧录日志")

@@ -1,0 +1,54 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/project_guide.gd" id="1_script"]
+
+[node name="ProjectGuide" type="PanelContainer"]
+custom_minimum_size = Vector2(250, 0)
+layout_mode = 2
+script = ExtResource("1_script")
+
+[node name="Margin" type="MarginContainer" parent="."]
+layout_mode = 2
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 12
+
+[node name="Content" type="VBoxContainer" parent="Margin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Header" type="HBoxContainer" parent="Margin/Content"]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="Margin/Content/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 18
+text = "项目引导"
+
+[node name="Toggle" type="Button" parent="Margin/Content/Header"]
+custom_minimum_size = Vector2(34, 34)
+layout_mode = 2
+tooltip_text = "收起项目引导"
+text = "<"
+
+[node name="Progress" type="ProgressBar" parent="Margin/Content"]
+custom_minimum_size = Vector2(0, 22)
+layout_mode = 2
+max_value = 7.0
+show_percentage = false
+
+[node name="Status" type="Label" parent="Margin/Content"]
+layout_mode = 2
+text = "0 / 7 步完成"
+
+[node name="Steps" type="VBoxContainer" parent="Margin/Content"]
+layout_mode = 2
+theme_override_constants/separation = 5
+
+[node name="Hint" type="Label" parent="Margin/Content"]
+layout_mode = 2
+size_flags_vertical = 3
+text = "按顺序完成配置、检查、编译和烧录。"
+autowrap_mode = 3

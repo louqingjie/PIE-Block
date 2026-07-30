@@ -143,13 +143,7 @@ const P_MAIN_UI: NodePath = "VBoxContainer"
 const P_HARDWARE_GATE: NodePath = "HardwareGate"
 const P_GATE_CONFIRM: NodePath = "HardwareGate/Center/Content/Actions/Confirm"
 const P_GATE_BACK: NodePath = "HardwareGate/Center/Content/Actions/Back"
-const P_GUIDE_PANEL: NodePath = "VBoxContainer/HBoxContainer/GuidePanel"
-const P_GUIDE_TOGGLE: NodePath = "VBoxContainer/HBoxContainer/GuidePanel/Margin/Content/Header/Toggle"
-const P_GUIDE_PROGRESS: NodePath = "VBoxContainer/HBoxContainer/GuidePanel/Margin/Content/Progress"
-const P_GUIDE_STATUS: NodePath = "VBoxContainer/HBoxContainer/GuidePanel/Margin/Content/Status"
-const P_GUIDE_STEPS: NodePath = "VBoxContainer/HBoxContainer/GuidePanel/Margin/Content/Steps"
-const P_GUIDE_HINT: NodePath = "VBoxContainer/HBoxContainer/GuidePanel/Margin/Content/Hint"
-const P_GUIDE_REOPEN: NodePath = "VBoxContainer/HBoxContainer/Reopen"
+const P_PROJECT_GUIDE: NodePath = "VBoxContainer/HBoxContainer/ProjectGuide"
 # 项目管理按钮
 const P_CREATE_BTN: NodePath = "VBoxContainer/TopPanel/Create"
 const P_OPEN_BTN: NodePath = "VBoxContainer/TopPanel/Open"
@@ -221,8 +215,6 @@ var _last_issues: Array = []
 var _ik_pitch_dof: bool = false
 ## _ik_pitch_dof 为假时的简短理由，显示在界面上避免学生不明所以
 var _ik_pitch_reason: String = ""
-var _guide_buttons: Array[Button] = []
-
 const GUIDE_TITLES: Array[String] = [
 	"项目与硬件确认", "配置遥控器", "配置执行机构", "检查与仿真",
 	"编译程序", "烧录主控板", "真机低速测试",
@@ -324,12 +316,6 @@ func _connect_signals() -> void:
 	var download_btn: Node = get_node_or_null(P_DOWNLOAD_BTN)
 	if download_btn is BaseButton:
 		download_btn.pressed.connect(_on_download_pressed)
-	var guide_toggle: Node = get_node_or_null(P_GUIDE_TOGGLE)
-	if guide_toggle is BaseButton:
-		guide_toggle.pressed.connect(_set_guide_collapsed.bind(true))
-	var guide_reopen: Node = get_node_or_null(P_GUIDE_REOPEN)
-	if guide_reopen is BaseButton:
-		guide_reopen.pressed.connect(_set_guide_collapsed.bind(false))
 	# AI 编辑入口
 	var ai_btn: Node = get_node_or_null(P_AI_EDIT_BTN)
 	if ai_btn is BaseButton:
@@ -542,30 +528,12 @@ func _mark_dirty() -> void:
 # 项目引导
 # ==================================================================
 func _setup_guide() -> void:
-	var steps: Node = get_node_or_null(P_GUIDE_STEPS)
-	if not steps is VBoxContainer:
+	var guide: Node = get_node_or_null(P_PROJECT_GUIDE)
+	if guide == null or not guide.has_method("setup"):
 		return
-	for child in steps.get_children():
-		child.queue_free()
-	_guide_buttons.clear()
-	for i in range(GUIDE_TITLES.size()):
-		var button := Button.new()
-		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		button.custom_minimum_size = Vector2(0, 38)
-		button.text = "%d  %s" % [i + 1, GUIDE_TITLES[i]]
-		button.pressed.connect(_on_guide_step_pressed.bind(i))
-		steps.add_child(button)
-		_guide_buttons.append(button)
-	_update_guide()
-
-
-func _set_guide_collapsed(collapsed: bool) -> void:
-	var panel: Node = get_node_or_null(P_GUIDE_PANEL)
-	var reopen: Node = get_node_or_null(P_GUIDE_REOPEN)
-	if panel is CanvasItem:
-		panel.visible = not collapsed
-	if reopen is CanvasItem:
-		reopen.visible = collapsed
+	guide.setup(_guide_titles(), GUIDE_HINTS, _guide_done_states())
+	if not guide.step_pressed.is_connected(_on_guide_step_pressed):
+		guide.step_pressed.connect(_on_guide_step_pressed)
 
 
 func _workflow() -> Dictionary:
@@ -608,9 +576,13 @@ func _guide_done_states() -> Array[bool]:
 
 
 func _update_guide() -> void:
-	if _guide_buttons.is_empty():
+	var guide: Node = get_node_or_null(P_PROJECT_GUIDE)
+	if guide == null or not guide.has_method("set_state"):
 		return
-	var done: Array[bool] = _guide_done_states()
+	guide.set_state(_guide_titles(), GUIDE_HINTS, _guide_done_states())
+
+
+func _guide_titles() -> Array[String]:
 	var titles: Array[String] = GUIDE_TITLES.duplicate()
 	match _current_tab():
 		2:
@@ -619,24 +591,10 @@ func _update_guide() -> void:
 		3:
 			titles[1] = "选择测试端口"
 			titles[2] = "配置测试参数"
-	var completed: int = 0
-	for i in range(min(done.size(), _guide_buttons.size())):
-		if done[i]:
-			completed += 1
-		_guide_buttons[i].text = "%s %d  %s" % [
-			"[完成]" if done[i] else "[ ]", i + 1, titles[i]]
-	var progress: Node = get_node_or_null(P_GUIDE_PROGRESS)
-	if progress is ProgressBar:
-		progress.value = completed
-	var status: Node = get_node_or_null(P_GUIDE_STATUS)
-	if status is Label:
-		status.text = "%d / %d 步完成" % [completed, GUIDE_TITLES.size()]
+	return titles
 
 
 func _on_guide_step_pressed(step: int) -> void:
-	var hint: Node = get_node_or_null(P_GUIDE_HINT)
-	if hint is Label:
-		hint.text = GUIDE_HINTS[step]
 	match step:
 		0:
 			_confirm_hardware()

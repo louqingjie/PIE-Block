@@ -3,6 +3,7 @@
 [ext_resource type="FontFile" uid="uid://bs174vxb8p5iv" path="res://assets/fonts/NotoSansCJK-Regular.ttc" id="1_nt7q6"]
 [ext_resource type="Script" uid="uid://dp6x4avofe57m" path="res://scripts/output.gd" id="2_x4jx1"]
 [ext_resource type="Script" uid="uid://d4e4choqekw3p" path="res://scripts/ui.gd" id="2_yev5y"]
+[ext_resource type="PackedScene" path="res://scenes/project_guide.tscn" id="4_guide"]
 
 [sub_resource type="Theme" id="Theme_g4v7s"]
 Button/fonts/font = ExtResource("1_nt7q6")
@@ -86,62 +87,7 @@ text = "烧录主控板"
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="GuidePanel" type="PanelContainer" parent="VBoxContainer/HBoxContainer" unique_id=589366756]
-custom_minimum_size = Vector2(250, 0)
-layout_mode = 2
-
-[node name="Margin" type="MarginContainer" parent="VBoxContainer/HBoxContainer/GuidePanel" unique_id=2066635023]
-layout_mode = 2
-theme_override_constants/margin_left = 12
-theme_override_constants/margin_top = 12
-theme_override_constants/margin_right = 12
-theme_override_constants/margin_bottom = 12
-
-[node name="Content" type="VBoxContainer" parent="VBoxContainer/HBoxContainer/GuidePanel/Margin" unique_id=825529696]
-layout_mode = 2
-theme_override_constants/separation = 8
-
-[node name="Header" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/GuidePanel/Margin/Content" unique_id=9148961]
-layout_mode = 2
-
-[node name="Title" type="Label" parent="VBoxContainer/HBoxContainer/GuidePanel/Margin/Content/Header" unique_id=283275453]
-layout_mode = 2
-size_flags_horizontal = 3
-theme_override_font_sizes/font_size = 18
-text = "项目引导"
-
-[node name="Toggle" type="Button" parent="VBoxContainer/HBoxContainer/GuidePanel/Margin/Content/Header" unique_id=442534876]
-custom_minimum_size = Vector2(34, 34)
-layout_mode = 2
-tooltip_text = "收起项目引导"
-text = "<"
-
-[node name="Progress" type="ProgressBar" parent="VBoxContainer/HBoxContainer/GuidePanel/Margin/Content" unique_id=1958950473]
-custom_minimum_size = Vector2(0, 22)
-layout_mode = 2
-max_value = 7.0
-show_percentage = false
-
-[node name="Status" type="Label" parent="VBoxContainer/HBoxContainer/GuidePanel/Margin/Content" unique_id=1737446095]
-layout_mode = 2
-text = "0 / 7 步完成"
-
-[node name="Steps" type="VBoxContainer" parent="VBoxContainer/HBoxContainer/GuidePanel/Margin/Content" unique_id=1723711027]
-layout_mode = 2
-theme_override_constants/separation = 5
-
-[node name="Hint" type="Label" parent="VBoxContainer/HBoxContainer/GuidePanel/Margin/Content" unique_id=1378887400]
-layout_mode = 2
-size_flags_vertical = 3
-text = "按顺序完成配置、检查、编译和烧录。"
-autowrap_mode = 3
-
-[node name="Reopen" type="Button" parent="VBoxContainer/HBoxContainer" unique_id=1890803830]
-visible = false
-custom_minimum_size = Vector2(40, 0)
-layout_mode = 2
-tooltip_text = "展开项目引导"
-text = ">"
+[node name="ProjectGuide" parent="VBoxContainer/HBoxContainer" instance=ExtResource("4_guide")]
 
 [node name="HSplitContainer" type="HSplitContainer" parent="VBoxContainer/HBoxContainer" unique_id=1279386792]
 layout_mode = 2
