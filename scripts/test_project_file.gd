@@ -10,6 +10,14 @@ const TMP_DIR: String = "user://_test_pieproj"
 var _fail: int = 0
 
 
+class MissingHexToolchain extends RefCounted:
+	func get_hex_path(_project_dst: String) -> String:
+		return "user://missing.hex"
+
+	func hex_exists(_project_dst: String) -> bool:
+		return false
+
+
 ## AppState 是 autoload，--script 模式下没有全局标识符，只能从 root 拿
 func _app() -> Node:
 	return root.get_node("/root/AppState")
@@ -345,6 +353,13 @@ func _test_lifecycle() -> void:
 		created["data"]["workflow"] == PF.normalize_workflow({}))
 	_check("主界面显示七步项目引导", ui._guide_buttons.size() == 7)
 	_check("烧录按钮明确指向主控板", ui.get_node(ui.P_DOWNLOAD_BTN).text == "烧录主控板")
+	var output: Node = ui.get_node(ui.P_OUTPUT)
+	ui._append_output("旧烧录日志")
+	ui._tc = MissingHexToolchain.new()
+	ui._on_download_pressed()
+	_check("新烧录尝试会清空旧日志", not str(output.text).contains("旧烧录日志"))
+	_check("清空后保留本次烧录错误", str(output.text).contains("没有找到编译好的程序"))
+	ui._tc = null
 	_check("第一步未确认时显示全屏门禁", ui.get_node(ui.P_HARDWARE_GATE).visible)
 	_check("第一步未确认时隐藏主 UI", not ui.get_node(ui.P_MAIN_UI).visible)
 	ui._on_hardware_gate_confirmed()

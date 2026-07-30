@@ -2535,6 +2535,8 @@ func _cleanup_download_thread() -> void:
 func _on_download_pressed() -> void:
 	if _download_busy:
 		return
+	# 每次烧录只展示本次尝试的串口、进度与结果，避免重复烧录时日志堆积。
+	_clear_output()
 
 	# 1) hex 是否存在
 	var project_dst: String = _get_current_project_dst()
