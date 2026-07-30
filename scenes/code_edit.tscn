@@ -132,6 +132,7 @@ size_flags_vertical = 3
 
 [node name="WebView" type="WebView" parent="." unique_id=842435095]
 full_window_size = false
+focused_when_created = false
 url = ""
 html = "<html><body style=\"margin:0;padding:24px;font-family:system-ui,sans-serif;background:#1d2229;color:#c8cdd4\">正在启动 AI 终端…</body></html>"
 data_directory = "user://webview"

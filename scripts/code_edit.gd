@@ -10,6 +10,7 @@ extends Control
 
 # ------------------------------------------------------------------ 节点路径
 const P_CODE_EDIT: NodePath = "VBoxContainer/HSplitContainer/CodeZone/VSplitContainer/Code/CodeEdit"
+const P_CODE_PANEL: NodePath = "VBoxContainer/HSplitContainer/CodeZone/VSplitContainer/Code"
 const P_OUTPUT: NodePath = "VBoxContainer/HSplitContainer/CodeZone/VSplitContainer/Output/Output"
 const P_STATUS: NodePath = "VBoxContainer/HSplitContainer/AIPanel/Header/Status"
 ## WebView 必须挂在根节点下、脱离容器管辖，理由见 _sync_webview_rect()
@@ -236,6 +237,40 @@ func _apply_zoom() -> void:
 ## _sync_webview_rect() 内部有等值短路，实际不会每帧真的调 resize()。
 func _process(_delta: float) -> void:
 	_sync_webview_rect()
+
+
+## WebView2 与 Godot 使用两套原生焦点系统，不能只依赖 Control.grab_focus()。
+## 终端转发的鼠标事件也会进入这里，因此可用真实面板矩形统一判定点击目标。
+func _input(event: InputEvent) -> void:
+	if not event is InputEventMouseButton or not event.pressed \
+			or event.button_index != MOUSE_BUTTON_LEFT:
+		return
+	var mouse_pos: Vector2 = event.position
+	var code_panel: Node = get_node_or_null(P_CODE_PANEL)
+	if code_panel is Control and code_panel.get_global_rect().has_point(mouse_pos):
+		_focus_code_input()
+		return
+	var web_slot: Node = get_node_or_null(P_WEB_SLOT)
+	if web_slot is Control and web_slot.get_global_rect().has_point(mouse_pos):
+		_focus_terminal_input()
+
+
+func _focus_code_input() -> void:
+	if _wv != null:
+		_wv.focus_parent()
+	var ce: Node = get_node_or_null(P_CODE_EDIT)
+	if ce is CodeEdit:
+		# focus_parent() 先把原生 HWND 焦点还给 Godot；延迟执行避免同一次
+		# 鼠标事件结束时 WebView2 又把焦点夺回去。
+		ce.call_deferred("grab_focus")
+
+
+func _focus_terminal_input() -> void:
+	var ce: Node = get_node_or_null(P_CODE_EDIT)
+	if ce is CodeEdit:
+		ce.release_focus()
+	if _wv != null:
+		_wv.focus()
 
 
 func _start_ai() -> void:

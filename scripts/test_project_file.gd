@@ -41,6 +41,7 @@ func _initialize() -> void:
 	await _test_config_roundtrip()
 	await _test_lifecycle()
 	await _test_launcher()
+	_test_code_edit_focus_setup()
 	_cleanup()
 	print("\n=== 结果: %s ===" % ("全部通过 ✓" if _fail == 0 else "%d 项失败 ✗" % _fail))
 	quit(0 if _fail == 0 else 1)
@@ -53,6 +54,23 @@ func _cleanup() -> void:
 	for f in da.get_files():
 		da.remove(f)
 	DirAccess.open("user://").remove("_test_pieproj")
+
+
+# ------------------------------------------------------------------ AI 编辑焦点配置
+func _test_code_edit_focus_setup() -> void:
+	print("--- AI 编辑面板焦点配置 ---")
+	var packed: PackedScene = load("res://scenes/code_edit.tscn") as PackedScene
+	_check("code_edit.tscn 可加载", packed != null)
+	if packed == null:
+		return
+	var editor: Node = packed.instantiate()
+	var webview: Node = editor.get_node_or_null("WebView")
+	_check("WebView 不在创建时抢焦点", webview != null
+		and not bool(webview.get("focused_when_created")))
+	_check("脚本提供代码面板聚焦入口", editor.has_method("_focus_code_input"))
+	_check("脚本提供终端面板聚焦入口", editor.has_method("_focus_terminal_input"))
+	editor.free()
+	print("")
 
 
 # ------------------------------------------------------------------ 类型映射

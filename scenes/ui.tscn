@@ -26,66 +26,12 @@ theme = SubResource("Theme_g4v7s")
 script = ExtResource("2_yev5y")
 
 [node name="VBoxContainer" type="VBoxContainer" parent="." unique_id=1456694099]
-visible = false
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-
-[node name="HardwareGate" type="PanelContainer" parent="."]
-z_index = 100
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-
-[node name="Center" type="CenterContainer" parent="HardwareGate"]
-layout_mode = 2
-
-[node name="Content" type="VBoxContainer" parent="HardwareGate/Center"]
-custom_minimum_size = Vector2(560, 0)
-layout_mode = 2
-theme_override_constants/separation = 18
-
-[node name="Title" type="Label" parent="HardwareGate/Center/Content"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 28
-text = "开始前确认"
-horizontal_alignment = 1
-
-[node name="Subtitle" type="Label" parent="HardwareGate/Center/Content"]
-layout_mode = 2
-theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
-text = "完成第一步后才能进入项目配置"
-horizontal_alignment = 1
-
-[node name="Separator" type="HSeparator" parent="HardwareGate/Center/Content"]
-layout_mode = 2
-
-[node name="Checklist" type="Label" parent="HardwareGate/Center/Content"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 18
-text = "1. 程序只烧录到主控板。\n\n2. 绝不向机械扩展板烧录任何程序。\n\n3. 新主控板需要先由维护者安装引导程序。"
-autowrap_mode = 3
-
-[node name="Actions" type="HBoxContainer" parent="HardwareGate/Center/Content"]
-layout_mode = 2
-theme_override_constants/separation = 12
-alignment = 1
-
-[node name="Back" type="Button" parent="HardwareGate/Center/Content/Actions"]
-custom_minimum_size = Vector2(180, 48)
-layout_mode = 2
-text = "返回项目列表"
-
-[node name="Confirm" type="Button" parent="HardwareGate/Center/Content/Actions"]
-custom_minimum_size = Vector2(220, 48)
-layout_mode = 2
-text = "我已了解，进入配置"
 
 [node name="TopPanel" type="HBoxContainer" parent="VBoxContainer" unique_id=847707271]
 layout_mode = 2
@@ -140,57 +86,57 @@ text = "烧录主控板"
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="GuidePanel" type="PanelContainer" parent="VBoxContainer/HBoxContainer"]
+[node name="GuidePanel" type="PanelContainer" parent="VBoxContainer/HBoxContainer" unique_id=589366756]
 custom_minimum_size = Vector2(250, 0)
 layout_mode = 2
 
-[node name="Margin" type="MarginContainer" parent="VBoxContainer/HBoxContainer/GuidePanel"]
+[node name="Margin" type="MarginContainer" parent="VBoxContainer/HBoxContainer/GuidePanel" unique_id=2066635023]
 layout_mode = 2
 theme_override_constants/margin_left = 12
 theme_override_constants/margin_top = 12
 theme_override_constants/margin_right = 12
 theme_override_constants/margin_bottom = 12
 
-[node name="Content" type="VBoxContainer" parent="VBoxContainer/HBoxContainer/GuidePanel/Margin"]
+[node name="Content" type="VBoxContainer" parent="VBoxContainer/HBoxContainer/GuidePanel/Margin" unique_id=825529696]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="Header" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/GuidePanel/Margin/Content"]
+[node name="Header" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/GuidePanel/Margin/Content" unique_id=9148961]
 layout_mode = 2
 
-[node name="Title" type="Label" parent="VBoxContainer/HBoxContainer/GuidePanel/Margin/Content/Header"]
+[node name="Title" type="Label" parent="VBoxContainer/HBoxContainer/GuidePanel/Margin/Content/Header" unique_id=283275453]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_font_sizes/font_size = 18
 text = "项目引导"
 
-[node name="Toggle" type="Button" parent="VBoxContainer/HBoxContainer/GuidePanel/Margin/Content/Header"]
+[node name="Toggle" type="Button" parent="VBoxContainer/HBoxContainer/GuidePanel/Margin/Content/Header" unique_id=442534876]
 custom_minimum_size = Vector2(34, 34)
 layout_mode = 2
 tooltip_text = "收起项目引导"
 text = "<"
 
-[node name="Progress" type="ProgressBar" parent="VBoxContainer/HBoxContainer/GuidePanel/Margin/Content"]
+[node name="Progress" type="ProgressBar" parent="VBoxContainer/HBoxContainer/GuidePanel/Margin/Content" unique_id=1958950473]
 custom_minimum_size = Vector2(0, 22)
 layout_mode = 2
 max_value = 7.0
 show_percentage = false
 
-[node name="Status" type="Label" parent="VBoxContainer/HBoxContainer/GuidePanel/Margin/Content"]
+[node name="Status" type="Label" parent="VBoxContainer/HBoxContainer/GuidePanel/Margin/Content" unique_id=1737446095]
 layout_mode = 2
 text = "0 / 7 步完成"
 
-[node name="Steps" type="VBoxContainer" parent="VBoxContainer/HBoxContainer/GuidePanel/Margin/Content"]
+[node name="Steps" type="VBoxContainer" parent="VBoxContainer/HBoxContainer/GuidePanel/Margin/Content" unique_id=1723711027]
 layout_mode = 2
 theme_override_constants/separation = 5
 
-[node name="Hint" type="Label" parent="VBoxContainer/HBoxContainer/GuidePanel/Margin/Content"]
+[node name="Hint" type="Label" parent="VBoxContainer/HBoxContainer/GuidePanel/Margin/Content" unique_id=1378887400]
 layout_mode = 2
 size_flags_vertical = 3
 text = "按顺序完成配置、检查、编译和烧录。"
 autowrap_mode = 3
 
-[node name="Reopen" type="Button" parent="VBoxContainer/HBoxContainer"]
+[node name="Reopen" type="Button" parent="VBoxContainer/HBoxContainer" unique_id=1890803830]
 visible = false
 custom_minimum_size = Vector2(40, 0)
 layout_mode = 2
@@ -3877,3 +3823,61 @@ script = ExtResource("2_x4jx1")
 
 [node name="Control2" type="Control" parent="VBoxContainer/HBoxContainer" unique_id=2009122565]
 layout_mode = 2
+
+[node name="HardwareGate" type="PanelContainer" parent="." unique_id=1567335260]
+visible = false
+z_index = 100
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Center" type="CenterContainer" parent="HardwareGate" unique_id=1526691682]
+layout_mode = 2
+
+[node name="Content" type="VBoxContainer" parent="HardwareGate/Center" unique_id=319258421]
+custom_minimum_size = Vector2(560, 0)
+layout_mode = 2
+theme_override_constants/separation = 18
+
+[node name="Title" type="Label" parent="HardwareGate/Center/Content" unique_id=707257352]
+layout_mode = 2
+theme_override_font_sizes/font_size = 28
+text = "开始前确认"
+horizontal_alignment = 1
+
+[node name="Subtitle" type="Label" parent="HardwareGate/Center/Content" unique_id=1370350335]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
+text = "完成第一步后才能进入项目配置"
+horizontal_alignment = 1
+
+[node name="Separator" type="HSeparator" parent="HardwareGate/Center/Content" unique_id=1218500646]
+layout_mode = 2
+
+[node name="Checklist" type="Label" parent="HardwareGate/Center/Content" unique_id=742928530]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "1. 程序只烧录到主控板。
+
+2. 绝不向机械扩展板烧录任何程序。
+
+3. 新主控板需要先由维护者安装引导程序。"
+autowrap_mode = 3
+
+[node name="Actions" type="HBoxContainer" parent="HardwareGate/Center/Content" unique_id=1685629487]
+layout_mode = 2
+theme_override_constants/separation = 12
+alignment = 1
+
+[node name="Back" type="Button" parent="HardwareGate/Center/Content/Actions" unique_id=1127680701]
+custom_minimum_size = Vector2(180, 48)
+layout_mode = 2
+text = "返回项目列表"
+
+[node name="Confirm" type="Button" parent="HardwareGate/Center/Content/Actions" unique_id=1241646242]
+custom_minimum_size = Vector2(220, 48)
+layout_mode = 2
+text = "我已了解，进入配置"
