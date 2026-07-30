@@ -138,6 +138,14 @@ const P_EDIT_ZONE: NodePath = "VBoxContainer/HBoxContainer/HSplitContainer/EditZ
 # 顶栏按钮
 const P_BUILD_BTN: NodePath = "VBoxContainer/TopPanel/Build"
 const P_DOWNLOAD_BTN: NodePath = "VBoxContainer/TopPanel/Download"
+# 项目引导
+const P_GUIDE_PANEL: NodePath = "VBoxContainer/HBoxContainer/GuidePanel"
+const P_GUIDE_TOGGLE: NodePath = "VBoxContainer/HBoxContainer/GuidePanel/Margin/Content/Header/Toggle"
+const P_GUIDE_PROGRESS: NodePath = "VBoxContainer/HBoxContainer/GuidePanel/Margin/Content/Progress"
+const P_GUIDE_STATUS: NodePath = "VBoxContainer/HBoxContainer/GuidePanel/Margin/Content/Status"
+const P_GUIDE_STEPS: NodePath = "VBoxContainer/HBoxContainer/GuidePanel/Margin/Content/Steps"
+const P_GUIDE_HINT: NodePath = "VBoxContainer/HBoxContainer/GuidePanel/Margin/Content/Hint"
+const P_GUIDE_REOPEN: NodePath = "VBoxContainer/HBoxContainer/Reopen"
 # 项目管理按钮
 const P_CREATE_BTN: NodePath = "VBoxContainer/TopPanel/Create"
 const P_OPEN_BTN: NodePath = "VBoxContainer/TopPanel/Open"
@@ -209,6 +217,21 @@ var _last_issues: Array = []
 var _ik_pitch_dof: bool = false
 ## _ik_pitch_dof 为假时的简短理由，显示在界面上避免学生不明所以
 var _ik_pitch_reason: String = ""
+var _guide_buttons: Array[Button] = []
+
+const GUIDE_TITLES: Array[String] = [
+	"项目与硬件确认", "配置遥控器", "配置执行机构", "检查与仿真",
+	"编译程序", "烧录主控板", "真机低速测试",
+]
+const GUIDE_HINTS: Array[String] = [
+	"确认程序只烧录到主控板。机械扩展板不能烧录，并应已与主控板正确连接。",
+	"填写遥控器通道号（0-125）和死区。不确定死区时可保持默认值 10。",
+	"按机械接线配置底盘、云台、执行机构和按键。P74 是扩展板口，MP74 是主控板舵机口。",
+	"修正“问题与输出”中的错误；步兵和机械臂项目建议再进入 3D 仿真检查方向。",
+	"静态检查通过后编译。成功标志是输出中显示“编译成功”。",
+	"连接主控板后开始烧录。这里只烧录主控板，绝不要给机械扩展板烧录程序。",
+	"架空底盘或拆下危险机构，逐个低速测试方向和停止功能，确认后完成项目。",
+]
 
 
 func _ready() -> void:
@@ -225,6 +248,7 @@ func _ready() -> void:
 	_update_engineer_placeholders()
 	# 按默认关节数显隐逆解界面的关节行
 	_update_ik_joint_rows()
+	_setup_guide()
 	_connect_signals()
 	# 恢复 / 初始化项目上下文（会自行触发 _run_check）
 	_restore_project_context()
@@ -290,6 +314,12 @@ func _connect_signals() -> void:
 	var download_btn: Node = get_node_or_null(P_DOWNLOAD_BTN)
 	if download_btn is BaseButton:
 		download_btn.pressed.connect(_on_download_pressed)
+	var guide_toggle: Node = get_node_or_null(P_GUIDE_TOGGLE)
+	if guide_toggle is BaseButton:
+		guide_toggle.pressed.connect(_set_guide_collapsed.bind(true))
+	var guide_reopen: Node = get_node_or_null(P_GUIDE_REOPEN)
+	if guide_reopen is BaseButton:
+		guide_reopen.pressed.connect(_set_guide_collapsed.bind(false))
 	# AI 编辑入口
 	var ai_btn: Node = get_node_or_null(P_AI_EDIT_BTN)
 	if ai_btn is BaseButton:
@@ -492,10 +522,206 @@ func _on_config_touched() -> void:
 
 
 func _mark_dirty() -> void:
-	if _dirty:
+	if not _dirty:
+		_dirty = true
+		_update_title()
+	_update_guide()
+
+
+# ==================================================================
+# 项目引导
+# ==================================================================
+func _setup_guide() -> void:
+	var steps: Node = get_node_or_null(P_GUIDE_STEPS)
+	if not steps is VBoxContainer:
 		return
-	_dirty = true
-	_update_title()
+	for child in steps.get_children():
+		child.queue_free()
+	_guide_buttons.clear()
+	for i in range(GUIDE_TITLES.size()):
+		var button := Button.new()
+		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		button.custom_minimum_size = Vector2(0, 38)
+		button.text = "%d  %s" % [i + 1, GUIDE_TITLES[i]]
+		button.pressed.connect(_on_guide_step_pressed.bind(i))
+		steps.add_child(button)
+		_guide_buttons.append(button)
+	_update_guide()
+
+
+func _set_guide_collapsed(collapsed: bool) -> void:
+	var panel: Node = get_node_or_null(P_GUIDE_PANEL)
+	var reopen: Node = get_node_or_null(P_GUIDE_REOPEN)
+	if panel is CanvasItem:
+		panel.visible = not collapsed
+	if reopen is CanvasItem:
+		reopen.visible = collapsed
+
+
+func _workflow() -> Dictionary:
+	if _project.is_empty():
+		return PF.normalize_workflow({})
+	var workflow: Dictionary = PF.normalize_workflow(_project.get("workflow", {}))
+	_project["workflow"] = workflow
+	return workflow
+
+
+func _code_hash() -> String:
+	var code: String = _current_preview_code()
+	return code.sha256_text() if not code.strip_edges().is_empty() else ""
+
+
+func _guide_done_states() -> Array[bool]:
+	var workflow: Dictionary = _workflow()
+	var code_hash: String = _code_hash()
+	var channel: String = _get_line_text(P_CHANNEL).strip_edges()
+	var remote_done: bool = channel.is_valid_int() and channel.to_int() >= 0 \
+		and channel.to_int() <= 125
+	var has_error: bool = false
+	for issue in _last_issues:
+		if str(issue.get("type", "")) == "Error":
+			has_error = true
+			break
+	var checked: bool = not code_hash.is_empty() and not has_error
+	var tab: int = _current_tab()
+	var input_done: bool = remote_done if tab == 0 or tab == 1 else checked
+	return [
+		bool(workflow.get("hardware_confirmed", false)),
+		input_done,
+		checked,
+		str(workflow.get("checked_hash", "")) == code_hash and checked,
+		str(workflow.get("built_hash", "")) == code_hash and not code_hash.is_empty(),
+		str(workflow.get("flashed_hash", "")) == code_hash and not code_hash.is_empty(),
+		bool(workflow.get("hardware_tested", false))
+			and str(workflow.get("flashed_hash", "")) == code_hash and not code_hash.is_empty(),
+	]
+
+
+func _update_guide() -> void:
+	if _guide_buttons.is_empty():
+		return
+	var done: Array[bool] = _guide_done_states()
+	var titles: Array[String] = GUIDE_TITLES.duplicate()
+	match _current_tab():
+		2:
+			titles[1] = "配置机械臂构形"
+			titles[2] = "配置关节与控制"
+		3:
+			titles[1] = "选择测试端口"
+			titles[2] = "配置测试参数"
+	var completed: int = 0
+	for i in range(min(done.size(), _guide_buttons.size())):
+		if done[i]:
+			completed += 1
+		_guide_buttons[i].text = "%s %d  %s" % [
+			"[完成]" if done[i] else "[ ]", i + 1, titles[i]]
+	var progress: Node = get_node_or_null(P_GUIDE_PROGRESS)
+	if progress is ProgressBar:
+		progress.value = completed
+	var status: Node = get_node_or_null(P_GUIDE_STATUS)
+	if status is Label:
+		status.text = "%d / %d 步完成" % [completed, GUIDE_TITLES.size()]
+
+
+func _on_guide_step_pressed(step: int) -> void:
+	var hint: Node = get_node_or_null(P_GUIDE_HINT)
+	if hint is Label:
+		hint.text = GUIDE_HINTS[step]
+	match step:
+		0:
+			_confirm_hardware()
+		1:
+			match _current_tab():
+				2:
+					_focus_control(P_IK_CONFIG_TYPE)
+				3:
+					_focus_control(NodePath(DEBUG +"/HBoxContainer/OptionButton"))
+				_:
+					_focus_control(P_CHANNEL)
+		2:
+			_focus_control(P_L1_IO if _current_tab() != 3 else NodePath(DEBUG +"/HBoxContainer/LineEdit"))
+		3:
+			_run_guide_check()
+		4:
+			_run_guide_build()
+		5:
+			_on_download_pressed()
+		6:
+			_confirm_hardware_test()
+
+
+func _current_tab() -> int:
+	var tabs: Node = get_node_or_null(P_TAB_CONTAINER)
+	return tabs.current_tab if tabs is TabContainer else 0
+
+
+func _focus_control(path: NodePath) -> void:
+	var control: Node = get_node_or_null(path)
+	if control is Control:
+		control.grab_focus()
+
+
+func _run_guide_check() -> void:
+	_run_check()
+	var has_error: bool = false
+	for issue in _last_issues:
+		if str(issue.get("type", "")) == "Error":
+			has_error = true
+			break
+	if not _project.is_empty():
+		var workflow: Dictionary = _workflow()
+		workflow["checked_hash"] = "" if has_error else _code_hash()
+		_project["workflow"] = workflow
+		_save_project(false)
+	_update_guide()
+
+
+func _run_guide_build() -> void:
+	_run_guide_check()
+	for issue in _last_issues:
+		if str(issue.get("type", "")) == "Error":
+			_append_output("[Error] 配置仍有错误，请先完成“检查与仿真”步骤")
+			return
+	_on_build_pressed()
+
+
+func _confirm_hardware() -> void:
+	var dialog := ConfirmationDialog.new()
+	dialog.title = "确认硬件连接"
+	dialog.dialog_text = "请确认：\n\n1. 机械扩展板已连接主控板。\n2. 程序只烧录到主控板。\n3. 绝不向机械扩展板烧录程序。\n4. 新主控板已经由维护者安装引导程序。"
+	dialog.get_ok_button().text = "已确认"
+	dialog.get_cancel_button().text = "返回检查"
+	dialog.confirmed.connect(func() -> void:
+		var workflow: Dictionary = _workflow()
+		workflow["hardware_confirmed"] = true
+		_project["workflow"] = workflow
+		_save_project(false)
+		_update_guide())
+	add_child(dialog)
+	dialog.popup_centered(Vector2i(520, 300))
+	dialog.close_requested.connect(dialog.queue_free)
+
+
+func _confirm_hardware_test() -> void:
+	var workflow: Dictionary = _workflow()
+	var code_hash: String = _code_hash()
+	if code_hash.is_empty() or str(workflow.get("flashed_hash", "")) != code_hash:
+		_clear_output()
+		_append_output("[Error] 请先编译并烧录当前程序，再进行真机测试")
+		return
+	var dialog := ConfirmationDialog.new()
+	dialog.title = "确认真机低速测试"
+	dialog.dialog_text = "请确认已经架空底盘或拆下危险机构，并逐个低速验证：\n\n- 每个电机和舵机方向正确\n- 停止操作有效\n- 摩擦轮从低速逐渐启动和停止"
+	dialog.get_ok_button().text = "测试通过"
+	dialog.get_cancel_button().text = "尚未完成"
+	dialog.confirmed.connect(func() -> void:
+		workflow["hardware_tested"] = true
+		_project["workflow"] = workflow
+		_save_project(false)
+		_update_guide())
+	add_child(dialog)
+	dialog.popup_centered(Vector2i(520, 300))
+	dialog.close_requested.connect(dialog.queue_free)
 
 
 # ==================================================================
@@ -2229,6 +2455,11 @@ func _on_build_finished(result: Dictionary) -> void:
 	var ok: bool = (not log_text.is_empty()) and log_text.find("0 Error(s)") >= 0
 	if ok:
 		_append_output("✓ 编译成功")
+		if not _project.is_empty():
+			var workflow: Dictionary = _workflow()
+			workflow["built_hash"] = _code_hash()
+			_project["workflow"] = workflow
+			_save_project(false)
 	else:
 		# exit_code 可能是 0（UV4 批处理常不返回标准码），故仅作参考
 		_append_output("✗ 编译失败（UV4 退出码 %d，请查看下方日志）" % exit_code)
@@ -2239,6 +2470,7 @@ func _on_build_finished(result: Dictionary) -> void:
 		# 逐行追加，IssueHighlighter 会自动给 Error/Warning 行着色
 		for line in log_text.split("\n", false):
 			_append_output(line)
+	_update_guide()
 
 
 ## 向 Output 框追加一行（复用 output.gd 的 append_line）
@@ -2323,7 +2555,7 @@ func _on_download_pressed() -> void:
 		_download_busy = false
 		if btn is BaseButton:
 			btn.disabled = false
-			btn.text = "下载"
+			btn.text = "烧录主控板"
 		_append_output("[Error] 无法启动下载线程（错误码 %d）" % err)
 
 
@@ -2343,13 +2575,20 @@ func _on_download_finished(result: Dictionary) -> void:
 	var btn: Node = get_node_or_null(P_DOWNLOAD_BTN)
 	if btn is BaseButton:
 		btn.disabled = false
-		btn.text = "下载"
+		btn.text = "烧录主控板"
 
 	var ok: bool = bool(result.get("ok", false))
 	var log_text: String = str(result.get("log", ""))
 
 	if ok:
 		_append_output("✓ 下载完成，板子已经在运行新程序")
+		if not _project.is_empty():
+			var workflow: Dictionary = _workflow()
+			workflow["flashed_hash"] = _code_hash()
+			workflow["hardware_tested"] = false
+			_project["workflow"] = workflow
+			_save_project(false)
+			_update_guide()
 		# 成功时日志只留进度尾巴，几百行百分比对用户没意义
 		_append_download_log(log_text, true)
 		return

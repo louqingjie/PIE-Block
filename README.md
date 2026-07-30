@@ -13,12 +13,14 @@
 ```mermaid
 flowchart LR
     A[启动页<br/>新建/打开 .pieproj] --> B[阶段一<br/>图形化配置]
-    B --> C[静态检查<br/>问题 & 输出]
+    B --> C[七步项目引导<br/>检查/编译/烧录]
+    C --> H[静态检查<br/>问题 & 输出]
     B --> D[3D 仿真<br/>试驾/标定]
     B --> E[生成 main.c 预览]
     E --> F[编译<br/>Keil C251]
     B -->|不可逆| G[阶段二<br/>AI 编辑代码]
     G --> F
+    F --> I[IAP 烧录<br/>仅主控板]
     G -.丢弃 AI 代码.-> B
 ```
 
@@ -41,6 +43,9 @@ flowchart LR
 
 ### 图形化配置与静态检查
 
+- 主界面七步项目引导：硬件确认、输入配置、执行机构配置、检查与仿真、编译、
+  烧录主控板、真机低速测试；步骤直接复用真实控件和操作入口
+- 检查、编译、烧录状态按当前代码 SHA-256 记录，配置变化后旧结果自动失效
 - 遥控器（通道号、死区）、底盘（4 路电机 IO + 方向 + 普通/冲刺速度）
 - 步兵云台：Yaw / Pitch 可选电机或舵机、摩擦轮 P64/P66、拨弹、按键映射、归中角
 - 工程：8 个扩展板引脚 + 主控板 MP03/MP74 的驱动类型初始化，右摇杆与
@@ -100,6 +105,13 @@ flowchart LR
 
 相关文件：[scripts/toolchain.gd](scripts/toolchain.gd)
 
+### 主控板烧录
+
+- 日常烧录走自建 bootloader 的 IAP 协议，不需要断电或按复位键
+- 自动识别 USB / 蓝牙串口，失败时按端口、连接、擦除、写入、校验阶段给排查建议
+- 烧录入口与向导都明确限制为主控板；机械扩展板绝不能烧录
+- 新主控板首次仍需由维护者通过 ROM ISP 安装 bootloader
+
 ### AI 代码编辑（阶段二）
 
 - 内嵌 ttyd + WRY WebView，在程序窗口内跑 AI Agent 的原生 TUI（中文输入正常）
@@ -128,15 +140,6 @@ headless 脚本，跑法 `godot --headless --path . --script scripts/test_xxx.gd
 占 4ms 预算 10.8%。
 
 ## 需要补齐的功能
-
-### 阻塞发布的
-
-- **烧录**：目前只能编译出 hex，没有下载到主控板的路径。需要接 STC 的 ISP 协议
-  （串口冷启动握手），或者调用外部 stcgal / STC-ISP。这是学生用起来的最后一环
-- **新手向导**：[scenes/guide/guide_1.tscn](scenes/guide/guide_1.tscn)、[scenes/guide/guide_2.tscn](scenes/guide/guide_2.tscn) 已建好但没有脚本、
-  没有任何地方引用，等于零。目标用户没有编程基础，逐步引导是必需的而非加分项
-- **仓库清理**：根目录散着 `_tmp_*.gd`、`_tmp_eng.c`、`test_ik_output.c`、
-  `未命名.pieproj` 等开发残留；`scenes/ui.tscn.bak` 也该删
 
 ### 功能缺口
 

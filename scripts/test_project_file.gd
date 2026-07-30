@@ -102,6 +102,13 @@ func _test_roundtrip() -> void:
 		}
 		data["main_c_stage1"] = "#include \"main.h\"\nint main(){return 0;}\n"
 		data["main_c_ai"] = "// AI 改过\nint main(){while(1);}\n" if stage >= 2 else ""
+		data["workflow"] = {
+			"hardware_confirmed": true,
+			"checked_hash": "check-123",
+			"built_hash": "build-123",
+			"flashed_hash": "flash-123",
+			"hardware_tested": stage >= 2,
+		}
 		var path: String = "%s/%s_%d.%s" % [TMP_DIR, kind, stage, PF.EXT]
 		var w: Dictionary = PF.save_to(path, data)
 		_check("%s/阶段%d 写入成功" % [kind, stage], w["ok"], str(w["err"]))
@@ -119,6 +126,8 @@ func _test_roundtrip() -> void:
 			got["main_c_stage1"] == data["main_c_stage1"])
 		_check("%s/阶段%d main_c_ai 一致" % [kind, stage],
 			got["main_c_ai"] == data["main_c_ai"])
+		_check("%s/阶段%d workflow 一致" % [kind, stage],
+			got["workflow"] == data["workflow"])
 	# current_main_c：阶段二优先 AI 版
 	var d2: Dictionary = PF.new_data(PF.KIND_ENGINEER)
 	d2["stage"] = 2
@@ -332,6 +341,10 @@ func _test_lifecycle() -> void:
 	_check("新建后是阶段一", int(created["data"]["stage"]) == 1)
 	_check("新建后已生成阶段一代码",
 		not str(created["data"]["main_c_stage1"]).strip_edges().is_empty())
+	_check("新建项目带默认工作流状态",
+		created["data"]["workflow"] == PF.normalize_workflow({}))
+	_check("主界面显示七步项目引导", ui._guide_buttons.size() == 7)
+	_check("烧录按钮明确指向主控板", ui.get_node(ui.P_DOWNLOAD_BTN).text == "烧录主控板")
 
 	# 改配置 -> 脏标记 -> 保存
 	channel.text = "77"

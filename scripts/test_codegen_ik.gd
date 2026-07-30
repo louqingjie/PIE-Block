@@ -2,7 +2,7 @@ extends SceneTree
 
 ## 代码生成验证脚本：调用 CodeGenEngineerIK 生成 main.c 并做结构断言
 ## 运行方式：godot --headless --script scripts/test_codegen_ik.gd
-## 最后一个构型的输出写入 res://test_ik_output.c 供 Keil 编译验证
+## 最后一个构型的输出写入 user://test_ik_output.c，避免测试产物污染仓库
 
 var _fail: int = 0
 
@@ -126,8 +126,8 @@ func _test_config(cg, config_type: int, jc: int, label: String) -> void:
 	_check("%s 用臂展判超界" % label, code.find("ik_target_too_far(") >= 0)
 	# C89：变量声明必须在可执行语句之前
 	_check("%s 符合 C89 声明顺序" % label, _check_c89_decl_order(code))
-	# 写入文件供 Keil 编译验证
-	var f = FileAccess.open("res://test_ik_output.c", FileAccess.WRITE)
+	# 写入用户临时目录，仍可供开发期 Keil 编译验证
+	var f = FileAccess.open("user://test_ik_output.c", FileAccess.WRITE)
 	if f:
 		f.store_string(code)
 		f.close()

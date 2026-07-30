@@ -33,6 +33,7 @@ stc32g/Projects/**/MDK/*.log
 *.bak
 *.tmp
 *~
+~*
 # 调试/探针脚本与临时产物（约定以 _tmp_ 前缀命名）
 _tmp_*
 

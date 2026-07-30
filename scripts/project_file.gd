@@ -14,7 +14,7 @@ extends RefCounted
 ## 文件扩展名（不含点）
 const EXT: String = "pieproj"
 ## 格式版本，将来迁移用
-const FORMAT_VERSION: int = 1
+const FORMAT_VERSION: int = 2
 
 # ------------------------------------------------------------------ 项目类型
 const KIND_INFANTRY: String = "infantry"
@@ -88,7 +88,30 @@ static func new_data(kind: String) -> Dictionary:
 		"config": {},
 		"main_c_stage1": "",
 		"main_c_ai": "",
+		"workflow": _default_workflow(),
 	}
+
+
+static func _default_workflow() -> Dictionary:
+	return {
+		"hardware_confirmed": false,
+		"checked_hash": "",
+		"built_hash": "",
+		"flashed_hash": "",
+		"hardware_tested": false,
+	}
+
+
+static func normalize_workflow(raw: Variant) -> Dictionary:
+	var workflow: Dictionary = _default_workflow()
+	if not raw is Dictionary:
+		return workflow
+	workflow["hardware_confirmed"] = bool(raw.get("hardware_confirmed", false))
+	workflow["checked_hash"] = str(raw.get("checked_hash", ""))
+	workflow["built_hash"] = str(raw.get("built_hash", ""))
+	workflow["flashed_hash"] = str(raw.get("flashed_hash", ""))
+	workflow["hardware_tested"] = bool(raw.get("hardware_tested", false))
+	return workflow
 
 
 ## 把任意来源的字典规整成合法项目数据（缺字段补默认值，非法值纠正）
@@ -107,6 +130,7 @@ static func normalize(raw: Dictionary) -> Dictionary:
 	data["config"] = normalize_config(cfg) if cfg is Dictionary else {}
 	data["main_c_stage1"] = str(raw.get("main_c_stage1", ""))
 	data["main_c_ai"] = str(raw.get("main_c_ai", ""))
+	data["workflow"] = normalize_workflow(raw.get("workflow", {}))
 	return data
 
 
