@@ -1,45 +1,48 @@
 /*
-* remote_control.c
-*
-*  Created on: 2020Äê4ÔÂ5ÈÕ
-*      Author: Ð¤Ê±ÓÐ
-*/
+ * remote_control.c
+ *
+ *  Created on: 2020ï¿½ï¿½4ï¿½ï¿½5ï¿½ï¿½
+ *      Author: Ð¤Ê±ï¿½ï¿½
+ */
 #include "CNU_PIE_TIMER.h"
 #include "remote_control.h"
 #include "nrf24l01.h"
 #include "main.h"
 
-RC_ctrl_t rc_ctrl; //Ò£¿ØÆ÷ÊµÌå»¯
-SendPack_t sendpack; //·¢ËÍÊý¾ÝÊµÌå»¯
+RC_ctrl_t rc_ctrl;   // Ò£ï¿½ï¿½ï¿½ï¿½Êµï¿½å»¯
+SendPack_t sendpack; // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Êµï¿½å»¯
 
-//Ò£¿ØÆ÷³õÊ¼»¯
+// Ò£ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê¼ï¿½ï¿½
 void remote_control_init(void)
-{  
-  //Ci24R1³õÊ¼»¯
-  while(!NRF24L01_Init());
+{
+  // Ci24R1ï¿½ï¿½Ê¼ï¿½ï¿½
+  while (!NRF24L01_Init())
+    ;
   // NRF24L01_Init();
 
   memset(&sendpack, 0, sizeof(SendPack_t));
-  
-  //³õÊ¼»¯½áÊø¿ªÆôÖÐ¶Ï
-  //PIT4ÖÐ¶ÏÅäÖÃ 1msÖÐ¶Ï
-	
-  //PIT_Timer_Ms(TIM4, 1);
-	
-	 Ms_Delay(200);
+
+  // ï¿½ï¿½Ê¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð¶ï¿½
+  // PIT4ï¿½Ð¶ï¿½ï¿½ï¿½ï¿½ï¿½ 1msï¿½Ð¶ï¿½
+
+  // PIT_Timer_Ms(TIM4, 1);
+
+  Ms_Delay(200);
 }
 
-//Ò£¿ØÆ÷Ð­Òé½â°ü
-uint8_t Rc_unpack_data(uint8_t* data_t)
+// Ò£ï¿½ï¿½ï¿½ï¿½Ð­ï¿½ï¿½ï¿½ï¿½
+uint8_t Rc_unpack_data(uint8_t *data_t)
 {
-	int i ;
-	uint8_t check = 0;
-  if(data_t[0] != 11) return 0; //Ö¡Í·Ð£ÑéÊ§°Ü
-  for(i = 1; i < 11; i++)
+  int i;
+  uint8_t check = 0;
+  if (data_t[0] != 11)
+    return 0; // Ö¡Í·Ð£ï¿½ï¿½Ê§ï¿½ï¿½
+  for (i = 1; i < 11; i++)
     check += data_t[i];
-  if(check != data_t[11]) return 0;//Ö¡Î²Ð£ÑéÊ§°Ü
-   
-  //½â°ü
+  if (check != data_t[11])
+    return 0; // Ö¡Î²Ð£ï¿½ï¿½Ê§ï¿½ï¿½
+
+  // ï¿½ï¿½ï¿½
   rc_ctrl.rocker.value[0] = (int16_t)(data_t[1] | data_t[2] << 8);
   rc_ctrl.rocker.value[1] = (int16_t)(data_t[3] | data_t[4] << 8);
   rc_ctrl.rocker.value[2] = (int16_t)(data_t[5] | data_t[6] << 8);
@@ -48,20 +51,21 @@ uint8_t Rc_unpack_data(uint8_t* data_t)
   return 1;
 }
 
-
 /*
-*@brief ½«Êý¾ÝÒÔ¼°Ãû×ÖÏÔÊ¾ÔÚ¶ÔÓ¦ÐÐÊý
-*@param ÏÔÊ¾Ãû×ÖÊ×µØÖ·
-*@param ÏÔÊ¾Ãû×Ö³¤¶È ×î´óÎª5¸ö×Ö·û 
-*@param ÏÔÊ¾Êý¾Ý
-*@param Î»ÓÚÒ£¿ØÆ÷µÄÐÐÊý 0-5 ¹²6ÐÐ ·ñÔò²»ÏÔÊ¾
-*@param ÏÔÊ¾´óÐ¡ (0) ÒÔ6*8´óÐ¡ÏÔÊ¾ (!0)ÒÔ8*16´óÐ¡ÏÔÊ¾
-*@example ShowStringData("abc", 3, 2.55, 0, 1);
-*/
-void ShowStringData(char* name_t, uint8_t namelenth, float num, uint8_t row, uint8_t Size)
+ *@brief ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ô¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê¾ï¿½Ú¶ï¿½Ó¦ï¿½ï¿½ï¿½ï¿½
+ *@param ï¿½ï¿½Ê¾ï¿½ï¿½ï¿½ï¿½ï¿½×µï¿½Ö·
+ *@param ï¿½ï¿½Ê¾ï¿½ï¿½ï¿½Ö³ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½Îª5ï¿½ï¿½ï¿½Ö·ï¿½
+ *@param ï¿½ï¿½Ê¾ï¿½ï¿½ï¿½ï¿½
+ *@param Î»ï¿½ï¿½Ò£ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ 0-5 ï¿½ï¿½6ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê¾
+ *@param ï¿½ï¿½Ê¾ï¿½ï¿½Ð¡ (0) ï¿½ï¿½6*8ï¿½ï¿½Ð¡ï¿½ï¿½Ê¾ (!0)ï¿½ï¿½8*16ï¿½ï¿½Ð¡ï¿½ï¿½Ê¾
+ *@example ShowStringData("abc", 3, 2.55, 0, 1);
+ */
+void ShowStringData(char *name_t, uint8_t namelenth, float num, uint8_t row, uint8_t Size)
 {
-  if(row > 5 || (name_t == 0 && namelenth != 0) || sendpack.Mode[row])return;
-  if(namelenth > 5)namelenth = 5;
+  if (row > 5 || (name_t == 0 && namelenth != 0) || sendpack.Mode[row])
+    return;
+  if (namelenth > 5)
+    namelenth = 5;
   memcpy(sendpack.line[row].Name, name_t, namelenth);
   sendpack.line[row].Namelenth = namelenth;
   sendpack.line[row].Number[0] = num;
@@ -70,18 +74,18 @@ void ShowStringData(char* name_t, uint8_t namelenth, float num, uint8_t row, uin
   sendpack.Mode[row] = 1;
 }
 
-
 /*
-*@brief ½«Á½¸ö¸¡µãÐÍÊý¾ÝÏÔÊ¾ÔÚ¶ÔÓ¦ÐÐÊý
-*@param ÏÔÊ¾Êý¾Ý×ó
-*@param ÏÔÊ¾Êý¾ÝÓÒ
-*@param Î»ÓÚÒ£¿ØÆ÷µÄÐÐÊý 0-5 ¹²6ÐÐ ·ñÔò²»ÏÔÊ¾
-*@param ÏÔÊ¾´óÐ¡ (0) ÒÔ6*8´óÐ¡ÏÔÊ¾ (!0)ÒÔ8*16´óÐ¡ÏÔÊ¾
-*@example ShowData(1.0, 0.2, 0, 1); 
-*/
+ *@brief ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê¾ï¿½Ú¶ï¿½Ó¦ï¿½ï¿½ï¿½ï¿½
+ *@param ï¿½ï¿½Ê¾ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+ *@param ï¿½ï¿½Ê¾ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+ *@param Î»ï¿½ï¿½Ò£ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ 0-5 ï¿½ï¿½6ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê¾
+ *@param ï¿½ï¿½Ê¾ï¿½ï¿½Ð¡ (0) ï¿½ï¿½6*8ï¿½ï¿½Ð¡ï¿½ï¿½Ê¾ (!0)ï¿½ï¿½8*16ï¿½ï¿½Ð¡ï¿½ï¿½Ê¾
+ *@example ShowData(1.0, 0.2, 0, 1);
+ */
 void ShowData(float numleft, float numright, uint8_t row, uint8_t Size)
 {
-  if(row > 5 || sendpack.Mode[row])return;
+  if (row > 5 || sendpack.Mode[row])
+    return;
   sendpack.line[row].Number[0] = numleft;
   sendpack.line[row].Number[1] = numright;
   sendpack.line[row].Row = row;
@@ -90,64 +94,64 @@ void ShowData(float numleft, float numright, uint8_t row, uint8_t Size)
 }
 
 /*
-*@brief Çå³ýÄ³Ò»ÐÐÏÔÊ¾ÄÚÈÝ
-*@param Î»ÓÚÒ£¿ØÆ÷µÄÐÐÊý 0-5 ¹²6ÐÐ ·ñÔòÎÞÐ§
-*@param ´óÐ¡ £¨0£©Ò»´ÎÇå³ýÒ»ÐÐ £¨£¡0£©Ò»´ÎÇå³ýÁ½ÐÐ
-*@example ShowLineClear(0, 1);  //Çå³ýµÚ0,1ÐÐµÄÏÔÊ¾ÄÚÈÝ
-*/
+ *@brief ï¿½ï¿½ï¿½Ä³Ò»ï¿½ï¿½ï¿½ï¿½Ê¾ï¿½ï¿½ï¿½ï¿½
+ *@param Î»ï¿½ï¿½Ò£ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ 0-5 ï¿½ï¿½6ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð§
+ *@param ï¿½ï¿½Ð¡ ï¿½ï¿½0ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½0ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+ *@example ShowLineClear(0, 1);  //ï¿½ï¿½ï¿½ï¿½ï¿½0,1ï¿½Ðµï¿½ï¿½ï¿½Ê¾ï¿½ï¿½ï¿½ï¿½
+ */
 void ShowLineClear(uint8_t row, uint8_t Size)
 {
-  if(row > 5)return;
+  if (row > 5)
+    return;
   sendpack.line[row].Row = row;
   sendpack.line[row].Size = Size ? 1 : 0;
   sendpack.Mode[row] = 3;
 }
 
 /*
-*@brief »ñÈ¡Ò£¿ØÆ÷°´¼üÖµ
-*@param °´¼üÐòºÅ 
-*@return °´ÏÂ·µ»Ø1 ËÉ¿ª·µ»Ø0 ÊäÈë´íÎó·µ»Ø-1
-*/
+ *@brief ï¿½ï¿½È¡Ò£ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Öµ
+ *@param ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+ *@return ï¿½ï¿½ï¿½Â·ï¿½ï¿½ï¿½1 ï¿½É¿ï¿½ï¿½ï¿½ï¿½ï¿½0 ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ó·µ»ï¿½-1
+ */
 int8_t RcKeyValueRead(KEY_OFFSET_t offset)
 {
-  if(offset > 15)return -1;
+  if (offset > 15)
+    return -1;
   return (rc_ctrl.key.value & (1 << offset)) ? 1 : 0;
 }
 
 /*
-*@brief »ñÈ¡Ò£¿ØÆ÷Ò¡¸Ëadc²É¼¯Öµ
-*@param  Ò¡¸ËÐòºÅ
-*@return ·µ»Ø¶ÔÓ¦·½Ïòadc²É¼¯Öµ
-*/
+ *@brief ï¿½ï¿½È¡Ò£ï¿½ï¿½ï¿½ï¿½Ò¡ï¿½ï¿½adcï¿½É¼ï¿½Öµ
+ *@param  Ò¡ï¿½ï¿½ï¿½ï¿½ï¿½
+ *@return ï¿½ï¿½ï¿½Ø¶ï¿½Ó¦ï¿½ï¿½ï¿½ï¿½adcï¿½É¼ï¿½Öµ
+ */
 int16_t RcRockerValueRead(ROCKER_OFFSET_t offset)
 {
   return rc_ctrl.rocker.value[offset];
 }
 
-
-
-//ÖÐ¶Ï»Øµ÷º¯Êý
-static uint32_t timeline = 0; //Ê±¼äÏß
-uint8_t Clear_Time = 0; //Ò£¿ØÆ÷¶Ï¿ªÇåÁã¼ÆÊý
-float Offset = 0; //Òì²½´«ÊäÆ«ÒÆÁ¿
+// ï¿½Ð¶Ï»Øµï¿½ï¿½ï¿½ï¿½ï¿½
+static uint32_t timeline = 0; // Ê±ï¿½ï¿½ï¿½ï¿½
+uint8_t Clear_Time = 0;       // Ò£ï¿½ï¿½ï¿½ï¿½ï¿½Ï¿ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+float Offset = 0;             // ï¿½ì²½ï¿½ï¿½ï¿½ï¿½Æ«ï¿½ï¿½ï¿½ï¿½
 void TM4_Isr() interrupt 20
 {
-	PIT_Timer_Clear(TIM4);
+  PIT_Timer_Clear(TIM4);
   timeline++;
-  if((timeline % 20) == 0) //20ms ·¢ËÍÒ»´Î
+  if ((timeline % 20) == 0) // 20ms ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½
   {
     RCPacket_Send();
   }
   Clear_Time++;
-  if(Clear_Time >= 50) //50msÎ´½ÓÊÕµ½Ò£¿ØÆ÷Êý¾ÝÔòÇå³ýËùÓÐÐÅÏ¢
+  if (Clear_Time >= 50) // 50msÎ´ï¿½ï¿½ï¿½Õµï¿½Ò£ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ï¢
   {
     Clear_Time = 0;
     memset(&rc_ctrl, 0, sizeof(rc_ctrl));
     rc_ctrl.key.value |= 1 << KEY_RCDISCONNECTED;
   }
 }
-//·¢ËÍÊý¾ÝÖ¸Õë
-SendPack_t* get_sendpack_point(void)
+// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö¸ï¿½ï¿½
+SendPack_t *get_sendpack_point(void)
 {
   return &sendpack;
 }
