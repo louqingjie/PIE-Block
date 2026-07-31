@@ -31,12 +31,11 @@ const PITCH_REL_EPS: float = 1.0e-3
 ##   "pitch_dof": bool,            末端俯仰角能否在不动位置的前提下单独调
 ##   "pitch_reason": String,       pitch_dof 为假时的简短理由（供 UI 置灰提示）
 ## }
-func analyze(joints: Array, jc: int, config_type: int,
-		l1: float, l2: float, l3: float) -> Dictionary:
+func analyze(joints: Array, jc: int) -> Dictionary:
 	var cg = CG.new()
 	var issues: Array = []
-	var axes_names: Array = cg.joint_axes(joints, jc, config_type)
-	var lens: Array = cg.joint_lengths(joints, jc, config_type, l1, l2, l3)
+	var axes_names: Array = cg.joint_axes(joints, jc)
+	var lens: Array = cg.joint_lengths(joints, jc)
 	# --- 连杆长度合理性：全零臂末端恒在原点 ---
 	var total_len: float = 0.0
 	for v in lens:
@@ -52,7 +51,7 @@ func analyze(joints: Array, jc: int, config_type: int,
 	# φ 解耦只需「存在某个姿态能做到」，故各采样姿态取或
 	var pitch_ok: bool = false
 	for sample in _sample_poses(joints, jc):
-		var chain: Dictionary = cg.fk_chain(sample, joints, jc, config_type, l1, l2, l3)
+		var chain: Dictionary = cg.fk_chain(sample, joints, jc)
 		var cols: Array = _jacobian_columns(chain, jc)
 		best_dof = max(best_dof, _rank(cols))
 		if _pitch_decoupled(chain, jc):
@@ -105,7 +104,7 @@ func analyze(joints: Array, jc: int, config_type: int,
 	# 末端俯仰角 φ 是否能在不动位置的前提下单独调
 	var pitch_reason: String = _report_pitch(issues, pitch_ok, best_dof, jc, axes_names)
 	# 逐关节提示只在整体可动时才有意义
-	issues.append_array(_check_useless_joints(cg, joints, jc, config_type, l1, l2, l3))
+	issues.append_array(_check_useless_joints(cg, joints, jc))
 	return {"dof": best_dof, "issues": issues, "locked": locked,
 		"pitch_dof": pitch_ok, "pitch_reason": pitch_reason}
 
@@ -314,15 +313,13 @@ func _direction_reach(cols: Array) -> Vector3:
 ## 找出「转动完全不改变末端位置」的关节。
 ## 最典型的是末端那个 Roll：绕自身轴自转，末端位置纹丝不动。
 ## 这不算错（夹爪自转有用），但要告诉学生它不参与定位。
-func _check_useless_joints(cg, joints: Array, jc: int, config_type: int,
-		l1: float, l2: float, l3: float) -> Array:
+func _check_useless_joints(cg, joints: Array, jc: int) -> Array:
 	var out: Array = []
-	var axes_names: Array = cg.joint_axes(joints, jc, config_type)
+	var axes_names: Array = cg.joint_axes(joints, jc)
 	for i in range(jc):
 		var moves: bool = false
 		for sample in _sample_poses(joints, jc):
-			var chain: Dictionary = cg.fk_chain(sample, joints, jc, config_type,
-				l1, l2, l3)
+			var chain: Dictionary = cg.fk_chain(sample, joints, jc)
 			var cols: Array = _jacobian_columns(chain, jc)
 			if (cols[i] as Vector3).length() > DIR_EPS:
 				moves = true

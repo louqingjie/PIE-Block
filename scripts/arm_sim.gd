@@ -1,13 +1,11 @@
 extends Control
 ## 机械臂逆解 3D 仿真视图。
 ##
-## 全部运动学都走 CodeGenEngineerIK 里的公开函数（joint_frames /
-## forward_kinematics_angles / solve_ik_checked / clamp_angles_to_limits），
+## 全部运动学都走 CodeGenEngineerIK 里的公开函数（fk_chain /
+## solve_ik_jacobian_converge / clamp_angles_to_limits），
 ## 不在本文件重推公式，避免仿真与生成的 C 代码脱节。
 ##
-## 坐标系约定（机器人坐标 -> Godot 坐标）：
-##   - 2 轴构型：(x, y) 是竖直平面，y 是高度   -> Godot (x, y, 0)
-##   - 3/4 轴构型：(x, y) 是水平面，z 是高度   -> Godot (x, z, -y)
+## 坐标系约定：机器人 X/Y 为水平面、Z 为高度，映射到 Godot (x, z, -y)。
 ## 单位：机器人侧 mm，Godot 侧 mm * MM_TO_UNIT。
 
 # ------------------------------------------------------------------ 节点路径
@@ -15,20 +13,26 @@ const P_VIEWPORT: NodePath = "Sim/SubViewport"
 const P_WORLD: NodePath = "Sim/SubViewport/World"
 const P_CAMERA: NodePath = "Sim/SubViewport/World/Camera3D"
 const P_GRID: NodePath = "Sim/SubViewport/World/Grid"
-const P_AXES: NodePath = "Sim/SubViewport/World/Axes"
-const P_ARM_ROOT: NodePath = "Sim/SubViewport/World/ArmRoot"
+const P_VEHICLE: NodePath = "Sim/SubViewport/World/VehicleRoot"
+const P_ARM_MOUNT: NodePath = "Sim/SubViewport/World/VehicleRoot/ArmMount"
+const P_AXES: NodePath = "Sim/SubViewport/World/VehicleRoot/ArmMount/Axes"
+const P_ARM_ROOT: NodePath = "Sim/SubViewport/World/VehicleRoot/ArmMount/ArmRoot"
 const P_TRAIL: NodePath = "Sim/SubViewport/World/Trail"
-const P_GHOST: NodePath = "Sim/SubViewport/World/TargetGhost"
+const P_GHOST: NodePath = "Sim/SubViewport/World/VehicleRoot/ArmMount/TargetGhost"
 const P_PARAMS: NodePath = "SidePanel/Scroll/Params"
+const P_SIDE_PANEL: NodePath = "SidePanel"
+const P_TOP_PANEL: NodePath = "TopPanel"
 const P_STATUS: NodePath = "StatusPanel/Status"
 const P_MODE: NodePath = "TopPanel/HBox/Mode"
 const P_BACK: NodePath = "TopPanel/HBox/Back"
-const P_CHASSIS: NodePath = "Sim/SubViewport/World/Chassis"
-const P_GRIPPER: NodePath = "Sim/SubViewport/World/Gripper"
+const P_CHASSIS: NodePath = "Sim/SubViewport/World/VehicleRoot/Chassis"
+const P_GRIPPER: NodePath = "Sim/SubViewport/World/VehicleRoot/ArmMount/Gripper"
 const P_CHASSIS_TOGGLE: NodePath = "TopPanel/HBox/ChassisToggle"
 const P_TRAIL_TOGGLE: NodePath = "TopPanel/HBox/TrailToggle"
 const P_TRAIL_CLEAR: NodePath = "TopPanel/HBox/TrailClear"
 const P_RESET_VIEW: NodePath = "TopPanel/HBox/ResetView"
+const P_FOLLOW_TOGGLE: NodePath = "TopPanel/HBox/FollowToggle"
+const P_RESET_POSE: NodePath = "TopPanel/HBox/ResetPose"
 const P_CONFIG_LABEL: NodePath = "TopPanel/HBox/ConfigLabel"
 const P_HINT: NodePath = "HintLabel"
 
@@ -45,10 +49,13 @@ const TIP_RADIUS_MM: float = 14.0
 const TRAIL_MAX_POINTS: int = 300
 ## 相机俯仰角限制（弧度），避免翻越极点
 const CAM_PITCH_LIMIT: float = 1.45
-## 模拟手柄的固定步进周期（ms），与生成的 C 主循环 LOOP_PERIOD_MS 一致
+## 操控模式的固定步进周期（ms），与生成的 C 主循环 LOOP_PERIOD_MS 一致
 const SIM_STEP_MS: float = 10.0
 ## 摇杆满偏值（与 C 端 valueOfRoker 量程一致）
 const ROKER_FULL: float = 2047.0
+const SPEED_SCALE_DEFAULT: float = 2.0
+const TURN_RATE_DEFAULT: float = 360.0
+const CAM_FOLLOW_LERP: float = 6.0
 ## 底盘默认尺寸（mm）。本车是两轮车（两轮同轴装在底盘中间），
 ## 故前后尺寸是「底盘板长度」而不是轴距。
 const CHASSIS_DECK_LEN_MM: float = 300.0
@@ -77,28 +84,26 @@ const WHEEL_WIDTH_MM: float = 30.0
 const KEY_MOVE_MM_PER_SEC: float = 120.0
 ## 逆解模式键盘调姿态角默认速度（°/s）
 const KEY_ROT_DEG_PER_SEC: float = 60.0
-## 手柄按键 -> 仿真里代替它的键盘按键。
-## 手柄的 A/B/C/D 故意不映射到同名字母键，否则会和摇杆的 WASD 撞车。
-const HANDLE_KEY_TO_KEYBOARD: Dictionary = {
-	"↑": KEY_UP, "↓": KEY_DOWN, "←": KEY_LEFT, "→": KEY_RIGHT, "->": KEY_RIGHT,
-	"A": KEY_1, "B": KEY_2, "C": KEY_3, "D": KEY_4, "R": KEY_R,
-}
 ## 模式枚举
 enum Mode {IK = 0, FK = 1, PRESET = 2, CONTROLLER = 3}
 
 # ------------------------------------------------------------------ 运动学求解器
 var _cg: CodeGenEngineerIK = CodeGenEngineerIK.new()
+const IK_CONFIG = preload("res://scripts/engineer_ik_config.gd")
+const DIAG = preload("res://scripts/arm_diagnosis.gd")
+const REMOTE_INPUT = preload("res://scripts/sim_remote_input.gd")
 
 # ------------------------------------------------------------------ 配置状态
 var _cfg: Dictionary = {}
-var _config_type: int = 0
+var _engineer: Dictionary = {}
+var _editable: bool = true
+## 始终保留 6 个槽位，减少关节数后再次增加不会丢失隐藏配置。
+var _joint_slots: Array = []
+var _io_init_patch: Dictionary = {}
 var _jc: int = 2
-var _l1: float = 100.0
-var _l2: float = 100.0
-var _l3: float = 0.0
-var _elbow: float = 1.0
 var _joints: Array = []
 var _presets: Array = []
+var _gripper: Dictionary = {}
 ## 末端俯仰角在当前构形上能否「位置不动、只转 φ」。
 ## 与生成器的 _phi_controllable 同一判据，不可控时 φ 不参与逆解。
 var _phi_dof: bool = false
@@ -112,7 +117,7 @@ var _mode: int = Mode.IK
 var _target: Array = [0.0, 0.0, 0.0, 0.0]
 ## 当前各关节角度（度），已过限位
 var _angles: Array = []
-## 上一帧逆解是否可达（模拟手柄模式的回退逻辑需要）
+## 上一帧逆解是否可达（操控模式的状态显示需要）
 var _reachable: bool = true
 ## 被限位钳住的关节掩码
 var _clamped: Array = []
@@ -121,12 +126,26 @@ var _fk_angles: Array = [0.0, 0.0, 0.0, 0.0]
 ## 逆解模式键盘移动速度（mm/s 与 °/s）
 var _ik_move_speed: float = KEY_MOVE_MM_PER_SEC
 var _ik_rot_speed: float = KEY_ROT_DEG_PER_SEC
-## 模拟手柄：右摇杆归一化值 [-1, 1]，由键盘推出
-var _joy: Vector2 = Vector2.ZERO
-## 模拟手柄：本周期被按住的手柄按键（"轴:方向" -> true）
-var _keys_down: Dictionary = {}
-## 模拟手柄的时间累加器（把不定 delta 切成固定 10ms 步）
+## 操控模式的完整遥控器状态及双模式固件运行状态。
+var _remote_snapshot: Dictionary = REMOTE_INPUT.compose({}, {})
+var _inverse_mode: bool = true
+var _mode_key_held: bool = false
+var _gripper_open: bool = true
+var _gripper_key_held: bool = false
+var _duty_chassis: Array = [0, 0, 0, 0]
+var _base_speed: int = 0
+var _turn_speed: int = 0
+var _duty_aux_motor: Array = [0, 0, 0, 0, 0, 0, 0, 0]
+var _duty_aux_servo: Array = [750.0, 750.0, 750.0, 750.0, 750.0, 750.0, 750.0, 750.0]
+var _duty_aux_main_servo: Array = [750.0, 750.0]
+## 操控模式的时间累加器（把不定 delta 切成固定 10ms 步）
 var _sim_accum: float = 0.0
+## 底盘世界位姿。位置使用 Godot 单位；航向绕 +Y，正值表示向机器人左侧转。
+var _vehicle_pos: Vector3 = Vector3.ZERO
+var _vehicle_heading: float = 0.0
+var _wheel_spin: Array = [0.0, 0.0, 0.0, 0.0]
+var _speed_scale: float = SPEED_SCALE_DEFAULT
+var _turn_rate: float = TURN_RATE_DEFAULT
 ## 预设点位巡航：>=0 表示正在播放第 N 个点位
 var _play_idx: int = -1
 var _play_t: float = 0.0
@@ -137,6 +156,9 @@ var _cam_yaw: float = -0.7
 var _cam_pitch: float = 0.5
 var _cam_dist: float = 5.0
 var _cam_pivot: Vector3 = Vector3.ZERO
+var _cam_focus_local: Vector3 = Vector3.ZERO
+var _cam_heading: float = 0.0
+var _follow: bool = true
 var _orbiting: bool = false
 var _panning: bool = false
 
@@ -147,10 +169,13 @@ var _tip_node: MeshInstance3D = null
 var _trail_points: Array = [] # Vector3（Godot 坐标）
 var _trail_enabled: bool = true
 var _chassis_visible: bool = true
-## 夹爪张开度 [0, 1]（1=张最大）。纯可视化，不进逆解。
-var _grip_open: float = 0.6
+## 夹爪几何张开度 [0, 1]（1=张开）。夹爪是独立舵机，不进逆解。
+var _grip_open: float = 1.0
 ## 夹爪各构件（掌座 + 两指）
 var _grip_nodes: Array = []
+var _wheel_nodes: Array = []
+var _wheel_centers: Array = []
+var _grid_step_unit: float = 1.0
 
 # 底盘尺寸与机械臂安装位置（mm，机器人坐标）。
 # 底盘只是视觉参照，不参与逆解；它的作用是看清机械臂装在车上哪里。
@@ -179,6 +204,7 @@ var _mat_grip: StandardMaterial3D = null
 var _sliders: Dictionary = {} # key -> HSlider
 var _spins: Dictionary = {} # key -> SpinBox
 var _syncing: bool = false # 滑块 <-> 数值框互相赋值时抑制回环
+var _diagnostic_labels: Array[Label] = []
 
 
 # ------------------------------------------------------------------ 生命周期
@@ -212,86 +238,93 @@ func _connect_ui() -> void:
 	var rv: Node = get_node_or_null(P_RESET_VIEW)
 	if rv is BaseButton:
 		rv.pressed.connect(_reset_view)
+	var ft: Node = get_node_or_null(P_FOLLOW_TOGGLE)
+	if ft is BaseButton:
+		ft.toggled.connect(_on_follow_toggled)
+	var rp: Node = get_node_or_null(P_RESET_POSE)
+	if rp is BaseButton:
+		rp.pressed.connect(_reset_vehicle_pose)
 
 
 # ------------------------------------------------------------------ 外部接口
-## 由 ui.gd 传入 _collect_ik_config() 的结果
-func set_config(cfg: Dictionary) -> void:
-	_cfg = cfg.duplicate(true)
+## context = {ik, engineer, editable}。工程配置只用于 IO 冲突与初始化联动。
+func set_config(context: Dictionary) -> void:
+	_cfg = IK_CONFIG.normalize(context.get("ik", {}))
+	_engineer = (context.get("engineer", {}) as Dictionary).duplicate(true)
+	_editable = bool(context.get("editable", true))
 	if is_inside_tree():
 		_apply_config()
 
 
 ## 返回配置界面时发出（由 ui.gd 连接）
 signal closed
-## 在仿真里改了臂长/中位朝向/初始角/预设点位时发出，携带完整 cfg 供 ui.gd 回填
-signal config_changed(cfg: Dictionary)
+## 返回结构化逆解配置与需要写回工程页的扩展口初始化变更。
+signal config_changed(payload: Dictionary)
 
 
 func _on_back_pressed() -> void:
 	closed.emit()
 
 
-## 把仿真里的编辑结果同步回 _cfg 并通知 ui.gd。
-## 只写用户能在这里改的字段，IO/方向/摇杆映射等仍归配置界面管。
 func _emit_config_changed() -> void:
-	# 连杆长度写回逐关节 len（配置界面已不再有全局 L1/L2/L3）。
-	# 映射与 legacy_link_lengths 互为逆运算：
-	#   2 关节：len[0]=L1, len[1]=L2
-	#   3 关节以上：底座那段为 0，len[1]=L1, len[2]=L2, len[3]=L3
-	var seg: Array = ([_l1, _l2] if _jc <= 2 else [0.0, _l1, _l2, _l3])
-	for i in range(min(_jc, _joints.size())):
-		if i < seg.size():
-			_joints[i]["len"] = "%.2f" % float(seg[i])
+	if not _editable:
+		return
+	_cfg["joint_count"] = _jc
 	_cfg["joints"] = _joints.duplicate(true)
 	_cfg["presets"] = _presets.duplicate(true)
-	config_changed.emit(_cfg.duplicate(true))
+	_cfg["gripper"] = _gripper.duplicate(true)
+	_cfg = IK_CONFIG.normalize(_cfg)
+	_gripper = (_cfg["gripper"] as Dictionary).duplicate(true)
+	_refresh_diagnostics()
+	config_changed.emit({
+		"ik": _cfg.duplicate(true),
+		"io_init": _io_init_patch.duplicate(true),
+	})
+	_io_init_patch.clear()
 
 
 # ------------------------------------------------------------------ 配置解析
 func _apply_config() -> void:
-	_config_type = int(_cfg.get("config_type", 0))
-	_jc = int(_cfg.get("joint_count", _jc_from_type(_config_type)))
-	# 连杆长度已从全局 L1/L2/L3 迁移为逐关节 len，
-	# 这里折算回旧解析路径要用的三个量（阶段二换雅可比后一并去掉）
-	var packed_lens: Array = _cg.legacy_link_lengths(_cfg)
-	_l1 = packed_lens[0]
-	_l2 = packed_lens[1]
-	_l3 = packed_lens[2]
-	# 连杆长度必须为正，否则余弦定理除零
-	if _l1 <= 0.0:
-		_l1 = 100.0
-	if _l2 <= 0.0:
-		_l2 = 100.0
-	if _l3 < 0.0:
-		_l3 = 0.0
-	_joints = _cfg.get("joints", [])
-	if _joints.is_empty():
-		# 无配置时造一份中位关节，保证界面可用
-		_joints = []
-		for i in range(_jc):
-			_joints.append({"offset": "0", "zero": "0", "min": "-90", "max": "90"})
-	# 关节数不足时补齐，避免标定时索引越界
-	while _joints.size() < _jc:
-		_joints.append({"offset": "0", "zero": "0", "min": "-90", "max": "90"})
+	_cfg = IK_CONFIG.normalize(_cfg)
+	_jc = clampi(int(_cfg.get("joint_count", 2)), 2, _cg.MAX_JOINTS)
+	_joint_slots.clear()
+	for i in range(IK_CONFIG.MAX_JOINTS):
+		if i < (_cfg["joints"] as Array).size():
+			_joint_slots.append((_cfg["joints"][i] as Dictionary).duplicate(true))
+		else:
+			_joint_slots.append(IK_CONFIG.default_joint(i))
+	_joints = _joint_slots.slice(0, _jc)
 	_presets = _cfg.get("presets", [])
+	_gripper = (_cfg.get("gripper", IK_CONFIG.default_gripper()) as Dictionary).duplicate(true)
 	# 预设点位表补齐到 4 项，便于「存为预设 N」直接写入
 	while _presets.size() < 4:
 		_presets.append({"key": "A", "x": "", "y": "", "z": "", "phi": "", "enabled": false})
-	_elbow = _cg._elbow_sign(_joints, _config_type)
 	# 末端俯仰角能否单独控制。与生成器同一判据，
 	# 不可控时 φ 不参与逆解，界面上也不该让学生以为能调。
 	var diag = load("res://scripts/arm_diagnosis.gd").new()
-	var d: Dictionary = diag.analyze(_joints, _jc, _config_type, _l1, _l2, _l3)
+	var d: Dictionary = diag.analyze(_joints, _jc)
 	_phi_dof = bool(d.get("pitch_dof", false))
 	# 初始姿态：与生成的 C 代码上电起点一致
 	_fk_angles = _cg._joint_home_angles(_joints)
 	_target = _tip_targets(_fk_angles.slice(0, _jc))
 	_angles = _fk_angles.slice(0, _jc)
+	_inverse_mode = true
+	_mode_key_held = false
+	_gripper_open = bool(_gripper.get("initial_open", true))
+	_gripper_key_held = false
+	_grip_open = 1.0 if _gripper_open else 0.0
+	_duty_chassis = [0, 0, 0, 0]
+	_base_speed = 0
+	_turn_speed = 0
+	_duty_aux_motor = [0, 0, 0, 0, 0, 0, 0, 0]
+	_duty_aux_servo = [750.0, 750.0, 750.0, 750.0, 750.0, 750.0, 750.0, 750.0]
+	_duty_aux_main_servo = [750.0, 750.0]
 	_clear_trail()
+	_update_arm_mount()
 	_rebuild_arm()
 	_rebuild_static_geometry()
 	_rebuild_params()
+	_reset_vehicle_pose(false)
 	_reset_view()
 	_update_config_label()
 	_update_hint()
@@ -306,36 +339,27 @@ func _cfg_float(key: String, default_val: float) -> float:
 	return default_val
 
 
-func _jc_from_type(t: int) -> int:
-	match t:
-		0: return 2
-		1: return 3
-		2: return 4
-	return 2
-
-
 func _update_config_label() -> void:
 	var label: Node = get_node_or_null(P_CONFIG_LABEL)
 	if label is Label:
-		var names: Array = ["2轴平面", "3轴", "4轴"]
-		var n: String = names[_config_type] if _config_type < names.size() else "未知"
-		var txt: String = "构型 %s ｜ L1=%.0f L2=%.0f" % [n, _l1, _l2]
-		if _jc >= 4:
-			txt += " L3=%.0f" % _l3
-		label.text = txt + " (mm)"
+		label.text = "%d 关节 ｜ 总臂长 %.0f mm" % [_jc, _arm_reach()]
 
 
 # ------------------------------------------------------------------ 坐标映射
 ## 机器人坐标 (mm) -> Godot 坐标（已缩放）
-## 2 轴：XY 竖直平面 -> Godot XY；3/4 轴：XY 水平面 + Z 高度 -> Godot (x, z, -y)
 func _robot_to_godot(x: float, y: float, z: float) -> Vector3:
-	if _config_type == 0:
-		return Vector3(x, y, 0.0) * MM_TO_UNIT
 	return Vector3(x, z, -y) * MM_TO_UNIT
 
 
 func _vec_to_godot(v: Vector3) -> Vector3:
 	return _robot_to_godot(v.x, v.y, v.z)
+
+
+func _arm_reach() -> float:
+	var total: float = 0.0
+	for value in _cg.joint_lengths(_joints, _jc):
+		total += absf(float(value))
+	return total
 
 
 # ------------------------------------------------------------------ 材质
@@ -365,7 +389,7 @@ func _make_material(c: Color, rough: float, metal: float) -> StandardMaterial3D:
 
 
 # ------------------------------------------------------------------ 机械臂几何（程序化）
-## 按 L1/L2/L3 与构型重建连杆与关节，参数改变即重新生成
+## 按逐关节连杆长度重建连杆与关节，参数改变即重新生成
 func _rebuild_arm() -> void:
 	var root: Node3D = get_node_or_null(P_ARM_ROOT)
 	if root == null:
@@ -377,8 +401,7 @@ func _rebuild_arm() -> void:
 		c.free()
 	_link_nodes.clear()
 	_joint_nodes.clear()
-	# 段数：2/3 轴 = 2 段（大臂 + 小臂），4 轴 = 3 段（再加腕部）
-	var seg_count: int = 3 if _config_type >= 2 else 2
+	var seg_count: int = _jc
 	for i in range(seg_count):
 		var link: MeshInstance3D = MeshInstance3D.new()
 		var cyl: CylinderMesh = CylinderMesh.new()
@@ -429,7 +452,7 @@ func _rebuild_arm() -> void:
 # ------------------------------------------------------------------ 夹爪
 ## 夹爪 = 掌座 + 两根手指。它的朝向就是末端姿态角的可视化：
 ## 掌座沿末端连杆方向伸出，两指在臂的工作平面内对开。
-## 纯可视化，不参与逆解（真机的夹爪开合另有舵机，不在本构型的关节里）。
+## 开合由独立舵机状态驱动，但不参与逆解，也不计入本构型的关节数。
 func _rebuild_gripper() -> void:
 	var root: Node3D = get_node_or_null(P_GRIPPER)
 	if root == null:
@@ -457,27 +480,16 @@ func _rebuild_gripper() -> void:
 		_grip_nodes.append(finger)
 
 
-## 按当前姿态摆放夹爪。pts 是 _render_arm already 算好的关节点链（Godot 坐标）。
-func _render_gripper(pts: Array) -> void:
+## 按通用 FK 返回的末端姿态摆放夹爪。
+func _render_gripper(chain: Dictionary, pts: Array) -> void:
 	if _grip_nodes.size() < 3 or pts.size() < 2:
 		return
 	var tip: Vector3 = pts[pts.size() - 1]
-	var prev: Vector3 = pts[pts.size() - 2]
-	var seg: Vector3 = tip - prev
-	# approach = 末端朝向。正常取末段连杆方向；末段长度为 0 时
-	# （4 轴 L3 留空即 L3=0，腕心与末端重合）改由关节角直接算，
-	# 否则夹爪会整个消失——姿态角本身是有定义的，不该因 L3=0 就不画。
-	var approach: Vector3 = seg.normalized() if seg.length() > 1e-6 \
-		else _approach_from_angles()
-	if approach.length() < 1e-6:
-		# 兜底：连关节角都算不出方向时才隐藏
-		for n in _grip_nodes:
-			n.visible = false
-		return
-	var normal: Vector3 = _arm_plane_normal()
-	var open_dir: Vector3 = normal.cross(approach)
+	var tip_basis: Basis = chain["tip_basis"]
+	var approach: Vector3 = _vec_to_godot(tip_basis * Vector3.RIGHT).normalized()
+	var open_dir: Vector3 = _vec_to_godot(tip_basis * Vector3.UP)
+	open_dir -= approach * open_dir.dot(approach)
 	if open_dir.length() < 1e-6:
-		# approach 与平面法向平行（理论上不该发生），换个参考轴兜底
 		open_dir = approach.cross(Vector3.UP)
 		if open_dir.length() < 1e-6:
 			open_dir = approach.cross(Vector3.RIGHT)
@@ -505,63 +517,23 @@ func _render_gripper(pts: Array) -> void:
 			+ open_dir * (side * half_span * MM_TO_UNIT))
 
 
-## 由关节角直接算末端朝向（Godot 坐标，单位向量）。
-## 用于末段连杆长度为 0 的情形：此时点链最后两点重合，减不出方向，
-## 但姿态角依然明确 —— 它就是工作平面内各关节角之和。
-func _approach_from_angles() -> Vector3:
-	if _config_type == 0:
-		# 2 轴：工作平面即 Godot XY，朝向角 = θ1 + θ2
-		var a: float = deg_to_rad(_sum_planar_angles())
-		return Vector3(cos(a), sin(a), 0.0)
-	# 3/4 轴：先在 (r, z) 平面内算朝向，再绕底座转 θ1
-	var phi: float = deg_to_rad(_sum_planar_angles())
-	var t0: float = deg_to_rad(_angles[0] if _angles.size() > 0 else 0.0)
-	# (r, z) 分量 -> 机器人坐标 -> Godot 坐标
-	var r_comp: float = cos(phi)
-	var z_comp: float = sin(phi)
-	return _robot_to_godot(r_comp * cos(t0), r_comp * sin(t0), z_comp).normalized()
-
-
-## 工作平面内各关节角之和（度）。2 轴是 θ1+θ2；3/4 轴跳过底座关节，取其余之和。
-func _sum_planar_angles() -> float:
-	var s: float = 0.0
-	var start: int = 0 if _config_type == 0 else 1
-	for i in range(start, _angles.size()):
-		s += float(_angles[i])
-	return s
-
-
-## 臂所在工作平面的法向（Godot 坐标，单位向量）。
-## 2 轴：臂在 Godot XY 平面内，法向是 Z。
-## 3/4 轴：臂在过底座的竖直平面内，法向 = 该平面的水平法线（随底座转角 θ1 变）。
-func _arm_plane_normal() -> Vector3:
-	if _config_type == 0:
-		return Vector3(0.0, 0.0, 1.0)
-	var t0: float = deg_to_rad(_angles[0] if _angles.size() > 0 else 0.0)
-	# 机器人水平径向方向经 _robot_to_godot 映射后的单位向量
-	var radial: Vector3 = _robot_to_godot(cos(t0), sin(t0), 0.0).normalized()
-	var n: Vector3 = radial.cross(Vector3.UP)
-	if n.length() < 1e-6:
-		return Vector3(0.0, 0.0, 1.0)
-	return n.normalized()
-
-
 # ------------------------------------------------------------------ 静态辅助几何
-## 网格地面 + 坐标轴 + 底盘。2 轴构型的"地面"是竖直工作平面，故网格朝向随构型变
+## 网格地面 + 坐标轴 + 底盘。
 func _rebuild_static_geometry() -> void:
 	_build_grid()
 	_build_axes()
 	_build_chassis()
+	_render_vehicle()
 
 
-# ------------------------------------------------------------------ 底盘（视觉参照）
-## 画一块底盘板 + 两个同轴轮（摩托车式，轮子在底盘前后中点）+ 连接轮轴。
-## 底盘不参与任何运算：逆解的原点永远是机械臂底座，
-## 所以底盘整体按 -_mount 平移，使底座落在正确的车上位置。
+# ------------------------------------------------------------------ 底盘
+## 底盘以 VehicleRoot 为中心绘制；ArmMount 单独表达机械臂安装偏移。
 func _build_chassis() -> void:
 	var root: Node3D = get_node_or_null(P_CHASSIS)
 	if root == null:
 		return
+	_wheel_nodes.clear()
+	_wheel_centers.clear()
 	# 必须立即移除：queue_free 要等到帧末，同一帧内多次重建（拖滑块时很常见）
 	# 会让旧底盘持续堆积
 	for c in root.get_children():
@@ -573,7 +545,7 @@ func _build_chassis() -> void:
 	var half_len: float = _chassis_deck_len * 0.5
 	var half_tr: float = _chassis_track * 0.5
 	var wheel_r: float = WHEEL_RADIUS_MM
-	# 高度基准：底盘板顶面在机械臂底座下方 _mount.z 处（_chassis_point 已处理）
+	# 高度基准：VehicleRoot 位于底盘板顶面中心，机械臂安装高度由 ArmMount 处理。
 	# 轮心：从地面往上一个轮半径。地面在板顶面下方 _chassis_height 处，
 	# 故轮心局部高度 = -(车高 - 轮半径)。这样车高降到贴地时轮子也跟着沉，
 	# 而不是固定挂在板下某个深度、把自己埋到地面以下。
@@ -590,9 +562,9 @@ func _build_chassis() -> void:
 	deck.material_override = _mat_deck
 	deck.position = _chassis_point(0.0, 0.0, -CHASSIS_DECK_THICK_MM * 0.5)
 	root.add_child(deck)
-	# 四个轮子：前后各一对，左右对称
-	for sx in [1.0, -1.0]:
-		for sy in [1.0, -1.0]:
+	# 顺序固定为左前、左后、右前、右后，便于按左右轮组累计转角。
+	for sy in [1.0, -1.0]:
+		for sx in [1.0, -1.0]:
 			var wheel: MeshInstance3D = MeshInstance3D.new()
 			var cyl: CylinderMesh = CylinderMesh.new()
 			cyl.top_radius = wheel_r * MM_TO_UNIT
@@ -605,9 +577,12 @@ func _build_chassis() -> void:
 			# CylinderMesh 默认沿 +Y，需把它转到机器人左右轴方向。
 			# 轮心 = 板半宽 + 半个轮宽，使轮子内侧面与板侧面**重合无缝**。
 			# 注意 deck_w 必须与这里同源，否则板和轮之间会出现横向空隙。
-			wheel.transform = Transform3D(_wheel_basis(), _chassis_point(
-				sx * half_wb, sy * (deck_w * 0.5 + WHEEL_WIDTH_MM * 0.5), axle_up))
+			var center: Vector3 = _chassis_point(
+				sx * half_wb, sy * (deck_w * 0.5 + WHEEL_WIDTH_MM * 0.5), axle_up)
+			wheel.transform = Transform3D(_wheel_basis(), center)
 			root.add_child(wheel)
+			_wheel_nodes.append(wheel)
+			_wheel_centers.append(center)
 	# 注：不画横贯左右的轮轴。底盘只是示意，轮子怎么连到车上无需深究，
 	# 而那两根长杆比底盘板本身还抢眼，反而干扰对机械臂的观察。
 	# 支臂：只在有悬挂间隙时才画（间隙为 0 说明轮子已贴着板底，无需连接件）。
@@ -661,15 +636,14 @@ func _build_chassis() -> void:
 
 
 ## 底盘局部坐标 (前后, 左右, 板顶面为 0 的高度) -> Godot 坐标。
-## 已含 -_mount 全部三个分量的平移：机械臂底座在机器人原点，
-## 底盘中心在它后方 _mount.x、侧方 _mount.y、下方 _mount.z 处。
 func _chassis_point(fwd: float, side: float, up: float) -> Vector3:
-	if _config_type == 0:
-		# 2 轴构型里机械臂的工作平面是 Godot XY，高度轴是 Y。
-		# 但底盘仍然是个三维物体：左右方向直接用 Godot Z，
-		# 否则四个轮子会全叠在一起（踩过：看起来只剩一个轮）。
-		return Vector3(fwd - _mount.x, up - _mount.z, - (side - _mount.y)) * MM_TO_UNIT
-	return _robot_to_godot(fwd - _mount.x, side - _mount.y, up - _mount.z)
+	return _robot_to_godot(fwd, side, up)
+
+
+func _update_arm_mount() -> void:
+	var arm_mount: Node3D = get_node_or_null(P_ARM_MOUNT)
+	if arm_mount != null:
+		arm_mount.position = _robot_to_godot(_mount.x, _mount.y, _mount.z)
 
 
 ## BoxMesh 尺寸：把「左右/高/前后」换算到 Godot 轴。
@@ -690,23 +664,18 @@ func _build_grid() -> void:
 		return
 	# 网格要盖住臂的可达范围与整个车身，并向外多留一圈，
 	# 否则地面只在车身边缘露出一角，看不出是地面
-	var span: float = _l1 + _l2 + _l3
+	var span: float = _arm_reach()
 	if _chassis_visible:
 		span = maxf(span, maxf(
 			_chassis_deck_len * 0.5,
 			_chassis_track * 0.5 + WHEEL_WIDTH_MM) * 1.6)
 	# 步长对齐到 10mm 的整数倍，读数更好认
-	var half: int = 5
+	var half: int = 8
 	var step_mm: float = max(10.0, round(span / float(half) / 10.0) * 10.0)
+	_grid_step_unit = step_mm * MM_TO_UNIT
 	var lim: float = float(half) * step_mm
-	# 网格代表地面，显示底盘时下移到轮下沿，否则会横穿车身
-	var plane: float = _ground_level()
-	# 网格中心跟着车走：臂装在偏离底盘中心处时，以底座为中心画会看着歪
-	var cx: float = 0.0
-	var cy: float = 0.0
-	if _chassis_visible:
-		cx = - _mount.x
-		cy = - _mount.y
+	# 网格位于 VehicleRoot 的世界高度：显示底盘时在轮下沿，隐藏时在机械臂底座平面。
+	var plane: float = -_chassis_height if _chassis_visible else _mount.z
 	var im: ImmediateMesh = ImmediateMesh.new()
 	var mat: StandardMaterial3D = StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -719,15 +688,16 @@ func _build_grid() -> void:
 		# 统一铺在水平地面上（用 _grid_point 而非 _robot_to_godot，
 		# 后者在 2 轴构型会把左右分量丢掉）
 		im.surface_set_color(minor)
-		im.surface_add_vertex(_grid_point(cx + t, cy - lim, plane))
+		im.surface_add_vertex(_grid_point(t, -lim, plane))
 		im.surface_set_color(minor)
-		im.surface_add_vertex(_grid_point(cx + t, cy + lim, plane))
+		im.surface_add_vertex(_grid_point(t, lim, plane))
 		im.surface_set_color(minor)
-		im.surface_add_vertex(_grid_point(cx - lim, cy + t, plane))
+		im.surface_add_vertex(_grid_point(-lim, t, plane))
 		im.surface_set_color(minor)
-		im.surface_add_vertex(_grid_point(cx + lim, cy + t, plane))
+		im.surface_add_vertex(_grid_point(lim, t, plane))
 	im.surface_end()
 	grid.mesh = im
+	_update_grid_origin()
 
 
 ## 悬挂间隙（mm）：车高扣掉固定轮径与板厚后剩下的那段。
@@ -738,11 +708,8 @@ func _wheel_gap() -> float:
 
 
 ## 地面网格顶点：(前后, 左右, 高度) -> Godot 坐标。
-## 与 _chassis_point 同一套映射（但不含 _mount 平移），
-## 保证 2 轴构型下网格也是水平地面而不是竖直工作平面。
+## 与 _chassis_point 同一套映射（但不含 _mount 平移）。
 func _grid_point(fwd: float, side: float, up: float) -> Vector3:
-	if _config_type == 0:
-		return Vector3(fwd, up, -side) * MM_TO_UNIT
 	return _robot_to_godot(fwd, side, up)
 
 
@@ -759,7 +726,7 @@ func _build_axes() -> void:
 	var axes: MeshInstance3D = get_node_or_null(P_AXES)
 	if not axes is MeshInstance3D:
 		return
-	var len_mm: float = (_l1 + _l2 + _l3) * 0.45
+	var len_mm: float = _arm_reach() * 0.45
 	var im: ImmediateMesh = ImmediateMesh.new()
 	var mat: StandardMaterial3D = StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -772,9 +739,6 @@ func _build_axes() -> void:
 		[Vector3(0, 0, len_mm), Color(0.35, 0.55, 0.95)],
 	]
 	for d in axis_defs:
-		# 2 轴构型没有机器人 Z 轴，跳过以免误导
-		if _config_type == 0 and d[0].z > 0.0:
-			continue
 		im.surface_set_color(d[1])
 		im.surface_add_vertex(Vector3.ZERO)
 		im.surface_set_color(d[1])
@@ -787,8 +751,7 @@ func _build_axes() -> void:
 ## 由关节角算出末端目标 [x, y, z, φ]，与 _target 的布局一致。
 ## φ 是末端朝向的仰角（与生成的 C 代码同一定义），不是 θ1+θ2+θ3。
 func _tip_targets(angles: Array) -> Array:
-	var chain: Dictionary = _cg.fk_chain(angles, _joints, _jc, _config_type,
-		_l1, _l2, _l3)
+	var chain: Dictionary = _cg.fk_chain(angles, _joints, _jc)
 	var pts: Array = chain["points"]
 	var tip: Vector3 = pts[pts.size() - 1]
 	return [tip.x, tip.y, tip.z, _cg.tip_pitch_deg(chain)]
@@ -806,13 +769,9 @@ func _target_phi() -> float:
 ## 摇杆是增量累加的，不拦住的话长推会让目标无限飘远，
 ## 松手后末端要很久才能追回来。
 func _target_too_far() -> bool:
-	var lens: Array = _cg.joint_lengths(_joints, _jc, _config_type, _l1, _l2, _l3)
-	var reach: float = 0.0
-	for v in lens:
-		reach += absf(float(v))
+	var reach: float = _arm_reach()
 	var limit: float = reach * _cg.IK_REACH_MARGIN
-	var d: Vector3 = Vector3(_target[0], _target[1],
-		_target[2] if _jc >= 3 else 0.0)
+	var d: Vector3 = Vector3(_target[0], _target[1], _target[2])
 	return d.length_squared() > limit * limit
 
 
@@ -825,12 +784,21 @@ func _recompute() -> void:
 		_clamped = lim["clamped"]
 		_reachable = true
 		_target = _tip_targets(_angles)
+	elif _mode == Mode.CONTROLLER and not _inverse_mode:
+		# 双模式固件的正解分支直接维护 jointAngle[]，不再调用逆解。
+		var forward_lim: Dictionary = _cg.clamp_angles_to_limits(_angles, _joints)
+		_angles = forward_lim["angles"]
+		_clamped = forward_lim["clamped"]
+		_reachable = true
+		_target = _tip_targets(_angles)
+		for i in range(min(_angles.size(), _fk_angles.size())):
+			_fk_angles[i] = _angles[i]
 	else:
 		# 雅可比数值逆解：从当前姿态起解，与真机 ik_solve 同一套数学。
 		# 仿真里迭代到收敛（真机是每周期走一步，靠连续周期逼近）。
 		var res: Dictionary = _cg.solve_ik_jacobian_converge(
 			Vector3(_target[0], _target[1], _target[2]), _target_phi(),
-			_angles, _joints, _jc, _config_type, _l1, _l2, _l3)
+			_angles, _joints, _jc)
 		var lim2: Dictionary = _cg.clamp_angles_to_limits(res["angles"], _joints)
 		_angles = lim2["angles"]
 		_clamped = lim2["clamped"]
@@ -839,7 +807,9 @@ func _recompute() -> void:
 		# 收敛完成时反而是假；也不能用钳位前的误差，限位会把末端推开。
 		var actual: Array = _tip_targets(_angles)
 		_reachable = Vector3(actual[0] - _target[0], actual[1] - _target[1],
-			(actual[2] - _target[2]) if _jc >= 3 else 0.0).length() < IK_REACHED_TOL
+			actual[2] - _target[2]).length() < IK_REACHED_TOL
+		if _phi_dof:
+			_reachable = _reachable and absf(actual[3] - _target[3]) < 1.0
 		# FK 滑块跟着走，切模式时姿态连续
 		for i in range(min(_angles.size(), _fk_angles.size())):
 			_fk_angles[i] = _angles[i]
@@ -850,7 +820,8 @@ func _recompute() -> void:
 
 ## 按 _angles 更新连杆/关节的 Transform3D
 func _render_arm() -> void:
-	var frames: Array = _cg.joint_frames(_angles, _l1, _l2, _l3, _config_type)
+	var chain: Dictionary = _cg.fk_chain(_angles, _joints, _jc)
+	var frames: Array = chain["points"]
 	var pts: Array = []
 	for f in frames:
 		pts.append(_vec_to_godot(f))
@@ -886,8 +857,13 @@ func _render_arm() -> void:
 		ghost.position = tgt
 		ghost.visible = _mode != Mode.FK \
 			and tgt.distance_to(pts[pts.size() - 1]) > TIP_RADIUS_MM * MM_TO_UNIT * 0.6
-	_render_gripper(pts)
-	_push_trail(pts[pts.size() - 1])
+	_render_gripper(chain, pts)
+	_push_trail(_arm_point_to_world(pts[pts.size() - 1]))
+
+
+func _arm_point_to_world(point: Vector3) -> Vector3:
+	var arm_mount: Node3D = get_node_or_null(P_ARM_MOUNT)
+	return arm_mount.to_global(point) if arm_mount != null else point
 
 
 ## 把单位长度沿 +Y 的圆柱摆到 a->b 段上
@@ -895,7 +871,7 @@ func _segment_transform(a: Vector3, b: Vector3) -> Transform3D:
 	var dir: Vector3 = b - a
 	var length: float = dir.length()
 	if length < 1e-6:
-		# 零长段（例如 L3=0 的腕部）退化为不可见的极小段，避免 basis 退化
+		# 零长段退化为不可见的极小段，避免 basis 退化
 		return Transform3D(Basis().scaled(Vector3(1, 1e-6, 1)), a)
 	var up: Vector3 = dir / length
 	# 取一个与 up 不平行的参考轴构造正交基
@@ -956,8 +932,10 @@ func _on_trail_toggled(on: bool) -> void:
 func _on_chassis_toggled(on: bool) -> void:
 	_chassis_visible = on
 	_build_chassis()
+	_render_vehicle()
 	# 网格代表地面，高度随底盘显隐而变
 	_build_grid()
+	_refresh_camera_focus()
 	_update_status()
 
 
@@ -967,13 +945,8 @@ func _update_status() -> void:
 	if not label is Label:
 		return
 	var lines: Array = []
-	var tip: Array = _cg.forward_kinematics_angles(_angles, _l1, _l2, _l3, _config_type)
-	if _config_type == 0:
-		lines.append("末端 X=%.1f Y=%.1f mm" % [tip[0], tip[1]])
-	elif _config_type == 1:
-		lines.append("末端 X=%.1f Y=%.1f Z=%.1f mm" % [tip[0], tip[1], tip[2]])
-	else:
-		lines.append("末端 X=%.1f Y=%.1f Z=%.1f mm  φ=%.1f°" % [tip[0], tip[1], tip[2], tip[3]])
+	var tip: Array = _tip_targets(_angles)
+	lines.append("末端 X=%.1f Y=%.1f Z=%.1f mm  φ=%.1f°" % [tip[0], tip[1], tip[2], tip[3]])
 	var ang_parts: Array = []
 	for i in range(_angles.size()):
 		ang_parts.append("θ%d=%.1f°" % [i + 1, _angles[i]])
@@ -985,14 +958,31 @@ func _update_status() -> void:
 		var mark: String = " ✗超程" if sv["over_travel"][i] else ""
 		sv_parts.append("s%d=%.1f°%s" % [i + 1, sv["angles"][i], mark])
 	lines.append("舵机指令角 " + "  ".join(sv_parts))
+	lines.append(_gripper_control_text())
+	if _mode == Mode.CONTROLLER:
+		var roker: Array = _remote_snapshot.get("valueOfRoker", [[0, 0], [0, 0]])
+		var pad_name: String = str(_remote_snapshot.get("pad_name", ""))
+		lines.append("遥控 %s ｜ %s" % ["逆解" if _inverse_mode else "正解",
+			"键盘" if pad_name.is_empty() else pad_name])
+		lines.append("左摇杆 [%d, %d]  右摇杆 [%d, %d]  按键 [%s]" % [
+			roker[0][0], roker[0][1], roker[1][0], roker[1][1],
+			", ".join(REMOTE_INPUT.pressed_names(_remote_snapshot))])
+		lines.append("底盘占空比 L1=%d L2=%d R1=%d R2=%d" % _duty_chassis)
+		var linear_mps: float = float(_base_speed) / 10000.0 * _speed_scale
+		var omega_dps: float = -float(_turn_speed) / 10000.0 * _turn_rate
+		lines.append("车体 X=%+.2f Y=%+.2f m  航向=%+.1f°  v=%+.2f m/s  ω=%+.1f°/s  %s" % [
+			_vehicle_pos.x / (1000.0 * MM_TO_UNIT),
+			-_vehicle_pos.z / (1000.0 * MM_TO_UNIT), rad_to_deg(_vehicle_heading),
+			linear_mps, omega_dps, "相机跟随" if _follow else "自由视角"])
 	# 可达性：与生成的 C 代码里的 ik_reachable 同义
 	if _mode == Mode.FK:
 		lines.append("标定模式：由关节角推算末端，不做逆解")
+	elif _mode == Mode.CONTROLLER and not _inverse_mode:
+		lines.append("遥控正解：按工程映射直接调整关节与 IO")
 	elif _reachable:
 		lines.append("ik_reachable = 1  目标可达")
 	else:
-		lines.append("ik_reachable = 0  目标不可达，已钳位到 [%.0f, %.0f] mm 半径边界"
-			% [abs(_l1 - _l2), _l1 + _l2])
+		lines.append("ik_reachable = 0  目标无法在当前关节限位内收敛")
 	var over: Array = []
 	for i in range(_clamped.size()):
 		if _clamped[i]:
@@ -1014,34 +1004,42 @@ func _update_status() -> void:
 
 ## 夹爪朝向描述：末端连杆相对水平面的仰角，正=朝上
 func _gripper_text() -> String:
-	var frames: Array = _cg.joint_frames(_angles, _l1, _l2, _l3, _config_type)
-	if frames.size() < 2:
-		return "夹爪 朝向未定义"
-	var seg: Vector3 = frames[frames.size() - 1] - frames[frames.size() - 2]
-	if seg.length() < 1e-6:
-		return "夹爪 末段长度为 0，朝向未定义"
-	# 末段在工作平面内的仰角：2 轴高度是 y，3/4 轴是 z
-	var rise: float = seg.y if _config_type == 0 else seg.z
-	var run: float = sqrt(seg.x * seg.x + seg.y * seg.y) if _config_type != 0 else absf(seg.x)
-	var pitch: float = rad_to_deg(atan2(rise, run))
-	return "夹爪 仰角%+.1f°  张开%.0f%%" % [pitch, _grip_open * 100.0]
+	var chain: Dictionary = _cg.fk_chain(_angles, _joints, _jc)
+	var pitch: float = _cg.tip_pitch_deg(chain)
+	return "夹爪末端仰角%+.1f°" % pitch
+
+
+func _gripper_control_text() -> String:
+	if not bool(_gripper.get("enabled", false)):
+		return "夹爪舵机 未启用（几何仅显示末端朝向）"
+	var state: String = "张开" if _gripper_open else "闭合"
+	return "夹爪舵机 %s  IO=%s  指令角=%+.1f°  duty=%d" % [
+		state, str(_gripper.get("io", "")), _gripper_command_angle(), _gripper_duty()]
+
+
+func _gripper_command_angle() -> float:
+	var field: String = "open_angle" if _gripper_open else "closed_angle"
+	var angle: float = _number_or(str(_gripper.get(field, "0")), 0.0)
+	return -angle if str(_gripper.get("dir", "正向")) == "反向" else angle
+
+
+func _gripper_duty() -> int:
+	return _cg._servo_angle_to_duty(int(round(clampf(_gripper_command_angle(), -90.0, 90.0))))
 
 
 ## 末端相对底盘的位置描述：伸出车外多少、是否低于轮下沿
 func _chassis_relation_text(tip: Array) -> String:
 	# 末端在底盘坐标系里的位置 = 机器人坐标 + 安装偏移（高度以板顶面为 0）
 	var fwd: float = tip[0] + _mount.x
-	var side: float = (tip[1] if _config_type != 0 else 0.0) + _mount.y
-	var up: float = (tip[2] if _config_type != 0 else tip[1]) + _mount.z
+	var side: float = tip[1] + _mount.y
+	var up: float = tip[2] + _mount.z
 	var half_wb: float = _chassis_deck_len * 0.5
 	var half_tr: float = _chassis_track * 0.5
-	var parts: Array = ["末端相对底盘 前后%+.0f 高%+.0f mm" % [fwd, up]]
-	if _config_type != 0:
-		parts[0] = "末端相对底盘 前后%+.0f 左右%+.0f 高%+.0f mm" % [fwd, side, up]
+	var parts: Array = ["末端相对底盘 前后%+.0f 左右%+.0f 高%+.0f mm" % [fwd, side, up]]
 	var out_of: Array = []
 	if absf(fwd) > half_wb:
 		out_of.append("前后伸出 %.0f" % (absf(fwd) - half_wb))
-	if _config_type != 0 and absf(side) > half_tr:
+	if absf(side) > half_tr:
 		out_of.append("左右伸出 %.0f" % (absf(side) - half_tr))
 	if out_of.size() > 0:
 		parts.append("（超出底盘 " + " / ".join(out_of) + " mm）")
@@ -1063,8 +1061,7 @@ func _joint_limit_str(idx: int, key: String) -> String:
 # ------------------------------------------------------------------ 模式切换
 func _on_mode_selected(idx: int) -> void:
 	_mode = idx
-	_joy = Vector2.ZERO
-	_keys_down.clear()
+	_remote_snapshot = REMOTE_INPUT.compose({}, {})
 	_play_idx = -1
 	_sim_accum = 0.0
 	_rebuild_params()
@@ -1082,7 +1079,9 @@ func _update_hint() -> void:
 		Mode.IK:
 			label.text = "%s · %s · Shift 加速 / Alt 减速" % [base, _key_hint_text()]
 		Mode.CONTROLLER:
-			label.text = "%s · WASD 代打右摇杆 · 手柄 A/B/C/D 代打为 1/2/3/4" % base
+			var pad_name: String = str(_remote_snapshot.get("pad_name", ""))
+			label.text = "%s · WASD 左摇杆 · IJKL 右摇杆 · 1/2/3/4 = A/B/C/D · %s" % [
+				base, "未检测到手柄" if pad_name.is_empty() else pad_name]
 		_:
 			label.text = base
 
@@ -1097,6 +1096,7 @@ func _rebuild_params() -> void:
 		c.queue_free()
 	_sliders.clear()
 	_spins.clear()
+	_diagnostic_labels.clear()
 	match _mode:
 		Mode.IK:
 			_build_ik_params(params)
@@ -1114,6 +1114,206 @@ func _add_section(parent: Node, text: String) -> void:
 	var l: Label = Label.new()
 	l.text = text
 	parent.add_child(l)
+
+
+func _add_option_row(parent: Node, label_text: String, choices: Array,
+		current: String, changed: Callable, disabled_values: Array = []) -> OptionButton:
+	var row := HBoxContainer.new()
+	parent.add_child(row)
+	var label := Label.new()
+	label.text = label_text
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(label)
+	var option := OptionButton.new()
+	option.custom_minimum_size = Vector2(150, 0)
+	for i in range(choices.size()):
+		option.add_item(str(choices[i]))
+		option.set_item_disabled(i, str(choices[i]) in disabled_values)
+		if str(choices[i]) == current:
+			option.selected = i
+	option.disabled = not _editable
+	option.item_selected.connect(func(index: int) -> void: changed.call(str(choices[index])))
+	row.add_child(option)
+	return option
+
+
+func _add_config_spin(parent: Node, label_text: String, value_text: String,
+		lo: float, hi: float, step: float, changed: Callable) -> SpinBox:
+	var row := HBoxContainer.new()
+	parent.add_child(row)
+	var label := Label.new()
+	label.text = label_text
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(label)
+	var spin := SpinBox.new()
+	spin.min_value = lo
+	spin.max_value = hi
+	spin.step = step
+	spin.value = clampf(value_text.to_float() if value_text.is_valid_float() else 0.0, lo, hi)
+	spin.custom_minimum_size = Vector2(120, 0)
+	spin.editable = _editable
+	spin.value_changed.connect(func(value: float) -> void: changed.call(value))
+	row.add_child(spin)
+	return spin
+
+
+func _add_toggle_row(parent: Node, text: String, pressed: bool, changed: Callable) -> CheckBox:
+	var toggle := CheckBox.new()
+	toggle.text = text
+	toggle.button_pressed = pressed
+	toggle.disabled = not _editable
+	toggle.toggled.connect(func(value: bool) -> void: changed.call(value))
+	parent.add_child(toggle)
+	return toggle
+
+
+func _build_diagnostics(parent: Node) -> void:
+	_add_section(parent, "配置检查")
+	var label := Label.new()
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_diagnostic_labels.append(label)
+	parent.add_child(label)
+	_refresh_diagnostics()
+	if not _editable:
+		var locked := Label.new()
+		locked.text = "AI 编辑阶段：配置只读"
+		parent.add_child(locked)
+
+
+func _refresh_diagnostics() -> void:
+	var result: Dictionary = IK_CONFIG.validate(_cfg, _engineer)
+	_phi_dof = bool(result.get("pitch_dof", false))
+	var issues: Array = result.get("issues", [])
+	var text: String = "配置有效"
+	if issues.is_empty():
+		text = "配置有效"
+	else:
+		var lines: Array[String] = []
+		for issue in issues:
+			lines.append("%s  %s" % ["错误" if issue.get("type", "") == "Error" else "警告",
+				str(issue.get("msg", ""))])
+		text = "\n".join(lines)
+	for label in _diagnostic_labels:
+		if is_instance_valid(label):
+			label.text = text
+
+
+func _build_structure_editor(parent: Node) -> void:
+	_add_section(parent, "机械臂构型")
+	var counts: Array = ["2", "3", "4", "5", "6"]
+	_add_option_row(parent, "关节数", counts, str(_jc), _on_joint_count_config_changed)
+	_add_option_row(parent, "正解/逆解切换键", IK_CONFIG.KEYS,
+		str(_cfg.get("mode_switch_key", "R")), func(value: String) -> void:
+			_cfg["mode_switch_key"] = value
+			_emit_config_changed())
+	var blocked: Array[String] = IK_CONFIG.blocked_chassis_ios(_engineer)
+	for i in range(_jc):
+		_add_section(parent, "关节 %d" % (i + 1))
+		var used: Array[String] = blocked.duplicate()
+		for j in range(_jc):
+			if j != i:
+				used.append(str(_joints[j].get("io", "")))
+		if bool(_gripper.get("enabled", false)):
+			used.append(str(_gripper.get("io", "")))
+		_add_option_row(parent, "IO", IK_CONFIG.IOS, str(_joints[i].get("io", "P60")),
+			func(value: String) -> void: _on_joint_option_changed(i, "io", value), used)
+		_add_option_row(parent, "方向", ["正向", "反向"], str(_joints[i].get("dir", "正向")),
+			func(value: String) -> void: _on_joint_option_changed(i, "dir", value))
+		_add_option_row(parent, "转轴", IK_CONFIG.AXES, str(_joints[i].get("axis", "Pitch")),
+			func(value: String) -> void: _on_joint_option_changed(i, "axis", value))
+		for field in [
+			["len", "连杆长度 mm", 0.0, 5000.0],
+			["offset", "中位朝向 °", -360.0, 360.0],
+			["zero", "初始角 °", -360.0, 360.0],
+			["min", "最小限位 °", -360.0, 360.0],
+			["max", "最大限位 °", -360.0, 360.0],
+		]:
+			_add_config_spin(parent, field[1], str(_joints[i].get(field[0], "")),
+				field[2], field[3], 0.5,
+				func(value: float) -> void: _on_joint_number_changed(i, field[0], value))
+	_build_diagnostics(parent)
+
+
+func _on_joint_count_config_changed(value: String) -> void:
+	if not _editable:
+		return
+	for i in range(_joints.size()):
+		_joint_slots[i] = _joints[i]
+	_jc = clampi(value.to_int(), IK_CONFIG.MIN_JOINTS, IK_CONFIG.MAX_JOINTS)
+	_joints = _joint_slots.slice(0, _jc)
+	_cfg["joint_count"] = _jc
+	_cfg["joints"] = _joints.duplicate(true)
+	_refresh_after_structure_change()
+
+
+func _on_joint_option_changed(index: int, field: String, value: String) -> void:
+	if not _editable or index >= _joints.size():
+		return
+	_joints[index][field] = value
+	_joint_slots[index] = _joints[index]
+	if field == "io" and value in IK_CONFIG.EXPANSION_IOS:
+		_io_init_patch[value] = "舵机"
+		var init: Dictionary = _engineer.get("io_init", {}).duplicate(true)
+		init[value] = "舵机"
+		_engineer["io_init"] = init
+	_refresh_after_structure_change()
+
+
+func _on_joint_number_changed(index: int, field: String, value: float) -> void:
+	if not _editable or index >= _joints.size():
+		return
+	_joints[index][field] = str(value)
+	_joint_slots[index] = _joints[index]
+	_refresh_after_structure_change()
+
+
+func _refresh_after_structure_change() -> void:
+	_cfg["joints"] = _joints.duplicate(true)
+	var diagnosis: Dictionary = DIAG.new().analyze(_joints, _jc)
+	_phi_dof = bool(diagnosis.get("pitch_dof", false))
+	_fk_angles = _cg._joint_home_angles(_joints)
+	_angles = _fk_angles.slice(0, _jc)
+	_target = _tip_targets(_angles)
+	_rebuild_arm()
+	_rebuild_static_geometry()
+	_update_config_label()
+	_clear_trail()
+	_emit_config_changed()
+	_rebuild_params()
+	_recompute()
+
+
+func _build_control_editor(parent: Node) -> void:
+	_add_section(parent, "遥控映射")
+	for row in [
+		["joy_x", "末端 X 摇杆", ["右X->末端X", "右Y->末端X"]],
+		["joy_y", "末端 Y 摇杆", ["右X->末端Y", "右Y->末端Y"]],
+		["joy_z", "末端 Z 摇杆", ["右X->末端Z", "右Y->末端Z"]],
+	]:
+		_add_option_row(parent, row[1], row[2], str(_cfg[row[0]]),
+			func(value: String) -> void:
+				_cfg[row[0]] = value
+				_emit_config_changed())
+	_add_config_spin(parent, "摇杆步长 mm/周期", str(_cfg["joy_scale"]), 0.1, 1000.0, 0.1,
+		func(value: float) -> void:
+			_cfg["joy_scale"] = str(value)
+			_emit_config_changed())
+	_add_config_spin(parent, "按键步长/周期", str(_cfg["keymove_speed"]), 0.1, 1000.0, 0.1,
+		func(value: float) -> void:
+			_cfg["keymove_speed"] = str(value)
+			_emit_config_changed())
+	var labels: Array[String] = ["末端 X", "末端 Y", "末端 Z", "姿态 φ"]
+	for i in range(4):
+		_add_section(parent, labels[i])
+		var unavailable: bool = i == 3 and not _phi_dof
+		for side in ["plus", "minus"]:
+			var option := _add_option_row(parent, "+" if side == "plus" else "-",
+				IK_CONFIG.MOVE_KEYS, str(_cfg["keymove"][i][side]),
+				func(value: String) -> void:
+					_cfg["keymove"][i][side] = value
+					_emit_config_changed())
+			option.disabled = option.disabled or unavailable
+	_build_diagnostics(parent)
 
 
 ## 一行「标签 + 滑块 + 数值框」，双向同步
@@ -1155,15 +1355,20 @@ func _on_param_changed(value: float, key: String, peer: Node) -> void:
 	if peer is Range:
 		peer.value = value
 	_syncing = false
+	if key.begins_with("j") and key.substr(1).is_valid_int():
+		var joint_idx: int = key.substr(1).to_int()
+		if joint_idx < _fk_angles.size():
+			_fk_angles[joint_idx] = value
+			_recompute()
+		return
+	if key.begins_with("len") and key.substr(3).is_valid_int():
+		_on_link_length_changed(key.substr(3).to_int(), value)
+		return
 	match key:
 		"x": _target[0] = value
 		"y": _target[1] = value
 		"z": _target[2] = value
 		"phi": _target[3] = value
-		"j0": _fk_angles[0] = value
-		"j1": _fk_angles[1] = value
-		"j2": _fk_angles[2] = value
-		"j3": _fk_angles[3] = value
 		"movespd":
 			# 速度只影响下一帧的键盘步进，不改当前姿态
 			_ik_move_speed = value
@@ -1171,16 +1376,14 @@ func _on_param_changed(value: float, key: String, peer: Node) -> void:
 		"rotspd":
 			_ik_rot_speed = value
 			return
-		"L1", "L2", "L3":
-			_on_link_length_changed(key, value)
+		"sim_speed":
+			_speed_scale = value
+			return
+		"sim_turn":
+			_turn_rate = value
 			return
 		"cwb", "ctr", "chh", "mx", "my", "mz":
 			_on_chassis_param_changed(key, value)
-			return
-		"grip":
-			# 夹爪开合纯可视化，姿态不变，只需重摆夹爪
-			_grip_open = value
-			_render_arm()
 			return
 	_recompute()
 
@@ -1195,10 +1398,15 @@ func _on_chassis_param_changed(key: String, value: float) -> void:
 		# 低于板厚就没意义了（板本身就那么厚），其余一律允许
 		"chh": _chassis_height = maxf(value, CHASSIS_DECK_THICK_MM)
 		"mz": _mount.z = value
+	_update_arm_mount()
 	_build_chassis()
+	_render_vehicle()
 	# 安装高度与底盘高都会改变地面位置，网格要跟着重画
 	if key == "mz" or key == "chh":
 		_build_grid()
+	_refresh_camera_focus()
+	if key in ["mx", "my", "mz"]:
+		_clear_trail()
 	# 提示文字里印着轮径与间隙的推算结果，改完要刷新
 	if key == "chh":
 		_refresh_chassis_hint()
@@ -1214,16 +1422,15 @@ func _refresh_chassis_hint() -> void:
 	if label is Label:
 		label.text = "底盘高 = 地面到底盘板顶面；轮径固定 %.0f mm，改车高只动悬挂间隙（当前 %.0f mm）。" \
 			% [WHEEL_RADIUS_MM * 2.0, _wheel_gap()]
-		label.text += "\n底盘只是视觉参照，不参与逆解算：逆解的原点永远是机械臂底座。"
-		label.text += "\n改安装位置就是挪底盘，用来核对臂能不能伸到车外、会不会撞到自己的轮子。"
+		label.text += "\n底盘世界运动不参与逆解算：逆解原点始终是随车移动的机械臂底座。"
+		label.text += "\n改安装位置会移动 ArmMount，用来核对臂能不能伸到车外、会不会撞到自己的轮子。"
 
 
 ## 臂长改动：几何要重建，可达域也跟着变
-func _on_link_length_changed(key: String, value: float) -> void:
-	match key:
-		"L1": _l1 = maxf(value, 1.0)
-		"L2": _l2 = maxf(value, 1.0)
-		"L3": _l3 = maxf(value, 0.0)
+func _on_link_length_changed(index: int, value: float) -> void:
+	if not _editable or index < 0 or index >= _joints.size():
+		return
+	_joints[index]["len"] = "%.2f" % maxf(value, 0.0)
 	_rebuild_arm()
 	_rebuild_static_geometry()
 	_update_config_label()
@@ -1253,22 +1460,18 @@ func _sync_param_widgets() -> void:
 
 # --- IK 模式参数
 func _build_ik_params(parent: Node) -> void:
-	_build_link_length_rows(parent)
+	_build_structure_editor(parent)
 	_add_section(parent, "末端目标（逆解）")
 	# 滑块范围按最大可达半径取整，留 20% 余量便于试探越界行为
-	var reach: float = (_l1 + _l2 + _l3) * 1.2
+	var reach: float = maxf(_arm_reach() * 1.2, 1.0)
 	_add_slider_row(parent, "x", "X (mm)", -reach, reach, _target[0], 1.0)
-	if _config_type == 0:
-		# 2 轴构型 Y 是高度
-		_add_slider_row(parent, "y", "Y (mm，竖直)", -reach, reach, _target[1], 1.0)
-	else:
-		_add_slider_row(parent, "y", "Y (mm)", -reach, reach, _target[1], 1.0)
-		_add_slider_row(parent, "z", "Z (mm，高度)", -reach, reach, _target[2], 1.0)
-	if _jc >= 4:
+	_add_slider_row(parent, "y", "Y (mm)", -reach, reach, _target[1], 1.0)
+	_add_slider_row(parent, "z", "Z (mm，高度)", -reach, reach, _target[2], 1.0)
+	if _phi_dof:
 		_add_slider_row(parent, "phi", "末端姿态角 φ (°)", -180.0, 180.0, _target[3], 1.0)
 	_add_section(parent, "键盘移动速度")
 	_add_slider_row(parent, "movespd", "位移 (mm/s)", 10.0, 500.0, _ik_move_speed, 5.0)
-	if _jc >= 4:
+	if _phi_dof:
 		_add_slider_row(parent, "rotspd", "姿态角 (°/s)", 5.0, 240.0, _ik_rot_speed, 5.0)
 	var hint: Label = Label.new()
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -1281,17 +1484,15 @@ func _build_ik_params(parent: Node) -> void:
 
 ## 当前构型的键盘映射说明（顶栏提示与侧欄共用）
 func _key_hint_text() -> String:
-	if _config_type == 0:
-		return "A/D 走 X，W/S 或 ↑↓ 走 Y（高度）"
 	var s: String = "W/S 走 X，A/D 走 Y（水平面），↑↓ 走 Z（高度）"
-	if _jc >= 4:
+	if _phi_dof:
 		s += "，Q/E 调姿态角 φ"
 	return s
 
 
 # --- FK / 标定模式参数
 func _build_fk_params(parent: Node) -> void:
-	_build_link_length_rows(parent)
+	_build_structure_editor(parent)
 	_add_section(parent, "关节角度（运动学角）")
 	for i in range(_jc):
 		var rng: Array = _joint_slider_range(i)
@@ -1302,15 +1503,18 @@ func _build_fk_params(parent: Node) -> void:
 	set_off.text = "当前姿态设为中位朝向"
 	set_off.tooltip_text = "舵机盘装歪时用：把滑块摆到「舵机处于中位时臂的实际朝向」再点这里"
 	set_off.pressed.connect(_calibrate_offset_from_current)
+	set_off.disabled = not _editable
 	parent.add_child(set_off)
 	var set_home: Button = Button.new()
 	set_home.text = "当前姿态设为初始角"
 	set_home.tooltip_text = "上电后机械臂应停在的姿态"
 	set_home.pressed.connect(_calibrate_home_from_current)
+	set_home.disabled = not _editable
 	parent.add_child(set_home)
 	var reset_off: Button = Button.new()
 	reset_off.text = "中位朝向归零"
 	reset_off.pressed.connect(_reset_offsets)
+	reset_off.disabled = not _editable
 	parent.add_child(reset_off)
 	# 当前各关节的中位朝向读数，标定完能立刻核对
 	var off_label: Label = Label.new()
@@ -1330,21 +1534,78 @@ func _build_fk_params(parent: Node) -> void:
 ## 臂长编辑行（标定与预设模式共用）
 func _build_link_length_rows(parent: Node) -> void:
 	_add_section(parent, "连杆长度 (mm)")
-	_add_slider_row(parent, "L1", "L1 大臂", 10.0, 600.0, _l1, 1.0)
-	_add_slider_row(parent, "L2", "L2 小臂", 10.0, 600.0, _l2, 1.0)
-	if _jc >= 4:
-		_add_slider_row(parent, "L3", "L3 腕部", 0.0, 600.0, _l3, 1.0)
+	var lens: Array = _cg.joint_lengths(_joints, _jc)
+	for i in range(_jc):
+		_add_slider_row(parent, "len%d" % i, "关节%d 后连杆" % (i + 1),
+			0.0, 600.0, float(lens[i]), 1.0)
 
 
-## 夹爪开合（纯视觉，真机夹爪另有舵机，不在本构型的关节里）
+## 独立夹爪舵机配置。它不占逆解关节，但与关节、底盘和工程映射共享 IO。
 func _build_gripper_rows(parent: Node) -> void:
-	_add_section(parent, "夹爪")
-	_add_slider_row(parent, "grip", "张开度", 0.0, 1.0, _grip_open, 0.05)
+	_add_section(parent, "夹爪舵机")
+	_add_toggle_row(parent, "启用夹爪舵机", bool(_gripper.get("enabled", false)),
+		func(value: bool) -> void: _on_gripper_field_changed("enabled", value))
+	var used: Array[String] = IK_CONFIG.blocked_chassis_ios(_engineer)
+	for joint in _joints:
+		used.append(str(joint.get("io", "")))
+	for row in _engineer.get("key_map", []):
+		var target: String = str(row.get("target", ""))
+		if not target.is_empty():
+			used.append(target)
+	_add_option_row(parent, "舵机 IO", IK_CONFIG.IOS, str(_gripper.get("io", "MP03")),
+		func(value: String) -> void: _on_gripper_field_changed("io", value), used)
+	_add_option_row(parent, "安装方向", ["正向", "反向"], str(_gripper.get("dir", "正向")),
+		func(value: String) -> void: _on_gripper_field_changed("dir", value))
+	_add_config_spin(parent, "张开角（相对中位）°", str(_gripper.get("open_angle", "45")),
+		-90.0, 90.0, 0.5,
+		func(value: float) -> void: _on_gripper_field_changed("open_angle", str(value)))
+	_add_config_spin(parent, "闭合角（相对中位）°", str(_gripper.get("closed_angle", "-45")),
+		-90.0, 90.0, 0.5,
+		func(value: float) -> void: _on_gripper_field_changed("closed_angle", str(value)))
+	_add_toggle_row(parent, "上电时张开", bool(_gripper.get("initial_open", true)),
+		func(value: bool) -> void: _on_gripper_field_changed("initial_open", value))
+	_add_option_row(parent, "开合触发键", IK_CONFIG.KEYS, str(_gripper.get("key", "D")),
+		func(value: String) -> void: _on_gripper_field_changed("key", value))
+	var preview := HBoxContainer.new()
+	parent.add_child(preview)
+	var open_button := Button.new()
+	open_button.text = "预览张开"
+	open_button.pressed.connect(_preview_gripper.bind(true))
+	preview.add_child(open_button)
+	var close_button := Button.new()
+	close_button.text = "预览闭合"
+	close_button.pressed.connect(_preview_gripper.bind(false))
+	preview.add_child(close_button)
 	var hint: Label = Label.new()
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	hint.text = "夹爪的伸出方向就是末端姿态角，两指在臂的工作平面内对开。"
-	hint.text += "\n开合只是示意，不占关节、不进逆解。"
+	hint.text = "角度是相对舵机中位的偏移。夹爪不计入关节数，也不参与正逆解。"
+	hint.text += "\n操控模式中单击触发键切换开合；预设点位不会改变夹爪。"
 	parent.add_child(hint)
+
+
+func _on_gripper_field_changed(field: String, value: Variant) -> void:
+	if not _editable:
+		return
+	_gripper[field] = value
+	if field == "io" and str(value) in IK_CONFIG.EXPANSION_IOS:
+		_io_init_patch[str(value)] = "舵机"
+		var init: Dictionary = _engineer.get("io_init", {}).duplicate(true)
+		init[str(value)] = "舵机"
+		_engineer["io_init"] = init
+	if field == "initial_open":
+		_preview_gripper(bool(value))
+	_cfg["gripper"] = _gripper.duplicate(true)
+	_emit_config_changed()
+	_rebuild_params()
+	_render_arm()
+	_update_status()
+
+
+func _preview_gripper(opened: bool) -> void:
+	_gripper_open = opened
+	_grip_open = 1.0 if opened else 0.0
+	_render_arm()
+	_update_status()
 
 
 ## 底盘尺寸与机械臂安装位置（纯视觉参照，不进逆解）
@@ -1356,12 +1617,10 @@ func _build_chassis_rows(parent: Node) -> void:
 	_add_slider_row(parent, "chh", "底盘高（地面到板面）",
 		CHASSIS_DECK_THICK_MM,
 		WHEEL_RADIUS_MM * 6.0 + CHASSIS_DECK_THICK_MM, _chassis_height, 5.0)
-	if _config_type != 0:
-		_add_slider_row(parent, "ctr", "轮距（左右）", 100.0, 800.0, _chassis_track, 5.0)
+	_add_slider_row(parent, "ctr", "轮距（左右）", 100.0, 800.0, _chassis_track, 5.0)
 	_add_section(parent, "机械臂安装位置（相对底盘中心）")
 	_add_slider_row(parent, "mx", "前后偏移（+前）", -400.0, 400.0, _mount.x, 5.0)
-	if _config_type != 0:
-		_add_slider_row(parent, "my", "左右偏移（+左）", -400.0, 400.0, _mount.y, 5.0)
+	_add_slider_row(parent, "my", "左右偏移（+左）", -400.0, 400.0, _mount.y, 5.0)
 	_add_slider_row(parent, "mz", "底座离底盘板高", 0.0, 400.0, _mount.z, 5.0)
 	var hint: Label = Label.new()
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -1408,6 +1667,8 @@ func _offset_summary() -> String:
 
 ## 把当前姿态写成各关节的安装中位朝向
 func _calibrate_offset_from_current() -> void:
+	if not _editable:
+		return
 	for i in range(_jc):
 		_joints[i]["offset"] = "%.2f" % _angles[i]
 	# 中位朝向变了，滑块可调范围随之平移，必须重建面板
@@ -1418,15 +1679,17 @@ func _calibrate_offset_from_current() -> void:
 
 ## 把当前姿态写成上电初始角
 func _calibrate_home_from_current() -> void:
+	if not _editable:
+		return
 	for i in range(_jc):
 		_joints[i]["zero"] = "%.2f" % _angles[i]
-	# 肘部分支由初始角符号决定，改了要重算，否则逆解会跳到镜像姿态
-	_elbow = _cg._elbow_sign(_joints, _config_type)
 	_emit_config_changed()
 	_recompute()
 
 
 func _reset_offsets() -> void:
+	if not _editable:
+		return
 	for i in range(_jc):
 		_joints[i]["offset"] = "0"
 	_rebuild_params()
@@ -1436,7 +1699,21 @@ func _reset_offsets() -> void:
 
 # --- 预设点位模式
 func _build_preset_params(parent: Node) -> void:
-	_build_link_length_rows(parent)
+	_add_section(parent, "预设配置")
+	for i in range(IK_CONFIG.PRESET_COUNT):
+		var preset: Dictionary = _presets[i]
+		_add_section(parent, "预设 %d" % (i + 1))
+		_add_toggle_row(parent, "启用", bool(preset.get("enabled", false)),
+			func(value: bool) -> void: _on_preset_field_changed(i, "enabled", value))
+		_add_option_row(parent, "触发键", IK_CONFIG.KEYS, str(preset.get("key", "A")),
+			func(value: String) -> void: _on_preset_field_changed(i, "key", value))
+		for field in [["x", "X mm", -5000.0, 5000.0], ["y", "Y mm", -5000.0, 5000.0],
+			["z", "Z mm", -5000.0, 5000.0], ["phi", "姿态 φ °", -90.0, 90.0]]:
+			var spin := _add_config_spin(parent, field[1], str(preset.get(field[0], "")),
+				field[2], field[3], 0.5,
+				func(value: float) -> void: _on_preset_field_changed(i, field[0], str(value)))
+			if field[0] == "phi" and not _phi_dof:
+				spin.editable = false
 	_add_section(parent, "预设点位（点按钮跳转）")
 	var active: Array = _active_presets()
 	if active.is_empty():
@@ -1458,27 +1735,39 @@ func _build_preset_params(parent: Node) -> void:
 		var occupied: bool = i < _presets.size() and _presets[i].get("enabled", false)
 		save.text = "存为预设 %d%s" % [i + 1, "（覆盖）" if occupied else ""]
 		save.pressed.connect(_save_preset.bind(i))
+		save.disabled = not _editable
 		parent.add_child(save)
 	if not active.is_empty():
 		var clear_row: Button = Button.new()
 		clear_row.text = "清空全部预设"
 		clear_row.pressed.connect(_clear_presets)
+		clear_row.disabled = not _editable
 		parent.add_child(clear_row)
-	if active.is_empty():
+	if not active.is_empty():
+		_add_section(parent, "巡航")
+		var play: Button = Button.new()
+		play.text = "依次播放"
+		play.pressed.connect(_start_play)
+		parent.add_child(play)
+		var stop: Button = Button.new()
+		stop.text = "停止"
+		stop.pressed.connect(func() -> void: _play_idx = -1)
+		parent.add_child(stop)
+		var hint: Label = Label.new()
+		hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		hint.text = "真机按键是瞬时跳转目标，这里的插值仅为便于观察运动路径。"
+		parent.add_child(hint)
+	_build_gripper_rows(parent)
+	_build_diagnostics(parent)
+
+
+func _on_preset_field_changed(index: int, field: String, value: Variant) -> void:
+	if not _editable or index < 0 or index >= _presets.size():
 		return
-	_add_section(parent, "巡航")
-	var play: Button = Button.new()
-	play.text = "依次播放"
-	play.pressed.connect(_start_play)
-	parent.add_child(play)
-	var stop: Button = Button.new()
-	stop.text = "停止"
-	stop.pressed.connect(func() -> void: _play_idx = -1)
-	parent.add_child(stop)
-	var hint: Label = Label.new()
-	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	hint.text = "真机按键是瞬时跳转目标，这里的插值仅为便于观察运动路径。"
-	parent.add_child(hint)
+	_presets[index][field] = value
+	_cfg["presets"] = _presets.duplicate(true)
+	_emit_config_changed()
+	_rebuild_params()
 
 
 ## 启用的预设点位，附原始序号（按钮标号要与配置界面 Preset N 对得上）
@@ -1504,12 +1793,11 @@ func _goto_preset(idx: int) -> void:
 	_recompute()
 
 
-## 预设点位坐标的显示文本（按构型裁剪，2 轴无 Z、非 4 轴无 φ）
+## 预设点位坐标的显示文本。
 func _preset_coord_text(p: Dictionary) -> String:
-	var s: String = "X=%.0f Y=%.0f" % [_p_float(p, "x"), _p_float(p, "y")]
-	if _config_type != 0:
-		s += " Z=%.0f" % _p_float(p, "z")
-	if _jc >= 4:
+	var s: String = "X=%.0f Y=%.0f Z=%.0f" % [
+		_p_float(p, "x"), _p_float(p, "y"), _p_float(p, "z")]
+	if _phi_dof:
 		s += " φ=%.0f°" % _p_float(p, "phi")
 	return s
 
@@ -1517,15 +1805,16 @@ func _preset_coord_text(p: Dictionary) -> String:
 ## 把当前末端实际位置存为第 idx 个预设点位。
 ## 存实际末端（经限位钳位后的 FK 结果）而非目标值，否则存进去的点位本身就不可达。
 func _save_preset(idx: int) -> void:
+	if not _editable:
+		return
 	while _presets.size() <= idx:
 		_presets.append({"key": "A", "x": "", "y": "", "z": "", "phi": "", "enabled": false})
-	var tip: Array = _cg.forward_kinematics_angles(_angles, _l1, _l2, _l3, _config_type)
+	var tip: Array = _tip_targets(_angles)
 	var p: Dictionary = _presets[idx]
 	p["x"] = "%.2f" % tip[0]
 	p["y"] = "%.2f" % tip[1]
-	# 2 轴构型没有 Z 轴，写空避免配置界面出现无意义的 0
-	p["z"] = "%.2f" % tip[2] if _config_type != 0 else ""
-	p["phi"] = "%.2f" % tip[3] if _jc >= 4 else ""
+	p["z"] = "%.2f" % tip[2]
+	p["phi"] = "%.2f" % tip[3] if _phi_dof else ""
 	p["enabled"] = true
 	# 按键未选过时给个默认，避免生成的 C 里 presetKey 落到回退值
 	if not p.has("key") or str(p.get("key", "")).is_empty():
@@ -1537,6 +1826,8 @@ func _save_preset(idx: int) -> void:
 
 
 func _clear_presets() -> void:
+	if not _editable:
+		return
 	for i in range(_presets.size()):
 		_presets[i]["x"] = ""
 		_presets[i]["y"] = ""
@@ -1557,64 +1848,23 @@ func _start_play() -> void:
 	_play_from = _target.duplicate()
 
 
-# --- 模拟手柄模式（键盘代打手柄）
+# --- 双模式遥控器模拟
 func _build_controller_params(parent: Node) -> void:
-	_add_section(parent, "右摇杆（键盘代打）")
-	var joy_scale: float = _cfg_float("joy_scale", 5.0)
-	var jl: Label = Label.new()
-	jl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	jl.text = "WASD = 摇杆推向四个方向（W/S 竖直，A/D 水平），松开即回中。"
-	jl.text += "\n映射：%s / %s" % [_cfg.get("joy_x", "右X->末端X"), _cfg.get("joy_y", "右Y->末端Y")]
-	if _jc >= 3:
-		jl.text += " / %s" % _cfg.get("joy_z", "右X->末端Z")
-	jl.text += "\n满偏步长 JOY_SCALE = %.2f mm/周期（%dms）" % [joy_scale, int(SIM_STEP_MS)]
-	parent.add_child(jl)
-	_add_section(parent, "手柄按键（长按持续移动）")
-	var rows: Array = _controller_key_rows()
-	if rows.is_empty():
-		var l2: Label = Label.new()
-		l2.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		l2.text = "未配置按键移动。回到配置界面的「按键控制末端移动」再选。"
-		parent.add_child(l2)
-	for row in rows:
-		var l: Label = Label.new()
-		l.text = "手柄 %s  →  键盘 %s   (%s %s)" % [
-			row["handle"], row["kb_name"], row["label"], row["sign_text"]]
-		parent.add_child(l)
+	_build_control_editor(parent)
+	_build_gripper_rows(parent)
+	_add_section(parent, "底盘仿真标定")
+	_add_slider_row(parent, "sim_speed", "10000 duty → m/s", 0.2, 6.0,
+		_speed_scale, 0.1)
+	_add_slider_row(parent, "sim_turn", "10000 duty → °/s", 30.0, 900.0,
+		_turn_rate, 10.0)
+	_add_section(parent, "遥控器状态")
 	var hint: Label = Label.new()
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	hint.text = "复现 C 端 CalculateIK：增量累加 -> 逆解 -> 越界且上次可达时回退本周期增量。"
-	hint.text += "\n手柄 A/B/C/D 在这里代打为数字键 1/2/3/4，避免与摇杆的 WASD 冲突。"
+	hint.text = "上电模式：逆解 ｜ 切换键：%s ｜ 周期：%dms" % [
+		_cfg.get("mode_switch_key", "R"), int(SIM_STEP_MS)]
+	hint.text += "\nWASD / IJKL = 左 / 右摇杆 ｜ 1/2/3/4 = A/B/C/D"
+	hint.text += "\n方向键 = 十字键 ｜ Shift / Z = 左 / 右摇杆按下 ｜ 鼠标左键 = R"
 	parent.add_child(hint)
-
-
-## 手柄按键映射表 -> 仿真里可用的键盘绑定行
-## 返回 [{axis, sign, handle, kb_code, kb_name, label, sign_text}]
-func _controller_key_rows() -> Array:
-	var keymove: Array = _cfg.get("keymove", [])
-	var labels: Array = ["末端X", "末端Y", "末端Z", "姿态角φ"]
-	var out: Array = []
-	for i in range(min(keymove.size(), 4)):
-		# 2 轴无 Z 轴；仅 4 轴有腕部姿态角（与生成器的裁剪规则一致）
-		if _jc < 3 and i == 2:
-			continue
-		if _jc < 4 and i == 3:
-			continue
-		for sign_key in ["plus", "minus"]:
-			var kname: String = str(keymove[i].get(sign_key, "不使用"))
-			if kname == "不使用" or not HANDLE_KEY_TO_KEYBOARD.has(kname):
-				continue
-			var code: int = HANDLE_KEY_TO_KEYBOARD[kname]
-			out.append({
-				"axis": i,
-				"sign": 1.0 if sign_key == "plus" else -1.0,
-				"handle": kname,
-				"kb_code": code,
-				"kb_name": OS.get_keycode_string(code),
-				"label": labels[i],
-				"sign_text": "+" if sign_key == "plus" else "-",
-			})
-	return out
 
 
 # ------------------------------------------------------------------ 每帧推进
@@ -1622,15 +1872,18 @@ func _process(delta: float) -> void:
 	if _mode == Mode.PRESET:
 		if _play_idx >= 0:
 			_step_play(delta)
-		return
-	# 焦点在数值框里时不吃键盘，否则输入 W/S 会同时推动末端
-	if _text_field_focused():
+		_update_camera(delta)
 		return
 	if _mode == Mode.CONTROLLER:
-		_poll_controller_keys()
+		_poll_remote_inputs()
 		_step_controller(delta)
 	elif _mode == Mode.IK:
+		# 焦点在数值框里时不吃键盘，否则输入 W/S 会同时推动末端。
+		if _text_field_focused():
+			_update_camera(delta)
+			return
 		_step_key_move(delta)
+	_update_camera(delta)
 
 
 ## 当前焦点是否落在可输入文本的控件上
@@ -1642,14 +1895,12 @@ func _text_field_focused() -> bool:
 	return f is LineEdit or f is TextEdit
 
 
-## 采样键盘，推出等效的摇杆偏移与手柄按键状态
-func _poll_controller_keys() -> void:
-	# WASD 代打右摇杆：满偏 = 键按下，松开立即回中（真机摇杆也是自动回中的）
-	_joy = Vector2(_axis_pair(KEY_D, KEY_A), _axis_pair(KEY_W, KEY_S))
-	_keys_down.clear()
-	for row in _controller_key_rows():
-		if Input.is_key_pressed(row["kb_code"]):
-			_keys_down["%d:%d" % [row["axis"], int(row["sign"])]] = true
+## 真实手柄始终可用；文本输入焦点只抑制键盘和鼠标代打。
+func _poll_remote_inputs() -> void:
+	var keyboard_enabled: bool = not _text_field_focused()
+	_remote_snapshot = REMOTE_INPUT.sample(_engineer_deadzone(), _engineer_deadzone(),
+		keyboard_enabled, keyboard_enabled and not _mouse_over_ui())
+	_update_hint()
 
 
 ## 复现生成的 C 主循环：固定 10ms 一步，把不定 delta 切成整数步，
@@ -1662,50 +1913,244 @@ func _step_controller(delta: float) -> void:
 	_sim_accum -= float(steps) * SIM_STEP_MS
 	# 一帧内最多补 20 步，避免掉帧后一次跳很远
 	steps = min(steps, 20)
-	var joy_scale: float = _cfg_float("joy_scale", 5.0)
-	var key_speed: float = _cfg_float("keymove_speed", 2.0)
-	var moved: bool = false
 	for _s in range(steps):
-		var last: Array = _target.duplicate()
+		_controller_tick()
 
-		# 摇杆增量：与 C 端 valueOfRoker[..]/2047 * JOY_SCALE 等价
-		var joy_vals: Array = [
-			_joy_axis_value(str(_cfg.get("joy_x", "右X->末端X"))),
-			_joy_axis_value(str(_cfg.get("joy_y", "右Y->末端Y"))),
-			_joy_axis_value(str(_cfg.get("joy_z", "右X->末端Z"))),
-		]
-		_target[0] += joy_vals[0] * joy_scale
-		_target[1] += joy_vals[1] * joy_scale
-		if _jc >= 3:
-			_target[2] += joy_vals[2] * joy_scale
-		# 按键增量
-		var keymove: Array = _cfg.get("keymove", [])
-		for i in range(min(keymove.size(), 4)):
-			for sv in [1.0, -1.0]:
-				if _keys_down.has("%d:%d" % [i, int(sv)]):
-					# φ 用 KEYMOVE_PHI_SPEED，生成器里其数值等于 keymove_speed
-					_target[i] += sv * key_speed
-		# 目标超出臂展就撤回本次增量，复现生成代码里的 ik_target_too_far。
-		# 不能用逆解返回的 reachable 判断：雅可比法下它表示「这一步有没有靠近」，
-		# 正常收敛途中也会为假，拿它回退会让末端根本动不了。
-		if _target_too_far():
-			_target = last
-		moved = true
-	if moved:
+
+func _controller_tick() -> void:
+	_update_remote_gripper()
+	_update_remote_mode()
+	_calculate_chassis_duty()
+	_integrate_chassis()
+	if _inverse_mode:
+		_duty_aux_motor.fill(0)
+		var preset_hit: bool = _apply_remote_preset()
+		if not preset_hit:
+			_apply_remote_ik_inputs()
+		_apply_controller_ik_step()
+	else:
+		_apply_forward_mapping()
 		_recompute()
 
 
-## 摇杆选项文本 -> 该轴当前归一化值。左摇杆固定给底盘，末端只用右摇杆。
-## 只看 "->" 左侧的源轴，与 codegen 的 parse_joy_axis 同规则
-func _joy_axis_value(text: String) -> float:
-	var src: String = text
-	var arrow: int = text.find("->")
-	if arrow >= 0:
-		src = text.substr(0, arrow)
-	# 摇杆竖直方向在 C 端是 valueOfRoker[1][1]，此处 _joy.y 已是归一化值
-	var raw: float = _joy.y if "Y" in src else _joy.x
-	# 走一遍 -2047~2047 的量化，与真机的整数摇杆读数一致
-	return round(raw * ROKER_FULL) / ROKER_FULL
+func _update_remote_gripper() -> void:
+	if not bool(_gripper.get("enabled", false)):
+		_gripper_key_held = false
+		return
+	var pressed: bool = _remote_key(str(_gripper.get("key", "D")))
+	if pressed and not _gripper_key_held:
+		_gripper_key_held = true
+		_preview_gripper(not _gripper_open)
+	elif not pressed:
+		_gripper_key_held = false
+
+
+func _update_remote_mode() -> void:
+	var pressed: bool = _remote_key(str(_cfg.get("mode_switch_key", "R")))
+	if pressed and not _mode_key_held:
+		_inverse_mode = not _inverse_mode
+		_mode_key_held = true
+		if _inverse_mode:
+			_target = _tip_targets(_angles)
+	elif not pressed:
+		_mode_key_held = false
+
+
+func _calculate_chassis_duty() -> void:
+	var roker: Array = _remote_snapshot["valueOfRoker"]
+	var speed_limit: int = _engineer_int("normal_speed", 4000, 0, 10000)
+	if bool(_engineer.get("sprint_enabled", false)) and _remote_pressed_id("ROCKER1"):
+		speed_limit = _engineer_int("sprint_speed", 8000, 0, 10000)
+	_base_speed = int(float(roker[0][1]) * speed_limit / ROKER_FULL)
+	_turn_speed = int(float(roker[0][0]) * speed_limit / ROKER_FULL)
+	var directions: Array = []
+	for key in ["l1_dir", "l2_dir", "r1_dir", "r2_dir"]:
+		directions.append(1 if str(_engineer.get(key, "正向")) == "正向" else -1)
+	_duty_chassis[0] = clampi(directions[0] * (-_base_speed - _turn_speed), -speed_limit, speed_limit)
+	_duty_chassis[1] = clampi(directions[1] * (-_base_speed - _turn_speed), -speed_limit, speed_limit)
+	_duty_chassis[2] = clampi(directions[2] * (_base_speed - _turn_speed), -speed_limit, speed_limit)
+	_duty_chassis[3] = clampi(directions[3] * (_base_speed - _turn_speed), -speed_limit, speed_limit)
+
+
+## 确定性差速模型。接线方向只修正真机输出，不参与仿真的物理方向。
+func _integrate_chassis() -> void:
+	var dt: float = SIM_STEP_MS / 1000.0
+	var linear_mps: float = float(_base_speed) / 10000.0 * _speed_scale
+	var omega: float = -float(_turn_speed) / 10000.0 * deg_to_rad(_turn_rate)
+	_vehicle_heading = wrapf(_vehicle_heading + omega * dt, -PI, PI)
+	# 车头在局部机器人 +X；Godot +Y 旋转后方向为 (cos h, 0, -sin h)。
+	var forward: Vector3 = Vector3(cos(_vehicle_heading), 0.0, -sin(_vehicle_heading))
+	_vehicle_pos += forward * linear_mps * (1000.0 * MM_TO_UNIT) * dt
+	var left_mps: float = float(_base_speed + _turn_speed) / 10000.0 * _speed_scale
+	var right_mps: float = float(_base_speed - _turn_speed) / 10000.0 * _speed_scale
+	var radius_m: float = WHEEL_RADIUS_MM / 1000.0
+	for i in range(_wheel_spin.size()):
+		var wheel_speed: float = left_mps if i < 2 else right_mps
+		_wheel_spin[i] = wrapf(_wheel_spin[i] + wheel_speed / radius_m * dt, -PI, PI)
+	_render_vehicle()
+	_update_grid_origin()
+
+
+func _render_vehicle() -> void:
+	var vehicle: Node3D = get_node_or_null(P_VEHICLE)
+	if vehicle == null:
+		return
+	vehicle.position = _vehicle_pos
+	vehicle.rotation = Vector3(0.0, _vehicle_heading, 0.0)
+	for i in range(min(_wheel_nodes.size(), _wheel_centers.size())):
+		var wheel: MeshInstance3D = _wheel_nodes[i]
+		if is_instance_valid(wheel):
+			wheel.transform = Transform3D(
+				Basis(Vector3.BACK, _wheel_spin[i]) * _wheel_basis(), _wheel_centers[i])
+
+
+func _update_grid_origin() -> void:
+	var grid: MeshInstance3D = get_node_or_null(P_GRID)
+	if not grid is MeshInstance3D or _grid_step_unit <= 0.0:
+		return
+	grid.position.x = round(_vehicle_pos.x / _grid_step_unit) * _grid_step_unit
+	grid.position.z = round(_vehicle_pos.z / _grid_step_unit) * _grid_step_unit
+
+
+func _apply_remote_preset() -> bool:
+	for preset in _presets:
+		if preset.get("enabled", false) and _remote_key(str(preset.get("key", ""))):
+			_target = [_p_float(preset, "x"), _p_float(preset, "y"),
+				_p_float(preset, "z"), _p_float(preset, "phi")]
+			return true
+	return false
+
+
+func _apply_remote_ik_inputs() -> void:
+	var previous: Array = _target.duplicate()
+	var joy_scale: float = _cfg_float("joy_scale", 5.0)
+	for i in range(3):
+		var mapping: String = str(_cfg.get(["joy_x", "joy_y", "joy_z"][i], ""))
+		_target[i] += float(_remote_joy_value(mapping)) * joy_scale / ROKER_FULL
+	var key_speed: float = _cfg_float("keymove_speed", 2.0)
+	var keymove: Array = _cfg.get("keymove", [])
+	for i in range(min(keymove.size(), 4)):
+		if i == 3 and not _phi_dof:
+			continue
+		if _remote_key(str(keymove[i].get("plus", "不使用"))):
+			_target[i] += key_speed
+		if _remote_key(str(keymove[i].get("minus", "不使用"))):
+			_target[i] -= key_speed
+	if _target_too_far():
+		_target = previous
+
+
+func _apply_controller_ik_step() -> void:
+	var result: Dictionary = _cg.solve_ik_jacobian(
+		Vector3(_target[0], _target[1], _target[2]), _target_phi(),
+		_angles, _joints, _jc)
+	var limited: Dictionary = _cg.clamp_angles_to_limits(result["angles"], _joints)
+	_angles = limited["angles"]
+	_clamped = limited["clamped"]
+	_reachable = bool(result.get("reachable", false))
+	for i in range(min(_angles.size(), _fk_angles.size())):
+		_fk_angles[i] = _angles[i]
+	_render_arm()
+	_sync_param_widgets()
+	_update_status()
+
+
+func _apply_forward_mapping() -> void:
+	var joint_by_io: Dictionary = {}
+	for i in range(_jc):
+		joint_by_io[str(_joints[i].get("io", ""))] = i
+	for row in _engineer.get("key_map", []):
+		var target: String = str(row.get("target", ""))
+		if target.is_empty():
+			continue
+		var input_name: String = str(row.get("input", ""))
+		var input_value: float = _forward_input_value(input_name)
+		var joystick: bool = input_name in ["右摇杆X", "右摇杆Y"]
+		var direction: float = 1.0 if str(row.get("dir", "正")) == "正" else -1.0
+		var mode: String = str(row.get("mode", "增量"))
+		var parameter: float = _number_or(str(row.get("param", "0")), 0.0)
+		if joint_by_io.has(target) and mode == "增量":
+			var joint: int = int(joint_by_io[target])
+			_angles[joint] += direction * absf(parameter) * (input_value / ROKER_FULL if joystick else input_value)
+			continue
+		if joint_by_io.has(target) and mode == "直接" and not joystick:
+			if input_value != 0.0:
+				_angles[int(joint_by_io[target])] = parameter
+			continue
+		_apply_forward_aux(target, mode, direction, parameter, input_value, joystick)
+	for i in range(_duty_aux_servo.size()):
+		_duty_aux_servo[i] = clampf(_duty_aux_servo[i], _cg.SERVO_DUTY_MIN, _cg.SERVO_DUTY_MAX)
+	for i in range(_duty_aux_main_servo.size()):
+		_duty_aux_main_servo[i] = clampf(_duty_aux_main_servo[i], _cg.SERVO_DUTY_MIN, _cg.SERVO_DUTY_MAX)
+	for i in range(_duty_aux_motor.size()):
+		_duty_aux_motor[i] = clampi(_duty_aux_motor[i], -10000, 10000)
+
+
+func _apply_forward_aux(target: String, mode: String, direction: float,
+		parameter: float, input_value: float, joystick: bool) -> void:
+	var slot: int = _cg._io_to_exp_slot(target)
+	var io_type: String = str((_engineer.get("io_init", {}) as Dictionary).get(target, "舵机"))
+	var main_index: int = 0 if target == "MP03" else (1 if target == "MP74" else -1)
+	if io_type == "舵机" and (slot >= 0 or main_index >= 0):
+		var values: Array = _duty_aux_servo if slot >= 0 else _duty_aux_main_servo
+		var index: int = slot if slot >= 0 else main_index
+		if mode == "增量":
+			var step: float = float(_cg._servo_deg_to_duty_delta(absf(parameter)))
+			values[index] += direction * step * (input_value / ROKER_FULL if joystick else input_value)
+		elif mode == "直接" and not joystick and input_value != 0.0:
+			values[index] = float(_cg._servo_angle_to_duty(int(parameter)))
+		return
+	if slot < 0 or io_type != "电机":
+		return
+	var scaled: int = int(input_value * direction * absf(parameter) / ROKER_FULL)
+	match mode:
+		"速度": _duty_aux_motor[slot] = scaled
+		"增速": _duty_aux_motor[slot] += scaled
+		"直接": _duty_aux_motor[slot] = int(direction * absf(parameter)) if input_value != 0.0 else 0
+
+
+func _forward_input_value(input_name: String) -> float:
+	var roker: Array = _remote_snapshot["valueOfRoker"]
+	match input_name:
+		"右摇杆X": return float(roker[1][0])
+		"右摇杆Y": return float(roker[1][1])
+		_: return 1.0 if _remote_key(input_name) else 0.0
+
+
+func _remote_joy_value(mapping: String) -> int:
+	var source: String = mapping.split("->")[0]
+	var roker: Array = _remote_snapshot["valueOfRoker"]
+	return int(roker[1][1] if "Y" in source else roker[1][0])
+
+
+func _remote_key(config_key: String) -> bool:
+	return config_key != "不使用" and REMOTE_INPUT.is_pressed(_remote_snapshot, config_key)
+
+
+func _remote_pressed_id(id: String) -> bool:
+	return (_remote_snapshot.get("pressed", {}) as Dictionary).has(id)
+
+
+func _engineer_deadzone() -> int:
+	return _engineer_int("deadzone", 10, 0, 2047)
+
+
+func _engineer_int(key: String, fallback: int, lo: int, hi: int) -> int:
+	var text: String = str(_engineer.get(key, "")).strip_edges()
+	return clampi(text.to_int(), lo, hi) if text.is_valid_int() else fallback
+
+
+func _number_or(text: String, fallback: float) -> float:
+	return text.to_float() if text.strip_edges().is_valid_float() else fallback
+
+
+func _mouse_over_ui() -> bool:
+	var pointer: Vector2 = get_global_mouse_position()
+	for path in [P_SIDE_PANEL, P_TOP_PANEL]:
+		var panel: Node = get_node_or_null(path)
+		if panel is Control and panel.visible and panel.get_global_rect().has_point(pointer):
+			return true
+	return false
 
 
 ## 预设点位巡航：在目标空间线性插值，走完一个点位停 0.4s 再去下一个
@@ -1734,7 +2179,7 @@ func _step_play(delta: float) -> void:
 func _reset_view() -> void:
 	# 显式算出「臂 + 车」的竖直范围与水平半宽，再让取景距离同时满足两者。
 	# 之前只用一个"包围半径"，车高一变就会把臂裁出画面顶部（踩过）。
-	var arm_reach: float = _l1 + _l2 + _l3
+	var arm_reach: float = _arm_reach()
 	# 竖直方向：上界是臂完全举起的高度，下界是地面
 	var top_mm: float = arm_reach
 	var bottom_mm: float = 0.0
@@ -1745,8 +2190,8 @@ func _reset_view() -> void:
 		half_w_mm = maxf(half_w_mm, maxf(
 			_chassis_deck_len * 0.5 + absf(_mount.x),
 			_chassis_track * 0.5 + WHEEL_WIDTH_MM + absf(_mount.y)))
-	# 取景中心放在竖直范围的正中，上下都不会被裁
-	var mid_y: float = (top_mm + bottom_mm) * 0.5 * MM_TO_UNIT
+	# 取景中心先在机械臂局部坐标计算，再换到 VehicleRoot 局部坐标。
+	var mid_up_mm: float = (top_mm + bottom_mm) * 0.5
 	# 需要装下的半高与半宽（相对取景中心）
 	var half_h: float = (top_mm - bottom_mm) * 0.5 * MM_TO_UNIT
 	var half_w: float = half_w_mm * MM_TO_UNIT
@@ -1762,38 +2207,87 @@ func _reset_view() -> void:
 		aspect = float(vp.size.x) / float(vp.size.y)
 	var need_h: float = half_w / tan(vfov) / aspect
 	_cam_dist = max(0.5, maxf(need_v, need_h) * 1.25)
-	if _config_type == 0:
-		# 2 轴：臂在 Godot XY 平面内，但底盘是三维的。
-		# 略微侧转 + 小俯角，既看清臂的工作平面又能数出四个轮子
-		_cam_yaw = -0.35
-		_cam_pitch = 0.20
-	else:
-		_cam_yaw = -0.85
-		# 俯角不能太大，否则底盘板会把下面的轮子与轮轴挡住
-		_cam_pitch = 0.26
-	# 水平方向：取景中心落在「底座」与「底盘中心」之间，两者都不至于贴边
-	var pivot: Vector3 = Vector3(0.0, mid_y, 0.0)
-	if _chassis_visible:
-		var deck_center: Vector3 = _chassis_point(0.0, 0.0, 0.0)
-		pivot.x = deck_center.x * 0.5
-		pivot.z = deck_center.z * 0.5
-	_cam_pivot = pivot
+	_cam_yaw = -0.85
+	# 俯角不能太大，否则底盘板会把下面的轮子与轮轴挡住
+	_cam_pitch = 0.26
+	_cam_focus_local = _camera_focus_from_mid_up(mid_up_mm)
+	_cam_heading = _vehicle_heading
 	_update_camera()
 
 
-func _update_camera() -> void:
+func _camera_focus_from_mid_up(mid_up_mm: float) -> Vector3:
+	var focus_fwd: float = _mount.x * 0.5 if _chassis_visible else _mount.x
+	var focus_side: float = _mount.y * 0.5 if _chassis_visible else _mount.y
+	return _robot_to_godot(focus_fwd, focus_side, _mount.z + mid_up_mm)
+
+
+func _refresh_camera_focus() -> void:
+	var bottom_mm: float = _ground_level() if _chassis_visible else 0.0
+	_cam_focus_local = _camera_focus_from_mid_up((_arm_reach() + bottom_mm) * 0.5)
+	_update_camera()
+
+
+func _vehicle_focus_world() -> Vector3:
+	var vehicle: Node3D = get_node_or_null(P_VEHICLE)
+	return vehicle.to_global(_cam_focus_local) if vehicle != null else _cam_focus_local
+
+
+func _on_follow_toggled(on: bool) -> void:
+	if on == _follow:
+		return
+	if on:
+		_cam_heading = _vehicle_heading
+		_cam_yaw = wrapf(_cam_yaw - _cam_heading, -PI, PI)
+	else:
+		_cam_yaw = wrapf(_cam_yaw + _cam_heading, -PI, PI)
+	_follow = on
+	_update_camera()
+	_update_status()
+
+
+func _reset_vehicle_pose(clear_trail: bool = true) -> void:
+	_vehicle_pos = Vector3.ZERO
+	_vehicle_heading = 0.0
+	_base_speed = 0
+	_turn_speed = 0
+	_duty_chassis = [0, 0, 0, 0]
+	_wheel_spin = [0.0, 0.0, 0.0, 0.0]
+	_cam_heading = 0.0
+	if clear_trail:
+		_clear_trail()
+	_render_vehicle()
+	_update_grid_origin()
+	_update_camera()
+	_update_status()
+
+
+func _update_camera(delta: float = 0.0) -> void:
 	var cam: Node = get_node_or_null(P_CAMERA)
 	if not cam is Camera3D:
 		return
+	if _follow:
+		_cam_pivot = _vehicle_focus_world()
+		if delta > 0.0:
+			var t: float = 1.0 - exp(-CAM_FOLLOW_LERP * delta)
+			_cam_heading = lerp_angle(_cam_heading, _vehicle_heading, t)
+		else:
+			_cam_heading = _vehicle_heading
+	var yaw: float = _cam_heading + _cam_yaw if _follow else _cam_yaw
 	var offset: Vector3 = Vector3(
-		_cam_dist * cos(_cam_pitch) * sin(_cam_yaw),
+		_cam_dist * cos(_cam_pitch) * sin(yaw),
 		_cam_dist * sin(_cam_pitch),
-		_cam_dist * cos(_cam_pitch) * cos(_cam_yaw))
+		_cam_dist * cos(_cam_pitch) * cos(yaw))
 	cam.position = _cam_pivot + offset
 	cam.look_at(_cam_pivot, Vector3.UP)
 
 
 # ------------------------------------------------------------------ 输入
+func _input(event: InputEvent) -> void:
+	if _mode == Mode.CONTROLLER \
+			and (event is InputEventJoypadButton or event is InputEventJoypadMotion):
+		get_viewport().set_input_as_handled()
+
+
 func _gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		_handle_mouse_button(event)
@@ -1828,6 +2322,9 @@ func _handle_mouse_motion(e: InputEventMouseMotion) -> void:
 	elif _panning:
 		var cam: Node = get_node_or_null(P_CAMERA)
 		if cam is Camera3D:
+			var follow_toggle: Node = get_node_or_null(P_FOLLOW_TOGGLE)
+			if follow_toggle is BaseButton and follow_toggle.button_pressed:
+				follow_toggle.button_pressed = false
 			var scale: float = _cam_dist * 0.0015
 			var basis: Basis = cam.global_transform.basis
 			_cam_pivot -= basis.x * e.relative.x * scale
@@ -1838,8 +2335,7 @@ func _handle_mouse_motion(e: InputEventMouseMotion) -> void:
 
 # ------------------------------------------------------------------ 键盘控制末端
 ## 逆解模式下由键盘直接推末端目标。
-## 3/4 轴：WASD 走水平面（W/S 是机器人 +X/-X，A/D 是 +Y/-Y），↑↓ 走 Z 高度。
-## 2 轴：只有一个竖直工作平面，A/D 走 X，W/S 与 ↑↓ 都走 Y（高度）。
+## WASD 走水平面（W/S 是机器人 +X/-X，A/D 是 +Y/-Y），↑↓ 走 Z 高度。
 ## 按住 Shift 加速一倍，按住 Alt 减速到 1/4，便于粗调后微调。
 func _step_key_move(delta: float) -> void:
 	var d: Vector3 = _key_move_axis()
@@ -1854,9 +2350,8 @@ func _step_key_move(delta: float) -> void:
 	var step: float = _ik_move_speed * mul * delta
 	_target[0] += d.x * step
 	_target[1] += d.y * step
-	if _jc >= 3:
-		_target[2] += d.z * step
-	if _jc >= 4:
+	_target[2] += d.z * step
+	if _phi_dof:
 		_target[3] += dphi * _ik_rot_speed * mul * delta
 	_recompute()
 
@@ -1864,14 +2359,6 @@ func _step_key_move(delta: float) -> void:
 ## 当前按键组合对应的移动方向（机器人坐标，各分量 -1/0/1）
 func _key_move_axis() -> Vector3:
 	var v: Vector3 = Vector3.ZERO
-	if _config_type == 0:
-		# 2 轴：X 用 A/D，高度（机器人 Y）用 W/S 与 ↑↓
-		v.x += _axis_pair(KEY_D, KEY_A)
-		v.y += _axis_pair(KEY_W, KEY_S)
-		v.y += _axis_pair(KEY_UP, KEY_DOWN)
-		v.y = clampf(v.y, -1.0, 1.0)
-		return v
-	# 3/4 轴：WASD 在水平面，↑↓ 管高度
 	v.x = _axis_pair(KEY_W, KEY_S)
 	v.y = _axis_pair(KEY_A, KEY_D)
 	v.z = _axis_pair(KEY_UP, KEY_DOWN)

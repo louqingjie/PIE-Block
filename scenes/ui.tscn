@@ -3,6 +3,7 @@
 [ext_resource type="FontFile" uid="uid://bs174vxb8p5iv" path="res://assets/fonts/NotoSansCJK-Regular.ttc" id="1_nt7q6"]
 [ext_resource type="Script" uid="uid://dp6x4avofe57m" path="res://scripts/output.gd" id="2_x4jx1"]
 [ext_resource type="Script" uid="uid://d4e4choqekw3p" path="res://scripts/ui.gd" id="2_yev5y"]
+[ext_resource type="Texture2D" uid="uid://chtiuyk4ow15a" path="res://assets/images/image-1784962225614_transparent.png" id="4_8dubc"]
 [ext_resource type="PackedScene" path="res://scenes/project_guide.tscn" id="4_guide"]
 [ext_resource type="PackedScene" path="res://scenes/upgrade_progress.tscn" id="5_upgrade"]
 
@@ -101,79 +102,76 @@ size_flags_vertical = 3
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
+split_offsets = PackedInt32Array(-1, -1)
+split_offset = -1
 
-[node name="EditZone" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer" unique_id=526377347]
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 3
-
-[node name="FirstRow" type="VBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone" unique_id=1924483469]
+[node name="FirstRow" type="VBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer" unique_id=1924483469]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="RemoteSetting" type="VBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow" unique_id=552649679]
+[node name="RemoteSetting" type="VBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow" unique_id=552649679]
 layout_mode = 2
 
-[node name="HSeparator3" type="HSeparator" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/RemoteSetting" unique_id=1631243043]
+[node name="HSeparator3" type="HSeparator" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/RemoteSetting" unique_id=1631243043]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/RemoteSetting" unique_id=524318515]
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/RemoteSetting" unique_id=524318515]
 layout_mode = 2
 size_flags_horizontal = 4
 text = "遥控器设置"
 
-[node name="HSeparator2" type="HSeparator" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/RemoteSetting" unique_id=639837662]
+[node name="HSeparator2" type="HSeparator" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/RemoteSetting" unique_id=639837662]
 layout_mode = 2
 
-[node name="Channel" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/RemoteSetting" unique_id=1105698952]
+[node name="Channel" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/RemoteSetting" unique_id=1105698952]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/RemoteSetting/Channel" unique_id=383439368]
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/RemoteSetting/Channel" unique_id=383439368]
 layout_mode = 2
 size_flags_horizontal = 2
 text = "通道号"
 
-[node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/RemoteSetting/Channel" unique_id=1805855154]
+[node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/RemoteSetting/Channel" unique_id=1805855154]
 layout_mode = 2
 size_flags_horizontal = 8
 placeholder_text = "0-125"
 
-[node name="DeadZone" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/RemoteSetting" unique_id=1423946704]
+[node name="DeadZone" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/RemoteSetting" unique_id=1423946704]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/RemoteSetting/DeadZone" unique_id=314407039]
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/RemoteSetting/DeadZone" unique_id=314407039]
 layout_mode = 2
 size_flags_horizontal = 2
 text = "死区"
 
-[node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/RemoteSetting/DeadZone" unique_id=1700032154]
+[node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/RemoteSetting/DeadZone" unique_id=1700032154]
 layout_mode = 2
 size_flags_horizontal = 8
 text = "10"
 
-[node name="HSeparator" type="HSeparator" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/RemoteSetting" unique_id=905167803]
+[node name="HSeparator" type="HSeparator" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/RemoteSetting" unique_id=905167803]
 layout_mode = 2
 
-[node name="Chassis" type="VBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow" unique_id=1030998162]
+[node name="Chassis" type="VBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow" unique_id=1030998162]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/Chassis" unique_id=1496024073]
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/Chassis" unique_id=1496024073]
 layout_mode = 2
 size_flags_horizontal = 4
 text = "底盘"
 
-[node name="HSeparator2" type="HSeparator" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/Chassis" unique_id=472595969]
+[node name="HSeparator2" type="HSeparator" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/Chassis" unique_id=472595969]
 layout_mode = 2
 
-[node name="L1" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/Chassis" unique_id=126562025]
+[node name="L1" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/Chassis" unique_id=126562025]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/Chassis/L1" unique_id=684353020]
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/Chassis/L1" unique_id=684353020]
 layout_mode = 2
 size_flags_horizontal = 2
 text = "左前轮 IO"
 
-[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/Chassis/L1" unique_id=955150111]
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/Chassis/L1" unique_id=955150111]
 layout_mode = 2
 size_flags_horizontal = 8
 selected = 3
@@ -191,7 +189,7 @@ popup/item_4/id = 4
 popup/item_5/text = "P62 P63"
 popup/item_5/id = 5
 
-[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/Chassis/L1" unique_id=852780576]
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/Chassis/L1" unique_id=852780576]
 layout_mode = 2
 size_flags_horizontal = 8
 selected = 0
@@ -201,15 +199,15 @@ popup/item_0/id = 0
 popup/item_1/text = "反向"
 popup/item_1/id = 1
 
-[node name="L2" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/Chassis" unique_id=921020273]
+[node name="L2" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/Chassis" unique_id=921020273]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/Chassis/L2" unique_id=997664485]
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/Chassis/L2" unique_id=997664485]
 layout_mode = 2
 size_flags_horizontal = 2
 text = "左后轮 IO"
 
-[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/Chassis/L2" unique_id=88734850]
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/Chassis/L2" unique_id=88734850]
 layout_mode = 2
 size_flags_horizontal = 8
 selected = 2
@@ -227,7 +225,7 @@ popup/item_4/id = 4
 popup/item_5/text = "P62 P63"
 popup/item_5/id = 5
 
-[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/Chassis/L2" unique_id=1511161707]
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/Chassis/L2" unique_id=1511161707]
 layout_mode = 2
 size_flags_horizontal = 8
 selected = 0
@@ -237,15 +235,15 @@ popup/item_0/id = 0
 popup/item_1/text = "反向"
 popup/item_1/id = 1
 
-[node name="R1" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/Chassis" unique_id=1529605440]
+[node name="R1" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/Chassis" unique_id=1529605440]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/Chassis/R1" unique_id=949560284]
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/Chassis/R1" unique_id=949560284]
 layout_mode = 2
 size_flags_horizontal = 2
 text = "右前轮 IO"
 
-[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/Chassis/R1" unique_id=932150419]
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/Chassis/R1" unique_id=932150419]
 layout_mode = 2
 size_flags_horizontal = 8
 selected = 1
@@ -263,7 +261,7 @@ popup/item_4/id = 4
 popup/item_5/text = "P62 P63"
 popup/item_5/id = 5
 
-[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/Chassis/R1" unique_id=161761569]
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/Chassis/R1" unique_id=161761569]
 layout_mode = 2
 size_flags_horizontal = 8
 selected = 0
@@ -273,15 +271,15 @@ popup/item_0/id = 0
 popup/item_1/text = "反向"
 popup/item_1/id = 1
 
-[node name="R2" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/Chassis" unique_id=1443549150]
+[node name="R2" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/Chassis" unique_id=1443549150]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/Chassis/R2" unique_id=1685891822]
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/Chassis/R2" unique_id=1685891822]
 layout_mode = 2
 size_flags_horizontal = 2
 text = "右后轮 IO"
 
-[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/Chassis/R2" unique_id=873006863]
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/Chassis/R2" unique_id=873006863]
 layout_mode = 2
 size_flags_horizontal = 8
 selected = 0
@@ -299,7 +297,7 @@ popup/item_4/id = 4
 popup/item_5/text = "P62 P63"
 popup/item_5/id = 5
 
-[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/Chassis/R2" unique_id=1479638528]
+[node name="OptionButton2" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/Chassis/R2" unique_id=1479638528]
 layout_mode = 2
 size_flags_horizontal = 8
 selected = 0
@@ -309,49 +307,70 @@ popup/item_0/id = 0
 popup/item_1/text = "反向"
 popup/item_1/id = 1
 
-[node name="Speed" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/Chassis" unique_id=1780330990]
+[node name="Speed" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/Chassis" unique_id=1780330990]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/Chassis/Speed" unique_id=1859310174]
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/Chassis/Speed" unique_id=1859310174]
 layout_mode = 2
 size_flags_horizontal = 2
 text = "普通速度"
 
-[node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/Chassis/Speed" unique_id=1941673480]
+[node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/Chassis/Speed" unique_id=1941673480]
 layout_mode = 2
 size_flags_horizontal = 8
 text = "8000"
 placeholder_text = "0~1e4"
 
-[node name="SprintSpeed" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/Chassis" unique_id=468703957]
+[node name="SprintSpeed" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/Chassis" unique_id=468703957]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/Chassis/SprintSpeed" unique_id=77090758]
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/Chassis/SprintSpeed" unique_id=77090758]
 layout_mode = 2
 size_flags_horizontal = 2
 text = "冲刺速度"
 
-[node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/Chassis/SprintSpeed" unique_id=447631766]
+[node name="LineEdit" type="LineEdit" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/Chassis/SprintSpeed" unique_id=447631766]
 layout_mode = 2
 size_flags_horizontal = 8
 text = "10000"
 placeholder_text = "0~1e4"
 
-[node name="Sprint" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/Chassis" unique_id=571092198]
+[node name="Sprint" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/Chassis" unique_id=571092198]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/Chassis/Sprint" unique_id=1027207429]
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/Chassis/Sprint" unique_id=1027207429]
 layout_mode = 2
 size_flags_horizontal = 2
 text = "按下左摇杆冲刺"
 
-[node name="CheckBox" type="CheckBox" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/FirstRow/Chassis/Sprint" unique_id=300063611]
+[node name="CheckBox" type="CheckBox" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/Chassis/Sprint" unique_id=300063611]
 layout_mode = 2
 size_flags_horizontal = 10
 button_pressed = true
 
-[node name="VSeparator2" type="VSeparator" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone" unique_id=334814236]
+[node name="HSeparator3" type="HSeparator" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/Chassis" unique_id=1551022486]
 layout_mode = 2
+
+[node name="Control" type="Control" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow" unique_id=1164344812]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="TextureRect" type="TextureRect" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/Control" unique_id=303206144]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_vertical = 3
+texture = ExtResource("4_8dubc")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="EditZone" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer" unique_id=526377347]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
 
 [node name="InfantryAdvance" type="VBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone" unique_id=1786380384]
 visible = false
@@ -1139,9 +1158,6 @@ popup/item_8/id = 8
 popup/item_9/text = "MP74"
 popup/item_9/id = 9
 
-[node name="VSeparator" type="VSeparator" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone" unique_id=1122104879]
-layout_mode = 2
-
 [node name="SecondRow" type="VBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone" unique_id=1339218254]
 layout_mode = 2
 size_flags_horizontal = 3
@@ -1149,14 +1165,13 @@ size_flags_horizontal = 3
 [node name="TabContainer" type="TabContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow" unique_id=1246727485]
 layout_mode = 2
 size_flags_vertical = 3
-current_tab = 2
+current_tab = 0
 tab_0/title = "步兵"
 tab_1/title = "工程"
 tab_2/title = "工程逆解算"
 tab_3/title = "调试"
 
 [node name="Infantry" type="VBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer" unique_id=1911259566]
-visible = false
 layout_mode = 2
 metadata/_tab_index = 0
 metadata/_tab_name = "步兵"
@@ -2323,6 +2338,7 @@ popup/item_10/text = "MP74"
 popup/item_10/id = 10
 
 [node name="EngineerAdvanced" type="VBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer" unique_id=2017398683]
+visible = false
 layout_mode = 2
 metadata/_tab_index = 2
 metadata/_tab_name = "工程逆解算"

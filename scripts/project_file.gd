@@ -5,6 +5,7 @@ extends RefCounted
 ##   - kind            项目类型，新建时定死，之后不可转换
 ##   - stage           1 = 图形化配置阶段；2 = AI 编辑阶段（只能 1 -> 2 单向推进）
 ##   - config          图形化配置快照（节点相对路径 -> 值），进入阶段二后冻结
+##   - ik_config       工程逆解结构化配置，由 3D 仿真页维护，进入阶段二后冻结
 ##   - active_tab      TabContainer 索引，工程项目用于区分「工程 / 工程逆解算」
 ##   - main_c_stage1   阶段一图形化生成的 C 源，进入阶段二时冻结
 ##   - main_c_ai       阶段二 AI / 手工编辑后的 C 源
@@ -15,7 +16,9 @@ extends RefCounted
 ## 文件扩展名（不含点）
 const EXT: String = "pieproj"
 ## 格式版本，将来迁移用
-const FORMAT_VERSION: int = 3
+const IK_CONFIG = preload("res://scripts/engineer_ik_config.gd")
+
+const FORMAT_VERSION: int = 5
 const GUIDE_STEP_COUNT: int = 7
 
 # ------------------------------------------------------------------ 项目类型
@@ -88,6 +91,7 @@ static func new_data(kind: String) -> Dictionary:
 		"stage": 1,
 		"active_tab": kind_default_tab(k),
 		"config": {},
+		"ik_config": IK_CONFIG.default_config(),
 		"main_c_stage1": "",
 		"main_c_ai": "",
 		"workflow": _default_workflow(),
@@ -137,6 +141,7 @@ static func normalize(raw: Dictionary) -> Dictionary:
 	data["active_tab"] = tab if tab in kind_tabs(kind) else kind_default_tab(kind)
 	var cfg: Variant = raw.get("config", {})
 	data["config"] = normalize_config(cfg) if cfg is Dictionary else {}
+	data["ik_config"] = IK_CONFIG.normalize(raw.get("ik_config", {}))
 	data["main_c_stage1"] = str(raw.get("main_c_stage1", ""))
 	data["main_c_ai"] = str(raw.get("main_c_ai", ""))
 	data["workflow"] = normalize_workflow(raw.get("workflow", {}))

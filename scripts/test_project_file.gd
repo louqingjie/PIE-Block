@@ -4,6 +4,7 @@ extends SceneTree
 ## 运行方式：godot --headless --path . --script scripts/test_project_file.gd
 
 const PF = preload("res://scripts/project_file.gd")
+const IK_CONFIG = preload("res://scripts/engineer_ik_config.gd")
 
 const TMP_DIR: String = "user://_test_pieproj"
 
@@ -33,6 +34,7 @@ func _check(label: String, ok: bool, detail: String = "") -> void:
 
 func _initialize() -> void:
 	print("=== 项目文件与配置序列化测试 ===\n")
+	_check("项目格式版本已升级到 5", PF.FORMAT_VERSION == 5)
 	DirAccess.make_dir_recursive_absolute(TMP_DIR)
 	_test_kind_mapping()
 	_test_roundtrip()
@@ -143,6 +145,12 @@ func _test_roundtrip() -> void:
 			"FirstRow/Chassis/Sprint/CheckBox": {"b": true},
 			"SecondRow/中文节点/Weird": {"t": "引号\" 反斜杠\\ 换行\n结束"},
 		}
+		data["ik_config"]["joint_count"] = 6
+		data["ik_config"]["joints"] = []
+		for i in range(6):
+			data["ik_config"]["joints"].append({"io": ["P60", "P62", "P64", "P66", "P74", "P75"][i],
+				"dir": "正向", "axis": "Yaw" if i == 0 else "Pitch", "len": str(i * 10),
+				"offset": "0", "zero": "0", "min": "-90", "max": "90"})
 		data["main_c_stage1"] = "#include \"main.h\"\nint main(){return 0;}\n"
 		data["main_c_ai"] = "// AI 改过\nint main(){while(1);}\n" if stage >= 2 else ""
 		data["workflow"] = {
@@ -166,6 +174,8 @@ func _test_roundtrip() -> void:
 		_check("%s/阶段%d active_tab 保持" % [kind, stage], int(got["active_tab"]) == tab)
 		_check("%s/阶段%d config 完全一致" % [kind, stage],
 			got["config"] == data["config"])
+		_check("%s/阶段%d ik_config 完全一致" % [kind, stage],
+			got["ik_config"] == data["ik_config"])
 		_check("%s/阶段%d main_c_stage1 一致" % [kind, stage],
 			got["main_c_stage1"] == data["main_c_stage1"])
 		_check("%s/阶段%d main_c_ai 一致" % [kind, stage],
@@ -228,6 +238,7 @@ func _test_normalize() -> void:
 		_check("缺 kind 回退步兵", d["kind"] == PF.KIND_INFANTRY)
 		_check("缺 stage 回退 1", int(d["stage"]) == 1)
 		_check("缺 config 回退空字典", (d["config"] as Dictionary).is_empty())
+		_check("缺夹爪配置补默认固定舵机", d["ik_config"]["gripper"] == IK_CONFIG.default_gripper())
 		_check("缺 main_c 回退空串", d["main_c_stage1"] == "" and d["main_c_ai"] == "")
 
 	var weird: Dictionary = PF.normalize({
@@ -280,10 +291,8 @@ func _test_config_roundtrip() -> void:
 
 	var base: Dictionary = ui._snapshot_config()
 	_check("快照非空", base.size() > 50, "实际 %d 项" % base.size())
-	var switch_path: String = "SecondRow/TabContainer/EngineerAdvanced/ModeSwitch/OptionButton"
-	_check("快照包含正逆解切换键", base.has(switch_path))
-	if base.has(switch_path):
-		_check("新项目切换键默认 R", str(base[switch_path].get("s", "")) == "R")
+	_check("快照不再包含工程逆解控件", not "EngineerAdvanced/ConfigType" in " ".join(base.keys()))
+	_check("结构化 IK 默认切换键为 R", str(ui._ik_config.get("mode_switch_key", "")) == "R")
 
 	# 改一批控件：LineEdit / OptionButton / CheckBox 三类都覆盖
 	var touched: int = 0
@@ -308,8 +317,6 @@ func _test_config_roundtrip() -> void:
 	ui._apply_config(base)
 	var restored: Dictionary = ui._snapshot_config()
 	_check("回填初始快照后完全复原", restored == base, _diff_hint(base, restored))
-	if restored.has(switch_path):
-		_check("回填后切换键恢复 R", str(restored[switch_path].get("s", "")) == "R")
 
 	# 再回填改动后的快照，也应完全复现
 	ui._apply_config(changed)

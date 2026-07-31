@@ -14,11 +14,12 @@ func _initialize() -> void:
 	_test_angle_clamp(cg)
 	_test_no_preset(cg)
 	_test_dual_mode(cg)
-	_test_negative_elbow(cg)
+	_test_gripper(cg)
+	_test_initial_target(cg)
 	_test_joint_offset(cg)
-	_test_config(cg, 0, 2, "2轴")
-	_test_config(cg, 1, 3, "3轴")
-	_test_config(cg, 2, 4, "4轴")
+	_test_config(cg, 2, "2关节")
+	_test_config(cg, 3, "3关节")
+	_test_config(cg, 4, "4关节")
 	print("\n=== 结果: %s ===" % ("全部通过 ✓" if _fail == 0 else "%d 项失败 ✗" % _fail))
 	quit(0 if _fail == 0 else 1)
 
@@ -32,17 +33,18 @@ func _check(label: String, ok: bool) -> void:
 
 
 ## 构造测试配置
-func _make_cfg(config_type: int, jc: int, presets: Array) -> Dictionary:
+func _make_cfg(jc: int, presets: Array) -> Dictionary:
 	var joints: Array = []
 	var io_list: Array = ["P74", "P75", "P76", "MP03"]
+	var lens: Array = [100.0, 80.0] if jc == 2 else [0.0, 100.0, 80.0, 30.0]
 	for i in range(jc):
 		joints.append({
-			"io": io_list[i], "dir": "正向", "zero": "45",
+			"io": io_list[i], "dir": "正向",
+			"axis": "Yaw" if i == 0 else "Pitch", "len": str(lens[i]), "zero": "45",
 			"min": "-90", "max": "90",
 		})
 	return {
-		"config_type": config_type, "joint_count": jc,
-		"L1": "100", "L2": "80", "L3": "30",
+		"joint_count": jc,
 		"joints": joints,
 		"presets": presets,
 		"joy_x": "右X->末端X", "joy_y": "右Y->末端Y", "joy_z": "右X->末端Z",
@@ -58,7 +60,7 @@ func _make_cfg(config_type: int, jc: int, presets: Array) -> Dictionary:
 
 
 func _make_dual_cfg() -> Dictionary:
-	var ik: Dictionary = _make_cfg(1, 3, [])
+	var ik: Dictionary = _make_cfg(3, [])
 	ik["mode_switch_key"] = "R"
 	return {
 		"engineer": {
@@ -105,10 +107,40 @@ func _test_dual_mode(cg) -> void:
 	_check("双模式符合 C89 声明顺序", _check_c89_decl_order(code))
 
 
-func _test_config(cg, config_type: int, jc: int, label: String) -> void:
+func _test_gripper(cg) -> void:
+	print("\n--- 独立夹爪舵机 ---")
+	var cfg: Dictionary = _make_cfg(3, [])
+	cfg["gripper"] = {
+		"enabled": true, "io": "P77", "dir": "反向", "open_angle": "45",
+		"closed_angle": "-45", "initial_open": true, "key": "D"}
+	var code: String = cg.generate(cfg)
+	_check("夹爪不增加关节数", code.contains("#define JOINT_COUNT 3"))
+	_check("夹爪反向角预计算为占空比", code.contains("#define GRIPPER_OPEN_DUTY  500")
+		and code.contains("#define GRIPPER_CLOSED_DUTY  1000"))
+	_check("夹爪有独立状态与按键锁存", code.contains("uint8_t  gripperOpen = 1")
+		and code.contains("pressed = RcKeyValueRead(KEY_OFFSET_D)")
+		and code.contains("pressed && !gripperKeyHeld"))
+	_check("夹爪更新位于模式分支之外", code.find("UpdateGripper();") < code.find("if (inverseMode)"))
+	_check("扩展板夹爪合并统一输出", code.contains("dutyOfGripper")
+		and code.contains("ExpansionBoradControl(Duty_Change_Order")
+		and not code.contains("PWM_"))
+	var main_cfg: Dictionary = _make_cfg(2, [])
+	main_cfg["gripper"] = cfg["gripper"].duplicate(true)
+	main_cfg["gripper"]["io"] = "MP74"
+	main_cfg["gripper"]["initial_open"] = false
+	var main_code: String = cg.generate(main_cfg)
+	_check("主控夹爪按闭合状态初始化", main_code.contains("uint8_t  gripperOpen = 0")
+		and main_code.contains("PWM_Init(PWMB_CH1_P74, 50, dutyOfGripper)"))
+	_check("主控夹爪运行时使用 PWM", main_code.contains(
+		"PWM_SET_Frequency(PWMB_CH1_P74, 50, dutyOfGripper)"))
+	var disabled_code: String = cg.generate(_make_cfg(3, []))
+	_check("禁用夹爪不生成控制状态", not disabled_code.contains("dutyOfGripper"))
+
+
+func _test_config(cg, jc: int, label: String) -> void:
 	print("\n--- %s ---" % label)
 	var presets: Array = [ {"key": "A", "x": "100", "y": "80", "z": "50", "phi": "90", "enabled": true}]
-	var code: String = cg.generate(_make_cfg(config_type, jc, presets))
+	var code: String = cg.generate(_make_cfg(jc, presets))
 	_check("%s 生成非空" % label, not code.is_empty())
 	# 必需的头文件与宏
 	_check("%s 包含 main.h" % label, code.find("#include \"main.h\"") >= 0)
@@ -164,7 +196,7 @@ func _test_config(cg, config_type: int, jc: int, label: String) -> void:
 		code.find("num += ikJte[k] * ikJte[k]") >= 0
 		and code.find("alpha = num / den") >= 0)
 	_check("%s 有单步限幅" % label, code.find("IK_MAX_STEP_DEG / maxStep") >= 0)
-	# 4 轴必须用 L3 做腕部补偿，且姿态角可由按键调整
+	# 该测试构型从 4 关节起具备独立姿态自由度，姿态角应可由按键调整。
 	if jc >= 4:
 		_check("4轴 有 φ 按键增量", code.find("targetPhi += KEYMOVE_PHI_SPEED") >= 0)
 		# 俯仰角纳入解算：权重宏 + asin 求仰角 + 梯度项
@@ -185,7 +217,7 @@ func _test_config(cg, config_type: int, jc: int, label: String) -> void:
 ## 预设点位为 0 时不得生成零长数组（C89 禁止）
 func _test_no_preset(cg) -> void:
 	print("\n--- 无预设点位 ---")
-	var code: String = cg.generate(_make_cfg(1, 3, []))
+	var code: String = cg.generate(_make_cfg(3, []))
 	_check("PRESET_COUNT 为 0", code.find("#define PRESET_COUNT 0") >= 0)
 	_check("不生成 presetKey 数组", code.find("const uint8_t presetKey[") < 0)
 	_check("不生成 presetPos 数组", code.find("const float presetPos[") < 0)
@@ -197,7 +229,7 @@ func _test_no_preset(cg) -> void:
 ## 限位/初始角超出舵机行程 ±90° 时必须夹紧后写入常量数组
 func _test_angle_clamp(cg) -> void:
 	print("\n--- 角度夹紧 ±90° ---")
-	var cfg: Dictionary = _make_cfg(1, 3, [])
+	var cfg: Dictionary = _make_cfg(3, [])
 	cfg["joints"][0]["min"] = "-180"
 	cfg["joints"][0]["max"] = "180"
 	cfg["joints"][1]["zero"] = "150"
@@ -222,10 +254,10 @@ func _test_joy_axis(cg) -> void:
 ## 余弦定理有两个解，得靠符号挑一个。雅可比法从当前姿态起解，
 ## 天然待在初始角所在的那一支，不需要也没有这个参数。
 ## 换成测「上电首帧不跳变」：target 初值与初始角末端不符会导致关节猛冲。
-func _test_negative_elbow(cg) -> void:
+func _test_initial_target(cg) -> void:
 	print("\n--- 上电起点自洽性 ---")
 	for zero in ["45", "-60"]:
-		var cfg: Dictionary = _make_cfg(1, 3, [])
+		var cfg: Dictionary = _make_cfg(3, [])
 		cfg["joints"][2]["zero"] = zero
 		var code: String = cg.generate(cfg)
 		# 生成代码里的 target 初值
@@ -236,10 +268,8 @@ func _test_negative_elbow(cg) -> void:
 		var line: String = code.substr(idx, code.find("\n", idx) - idx)
 		# 与 GDScript 侧按初始角正推的末端比对
 		var jc: int = cfg["joint_count"]
-		var lens: Array = cg.legacy_link_lengths(cfg)
 		var home_ang: Array = cg._joint_home_angles(cfg["joints"])
-		var chain: Dictionary = cg.fk_chain(home_ang, cfg["joints"], jc,
-			cfg["config_type"], lens[0], lens[1], lens[2])
+		var chain: Dictionary = cg.fk_chain(home_ang, cfg["joints"], jc)
 		var pts: Array = chain["points"]
 		var tip: Vector3 = pts[pts.size() - 1]
 		var ok: bool = line.contains("%.2ff" % tip.x) and line.contains("%.2ff" % tip.y)
@@ -252,7 +282,7 @@ func _test_negative_elbow(cg) -> void:
 func _test_joint_offset(cg) -> void:
 	print("\n--- 安装中位朝向 ---")
 	# offset 缺失（老配置）：仍要生成数组，且全为 0，行为与以前一致
-	var base_code: String = cg.generate(_make_cfg(1, 3, []))
+	var base_code: String = cg.generate(_make_cfg(3, []))
 	_check("offset 缺失时仍生成 jointOffset", base_code.find("const float jointOffset[3]") >= 0)
 	_check("offset 缺失时全为 0",
 		base_code.find("jointOffset[3] = {0.00f, 0.00f, 0.00f}") >= 0)
@@ -264,7 +294,7 @@ func _test_joint_offset(cg) -> void:
 			and base_code.find("SERVO_MID_DUTY - servo * SERVO_DUTY_PER_DEG") >= 0)
 	_check("angle_to_duty 声明在块首(C89)", _decl_before_stmt(base_code, "float servo;"))
 	# offset 不为 0：限位钳位区间跟着平移，不再是固定 ±90
-	var cfg: Dictionary = _make_cfg(1, 3, [])
+	var cfg: Dictionary = _make_cfg(3, [])
 	for i in range(3):
 		cfg["joints"][i]["offset"] = "30"
 		cfg["joints"][i]["min"] = "-60"
@@ -318,30 +348,9 @@ func _func_body(code: String, signature: String) -> String:
 	return ""
 
 
-## 把生成代码里的 target 初值（正运动学结果）反解回关节角，应还原各关节初始角
-func _round_trip(cg, cfg: Dictionary, elbow: float) -> bool:
-	var code: String = cg.generate(cfg)
-	var home: Array = _parse_home(code)
-	if home.is_empty():
-		print("      未能解析 target 初值")
-		return false
-	var jc: int = cfg["joint_count"]
-	var angles: Array = cg.solve_ik(home[0], home[1], home[2], home[3],
-		cfg["L1"].to_float(), cfg["L2"].to_float(), cfg["L3"].to_float(),
-		cfg["config_type"], jc, elbow)
-	for i in range(jc):
-		var want: float = cfg["joints"][i]["zero"].to_float()
-		if abs(angles[i] - want) > 0.5:
-			print("      关节%d 期望 %.1f 实得 %.1f" % [i + 1, want, angles[i]])
-			return false
-	return true
-
-
 ## ik_solve 的形参列表（随构型裁剪，需与生成器保持一致）
 func _ik_sig(jc: int) -> String:
-	var names: Array = ["float x", "float y"]
-	if jc >= 3:
-		names.append("float z")
+	var names: Array = ["float x", "float y", "float z"]
 	if jc >= 4:
 		names.append("float phi")
 	return ", ".join(names)

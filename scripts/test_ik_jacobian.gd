@@ -2,10 +2,10 @@ extends SceneTree
 
 ## 雅可比转置数值逆解验证。
 ##
-## 这套解法要取代 2/3/4 轴各一份的解析公式，所以必须证明三件事：
+## 唯一逆解路径必须证明三件事：
 ##   1. 它能收敛（误差单调下降，不振荡）
-##   2. 老构型上它与旧解析解结果一致（不回归）
-##   3. φ 真的解耦可控（只改 φ 时末端位置不动）——这是 Phase 1 判定的实际兑现
+##   2. FK 目标与 IK 结果一致
+##   3. φ 真的解耦可控（只改 φ 时末端位置不动）
 ##
 ## 运行：godot --headless --path . --script scripts/test_ik_jacobian.gd
 
@@ -42,7 +42,7 @@ func _zeros(n: int) -> Array:
 
 ## 末端位置
 func _tip(angles: Array, joints: Array, jc: int) -> Vector3:
-	var chain: Dictionary = _cg.fk_chain(angles, joints, jc, 2, 0.0, 0.0, 0.0)
+	var chain: Dictionary = _cg.fk_chain(angles, joints, jc)
 	var pts: Array = chain["points"]
 	return pts[pts.size() - 1]
 
@@ -51,7 +51,6 @@ func _initialize() -> void:
 	print("=== 雅可比数值逆解验证 ===\n")
 	_test_convergence()
 	_test_fk_ik_roundtrip()
-	_test_matches_analytic()
 	_test_phi_decoupled_in_practice()
 	_test_unreachable()
 	_test_limits_respected()
@@ -67,8 +66,7 @@ func _test_convergence() -> void:
 	var ang: Array = [0.0, 20.0, -30.0, 10.0]
 	var errs: Array = []
 	for _n in range(60):
-		var r: Dictionary = _cg.solve_ik_jacobian(target, NAN, ang, j, 4, 2,
-			0.0, 0.0, 0.0)
+		var r: Dictionary = _cg.solve_ik_jacobian(target, NAN, ang, j, 4)
 		ang = r["angles"]
 		errs.append(float(r["err"]))
 	_check("收敛：误差下降到 1mm 内", errs[errs.size() - 1] < 1.0,
@@ -107,56 +105,34 @@ func _test_fk_ik_roundtrip() -> void:
 		var goal: Vector3 = _tip(c["ang"], j, jc)
 		# 从零位起解，不给它原答案当初值
 		var r: Dictionary = _cg.solve_ik_jacobian_converge(goal, NAN,
-			_zeros(jc), j, jc, 2, 0.0, 0.0, 0.0)
+			_zeros(jc), j, jc)
 		var got: Vector3 = _tip(r["angles"], j, jc)
 		_check("%s FK→IK 自洽（<1mm）" % c["tag"], goal.distance_to(got) < 1.0,
 			"目标 %s 实际 %s 差 %.3f" % [str(goal), str(got), goal.distance_to(got)])
-
-
-## 老构型上数值解与旧解析解必须落到同一个末端位置。
-## 这是「换算法不回归」的核心断言：关节角可以不同（多解），末端必须一致。
-func _test_matches_analytic() -> void:
-	var l1: float = 120.0
-	var l2: float = 90.0
-	var l3: float = 40.0
-	# 3 轴：Yaw + 2 Pitch
-	var j3: Array = _mk(["Yaw", "Pitch", "Pitch"], [0, l1, l2])
-	for target in [Vector3(150.0, 30.0, 40.0), Vector3(80.0, -60.0, 90.0),
-			Vector3(180.0, 0.0, -30.0)]:
-		var ana: Array = _cg.solve_ik(target.x, target.y, target.z, 0.0,
-			l1, l2, l3, 1, 3, 1.0)
-		var ana_tip: Vector3 = _tip(ana, j3, 3)
-		var num: Dictionary = _cg.solve_ik_jacobian_converge(target, NAN,
-			_zeros(3), j3, 3, 1, l1, l2, l3)
-		var num_tip: Vector3 = _tip(num["angles"], j3, 3)
-		_check("3轴 数值解与解析解末端一致 %s" % str(target),
-			ana_tip.distance_to(num_tip) < 1.0,
-			"解析 %s 数值 %s 差 %.3f" % [str(ana_tip), str(num_tip),
-				ana_tip.distance_to(num_tip)])
 
 
 ## φ 解耦的实际兑现：诊断说可控，就必须真能只改 φ 而末端不动。
 ## Phase 1 只证明了「数学上存在这样的关节速度」，这里证明 IK 真的能找到它。
 func _test_phi_decoupled_in_practice() -> void:
 	var j: Array = _mk(["Yaw", "Pitch", "Pitch", "Pitch"], [0, 120, 90, 40])
-	var diag: Dictionary = DIAG.new().analyze(j, 4, 2, 0.0, 0.0, 0.0)
+	var diag: Dictionary = DIAG.new().analyze(j, 4)
 	_check("4关节 诊断判定 φ 可控（前提）", bool(diag["pitch_dof"]), str(diag))
 	# 先解到一个位置 + 初始 φ
 	var target: Vector3 = Vector3(150.0, 30.0, 50.0)
 	var r0: Dictionary = _cg.solve_ik_jacobian_converge(target, -20.0,
-		_zeros(4), j, 4, 2, 0.0, 0.0, 0.0)
+		_zeros(4), j, 4)
 	var ang0: Array = r0["angles"]
 	var tip0: Vector3 = _tip(ang0, j, 4)
-	var chain0: Dictionary = _cg.fk_chain(ang0, j, 4, 2, 0.0, 0.0, 0.0)
+	var chain0: Dictionary = _cg.fk_chain(ang0, j, 4)
 	var phi0: float = _cg.tip_pitch_deg(chain0)
 	_check("φ 跟踪：初始 φ 达到 -20°", absf(phi0 - (-20.0)) < 2.0,
 		"实际 %.2f" % phi0)
 	# 只改 φ，位置目标不变
 	var r1: Dictionary = _cg.solve_ik_jacobian_converge(target, -60.0,
-		ang0, j, 4, 2, 0.0, 0.0, 0.0)
+		ang0, j, 4)
 	var ang1: Array = r1["angles"]
 	var tip1: Vector3 = _tip(ang1, j, 4)
-	var chain1: Dictionary = _cg.fk_chain(ang1, j, 4, 2, 0.0, 0.0, 0.0)
+	var chain1: Dictionary = _cg.fk_chain(ang1, j, 4)
 	var phi1: float = _cg.tip_pitch_deg(chain1)
 	_check("φ 跟踪：改到 -60°", absf(phi1 - (-60.0)) < 2.0, "实际 %.2f" % phi1)
 	# 这是本测试的重点：位置不能漂
@@ -175,7 +151,7 @@ func _test_unreachable() -> void:
 	var j: Array = _mk(["Yaw", "Pitch", "Pitch"], [0, 100, 80])
 	var far: Vector3 = Vector3(5000.0, 0.0, 0.0)
 	var r: Dictionary = _cg.solve_ik_jacobian_converge(far, NAN, _zeros(3),
-		j, 3, 2, 0.0, 0.0, 0.0)
+		j, 3)
 	var tip: Vector3 = _tip(r["angles"], j, 3)
 	var has_nan: bool = false
 	for a in r["angles"]:
@@ -188,7 +164,7 @@ func _test_unreachable() -> void:
 		"末端半径 %.2f（臂展 180）" % tip.length())
 	# 原点附近也不能炸（r 趋 0 时旧解析解要防除零，数值解应天然安全）
 	var r0: Dictionary = _cg.solve_ik_jacobian_converge(Vector3.ZERO, NAN,
-		_zeros(3), j, 3, 2, 0.0, 0.0, 0.0)
+		_zeros(3), j, 3)
 	var nan0: bool = false
 	for a in r0["angles"]:
 		if is_nan(float(a)):
@@ -202,7 +178,7 @@ func _test_limits_respected() -> void:
 	var j: Array = _mk(["Yaw", "Pitch", "Pitch", "Pitch"], [0, 120, 90, 40],
 		-30.0, 30.0)
 	var r: Dictionary = _cg.solve_ik_jacobian_converge(Vector3(60.0, 90.0, 120.0),
-		NAN, _zeros(4), j, 4, 2, 0.0, 0.0, 0.0)
+		NAN, _zeros(4), j, 4)
 	var bad: String = ""
 	for i in range(4):
 		var a: float = float(r["angles"][i])
@@ -226,8 +202,7 @@ func _test_arbitrary_configs() -> void:
 		var j: Array = _mk(c["axes"], c["lens"])
 		# 同时带 φ 目标，确保姿态项在退化构形下也不炸
 		var r: Dictionary = _cg.solve_ik_jacobian_converge(
-			Vector3(100.0, 50.0, 80.0), -45.0, _zeros(jc), j, jc, 2,
-			0.0, 0.0, 0.0)
+			Vector3(100.0, 50.0, 80.0), -45.0, _zeros(jc), j, jc)
 		var bad: String = ""
 		for i in range(jc):
 			var a: float = float(r["angles"][i])

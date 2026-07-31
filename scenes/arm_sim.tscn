@@ -61,17 +61,21 @@ light_energy = 0.35
 
 [node name="Grid" type="MeshInstance3D" parent="Sim/SubViewport/World" unique_id=1729190461]
 
-[node name="Axes" type="MeshInstance3D" parent="Sim/SubViewport/World" unique_id=644408213]
-
-[node name="Chassis" type="Node3D" parent="Sim/SubViewport/World" unique_id=1624271568]
-
-[node name="Gripper" type="Node3D" parent="Sim/SubViewport/World" unique_id=624837162]
-
-[node name="ArmRoot" type="Node3D" parent="Sim/SubViewport/World" unique_id=2100446996]
-
 [node name="Trail" type="MeshInstance3D" parent="Sim/SubViewport/World" unique_id=1367838762]
 
-[node name="TargetGhost" type="MeshInstance3D" parent="Sim/SubViewport/World" unique_id=620408539]
+[node name="VehicleRoot" type="Node3D" parent="Sim/SubViewport/World"]
+
+[node name="Chassis" type="Node3D" parent="Sim/SubViewport/World/VehicleRoot" unique_id=1624271568]
+
+[node name="ArmMount" type="Node3D" parent="Sim/SubViewport/World/VehicleRoot"]
+
+[node name="Axes" type="MeshInstance3D" parent="Sim/SubViewport/World/VehicleRoot/ArmMount" unique_id=644408213]
+
+[node name="Gripper" type="Node3D" parent="Sim/SubViewport/World/VehicleRoot/ArmMount" unique_id=624837162]
+
+[node name="ArmRoot" type="Node3D" parent="Sim/SubViewport/World/VehicleRoot/ArmMount" unique_id=2100446996]
+
+[node name="TargetGhost" type="MeshInstance3D" parent="Sim/SubViewport/World/VehicleRoot/ArmMount" unique_id=620408539]
 
 [node name="TopPanel" type="PanelContainer" parent="." unique_id=1338158298]
 layout_mode = 1
@@ -105,7 +109,7 @@ popup/item_1/text = "标定（关节角/中位朝向）"
 popup/item_1/id = 1
 popup/item_2/text = "预设点位"
 popup/item_2/id = 2
-popup/item_3/text = "模拟手柄（键盘代打）"
+popup/item_3/text = "操控（手柄/键盘）"
 popup/item_3/id = 3
 
 [node name="VSeparator2" type="VSeparator" parent="TopPanel/HBox" unique_id=238408093]
@@ -128,6 +132,15 @@ text = "清空轨迹"
 [node name="VSeparator3" type="VSeparator" parent="TopPanel/HBox" unique_id=1247091508]
 layout_mode = 2
 
+[node name="FollowToggle" type="CheckButton" parent="TopPanel/HBox"]
+layout_mode = 2
+button_pressed = true
+text = "跟随"
+
+[node name="ResetPose" type="Button" parent="TopPanel/HBox"]
+layout_mode = 2
+text = "车归位"
+
 [node name="ResetView" type="Button" parent="TopPanel/HBox" unique_id=1867107572]
 layout_mode = 2
 text = "重置视角"
@@ -146,7 +159,7 @@ anchors_preset = 11
 anchor_left = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -340.0
+offset_left = -440.0
 offset_top = 44.0
 offset_bottom = -8.0
 grow_horizontal = 0
@@ -168,25 +181,28 @@ anchors_preset = 2
 anchor_top = 1.0
 anchor_bottom = 1.0
 offset_left = 8.0
-offset_top = -96.0
-offset_right = 480.0
+offset_top = -228.0
+offset_right = 824.0
 offset_bottom = -8.0
 grow_vertical = 0
+clip_contents = true
 theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
 
 [node name="Status" type="Label" parent="StatusPanel" unique_id=363561654]
 layout_mode = 2
+theme_override_font_sizes/font_size = 14
 text = "就绪"
+autowrap_mode = 2
 
 [node name="HintLabel" type="Label" parent="." unique_id=1616829439]
 layout_mode = 1
-anchors_preset = 2
-anchor_top = 1.0
-anchor_bottom = 1.0
+anchors_preset = 10
+anchor_right = 1.0
 offset_left = 8.0
-offset_top = -856.0
-offset_right = 600.0
-offset_bottom = -832.0
+offset_top = 44.0
+offset_right = -448.0
+offset_bottom = 68.0
+grow_horizontal = 2
 grow_vertical = 0
 theme_override_colors/font_color = Color(0.6666667, 0.7019608, 0.7529412, 1)
 text = "右键拖拽旋转视角 · 滚轮缩放 · 中键平移"

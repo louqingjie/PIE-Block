@@ -4,6 +4,16 @@ const CG = preload("res://scripts/codegen/codegen_engineer_ik.gd")
 const TC = preload("res://scripts/toolchain.gd")
 
 
+func _joint(template: Dictionary, io: String, axis: String, length: String,
+		zero: String = "0") -> Dictionary:
+	var joint: Dictionary = template.duplicate(true)
+	joint["io"] = io
+	joint["axis"] = axis
+	joint["len"] = length
+	joint["zero"] = zero
+	return joint
+
+
 func _initialize() -> void:
 	var cfg: Dictionary = {
 		"engineer": {
@@ -24,7 +34,7 @@ func _initialize() -> void:
 			],
 		},
 		"ik": {
-			"config_type": 2, "joint_count": 4, "mode_switch_key": "R",
+			"joint_count": 4, "mode_switch_key": "R",
 			"joints": [
 				{"io": "P74", "dir": "正向", "axis": "Yaw", "len": "0", "offset": "0", "zero": "0", "min": "-90", "max": "90"},
 				{"io": "P75", "dir": "正向", "axis": "Pitch", "len": "120", "offset": "0", "zero": "20", "min": "-90", "max": "90"},
@@ -42,13 +52,63 @@ func _initialize() -> void:
 			],
 		},
 	}
-	var code: String = CG.new().generate(cfg)
-	var tc = TC.new()
-	var result: Dictionary = tc.build_project(TC.PROJECT_ENGINEER_DST, code)
-	print(result.get("log", ""))
-	if result.get("ok", false):
-		print("=== C251 双模式编译: 通过 ===")
-		quit(0)
-	else:
-		print("=== C251 双模式编译: 失败 ===")
-		quit(1)
+	var template: Dictionary = cfg["ik"]["joints"][0]
+	var cases: Array = [
+		{"name": "2-joint", "joints": [
+			_joint(template, "P74", "Yaw", "0"),
+			_joint(template, "P75", "Pitch", "150", "20"),
+		]},
+		{"name": "4-joint", "joints": cfg["ik"]["joints"]},
+		{"name": "6-joint", "joints": [
+			_joint(template, "P74", "Yaw", "0"),
+			_joint(template, "P75", "Pitch", "120", "20"),
+			_joint(template, "P76", "Roll", "40"),
+			_joint(template, "P77", "Pitch", "90", "30"),
+			_joint(template, "MP03", "Yaw", "30"),
+			_joint(template, "MP74", "Roll", "20"),
+		]},
+	]
+	var failed: bool = false
+	for c in cases:
+		var case_cfg: Dictionary = cfg.duplicate(true)
+		# 六关节 + 一夹爪需要让同侧底盘电机共用扩展口，释放 P64/P66。
+		case_cfg["engineer"]["l2_io"] = case_cfg["engineer"]["l1_io"]
+		case_cfg["engineer"]["r1_io"] = "P62 P63"
+		case_cfg["engineer"]["r2_io"] = "P62 P63"
+		case_cfg["engineer"]["io_init"]["P64"] = "舵机"
+		case_cfg["engineer"]["io_init"]["P66"] = "舵机"
+		case_cfg["engineer"]["io_init"]["P76"] = "舵机"
+		case_cfg["engineer"]["key_map"] = []
+		case_cfg["ik"]["joints"] = c["joints"]
+		case_cfg["ik"]["joint_count"] = c["joints"].size()
+		case_cfg["ik"]["keymove"][3] = {"plus": "不使用", "minus": "不使用"}
+		case_cfg["ik"]["gripper"] = {
+			"enabled": true, "io": "MP03", "dir": "正向", "open_angle": "45",
+			"closed_angle": "-45", "initial_open": true, "key": "D"}
+		if c["name"] == "4-joint":
+			case_cfg["ik"]["joints"] = [
+				_joint(template, "P74", "Yaw", "0"),
+				_joint(template, "P75", "Pitch", "120", "20"),
+				_joint(template, "P76", "Pitch", "90", "30"),
+				_joint(template, "P77", "Pitch", "40"),
+			]
+			case_cfg["ik"]["joint_count"] = 4
+		elif c["name"] == "6-joint":
+			case_cfg["ik"]["joints"] = [
+				_joint(template, "P64", "Yaw", "0"),
+				_joint(template, "P66", "Pitch", "120", "20"),
+				_joint(template, "P74", "Roll", "40"),
+				_joint(template, "P75", "Pitch", "90", "30"),
+				_joint(template, "P76", "Yaw", "30"),
+				_joint(template, "P77", "Roll", "20"),
+			]
+			case_cfg["ik"]["joint_count"] = 6
+		var code: String = CG.new().generate(case_cfg)
+		var result: Dictionary = TC.new().build_project(TC.PROJECT_ENGINEER_DST, code)
+		print(result.get("log", ""))
+		if result.get("ok", false):
+			print("=== C251 %s: PASS ===" % c["name"])
+		else:
+			print("=== C251 %s: FAIL ===" % c["name"])
+			failed = true
+	quit(1 if failed else 0)

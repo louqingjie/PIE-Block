@@ -138,35 +138,7 @@ const CAM_PITCH_LIMIT: float = 1.45
 const CAM_FOLLOW_LERP: float = 6.0
 
 # ------------------------------------------------------------------ 输入映射
-## 内部按键 id。valueOfKey 的三行对应：方向键 / ABCD / 两个摇杆按下
-const KEY_ROWS: Array = [
-	["UP", "DOWN", "LEFT", "RIGHT"],
-	["A", "B", "C", "D"],
-	["ROCKER1", "ROCKER2", "", ""],
-]
-## 配置里的按键名 -> 内部 id（右方向键在步兵界面写作 "→"，工程界面写作 "->"）
-const CFG_KEY_TO_ID: Dictionary = {
-	"R": "R", "↑": "UP", "↓": "DOWN", "←": "LEFT", "→": "RIGHT", "->": "RIGHT",
-	"A": "A", "B": "B", "C": "C", "D": "D",
-}
-## 键盘代打：内部 id -> 键码。
-## 右摇杆用 IJKL 而不是方向键，因为方向键本身是手柄上的一组功能键。
-## 扳机键（R）不在这里，它绑鼠标左键，见 _read_controller_inputs。
-const KB_KEY_TO_ID: Dictionary = {
-	KEY_UP: "UP", KEY_DOWN: "DOWN", KEY_LEFT: "LEFT", KEY_RIGHT: "RIGHT",
-	KEY_1: "A", KEY_2: "B", KEY_3: "C", KEY_4: "D",
-	KEY_SHIFT: "ROCKER1", KEY_Z: "ROCKER2",
-}
-## 手柄代打：按钮 -> 内部 id。
-## 扳机键（R）绑 RT（右扳机），它是轴而非按钮，单独处理。
-const PAD_BUTTON_TO_ID: Dictionary = {
-	JOY_BUTTON_A: "A", JOY_BUTTON_B: "B", JOY_BUTTON_X: "C", JOY_BUTTON_Y: "D",
-	JOY_BUTTON_DPAD_UP: "UP", JOY_BUTTON_DPAD_DOWN: "DOWN",
-	JOY_BUTTON_DPAD_LEFT: "LEFT", JOY_BUTTON_DPAD_RIGHT: "RIGHT",
-	JOY_BUTTON_LEFT_STICK: "ROCKER1", JOY_BUTTON_RIGHT_STICK: "ROCKER2",
-}
-## RT 扳机的触发阈值（扳机是 0~1 的模拟轴）
-const PAD_TRIGGER_THRESHOLD: float = 0.5
+const REMOTE_INPUT = preload("res://scripts/sim_remote_input.gd")
 
 enum Mode {OPERATE = 0, CALIB = 1}
 
@@ -393,8 +365,8 @@ func _apply_config() -> void:
 		_dir_to_int(str(_cfg.get("r1_dir", "正向"))),
 		_dir_to_int(str(_cfg.get("r2_dir", "正向"))),
 	]
-	_trigger_key_id = CFG_KEY_TO_ID.get(str(_cfg.get("trigger_key", "R")), "R")
-	_booster_key_id = CFG_KEY_TO_ID.get(str(_cfg.get("booster_key", "A")), "A")
+	_trigger_key_id = REMOTE_INPUT.CONFIG_KEY_TO_ID.get(str(_cfg.get("trigger_key", "R")), "R")
+	_booster_key_id = REMOTE_INPUT.CONFIG_KEY_TO_ID.get(str(_cfg.get("booster_key", "A")), "A")
 	# 云台数值语义（归中占空比 / 限幅边界 / 变化率）全部来自生成器
 	_gp = _cg.gimbal_params(_cfg)
 	_reset_control_state()
@@ -671,69 +643,14 @@ func _clear_children(node: Node) -> void:
 # ------------------------------------------------------------------ 输入采集
 ## 采样手柄与键盘，归一成 valueOfRoker / valueOfKey，复现 ReadControllerInputs
 func _read_controller_inputs() -> void:
-	var lx: float = 0.0
-	var ly: float = 0.0
-	var rx: float = 0.0
-	var ry: float = 0.0
-	var pressed: Dictionary = {}
-	# --- 手柄 ---
-	var pads: Array = Input.get_connected_joypads()
-	if pads.size() > 0:
-		var pad: int = pads[0]
-		lx = Input.get_joy_axis(pad, JOY_AXIS_LEFT_X)
-		# Godot 摇杆竖直向下为正，手柄推前应对应 baseSpeed 为正
-		ly = - Input.get_joy_axis(pad, JOY_AXIS_LEFT_Y)
-		rx = Input.get_joy_axis(pad, JOY_AXIS_RIGHT_X)
-		ry = - Input.get_joy_axis(pad, JOY_AXIS_RIGHT_Y)
-		for btn in PAD_BUTTON_TO_ID.keys():
-			if Input.is_joy_button_pressed(pad, btn):
-				pressed[PAD_BUTTON_TO_ID[btn]] = true
-		# RT 扳机 = 扳机键，扣扳机发射最直觉
-		if Input.get_joy_axis(pad, JOY_AXIS_TRIGGER_RIGHT) > PAD_TRIGGER_THRESHOLD:
-			pressed["R"] = true
-	# --- 键盘与鼠标（与手柄叠加，谁动听谁）---
-	if not _text_field_focused():
-		lx += _axis_pair(KEY_D, KEY_A)
-		ly += _axis_pair(KEY_W, KEY_S)
-		rx += _axis_pair(KEY_L, KEY_J)
-		ry += _axis_pair(KEY_I, KEY_K)
-		for code in KB_KEY_TO_ID.keys():
-			if Input.is_key_pressed(code):
-				pressed[KB_KEY_TO_ID[code]] = true
-		# 鼠标左键 = 扳机键。用全局轮询而不是 _gui_input：
-		# 后者会与相机拖拽抢事件，且开火是持续状态而非一次性事件。
-		# 鼠标落在控件上（拖滑块、点按钮）时不算开火，否则调摩擦轮档位会误发弹
-		if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and not _mouse_over_ui():
-			pressed["R"] = true
-	# --- 量化到 -2047~2047 并过死区，复现真机的整数摇杆读数 ---
-	_roker[0][0] = _quantize(lx)
-	_roker[0][1] = _quantize(ly)
-	_roker[1][0] = _quantize(rx)
-	_roker[1][1] = _quantize(ry)
-	for i in range(2):
-		for j in range(2):
-			if absi(_roker[i][j]) <= _deadzone:
-				_roker[i][j] = 0
-	# --- 按键状态 ---
-	for i in range(KEY_ROWS.size()):
-		for j in range(4):
-			var id: String = KEY_ROWS[i][j]
-			_key[i][j] = 1 if (id != "" and pressed.has(id)) else 0
+	var keyboard_enabled: bool = not _text_field_focused()
+	var snapshot: Dictionary = REMOTE_INPUT.sample(
+		_deadzone, _deadzone, keyboard_enabled, not _mouse_over_ui())
+	_roker = snapshot["valueOfRoker"].duplicate(true)
+	_key = snapshot["valueOfKey"].duplicate(true)
+	var pressed: Dictionary = snapshot["pressed"]
 	_trigger_key = 1 if pressed.has(_trigger_key_id) else 0
 	_booster_key = 1 if pressed.has(_booster_key_id) else 0
-
-
-func _axis_pair(pos_key: int, neg_key: int) -> float:
-	var v: float = 0.0
-	if Input.is_key_pressed(pos_key):
-		v += 1.0
-	if Input.is_key_pressed(neg_key):
-		v -= 1.0
-	return v
-
-
-func _quantize(v: float) -> int:
-	return int(round(clampf(v, -1.0, 1.0) * ROKER_FULL))
 
 
 ## 当前焦点是否落在可输入文本的控件上（否则输入 W/S 会同时开车）

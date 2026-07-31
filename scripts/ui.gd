@@ -104,29 +104,23 @@ const ENG_KEY_LABELS: Array = [
 ]
 # 工程逆解算界面（Tab 2）
 const IK: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced"
-## 关节数下拉（选项 0..4 对应 2..6 个关节）。
-## 旧版是「2轴/3轴/4轴」固定构型，现在轴类型由各关节自己选。
+const P_IK_SUMMARY: NodePath = IK + "/Summary"
+const P_IK_OPEN_SIM: NodePath = IK + "/OpenSim"
+## Legacy paths are referenced only by dead compatibility helpers below. The panel is
+## replaced before the project snapshot, so none of these nodes remain at runtime.
 const P_IK_CONFIG_TYPE: NodePath = IK + "/ConfigType/OptionButton"
 const P_IK_MODE_SWITCH_KEY: NodePath = IK + "/ModeSwitch/OptionButton"
-## 关节数上下限（上限依据 STC32G 浮点预算实测，见 CodeGenEngineerIK.MAX_JOINTS）
 const IK_MIN_JOINTS: int = 2
 const IK_MAX_JOINTS: int = 6
-# 关节行（Joint1~Joint4），每行子节点：IO/Dir/Zero/Min/Max
-const IK_JOINT_ROWS: Array = ["Joint1", "Joint2", "Joint3", "Joint4",
-	"Joint5", "Joint6"]
-# 预设点位行（Preset1~Preset4），每行子节点：Key/X/Y/Z/Phi
+const IK_JOINT_ROWS: Array = ["Joint1", "Joint2", "Joint3", "Joint4", "Joint5", "Joint6"]
 const IK_PRESET_ROWS: Array = ["Preset1", "Preset2", "Preset3", "Preset4"]
 const P_IK_JOY_X: NodePath = IK + "/JoystickMap/XAxis"
 const P_IK_JOY_Y: NodePath = IK + "/JoystickMap/YAxis"
 const P_IK_JOY_Z: NodePath = IK + "/JoystickMap/ZAxis"
 const P_IK_JOY_SCALE: NodePath = IK + "/JoystickMap/Scale"
-# 按键控制末端移动（长按持续移动）
 const P_IK_KEYMOVE_SPEED: NodePath = IK + "/KeyMoveSpeed/Speed"
-# 按键移动行（末端 X/Y/Z/姿态角φ），每行子节点：Plus/Minus
 const IK_KEYMOVE_ROWS: Array = ["KeyMoveX", "KeyMoveY", "KeyMoveZ", "KeyMovePhi"]
-# 与 IK_KEYMOVE_ROWS 一一对应的轴显示名
 const IK_KEYMOVE_LABELS: Array = ["X", "Y", "Z", "φ"]
-# 关节角以舵机中位为 0°，行程 ±90°（对应物理 0~180°）
 const IK_ANGLE_MIN: float = -90.0
 const IK_ANGLE_MAX: float = 90.0
 # TabContainer（用于切换代码生成器）
@@ -186,6 +180,7 @@ const UPGRADE_PROGRESS = preload("res://scripts/upgrade_progress.gd")
 const ARM_DIAG = preload("res://scripts/arm_diagnosis.gd")
 # 项目文件（.pieproj）读写与「项目类型 <-> Tab」映射表
 const PF = preload("res://scripts/project_file.gd")
+const IK_CONFIG = preload("res://scripts/engineer_ik_config.gd")
 
 
 # ------------------------------------------------------------------ 生命周期
@@ -212,6 +207,10 @@ var _dirty: bool = false
 var _stage2_preview: bool = false
 ## 阶段二回滚用的基准配置（已与默认值合并过，缺项也能回滚干净）
 var _frozen_config: Dictionary = {}
+## 工程逆解唯一状态源。主页面不再从 Tab 2 控件树拼装配置。
+var _ik_config: Dictionary = {}
+## 阶段二只读预览时用于恢复结构化逆解配置。
+var _frozen_ik_config: Dictionary = {}
 ## 已经弹过「继续修改将丢弃 AI 代码」确认框，避免连点堆叠弹窗
 var _discard_dialog_open: bool = false
 ## 最近一次静态检查的结果，进入 AI 编辑前的提示要拿它报问题数
@@ -237,6 +236,7 @@ const GUIDE_HINTS: Array[String] = [
 
 
 func _ready() -> void:
+	_replace_legacy_ik_panel()
 	# 为 C 代码预览框挂载语法高亮器（状态机正则）
 	var code_edit: Node = get_node_or_null(P_CODE_EDIT)
 	if code_edit is CodeEdit:
@@ -244,18 +244,44 @@ func _ready() -> void:
 		code_edit.syntax_highlighter = hl
 	# 场景刚实例化，此刻的控件值就是「默认配置」，新建项目时用它复位
 	_default_config = _snapshot_config()
+	_ik_config = IK_CONFIG.default_config()
 	# 初始化调试界面占位提示
 	_update_debug_placeholders()
 	# 初始化工程界面参数框占位提示
 	_update_engineer_placeholders()
-	# 按默认关节数显隐逆解界面的关节行
-	_update_ik_joint_rows()
 	_setup_guide()
 	_setup_build_controller()
 	_setup_download_controller()
 	_connect_signals()
 	# 恢复 / 初始化项目上下文（会自行触发 _run_check）
 	_restore_project_context()
+
+
+## Tab 2 只保留结构化配置摘要和 3D 编辑入口。
+## 在默认快照之前执行，因此旧路径不会再进入新的 .pieproj。
+func _replace_legacy_ik_panel() -> void:
+	var panel: Node = get_node_or_null(NodePath(IK))
+	if panel == null:
+		return
+	for child in panel.get_children():
+		panel.remove_child(child)
+		child.free()
+	var title := Label.new()
+	title.text = "机械臂 3D 配置"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	panel.add_child(title)
+	var summary := Label.new()
+	summary.name = "Summary"
+	summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	summary.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	summary.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	panel.add_child(summary)
+	var open := Button.new()
+	open.name = "OpenSim"
+	open.text = "打开 3D 配置"
+	open.custom_minimum_size = Vector2(220, 48)
+	open.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	panel.add_child(open)
 
 
 func _setup_build_controller() -> void:
@@ -356,6 +382,9 @@ func _connect_signals() -> void:
 	var sim_btn: Node = get_node_or_null(P_ARM_SIM_BTN)
 	if sim_btn is BaseButton:
 		sim_btn.pressed.connect(_on_arm_sim_pressed)
+	var ik_sim_btn: Node = get_node_or_null(P_IK_OPEN_SIM)
+	if ik_sim_btn is BaseButton:
+		ik_sim_btn.pressed.connect(_on_arm_sim_pressed)
 	# 调试界面：驱动类型变化时更新占位提示并触发检查
 	for row_name in DEBUG_ROWS:
 		var drive_btn: Node = get_node_or_null(NodePath(DEBUG +"/"+ row_name +"/OptionButton"))
@@ -654,7 +683,7 @@ func _on_guide_step_pressed(step: int) -> void:
 		1:
 			match _current_tab():
 				2:
-					_focus_control(P_IK_CONFIG_TYPE)
+					_on_arm_sim_pressed()
 				3:
 					_focus_control(NodePath(DEBUG +"/HBoxContainer/OptionButton"))
 				_:
@@ -799,6 +828,7 @@ func _restore_project_context() -> void:
 ## 不禁用任何东西，只是标题上说明一下、编译等操作退化成按 Tab 猜构型。
 func _apply_no_project_state() -> void:
 	_project = {}
+	_ik_config = IK_CONFIG.default_config()
 	_apply_hardware_gate(false)
 	_stage2_preview = false
 	_dirty = false
@@ -838,6 +868,7 @@ func _set_node_tree_enabled(node: Node, enabled: bool) -> void:
 ## 把一份项目数据装载进界面
 func _adopt_project(data: Dictionary, path: String) -> void:
 	_project = data
+	_ik_config = IK_CONFIG.normalize(data.get("ik_config", {}))
 	_apply_hardware_gate(not bool(_workflow().get("hardware_confirmed", false)))
 	var kind: String = str(data["kind"])
 	AppState.project_path = path
@@ -853,6 +884,7 @@ func _adopt_project(data: Dictionary, path: String) -> void:
 	cfg.merge(data["config"] as Dictionary, true)
 	_apply_config(cfg)
 	_frozen_config = cfg
+	_frozen_ik_config = _ik_config.duplicate(true)
 	_stage2_preview = int(data["stage"]) >= 2
 	_dirty = false
 	_update_title()
@@ -911,6 +943,7 @@ func _create_project_at(kind: String, path: String) -> bool:
 	var data: Dictionary = PF.new_data(kind)
 	# 新项目从场景默认值开始
 	data["config"] = _default_config.duplicate(true)
+	data["ik_config"] = IK_CONFIG.default_config()
 	var res: Dictionary = PF.save_to(path, data)
 	if not res["ok"]:
 		_clear_output()
@@ -942,6 +975,7 @@ func _save_project(verbose: bool) -> void:
 		return
 	if int(_project["stage"]) < 2:
 		_project["config"] = _snapshot_config()
+		_project["ik_config"] = _ik_config.duplicate(true)
 		_project["main_c_stage1"] = _current_preview_code()
 		var tab_container: Node = get_node_or_null(P_TAB_CONTAINER)
 		if tab_container is TabContainer:
@@ -1439,15 +1473,17 @@ func _update_ik_joint_rows() -> void:
 
 ## 收集工程逆解算界面配置，返回字典供代码生成使用
 func _collect_ik_config() -> Dictionary:
+	return _ik_config.duplicate(true)
+
+
+## 仅保留到旧场景节点删除完成，不能再作为运行时配置源。
+func _collect_ik_config_legacy() -> Dictionary:
 	var cfg: Dictionary = {}
 	var type_btn: Node = get_node_or_null(P_IK_CONFIG_TYPE)
 	var type_idx: int = type_btn.selected if type_btn is OptionButton else 1
 	var jc: int = _ik_joint_count(type_idx)
 	cfg["joint_count"] = jc
 	cfg["mode_switch_key"] = _get_option_text(P_IK_MODE_SWITCH_KEY)
-	# config_type 仅供旧解析路径与 axis/len 缺失时的兼容推断，
-	# 不再决定构型：轴类型由各关节自己选
-	cfg["config_type"] = clampi(jc - 2, 0, 2)
 	# 各关节配置
 	var joints: Array = []
 	for i in range(jc):
@@ -1587,6 +1623,14 @@ func _check_engineer_ik_io_conflicts(issues: Array) -> void:
 
 # ------------------------------------------------------------------ 工程逆解算：静态检查
 func _check_ik_params(issues: Array) -> void:
+	var result: Dictionary = IK_CONFIG.validate(_ik_config, _collect_engineer_config())
+	_ik_pitch_dof = bool(result.get("pitch_dof", false))
+	_ik_pitch_reason = str(result.get("pitch_reason", ""))
+	issues.append_array(result.get("issues", []))
+
+
+## 旧控件校验实现，待场景节点删除时一并移除。
+func _check_ik_params_legacy(issues: Array) -> void:
 	var cfg: Dictionary = _collect_ik_config()
 	var jc: int = cfg["joint_count"]
 	# 先重置：诊断可能因连杆长度非法而跳过，残留上次的值会让提示对不上当前构形
@@ -1667,26 +1711,19 @@ func _check_ik_params(issues: Array) -> void:
 		if io_map[io].size() > 1:
 			issues.append({"type": "Error",
 				"msg": "工程逆解算 IO %s 被多关节复用：%s" % [io, str(io_map[io])]})
-	# 预设点位：数值合法性、按键重复、可达性
-	# 连杆长度由逐关节 len 折算（旧解析路径的可达域仍按 L1/L2 判定）
-	var packed: Array = CodeGenEngineerIK.new().legacy_link_lengths(cfg)
-	var l1: float = packed[0]
-	var l2: float = packed[1]
-	var l3: float = packed[2]
+	# 预设点位：数值合法性、按键重复、雅可比收敛性
+	var cg := CodeGenEngineerIK.new()
 	# 构形诊断：告诉学生这个臂能干什么、不能干什么。
 	# 连杆长度非法时诊断拿到的 lens 无意义，会刷一堆级联噪声，故仅在长度有效时跑。
 	# 另外 ARM_DIAG 自己也会报「连杆长度全为 0」，与上面那条重复，这里的 guard 顺带去重。
 	if total_len > 0.0:
-		var diag: Dictionary = ARM_DIAG.new().analyze(joints, jc,
-			cfg.get("config_type", 1), l1, l2, l3)
+		var diag: Dictionary = ARM_DIAG.new().analyze(joints, jc)
 		for it in diag.get("issues", []):
 			issues.append({"type": it.get("type", "Warn"),
 				"msg": "机械臂构形：%s" % str(it.get("msg", ""))})
 		_ik_pitch_dof = bool(diag.get("pitch_dof", false))
 		_ik_pitch_reason = str(diag.get("pitch_reason", ""))
 	var presets: Array = cfg["presets"]
-	var reach_min: float = abs(l1 - l2)
-	var reach_max: float = l1 + l2
 	var preset_keys: Dictionary = {} # 按键名 -> 首次使用的点位序号
 	var active_count: int = 0
 	for i in range(presets.size()):
@@ -1696,10 +1733,8 @@ func _check_ik_params(issues: Array) -> void:
 		active_count += 1
 		# 坐标必须是合法数值，否则生成时会被静默当成 0
 		var bad_field: bool = false
-		var need_fields: Array = ["x", "y"]
-		if jc >= 3:
-			need_fields.append("z")
-		if jc >= 4:
+		var need_fields: Array = ["x", "y", "z"]
+		if _ik_pitch_dof:
 			need_fields.append("phi")
 		for f in need_fields:
 			var t: String = p.get(f, "")
@@ -1719,25 +1754,21 @@ func _check_ik_params(issues: Array) -> void:
 			preset_keys[pkey] = i + 1
 		if bad_field:
 			continue
-		# 可达性：2 轴只看 XY 平面；3/4 轴需算上 Z；4 轴先沿 φ 回退 L3 得到腕心
+		# 从配置的初始角开始跑同一套雅可比求解器，不再用特定构型的圆环近似。
 		var x: float = _ik_num(p.get("x", ""))
 		var y: float = _ik_num(p.get("y", ""))
 		var z: float = _ik_num(p.get("z", ""))
 		var phi: float = _ik_num(p.get("phi", ""))
-		var r: float = 0.0
-		if jc == 2:
-			r = sqrt(x * x + y * y)
-		elif jc == 3:
-			r = sqrt(x * x + y * y + z * z)
-		else:
-			var phi_rad: float = deg_to_rad(phi)
-			var rw: float = sqrt(x * x + y * y) - l3 * cos(phi_rad)
-			var zw: float = z - l3 * sin(phi_rad)
-			r = sqrt(rw * rw + zw * zw)
-		if r < reach_min or r > reach_max:
+		var target_phi: float = phi if _ik_pitch_dof else NAN
+		var conv: Dictionary = cg.solve_ik_jacobian_converge(
+			Vector3(x, y, z), target_phi, cg._joint_home_angles(joints), joints, jc)
+		if float(conv.get("err", INF)) >= 2.0 \
+				or (_ik_pitch_dof and absf(float(conv.get("phi_err", INF))) >= 1.0):
 			issues.append({"type": "Warn",
-				"msg": "工程逆解算 预设点位 P%d 折算半径 %.1f 超出可达范围 [%.1f, %.1f]"
-					% [i + 1, r, reach_min, reach_max]})
+				"msg": "工程逆解算 预设点位 P%d 无法从初始姿态收敛（位置误差 %.1fmm%s）"
+					% [i + 1, float(conv.get("err", INF)),
+						"，姿态误差 %.1f°" % absf(float(conv.get("phi_err", 0.0)))
+						if _ik_pitch_dof else ""]})
 	if active_count == 0:
 		issues.append({"type": "Warn",
 			"msg": "工程逆解算 未配置任何预设点位，生成的代码只能靠摇杆/按键增量控制"})
@@ -1750,8 +1781,8 @@ func _check_ik_params(issues: Array) -> void:
 	if not jx.is_empty() and not jy.is_empty() and jx == jy:
 		issues.append({"type": "Error",
 			"msg": "工程逆解算 末端X和末端Y映射到同一摇杆轴「%s」，需区分" % jx})
-	# Z 与 X/Y 共用时给出提示（3/4轴才需要Z，2轴时Z未使用）
-	if jc >= 3 and not jz.is_empty() and (jz == jx or jz == jy):
+	# Z 与 X/Y 共用时给出提示
+	if not jz.is_empty() and (jz == jx or jz == jy):
 		issues.append({"type": "Warn",
 			"msg": "工程逆解算 末端Z与末端%s共用摇杆轴「%s」，Z方向将随该轴联动" % ["X" if jz == jx else "Y", jz]})
 	# 缩放：满偏时每周期位移，过大会让末端一帧冲出量程
@@ -1760,10 +1791,10 @@ func _check_ik_params(issues: Array) -> void:
 		if not scale_s.is_valid_float() or scale_s.to_float() <= 0:
 			issues.append({"type": "Error",
 				"msg": "工程逆解算 摇杆缩放「%s」不是合法正数" % scale_s})
-		elif reach_max > 0 and scale_s.to_float() > reach_max * 0.2:
+		elif total_len > 0 and scale_s.to_float() > total_len * 0.2:
 			issues.append({"type": "Warn",
 				"msg": "工程逆解算 摇杆缩放 %.1fmm/周期 相对臂长(%.1fmm)偏大，末端会移动过快"
-					% [scale_s.to_float(), reach_max]})
+					% [scale_s.to_float(), total_len]})
 	# 按键控制末端移动检查
 	var km_speed: String = cfg.get("keymove_speed", "")
 	if not km_speed.is_empty() and (not km_speed.is_valid_float() or km_speed.to_float() <= 0):
@@ -1861,8 +1892,6 @@ func _run_check(_a = null, _b = null) -> void:
 		_check_engineer_chassis_io(issues)
 		_check_engineer_keymap(issues)
 		_check_ik_params(issues)
-		_check_mode_switch_conflicts(issues)
-		_check_engineer_ik_io_conflicts(issues)
 	elif current_tab == 3:
 		# 调试模式检查（tab 顺序：0=步兵, 1=工程, 2=工程逆解算, 3=调试）
 		_check_debug_params(issues)
@@ -1874,9 +1903,8 @@ func _run_check(_a = null, _b = null) -> void:
 		_check_engineer_chassis_io(issues)
 		_check_engineer_keymap(issues)
 		_check_ik_params(issues)
-		_check_mode_switch_conflicts(issues)
-		_check_engineer_ik_io_conflicts(issues)
 	_last_issues = issues
+	_update_ik_summary()
 	# 将问题展示到 Output
 	var out: Node = get_node_or_null(P_OUTPUT)
 	if out and out.has_method("set_issues"):
@@ -1895,6 +1923,34 @@ func _run_check(_a = null, _b = null) -> void:
 	var code_edit: Node = get_node_or_null(P_CODE_EDIT)
 	if code_edit is CodeEdit:
 		code_edit.text = code
+
+
+func _update_ik_summary() -> void:
+	var label: Node = get_node_or_null(P_IK_SUMMARY)
+	if not label is Label:
+		return
+	var result: Dictionary = IK_CONFIG.validate(_ik_config, _collect_engineer_config())
+	var errors: int = 0
+	var warnings: int = 0
+	for issue in result.get("issues", []):
+		if str(issue.get("type", "")) == "Error":
+			errors += 1
+		else:
+			warnings += 1
+	var ios: Array[String] = []
+	for joint in _ik_config.get("joints", []):
+		ios.append(str(joint.get("io", "")))
+	var active_presets: int = 0
+	for preset in _ik_config.get("presets", []):
+		if preset.get("enabled", false):
+			active_presets += 1
+	var gripper: Dictionary = _ik_config.get("gripper", {})
+	var gripper_text: String = "夹爪 %s" % str(gripper.get("io", "")) \
+		if bool(gripper.get("enabled", false)) else "夹爪未启用"
+	label.text = "%d 个关节  |  IO %s  |  %s  |  %d 个预设\n%d 个错误，%d 个警告" % [
+		int(_ik_config.get("joint_count", 3)), ", ".join(ios), gripper_text,
+		active_presets, errors, warnings,
+	]
 
 
 # ------------------------------------------------------------------ 规则：通道号
@@ -2423,6 +2479,7 @@ func _enter_ai_edit() -> void:
 	# 冻结阶段一：配置快照 + 生成代码；AI 从这份代码起步
 	if int(_project["stage"]) < 2:
 		_project["config"] = _snapshot_config()
+		_project["ik_config"] = _ik_config.duplicate(true)
 		_project["main_c_stage1"] = code
 		_project["active_tab"] = tab
 		_project["stage"] = 2
@@ -2452,7 +2509,11 @@ func _on_arm_sim_pressed() -> void:
 			cfg = _collect_config()
 		2:
 			scene_path = ARM_SIM_SCENE
-			cfg = _collect_ik_config()
+			cfg = {
+				"ik": _collect_ik_config(),
+				"engineer": _collect_engineer_config(),
+				"editable": not _stage2_preview,
+			}
 		_:
 			_clear_output()
 			_append_output("[Warn] 当前构型没有 3D 仿真，请切到「步兵」或「工程逆解算」标签页")
@@ -2497,7 +2558,25 @@ func _on_infantry_sim_config_changed(cfg: Dictionary) -> void:
 
 ## 把 3D 标定台里的编辑结果写回配置界面控件，再重跑检查与代码生成。
 ## 只回填仿真能改的字段，IO/方向/摇杆映射等仍由配置界面独占。
-func _on_arm_sim_config_changed(cfg: Dictionary) -> void:
+func _on_arm_sim_config_changed(payload: Dictionary) -> void:
+	if _stage2_preview:
+		return
+	var next_ik: Variant = payload.get("ik", payload)
+	_ik_config = IK_CONFIG.normalize(next_ik)
+	var io_patch: Dictionary = payload.get("io_init", {})
+	_loading = true
+	for pin in io_patch.keys():
+		if ENG_IO_PATHS.has(pin):
+			var node: Node = get_node_or_null(NodePath(ENG_IO_PATHS[pin]))
+			if node is OptionButton:
+				_select_option_by_text(node, str(io_patch[pin]))
+	_loading = false
+	_mark_dirty()
+	_run_check()
+	_update_ik_summary()
+
+
+func _on_arm_sim_config_changed_legacy(cfg: Dictionary) -> void:
 	var joints: Array = cfg.get("joints", [])
 	for i in range(min(joints.size(), IK_JOINT_ROWS.size())):
 		var row: String = IK_JOINT_ROWS[i]

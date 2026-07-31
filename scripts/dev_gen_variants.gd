@@ -3,7 +3,7 @@ extends SceneTree
 ## 生成 5 种构形的 main.c 到 user://，供 Keil 实编译验证。
 ##
 ## 覆盖面按「最容易出编译错误」挑选：
-##   2 关节        —— 无 Z 目标，ikEv[2] 走常量 0 分支
+##   2 关节        —— 仍使用统一 XYZ 目标
 ##   4 关节 Yaw+3Pitch —— φ 可控，走完整的姿态解算路径
 ##   6 关节含 Roll —— 关节数上限，xdata 用量最大
 ##   4 关节全 Pitch —— φ 不可控，整条 φ 链路都不该生成
@@ -28,7 +28,7 @@ func _mk(axes: Array, lens: Array, ios: Array) -> Array:
 func _cfg(joints: Array, presets: Array) -> Dictionary:
 	var jc: int = joints.size()
 	return {
-		"config_type": clampi(jc - 2, 0, 2), "joint_count": jc,
+		"joint_count": jc,
 		"joints": joints, "presets": presets,
 		"joy_x": "右X->末端X", "joy_y": "右Y->末端Y", "joy_z": "右X->末端Z",
 		"joy_scale": "5", "keymove_speed": "2",
@@ -71,9 +71,7 @@ func _initialize() -> void:
 		var jc: int = cfg["joint_count"]
 		var cg = CG.new()
 		var code: String = cg.generate(cfg)
-		var lens: Array = cg.legacy_link_lengths(cfg)
-		var d: Dictionary = diag.analyze(cfg["joints"], jc,
-			cfg["config_type"], lens[0], lens[1], lens[2])
+		var d: Dictionary = diag.analyze(cfg["joints"], jc)
 		var path: String = "%s/%s.c" % [dir, c["name"]]
 		var f = FileAccess.open(path, FileAccess.WRITE)
 		f.store_string(code)

@@ -96,7 +96,8 @@ flowchart LR
   支持 PC 手柄与键盘代打，云台标定结果可回填配置界面
 - **机械臂仿真兼标定台**（[scripts/arm_sim.gd](scripts/arm_sim.gd)）：运动学全部调用生成器里的公开函数，
   不重推公式。黄色幽灵球（目标）与绿色球（钳位后实际末端）分离显示限位偏差；
-  可在仿真里摆姿态后「设为中位朝向 / 设为初始角 / 存为预设」并回填配置界面
+  可在仿真里摆姿态后「设为中位朝向 / 设为初始角 / 存为预设」并回填配置界面；
+  操控模式支持键盘/手柄、正逆解切换、四轮占空比与差速底盘移动，机械臂目标保持车体局部坐标
 
 ### 编译工具链
 
@@ -135,8 +136,10 @@ headless 脚本，跑法 `godot --headless --path . --script scripts/test_xxx.gd
 | 脚本 | 覆盖范围 |
 | --- | --- |
 | [test_project_file.gd](scripts/test_project_file.gd) | 项目文件往返、配置序列化、全链路生命周期 |
-| [test_codegen_ik.gd](scripts/test_codegen_ik.gd) / [test_ik.gd](scripts/test_ik.gd) | 逆解算生成器产物与公式 |
-| [test_ik_jacobian.gd](scripts/test_ik_jacobian.gd) / [test_fk_chain.gd](scripts/test_fk_chain.gd) | 雅可比迭代收敛性、正解链 |
+| [test_codegen_ik.gd](scripts/test_codegen_ik.gd) / [test_ik_jacobian.gd](scripts/test_ik_jacobian.gd) | 通用雅可比逆解、收敛与生成代码 |
+| [test_fk_chain.gd](scripts/test_fk_chain.gd) | 2 至 6 关节的正解链、世界转轴与雅可比列 |
+| [test_engineer_ik_config.gd](scripts/test_engineer_ik_config.gd) | 工程逆解结构化配置、默认值与 IO 联动 |
+| [test_sim_remote_input.gd](scripts/test_sim_remote_input.gd) | 步兵/工程共享的键盘与手柄遥控器映射 |
 | [test_arm_diagnosis.gd](scripts/test_arm_diagnosis.gd) | 构形诊断判据 |
 | [test_arm_sim.gd](scripts/test_arm_sim.gd) / [test_infantry_sim.gd](scripts/test_infantry_sim.gd) | 仿真几何与控制方向一致性 |
 | [test_ui_ik_e2e.gd](scripts/test_ui_ik_e2e.gd) | 配置界面到生成器的端到端 |
@@ -148,8 +151,6 @@ headless 脚本，跑法 `godot --headless --path . --script scripts/test_xxx.gd
 
 ### 功能缺口
 
-- **工程机械臂的夹爪** 目前只是仿真里的可视化装饰，不占关节、不进逆解，
-  生成的代码里也没有夹爪舵机控制
 - **调试模式只能顺序自检**，不能交互式单点测试某个引脚（学生排查接线时更想要后者）
 - **配置界面无法导入真机测得的参数**（如摇杆实际量程、电机死区），
   速度与初速的标定系数目前是估值
