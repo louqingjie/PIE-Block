@@ -52,7 +52,14 @@ toolchain/
 stc32g/toolchain/**
 !stc32g/toolchain/stcflash/
 !stc32g/toolchain/stcflash/**
+!stc32g/toolchain/mcs251-sim/
+!stc32g/toolchain/mcs251-sim/**
+!stc32g/toolchain/mcs251-tests/
+!stc32g/toolchain/mcs251-tests/**
 stc32g/toolchain/stcflash/__pycache__/
+stc32g/toolchain/mcs251-sim/__pycache__/
+stc32g/toolchain/mcs251-tests/__pycache__/
+stc32g/toolchain/mcs251-tests/build/
 
 *.pieproj
 
