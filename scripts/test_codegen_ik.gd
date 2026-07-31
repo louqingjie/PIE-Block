@@ -20,6 +20,8 @@ func _initialize() -> void:
 	_test_config(cg, 2, "2关节")
 	_test_config(cg, 3, "3关节")
 	_test_config(cg, 4, "4关节")
+	_test_config(cg, 5, "5关节")
+	_test_config(cg, 6, "6关节")
 	print("\n=== 结果: %s ===" % ("全部通过 ✓" if _fail == 0 else "%d 项失败 ✗" % _fail))
 	quit(0 if _fail == 0 else 1)
 
@@ -35,8 +37,8 @@ func _check(label: String, ok: bool) -> void:
 ## 构造测试配置
 func _make_cfg(jc: int, presets: Array) -> Dictionary:
 	var joints: Array = []
-	var io_list: Array = ["P74", "P75", "P76", "MP03"]
-	var lens: Array = [100.0, 80.0] if jc == 2 else [0.0, 100.0, 80.0, 30.0]
+	var io_list: Array = ["P74", "P75", "P76", "MP03", "MP74", "P77"]
+	var lens: Array = [100.0, 80.0] if jc == 2 else [0.0, 100.0, 80.0, 30.0, 20.0, 10.0]
 	for i in range(jc):
 		joints.append({
 			"io": io_list[i], "dir": "正向",
@@ -120,7 +122,9 @@ func _test_gripper(cg) -> void:
 	_check("夹爪有独立状态与按键锁存", code.contains("uint8_t  gripperOpen = 1")
 		and code.contains("pressed = RcKeyValueRead(KEY_OFFSET_D)")
 		and code.contains("pressed && !gripperKeyHeld"))
-	_check("夹爪更新位于模式分支之外", code.find("UpdateGripper();") < code.find("if (inverseMode)"))
+	var inverse_at: int = code.find("if (inverseMode)")
+	_check("夹爪更新位于模式分支之外", inverse_at < 0
+		or code.find("        UpdateGripper();") < inverse_at)
 	_check("扩展板夹爪合并统一输出", code.contains("dutyOfGripper")
 		and code.contains("ExpansionBoradControl(Duty_Change_Order")
 		and not code.contains("PWM_"))
@@ -139,7 +143,8 @@ func _test_gripper(cg) -> void:
 
 func _test_config(cg, jc: int, label: String) -> void:
 	print("\n--- %s ---" % label)
-	var presets: Array = [ {"key": "A", "x": "100", "y": "80", "z": "50", "phi": "90", "enabled": true}]
+	var presets: Array = [ {"key": "A", "x": "100", "y": "80", "z": "50",
+		"roll": "0", "pitch": "30", "yaw": "0", "enabled": true}]
 	var code: String = cg.generate(_make_cfg(jc, presets))
 	_check("%s 生成非空" % label, not code.is_empty())
 	# 必需的头文件与宏
@@ -168,7 +173,7 @@ func _test_config(cg, jc: int, label: String) -> void:
 	_check("%s 有 ExpansionBoradControl" % label, code.find("void ExpansionBoradControl(") >= 0)
 	_check("%s 定义 Channal" % label, code.find("uint8_t Channal =") >= 0)
 	# 预设点位表用末端坐标而非关节角度
-	_check("%s 有 presetPos 表" % label, code.find("const float presetPos[PRESET_COUNT][4]") >= 0)
+	_check("%s 有六维 presetPose 表" % label, code.find("const float presetPose[PRESET_COUNT][6]") >= 0)
 	# 舵机方向不得再走 Dir_Change_Order（会与占空比镜像叠加抵消）
 	_check("%s 不发 Dir_Change_Order" % label, code.find("ExpansionBoradControl(Dir_Change_Order") < 0)
 	# 占空比系数：0~180° 必须映射满实测行程 250~1250（跨度 1000）
@@ -193,16 +198,17 @@ func _test_config(cg, jc: int, label: String) -> void:
 		and code.find("static float xdata ikBasis[") >= 0)
 	# α 必须自适应（分子是关节空间的 |J^T e|²），不能是固定值
 	_check("%s alpha 自适应" % label,
-		code.find("num += ikJte[k] * ikJte[k]") >= 0
-		and code.find("alpha = num / den") >= 0)
-	_check("%s 有单步限幅" % label, code.find("IK_MAX_STEP_DEG / maxStep") >= 0)
+		code.find("num+=ikJte[k]*ikJte[k]") >= 0
+		and code.find("alpha=(den>IK_EPS)?num/den") >= 0)
+	_check("%s 有单步限幅" % label, code.find("IK_MAX_STEP_DEG/maxStep") >= 0)
 	# 该测试构型从 4 关节起具备独立姿态自由度，姿态角应可由按键调整。
 	if jc >= 4:
-		_check("4轴 有 φ 按键增量", code.find("targetPhi += KEYMOVE_PHI_SPEED") >= 0)
-		# 俯仰角纳入解算：权重宏 + asin 求仰角 + 梯度项
-		_check("4轴 有 PHI_WEIGHT", code.find("#define PHI_WEIGHT") >= 0)
-		_check("4轴 用 asin 求仰角", code.find("asin(az)") >= 0)
-		_check("4轴 有 φ 梯度项", code.find("gk * PHI_WEIGHT") >= 0)
+		_check("4轴 有 Pitch 按键增量", code.find("targetPitch += KEYMOVE_PITCH_SPEED") >= 0)
+		_check("4轴 有姿态权重", code.find("#define ORIENTATION_WEIGHT") >= 0)
+		_check("4轴 从 RPY 构造目标旋转矩阵", code.find("ikTargetBasis[0][0]=cy*cp") >= 0)
+		_check("4轴 使用最短旋转误差", code.find("atan2(sinAngle,cosAngle)") >= 0)
+	_check("%s 不再生成旧 phi 路径" % label,
+		not code.contains("targetPhi") and not code.contains("pitch_gradient") and not code.contains("PHI_WEIGHT"))
 	# 可达性拦截不能再依赖 ik_reachable（雅可比法下它只表示「这步有没有靠近」）
 	_check("%s 用臂展判超界" % label, code.find("ik_target_too_far(") >= 0)
 	_check("%s 超界时允许目标朝内移动" % label,
@@ -223,7 +229,7 @@ func _test_no_preset(cg) -> void:
 	var code: String = cg.generate(_make_cfg(3, []))
 	_check("PRESET_COUNT 为 0", code.find("#define PRESET_COUNT 0") >= 0)
 	_check("不生成 presetKey 数组", code.find("const uint8_t presetKey[") < 0)
-	_check("不生成 presetPos 数组", code.find("const float presetPos[") < 0)
+	_check("不生成 presetPose 数组", code.find("const float presetPose[") < 0)
 	_check("不声明 CheckPresetKeys", code.find("uint8_t CheckPresetKeys();") < 0)
 	_check("不调用 CheckPresetKeys", code.find("CheckPresetKeys()") < 0)
 	_check("presetHit 置 0", code.find("presetHit = 0;") >= 0)
@@ -365,7 +371,7 @@ func _func_body(code: String, signature: String) -> String:
 func _ik_sig(jc: int) -> String:
 	var names: Array = ["float x", "float y", "float z"]
 	if jc >= 4:
-		names.append("float phi")
+		names.append("float pitch")
 	return ", ".join(names)
 
 

@@ -34,7 +34,7 @@ func _check(label: String, ok: bool, detail: String = "") -> void:
 
 func _initialize() -> void:
 	print("=== 项目文件与配置序列化测试 ===\n")
-	_check("项目格式版本已升级到 5", PF.FORMAT_VERSION == 5)
+	_check("项目格式版本已升级到 6", PF.FORMAT_VERSION == 6)
 	DirAccess.make_dir_recursive_absolute(TMP_DIR)
 	_test_kind_mapping()
 	_test_roundtrip()

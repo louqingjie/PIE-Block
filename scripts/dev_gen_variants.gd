@@ -45,7 +45,7 @@ func _initialize() -> void:
 	var io6: Array = ["P74", "P75", "P76", "P77", "P60", "P62"]
 	var presets: Array = [ {
 		"enabled": true, "key": "A",
-		"x": "150", "y": "30", "z": "60", "phi": "-30",
+		"x": "150", "y": "30", "z": "60", "roll": "0", "pitch": "-30", "yaw": "0",
 	}]
 	var cases: Array = [
 		{"name": "v1_2joint",
@@ -76,10 +76,11 @@ func _initialize() -> void:
 		var f = FileAccess.open(path, FileAccess.WRITE)
 		f.store_string(code)
 		f.close()
-		print("%s : jc=%d phi=%s targetPhi=%s PHI_WEIGHT=%s -> %s"
-			% [c["name"], jc, str(d["pitch_dof"]),
-				str(code.contains("targetPhi")),
-				str(code.contains("#define PHI_WEIGHT")),
+		var mask: Dictionary = d.get("orientation_mask", {})
+		print("%s : jc=%d orientation=%s targetPitch=%s ORIENTATION_WEIGHT=%s -> %s"
+			% [c["name"], jc, str(mask),
+				str(code.contains("targetPitch")),
+				str(code.contains("#define ORIENTATION_WEIGHT")),
 				ProjectSettings.globalize_path(path)])
 	print("DONE ", ProjectSettings.globalize_path(dir))
 	quit(0)

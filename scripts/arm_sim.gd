@@ -2,7 +2,7 @@ extends Control
 ## 机械臂逆解 3D 仿真视图。
 ##
 ## 全部运动学都走 CodeGenEngineerIK 里的公开函数（fk_chain /
-## solve_ik_jacobian_converge / clamp_angles_to_limits），
+## solve_ik_pose_converge / clamp_angles_to_limits），
 ## 不在本文件重推公式，避免仿真与生成的 C 代码脱节。
 ##
 ## 坐标系约定：机器人 X/Y 为水平面、Z 为高度，映射到 Godot (x, z, -y)。
@@ -105,16 +105,16 @@ var _joints: Array = []
 var _presets: Array = []
 var _gripper: Dictionary = {}
 ## 末端俯仰角在当前构形上能否「位置不动、只转 φ」。
-## 与生成器的 _phi_controllable 同一判据，不可控时 φ 不参与逆解。
-var _phi_dof: bool = false
+var _orientation_mask: Dictionary = {"roll": false, "pitch": false, "yaw": false}
+var _orientation_reason: Dictionary = {}
 ## 判定「末端到位」的容差(mm)。数值解不会精确命中，
 ## 超过这个距离才认为目标够不着（连杆染红 + 状态行提示）。
 const IK_REACHED_TOL: float = 2.0
 
 # ------------------------------------------------------------------ 运行状态
 var _mode: int = Mode.IK
-## 末端目标 [x, y, z, phi]（机器人坐标 mm / 度）
-var _target: Array = [0.0, 0.0, 0.0, 0.0]
+## 末端目标使用 ArmMount 局部坐标；姿态仅在 UI 边界表示为 RPY。
+var _target: Dictionary = {"position": Vector3.ZERO, "rpy": Vector3.ZERO}
 ## 当前各关节角度（度），已过限位
 var _angles: Array = []
 ## 上一帧逆解是否可达（操控模式的状态显示需要）
@@ -149,7 +149,7 @@ var _turn_rate: float = TURN_RATE_DEFAULT
 ## 预设点位巡航：>=0 表示正在播放第 N 个点位
 var _play_idx: int = -1
 var _play_t: float = 0.0
-var _play_from: Array = []
+var _play_from: Dictionary = {}
 
 # ------------------------------------------------------------------ 视图状态
 var _cam_yaw: float = -0.7
@@ -298,15 +298,16 @@ func _apply_config() -> void:
 	_gripper = (_cfg.get("gripper", IK_CONFIG.default_gripper()) as Dictionary).duplicate(true)
 	# 预设点位表补齐到 4 项，便于「存为预设 N」直接写入
 	while _presets.size() < 4:
-		_presets.append({"key": "A", "x": "", "y": "", "z": "", "phi": "", "enabled": false})
+		_presets.append(IK_CONFIG.default_preset(_presets.size()))
 	# 末端俯仰角能否单独控制。与生成器同一判据，
 	# 不可控时 φ 不参与逆解，界面上也不该让学生以为能调。
 	var diag = load("res://scripts/arm_diagnosis.gd").new()
 	var d: Dictionary = diag.analyze(_joints, _jc)
-	_phi_dof = bool(d.get("pitch_dof", false))
+	_orientation_mask = (d.get("orientation_mask", {}) as Dictionary).duplicate(true)
+	_orientation_reason = (d.get("orientation_reason", {}) as Dictionary).duplicate(true)
 	# 初始姿态：与生成的 C 代码上电起点一致
 	_fk_angles = _cg._joint_home_angles(_joints)
-	_target = _tip_targets(_fk_angles.slice(0, _jc))
+	_target = _tip_target(_fk_angles.slice(0, _jc))
 	_angles = _fk_angles.slice(0, _jc)
 	_inverse_mode = true
 	_mode_key_held = false
@@ -436,14 +437,11 @@ func _rebuild_arm() -> void:
 	_tip_node.mesh = tip_mesh
 	_tip_node.material_override = _mat_tip
 	root.add_child(_tip_node)
-	# 目标幽灵球：钳位时与实际末端分离，直观显示误差
+	# 非对称目标块同时显示目标位置和完整末端方向。
 	var ghost: MeshInstance3D = get_node_or_null(P_GHOST)
 	if ghost is MeshInstance3D:
-		var gm: SphereMesh = SphereMesh.new()
-		gm.radius = TIP_RADIUS_MM * 1.15 * MM_TO_UNIT
-		gm.height = TIP_RADIUS_MM * 2.3 * MM_TO_UNIT
-		gm.radial_segments = 16
-		gm.rings = 8
+		var gm: BoxMesh = BoxMesh.new()
+		gm.size = Vector3(48.0, 22.0, 14.0) * MM_TO_UNIT
 		ghost.mesh = gm
 		ghost.material_override = _mat_ghost
 	_rebuild_gripper()
@@ -748,37 +746,31 @@ func _build_axes() -> void:
 
 
 # ------------------------------------------------------------------ 求解 & 渲染
-## 由关节角算出末端目标 [x, y, z, φ]，与 _target 的布局一致。
-## φ 是末端朝向的仰角（与生成的 C 代码同一定义），不是 θ1+θ2+θ3。
-func _tip_targets(angles: Array) -> Array:
+func _tip_target(angles: Array) -> Dictionary:
 	var chain: Dictionary = _cg.fk_chain(angles, _joints, _jc)
 	var pts: Array = chain["points"]
 	var tip: Vector3 = pts[pts.size() - 1]
-	return [tip.x, tip.y, tip.z, _cg.tip_pitch_deg(chain)]
+	return {"position": tip, "rpy": _cg.tip_rpy_deg(chain)}
 
 
-## 传给逆解的目标俯仰角。φ 在当前构形上不可控时返回 NAN，
-## 逆解据此只解位置 —— 与生成的 C 代码「不声明 targetPhi」的裁剪一致。
-func _target_phi() -> float:
-	if not _phi_dof:
-		return NAN
-	return _target[3]
+func _target_basis() -> Basis:
+	return _cg.basis_from_rpy_deg(_target["rpy"])
 
 
 ## 目标是否超出臂展。复现生成代码里的 ik_target_too_far：
 ## 摇杆是增量累加的，不拦住的话长推会让目标无限飘远，
 ## 松手后末端要很久才能追回来。
-func _target_too_far(previous: Array = []) -> bool:
+func _target_too_far(previous: Dictionary = {}) -> bool:
 	var reach: float = _arm_reach()
 	var limit: float = reach * _cg.IK_REACH_MARGIN
-	var d: Vector3 = Vector3(_target[0], _target[1], _target[2])
+	var d: Vector3 = _target["position"]
 	if d.length_squared() <= limit * limit:
 		return false
 	# 初始姿态常常正好完全伸直，天然位于 98% 软边界之外。
 	# 此时必须允许目标朝底座方向移动，否则每个向内增量都会被撤回，
 	# 遥控目标将永远无法进入软边界。
-	if previous.size() >= 3:
-		var old: Vector3 = Vector3(previous[0], previous[1], previous[2])
+	if previous.has("position"):
+		var old: Vector3 = previous["position"]
 		return d.length_squared() >= old.length_squared()
 	return true
 
@@ -791,26 +783,29 @@ func _recompute() -> void:
 		_angles = forward_lim["angles"]
 		_clamped = forward_lim["clamped"]
 		_reachable = true
-		_target = _tip_targets(_angles)
+		_target = _tip_target(_angles)
 		for i in range(min(_angles.size(), _fk_angles.size())):
 			_fk_angles[i] = _angles[i]
 	else:
 		# 雅可比数值逆解：从当前姿态起解，与真机 ik_solve 同一套数学。
 		# 仿真里迭代到收敛（真机是每周期走一步，靠连续周期逼近）。
-		var res: Dictionary = _cg.solve_ik_jacobian_converge(
-			Vector3(_target[0], _target[1], _target[2]), _target_phi(),
-			_angles, _joints, _jc)
+		var res: Dictionary = _cg.solve_ik_pose_converge(_target["position"],
+			_target_basis(), _orientation_mask, _angles, _joints, _jc)
 		var lim2: Dictionary = _cg.clamp_angles_to_limits(res["angles"], _joints)
 		_angles = lim2["angles"]
 		_clamped = lim2["clamped"]
 		# 「可达」= 钳位后的实际末端确实落在目标附近。
 		# 不能用逆解返回的 reachable：那表示「这一步有没有靠近目标」，
 		# 收敛完成时反而是假；也不能用钳位前的误差，限位会把末端推开。
-		var actual: Array = _tip_targets(_angles)
-		_reachable = Vector3(actual[0] - _target[0], actual[1] - _target[1],
-			actual[2] - _target[2]).length() < IK_REACHED_TOL
-		if _phi_dof:
-			_reachable = _reachable and absf(actual[3] - _target[3]) < 1.0
+		var actual: Dictionary = _tip_target(_angles)
+		_reachable = (actual["position"] as Vector3).distance_to(_target["position"]) < IK_REACHED_TOL
+		var orientation_error: Vector3 = _cg.orientation_error_vector(
+			_cg.basis_from_rpy_deg(actual["rpy"]), _target_basis())
+		var task: Dictionary = _cg.orientation_task_rows(
+			_cg.fk_chain(_angles, _joints, _jc), _jc, _orientation_mask)
+		for name in task["order"]:
+			_reachable = _reachable and absf(rad_to_deg(
+				orientation_error.dot(task["axes"][name]))) < 1.0
 		# 关节调整滑块跟着解算结果走，编辑时姿态连续
 		for i in range(min(_angles.size(), _fk_angles.size())):
 			_fk_angles[i] = _angles[i]
@@ -851,12 +846,16 @@ func _render_arm() -> void:
 	# 末端球
 	if _tip_node != null:
 		_tip_node.position = pts[pts.size() - 1]
-	# 目标幽灵球：仅当目标与实际末端有可见差距时显示
+	# 目标块始终显示；其长边沿目标夹爪 Roll 轴，完整反映目标 RPY。
 	var ghost: MeshInstance3D = get_node_or_null(P_GHOST)
 	if ghost is MeshInstance3D:
-		var tgt: Vector3 = _robot_to_godot(_target[0], _target[1], _target[2])
-		ghost.position = tgt
-		ghost.visible = tgt.distance_to(pts[pts.size() - 1]) > TIP_RADIUS_MM * MM_TO_UNIT * 0.6
+		var target_basis: Basis = _target_basis()
+		var bx: Vector3 = _vec_to_godot(target_basis.x).normalized()
+		var by: Vector3 = _vec_to_godot(target_basis.y).normalized()
+		var bz: Vector3 = bx.cross(by).normalized()
+		ghost.transform = Transform3D(Basis(bx, by, bz),
+			_vec_to_godot(_target["position"]))
+		ghost.visible = true
 	_render_gripper(chain, pts)
 	_push_trail(_arm_point_to_world(pts[pts.size() - 1]))
 
@@ -945,11 +944,17 @@ func _update_status() -> void:
 	if not label is Label:
 		return
 	var lines: Array = []
-	var tip: Array = _tip_targets(_angles)
-	lines.append("实际末端 X=%.1f Y=%.1f Z=%.1f mm  φ=%.1f°" % [tip[0], tip[1], tip[2], tip[3]])
+	var tip: Dictionary = _tip_target(_angles)
+	var tip_position: Vector3 = tip["position"]
+	var tip_rpy: Vector3 = tip["rpy"]
+	lines.append("实际末端 X=%.1f Y=%.1f Z=%.1f mm  R=%.1f° P=%.1f° Y=%.1f°" % [
+		tip_position.x, tip_position.y, tip_position.z, tip_rpy.x, tip_rpy.y, tip_rpy.z])
 	if _mode == Mode.CONTROLLER and _inverse_mode:
-		lines.append("逆解目标 X=%.1f Y=%.1f Z=%.1f mm  φ=%.1f°" % [
-			_target[0], _target[1], _target[2], _target[3]])
+		var target_position: Vector3 = _target["position"]
+		var target_rpy: Vector3 = _target["rpy"]
+		lines.append("逆解目标 X=%.1f Y=%.1f Z=%.1f mm  R=%.1f° P=%.1f° Y=%.1f°" % [
+			target_position.x, target_position.y, target_position.z,
+			target_rpy.x, target_rpy.y, target_rpy.z])
 	var ang_parts: Array = []
 	for i in range(_angles.size()):
 		ang_parts.append("θ%d=%.1f°" % [i + 1, _angles[i]])
@@ -995,19 +1000,18 @@ func _update_status() -> void:
 				% [i + 1, sv["angles"][i], _joint_offset(i)])
 	if over.size() > 0:
 		lines.append(", ".join(over))
-	# 夹爪朝向：与状态行里的 φ 互为印证，也覆盖 2/3 轴（它们没有 φ 字段）
+	# 夹爪朝向与状态行里的完整 RPY 互为印证。
 	lines.append(_gripper_text())
 	# 末端相对底盘中心的位置，判断有没有伸出车外
 	if _chassis_visible:
-		lines.append(_chassis_relation_text(tip))
+		lines.append(_chassis_relation_text(tip_position))
 	label.text = "\n".join(lines)
 
 
-## 夹爪朝向描述：末端连杆相对水平面的仰角，正=朝上
 func _gripper_text() -> String:
 	var chain: Dictionary = _cg.fk_chain(_angles, _joints, _jc)
-	var pitch: float = _cg.tip_pitch_deg(chain)
-	return "夹爪末端仰角%+.1f°" % pitch
+	var rpy: Vector3 = _cg.tip_rpy_deg(chain)
+	return "夹爪朝向 Roll=%+.1f° Pitch=%+.1f° Yaw=%+.1f°" % [rpy.x, rpy.y, rpy.z]
 
 
 func _gripper_control_text() -> String:
@@ -1029,11 +1033,11 @@ func _gripper_duty() -> int:
 
 
 ## 末端相对底盘的位置描述：伸出车外多少、是否低于轮下沿
-func _chassis_relation_text(tip: Array) -> String:
+func _chassis_relation_text(tip: Vector3) -> String:
 	# 末端在底盘坐标系里的位置 = 机器人坐标 + 安装偏移（高度以板顶面为 0）
-	var fwd: float = tip[0] + _mount.x
-	var side: float = tip[1] + _mount.y
-	var up: float = tip[2] + _mount.z
+	var fwd: float = tip.x + _mount.x
+	var side: float = tip.y + _mount.y
+	var up: float = tip.z + _mount.z
 	var half_wb: float = _chassis_deck_len * 0.5
 	var half_tr: float = _chassis_track * 0.5
 	var parts: Array = ["末端相对底盘 前后%+.0f 左右%+.0f 高%+.0f mm" % [fwd, side, up]]
@@ -1181,7 +1185,8 @@ func _build_diagnostics(parent: Node) -> void:
 
 func _refresh_diagnostics() -> void:
 	var result: Dictionary = IK_CONFIG.validate(_cfg, _engineer)
-	_phi_dof = bool(result.get("pitch_dof", false))
+	_orientation_mask = (result.get("orientation_mask", {}) as Dictionary).duplicate(true)
+	_orientation_reason = (result.get("orientation_reason", {}) as Dictionary).duplicate(true)
 	var issues: Array = result.get("issues", [])
 	var text: String = "配置有效"
 	if issues.is_empty():
@@ -1269,10 +1274,11 @@ func _on_joint_number_changed(index: int, field: String, value: float) -> void:
 func _refresh_after_structure_change() -> void:
 	_cfg["joints"] = _joints.duplicate(true)
 	var diagnosis: Dictionary = DIAG.new().analyze(_joints, _jc)
-	_phi_dof = bool(diagnosis.get("pitch_dof", false))
+	_orientation_mask = (diagnosis.get("orientation_mask", {}) as Dictionary).duplicate(true)
+	_orientation_reason = (diagnosis.get("orientation_reason", {}) as Dictionary).duplicate(true)
 	_fk_angles = _cg._joint_home_angles(_joints)
 	_angles = _fk_angles.slice(0, _jc)
-	_target = _tip_targets(_angles)
+	_target = _tip_target(_angles)
 	_rebuild_arm()
 	_rebuild_static_geometry()
 	_update_config_label()
@@ -1301,10 +1307,10 @@ func _build_control_editor(parent: Node) -> void:
 		func(value: float) -> void:
 			_cfg["keymove_speed"] = str(value)
 			_emit_config_changed())
-	var labels: Array[String] = ["末端 X", "末端 Y", "末端 Z", "姿态 φ"]
+	var labels: Array[String] = ["末端 X", "末端 Y", "末端 Z", "姿态 Pitch"]
 	for i in range(4):
 		_add_section(parent, labels[i])
-		var unavailable: bool = i == 3 and not _phi_dof
+		var unavailable: bool = i == 3 and not bool(_orientation_mask.get("pitch", false))
 		for side in ["plus", "minus"]:
 			var option := _add_option_row(parent, "+" if side == "plus" else "-",
 				IK_CONFIG.MOVE_KEYS, str(_cfg["keymove"][i][side]),
@@ -1364,10 +1370,16 @@ func _on_param_changed(value: float, key: String, peer: Node) -> void:
 		_on_link_length_changed(key.substr(3).to_int(), value)
 		return
 	match key:
-		"x": _target[0] = value
-		"y": _target[1] = value
-		"z": _target[2] = value
-		"phi": _target[3] = value
+		"x", "y", "z":
+			var position: Vector3 = _target["position"]
+			position[{"x": 0, "y": 1, "z": 2}[key]] = value
+			_target["position"] = position
+		"roll", "pitch", "yaw":
+			var rpy: Vector3 = _target["rpy"]
+			var component: int = {"roll": 0, "pitch": 1, "yaw": 2}[key]
+			rpy[component] = clampf(value, -90.0, 90.0) if key == "pitch" \
+				else wrapf(value, -180.0, 180.0)
+			_target["rpy"] = rpy
 		"movespd":
 			# 速度只影响下一帧的键盘步进，不改当前姿态
 			_ik_move_speed = value
@@ -1441,7 +1453,10 @@ func _on_link_length_changed(index: int, value: float) -> void:
 ## 求解结果同时回写末端与关节控件，保证两种编辑方式始终描述同一姿态。
 func _sync_param_widgets() -> void:
 	_syncing = true
-	var vals: Dictionary = {"x": _target[0], "y": _target[1], "z": _target[2], "phi": _target[3]}
+	var position: Vector3 = _target["position"]
+	var rpy: Vector3 = _target["rpy"]
+	var vals: Dictionary = {"x": position.x, "y": position.y, "z": position.z,
+		"roll": rpy.x, "pitch": rpy.y, "yaw": rpy.z}
 	if _mode == Mode.IK:
 		for i in range(_angles.size()):
 			vals["j%d" % i] = _angles[i]
@@ -1461,20 +1476,35 @@ func _build_ik_params(parent: Node) -> void:
 	_add_section(parent, "末端目标（逆解）")
 	# 滑块范围按最大可达半径取整，留 20% 余量便于试探越界行为
 	var reach: float = maxf(_arm_reach() * 1.2, 1.0)
-	_add_slider_row(parent, "x", "X (mm)", -reach, reach, _target[0], 1.0)
-	_add_slider_row(parent, "y", "Y (mm)", -reach, reach, _target[1], 1.0)
-	_add_slider_row(parent, "z", "Z (mm，高度)", -reach, reach, _target[2], 1.0)
-	if _phi_dof:
-		_add_slider_row(parent, "phi", "末端姿态角 φ (°)", -180.0, 180.0, _target[3], 1.0)
+	var position: Vector3 = _target["position"]
+	var rpy: Vector3 = _target["rpy"]
+	_add_slider_row(parent, "x", "X (mm)", -reach, reach, position.x, 1.0)
+	_add_slider_row(parent, "y", "Y (mm)", -reach, reach, position.y, 1.0)
+	_add_slider_row(parent, "z", "Z (mm，高度)", -reach, reach, position.z, 1.0)
+	for item in [["roll", "Roll（滚转）", rpy.x, -180.0, 180.0],
+			["pitch", "Pitch（俯仰）", rpy.y, -90.0, 90.0],
+			["yaw", "Yaw（偏航）", rpy.z, -180.0, 180.0]]:
+		var name: String = item[0]
+		var enabled: bool = bool(_orientation_mask.get(name, false))
+		var label_text: String = item[1]
+		if not enabled:
+			label_text += "（不可独立控制）"
+		_add_slider_row(parent, name, label_text, item[3], item[4], item[2], 1.0)
+		_sliders[name].editable = enabled and _editable
+		_spins[name].editable = enabled and _editable
+		if not enabled:
+			var reason: String = str(_orientation_reason.get(name, "构形自由度不足"))
+			_sliders[name].tooltip_text = reason
+			_spins[name].tooltip_text = reason
 	_add_section(parent, "键盘移动速度")
 	_add_slider_row(parent, "movespd", "位移 (mm/s)", 10.0, 500.0, _ik_move_speed, 5.0)
-	if _phi_dof:
+	if bool(_orientation_mask.get("pitch", false)):
 		_add_slider_row(parent, "rotspd", "姿态角 (°/s)", 5.0, 240.0, _ik_rot_speed, 5.0)
 	var hint: Label = Label.new()
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	hint.text = "键盘控制末端：" + _key_hint_text()
 	hint.text += "\nShift 加速一倍，Alt 减速到 1/4。"
-	hint.text += "\n黄色半透明球是目标位置，与末端分离即表示被钳位。"
+	hint.text += "\n黄色半透明目标块同时显示目标位置和完整朝向。"
 	parent.add_child(hint)
 	_build_joint_calibration(parent)
 	_build_gripper_rows(parent)
@@ -1484,8 +1514,8 @@ func _build_ik_params(parent: Node) -> void:
 ## 当前构型的键盘映射说明（顶栏提示与侧欄共用）
 func _key_hint_text() -> String:
 	var s: String = "W/S 走 X，A/D 走 Y（水平面），↑↓ 走 Z（高度）"
-	if _phi_dof:
-		s += "，Q/E 调姿态角 φ"
+	if bool(_orientation_mask.get("pitch", false)):
+		s += "，Q/E 调 Pitch"
 	return s
 
 
@@ -1536,7 +1566,7 @@ func _apply_joint_pose_from_editor() -> void:
 	_angles = limited["angles"]
 	_clamped = limited["clamped"]
 	_reachable = true
-	_target = _tip_targets(_angles)
+	_target = _tip_target(_angles)
 	for i in range(min(_angles.size(), _fk_angles.size())):
 		_fk_angles[i] = _angles[i]
 	_render_arm()
@@ -1721,12 +1751,15 @@ func _build_preset_params(parent: Node) -> void:
 		_add_option_row(parent, "触发键", IK_CONFIG.KEYS, str(preset.get("key", "A")),
 			func(value: String) -> void: _on_preset_field_changed(i, "key", value))
 		for field in [["x", "X mm", -5000.0, 5000.0], ["y", "Y mm", -5000.0, 5000.0],
-			["z", "Z mm", -5000.0, 5000.0], ["phi", "姿态 φ °", -90.0, 90.0]]:
+			["z", "Z mm", -5000.0, 5000.0], ["roll", "Roll °", -180.0, 180.0],
+			["pitch", "Pitch °", -90.0, 90.0], ["yaw", "Yaw °", -180.0, 180.0]]:
 			var spin := _add_config_spin(parent, field[1], str(preset.get(field[0], "")),
 				field[2], field[3], 0.5,
 				func(value: float) -> void: _on_preset_field_changed(i, field[0], str(value)))
-			if field[0] == "phi" and not _phi_dof:
+			if field[0] in ["roll", "pitch", "yaw"] \
+					and not bool(_orientation_mask.get(field[0], false)):
 				spin.editable = false
+				spin.tooltip_text = str(_orientation_reason.get(field[0], "构形自由度不足"))
 	_add_section(parent, "预设点位（点按钮跳转）")
 	var active: Array = _active_presets()
 	if active.is_empty():
@@ -1802,7 +1835,12 @@ func _goto_preset(idx: int) -> void:
 		return
 	var p: Dictionary = _presets[idx]
 	_play_idx = -1
-	_target = [_p_float(p, "x"), _p_float(p, "y"), _p_float(p, "z"), _p_float(p, "phi")]
+	var rpy: Vector3 = _target["rpy"]
+	for pair in [["roll", 0], ["pitch", 1], ["yaw", 2]]:
+		if bool(_orientation_mask.get(pair[0], false)):
+			rpy[pair[1]] = _p_float(p, pair[0])
+	_target = {"position": Vector3(_p_float(p, "x"), _p_float(p, "y"), _p_float(p, "z")),
+		"rpy": rpy}
 	_recompute()
 
 
@@ -1810,8 +1848,9 @@ func _goto_preset(idx: int) -> void:
 func _preset_coord_text(p: Dictionary) -> String:
 	var s: String = "X=%.0f Y=%.0f Z=%.0f" % [
 		_p_float(p, "x"), _p_float(p, "y"), _p_float(p, "z")]
-	if _phi_dof:
-		s += " φ=%.0f°" % _p_float(p, "phi")
+	for pair in [["roll", "R"], ["pitch", "P"], ["yaw", "Y"]]:
+		if bool(_orientation_mask.get(pair[0], false)):
+			s += " %s=%.0f°" % [pair[1], _p_float(p, pair[0])]
 	return s
 
 
@@ -1821,13 +1860,16 @@ func _save_preset(idx: int) -> void:
 	if not _editable:
 		return
 	while _presets.size() <= idx:
-		_presets.append({"key": "A", "x": "", "y": "", "z": "", "phi": "", "enabled": false})
-	var tip: Array = _tip_targets(_angles)
+		_presets.append(IK_CONFIG.default_preset(_presets.size()))
+	var tip: Dictionary = _tip_target(_angles)
+	var position: Vector3 = tip["position"]
+	var rpy: Vector3 = tip["rpy"]
 	var p: Dictionary = _presets[idx]
-	p["x"] = "%.2f" % tip[0]
-	p["y"] = "%.2f" % tip[1]
-	p["z"] = "%.2f" % tip[2]
-	p["phi"] = "%.2f" % tip[3] if _phi_dof else ""
+	p["x"] = "%.2f" % position.x
+	p["y"] = "%.2f" % position.y
+	p["z"] = "%.2f" % position.z
+	for pair in [["roll", rpy.x], ["pitch", rpy.y], ["yaw", rpy.z]]:
+		p[pair[0]] = "%.2f" % pair[1] if bool(_orientation_mask.get(pair[0], false)) else ""
 	p["enabled"] = true
 	# 按键未选过时给个默认，避免生成的 C 里 presetKey 落到回退值
 	if not p.has("key") or str(p.get("key", "")).is_empty():
@@ -1845,7 +1887,9 @@ func _clear_presets() -> void:
 		_presets[i]["x"] = ""
 		_presets[i]["y"] = ""
 		_presets[i]["z"] = ""
-		_presets[i]["phi"] = ""
+		_presets[i]["roll"] = ""
+		_presets[i]["pitch"] = ""
+		_presets[i]["yaw"] = ""
 		_presets[i]["enabled"] = false
 	_play_idx = -1
 	_rebuild_params()
@@ -1964,7 +2008,7 @@ func _update_remote_mode() -> void:
 		_inverse_mode = not _inverse_mode
 		_mode_key_held = true
 		if _inverse_mode:
-			_target = _tip_targets(_angles)
+			_target = _tip_target(_angles)
 	elif not pressed:
 		_mode_key_held = false
 
@@ -2028,35 +2072,52 @@ func _update_grid_origin() -> void:
 func _apply_remote_preset() -> bool:
 	for preset in _presets:
 		if preset.get("enabled", false) and _remote_key(str(preset.get("key", ""))):
-			_target = [_p_float(preset, "x"), _p_float(preset, "y"),
-				_p_float(preset, "z"), _p_float(preset, "phi")]
+			_apply_preset_target(preset)
 			return true
 	return false
 
 
+func _apply_preset_target(preset: Dictionary) -> void:
+	var rpy: Vector3 = _target["rpy"]
+	for pair in [["roll", 0], ["pitch", 1], ["yaw", 2]]:
+		if bool(_orientation_mask.get(pair[0], false)):
+			rpy[pair[1]] = _p_float(preset, pair[0])
+	_target = {"position": Vector3(_p_float(preset, "x"), _p_float(preset, "y"),
+		_p_float(preset, "z")), "rpy": rpy}
+
+
 func _apply_remote_ik_inputs() -> void:
-	var previous: Array = _target.duplicate()
+	var previous: Dictionary = _target.duplicate(true)
 	var joy_scale: float = _cfg_float("joy_scale", 5.0)
+	var position: Vector3 = _target["position"]
 	for i in range(3):
 		var mapping: String = str(_cfg.get(["joy_x", "joy_y", "joy_z"][i], ""))
-		_target[i] += float(_remote_joy_value(mapping)) * joy_scale / ROKER_FULL
+		position[i] += float(_remote_joy_value(mapping)) * joy_scale / ROKER_FULL
+	_target["position"] = position
 	var key_speed: float = _cfg_float("keymove_speed", 2.0)
 	var keymove: Array = _cfg.get("keymove", [])
 	for i in range(min(keymove.size(), 4)):
-		if i == 3 and not _phi_dof:
+		if i == 3 and not bool(_orientation_mask.get("pitch", false)):
 			continue
-		if _remote_key(str(keymove[i].get("plus", "不使用"))):
-			_target[i] += key_speed
-		if _remote_key(str(keymove[i].get("minus", "不使用"))):
-			_target[i] -= key_speed
+		var pressed_plus: bool = _remote_key(str(keymove[i].get("plus", "不使用")))
+		var pressed_minus: bool = _remote_key(str(keymove[i].get("minus", "不使用")))
+		if i < 3:
+			position = _target["position"]
+			position[i] += key_speed if pressed_plus else 0.0
+			position[i] -= key_speed if pressed_minus else 0.0
+			_target["position"] = position
+		else:
+			var rpy: Vector3 = _target["rpy"]
+			rpy.y = clampf(rpy.y + (key_speed if pressed_plus else 0.0)
+				- (key_speed if pressed_minus else 0.0), -90.0, 90.0)
+			_target["rpy"] = rpy
 	if _target_too_far(previous):
 		_target = previous
 
 
 func _apply_controller_ik_step() -> void:
-	var result: Dictionary = _cg.solve_ik_jacobian(
-		Vector3(_target[0], _target[1], _target[2]), _target_phi(),
-		_angles, _joints, _jc)
+	var result: Dictionary = _cg.solve_ik_pose(_target["position"], _target_basis(),
+		_orientation_mask, _angles, _joints, _jc)
 	var limited: Dictionary = _cg.clamp_angles_to_limits(result["angles"], _joints)
 	_angles = limited["angles"]
 	_clamped = limited["clamped"]
@@ -2179,17 +2240,25 @@ func _step_play(delta: float) -> void:
 		return
 	var idx: int = _play_idx % active.size()
 	var p: Dictionary = active[idx]["preset"]
-	var to: Array = [_p_float(p, "x"), _p_float(p, "y"), _p_float(p, "z"), _p_float(p, "phi")]
+	var to_position: Vector3 = Vector3(_p_float(p, "x"), _p_float(p, "y"), _p_float(p, "z"))
+	var to_rpy: Vector3 = _target["rpy"]
+	for pair in [["roll", 0], ["pitch", 1], ["yaw", 2]]:
+		if bool(_orientation_mask.get(pair[0], false)):
+			to_rpy[pair[1]] = _p_float(p, pair[0])
 	_play_t += delta / 1.2
 	if _play_t >= 1.0:
 		_play_t = 0.0
-		_target = to
-		_play_from = to.duplicate()
+		_target = {"position": to_position, "rpy": to_rpy}
+		_play_from = _target.duplicate(true)
 		_play_idx = (_play_idx + 1) % active.size()
 	else:
-		for i in range(4):
-			var from_v: float = _play_from[i] if i < _play_from.size() else 0.0
-			_target[i] = lerp(from_v, to[i], _play_t)
+		var from_position: Vector3 = _play_from.get("position", _target["position"])
+		var from_rpy: Vector3 = _play_from.get("rpy", _target["rpy"])
+		var next_rpy: Vector3 = from_rpy
+		for component in range(3):
+			next_rpy[component] = lerp_angle(deg_to_rad(from_rpy[component]),
+				deg_to_rad(to_rpy[component]), _play_t) * 180.0 / PI
+		_target = {"position": from_position.lerp(to_position, _play_t), "rpy": next_rpy}
 	_recompute()
 
 
@@ -2361,8 +2430,8 @@ func _handle_mouse_motion(e: InputEventMouseMotion) -> void:
 ## 按住 Shift 加速一倍，按住 Alt 减速到 1/4，便于粗调后微调。
 func _step_key_move(delta: float) -> void:
 	var d: Vector3 = _key_move_axis()
-	var dphi: float = _key_phi_axis()
-	if d == Vector3.ZERO and is_zero_approx(dphi):
+	var dpitch: float = _key_pitch_axis()
+	if d == Vector3.ZERO and is_zero_approx(dpitch):
 		return
 	var mul: float = 1.0
 	if Input.is_key_pressed(KEY_SHIFT):
@@ -2370,11 +2439,13 @@ func _step_key_move(delta: float) -> void:
 	elif Input.is_key_pressed(KEY_ALT):
 		mul = 0.25
 	var step: float = _ik_move_speed * mul * delta
-	_target[0] += d.x * step
-	_target[1] += d.y * step
-	_target[2] += d.z * step
-	if _phi_dof:
-		_target[3] += dphi * _ik_rot_speed * mul * delta
+	var position: Vector3 = _target["position"]
+	position += d * step
+	_target["position"] = position
+	if bool(_orientation_mask.get("pitch", false)):
+		var rpy: Vector3 = _target["rpy"]
+		rpy.y = clampf(rpy.y + dpitch * _ik_rot_speed * mul * delta, -90.0, 90.0)
+		_target["rpy"] = rpy
 	_recompute()
 
 
@@ -2388,7 +2459,7 @@ func _key_move_axis() -> Vector3:
 
 
 ## 4 轴腕部姿态角：Q/E
-func _key_phi_axis() -> float:
+func _key_pitch_axis() -> float:
 	return _axis_pair(KEY_E, KEY_Q)
 
 

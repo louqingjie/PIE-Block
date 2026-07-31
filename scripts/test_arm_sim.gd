@@ -229,7 +229,8 @@ func _test_remote_control() -> void:
 		{"input": "右摇杆X", "dir": "正", "mode": "速度", "param": "6000", "target": "P75"},
 	]
 	var cfg: Dictionary = _cfg(2)
-	cfg["presets"] = [{"enabled": true, "key": "A", "x": "20", "y": "30", "z": "40", "phi": "0"}]
+	cfg["presets"] = [{"enabled": true, "key": "A", "x": "20", "y": "30", "z": "40",
+		"roll": "0", "pitch": "0", "yaw": "0"}]
 	cfg["gripper"] = {
 		"enabled": true, "io": "MP03", "dir": "正向", "open_angle": "45",
 		"closed_angle": "-45", "initial_open": true, "key": "D"}

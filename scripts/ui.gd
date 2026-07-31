@@ -1531,7 +1531,7 @@ func _collect_ik_config_legacy() -> Dictionary:
 			"x": x_text,
 			"y": y_text,
 			"z": z_text,
-			"phi": phi_text,
+			"roll": "", "pitch": phi_text, "yaw": "",
 			"enabled": enabled,
 		})
 	cfg["presets"] = presets
@@ -1624,8 +1624,10 @@ func _check_engineer_ik_io_conflicts(issues: Array) -> void:
 # ------------------------------------------------------------------ 工程逆解算：静态检查
 func _check_ik_params(issues: Array) -> void:
 	var result: Dictionary = IK_CONFIG.validate(_ik_config, _collect_engineer_config())
-	_ik_pitch_dof = bool(result.get("pitch_dof", false))
-	_ik_pitch_reason = str(result.get("pitch_reason", ""))
+	var mask: Dictionary = result.get("orientation_mask", {})
+	var reasons: Dictionary = result.get("orientation_reason", {})
+	_ik_pitch_dof = bool(mask.get("pitch", false))
+	_ik_pitch_reason = str(reasons.get("pitch", ""))
 	issues.append_array(result.get("issues", []))
 
 
@@ -1721,8 +1723,10 @@ func _check_ik_params_legacy(issues: Array) -> void:
 		for it in diag.get("issues", []):
 			issues.append({"type": it.get("type", "Warn"),
 				"msg": "机械臂构形：%s" % str(it.get("msg", ""))})
-		_ik_pitch_dof = bool(diag.get("pitch_dof", false))
-		_ik_pitch_reason = str(diag.get("pitch_reason", ""))
+		var old_mask: Dictionary = diag.get("orientation_mask", {})
+		var old_reasons: Dictionary = diag.get("orientation_reason", {})
+		_ik_pitch_dof = bool(old_mask.get("pitch", false))
+		_ik_pitch_reason = str(old_reasons.get("pitch", ""))
 	var presets: Array = cfg["presets"]
 	var preset_keys: Dictionary = {} # 按键名 -> 首次使用的点位序号
 	var active_count: int = 0
@@ -1735,7 +1739,7 @@ func _check_ik_params_legacy(issues: Array) -> void:
 		var bad_field: bool = false
 		var need_fields: Array = ["x", "y", "z"]
 		if _ik_pitch_dof:
-			need_fields.append("phi")
+			need_fields.append("pitch")
 		for f in need_fields:
 			var t: String = p.get(f, "")
 			if t.is_empty():
@@ -1758,16 +1762,18 @@ func _check_ik_params_legacy(issues: Array) -> void:
 		var x: float = _ik_num(p.get("x", ""))
 		var y: float = _ik_num(p.get("y", ""))
 		var z: float = _ik_num(p.get("z", ""))
-		var phi: float = _ik_num(p.get("phi", ""))
-		var target_phi: float = phi if _ik_pitch_dof else NAN
-		var conv: Dictionary = cg.solve_ik_jacobian_converge(
-			Vector3(x, y, z), target_phi, cg._joint_home_angles(joints), joints, jc)
+		var preset_rpy := Vector3(_ik_num(p.get("roll", "0")),
+			_ik_num(p.get("pitch", "0")), _ik_num(p.get("yaw", "0")))
+		var old_mask: Dictionary = {"roll": false, "pitch": _ik_pitch_dof, "yaw": false}
+		var conv: Dictionary = cg.solve_ik_pose_converge(Vector3(x, y, z),
+			cg.basis_from_rpy_deg(preset_rpy), old_mask,
+			cg._joint_home_angles(joints), joints, jc)
 		if float(conv.get("err", INF)) >= 2.0 \
-				or (_ik_pitch_dof and absf(float(conv.get("phi_err", INF))) >= 1.0):
+				or (_ik_pitch_dof and absf(float((conv.get("orientation_err", {}) as Dictionary).get("pitch", INF))) >= 1.0):
 			issues.append({"type": "Warn",
 				"msg": "工程逆解算 预设点位 P%d 无法从初始姿态收敛（位置误差 %.1fmm%s）"
 					% [i + 1, float(conv.get("err", INF)),
-						"，姿态误差 %.1f°" % absf(float(conv.get("phi_err", 0.0)))
+						"，姿态误差 %.1f°" % absf(float((conv.get("orientation_err", {}) as Dictionary).get("pitch", 0.0)))
 						if _ik_pitch_dof else ""]})
 	if active_count == 0:
 		issues.append({"type": "Warn",
@@ -1843,9 +1849,9 @@ func _check_ik_params_legacy(issues: Array) -> void:
 	# 俯仰角可控却没配按键时提醒；判据用诊断结果而非关节数，
 	# 因为「4 轴」不等于「俯仰角可调」（例如四个关节全是 Pitch 就不行）
 	if _ik_pitch_dof and keymove.size() > 3:
-		var phi_plus: String = keymove[3].get("plus", "不使用")
-		var phi_minus: String = keymove[3].get("minus", "不使用")
-		if phi_plus == "不使用" and phi_minus == "不使用":
+		var pitch_plus: String = keymove[3].get("plus", "不使用")
+		var pitch_minus: String = keymove[3].get("minus", "不使用")
+		if pitch_plus == "不使用" and pitch_minus == "不使用":
 			issues.append({"type": "Warn",
 				"msg": "工程逆解算 这个构形的末端俯仰角可以单独调，但没配加减按键，"
 					+"抓取角度只能由预设点位改变"})
@@ -2596,7 +2602,7 @@ func _on_arm_sim_config_changed_legacy(cfg: Dictionary) -> void:
 		var p: Dictionary = presets[i]
 		# 未启用的点位一律清空，否则配置界面会把残留坐标当成已启用
 		var on: bool = p.get("enabled", false)
-		for field2 in [["X", "x"], ["Y", "y"], ["Z", "z"], ["Phi", "phi"]]:
+		for field2 in [["X", "x"], ["Y", "y"], ["Z", "z"], ["Pitch", "pitch"]]:
 			var ple: Node = get_node_or_null(NodePath(IK +"/"+ prow +"/"+ field2[0]))
 			if ple is LineEdit:
 				ple.text = str(p.get(field2[1], "")) if on else ""

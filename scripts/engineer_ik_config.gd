@@ -33,7 +33,7 @@ static func default_preset(index: int) -> Dictionary:
 	return {
 		"enabled": false,
 		"key": ["A", "B", "C", "D"][index],
-		"x": "", "y": "", "z": "", "phi": "",
+		"x": "", "y": "", "z": "", "roll": "", "pitch": "", "yaw": "",
 	}
 
 
@@ -115,14 +115,20 @@ static func normalize(raw: Variant) -> Dictionary:
 	out["gripper"] = gripper
 
 	var raw_presets: Array = src.get("presets", []) if src.get("presets", []) is Array else []
+	var cg := CG.new()
+	var home_chain: Dictionary = cg.fk_chain(cg._joint_home_angles(joints), joints, jc)
+	var home_rpy: Vector3 = cg.tip_rpy_deg(home_chain)
 	var presets: Array = []
 	for i in range(PRESET_COUNT):
 		var base: Dictionary = default_preset(i)
 		var item: Dictionary = raw_presets[i] if i < raw_presets.size() and raw_presets[i] is Dictionary else {}
 		base["enabled"] = bool(item.get("enabled", false))
 		base["key"] = _choice(item.get("key", base["key"]), KEYS, base["key"])
-		for key in ["x", "y", "z", "phi"]:
+		for key in ["x", "y", "z"]:
 			base[key] = str(item.get(key, ""))
+		base["roll"] = str(item.get("roll", home_rpy.x))
+		base["pitch"] = str(item.get("pitch", home_rpy.y))
+		base["yaw"] = str(item.get("yaw", home_rpy.z))
 		presets.append(base)
 	out["presets"] = presets
 
@@ -170,7 +176,7 @@ static func servo_init_patch(ik: Dictionary) -> Dictionary:
 	return patch
 
 
-## 返回 {issues, pitch_dof, pitch_reason}。只读取字典，不依赖场景节点。
+## 返回配置问题与完整位姿自由度诊断。只读取字典，不依赖场景节点。
 static func validate(raw_ik: Dictionary, engineer: Dictionary = {}) -> Dictionary:
 	var ik: Dictionary = normalize(raw_ik)
 	var issues: Array = []
@@ -205,18 +211,24 @@ static func validate(raw_ik: Dictionary, engineer: Dictionary = {}) -> Dictionar
 			issues.append({"type": "Error", "msg": "工程逆解算 关节%d IO %s 必须初始化为舵机" % [i + 1, pin]})
 	_validate_gripper(issues, ik, engineer, io_owner, blocked)
 
-	var pitch_dof: bool = false
-	var pitch_reason: String = ""
+	var orientation_mask: Dictionary = {"roll": false, "pitch": false, "yaw": false}
+	var orientation_reason: Dictionary = {}
+	var diagnosis: Dictionary = {}
 	if lengths_valid and total_len > 0.0:
-		var diagnosis: Dictionary = DIAG.new().analyze(joints, jc)
-		pitch_dof = bool(diagnosis.get("pitch_dof", false))
-		pitch_reason = str(diagnosis.get("pitch_reason", ""))
+		diagnosis = DIAG.new().analyze(joints, jc)
+		orientation_mask = (diagnosis.get("orientation_mask", orientation_mask) as Dictionary).duplicate(true)
+		orientation_reason = (diagnosis.get("orientation_reason", {}) as Dictionary).duplicate(true)
 		for item in diagnosis.get("issues", []):
 			issues.append({"type": item.get("type", "Warn"),
 				"msg": "机械臂构形：%s" % str(item.get("msg", ""))})
-	_validate_presets(issues, ik, pitch_dof)
-	_validate_controls(issues, ik, engineer, pitch_dof, pitch_reason, total_len)
-	return {"issues": issues, "pitch_dof": pitch_dof, "pitch_reason": pitch_reason}
+	_validate_presets(issues, ik, orientation_mask)
+	_validate_controls(issues, ik, engineer, bool(orientation_mask.get("pitch", false)),
+		str(orientation_reason.get("pitch", "")), total_len)
+	return {"issues": issues, "orientation_mask": orientation_mask,
+		"orientation_reason": orientation_reason,
+		"position_dof": int(diagnosis.get("position_dof", 0)),
+		"orientation_dof": int(diagnosis.get("orientation_dof", 0)),
+		"pose_dof": int(diagnosis.get("pose_dof", 0))}
 
 
 static func _validate_gripper(issues: Array, ik: Dictionary, engineer: Dictionary,
@@ -270,7 +282,7 @@ static func _validate_joint_angles(issues: Array, joint: Dictionary, index: int)
 		issues.append({"type": "Warn", "msg": "工程逆解算 关节%d 限位超出中位朝向 ±90° 舵机行程" % (index + 1)})
 
 
-static func _validate_presets(issues: Array, ik: Dictionary, pitch_dof: bool) -> void:
+static func _validate_presets(issues: Array, ik: Dictionary, orientation_mask: Dictionary) -> void:
 	var used: Dictionary = {}
 	var cg = CG.new()
 	for i in range((ik["presets"] as Array).size()):
@@ -284,19 +296,29 @@ static func _validate_presets(issues: Array, ik: Dictionary, pitch_dof: bool) ->
 		else:
 			used[key] = i + 1
 		var fields: Array = ["x", "y", "z"]
-		if pitch_dof:
-			fields.append("phi")
+		for name in ["roll", "pitch", "yaw"]:
+			if bool(orientation_mask.get(name, false)): fields.append(name)
 		var valid: bool = true
 		for field in fields:
 			if not str(preset[field]).is_valid_float():
 				valid = false
 				issues.append({"type": "Error", "msg": "工程逆解算 预设%d %s 不是数值" % [i + 1, field]})
 		if valid:
-			var phi: float = float(preset["phi"]) if pitch_dof else NAN
-			var result: Dictionary = cg.solve_ik_jacobian_converge(
-				Vector3(float(preset["x"]), float(preset["y"]), float(preset["z"])), phi,
+			var home_chain: Dictionary = cg.fk_chain(cg._joint_home_angles(ik["joints"]),
+				ik["joints"], ik["joint_count"])
+			var home_rpy: Vector3 = cg.tip_rpy_deg(home_chain)
+			var target_rpy: Vector3 = Vector3(
+				float(preset["roll"]) if bool(orientation_mask.get("roll", false)) else home_rpy.x,
+				float(preset["pitch"]) if bool(orientation_mask.get("pitch", false)) else home_rpy.y,
+				float(preset["yaw"]) if bool(orientation_mask.get("yaw", false)) else home_rpy.z)
+			var result: Dictionary = cg.solve_ik_pose_converge(
+				Vector3(float(preset["x"]), float(preset["y"]), float(preset["z"])),
+				cg.basis_from_rpy_deg(target_rpy), orientation_mask,
 				cg._joint_home_angles(ik["joints"]), ik["joints"], ik["joint_count"])
-			if float(result["err"]) >= 2.0 or (pitch_dof and absf(float(result["phi_err"])) >= 1.0):
+			var orientation_bad: bool = false
+			for value in (result.get("orientation_err", {}) as Dictionary).values():
+				orientation_bad = orientation_bad or absf(float(value)) >= 1.0
+			if float(result["err"]) >= 2.0 or orientation_bad:
 				issues.append({"type": "Warn", "msg": "工程逆解算 预设%d 无法从初始姿态收敛" % (i + 1)})
 
 
@@ -312,7 +334,7 @@ static func _validate_controls(issues: Array, ik: Dictionary, engineer: Dictiona
 			if key == "不使用":
 				continue
 			if unavailable:
-				issues.append({"type": "Warn", "msg": "工程逆解算 姿态不可控，已配置的φ按键不会生效%s" %
+				issues.append({"type": "Warn", "msg": "工程逆解算 Pitch不可控，已配置的姿态按键不会生效%s" %
 					("（%s）" % pitch_reason if not pitch_reason.is_empty() else "")})
 				continue
 			if key == switch_key:

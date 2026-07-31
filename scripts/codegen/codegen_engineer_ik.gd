@@ -53,7 +53,7 @@ func generate(cfg: Dictionary) -> String:
 	var joy_scale: float = _to_float(cfg.get("joy_scale", "5"), 5.0)
 	var keymove_speed: float = _to_float(cfg.get("keymove_speed", "2"), 2.0)
 	# 姿态角按键步长：沿用位移步长的数值，单位改为度
-	var keymove_phi_speed: float = keymove_speed
+	var keymove_pitch_speed: float = keymove_speed
 	# 启用的预设点位数量（0 时不生成预设相关数组与查询循环）
 	var preset_count: int = _active_presets(presets).size()
 	# 逐关节转轴与连杆长度：雅可比逆解算的全部输入
@@ -62,8 +62,10 @@ func generate(cfg: Dictionary) -> String:
 	# 不是关节数 —— 四个关节全 Pitch 时 φ 同样不可控。
 	# φ 不可控时整条 φ 链路（目标变量、形参、按键映射）都不生成，
 	# 否则 C251 会报未引用参数警告，学生也会以为这个输入有效。
-	var use_phi: bool = _phi_controllable(joints, jc)
-	var tvars: Array = _target_vars_for(jc, use_phi)
+	var orientation_mask: Dictionary = _orientation_mask(joints, jc)
+	var has_orientation: bool = bool(orientation_mask.get("roll", false)) \
+		or bool(orientation_mask.get("pitch", false)) or bool(orientation_mask.get("yaw", false))
+	var tvars: Array = _target_vars_for(orientation_mask)
 	var switch_key: String = str(cfg.get("mode_switch_key", "R"))
 	var switch_offset: String = _key_name_to_offset(switch_key)
 	var channel: String = _int_or_default(engineer_cfg.get("channel", "36"), 36, 0, 125)
@@ -85,10 +87,10 @@ func generate(cfg: Dictionary) -> String:
 	code += "#define RAD_TO_DEG  57.29577951f\n"
 	code += "// 逆解单步最大转动量(度)：防大误差时末端猛冲，也避免线性近似失效\n"
 	code += "#define IK_MAX_STEP_DEG  %.1ff\n" % JACOBI_MAX_STEP_DEG
-	if use_phi:
+	if has_orientation:
 		code += "// 姿态误差权重(mm/rad)，取连杆总长：\n"
 		code += "// 让 1 弧度的俯仰角误差与一个臂长的位置误差等重，两者才能相加\n"
-		code += "#define PHI_WEIGHT  %.2ff\n" % _pitch_weight(kin_lens)
+		code += "#define ORIENTATION_WEIGHT  %.2ff\n" % _orientation_weight(kin_lens)
 	code += "// 舵机占空比参数（50Hz）\n"
 	code += "// 关节角以舵机中位为 0°，行程 ±90°（对应物理 0~180°）\n"
 	code += "#define SERVO_MID_DUTY  %d   // 0°\n" % SERVO_DUTY_MID
@@ -103,9 +105,9 @@ func generate(cfg: Dictionary) -> String:
 	code += "#define JOY_SCALE  %.2ff\n" % joy_scale
 	code += "// 按键长按时末端每周期位移(mm)\n"
 	code += "#define KEYMOVE_SPEED  %.2ff\n" % keymove_speed
-	if use_phi:
+	if bool(orientation_mask.get("pitch", false)):
 		code += "// 按键长按时末端俯仰角每周期变化(度)\n"
-		code += "#define KEYMOVE_PHI_SPEED  %.2ff\n" % keymove_phi_speed
+		code += "#define KEYMOVE_PITCH_SPEED  %.2ff\n" % keymove_pitch_speed
 	# 注：关节限位夹紧在 angle_to_duty 内直接比较，无需 LIMIT_VALUE 宏
 	code += _build_protocol_macros()
 	# NRF24L01 通信通道（nrf24l01.c 通过 extern 引用，必须在此定义）
@@ -140,7 +142,7 @@ func generate(cfg: Dictionary) -> String:
 	# 逆解算中间结果（必须在 xdata，见函数内注释）
 	code += _gen_ik_workspace(jc)
 	# 预设点位表（末端坐标，附 GUI 端预计算的关节角度注释）
-	code += _build_preset_table(presets, jc, joints, use_phi)
+	code += _build_preset_table(presets, jc, joints, orientation_mask)
 	code += "\n"
 	# 函数声明
 	code += "void All_Init();\n"
@@ -161,7 +163,7 @@ func generate(cfg: Dictionary) -> String:
 	code += "void axis_rot(float a[3], float ang, float m[3][3]);\n"
 	code += "void mat_mul(float x[3][3], float y[3][3], float out[3][3]);\n"
 	code += "void ik_fk();\n"
-	code += "void ik_solve(%s);\n" % _ik_params_for(jc, use_phi)
+	code += "void ik_solve(%s);\n" % _ik_params_for(orientation_mask)
 	code += "uint8_t ik_target_too_far(float x, float y, float z);\n"
 	code += "void ExpansionBoradControl(uint8_t control_cmd, uint16_t data_p60, uint16_t data_p62, uint16_t data_p64,\n"
 	code += "                           uint16_t data_p66, uint16_t data_p74, uint16_t data_p75, uint16_t data_p76,\n"
@@ -175,7 +177,7 @@ func generate(cfg: Dictionary) -> String:
 	# 增量模式：target 必须初始化为初始姿态对应的末端位置（正运动学预计算）。
 	# 用通用 fk_chain 而非旧的 _forward_kinematics：φ 的定义已改为末端仰角，
 	# 旧函数算的是 θ1+θ2+θ3，两者在混合转轴构形下不是一回事。
-	var home: Array = _home_targets(joints, jc, use_phi)
+	var home: Array = _home_targets(joints, jc, orientation_mask)
 	# 主控板舵机发送耗时可忽略，扩展板每次发送后需 EXP_SEND_DELAY_MS 延时
 	var has_exp: bool = _has_exp_slot(joints, jc) \
 		or (gripper_enabled and _io_to_exp_slot(str(gripper["io"])) >= 0)
@@ -231,21 +233,21 @@ func generate(cfg: Dictionary) -> String:
 	# --- 运动学辅助函数与雅可比逆解 ---
 	code += _gen_kinematics_helpers()
 	code += _gen_ik_fk()
-	code += _gen_ik_solve_jacobian(jc, use_phi, kin_lens)
+	code += _gen_ik_solve_pose(jc, orientation_mask, kin_lens)
 	# --- ReadControllerInputs ---
 	code += _gen_read_inputs()
 	if gripper_enabled:
 		code += _gen_gripper_control(gripper)
 	if dual_mode:
-		code += _gen_mode_control(switch_offset, jc, use_phi)
+		code += _gen_mode_control(switch_offset, jc, orientation_mask)
 		code += _gen_forward_control(engineer_cfg, joints, jc)
 		code += _gen_chassis_control(engineer_cfg)
 	# --- CheckPresetKeys ---
 	if preset_count > 0:
-		code += _gen_check_preset_keys(jc, use_phi)
+		code += _gen_check_preset_keys(jc, orientation_mask)
 	# --- CalculateIK ---
 	code += _gen_target_too_far(jc, kin_lens)
-	code += _gen_calculate_ik(cfg, use_phi)
+	code += _gen_calculate_ik(cfg, orientation_mask)
 	# --- ApplyServoControl ---
 	code += _gen_apply_servo_control(joints, jc, has_exp,
 		engineer_cfg if dual_mode else {}, gripper)
@@ -360,7 +362,7 @@ func _active_presets(presets: Array) -> Array:
 
 ## 预设点位表：存末端坐标，附 GUI 端预计算的关节角度注释便于人工核对
 func _build_preset_table(presets: Array, jc: int, joints: Array,
-		use_phi: bool) -> String:
+		orientation_mask: Dictionary) -> String:
 	var active: Array = _active_presets(presets)
 	var count: int = active.size()
 	var s: String = ""
@@ -380,21 +382,24 @@ func _build_preset_table(presets: Array, jc: int, joints: Array,
 		s += key_offset
 	s += "};\n"
 	# 存末端坐标而非关节角度：与增量模式统一走 ik_solve，避免两套状态冲突
-	s += "// 预设点位末端坐标 {x, y, z, phi}\n"
-	s += "const float presetPos[PRESET_COUNT][4] = {\n"
+	s += "// 预设点位末端位姿 {x, y, z, roll, pitch, yaw}\n"
+	s += "const float presetPose[PRESET_COUNT][6] = {\n"
 	for i in range(count):
 		var p: Dictionary = active[i]
 		var x: float = _to_float(p.get("x", "0"), 0.0)
 		var y: float = _to_float(p.get("y", "0"), 0.0)
 		var z: float = _to_float(p.get("z", "0"), 0.0)
-		var phi: float = _to_float(p.get("phi", "0"), 0.0)
-		s += "    {%.2ff, %.2ff, %.2ff, %.2ff}" % [x, y, z, phi]
+		var roll: float = _to_float(p.get("roll", "0"), 0.0)
+		var pitch: float = _to_float(p.get("pitch", "0"), 0.0)
+		var yaw: float = _to_float(p.get("yaw", "0"), 0.0)
+		s += "    {%.2ff, %.2ff, %.2ff, %.2ff, %.2ff, %.2ff}" \
+			% [x, y, z, roll, pitch, yaw]
 		if i < count - 1:
 			s += ","
 		# 附上 GUI 端预计算的关节角度作为注释，便于人工核对。
 		# 用雅可比数值解并从初始角起解，与真机上电后的收敛过程一致。
-		var solve_phi: float = phi if use_phi else NAN
-		var conv: Dictionary = solve_ik_jacobian_converge(Vector3(x, y, z), solve_phi,
+		var conv: Dictionary = solve_ik_pose_converge(Vector3(x, y, z),
+			basis_from_rpy_deg(Vector3(roll, pitch, yaw)), orientation_mask,
 			_joint_home_angles(joints), joints, jc)
 		var angles: Array = conv["angles"]
 		var ang_str: String = ""
@@ -421,55 +426,41 @@ const JACOBI_POS_TOL: float = 0.05
 const JACOBI_STALL_COUNT: int = 3
 
 
-## 雅可比转置增量逆解：一次调用走一步，靠连续周期收敛。
-##
-## Δθ = α·Jᵀe，J 第 i 列 = a_i × (p_tip − o_i)。
-## 转轴类型只改变 a_i 这个单位向量，公式本身不变 —— 这是它能支持
-## 任意 Pitch/Roll/Yaw 搭配的根本原因，也是换掉解析解的理由。
-##
-## 末端俯仰角 φ 作为第 4 行一起解算（target_phi 传 NAN 表示不控 φ）。
-## 姿态误差要乘权重换算成与位置可比的量纲，见 _pitch_weight。
-##
-## angles: 当前关节角（度，运动学角），会被读取但不修改
-## 返回 {
-##   "angles": Array[float]  走一步之后的关节角（已按限位钳位）
-##   "err": float            走一步之后的位置误差(mm)
-##   "phi_err": float        本步之前的 φ 误差(度)，不控 φ 时为 0
-##   "reachable": bool       总误差（位置+姿态）是否还在下降，false = 已贴到极限
-## }
-func solve_ik_jacobian(target: Vector3, target_phi: float, angles: Array,
-		joints: Array, jc: int) -> Dictionary:
+## 六维位姿雅可比转置单步。姿态行先投影到位置雅可比的零空间，
+## 因此姿态调整不会在一阶近似里牺牲可控的 XYZ。
+func solve_ik_pose(target_position: Vector3, target_basis: Basis,
+		orientation_mask: Dictionary, angles: Array, joints: Array, jc: int) -> Dictionary:
 	var cur: Array = []
 	for i in range(jc):
 		cur.append(float(angles[i]) if i < angles.size() else 0.0)
 	var lens: Array = joint_lengths(joints, jc)
-	var use_phi: bool = not is_nan(target_phi)
-	var w: float = _pitch_weight(lens)
+	var w: float = _orientation_weight(lens)
 	var chain: Dictionary = fk_chain(cur, joints, jc)
 	var pts: Array = chain["points"]
 	var tip: Vector3 = pts[pts.size() - 1]
-	var e: Vector3 = target - tip
+	var e: Vector3 = target_position - tip
 	var pos_err: float = e.length()
-	var phi_err_deg: float = 0.0
-	var g: Array = []
-	if use_phi:
-		g = pitch_gradient(chain, jc)
-		# 梯度退化（末端竖直）时本周期只管位置，下个周期姿态变了自然恢复
-		if not g.is_empty():
-			phi_err_deg = target_phi - tip_pitch_deg(chain)
+	var orientation_error: Vector3 = orientation_error_vector(chain["tip_basis"], target_basis)
+	var task: Dictionary = orientation_task_rows(chain, jc, orientation_mask)
+	var orientation_errors: Dictionary = {}
+	var orientation_max_deg: float = 0.0
+	for name in task["order"]:
+		var component: float = orientation_error.dot(task["axes"][name])
+		orientation_errors[name] = rad_to_deg(component)
+		orientation_max_deg = maxf(orientation_max_deg, absf(rad_to_deg(component)))
 	# 已经到位就不动，省得在数值噪声上抖
-	if pos_err < JACOBI_POS_TOL and absf(phi_err_deg) < 0.01:
-		return {"angles": cur, "err": pos_err, "phi_err": phi_err_deg,
+	if pos_err < JACOBI_POS_TOL and orientation_max_deg < 0.01:
+		return {"angles": cur, "err": pos_err, "orientation_err": orientation_errors,
 			"reachable": true}
-	# Jᵀe：位置三行 + 姿态一行
+	# Jᵀe：位置三行 + 已诊断为可控的姿态行
 	var cols: Array = jacobian_columns(chain, jc)
-	var phi_err_rad: float = deg_to_rad(phi_err_deg)
 	var jte: Array = []
 	for i in range(jc):
 		var v: float = (cols[i] as Vector3).dot(e)
-		if use_phi and not g.is_empty():
-			# 两项量纲统一到 mm：g 是 rad/rad，乘 w(mm/rad) 后与位置项可加
-			v += float(g[i]) * w * (phi_err_rad * w)
+		if pos_err < 2.0:
+			for name in task["order"]:
+				var component: float = orientation_error.dot(task["axes"][name])
+				v += float(task["rows"][name][i]) * w * (component * w)
 		jte.append(v)
 	# α 自适应（最速下降的精确步长）：
 	# 沿 Δθ = αJᵀe 走一步后残差是 |e − αJJᵀe|²，对 α 求极小得
@@ -478,12 +469,18 @@ func solve_ik_jacobian(target: Vector3, target_phi: float, angles: Array,
 	# 固定 α 不可行：不同臂长/姿态下合适的步长差几个数量级
 	# （bench 里那个 0.00002f 只对那一组臂长成立）。
 	var jjte: Vector3 = Vector3.ZERO
-	var g_dot: float = 0.0
+	var orientation_dot: Dictionary = {}
+	for name in task["order"]:
+		orientation_dot[name] = 0.0
 	for i in range(jc):
 		jjte += (cols[i] as Vector3) * float(jte[i])
-		if use_phi and not g.is_empty():
-			g_dot += float(g[i]) * w * float(jte[i])
-	var denom: float = jjte.length_squared() + g_dot * g_dot
+		if pos_err < 2.0:
+			for name in task["order"]:
+				orientation_dot[name] += float(task["rows"][name][i]) * w * float(jte[i])
+	var denom: float = jjte.length_squared()
+	if pos_err < 2.0:
+		for name in task["order"]:
+			denom += pow(float(orientation_dot[name]), 2.0)
 	var alpha: float = 0.0
 	if denom > IK_EPS:
 		var num: float = 0.0
@@ -507,15 +504,18 @@ func solve_ik_jacobian(target: Vector3, target_phi: float, angles: Array,
 	# 那些纯粹在调 φ 的步会被误判成停滞（位置本来就不该变）。
 	var chain2: Dictionary = fk_chain(out, joints, jc)
 	var pts2: Array = chain2["points"]
-	var new_pos_err: float = (target - (pts2[pts2.size() - 1] as Vector3)).length()
-	var before: float = pos_err
-	var after: float = new_pos_err
-	if use_phi and not g.is_empty():
-		# 姿态误差按 w 换算成 mm，与位置误差同量纲后合成
-		before = sqrt(pos_err * pos_err + pow(phi_err_rad * w, 2.0))
-		var pe2: float = deg_to_rad(target_phi - tip_pitch_deg(chain2))
-		after = sqrt(new_pos_err * new_pos_err + pow(pe2 * w, 2.0))
-	return {"angles": out, "err": new_pos_err, "phi_err": phi_err_deg,
+	var new_pos_err: float = (target_position - (pts2[pts2.size() - 1] as Vector3)).length()
+	var before: float = pos_err * pos_err
+	var after: float = new_pos_err * new_pos_err
+	if pos_err < 2.0:
+		for name in task["order"]:
+			before += pow(deg_to_rad(float(orientation_errors[name])) * w, 2.0)
+	var error2: Vector3 = orientation_error_vector(chain2["tip_basis"], target_basis)
+	var task2: Dictionary = orientation_task_rows(chain2, jc, orientation_mask)
+	if pos_err < 2.0:
+		for name in task2["order"]:
+			after += pow(error2.dot(task2["axes"][name]) * w, 2.0)
+	return {"angles": out, "err": new_pos_err, "orientation_err": orientation_errors,
 		"reachable": after < before - 1.0e-4}
 
 
@@ -523,7 +523,7 @@ func solve_ik_jacobian(target: Vector3, target_phi: float, angles: Array,
 ##
 ## 这样 1 rad 的姿态误差与「一个臂长的位置误差」等重，两者可以相加。
 ## 不做成用户可调：学生没有量纲直觉，多一个参数就是多一个出错点。
-func _pitch_weight(lens: Array) -> float:
+func _orientation_weight(lens: Array) -> float:
 	var total: float = 0.0
 	for v in lens:
 		total += absf(float(v))
@@ -532,20 +532,18 @@ func _pitch_weight(lens: Array) -> float:
 
 ## 迭代到收敛（GUI 侧预计算预设点位、仿真显示用；真机是每周期走一步）。
 ## max_iter 上限存在的意义是防止奇异位形附近原地打转。
-func solve_ik_jacobian_converge(target: Vector3, target_phi: float,
-		angles: Array, joints: Array, jc: int, max_iter: int = 200) -> Dictionary:
+func solve_ik_pose_converge(target_position: Vector3, target_basis: Basis,
+		orientation_mask: Dictionary, angles: Array, joints: Array, jc: int,
+		max_iter: int = 200) -> Dictionary:
 	var cur: Array = angles.duplicate()
 	var last: Dictionary = {}
 	var stall: int = 0
-	var use_phi: bool = not is_nan(target_phi)
 	for _n in range(max_iter):
-		last = solve_ik_jacobian(target, target_phi, cur, joints, jc)
+		last = solve_ik_pose(target_position, target_basis, orientation_mask, cur, joints, jc)
 		cur = last["angles"]
-		# 收敛判据必须同时看位置与姿态。只看位置会在位置一到位就退出，
-		# 而此时 φ 往往还差得远（踩过：φ 停在 -53° 而目标 -60°，位置反倒漂了 55mm）
 		var done: bool = float(last["err"]) < JACOBI_POS_TOL
-		if use_phi:
-			done = done and absf(float(last["phi_err"])) < 0.1
+		for value in (last.get("orientation_err", {}) as Dictionary).values():
+			done = done and absf(float(value)) < 0.1
 		if done:
 			break
 		# 连续多次不再靠近 => 已经贴到可达域边界或卡在奇异点
@@ -558,14 +556,16 @@ func solve_ik_jacobian_converge(target: Vector3, target_phi: float,
 	# 用最终姿态重算一次误差，返回的是「停在哪」而非「上一步之前的误差」
 	var chain: Dictionary = fk_chain(cur, joints, jc)
 	var pts: Array = chain["points"]
-	var final_err: float = (target - (pts[pts.size() - 1] as Vector3)).length()
-	var final_phi_err: float = 0.0
-	if not is_nan(target_phi):
-		final_phi_err = target_phi - tip_pitch_deg(chain)
+	var final_err: float = (target_position - (pts[pts.size() - 1] as Vector3)).length()
+	var final_orientation: Dictionary = {}
+	var final_vector: Vector3 = orientation_error_vector(chain["tip_basis"], target_basis)
+	var final_task: Dictionary = orientation_task_rows(chain, jc, orientation_mask)
 	var reached: bool = final_err < 1.0
-	if use_phi:
-		reached = reached and absf(final_phi_err) < 1.0
-	return {"angles": cur, "err": final_err, "phi_err": final_phi_err,
+	for name in final_task["order"]:
+		var error_deg: float = rad_to_deg(final_vector.dot(final_task["axes"][name]))
+		final_orientation[name] = error_deg
+		reached = reached and absf(error_deg) < 1.0
+	return {"angles": cur, "err": final_err, "orientation_err": final_orientation,
 		"reachable": reached}
 
 
@@ -646,11 +646,6 @@ const AXIS_VECTORS: Dictionary = {
 	AXIS_PITCH: Vector3(0.0, -1.0, 0.0),
 	AXIS_ROLL: Vector3(1.0, 0.0, 0.0),
 }
-## φ = asin(â_z) 的参数化在末端竖直（|â_z|→1）时退化，此时 asin 导数发散。
-## 判据用 1 - â_z² 与该阈值比较。
-const PITCH_DEGEN_EPS: float = 1.0e-4
-
-
 ## 各关节转轴名。空值回落到配置界面的默认值：
 ##   第 1 个关节 = Yaw（底座左右摆），其余 = Pitch（上下俯仰）
 ##
@@ -708,21 +703,53 @@ func fk_chain(angles: Array, joints: Array, jc: int) -> Dictionary:
 	return {"points": points, "axes": axes, "tip_basis": basis}
 
 
-# ------------------------------------------------------------------ 雅可比与末端俯仰角
+# ------------------------------------------------------------------ 雅可比与完整末端姿态
 ## 末端朝向（approach）：末段连杆指向，即 tip_basis 的局部 +X。
 ## 夹爪朝这个方向抓取。
 func tip_approach(chain: Dictionary) -> Vector3:
 	return ((chain["tip_basis"] as Basis) * Vector3(1.0, 0.0, 0.0)).normalized()
 
 
-## 末端俯仰角 φ（度）：末端朝向的仰角。
-##
-## 这是 φ 在任意构形下的通用定义。旧的 `φ = θ1+θ2+θ3` 只在
-## 「若干共面 Pitch」时成立，转轴一旦混搭那个加法就不对应任何几何量。
-## 仰角定义对任何构形都成立，物理含义仍是抓取俯仰角：
-## 0° = 水平前伸（插进货架），-90° = 竖直向下（扣桌面上的矿石）。
-func tip_pitch_deg(chain: Dictionary) -> float:
-	return rad_to_deg(asin(clampf(tip_approach(chain).z, -1.0, 1.0)))
+## RPY 约定：R = Rz(yaw) * R(-Y, pitch) * Rx(roll)。
+## 机器人坐标 X 向前、Y 向左、Z 向上，所以 Pitch 正值表示抬头。
+func basis_from_rpy_deg(rpy: Vector3) -> Basis:
+	var roll: float = deg_to_rad(wrapf(rpy.x, -180.0, 180.0))
+	var pitch: float = deg_to_rad(clampf(rpy.y, -90.0, 90.0))
+	var yaw: float = deg_to_rad(wrapf(rpy.z, -180.0, 180.0))
+	return (Basis(Vector3(0.0, 0.0, 1.0), yaw)
+		* Basis(Vector3(0.0, -1.0, 0.0), pitch)
+		* Basis(Vector3(1.0, 0.0, 0.0), roll)).orthonormalized()
+
+
+func tip_rpy_deg(chain: Dictionary) -> Vector3:
+	var b: Basis = (chain["tip_basis"] as Basis).orthonormalized()
+	var pitch: float = asin(clampf(b.x.z, -1.0, 1.0))
+	var cp: float = cos(pitch)
+	var roll: float = 0.0
+	var yaw: float = 0.0
+	if absf(cp) > 1.0e-5:
+		roll = atan2(b.y.z, b.z.z)
+		yaw = atan2(b.x.y, b.x.x)
+	else:
+		yaw = atan2(-b.y.x, b.y.y)
+	return Vector3(wrapf(rad_to_deg(roll), -180.0, 180.0),
+		clampf(rad_to_deg(pitch), -90.0, 90.0),
+		wrapf(rad_to_deg(yaw), -180.0, 180.0))
+
+
+## current -> target 的最短世界系旋转向量（方向=旋转轴，长度=弧度）。
+func orientation_error_vector(current: Basis, target: Basis) -> Vector3:
+	var delta: Basis = (target.orthonormalized()
+		* current.orthonormalized().transposed()).orthonormalized()
+	var q: Quaternion = delta.get_rotation_quaternion().normalized()
+	var angle: float = q.get_angle()
+	var axis: Vector3 = q.get_axis()
+	if angle > PI:
+		angle -= TAU
+	if not is_finite(angle) or not is_finite(axis.x) or not is_finite(axis.y) \
+			or not is_finite(axis.z) or absf(angle) < 1.0e-8:
+		return Vector3.ZERO
+	return axis.normalized() * angle
 
 
 ## 位置雅可比的列向量：第 i 列 = a_i × (p_tip - o_i)，单位 mm/rad。
@@ -737,64 +764,113 @@ func jacobian_columns(chain: Dictionary, jc: int) -> Array:
 	return cols
 
 
-## φ 对各关节角的梯度（1×n 行向量，单位 rad/rad）。
-##
-## dâ/dθ_i = a_i × â，而 φ = asin(â_z)，故
-##   dφ/dθ_i = (a_i × â)_z / sqrt(1 - â_z²)
-##
-## 返回空数组表示当前姿态下 φ 的参数化退化（末端竖直朝上或朝下）：
-## 此时 asin 的导数发散，且 φ 本身也不再能区分朝向，调用方应跳过该姿态。
-func pitch_gradient(chain: Dictionary, jc: int) -> Array:
-	var approach: Vector3 = tip_approach(chain)
-	var denom_sq: float = 1.0 - approach.z * approach.z
-	if denom_sq < PITCH_DEGEN_EPS:
-		return []
-	var denom: float = sqrt(denom_sq)
-	var axes: Array = chain["axes"]
-	var g: Array = []
-	for i in range(jc):
-		g.append(((axes[i] as Vector3).cross(approach)).z / denom)
-	return g
+## 返回位置优先、可同时控制的姿态任务行。每一行都已剔除位置行空间以及
+## 更高优先级姿态行的分量。优先级固定为 Pitch、Yaw、Roll。
+func orientation_task_rows(chain: Dictionary, jc: int, mask: Dictionary) -> Dictionary:
+	var cols: Array = jacobian_columns(chain, jc)
+	var joint_basis: Array = []
+	for component in range(3):
+		var position_row: Array = []
+		for i in range(jc):
+			position_row.append(float((cols[i] as Vector3)[component]))
+		_add_independent_row(joint_basis, position_row, 1.0e-6)
+	var current: Basis = chain["tip_basis"]
+	var rpy: Vector3 = tip_rpy_deg(chain)
+	var yaw_basis: Basis = Basis(Vector3(0.0, 0.0, 1.0), deg_to_rad(rpy.z))
+	var world_axes: Dictionary = {
+		"pitch": (yaw_basis * Vector3(0.0, -1.0, 0.0)).normalized(),
+		"yaw": Vector3(0.0, 0.0, 1.0),
+		"roll": current.x.normalized(),
+	}
+	var rows: Dictionary = {}
+	var axes_out: Dictionary = {}
+	var order: Array[String] = []
+	for name in ["pitch", "yaw", "roll"]:
+		if not bool(mask.get(name, false)):
+			continue
+		var raw: Array = []
+		for axis in chain["axes"]:
+			raw.append((axis as Vector3).dot(world_axes[name]))
+		var residual: Array = _row_residual(raw, joint_basis)
+		var norm: float = _row_norm(residual)
+		if norm <= 1.0e-4:
+			continue
+		var normalized: Array = []
+		for value in residual:
+			normalized.append(float(value) / norm)
+		joint_basis.append(normalized)
+		rows[name] = residual
+		axes_out[name] = world_axes[name]
+		order.append(name)
+	return {"rows": rows, "axes": axes_out, "order": order}
+
+
+func _row_residual(row: Array, basis_rows: Array) -> Array:
+	var out: Array = row.duplicate()
+	for basis_row in basis_rows:
+		var dot: float = 0.0
+		for i in range(min(out.size(), basis_row.size())):
+			dot += float(out[i]) * float(basis_row[i])
+		for i in range(min(out.size(), basis_row.size())):
+			out[i] = float(out[i]) - dot * float(basis_row[i])
+	return out
+
+
+func _row_norm(row: Array) -> float:
+	var length_sq: float = 0.0
+	for value in row:
+		length_sq += float(value) * float(value)
+	return sqrt(length_sq)
+
+
+func _add_independent_row(basis_rows: Array, row: Array, epsilon: float) -> bool:
+	var residual: Array = _row_residual(row, basis_rows)
+	var norm: float = _row_norm(residual)
+	if norm <= epsilon:
+		return false
+	var normalized: Array = []
+	for value in residual:
+		normalized.append(float(value) / norm)
+	basis_rows.append(normalized)
+	return true
 
 
 # ------------------------------------------------------------------ 目标状态变量
-## 末端俯仰角 φ 是否值得作为控制量：需要构形上真的能「位置不动、只转 φ」。
-##
-## 判据来自构形诊断而非关节数：4 个关节全是 Pitch 时 φ 同样不可控。
-## 生成器自己调诊断而不依赖外部传值，这样测试直接调 generate() 也能拿到正确结果。
-func _phi_controllable(joints: Array, jc: int) -> bool:
+func _orientation_mask(joints: Array, jc: int) -> Dictionary:
 	var diag = load("res://scripts/arm_diagnosis.gd").new()
 	var res: Dictionary = diag.analyze(joints, jc)
-	return bool(res.get("pitch_dof", false))
+	return (res.get("orientation_mask", {}) as Dictionary).duplicate(true)
 
 
-## 当前构型实际用到的末端目标变量（雅可比版）。
-## φ 不可控时不声明 targetPhi，否则 C251 会报未引用参数警告。
-func _target_vars_for(jc: int, use_phi: bool) -> Array:
+func _target_vars_for(mask: Dictionary) -> Array:
 	var out: Array = ["targetX", "targetY", "targetZ"]
-	if use_phi:
-		out.append("targetPhi")
+	for name in ["roll", "pitch", "yaw"]:
+		if bool(mask.get(name, false)):
+			out.append("target" + name.capitalize())
 	return out
 
 
 ## ik_solve 的形参列表（雅可比版），与 _target_vars_for 一一对应
-func _ik_params_for(jc: int, use_phi: bool) -> String:
+func _ik_params_for(mask: Dictionary) -> String:
 	var names: Array = ["float x", "float y", "float z"]
-	if use_phi:
-		names.append("float phi")
+	for name in ["roll", "pitch", "yaw"]:
+		if bool(mask.get(name, false)):
+			names.append("float " + name)
 	return ", ".join(names)
 
 
 ## 初始姿态对应的末端目标值，顺序与 _target_vars_for 一致。
 ## 增量模式必须从这里起步，否则上电首帧 target 与实际末端不符会导致关节跳变。
-func _home_targets(joints: Array, jc: int, use_phi: bool) -> Array:
+func _home_targets(joints: Array, jc: int, mask: Dictionary) -> Array:
 	var home_ang: Array = _joint_home_angles(joints)
 	var chain: Dictionary = fk_chain(home_ang, joints, jc)
 	var pts: Array = chain["points"]
 	var tip: Vector3 = pts[pts.size() - 1]
 	var out: Array = [tip.x, tip.y, tip.z]
-	if use_phi:
-		out.append(tip_pitch_deg(chain))
+	var rpy: Vector3 = tip_rpy_deg(chain)
+	for pair in [["roll", rpy.x], ["pitch", rpy.y], ["yaw", rpy.z]]:
+		if bool(mask.get(pair[0], false)):
+			out.append(pair[1])
 	return out
 
 
@@ -900,6 +976,7 @@ func _gen_ik_workspace(jc: int) -> String:
 	s += "static float xdata ikCols[%d][3];     // 雅可比各列 a_i x (tip - o_i)\n" % jc
 	s += "static float xdata ikJte[%d];         // J^T e\n" % jc
 	s += "static float xdata ikLa[3], ikLv[3], ikWv[3], ikEv[3];\n"
+	s += "static float xdata ikTargetBasis[3][3], ikOriErr[3];\n"
 	return s
 
 
@@ -910,130 +987,55 @@ func _gen_ik_workspace(jc: int) -> String:
 ## 转轴类型只改变 a_i 这个单位向量，公式本身不变 —— 这是它能支持
 ## 任意关节数与任意 Pitch/Roll/Yaw 搭配的根本原因。
 ##
-## 与 GDScript 侧 solve_ik_jacobian 逐行对应，改动必须同步两边。
-func _gen_ik_solve_jacobian(jc: int, use_phi: bool, lens: Array) -> String:
-	var w: float = _pitch_weight(lens)
+## 与 GDScript 侧 solve_ik_pose 逐行对应，改动必须同步两边。
+func _gen_ik_solve_pose(jc: int, mask: Dictionary, lens: Array) -> String:
 	var s: String = ""
-	s += "/// @brief 逆解算：末端目标 -> 各关节角度（雅可比转置增量法）\n"
-	s += "/// @param x 末端X(mm)\n"
-	s += "/// @param y 末端Y(mm)\n"
-	s += "/// @param z 末端Z(mm)\n"
-	if use_phi:
-		s += "/// @param phi 末端俯仰角(度)，末端朝向的仰角\n"
-	s += "/// @note 每次调用只走一步，靠 %dms 主循环连续收敛。\n" % LOOP_PERIOD_MS
-	s += "///       结果写入 jointAngle[]，已按 jointMin/jointMax 钳位。\n"
-	s += "///       ik_reachable=0 表示这一步没能靠近目标（已贴到可达域边界）。\n"
-	s += "void ik_solve(%s)\n" % _ik_params_for(jc, use_phi)
+	var enabled: Array = []
+	for name in ["pitch", "yaw", "roll"]:
+		if bool(mask.get(name, false)):
+			enabled.append(name)
+	s += "/// @brief Position-priority XYZ + Roll/Pitch/Yaw numerical IK.\n"
+	s += "void ik_solve(%s)\n" % _ik_params_for(mask)
 	s += "{\n"
-	# C89：所有声明必须在块首
 	s += "    uint8_t k;\n"
-	s += "    float alpha, num, den, step, maxStep, errBefore, errAfter;\n"
-	if use_phi:
-		s += "    float az, denom, phiErr, gk, gDot;\n"
-	s += "    // === 正运动学：得到各关节位置、世界转轴、末端姿态 ===\n"
+	s += "    float cr, sr, cp, sp, cy, sy, sinAngle, cosAngle, angleScale;\n"
+	s += "    float num, den, alpha, maxStep, step, errBefore, errAfter, posErr2;\n"
 	s += "    ik_fk();\n"
-	# 位置误差
-	s += "    // === 位置误差 ===\n"
-	s += "    ikEv[0] = x - ikPts[JOINT_COUNT][0];\n"
-	s += "    ikEv[1] = y - ikPts[JOINT_COUNT][1];\n"
-	s += "    ikEv[2] = z - ikPts[JOINT_COUNT][2];\n"
-	if use_phi:
-		s += "    // === 末端俯仰角误差 ===\n"
-		s += "    // phi = asin(a_z)，a = 末端朝向（tip_basis 的局部 +X）\n"
-		s += "    az = ikBasis[2][0];\n"
-		s += "    if (az > 1.0f) az = 1.0f;\n"
-		s += "    if (az < -1.0f) az = -1.0f;\n"
-		s += "    denom = 1.0f - az * az;\n"
-		s += "    phiErr = 0.0f;\n"
-		s += "    // 末端竖直时 asin 导数发散、phi 也不再区分朝向，本周期只管位置\n"
-		s += "    if (denom > %.6ff)\n" % PITCH_DEGEN_EPS
-		s += "    {\n"
-		s += "        denom = sqrt(denom);\n"
-		s += "        phiErr = (phi - asin(az) * RAD_TO_DEG) * DEG_TO_RAD;\n"
-		s += "    }\n"
-		s += "    else\n"
-		s += "        denom = 0.0f;   // 0 表示本周期不参与姿态解算\n"
-	# 雅可比列与 Jᵀe
-	s += "    // === 雅可比各列与 J^T e ===\n"
-	if use_phi:
-		s += "    gDot = 0.0f;\n"
-	s += "    for (k = 0; k < JOINT_COUNT; k++)\n"
-	s += "    {\n"
-	s += "        ikLv[0] = ikPts[JOINT_COUNT][0] - ikPts[k][0];\n"
-	s += "        ikLv[1] = ikPts[JOINT_COUNT][1] - ikPts[k][1];\n"
-	s += "        ikLv[2] = ikPts[JOINT_COUNT][2] - ikPts[k][2];\n"
-	s += "        ikCols[k][0] = ikAxes[k][1] * ikLv[2] - ikAxes[k][2] * ikLv[1];\n"
-	s += "        ikCols[k][1] = ikAxes[k][2] * ikLv[0] - ikAxes[k][0] * ikLv[2];\n"
-	s += "        ikCols[k][2] = ikAxes[k][0] * ikLv[1] - ikAxes[k][1] * ikLv[0];\n"
-	s += "        ikJte[k] = ikCols[k][0] * ikEv[0] + ikCols[k][1] * ikEv[1]\n"
-	s += "                 + ikCols[k][2] * ikEv[2];\n"
-	if use_phi:
-		s += "        if (denom > 0.0f)\n"
-		s += "        {\n"
-		s += "            // phi 梯度 g_k = (a_k x approach)_z / sqrt(1 - a_z^2)\n"
-		s += "            gk = (ikAxes[k][0] * ikBasis[1][0]\n"
-		s += "                - ikAxes[k][1] * ikBasis[0][0]) / denom;\n"
-		s += "            // 两项量纲统一到 mm：g 是 rad/rad，乘权重后与位置项可加\n"
-		s += "            ikJte[k] += gk * PHI_WEIGHT * (phiErr * PHI_WEIGHT);\n"
-		s += "            gDot += gk * PHI_WEIGHT * ikJte[k];\n"
-		s += "        }\n"
-	s += "    }\n"
-	# α 自适应
-	s += "    // === 步长 alpha（最速下降的精确解）===\n"
-	s += "    // alpha = |J^T e|^2 / |J J^T e|^2。分子是**关节空间**的模长，\n"
-	s += "    // 用任务空间的 |e|^2 会小好几个数量级，末端几乎不动。\n"
-	s += "    num = 0.0f;\n"
-	s += "    ikWv[0] = 0.0f; ikWv[1] = 0.0f; ikWv[2] = 0.0f;\n"
-	s += "    for (k = 0; k < JOINT_COUNT; k++)\n"
-	s += "    {\n"
-	s += "        num += ikJte[k] * ikJte[k];\n"
-	s += "        ikWv[0] += ikCols[k][0] * ikJte[k];\n"
-	s += "        ikWv[1] += ikCols[k][1] * ikJte[k];\n"
-	s += "        ikWv[2] += ikCols[k][2] * ikJte[k];\n"
-	s += "    }\n"
-	s += "    den = ikWv[0] * ikWv[0] + ikWv[1] * ikWv[1] + ikWv[2] * ikWv[2];\n"
-	if use_phi:
-		s += "    den += gDot * gDot;\n"
-	s += "    alpha = 0.0f;\n"
-	s += "    if (den > IK_EPS)\n"
-	s += "        alpha = num / den;\n"
-	# 步长限幅
-	s += "    // 单步限幅：防止大误差时末端猛冲，也避免线性近似在大角度下失效\n"
-	s += "    maxStep = 0.0f;\n"
-	s += "    for (k = 0; k < JOINT_COUNT; k++)\n"
-	s += "    {\n"
-	s += "        step = alpha * ikJte[k] * RAD_TO_DEG;\n"
-	s += "        if (step < 0.0f) step = -step;\n"
-	s += "        if (step > maxStep) maxStep = step;\n"
-	s += "    }\n"
-	s += "    if (maxStep > IK_MAX_STEP_DEG)\n"
-	s += "        alpha *= IK_MAX_STEP_DEG / maxStep;\n"
-	# 记录本步之前的误差，走一步，再判断是否靠近
-	s += "    // === 走一步并按限位钳位 ===\n"
-	s += "    errBefore = ikEv[0] * ikEv[0] + ikEv[1] * ikEv[1] + ikEv[2] * ikEv[2];\n"
-	if use_phi:
-		s += "    errBefore += (phiErr * PHI_WEIGHT) * (phiErr * PHI_WEIGHT);\n"
-	s += "    for (k = 0; k < JOINT_COUNT; k++)\n"
-	s += "    {\n"
-	s += "        jointAngle[k] += alpha * ikJte[k] * RAD_TO_DEG;\n"
-	s += "        if (jointAngle[k] < jointMin[k]) jointAngle[k] = jointMin[k];\n"
-	s += "        if (jointAngle[k] > jointMax[k]) jointAngle[k] = jointMax[k];\n"
-	s += "    }\n"
-	# 走完后重算误差判断可达性
-	s += "    // === 可达性：这一步有没有真的靠近目标 ===\n"
-	s += "    // 姿态误差要一起算进总误差，否则纯粹在调 phi 的步会被误判成停滞\n"
-	s += "    ik_fk();\n"
-	s += "    ikEv[0] = x - ikPts[JOINT_COUNT][0];\n"
-	s += "    ikEv[1] = y - ikPts[JOINT_COUNT][1];\n"
-	s += "    ikEv[2] = z - ikPts[JOINT_COUNT][2];\n"
-	s += "    errAfter = ikEv[0] * ikEv[0] + ikEv[1] * ikEv[1] + ikEv[2] * ikEv[2];\n"
-	if use_phi:
-		s += "    az = ikBasis[2][0];\n"
-		s += "    if (az > 1.0f) az = 1.0f;\n"
-		s += "    if (az < -1.0f) az = -1.0f;\n"
-		s += "    phiErr = (phi - asin(az) * RAD_TO_DEG) * DEG_TO_RAD;\n"
-		s += "    errAfter += (phiErr * PHI_WEIGHT) * (phiErr * PHI_WEIGHT);\n"
-	s += "    ik_reachable = (errAfter < errBefore) ? 1 : 0;\n"
+	s += "    ikEv[0]=x-ikPts[JOINT_COUNT][0]; ikEv[1]=y-ikPts[JOINT_COUNT][1]; ikEv[2]=z-ikPts[JOINT_COUNT][2];\n"
+	s += "    posErr2=ikEv[0]*ikEv[0]+ikEv[1]*ikEv[1]+ikEv[2]*ikEv[2];\n"
+	if not enabled.is_empty():
+		var rv: String = "roll" if bool(mask.get("roll", false)) \
+			else "(atan2(ikBasis[2][1],ikBasis[2][2])*RAD_TO_DEG)"
+		var pv: String = "pitch" if bool(mask.get("pitch", false)) \
+			else "(asin(ikBasis[2][0])*RAD_TO_DEG)"
+		var yv: String = "yaw" if bool(mask.get("yaw", false)) \
+			else "(atan2(ikBasis[1][0],ikBasis[0][0])*RAD_TO_DEG)"
+		s += "    cr=cos(%s*DEG_TO_RAD);sr=sin(%s*DEG_TO_RAD);cp=cos(%s*DEG_TO_RAD);sp=sin(%s*DEG_TO_RAD);cy=cos(%s*DEG_TO_RAD);sy=sin(%s*DEG_TO_RAD);\n" % [rv, rv, pv, pv, yv, yv]
+		s += "    ikTargetBasis[0][0]=cy*cp;ikTargetBasis[1][0]=sy*cp;ikTargetBasis[2][0]=sp;\n"
+		s += "    ikTargetBasis[0][1]=-sy*cr-cy*sp*sr;ikTargetBasis[1][1]=cy*cr-sy*sp*sr;ikTargetBasis[2][1]=cp*sr;\n"
+		s += "    ikTargetBasis[0][2]=sy*sr-cy*sp*cr;ikTargetBasis[1][2]=-cy*sr-sy*sp*cr;ikTargetBasis[2][2]=cp*cr;\n"
+		s += "    ikOriErr[0]=0.5f*((ikBasis[1][0]*ikTargetBasis[2][0]-ikBasis[2][0]*ikTargetBasis[1][0])+(ikBasis[1][1]*ikTargetBasis[2][1]-ikBasis[2][1]*ikTargetBasis[1][1])+(ikBasis[1][2]*ikTargetBasis[2][2]-ikBasis[2][2]*ikTargetBasis[1][2]));\n"
+		s += "    ikOriErr[1]=0.5f*((ikBasis[2][0]*ikTargetBasis[0][0]-ikBasis[0][0]*ikTargetBasis[2][0])+(ikBasis[2][1]*ikTargetBasis[0][1]-ikBasis[0][1]*ikTargetBasis[2][1])+(ikBasis[2][2]*ikTargetBasis[0][2]-ikBasis[0][2]*ikTargetBasis[2][2]));\n"
+		s += "    ikOriErr[2]=0.5f*((ikBasis[0][0]*ikTargetBasis[1][0]-ikBasis[1][0]*ikTargetBasis[0][0])+(ikBasis[0][1]*ikTargetBasis[1][1]-ikBasis[1][1]*ikTargetBasis[0][1])+(ikBasis[0][2]*ikTargetBasis[1][2]-ikBasis[1][2]*ikTargetBasis[0][2]));\n"
+		s += "    sinAngle=sqrt(ikOriErr[0]*ikOriErr[0]+ikOriErr[1]*ikOriErr[1]+ikOriErr[2]*ikOriErr[2]);\n"
+		s += "    cosAngle=0.5f*(ikTargetBasis[0][0]*ikBasis[0][0]+ikTargetBasis[1][0]*ikBasis[1][0]+ikTargetBasis[2][0]*ikBasis[2][0]+ikTargetBasis[0][1]*ikBasis[0][1]+ikTargetBasis[1][1]*ikBasis[1][1]+ikTargetBasis[2][1]*ikBasis[2][1]+ikTargetBasis[0][2]*ikBasis[0][2]+ikTargetBasis[1][2]*ikBasis[1][2]+ikTargetBasis[2][2]*ikBasis[2][2]-1.0f);\n"
+		s += "    if(cosAngle>1.0f)cosAngle=1.0f;if(cosAngle<-1.0f)cosAngle=-1.0f;angleScale=(sinAngle>IK_EPS)?atan2(sinAngle,cosAngle)/sinAngle:1.0f;\n"
+		s += "    ikOriErr[0]*=angleScale;ikOriErr[1]*=angleScale;ikOriErr[2]*=angleScale;\n"
+	s += "    for(k=0;k<JOINT_COUNT;k++){ikLv[0]=ikPts[JOINT_COUNT][0]-ikPts[k][0];ikLv[1]=ikPts[JOINT_COUNT][1]-ikPts[k][1];ikLv[2]=ikPts[JOINT_COUNT][2]-ikPts[k][2];ikCols[k][0]=ikAxes[k][1]*ikLv[2]-ikAxes[k][2]*ikLv[1];ikCols[k][1]=ikAxes[k][2]*ikLv[0]-ikAxes[k][0]*ikLv[2];ikCols[k][2]=ikAxes[k][0]*ikLv[1]-ikAxes[k][1]*ikLv[0];ikJte[k]=ikCols[k][0]*ikEv[0]+ikCols[k][1]*ikEv[1]+ikCols[k][2]*ikEv[2];"
+	if not enabled.is_empty():
+		var terms: Array = []
+		if bool(mask.get("pitch", false)):
+			terms.append("(ikAxes[k][0]*sy-ikAxes[k][1]*cy)*(ikOriErr[0]*sy-ikOriErr[1]*cy)")
+		if bool(mask.get("yaw", false)):
+			terms.append("ikAxes[k][2]*ikOriErr[2]")
+		if bool(mask.get("roll", false)):
+			terms.append("(ikAxes[k][0]*ikBasis[0][0]+ikAxes[k][1]*ikBasis[1][0]+ikAxes[k][2]*ikBasis[2][0])*(ikOriErr[0]*ikBasis[0][0]+ikOriErr[1]*ikBasis[1][0]+ikOriErr[2]*ikBasis[2][0])")
+		s += "if(posErr2<4.0f)ikJte[k]+=(%s)*ORIENTATION_WEIGHT*ORIENTATION_WEIGHT;" % "+".join(terms)
+	s += "}\n"
+	s += "    num=0.0f;ikWv[0]=0.0f;ikWv[1]=0.0f;ikWv[2]=0.0f;for(k=0;k<JOINT_COUNT;k++){num+=ikJte[k]*ikJte[k];ikWv[0]+=ikCols[k][0]*ikJte[k];ikWv[1]+=ikCols[k][1]*ikJte[k];ikWv[2]+=ikCols[k][2]*ikJte[k];}den=ikWv[0]*ikWv[0]+ikWv[1]*ikWv[1]+ikWv[2]*ikWv[2];alpha=(den>IK_EPS)?num/den:0.0f;\n"
+	s += "    maxStep=0.0f;for(k=0;k<JOINT_COUNT;k++){step=alpha*ikJte[k]*RAD_TO_DEG;if(step<0.0f)step=-step;if(step>maxStep)maxStep=step;}if(maxStep>IK_MAX_STEP_DEG)alpha*=IK_MAX_STEP_DEG/maxStep;errBefore=posErr2;\n"
+	s += "    for(k=0;k<JOINT_COUNT;k++){jointAngle[k]+=alpha*ikJte[k]*RAD_TO_DEG;if(jointAngle[k]<jointMin[k])jointAngle[k]=jointMin[k];if(jointAngle[k]>jointMax[k])jointAngle[k]=jointMax[k];}\n"
+	s += "    ik_fk();errAfter=(x-ikPts[JOINT_COUNT][0])*(x-ikPts[JOINT_COUNT][0])+(y-ikPts[JOINT_COUNT][1])*(y-ikPts[JOINT_COUNT][1])+(z-ikPts[JOINT_COUNT][2])*(z-ikPts[JOINT_COUNT][2]);ik_reachable=(errAfter<errBefore)?1:0;\n"
 	s += "}\n\n"
 	return s
 
@@ -1123,7 +1125,7 @@ func _gen_gripper_control(gripper: Dictionary) -> String:
 
 
 ## 模式键按下边沿翻转；回到逆解时用当前关节姿态刷新末端目标，避免追逐旧目标。
-func _gen_mode_control(switch_offset: String, jc: int, use_phi: bool) -> String:
+func _gen_mode_control(switch_offset: String, jc: int, mask: Dictionary) -> String:
 	var s: String = ""
 	s += "void SyncIKTargetFromJoints()\n"
 	s += "{\n"
@@ -1131,8 +1133,12 @@ func _gen_mode_control(switch_offset: String, jc: int, use_phi: bool) -> String:
 	s += "    targetX = ikPts[JOINT_COUNT][0];\n"
 	s += "    targetY = ikPts[JOINT_COUNT][1];\n"
 	s += "    targetZ = ikPts[JOINT_COUNT][2];\n"
-	if use_phi:
-		s += "    targetPhi = asin(ikBasis[2][0]) * RAD_TO_DEG;\n"
+	if bool(mask.get("roll", false)):
+		s += "    targetRoll = atan2(ikBasis[2][1], ikBasis[2][2]) * RAD_TO_DEG;\n"
+	if bool(mask.get("pitch", false)):
+		s += "    targetPitch = asin(ikBasis[2][0]) * RAD_TO_DEG;\n"
+	if bool(mask.get("yaw", false)):
+		s += "    targetYaw = atan2(ikBasis[1][0], ikBasis[0][0]) * RAD_TO_DEG;\n"
 	s += "}\n\n"
 	s += "void UpdateControlMode()\n"
 	s += "{\n"
@@ -1281,7 +1287,7 @@ func _gen_chassis_control(cfg: Dictionary) -> String:
 
 
 # ------------------------------------------------------------------ CheckPresetKeys
-func _gen_check_preset_keys(jc: int, use_phi: bool = false) -> String:
+func _gen_check_preset_keys(jc: int, mask: Dictionary) -> String:
 	var s: String = ""
 	s += "/// @brief 预设点位按键检测：按下时把末端目标设为该点位坐标\n"
 	s += "/// @return 1=命中预设点位（本周期跳过摇杆/按键增量），0=未命中\n"
@@ -1291,11 +1297,15 @@ func _gen_check_preset_keys(jc: int, use_phi: bool = false) -> String:
 	s += "    {\n"
 	s += "        if (RcKeyValueRead(presetKey[i]))\n"
 	s += "        {\n"
-	s += "            targetX = presetPos[i][0];\n"
-	s += "            targetY = presetPos[i][1];\n"
-	s += "            targetZ = presetPos[i][2];\n"
-	if use_phi:
-		s += "            targetPhi = presetPos[i][3];\n"
+	s += "            targetX = presetPose[i][0];\n"
+	s += "            targetY = presetPose[i][1];\n"
+	s += "            targetZ = presetPose[i][2];\n"
+	if bool(mask.get("roll", false)):
+		s += "            targetRoll = presetPose[i][3];\n"
+	if bool(mask.get("pitch", false)):
+		s += "            targetPitch = presetPose[i][4];\n"
+	if bool(mask.get("yaw", false)):
+		s += "            targetYaw = presetPose[i][5];\n"
 	s += "            return 1;\n"
 	s += "        }\n"
 	s += "    }\n"
@@ -1305,7 +1315,7 @@ func _gen_check_preset_keys(jc: int, use_phi: bool = false) -> String:
 
 
 # ------------------------------------------------------------------ CalculateIK
-func _gen_calculate_ik(cfg: Dictionary, use_phi: bool = false) -> String:
+func _gen_calculate_ik(cfg: Dictionary, mask: Dictionary) -> String:
 	var jc: int = cfg.get("joint_count", 2)
 	var s: String = ""
 	s += "/// @brief 摇杆/按键输入末端位置增量 -> 逆解算\n"
@@ -1314,7 +1324,7 @@ func _gen_calculate_ik(cfg: Dictionary, use_phi: bool = false) -> String:
 	s += "///       松开后末端保持当前位置不动。\n"
 	s += "///       逆解是雅可比增量法，每周期走一步，连续多个周期逼近目标。\n"
 	# 备份变量与 ik_solve 实参都随构型裁剪，避免未使用变量
-	var tvars: Array = _target_vars_for(jc, use_phi)
+	var tvars: Array = _target_vars_for(mask)
 	var backups: Array = []
 	var save_stmts: Array = []
 	var restore_stmts: Array = []
@@ -1333,7 +1343,7 @@ func _gen_calculate_ik(cfg: Dictionary, use_phi: bool = false) -> String:
 	s += "    if (!hit)\n"
 	s += "    {\n"
 	s += _indent_block(_build_joy_mapping(cfg))
-	s += _indent_block(_build_keymove_mapping(cfg, jc, use_phi))
+	s += _indent_block(_build_keymove_mapping(cfg, mask))
 	s += "    }\n"
 	s += "    // 目标是否落在可达范围内：拿末端到底座的距离与连杆总长比。\n"
 	s += "    // 注意不能用 ik_reachable 判断——雅可比法下它表示\n"
@@ -1411,18 +1421,18 @@ func _build_joy_mapping(cfg: Dictionary) -> String:
 
 ## 按键控制末端移动代码生成（长按持续移动）
 ## keymove 索引：0=末端X, 1=末端Y, 2=末端Z, 3=末端姿态角φ
-func _build_keymove_mapping(cfg: Dictionary, jc: int, use_phi: bool = false) -> String:
+func _build_keymove_mapping(cfg: Dictionary, mask: Dictionary) -> String:
 	var keymove: Array = cfg.get("keymove", [])
 	if keymove.is_empty():
 		return ""
-	var target_names: Array = ["targetX", "targetY", "targetZ", "targetPhi"]
+	var target_names: Array = ["targetX", "targetY", "targetZ", "targetPitch"]
 	var axis_labels: Array = ["X", "Y", "Z", "俯仰角"]
-	var step_macros: Array = ["KEYMOVE_SPEED", "KEYMOVE_SPEED", "KEYMOVE_SPEED", "KEYMOVE_PHI_SPEED"]
+	var step_macros: Array = ["KEYMOVE_SPEED", "KEYMOVE_SPEED", "KEYMOVE_SPEED", "KEYMOVE_PITCH_SPEED"]
 	var s: String = ""
 	var has_any: bool = false
 	for i in range(min(keymove.size(), 4)):
 		# 俯仰角只在构形上真的能单独控时才生成
-		if i == 3 and not use_phi:
+		if i == 3 and not bool(mask.get("pitch", false)):
 			continue
 		var plus_key: String = keymove[i].get("plus", "不使用")
 		var minus_key: String = keymove[i].get("minus", "不使用")

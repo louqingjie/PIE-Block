@@ -18,7 +18,7 @@ const EXT: String = "pieproj"
 ## 格式版本，将来迁移用
 const IK_CONFIG = preload("res://scripts/engineer_ik_config.gd")
 
-const FORMAT_VERSION: int = 5
+const FORMAT_VERSION: int = 6
 const GUIDE_STEP_COUNT: int = 7
 
 # ------------------------------------------------------------------ 项目类型
