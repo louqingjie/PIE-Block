@@ -205,6 +205,9 @@ func _test_config(cg, jc: int, label: String) -> void:
 		_check("4轴 有 φ 梯度项", code.find("gk * PHI_WEIGHT") >= 0)
 	# 可达性拦截不能再依赖 ik_reachable（雅可比法下它只表示「这步有没有靠近」）
 	_check("%s 用臂展判超界" % label, code.find("ik_target_too_far(") >= 0)
+	_check("%s 超界时允许目标朝内移动" % label,
+		code.find("targetX * targetX + targetY * targetY + targetZ * targetZ") >= 0
+		and code.find("lastX * lastX + lastY * lastY + lastZ * lastZ") >= 0)
 	# C89：变量声明必须在可执行语句之前
 	_check("%s 符合 C89 声明顺序" % label, _check_c89_decl_order(code))
 	# 写入用户临时目录，仍可供开发期 Keil 编译验证
@@ -246,6 +249,16 @@ func _test_joy_axis(cg) -> void:
 	_check("右Y->末端X 取竖直轴", cg.parse_joy_axis("右Y->末端X") == [1, 1])
 	_check("右X->末端Z 取水平轴", cg.parse_joy_axis("右X->末端Z") == [1, 0])
 	_check("右Y->末端Z 取竖直轴", cg.parse_joy_axis("右Y->末端Z") == [1, 1])
+	_check("不使用不解析为摇杆轴", cg.parse_joy_axis("不使用").is_empty())
+	var no_joy_cfg: Dictionary = _make_cfg(3, [])
+	no_joy_cfg["joy_x"] = "不使用"
+	no_joy_cfg["joy_y"] = "不使用"
+	no_joy_cfg["joy_z"] = "不使用"
+	var no_joy_code: String = cg.generate(no_joy_cfg)
+	_check("全部禁用时不生成末端摇杆增量", not no_joy_code.contains(
+		"targetX += (float)valueOfRoker") and not no_joy_code.contains(
+		"targetY += (float)valueOfRoker") and not no_joy_code.contains(
+		"targetZ += (float)valueOfRoker"))
 
 
 ## 上电起点自洽：main() 里 target 的初值必须等于初始角对应的实际末端。

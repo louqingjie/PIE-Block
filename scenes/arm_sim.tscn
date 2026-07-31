@@ -102,15 +102,13 @@ text = "模式"
 [node name="Mode" type="OptionButton" parent="TopPanel/HBox" unique_id=117097348]
 layout_mode = 2
 selected = 0
-item_count = 4
-popup/item_0/text = "逆解（键盘控末端）"
+item_count = 3
+popup/item_0/text = "逆解编辑（末端/关节）"
 popup/item_0/id = 0
-popup/item_1/text = "标定（关节角/中位朝向）"
+popup/item_1/text = "预设点位"
 popup/item_1/id = 1
-popup/item_2/text = "预设点位"
+popup/item_2/text = "操控（手柄/键盘）"
 popup/item_2/id = 2
-popup/item_3/text = "操控（手柄/键盘）"
-popup/item_3/id = 3
 
 [node name="VSeparator2" type="VSeparator" parent="TopPanel/HBox" unique_id=238408093]
 layout_mode = 2

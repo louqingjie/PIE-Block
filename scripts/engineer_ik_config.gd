@@ -81,11 +81,11 @@ static func normalize(raw: Variant) -> Dictionary:
 	out["joint_count"] = jc
 	out["mode_switch_key"] = _choice(src.get("mode_switch_key", "R"), KEYS, "R")
 	out["joy_x"] = _choice(src.get("joy_x", out["joy_x"]),
-		["右X->末端X", "右Y->末端X"], out["joy_x"])
+		["不使用", "右X->末端X", "右Y->末端X"], out["joy_x"])
 	out["joy_y"] = _choice(src.get("joy_y", out["joy_y"]),
-		["右X->末端Y", "右Y->末端Y"], out["joy_y"])
+		["不使用", "右X->末端Y", "右Y->末端Y"], out["joy_y"])
 	out["joy_z"] = _choice(src.get("joy_z", out["joy_z"]),
-		["右X->末端Z", "右Y->末端Z"], out["joy_z"])
+		["不使用", "右X->末端Z", "右Y->末端Z"], out["joy_z"])
 	out["joy_scale"] = str(src.get("joy_scale", out["joy_scale"]))
 	out["keymove_speed"] = str(src.get("keymove_speed", out["keymove_speed"]))
 
@@ -343,9 +343,10 @@ static func _validate_controls(issues: Array, ik: Dictionary, engineer: Dictiona
 	var jx: String = str(ik["joy_x"]).split("->")[0]
 	var jy: String = str(ik["joy_y"]).split("->")[0]
 	var jz: String = str(ik["joy_z"]).split("->")[0]
-	if jx == jy:
+	if jx != "不使用" and jy != "不使用" and jx == jy:
 		issues.append({"type": "Error", "msg": "工程逆解算 末端X和Y不能使用同一摇杆轴"})
-	if jz == jx or jz == jy:
+	if jz != "不使用" and ((jx != "不使用" and jz == jx)
+			or (jy != "不使用" and jz == jy)):
 		issues.append({"type": "Warn", "msg": "工程逆解算 末端Z与其他方向共用摇杆轴"})
 	for pair in [["joy_scale", "摇杆步长"], ["keymove_speed", "按键步长"]]:
 		var value: String = str(ik[pair[0]]).strip_edges()

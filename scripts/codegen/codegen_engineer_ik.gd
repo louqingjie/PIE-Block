@@ -1335,15 +1335,20 @@ func _gen_calculate_ik(cfg: Dictionary, use_phi: bool = false) -> String:
 	s += _indent_block(_build_joy_mapping(cfg))
 	s += _indent_block(_build_keymove_mapping(cfg, jc, use_phi))
 	s += "    }\n"
-	s += "    ik_solve(%s);\n" % call_args
 	s += "    // 目标是否落在可达范围内：拿末端到底座的距离与连杆总长比。\n"
 	s += "    // 注意不能用 ik_reachable 判断——雅可比法下它表示\n"
 	s += "    // 「这一步有没有靠近目标」，正常收敛途中也会因步长限幅而为 0。\n"
-	s += "    if (!hit && ik_target_too_far(%s))\n" % ", ".join(tvars.slice(0, 3))
+	s += "    // 完全伸直的上电目标本来就在 98% 软边界外；越界时仍允许朝内移动，\n"
+	s += "    // 只撤回让目标半径继续增大的输入。\n"
+	var now_d2: String = "targetX * targetX + targetY * targetY + targetZ * targetZ"
+	var old_d2: String = "lastX * lastX + lastY * lastY + lastZ * lastZ"
+	s += "    if (!hit && ik_target_too_far(%s)\n" % ", ".join(tvars.slice(0, 3))
+	s += "            && %s >= %s)\n" % [now_d2, old_d2]
 	s += "    {\n"
-	s += "        // 撤回本周期增量，target 停在上一个够得着的位置\n"
+	s += "        // 撤回继续向外的增量；向内的增量可以逐步进入软边界\n"
 	s += "        %s\n" % " ".join(restore_stmts)
 	s += "    }\n"
+	s += "    ik_solve(%s);\n" % call_args
 	s += "}\n\n"
 	return s
 
@@ -1385,16 +1390,22 @@ func _indent_block(block: String) -> String:
 
 ## 摇杆映射代码生成（增量累积模式）
 func _build_joy_mapping(cfg: Dictionary) -> String:
-	var jc: int = cfg.get("joint_count", 2)
 	var s: String = ""
-	# joy_x/joy_y/joy_z 选项格式："右X->末端X" 等（左摇杆固定用于底盘移动）
-	var joy_x: String = cfg.get("joy_x", "右X->末端X")
-	var joy_y: String = cfg.get("joy_y", "右Y->末端Y")
-	var joy_z: String = cfg.get("joy_z", "右X->末端Z")
-	s += "    // 摇杆增量：摇杆值 -2047~2047 归一化后乘 JOY_SCALE 作为每周期位移\n"
-	s += "    targetX += (float)valueOfRoker[%d][%d] * JOY_SCALE / 2047.0f;\n" % parse_joy_axis(joy_x)
-	s += "    targetY += (float)valueOfRoker[%d][%d] * JOY_SCALE / 2047.0f;\n" % parse_joy_axis(joy_y)
-	s += "    targetZ += (float)valueOfRoker[%d][%d] * JOY_SCALE / 2047.0f;\n" % parse_joy_axis(joy_z)
+	# 每个末端方向都可独立不使用摇杆，留给按键或预设控制。
+	var mappings: Array = [
+		["targetX", str(cfg.get("joy_x", "右X->末端X"))],
+		["targetY", str(cfg.get("joy_y", "右Y->末端Y"))],
+		["targetZ", str(cfg.get("joy_z", "右X->末端Z"))],
+	]
+	for mapping in mappings:
+		var mapping_text: String = str(mapping[1])
+		if mapping_text == "不使用" or mapping_text.is_empty():
+			continue
+		if s.is_empty():
+			s += "    // 摇杆增量：摇杆值 -2047~2047 归一化后乘 JOY_SCALE 作为每周期位移\n"
+		var axis: Array = parse_joy_axis(mapping_text)
+		s += "    %s += (float)valueOfRoker[%d][%d] * JOY_SCALE / 2047.0f;\n" \
+			% [mapping[0], axis[0], axis[1]]
 	return s
 
 
@@ -1434,6 +1445,8 @@ func _build_keymove_mapping(cfg: Dictionary, jc: int, use_phi: bool = false) -> 
 ## 只看 "->" 左侧的源轴，否则 "右Y->末端X" 会被右侧的 X 误判成水平轴
 ## "右X->末端X" -> [1, 0]; "右Y->末端X" -> [1, 1]
 func parse_joy_axis(text: String) -> Array:
+	if text == "不使用" or text.is_empty():
+		return []
 	var rocker: int = 1 # 固定右摇杆（左摇杆用于底盘）
 	var src: String = text
 	var arrow: int = text.find("->")

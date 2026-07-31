@@ -46,6 +46,14 @@ func _initialize() -> void:
 	_check("joint count clamps to six", clipped["joint_count"] == 6 and clipped["joints"].size() == 6)
 	var roundtrip: Dictionary = IK_CONFIG.normalize(JSON.parse_string(JSON.stringify(clipped)))
 	_check("normalized config survives JSON roundtrip", roundtrip == clipped)
+	var no_joy: Dictionary = IK_CONFIG.normalize({
+		"joy_x": "不使用", "joy_y": "不使用", "joy_z": "不使用"})
+	_check("each endpoint axis may disable rocker input", no_joy["joy_x"] == "不使用"
+		and no_joy["joy_y"] == "不使用" and no_joy["joy_z"] == "不使用")
+	var no_joy_validation: Dictionary = IK_CONFIG.validate(no_joy, {})
+	_check("disabled rocker axes do not conflict",
+		not _has_issue(no_joy_validation, "不能使用同一摇杆轴")
+		and not _has_issue(no_joy_validation, "共用摇杆轴"))
 	var patch: Dictionary = IK_CONFIG.servo_init_patch({"joints": [
 		{"io": "P74"}, {"io": "MP03"}, {"io": "P76"}],
 		"gripper": {"enabled": true, "io": "P77"}})

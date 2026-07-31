@@ -120,12 +120,24 @@ func _test_config_editing() -> void:
 	sim.set_config({"ik": cfg, "engineer": _engineer(), "editable": true})
 	root.add_child(sim)
 	await process_frame
+	var mode_picker: OptionButton = sim.get_node(sim.P_MODE)
+	var mode_names: String = " ".join([
+		mode_picker.get_item_text(0), mode_picker.get_item_text(1), mode_picker.get_item_text(2)])
+	_check("calibration top-level mode is removed", mode_picker.item_count == 3
+		and mode_picker.get_item_text(0).contains("逆解编辑")
+		and not mode_names.contains("标定"))
+	_check("IK editor contains direct joint controls", sim._sliders.has("j0"))
+	sim._on_param_changed(-30.0, "j0", null)
+	var edited_tip: Array = sim._tip_targets(sim._angles)
+	_check("joint editing directly sets pose", absf(float(sim._angles[0]) + 30.0) < 1.0e-4)
+	_check("joint editing syncs IK target", Vector3(sim._target[0], sim._target[1], sim._target[2])
+		.distance_to(Vector3(edited_tip[0], edited_tip[1], edited_tip[2])) < 1.0e-4)
 	var emitted: Array = []
 	sim.config_changed.connect(func(payload: Dictionary) -> void: emitted.append(payload))
 	sim._on_joint_count_config_changed("2")
 	sim._on_joint_count_config_changed("6")
 	_check("hidden joint slots survive count changes", str(sim._joints[5]["len"]) == "77")
-	sim._on_mode_selected(2)
+	sim._on_mode_selected(1)
 	_check("preset editor keeps diagnostics when no presets are enabled",
 		not sim._diagnostic_labels.is_empty()
 		and is_instance_valid(sim._diagnostic_labels[0])
@@ -179,6 +191,18 @@ func _test_responsive_overlays() -> void:
 			hint.position.x + hint.size.x <= side.position.x)
 		_check("%s vehicle controls fit toolbar" % str(viewport_size),
 			toolbar.size.x <= viewport_size.x)
+		var wheel := InputEventMouseButton.new()
+		wheel.button_index = MOUSE_BUTTON_WHEEL_DOWN
+		wheel.pressed = true
+		wheel.global_position = side.get_global_rect().get_center()
+		var distance_before_ui_wheel: float = sim._cam_dist
+		sim._handle_mouse_button(wheel)
+		_check("%s sidebar wheel does not zoom camera" % str(viewport_size),
+			is_equal_approx(sim._cam_dist, distance_before_ui_wheel))
+		wheel.global_position = Vector2(80.0, viewport_size.y * 0.5)
+		sim._handle_mouse_button(wheel)
+		_check("%s viewport wheel still zooms camera" % str(viewport_size),
+			sim._cam_dist > distance_before_ui_wheel)
 	root.remove_child(sim)
 	sim.free()
 
@@ -212,7 +236,7 @@ func _test_remote_control() -> void:
 	sim.set_config({"ik": cfg, "engineer": engineer, "editable": true})
 	root.add_child(sim)
 	await process_frame
-	sim._on_mode_selected(3)
+	sim._on_mode_selected(2)
 	_check("gripper starts from configured open state", sim._gripper_open and sim._grip_open == 1.0)
 	sim._remote_snapshot = _remote([[0, 0], [0, 0]], {"D": true})
 	sim._update_remote_gripper()
@@ -303,7 +327,7 @@ func _test_remote_control() -> void:
 	_check("mode changes preserve local target", sim._target == local_target_before_modes)
 
 	# 跟随开关保持相机位置连续；归位清零车体与轮角并清除轨迹。
-	sim._on_mode_selected(3)
+	sim._on_mode_selected(2)
 	sim._update_camera()
 	var camera: Camera3D = sim.get_node(sim.P_CAMERA)
 	var camera_before: Vector3 = camera.position
@@ -333,6 +357,29 @@ func _test_remote_control() -> void:
 		absf(sim._target[0] - target_before[0] - 5.0) < 1.0e-4
 		and absf(sim._target[2] - target_before[2] - 5.0) < 1.0e-4,
 		str(sim._target))
+
+	# 上电完全伸直时目标位于 98% 软边界外。向内输入必须能进入可达区，
+	# 否则每周期都回退，表现为键盘和手柄完全没有反应。
+	var reach: float = sim._arm_reach()
+	sim._target = [reach, 0.0, 0.0, 0.0]
+	sim._cfg["joy_x"] = "右X->末端X"
+	sim._cfg["joy_y"] = "右Y->末端Y"
+	sim._cfg["joy_z"] = "右Y->末端Z"
+	sim._remote_snapshot = _remote([[0, 0], [-2047, 0]])
+	sim._apply_remote_ik_inputs()
+	_check("fully extended target accepts inward controller input",
+		float(sim._target[0]) < reach, str(sim._target))
+	var inward_target: Array = sim._target.duplicate()
+	sim._remote_snapshot = _remote([[0, 0], [2047, 0]])
+	sim._apply_remote_ik_inputs()
+	_check("soft reach boundary rejects outward controller input",
+		sim._target == inward_target, str(sim._target))
+	sim._target = inward_target.duplicate()
+	sim._cfg["joy_x"] = "不使用"
+	sim._remote_snapshot = _remote([[0, 0], [-2047, 0]])
+	sim._apply_remote_ik_inputs()
+	_check("disabled endpoint rocker mapping leaves that axis unchanged",
+		is_equal_approx(float(sim._target[0]), float(inward_target[0])), str(sim._target))
 
 	# 模式键按下边沿只翻转一次，释放后才允许下一次翻转。
 	sim._remote_snapshot = _remote([[0, 0], [0, 0]], {"R": true})

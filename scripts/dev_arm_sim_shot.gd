@@ -35,7 +35,7 @@ func _initialize() -> void:
 			# 注意总臂长变小后可达范围随之缩小，必须把目标拉回范围内，
 			# 否则会触发越界反馈（连杆变红 + 幽灵球），干扰对夹爪的核对。
 			sim._on_param_changed(0.0, "len3", null)
-			sim._on_mode_selected(1) # 标定模式：由关节角推末端，必然可达
+			sim._on_mode_selected(0) # 逆解编辑已包含关节调整与标定
 		sim._build_chassis()
 		sim._build_grid()
 		sim._reset_view()

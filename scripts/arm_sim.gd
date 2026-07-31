@@ -84,8 +84,8 @@ const WHEEL_WIDTH_MM: float = 30.0
 const KEY_MOVE_MM_PER_SEC: float = 120.0
 ## 逆解模式键盘调姿态角默认速度（°/s）
 const KEY_ROT_DEG_PER_SEC: float = 60.0
-## 模式枚举
-enum Mode {IK = 0, FK = 1, PRESET = 2, CONTROLLER = 3}
+## 顶层模式。关节标定已经并入 IK 编辑，不再单独占一个模式。
+enum Mode {IK = 0, PRESET = 1, CONTROLLER = 2}
 
 # ------------------------------------------------------------------ 运动学求解器
 var _cg: CodeGenEngineerIK = CodeGenEngineerIK.new()
@@ -121,7 +121,7 @@ var _angles: Array = []
 var _reachable: bool = true
 ## 被限位钳住的关节掩码
 var _clamped: Array = []
-## FK 模式下由滑块直接给出的关节角
+## 逆解编辑页中关节调整滑块给出的姿态
 var _fk_angles: Array = [0.0, 0.0, 0.0, 0.0]
 ## 逆解模式键盘移动速度（mm/s 与 °/s）
 var _ik_move_speed: float = KEY_MOVE_MM_PER_SEC
@@ -768,23 +768,24 @@ func _target_phi() -> float:
 ## 目标是否超出臂展。复现生成代码里的 ik_target_too_far：
 ## 摇杆是增量累加的，不拦住的话长推会让目标无限飘远，
 ## 松手后末端要很久才能追回来。
-func _target_too_far() -> bool:
+func _target_too_far(previous: Array = []) -> bool:
 	var reach: float = _arm_reach()
 	var limit: float = reach * _cg.IK_REACH_MARGIN
 	var d: Vector3 = Vector3(_target[0], _target[1], _target[2])
-	return d.length_squared() > limit * limit
+	if d.length_squared() <= limit * limit:
+		return false
+	# 初始姿态常常正好完全伸直，天然位于 98% 软边界之外。
+	# 此时必须允许目标朝底座方向移动，否则每个向内增量都会被撤回，
+	# 遥控目标将永远无法进入软边界。
+	if previous.size() >= 3:
+		var old: Vector3 = Vector3(previous[0], previous[1], previous[2])
+		return d.length_squared() >= old.length_squared()
+	return true
 
 
 ## 依据当前模式算出关节角，钳位，然后更新 3D
 func _recompute() -> void:
-	if _mode == Mode.FK:
-		# 正解模式：滑块直接给关节角，仍走限位钳位以复现真机
-		var lim: Dictionary = _cg.clamp_angles_to_limits(_fk_angles.slice(0, _jc), _joints)
-		_angles = lim["angles"]
-		_clamped = lim["clamped"]
-		_reachable = true
-		_target = _tip_targets(_angles)
-	elif _mode == Mode.CONTROLLER and not _inverse_mode:
+	if _mode == Mode.CONTROLLER and not _inverse_mode:
 		# 双模式固件的正解分支直接维护 jointAngle[]，不再调用逆解。
 		var forward_lim: Dictionary = _cg.clamp_angles_to_limits(_angles, _joints)
 		_angles = forward_lim["angles"]
@@ -810,7 +811,7 @@ func _recompute() -> void:
 			actual[2] - _target[2]).length() < IK_REACHED_TOL
 		if _phi_dof:
 			_reachable = _reachable and absf(actual[3] - _target[3]) < 1.0
-		# FK 滑块跟着走，切模式时姿态连续
+		# 关节调整滑块跟着解算结果走，编辑时姿态连续
 		for i in range(min(_angles.size(), _fk_angles.size())):
 			_fk_angles[i] = _angles[i]
 	_render_arm()
@@ -855,8 +856,7 @@ func _render_arm() -> void:
 	if ghost is MeshInstance3D:
 		var tgt: Vector3 = _robot_to_godot(_target[0], _target[1], _target[2])
 		ghost.position = tgt
-		ghost.visible = _mode != Mode.FK \
-			and tgt.distance_to(pts[pts.size() - 1]) > TIP_RADIUS_MM * MM_TO_UNIT * 0.6
+		ghost.visible = tgt.distance_to(pts[pts.size() - 1]) > TIP_RADIUS_MM * MM_TO_UNIT * 0.6
 	_render_gripper(chain, pts)
 	_push_trail(_arm_point_to_world(pts[pts.size() - 1]))
 
@@ -946,7 +946,10 @@ func _update_status() -> void:
 		return
 	var lines: Array = []
 	var tip: Array = _tip_targets(_angles)
-	lines.append("末端 X=%.1f Y=%.1f Z=%.1f mm  φ=%.1f°" % [tip[0], tip[1], tip[2], tip[3]])
+	lines.append("实际末端 X=%.1f Y=%.1f Z=%.1f mm  φ=%.1f°" % [tip[0], tip[1], tip[2], tip[3]])
+	if _mode == Mode.CONTROLLER and _inverse_mode:
+		lines.append("逆解目标 X=%.1f Y=%.1f Z=%.1f mm  φ=%.1f°" % [
+			_target[0], _target[1], _target[2], _target[3]])
 	var ang_parts: Array = []
 	for i in range(_angles.size()):
 		ang_parts.append("θ%d=%.1f°" % [i + 1, _angles[i]])
@@ -975,9 +978,7 @@ func _update_status() -> void:
 			-_vehicle_pos.z / (1000.0 * MM_TO_UNIT), rad_to_deg(_vehicle_heading),
 			linear_mps, omega_dps, "相机跟随" if _follow else "自由视角"])
 	# 可达性：与生成的 C 代码里的 ik_reachable 同义
-	if _mode == Mode.FK:
-		lines.append("标定模式：由关节角推算末端，不做逆解")
-	elif _mode == Mode.CONTROLLER and not _inverse_mode:
+	if _mode == Mode.CONTROLLER and not _inverse_mode:
 		lines.append("遥控正解：按工程映射直接调整关节与 IO")
 	elif _reachable:
 		lines.append("ik_reachable = 1  目标可达")
@@ -1100,8 +1101,6 @@ func _rebuild_params() -> void:
 	match _mode:
 		Mode.IK:
 			_build_ik_params(params)
-		Mode.FK:
-			_build_fk_params(params)
 		Mode.PRESET:
 			_build_preset_params(params)
 		Mode.CONTROLLER:
@@ -1286,9 +1285,9 @@ func _refresh_after_structure_change() -> void:
 func _build_control_editor(parent: Node) -> void:
 	_add_section(parent, "遥控映射")
 	for row in [
-		["joy_x", "末端 X 摇杆", ["右X->末端X", "右Y->末端X"]],
-		["joy_y", "末端 Y 摇杆", ["右X->末端Y", "右Y->末端Y"]],
-		["joy_z", "末端 Z 摇杆", ["右X->末端Z", "右Y->末端Z"]],
+		["joy_x", "末端 X 摇杆", ["不使用", "右X->末端X", "右Y->末端X"]],
+		["joy_y", "末端 Y 摇杆", ["不使用", "右X->末端Y", "右Y->末端Y"]],
+		["joy_z", "末端 Z 摇杆", ["不使用", "右X->末端Z", "右Y->末端Z"]],
 	]:
 		_add_option_row(parent, row[1], row[2], str(_cfg[row[0]]),
 			func(value: String) -> void:
@@ -1359,7 +1358,7 @@ func _on_param_changed(value: float, key: String, peer: Node) -> void:
 		var joint_idx: int = key.substr(1).to_int()
 		if joint_idx < _fk_angles.size():
 			_fk_angles[joint_idx] = value
-			_recompute()
+			_apply_joint_pose_from_editor()
 		return
 	if key.begins_with("len") and key.substr(3).is_valid_int():
 		_on_link_length_changed(key.substr(3).to_int(), value)
@@ -1439,15 +1438,13 @@ func _on_link_length_changed(index: int, value: float) -> void:
 	_recompute()
 
 
-## 求解结果回写到控件（IK 模式下 FK 值会变，反之亦然）
+## 求解结果同时回写末端与关节控件，保证两种编辑方式始终描述同一姿态。
 func _sync_param_widgets() -> void:
 	_syncing = true
-	var vals: Dictionary = {}
-	if _mode == Mode.FK:
+	var vals: Dictionary = {"x": _target[0], "y": _target[1], "z": _target[2], "phi": _target[3]}
+	if _mode == Mode.IK:
 		for i in range(_angles.size()):
 			vals["j%d" % i] = _angles[i]
-	else:
-		vals = {"x": _target[0], "y": _target[1], "z": _target[2], "phi": _target[3]}
 	for key in vals.keys():
 		if _sliders.has(key):
 			_sliders[key].set_value_no_signal(clamp(vals[key],
@@ -1479,7 +1476,9 @@ func _build_ik_params(parent: Node) -> void:
 	hint.text += "\nShift 加速一倍，Alt 减速到 1/4。"
 	hint.text += "\n黄色半透明球是目标位置，与末端分离即表示被钳位。"
 	parent.add_child(hint)
+	_build_joint_calibration(parent)
 	_build_gripper_rows(parent)
+	_build_chassis_rows(parent)
 
 
 ## 当前构型的键盘映射说明（顶栏提示与侧欄共用）
@@ -1490,10 +1489,13 @@ func _key_hint_text() -> String:
 	return s
 
 
-# --- FK / 标定模式参数
-func _build_fk_params(parent: Node) -> void:
-	_build_structure_editor(parent)
-	_add_section(parent, "关节角度（运动学角）")
+# --- 逆解编辑页内的关节调整与安装标定
+func _build_joint_calibration(parent: Node) -> void:
+	_add_section(parent, "关节调整与安装标定")
+	var intro := Label.new()
+	intro.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	intro.text = "拖动关节角会直接摆机械臂并同步末端目标；拖动上方 XYZ/φ 则使用逆解。"
+	parent.add_child(intro)
 	for i in range(_jc):
 		var rng: Array = _joint_slider_range(i)
 		_add_slider_row(parent, "j%d" % i, "关节%d θ (°) 可调 [%.0f, %.0f]" % [i + 1, rng[0], rng[1]],
@@ -1527,8 +1529,19 @@ func _build_fk_params(parent: Node) -> void:
 	hint.text = "滑块是运动学角（连杆实际朝向）。舵机指令角 = 运动学角 - 中位朝向，"
 	hint.text += "行程 ±90°，超出会被钳到端点（状态行会提示）。"
 	parent.add_child(hint)
-	_build_gripper_rows(parent)
-	_build_chassis_rows(parent)
+
+
+func _apply_joint_pose_from_editor() -> void:
+	var limited: Dictionary = _cg.clamp_angles_to_limits(_fk_angles.slice(0, _jc), _joints)
+	_angles = limited["angles"]
+	_clamped = limited["clamped"]
+	_reachable = true
+	_target = _tip_targets(_angles)
+	for i in range(min(_angles.size(), _fk_angles.size())):
+		_fk_angles[i] = _angles[i]
+	_render_arm()
+	_sync_param_widgets()
+	_update_status()
 
 
 ## 臂长编辑行（标定与预设模式共用）
@@ -2036,7 +2049,7 @@ func _apply_remote_ik_inputs() -> void:
 			_target[i] += key_speed
 		if _remote_key(str(keymove[i].get("minus", "不使用"))):
 			_target[i] -= key_speed
-	if _target_too_far():
+	if _target_too_far(previous):
 		_target = previous
 
 
@@ -2118,6 +2131,8 @@ func _forward_input_value(input_name: String) -> float:
 
 
 func _remote_joy_value(mapping: String) -> int:
+	if mapping == "不使用" or mapping.is_empty():
+		return 0
 	var source: String = mapping.split("->")[0]
 	var roker: Array = _remote_snapshot["valueOfRoker"]
 	return int(roker[1][1] if "Y" in source else roker[1][0])
@@ -2145,7 +2160,10 @@ func _number_or(text: String, fallback: float) -> float:
 
 
 func _mouse_over_ui() -> bool:
-	var pointer: Vector2 = get_global_mouse_position()
+	return _point_over_ui(get_global_mouse_position())
+
+
+func _point_over_ui(pointer: Vector2) -> bool:
 	for path in [P_SIDE_PANEL, P_TOP_PANEL]:
 		var panel: Node = get_node_or_null(path)
 		if panel is Control and panel.visible and panel.get_global_rect().has_point(pointer):
@@ -2304,10 +2322,14 @@ func _handle_mouse_button(e: InputEventMouseButton) -> void:
 			_panning = e.pressed
 			accept_event()
 		MOUSE_BUTTON_WHEEL_UP:
+			if _point_over_ui(e.global_position):
+				return
 			_cam_dist = max(0.2, _cam_dist * 0.9)
 			_update_camera()
 			accept_event()
 		MOUSE_BUTTON_WHEEL_DOWN:
+			if _point_over_ui(e.global_position):
+				return
 			_cam_dist = min(200.0, _cam_dist * 1.1)
 			_update_camera()
 			accept_event()
