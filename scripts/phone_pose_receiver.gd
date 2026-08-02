@@ -284,7 +284,7 @@ func _handle_message(peer: WebSocketPeer, text: String) -> void:
 			reset_origin()
 			reset_requested.emit()
 		_:
-			pass  # 忽略未知消息类型
+			pass # 忽略未知消息类型
 
 
 func _handle_pose(msg: Dictionary) -> void:

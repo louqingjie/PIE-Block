@@ -1554,24 +1554,51 @@ func _on_arm_sim_closed() -> void:
 	_arm_sim = null
 
 func _on_solver_build_requested() -> void:
+	# 自愈：进度面板已隐藏但标志残留（上次流程异常结束）时自动清理，
+	# 否则之后所有点击都会被静默拦截，表现为“点了没反应”。
+	if (_solver_upgrade_active or _upgrade_active) and not _upgrade_panel_visible():
+		_solver_upgrade_active = false
+		_upgrade_active = false
+		_project_dst_override = ""
+		_set_upgrade_button_busy(false)
 	if _solver_upgrade_active or _upgrade_active or _build_controller == null \
 			or _build_controller.is_busy() or _download_controller == null \
 			or _download_controller.is_busy():
+		var reason: String = _solver_block_reason()
+		if not reason.is_empty():
+			_append_output("[Warn] 暂无法开始求解器编译：%s" % reason)
 		return
 	var ik_config: Dictionary = IK_CONFIG.normalize(_collect_ik_config())
 	var validation: Dictionary = IK_CONFIG.validate(ik_config, _collect_engineer_config())
 	var errors: Array[String] = []
+	var io_issues: Array[String] = []
 	for issue in validation.get("issues", []):
-		if str(issue.get("type", "")) == "Error":
-			errors.append(str(issue.get("msg", "")))
+		if str(issue.get("type", "")) != "Error":
+			continue
+		var message: String = str(issue.get("msg", ""))
+		# MCU 求解器固件不初始化任何执行器 IO（generate_simulator 明确无 IO），
+		# 因此 IO 冲突/初始化错误不影响求解器编译，只影响正式固件
+		# （编译正式固件时会再次检查）。
+		if message.contains("IO"):
+			io_issues.append(message)
+		else:
+			errors.append(message)
+	if not io_issues.is_empty():
+		_append_output("[Info] MCU 求解器无执行器 IO，已忽略 %d 条 IO 配置问题（编译正式固件时仍会检查）：" \
+			% io_issues.size())
+		for message in io_issues:
+			_append_output("  - " + message)
 	if not errors.is_empty():
 		_append_output("[Error] MCU 求解器构型无效，未开始编译：")
 		for message in errors:
 			_append_output("  - " + message)
+		# 3D 仿真全屏覆盖主界面输出面板，必须弹窗让用户能看到失败原因
+		_show_solver_error_dialog("MCU 求解器构型无效", errors)
 		return
 	var code: String = CodeGenEngineerIK.new().generate_simulator(ik_config)
 	if code.is_empty():
 		_append_output("[Error] 无法生成 MCU 求解器固件")
+		_show_solver_error_dialog("无法生成 MCU 求解器固件", ["生成器返回空代码，请检查配置。"])
 		return
 	if _arm_sim != null and _arm_sim.has_method("prepare_solver_build"):
 		_arm_sim.prepare_solver_build()
@@ -1588,6 +1615,24 @@ func _on_solver_build_requested() -> void:
 		_solver_upgrade_active = false
 		_project_dst_override = ""
 		_fail_upgrade("无法开始编译", "请查看下方输出中的详细提示。")
+
+
+## 返回求解器编译被拦截的具体原因（空串=未被拦截）。
+## 用于把“点击无反应”变成可读的提示，方便定位是状态残留还是控制器卡死。
+func _solver_block_reason() -> String:
+	if _solver_upgrade_active:
+		return "上一次求解器编译/烧录流程尚未结束（若进度面板已关闭请重启编辑器）"
+	if _upgrade_active:
+		return "主控板升级流程正在进行中"
+	if _build_controller == null:
+		return "编译控制器未初始化"
+	if _download_controller == null:
+		return "烧录控制器未初始化"
+	if _build_controller.is_busy():
+		return "编译器正在运行，请等待完成"
+	if _download_controller.is_busy():
+		return "烧录正在进行，请等待完成"
+	return ""
 
 
 ## 步兵仿真里标定出来的云台归中角回填到配置界面，再重跑检查与代码生成
@@ -1741,6 +1786,24 @@ func _set_upgrade_progress(stage: String, percent: float, detail: String) -> voi
 	var panel: Node = get_node_or_null(P_UPGRADE_PROGRESS)
 	if panel != null and panel.has_method("set_progress"):
 		panel.set_progress(stage, percent, detail)
+
+
+## 进度面板当前是否可见。用于区分「流程正在进行」与「标志残留」。
+func _upgrade_panel_visible() -> bool:
+	var panel: Node = get_node_or_null(P_UPGRADE_PROGRESS)
+	return panel != null and panel.visible
+
+
+## 求解器编译失败弹窗：3D 仿真全屏覆盖主界面输出面板，
+## 错误必须弹出可见对话框，否则用户以为「点击没反应」。
+func _show_solver_error_dialog(title: String, messages: Array) -> void:
+	var dialog := AcceptDialog.new()
+	dialog.title = title
+	dialog.dialog_text = "\n".join(messages)
+	dialog.ok_button_text = "知道了"
+	add_child(dialog)
+	dialog.popup_centered(Vector2i(560, 360))
+	dialog.close_requested.connect(dialog.queue_free)
 
 
 func _fail_upgrade(stage: String, detail: String) -> void:

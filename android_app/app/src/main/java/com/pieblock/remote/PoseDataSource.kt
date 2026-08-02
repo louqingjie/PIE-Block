@@ -44,10 +44,12 @@ class PoseDataSource(context: Context) : SensorEventListener {
     var trackingState = TrackingState.PAUSED
         private set
 
-    /// 原点（重置时记录）
+    /// 原点（重置时记录，单位：米，ARCore 绝对世界坐标）
     private var originPosition = FloatArray(3)
     private var originQuaternion = FloatArray(4)
     private var hasOrigin = false
+    /// 最近一帧 ARCore 相机绝对世界坐标平移（米）
+    private var latestTranslation = FloatArray(3)
 
     /// 回调
     var onPoseUpdated: ((position: FloatArray, rpy: FloatArray) -> Unit)? = null
@@ -81,9 +83,11 @@ class PoseDataSource(context: Context) : SensorEventListener {
         hasOrigin = false
     }
 
-    /// 重置原点：以当前位姿为零点
+    /// 重置原点：以当前位姿为零点。
+    /// 注意：必须用 ARCore 绝对世界坐标（米）作为 origin，不能用相对位移 position（mm）——
+    /// 否则下一次 position = (t - origin) * 1000 会把 mm 值当米用，直接爆炸到数百米。
     fun resetOrigin() {
-        originPosition = position.copyOf()
+        System.arraycopy(latestTranslation, 0, originPosition, 0, 3)
         // GAME_ROTATION_VECTOR 的四元数也记录
         System.arraycopy(quaternionBuffer, 0, originQuaternion, 0, 4)
         hasOrigin = true
@@ -103,8 +107,11 @@ class PoseDataSource(context: Context) : SensorEventListener {
         if (newState != trackingState) {
             trackingState = newState
             onTrackingStateChanged?.invoke(trackingState)
-            // 从暂停恢复到追踪时，重置原点避免跳跃
-            if (newState == TrackingState.TRACKING) {
+            // 仅在尚无原点时（首次进入追踪）建立原点。
+            // 注意：追踪丢失后再恢复时【不要】重置原点——否则在弱纹理环境下
+            // ARCore 在 TRACKING/kNotTracking 之间抖动时，每次恢复都把 position
+            // 打回 0，表现为"手机位置和原点反复跳变"。原点只应由用户手动回中设置。
+            if (newState == TrackingState.TRACKING && !hasOrigin) {
                 val t = camera.pose.translation
                 originPosition = floatArrayOf(t[0], t[1], t[2])
                 hasOrigin = true
@@ -112,6 +119,8 @@ class PoseDataSource(context: Context) : SensorEventListener {
         }
         if (trackingState == TrackingState.TRACKING) {
             val t = camera.pose.translation
+            // 保存绝对世界坐标（米），供 resetOrigin() 用作新原点
+            System.arraycopy(t, 0, latestTranslation, 0, 3)
             // 相对原点的位移，转换为 mm
             position[0] = (t[0] - originPosition[0]) * M_TO_MM
             position[1] = (t[1] - originPosition[1]) * M_TO_MM

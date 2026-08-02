@@ -647,12 +647,19 @@ func solve_ik_pose(target_position: Vector3, target_basis: Basis,
 		for i in range(jc):
 			num += float(jte[i]) * float(jte[i])
 		alpha = num / denom
+	# 防溢出：与 C 端一致，姿态行在奇异构形下残差可能巨大，
+	# 让 num/den 溢出为 inf，进而 0*inf=NaN 污染关节角。
+	for i in range(jc):
+		if not is_finite(float(jte[i])) or absf(float(jte[i])) > 1.0e6:
+			jte[i] = 0.0
 	# 步长限幅：换算成度之后不超过 JACOBI_MAX_STEP_DEG
 	var max_step: float = 0.0
 	for i in range(jc):
 		max_step = maxf(max_step, absf(rad_to_deg(alpha * float(jte[i]))))
 	if max_step > JACOBI_MAX_STEP_DEG:
 		alpha *= JACOBI_MAX_STEP_DEG / max_step
+	if not is_finite(alpha) or absf(alpha) > 100000.0:
+		alpha = 0.0
 	var next: Array = []
 	for i in range(jc):
 		next.append(cur[i] + rad_to_deg(alpha * float(jte[i])))
@@ -1256,9 +1263,12 @@ func _gen_ik_solve_pose(jc: int, mask: Dictionary, lens: Array) -> String:
 	if not enabled.is_empty():
 		s += "}ikRequestedMask=solverMask;ik_build_tasks();for(t=0;t<ikTaskCount;t++)ikTaskErr[t]=(ikOriErr[0]*ikTaskAxes[t][0]+ikOriErr[1]*ikTaskAxes[t][1]+ikOriErr[2]*ikTaskAxes[t][2])*ORIENTATION_WEIGHT;for(k=0;k<JOINT_COUNT;k++){if(doOrient)for(t=0;t<ikTaskCount;t++)ikJte[k]+=ikTaskRows[t][k]*ikTaskErr[t]*ORIENTATION_WEIGHT;"
 	s += "}\n"
+	s += "    // 防溢出：姿态行在奇异构形下 Gram-Schmidt 残差可能巨大，\n"
+	s += "    // 让 num/den 溢出为 inf，进而 0*inf=NaN 污染 jointAngle。\n"
+	s += "    for(k=0;k<JOINT_COUNT;k++){if(ikJte[k]!=ikJte[k]||ikJte[k]>1.0e6f||ikJte[k]<-1.0e6f)ikJte[k]=0.0f;}\n"
 	s += "    num=0.0f;ikWv[0]=0.0f;ikWv[1]=0.0f;ikWv[2]=0.0f;for(t=0;t<ikTaskCount;t++)ikTaskDot[t]=0.0f;for(k=0;k<JOINT_COUNT;k++){num+=ikJte[k]*ikJte[k];ikWv[0]+=ikCols[k][0]*ikJte[k];ikWv[1]+=ikCols[k][1]*ikJte[k];ikWv[2]+=ikCols[k][2]*ikJte[k];if(doOrient)for(t=0;t<ikTaskCount;t++)ikTaskDot[t]+=ikTaskRows[t][k]*ORIENTATION_WEIGHT*ikJte[k];}den=ikWv[0]*ikWv[0]+ikWv[1]*ikWv[1]+ikWv[2]*ikWv[2];if(doOrient)for(t=0;t<ikTaskCount;t++)den+=ikTaskDot[t]*ikTaskDot[t];alpha=(den>IK_EPS)?num/den:0.0f;ikNumericProtected=0;if(alpha!=alpha||alpha>100000.0f||alpha< -100000.0f){alpha=0.0f;ikNumericProtected=1;}\n"
 	s += "    maxStep=0.0f;for(k=0;k<JOINT_COUNT;k++){step=alpha*ikJte[k]*RAD_TO_DEG;if(step<0.0f)step=-step;if(step>maxStep)maxStep=step;}if(maxStep>IK_MAX_STEP_DEG)alpha*=IK_MAX_STEP_DEG/maxStep;errBefore=posErr2;\n"
-	s += "    ikStepClamped=0;for(k=0;k<JOINT_COUNT;k++){jointAngle[k]+=alpha*ikJte[k]*RAD_TO_DEG;if(jointAngle[k]<jointMin[k]){jointAngle[k]=jointMin[k];ikStepClamped=1;}if(jointAngle[k]>jointMax[k]){jointAngle[k]=jointMax[k];ikStepClamped=1;}}\n"
+	s += "    ikStepClamped=0;for(k=0;k<JOINT_COUNT;k++){jointAngle[k]+=alpha*ikJte[k]*RAD_TO_DEG;if(jointAngle[k]!=jointAngle[k]||jointAngle[k]>1.0e6f||jointAngle[k]<-1.0e6f){jointAngle[k]=jointHome[k];ikNumericProtected=1;}if(jointAngle[k]<jointMin[k]){jointAngle[k]=jointMin[k];ikStepClamped=1;}if(jointAngle[k]>jointMax[k]){jointAngle[k]=jointMax[k];ikStepClamped=1;}}\n"
 	if not enabled.is_empty():
 		s += "    if(doOrient)for(t=0;t<ikTaskCount;t++)errBefore+=ikTaskErr[t]*ikTaskErr[t];\n"
 	s += "    ik_fk();errAfter=(x-ikPts[JOINT_COUNT][0])*(x-ikPts[JOINT_COUNT][0])+(y-ikPts[JOINT_COUNT][1])*(y-ikPts[JOINT_COUNT][1])+(z-ikPts[JOINT_COUNT][2])*(z-ikPts[JOINT_COUNT][2]);"
