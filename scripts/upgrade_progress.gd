@@ -25,7 +25,7 @@ func begin() -> void:
 	_title.text = "升级主控板"
 	_close.hide()
 	set_progress("准备升级", 2.0, "正在保存当前程序…")
-	show()
+	_show_on_top()
 
 
 ## 求解器烧录专用：显示进度面板（标题与提示面向"编译并烧录 MCU 求解器"）。
@@ -34,7 +34,14 @@ func begin_solver() -> void:
 	_title.text = "编译并烧录 MCU 求解器"
 	_close.hide()
 	set_progress("准备编译求解器", 2.0, "仿真固件不会初始化或输出任何执行器 IO。")
+	_show_on_top()
+
+
+## 确保面板在节点树中排最后（z_index 对运行时动态添加的同级兄弟不可靠），
+## 否则后添加的 3D 仿真视图（SubViewportContainer 全屏拦截鼠标）会挡住面板按钮。
+func _show_on_top() -> void:
 	show()
+	move_to_front()
 
 
 func set_progress(stage_text: String, value: float, detail_text: String = "") -> void:
@@ -47,7 +54,7 @@ func complete() -> void:
 	_title.text = "升级完成"
 	set_progress("主控板已运行新程序", 100.0)
 	_close.text = "完成"
-	_close.show()
+	_show_close_on_top()
 
 
 func fail(stage_text: String, detail_text: String) -> void:
@@ -55,7 +62,14 @@ func fail(stage_text: String, detail_text: String) -> void:
 	_stage.text = stage_text
 	_detail.text = detail_text
 	_close.text = "关闭"
+	_show_close_on_top()
+
+
+## 显示关闭按钮并确保面板在最前（可接收鼠标与键盘）。
+func _show_close_on_top() -> void:
+	move_to_front()
 	_close.show()
+	_close.grab_focus()
 
 
 func _on_close_pressed() -> void:

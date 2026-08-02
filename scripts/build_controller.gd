@@ -82,7 +82,6 @@ func _on_worker_finished(result: Dictionary) -> void:
 	var ok: bool = bool(result.get("ok", false))
 	if ok:
 		_append("✓ 编译成功")
-		succeeded.emit()
 	else:
 		_append("✗ 编译失败（UV4 退出码 %d，详见下方日志）"
 			% int(result.get("exit", -1)))
@@ -92,6 +91,10 @@ func _on_worker_finished(result: Dictionary) -> void:
 	else:
 		for line in log_text.split("\n", false):
 			_append(line)
+	# succeeded 会触发下载流程（_clear 清空输出再追加烧录日志），
+	# 必须放在编译日志输出之后，否则编译日志的空行会混入烧录日志。
+	if ok:
+		succeeded.emit()
 	finished.emit(result)
 
 

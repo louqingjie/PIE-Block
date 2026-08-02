@@ -366,6 +366,10 @@ func _connect_signals() -> void:
 	var save_btn: Node = get_node_or_null(P_SAVE_BTN)
 	if save_btn is BaseButton:
 		save_btn.pressed.connect(_on_save_pressed)
+	# 升级进度面板关闭后重置升级/求解器标志，避免面板已隐藏但标志残留
+	var upgrade_progress: Node = get_node_or_null(P_UPGRADE_PROGRESS)
+	if upgrade_progress != null and upgrade_progress.has_signal("closed"):
+		upgrade_progress.closed.connect(_on_upgrade_panel_closed)
 	# 配置区所有控件统一挂一个「改动」监听，用于脏标记与阶段二锁定。
 	# 走通用遍历而非逐个列举：上面那些 _run_check 连接是按语义挑的，
 	# 这里要的是「任何控件动了」，漏一个就会让脏标记或锁定失效。
@@ -2129,6 +2133,11 @@ func _on_arm_sim_pressed() -> void:
 	if _arm_sim.has_method("set_config"):
 		_arm_sim.set_config(cfg)
 	add_child(_arm_sim)
+	# 3D 仿真视图全屏覆盖且拦截鼠标，升级进度面板必须始终排在它之后，
+	# 否则面板的按钮（完成/关闭）无法被点击或悬停。
+	var panel_front: Node = get_node_or_null(P_UPGRADE_PROGRESS)
+	if panel_front != null:
+		panel_front.move_to_front()
 
 
 func _on_arm_sim_closed() -> void:
@@ -2342,3 +2351,12 @@ func _set_upgrade_button_busy(is_busy: bool) -> void:
 	if button is BaseButton:
 		button.disabled = is_busy
 		button.text = "升级中…" if is_busy else "升级主控板"
+
+
+## 升级/求解器烧录进度面板关闭后，重置标志并恢复按钮状态。
+## complete()/fail() 已经 show 了关闭按钮，用户点「完成/关闭」后来到这里。
+func _on_upgrade_panel_closed() -> void:
+	_upgrade_active = false
+	_solver_upgrade_active = false
+	_project_dst_override = ""
+	_set_upgrade_button_busy(false)
