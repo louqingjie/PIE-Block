@@ -101,18 +101,20 @@ godot --headless --no-header --path . --script scripts/cli_codegen.gd -- help
 ### 安装依赖
 
 ```powershell
-c:/Users/louqi/Desktop/pie-block/.venv/Scripts/python.exe -m pip install mcp
+# 在项目的 Python 虚拟环境里安装 MCP 库
+<项目根>/.venv/Scripts/python.exe -m pip install -r tools/requirements.txt
 ```
 
 ### 手动测试
 
 ```powershell
-c:/Users/louqi/Desktop/pie-block/.venv/Scripts/python.exe tools/test_mcp_server.py
+<项目根>/.venv/Scripts/python.exe tools/test_mcp_server.py
 ```
 
 ### 接入 Agent
 
-把下面配置加进你的 MCP 客户端。`cwd` 必须是项目根（`pie-block`）。
+把下面配置加进你的 MCP 客户端。把 `<项目根>` 换成你本机实际的项目根路径
+（例如 `c:/Users/你的用户名/pie-block`），`cwd` 必须是项目根。
 
 **Claude Desktop / Claude Code（`claude_desktop_config.json`）**：
 
@@ -120,9 +122,9 @@ c:/Users/louqi/Desktop/pie-block/.venv/Scripts/python.exe tools/test_mcp_server.
 {
   "mcpServers": {
     "pie-block": {
-      "command": "c:/Users/louqi/Desktop/pie-block/.venv/Scripts/python.exe",
+      "command": "<项目根>/.venv/Scripts/python.exe",
       "args": ["tools/pieblock_mcp_server.py"],
-      "cwd": "c:/Users/louqi/Desktop/pie-block"
+      "cwd": "<项目根>"
     }
   }
 }
@@ -135,9 +137,9 @@ c:/Users/louqi/Desktop/pie-block/.venv/Scripts/python.exe tools/test_mcp_server.
   "servers": {
     "pie-block": {
       "type": "stdio",
-      "command": "c:/Users/louqi/Desktop/pie-block/.venv/Scripts/python.exe",
+      "command": "<项目根>/.venv/Scripts/python.exe",
       "args": ["tools/pieblock_mcp_server.py"],
-      "cwd": "c:/Users/louqi/Desktop/pie-block"
+      "cwd": "<项目根>"
     }
   }
 }

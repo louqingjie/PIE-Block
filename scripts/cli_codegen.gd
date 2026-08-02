@@ -211,8 +211,8 @@ func _cmd_check(args: PackedStringArray) -> void:
 		"ok": not has_error,
 		"kind": kind,
 		"issues": issues,
-		"error_count": issues.filter(func(i): return str(i.get("type","")) == "Error").size(),
-		"warn_count": issues.filter(func(i): return str(i.get("type","")) == "Warn").size(),
+		"error_count": issues.filter(func(i): return str(i.get("type", "")) == "Error").size(),
+		"warn_count": issues.filter(func(i): return str(i.get("type", "")) == "Warn").size(),
 	}
 	print(JSON.stringify(result, "\t"))
 	quit(EXIT_OK)
