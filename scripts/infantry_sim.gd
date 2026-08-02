@@ -809,12 +809,12 @@ func _limit_servo() -> void:
 		_duty_servo[0] = int(_float_duty_servo[0])
 	if _pitch_is_servo:
 		var plo: float = float(_gp["pitch_lo"])
-		var phi: float = float(_gp["pitch_hi"])
+		var pitch_upper: float = float(_gp["pitch_hi"])
 		if _float_duty_servo[1] < plo:
 			_float_duty_servo[1] = plo
 			_servo_clamped[1] = true
-		elif _float_duty_servo[1] > phi:
-			_float_duty_servo[1] = phi
+		elif _float_duty_servo[1] > pitch_upper:
+			_float_duty_servo[1] = pitch_upper
 			_servo_clamped[1] = true
 		_duty_servo[1] = int(_float_duty_servo[1])
 

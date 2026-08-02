@@ -1,6 +1,6 @@
 extends SceneTree
 
-const UI_SCENE = preload("res://scenes/ui.tscn")
+const UI_SCENE_PATH: String = "res://scenes/ui.tscn"
 const IK_CONFIG = preload("res://scripts/engineer_ik_config.gd")
 const CODEGEN = preload("res://scripts/codegen/codegen_engineer_ik.gd")
 
@@ -31,7 +31,11 @@ func _valid_ik(jc: int = 4) -> Dictionary:
 
 func _initialize() -> void:
 	print("=== 结构化 IK UI 端到端验证 ===")
-	var ui = UI_SCENE.instantiate()
+	# In --script mode autoload names are registered after this script's constants.
+	# Load the UI at runtime so ui.gd can resolve the AppState singleton.
+	await process_frame
+	var ui_scene: PackedScene = load(UI_SCENE_PATH)
+	var ui = ui_scene.instantiate()
 	root.add_child(ui)
 	await process_frame
 
@@ -77,6 +81,16 @@ func _initialize() -> void:
 	tabs.current_tab = 2
 	ui._run_check()
 	_check("两张工程页生成相同代码", code_edit.text == engineer_code)
+
+	ui._ik_config = IK_CONFIG.default_config()
+	ui._solver_upgrade_active = false
+	ui._upgrade_active = false
+	ui._on_solver_build_requested()
+	var output: CodeEdit = ui.get_node(ui.P_OUTPUT)
+	_check("invalid kinematic configuration cannot start solver build",
+		not ui._solver_upgrade_active and not ui._upgrade_active
+		and output.text.contains("MCU 求解器构型无效"))
+	ui._ik_config = changed
 
 	ui._stage2_preview = false
 	ui._on_arm_sim_pressed()

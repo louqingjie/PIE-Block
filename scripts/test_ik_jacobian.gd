@@ -32,6 +32,7 @@ func _initialize() -> void:
 	_test_rpy_roundtrip()
 	_test_shortest_rotation()
 	_test_pose_roundtrip()
+	_test_ypp_roll_regression()
 	_test_underactuated_and_limits()
 	print("=== %s ===" % ("全部通过" if failures == 0 else "%d 项失败" % failures))
 	quit(0 if failures == 0 else 1)
@@ -84,3 +85,17 @@ func _test_underactuated_and_limits() -> void:
 		limited = limited and float(angle) >= -30.001 and float(angle) <= 30.001
 	_check("欠驱动不可达目标无 NaN", _finite_angles(result.angles), str(result.angles))
 	_check("不可达目标稳定停在限位内", limited and not bool(result.reachable), str(result))
+
+func _test_ypp_roll_regression() -> void:
+	var joints: Array = _joints(["Yaw", "Pitch", "Pitch", "Roll"], [0, 120, 90, 0])
+	var diagnosis: Dictionary = DIAG.new().analyze(joints, 4)
+	var mask: Dictionary = diagnosis.get("orientation_mask", {})
+	_check("Y/P/P/R 仅 Roll 可在保持 XYZ 时独立控制",
+		bool(mask.get("roll", false)) and not bool(mask.get("pitch", false))
+		and not bool(mask.get("yaw", false)), str(mask))
+	var start: Array = [10.0, 25.0, -40.0, 0.0]
+	var chain: Dictionary = cg.fk_chain(start, joints, 4)
+	var yaw_only: Basis = cg.basis_from_rpy_deg(cg.tip_rpy_deg(chain) + Vector3(0, 0, 20))
+	var result: Dictionary = cg.solve_ik_pose(chain.points[-1], yaw_only, mask, start, joints, 4)
+	_check("不可控 Yaw 目标不会借用 Roll 关节",
+		absf(float(result.angles[3]) - float(start[3])) < 0.001, str(result.angles))

@@ -22,10 +22,22 @@ func _has_issue(result: Dictionary, text: String) -> bool:
 
 
 func _initialize() -> void:
+	var config_source: String = FileAccess.get_file_as_string(
+		"res://scripts/engineer_ik_config.gd")
+	_check("configuration validation does not execute PC diagnosis or IK",
+		not config_source.contains("arm_diagnosis.gd")
+		and not config_source.contains("solve_ik_pose"))
 	var defaults: Dictionary = IK_CONFIG.default_config()
 	_check("default has canonical fields", defaults.has_all([
 		"joint_count", "mode_switch_key", "joints", "presets", "joy_x", "joy_y",
-		"joy_z", "joy_scale", "keymove_speed", "keymove", "gripper"]))
+		"joy_z", "joy_scale", "keymove_speed", "orientation_key_speed",
+		"rocker2_home_enabled", "keymove", "gripper"]))
+	_check("six endpoint key channels default unused", defaults["keymove"].size() == 6
+		and defaults["keymove"][3]["plus"] == "不使用"
+		and defaults["keymove"][5]["minus"] == "不使用")
+	_check("orientation speed and ROCKER2 home have safe defaults",
+		defaults["orientation_key_speed"] == "1"
+		and not defaults["rocker2_home_enabled"])
 	_check("gripper defaults to a disabled servo", defaults["gripper"] == {
 		"enabled": false, "io": "MP03", "dir": "正向", "open_angle": "45",
 		"closed_angle": "-45", "initial_open": true, "key": "D"})
@@ -46,6 +58,13 @@ func _initialize() -> void:
 	_check("joint count clamps to six", clipped["joint_count"] == 6 and clipped["joints"].size() == 6)
 	var roundtrip: Dictionary = IK_CONFIG.normalize(JSON.parse_string(JSON.stringify(clipped)))
 	_check("normalized config survives JSON roundtrip", roundtrip == clipped)
+	var v6_like: Dictionary = IK_CONFIG.normalize({"keymove": [
+		{"plus": "A", "minus": "B"}, {}, {}, {}]})
+	_check("version 6 controls gain unused Roll/Yaw slots",
+		v6_like["keymove"].size() == 6 and v6_like["keymove"][0]["plus"] == "A"
+		and v6_like["keymove"][4]["plus"] == "不使用"
+		and v6_like["orientation_key_speed"] == "1"
+		and not v6_like["rocker2_home_enabled"])
 	var no_joy: Dictionary = IK_CONFIG.normalize({
 		"joy_x": "不使用", "joy_y": "不使用", "joy_z": "不使用"})
 	_check("each endpoint axis may disable rocker input", no_joy["joy_x"] == "不使用"
@@ -88,6 +107,34 @@ func _initialize() -> void:
 	_check("gripper conflicts with joint IO", _has_issue(grip_validation, "夹爪 IO P74 与关节1"))
 	_check("gripper open and closed angles differ", _has_issue(grip_validation, "张开角和闭合角不能相同"))
 	_check("gripper key conflicts are validated", _has_issue(grip_validation, "夹爪 按键R"))
+
+	var control_bad: Dictionary = conflict.duplicate(true)
+	control_bad["joints"][1]["io"] = "P75"
+	control_bad["orientation_key_speed"] = "0"
+	control_bad["keymove"][0] = {"plus": "A", "minus": "不使用"}
+	var control_validation: Dictionary = IK_CONFIG.validate(control_bad, {
+		"io_init": {"P74": "舵机", "P75": "舵机"},
+		"key_map": [{"input": "A", "target": "MP03"}]})
+	_check("orientation speed must be positive",
+		_has_issue(control_validation, "姿态按键步长必须是正数"))
+	_check("inverse keys conflict with forward mappings",
+		_has_issue(control_validation, "按键A与工程正解映射冲突"))
+
+	var preset_cfg: Dictionary = conflict.duplicate(true)
+	preset_cfg["joints"][1]["io"] = "P75"
+	preset_cfg["presets"][0] = {"enabled": true, "key": "B",
+		"x": "99999", "y": "-99999", "z": "50000",
+		"roll": "170", "pitch": "80", "yaw": "-170"}
+	var preset_validation: Dictionary = IK_CONFIG.validate(preset_cfg, {
+		"io_init": {"P74": "舵机", "P75": "舵机"}, "key_map": []})
+	_check("configuration validation delegates diagnosis and reachability to MCU",
+		str(preset_validation.get("diagnosis_source", "")) == "mcu"
+		and not _has_issue(preset_validation, "无法从初始姿态收敛"))
+	preset_cfg["presets"][0]["yaw"] = ""
+	preset_validation = IK_CONFIG.validate(preset_cfg, {
+		"io_init": {"P74": "舵机", "P75": "舵机"}, "key_map": []})
+	_check("enabled presets require a complete six-dimensional pose",
+		_has_issue(preset_validation, "预设1 yaw 不是数值"))
 
 	print("Result: %s" % ("PASS" if _fail == 0 else "%d failed" % _fail))
 	quit(0 if _fail == 0 else 1)

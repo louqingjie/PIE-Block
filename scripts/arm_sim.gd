@@ -1,9 +1,8 @@
 extends Control
 ## 机械臂逆解 3D 仿真视图。
 ##
-## 全部运动学都走 CodeGenEngineerIK 里的公开函数（fk_chain /
-## solve_ik_pose_converge / clamp_angles_to_limits），
-## 不在本文件重推公式，避免仿真与生成的 C 代码脱节。
+## MCU 是 FK、IK、构形诊断和关节限位的唯一权威。
+## PC 侧 fk_chain 只把 MCU 返回的关节角转换为绘图 Transform，并校验渲染模型。
 ##
 ## 坐标系约定：机器人 X/Y 为水平面、Z 为高度，映射到 Godot (x, z, -y)。
 ## 单位：机器人侧 mm，Godot 侧 mm * MM_TO_UNIT。
@@ -90,8 +89,10 @@ enum Mode {IK = 0, PRESET = 1, CONTROLLER = 2}
 # ------------------------------------------------------------------ 运动学求解器
 var _cg: CodeGenEngineerIK = CodeGenEngineerIK.new()
 const IK_CONFIG = preload("res://scripts/engineer_ik_config.gd")
-const DIAG = preload("res://scripts/arm_diagnosis.gd")
 const REMOTE_INPUT = preload("res://scripts/sim_remote_input.gd")
+const IK_SIM_LINK = preload("res://scripts/ik_sim_link.gd")
+const IK_SIM_PROTOCOL = preload("res://scripts/ik_sim_protocol.gd")
+const TOOLCHAIN = preload("res://scripts/toolchain.gd")
 
 # ------------------------------------------------------------------ 配置状态
 var _cfg: Dictionary = {}
@@ -104,7 +105,7 @@ var _jc: int = 2
 var _joints: Array = []
 var _presets: Array = []
 var _gripper: Dictionary = {}
-## 末端俯仰角在当前构形上能否「位置不动、只转 φ」。
+## MCU HELLO 返回的独立姿态任务可控掩码。
 var _orientation_mask: Dictionary = {"roll": false, "pitch": false, "yaw": false}
 var _orientation_reason: Dictionary = {}
 ## 判定「末端到位」的容差(mm)。数值解不会精确命中，
@@ -117,6 +118,8 @@ var _mode: int = Mode.IK
 var _target: Dictionary = {"position": Vector3.ZERO, "rpy": Vector3.ZERO}
 ## 当前各关节角度（度），已过限位
 var _angles: Array = []
+## 正解模式准备发给 MCU 的角度；不得用于绘图或“实际状态”显示。
+var _requested_angles: Array = []
 ## 上一帧逆解是否可达（操控模式的状态显示需要）
 var _reachable: bool = true
 ## 被限位钳住的关节掩码
@@ -130,6 +133,7 @@ var _ik_rot_speed: float = KEY_ROT_DEG_PER_SEC
 var _remote_snapshot: Dictionary = REMOTE_INPUT.compose({}, {})
 var _inverse_mode: bool = true
 var _mode_key_held: bool = false
+var _home_key_held: bool = false
 var _gripper_open: bool = true
 var _gripper_key_held: bool = false
 var _duty_chassis: Array = [0, 0, 0, 0]
@@ -150,6 +154,19 @@ var _turn_rate: float = TURN_RATE_DEFAULT
 var _play_idx: int = -1
 var _play_t: float = 0.0
 var _play_from: Dictionary = {}
+var _mcu_link: IkSimLink = null
+var _mcu_ready: bool = false
+var _mcu_hello_validated: bool = false
+var _mcu_status: String = "未连接 MCU 求解器"
+var _mcu_fingerprint: String = ""
+var _mcu_firmware_type: String = "未知"
+var _mcu_fingerprint_ok: bool = false
+var _solver_stale: bool = true
+var _solver_reconnect_deadline_ms: int = 0
+var _solver_reconnect_generation: int = 0
+var _mcu_actual: Dictionary = {"position": Vector3.ZERO, "rpy": Vector3.ZERO}
+var _mcu_diagnostics: Dictionary = {}
+var _render_model_mismatch: bool = false
 
 # ------------------------------------------------------------------ 视图状态
 var _cam_yaw: float = -0.7
@@ -217,6 +234,16 @@ func _ready() -> void:
 		set_config({})
 	else:
 		_apply_config()
+	_mcu_link = IK_SIM_LINK.new()
+	add_child(_mcu_link)
+	_mcu_link.connected.connect(_on_mcu_connected)
+	_mcu_link.state_received.connect(_on_mcu_state)
+	_mcu_link.link_error.connect(_on_mcu_error)
+	_mcu_link.link_warning.connect(_on_mcu_warning)
+	_mcu_link.disconnected.connect(_on_mcu_disconnected)
+	# The simulator build workflow reconnects after flashing. Entering controller
+	# mode also reconnects, but opening the configuration page must not launch a
+	# pipe process against an arbitrary serial device.
 
 
 func _connect_ui() -> void:
@@ -226,6 +253,13 @@ func _connect_ui() -> void:
 	var mode: Node = get_node_or_null(P_MODE)
 	if mode is OptionButton:
 		mode.item_selected.connect(_on_mode_selected)
+	var solver_button := Button.new()
+	solver_button.text = "编译并烧录 MCU 求解器"
+	solver_button.tooltip_text = "构型变化后必须重新生成并烧录无 IO 求解器固件"
+	solver_button.pressed.connect(func() -> void: solver_build_requested.emit())
+	var top: Node = get_node_or_null("TopPanel/HBox")
+	if top is Container:
+		top.add_child(solver_button)
 	var tt: Node = get_node_or_null(P_TRAIL_TOGGLE)
 	if tt is BaseButton:
 		tt.toggled.connect(_on_trail_toggled)
@@ -258,8 +292,19 @@ func set_config(context: Dictionary) -> void:
 
 ## 返回配置界面时发出（由 ui.gd 连接）
 signal closed
+signal solver_build_requested
 ## 返回结构化逆解配置与需要写回工程页的扩展口初始化变更。
 signal config_changed(payload: Dictionary)
+
+
+func prepare_solver_build() -> void:
+	_cancel_solver_reconnect()
+	_mcu_ready = false
+	_mcu_hello_validated = false
+	_mcu_status = "正在编译并烧录 MCU 求解器，机械臂操控已冻结"
+	if _mcu_link != null:
+		_mcu_link.stop()
+	_update_status()
 
 
 func _on_back_pressed() -> void:
@@ -299,18 +344,20 @@ func _apply_config() -> void:
 	# 预设点位表补齐到 4 项，便于「存为预设 N」直接写入
 	while _presets.size() < 4:
 		_presets.append(IK_CONFIG.default_preset(_presets.size()))
-	# 末端俯仰角能否单独控制。与生成器同一判据，
-	# 不可控时 φ 不参与逆解，界面上也不该让学生以为能调。
-	var diag = load("res://scripts/arm_diagnosis.gd").new()
-	var d: Dictionary = diag.analyze(_joints, _jc)
-	_orientation_mask = (d.get("orientation_mask", {}) as Dictionary).duplicate(true)
-	_orientation_reason = (d.get("orientation_reason", {}) as Dictionary).duplicate(true)
+	_orientation_mask = {"roll": false, "pitch": false, "yaw": false}
+	_orientation_reason = {"roll": "等待 MCU 构形诊断", "pitch": "等待 MCU 构形诊断",
+		"yaw": "等待 MCU 构形诊断"}
+	_solver_stale = true
+	_mcu_ready = false
+	_mcu_hello_validated = false
 	# 初始姿态：与生成的 C 代码上电起点一致
 	_fk_angles = _cg._joint_home_angles(_joints)
 	_target = _tip_target(_fk_angles.slice(0, _jc))
 	_angles = _fk_angles.slice(0, _jc)
+	_requested_angles = _angles.duplicate()
 	_inverse_mode = true
 	_mode_key_held = false
+	_home_key_held = false
 	_gripper_open = bool(_gripper.get("initial_open", true))
 	_gripper_key_held = false
 	_grip_open = 1.0 if _gripper_open else 0.0
@@ -757,58 +804,13 @@ func _target_basis() -> Basis:
 	return _cg.basis_from_rpy_deg(_target["rpy"])
 
 
-## 目标是否超出臂展。复现生成代码里的 ik_target_too_far：
-## 摇杆是增量累加的，不拦住的话长推会让目标无限飘远，
-## 松手后末端要很久才能追回来。
-func _target_too_far(previous: Dictionary = {}) -> bool:
-	var reach: float = _arm_reach()
-	var limit: float = reach * _cg.IK_REACH_MARGIN
-	var d: Vector3 = _target["position"]
-	if d.length_squared() <= limit * limit:
-		return false
-	# 初始姿态常常正好完全伸直，天然位于 98% 软边界之外。
-	# 此时必须允许目标朝底座方向移动，否则每个向内增量都会被撤回，
-	# 遥控目标将永远无法进入软边界。
-	if previous.has("position"):
-		var old: Vector3 = previous["position"]
-		return d.length_squared() >= old.length_squared()
-	return true
-
-
 ## 依据当前模式算出关节角，钳位，然后更新 3D
 func _recompute() -> void:
-	if _mode == Mode.CONTROLLER and not _inverse_mode:
-		# 双模式固件的正解分支直接维护 jointAngle[]，不再调用逆解。
-		var forward_lim: Dictionary = _cg.clamp_angles_to_limits(_angles, _joints)
-		_angles = forward_lim["angles"]
-		_clamped = forward_lim["clamped"]
-		_reachable = true
-		_target = _tip_target(_angles)
-		for i in range(min(_angles.size(), _fk_angles.size())):
-			_fk_angles[i] = _angles[i]
-	else:
-		# 雅可比数值逆解：从当前姿态起解，与真机 ik_solve 同一套数学。
-		# 仿真里迭代到收敛（真机是每周期走一步，靠连续周期逼近）。
-		var res: Dictionary = _cg.solve_ik_pose_converge(_target["position"],
-			_target_basis(), _orientation_mask, _angles, _joints, _jc)
-		var lim2: Dictionary = _cg.clamp_angles_to_limits(res["angles"], _joints)
-		_angles = lim2["angles"]
-		_clamped = lim2["clamped"]
-		# 「可达」= 钳位后的实际末端确实落在目标附近。
-		# 不能用逆解返回的 reachable：那表示「这一步有没有靠近目标」，
-		# 收敛完成时反而是假；也不能用钳位前的误差，限位会把末端推开。
-		var actual: Dictionary = _tip_target(_angles)
-		_reachable = (actual["position"] as Vector3).distance_to(_target["position"]) < IK_REACHED_TOL
-		var orientation_error: Vector3 = _cg.orientation_error_vector(
-			_cg.basis_from_rpy_deg(actual["rpy"]), _target_basis())
-		var task: Dictionary = _cg.orientation_task_rows(
-			_cg.fk_chain(_angles, _joints, _jc), _jc, _orientation_mask)
-		for name in task["order"]:
-			_reachable = _reachable and absf(rad_to_deg(
-				orientation_error.dot(task["axes"][name]))) < 1.0
-		# 关节调整滑块跟着解算结果走，编辑时姿态连续
-		for i in range(min(_angles.size(), _fk_angles.size())):
-			_fk_angles[i] = _angles[i]
+	if _mcu_ready:
+		if _mode == Mode.CONTROLLER and not _inverse_mode:
+			_mcu_link.send_joints(_requested_angles, _jc)
+		else:
+			_mcu_link.send_pose(_target["position"], _target["rpy"])
 	_render_arm()
 	_sync_param_widgets()
 	_update_status()
@@ -944,12 +946,12 @@ func _update_status() -> void:
 	if not label is Label:
 		return
 	var lines: Array = []
-	var tip: Dictionary = _tip_target(_angles)
+	var tip: Dictionary = _mcu_actual if _mcu_ready else _tip_target(_angles)
 	var tip_position: Vector3 = tip["position"]
 	var tip_rpy: Vector3 = tip["rpy"]
 	lines.append("实际末端 X=%.1f Y=%.1f Z=%.1f mm  R=%.1f° P=%.1f° Y=%.1f°" % [
 		tip_position.x, tip_position.y, tip_position.z, tip_rpy.x, tip_rpy.y, tip_rpy.z])
-	if _mode == Mode.CONTROLLER and _inverse_mode:
+	if (_mode == Mode.CONTROLLER and _inverse_mode) or _mode == Mode.IK:
 		var target_position: Vector3 = _target["position"]
 		var target_rpy: Vector3 = _target["rpy"]
 		lines.append("逆解目标 X=%.1f Y=%.1f Z=%.1f mm  R=%.1f° P=%.1f° Y=%.1f°" % [
@@ -967,6 +969,27 @@ func _update_status() -> void:
 		sv_parts.append("s%d=%.1f°%s" % [i + 1, sv["angles"][i], mark])
 	lines.append("舵机指令角 " + "  ".join(sv_parts))
 	lines.append(_gripper_control_text())
+	if _mode == Mode.CONTROLLER or _mcu_ready or _solver_stale:
+		lines.append("MCU 求解器: %s" % _mcu_status)
+		lines.append("MCU 固件=%s  指纹=%s%s" % [_mcu_firmware_type,
+			"匹配" if _mcu_fingerprint_ok else "未匹配",
+			" (%s)" % _mcu_fingerprint if not _mcu_fingerprint.is_empty() else ""])
+		if _mcu_ready:
+			lines.append("MCU %s %s  DOF 位置=%d 姿态=%d  RTT=%d ms  CRC=%d 丢弃=%d  位置误差=%.2f mm%s" % [
+				str(_mcu_diagnostics.get("port", "")),
+				str(_mcu_diagnostics.get("link_type", "unknown")),
+				int(_mcu_diagnostics.get("position_dof", 0)),
+				int(_mcu_diagnostics.get("orientation_dof", 0)),
+				int(_mcu_diagnostics.get("latency_ms", 0)),
+				int(_mcu_diagnostics.get("crc_errors", 0)),
+				int(_mcu_diagnostics.get("dropped_sequences", 0)),
+				float(_mcu_diagnostics.get("position_error", 0.0)),
+				"  渲染模型不一致" if _render_model_mismatch else ""])
+			var orientation_error: Vector3 = _mcu_diagnostics.get(
+				"orientation_error", Vector3.ZERO)
+			lines.append("MCU 状态 [%s]  姿态误差 R=%.2f° P=%.2f° Y=%.2f°" % [
+				_mcu_status_flags_text(int(_mcu_diagnostics.get("status", 0))),
+				orientation_error.x, orientation_error.y, orientation_error.z])
 	if _mode == Mode.CONTROLLER:
 		var roker: Array = _remote_snapshot.get("valueOfRoker", [[0, 0], [0, 0]])
 		var pad_name: String = str(_remote_snapshot.get("pad_name", ""))
@@ -975,6 +998,16 @@ func _update_status() -> void:
 		lines.append("左摇杆 [%d, %d]  右摇杆 [%d, %d]  按键 [%s]" % [
 			roker[0][0], roker[0][1], roker[1][0], roker[1][1],
 			", ".join(REMOTE_INPUT.pressed_names(_remote_snapshot))])
+		var enabled_orientation: Array[String] = []
+		for name in ["roll", "pitch", "yaw"]:
+			if bool(_orientation_mask.get(name, false)):
+				enabled_orientation.append(name.capitalize())
+		var active_orientation_inputs: Array[String] = _active_orientation_inputs()
+		lines.append("姿态可控 [%s]  姿态输入 [%s]  回初始角 %s%s" % [
+			", ".join(enabled_orientation) if not enabled_orientation.is_empty() else "无",
+			", ".join(active_orientation_inputs) if not active_orientation_inputs.is_empty() else "无",
+			"启用" if bool(_cfg.get("rocker2_home_enabled", false)) else "关闭",
+			"（按下）" if _home_key_held else ""])
 		lines.append("底盘占空比 L1=%d L2=%d R1=%d R2=%d" % _duty_chassis)
 		var linear_mps: float = float(_base_speed) / 10000.0 * _speed_scale
 		var omega_dps: float = -float(_turn_speed) / 10000.0 * _turn_rate
@@ -1012,6 +1045,20 @@ func _gripper_text() -> String:
 	var chain: Dictionary = _cg.fk_chain(_angles, _joints, _jc)
 	var rpy: Vector3 = _cg.tip_rpy_deg(chain)
 	return "夹爪朝向 Roll=%+.1f° Pitch=%+.1f° Yaw=%+.1f°" % [rpy.x, rpy.y, rpy.z]
+
+
+func _active_orientation_inputs() -> Array[String]:
+	var active: Array[String] = []
+	var keymove: Array = _cfg.get("keymove", [])
+	var names: Array[String] = ["Roll", "Pitch", "Yaw"]
+	for i in range(3):
+		var slot: int = i + 3
+		if slot >= keymove.size() or not bool(_orientation_mask.get(names[i].to_lower(), false)):
+			continue
+		for side in ["plus", "minus"]:
+			if _remote_key(str(keymove[slot].get(side, "不使用"))):
+				active.append("%s%s" % [names[i], "+" if side == "plus" else "-"])
+	return active
 
 
 func _gripper_control_text() -> String:
@@ -1063,9 +1110,28 @@ func _joint_limit_str(idx: int, key: String) -> String:
 	return "-90" if key == "min" else "90"
 
 
+func _mcu_status_flags_text(status: int) -> String:
+	var labels: Array[String] = []
+	if status & IK_SIM_PROTOCOL.STATUS_REACHED:
+		labels.append("已收敛")
+	if status & IK_SIM_PROTOCOL.STATUS_CLAMPED:
+		labels.append("触及限位")
+	if status & IK_SIM_PROTOCOL.STATUS_STALLED:
+		labels.append("停滞")
+	if status & IK_SIM_PROTOCOL.STATUS_SINGULAR:
+		labels.append("奇异")
+	if status & IK_SIM_PROTOCOL.STATUS_NUMERIC_ERROR:
+		labels.append("数值保护")
+	if labels.is_empty() and status & IK_SIM_PROTOCOL.STATUS_OK:
+		labels.append("迭代中")
+	return " / ".join(labels) if not labels.is_empty() else "未知"
+
+
 # ------------------------------------------------------------------ 模式切换
 func _on_mode_selected(idx: int) -> void:
 	_mode = idx
+	if _mode == Mode.CONTROLLER and DisplayServer.get_name() != "headless":
+		_connect_mcu_solver()
 	_remote_snapshot = REMOTE_INPUT.compose({}, {})
 	_play_idx = -1
 	_sim_accum = 0.0
@@ -1185,8 +1251,6 @@ func _build_diagnostics(parent: Node) -> void:
 
 func _refresh_diagnostics() -> void:
 	var result: Dictionary = IK_CONFIG.validate(_cfg, _engineer)
-	_orientation_mask = (result.get("orientation_mask", {}) as Dictionary).duplicate(true)
-	_orientation_reason = (result.get("orientation_reason", {}) as Dictionary).duplicate(true)
 	var issues: Array = result.get("issues", [])
 	var text: String = "配置有效"
 	if issues.is_empty():
@@ -1247,6 +1311,7 @@ func _on_joint_count_config_changed(value: String) -> void:
 	_joints = _joint_slots.slice(0, _jc)
 	_cfg["joint_count"] = _jc
 	_cfg["joints"] = _joints.duplicate(true)
+	_mark_solver_stale()
 	_refresh_after_structure_change()
 
 
@@ -1260,6 +1325,8 @@ func _on_joint_option_changed(index: int, field: String, value: String) -> void:
 		var init: Dictionary = _engineer.get("io_init", {}).duplicate(true)
 		init[value] = "舵机"
 		_engineer["io_init"] = init
+	if field == "axis":
+		_mark_solver_stale()
 	_refresh_after_structure_change()
 
 
@@ -1268,16 +1335,16 @@ func _on_joint_number_changed(index: int, field: String, value: float) -> void:
 		return
 	_joints[index][field] = str(value)
 	_joint_slots[index] = _joints[index]
+	if field in ["len", "zero", "min", "max"]:
+		_mark_solver_stale()
 	_refresh_after_structure_change()
 
 
 func _refresh_after_structure_change() -> void:
 	_cfg["joints"] = _joints.duplicate(true)
-	var diagnosis: Dictionary = DIAG.new().analyze(_joints, _jc)
-	_orientation_mask = (diagnosis.get("orientation_mask", {}) as Dictionary).duplicate(true)
-	_orientation_reason = (diagnosis.get("orientation_reason", {}) as Dictionary).duplicate(true)
 	_fk_angles = _cg._joint_home_angles(_joints)
 	_angles = _fk_angles.slice(0, _jc)
+	_requested_angles = _angles.duplicate()
 	_target = _tip_target(_angles)
 	_rebuild_arm()
 	_rebuild_static_geometry()
@@ -1286,6 +1353,213 @@ func _refresh_after_structure_change() -> void:
 	_emit_config_changed()
 	_rebuild_params()
 	_recompute()
+
+
+func _mark_solver_stale() -> void:
+	_cancel_solver_reconnect()
+	_solver_stale = true
+	_mcu_ready = false
+	_mcu_hello_validated = false
+	_mcu_fingerprint = ""
+	_mcu_firmware_type = "未知"
+	_mcu_fingerprint_ok = false
+	_orientation_mask = {"roll": false, "pitch": false, "yaw": false}
+	_orientation_reason = {"roll": "构型已变化，请重新烧录 MCU 求解器",
+		"pitch": "构型已变化，请重新烧录 MCU 求解器",
+		"yaw": "构型已变化，请重新烧录 MCU 求解器"}
+	_mcu_status = "构型已变化，机械臂操控已冻结；请编译并烧录 MCU 求解器"
+	if _mcu_link != null:
+		_mcu_link.stop()
+
+func _connect_mcu_solver() -> bool:
+	if _mcu_link == null or _mcu_ready:
+		return false
+	var tc = TOOLCHAIN.new()
+	var pick: Dictionary = tc.pick_download_port()
+	if not bool(pick.get("ok", false)):
+		_mcu_status = "未找到 MCU 串口，请先烧录仿真求解器"
+		_update_status()
+		return false
+	var python: String = tc.find_python()
+	if python.is_empty() or not _mcu_link.start(str(pick.get("device", "")), python,
+			str(pick.get("kind", "unknown"))):
+		_mcu_status = "无法启动 MCU 串口桥接"
+		_update_status()
+		return false
+	return true
+
+
+## 烧录会让 USB/蓝牙串口短暂消失。限时重试端口发现与桥接启动，
+## 直到 HELLO 完成固件类型、协议、算法和构型指纹校验。
+func reconnect_mcu_solver_after_flash() -> void:
+	_cancel_solver_reconnect()
+	_solver_reconnect_deadline_ms = Time.get_ticks_msec() + 10000
+	_solver_reconnect_generation += 1
+	_mcu_ready = false
+	_mcu_hello_validated = false
+	_mcu_status = "求解器已烧录，正在等待主控板重启并重新连接"
+	_update_status()
+	_retry_solver_reconnect(_solver_reconnect_generation)
+
+
+func _retry_solver_reconnect(generation: int) -> void:
+	if generation != _solver_reconnect_generation or _solver_reconnect_deadline_ms <= 0 \
+			or is_queued_for_deletion():
+		return
+	if Time.get_ticks_msec() >= _solver_reconnect_deadline_ms:
+		_solver_reconnect_deadline_ms = 0
+		_mcu_status = "主控板重启后未发现求解器串口，请检查连接后重试"
+		_update_status()
+		return
+	if _connect_mcu_solver():
+		return
+	get_tree().create_timer(0.5).timeout.connect(
+		_retry_solver_reconnect.bind(generation), CONNECT_ONE_SHOT)
+
+
+func _schedule_solver_reconnect_retry() -> void:
+	if _solver_reconnect_deadline_ms <= 0:
+		return
+	var generation: int = _solver_reconnect_generation
+	get_tree().create_timer(0.5).timeout.connect(
+		_retry_solver_reconnect.bind(generation), CONNECT_ONE_SHOT)
+
+
+func _cancel_solver_reconnect() -> void:
+	_solver_reconnect_deadline_ms = 0
+	_solver_reconnect_generation += 1
+
+func _on_mcu_connected(info: Dictionary) -> void:
+	if not info.has("hello"):
+		_mcu_status = "已连接，等待 MCU 求解器握手"
+		_update_status()
+		return
+	var hello: Dictionary = info["hello"]
+	var expected: String = _cg.solver_fingerprint(_cfg)
+	var actual: String = ""
+	var fingerprint: PackedByteArray = hello.get("fingerprint", PackedByteArray())
+	for i in range(8):
+		actual += "%02x" % int(fingerprint[i]) if i < fingerprint.size() else "??"
+	_mcu_fingerprint = actual
+	var firmware_type: int = int(hello.get("firmware_type", 0))
+	_mcu_firmware_type = "仿真" if firmware_type == 1 else (
+		"正式" if firmware_type == 0 else "未知")
+	_mcu_fingerprint_ok = actual == expected
+	if int(hello.get("protocol_version", -1)) != IK_SIM_PROTOCOL.VERSION \
+			or int(hello.get("algorithm_version", -1)) \
+				!= _cg.SOLVER_ALGORITHM_WIRE_VERSION \
+			or firmware_type != 1 or not _mcu_fingerprint_ok:
+		_mcu_ready = false
+		_mcu_hello_validated = false
+		_mcu_status = "MCU 固件类型、协议或构型指纹不匹配，请重新编译并烧录"
+	else:
+		_mcu_ready = false
+		_mcu_hello_validated = true
+		_apply_mcu_orientation_mask(int(hello.get("orientation_mask", 0)))
+		_mcu_diagnostics = {"position_dof": int(hello.get("position_dof", 0)),
+			"orientation_dof": int(hello.get("orientation_dof", 0))}
+		_mcu_status = "MCU 求解器已握手，正在读取上电关节状态"
+		# MCU owns joint state. PING obtains its jointHome/FK state after reboot;
+		# never overwrite it with the PC's stale rendering cache.
+		_mcu_link.send_ping()
+		_rebuild_params()
+	_update_status()
+
+func _on_mcu_state(state: Dictionary) -> void:
+	if not (_mcu_ready or _mcu_hello_validated) \
+			or int(state.get("joint_count", -1)) != _jc:
+		_mcu_status = "MCU state joint count does not match the current arm"
+		_mcu_ready = false
+		_mcu_hello_validated = false
+		_update_status()
+		return
+	var fingerprint: PackedByteArray = state.get("fingerprint", PackedByteArray())
+	var fingerprint_hex: String = fingerprint.hex_encode() if fingerprint.size() == 8 else ""
+	if fingerprint_hex != _cg.solver_fingerprint(_cfg):
+		_mcu_status = "MCU state fingerprint does not match the current arm"
+		_mcu_fingerprint = fingerprint_hex
+		_mcu_fingerprint_ok = false
+		_mcu_ready = false
+		_mcu_hello_validated = false
+		_update_status()
+		return
+	var values: Array = state.get("angles", [])
+	var position: Vector3 = state.get("position", Vector3(NAN, NAN, NAN))
+	var rpy: Vector3 = state.get("rpy", Vector3(NAN, NAN, NAN))
+	if values.size() < _jc or not position.is_finite() or not rpy.is_finite():
+		_mcu_status = "MCU state is incomplete or contains invalid numbers"
+		_mcu_ready = false
+		_mcu_hello_validated = false
+		_update_status()
+		return
+	for i in range(_jc):
+		if not is_finite(float(values[i])):
+			_mcu_status = "MCU joint state contains invalid numbers"
+			_mcu_ready = false
+			_mcu_hello_validated = false
+			_update_status()
+			return
+	for i in range(_jc):
+		_angles[i] = float(values[i])
+	_fk_angles = _angles.duplicate()
+	_apply_mcu_orientation_mask(int(state.get("orientation_mask_bits", 0)))
+	_mcu_actual = {"position": position, "rpy": rpy}
+	var request_kind: int = int(state.get("request_kind", 0))
+	var initial_state: bool = _mcu_hello_validated
+	if initial_state or request_kind in [IK_SIM_PROTOCOL.CMD_SET_JOINTS,
+			IK_SIM_PROTOCOL.CMD_HOME]:
+		_target = _mcu_actual.duplicate(true)
+	_mcu_diagnostics = state.duplicate(true)
+	var status: int = int(state.get("status", 0))
+	if request_kind == IK_SIM_PROTOCOL.CMD_HOME or (status & (
+			IK_SIM_PROTOCOL.STATUS_CLAMPED | IK_SIM_PROTOCOL.STATUS_NUMERIC_ERROR)) != 0:
+		_requested_angles = _angles.duplicate()
+	_reachable = (status & IK_SIM_PROTOCOL.STATUS_STALLED) == 0 \
+		and (status & IK_SIM_PROTOCOL.STATUS_NUMERIC_ERROR) == 0
+	var rendered: Dictionary = _tip_target(_angles)
+	var rendered_basis: Basis = _cg.basis_from_rpy_deg(rendered["rpy"])
+	var mcu_basis: Basis = _cg.basis_from_rpy_deg(_mcu_actual["rpy"])
+	var orientation_delta_deg: float = rad_to_deg(
+		(rendered_basis.transposed() * mcu_basis).get_rotation_quaternion().get_angle())
+	_render_model_mismatch = (rendered["position"] as Vector3).distance_to(
+		_mcu_actual["position"] as Vector3) > 1.0 or orientation_delta_deg > 1.0
+	if initial_state:
+		_mcu_hello_validated = false
+		_mcu_ready = true
+		_solver_stale = false
+		_mcu_status = "MCU 求解器已就绪"
+		_cancel_solver_reconnect()
+		_rebuild_params()
+	_render_arm()
+	_sync_param_widgets()
+	_update_status()
+
+
+func _apply_mcu_orientation_mask(bits: int) -> void:
+	_orientation_mask = {"roll": bool(bits & 1), "pitch": bool(bits & 2),
+		"yaw": bool(bits & 4)}
+	_orientation_reason = {}
+	for name in ["roll", "pitch", "yaw"]:
+		if not bool(_orientation_mask[name]):
+			_orientation_reason[name] = "MCU 诊断：该维度不能在保持 XYZ 时独立控制"
+
+func _on_mcu_error(message: String) -> void:
+	_mcu_ready = false
+	_mcu_hello_validated = false
+	_mcu_status = message
+	_update_status()
+	_schedule_solver_reconnect_retry()
+
+
+func _on_mcu_warning(message: String) -> void:
+	_mcu_status = message
+	_update_status()
+
+func _on_mcu_disconnected() -> void:
+	_mcu_ready = false
+	_mcu_hello_validated = false
+	if not is_queued_for_deletion() and not _solver_stale:
+		_mcu_status = "MCU 求解器已断开"
 
 
 func _build_control_editor(parent: Node) -> void:
@@ -1303,14 +1577,25 @@ func _build_control_editor(parent: Node) -> void:
 		func(value: float) -> void:
 			_cfg["joy_scale"] = str(value)
 			_emit_config_changed())
-	_add_config_spin(parent, "按键步长/周期", str(_cfg["keymove_speed"]), 0.1, 1000.0, 0.1,
+	_add_config_spin(parent, "位置按键步长 mm/周期", str(_cfg["keymove_speed"]), 0.1, 1000.0, 0.1,
 		func(value: float) -> void:
 			_cfg["keymove_speed"] = str(value)
 			_emit_config_changed())
-	var labels: Array[String] = ["末端 X", "末端 Y", "末端 Z", "姿态 Pitch"]
-	for i in range(4):
+	_add_config_spin(parent, "姿态按键步长 °/周期", str(_cfg["orientation_key_speed"]),
+		0.1, 90.0, 0.1, func(value: float) -> void:
+			_cfg["orientation_key_speed"] = str(value)
+			_emit_config_changed())
+	_add_toggle_row(parent, "右摇杆按下回初始角（键盘 Z）",
+		bool(_cfg.get("rocker2_home_enabled", false)), func(value: bool) -> void:
+			_cfg["rocker2_home_enabled"] = value
+			_emit_config_changed())
+	var labels: Array[String] = ["末端 X", "末端 Y", "末端 Z",
+		"姿态 Roll", "姿态 Pitch", "姿态 Yaw"]
+	var orientation_names: Array[String] = ["roll", "pitch", "yaw"]
+	for i in range(6):
 		_add_section(parent, labels[i])
-		var unavailable: bool = i == 3 and not bool(_orientation_mask.get("pitch", false))
+		var orientation_name: String = orientation_names[i - 3] if i >= 3 else ""
+		var unavailable: bool = i >= 3 and not bool(_orientation_mask.get(orientation_name, false))
 		for side in ["plus", "minus"]:
 			var option := _add_option_row(parent, "+" if side == "plus" else "-",
 				IK_CONFIG.MOVE_KEYS, str(_cfg["keymove"][i][side]),
@@ -1318,6 +1603,9 @@ func _build_control_editor(parent: Node) -> void:
 					_cfg["keymove"][i][side] = value
 					_emit_config_changed())
 			option.disabled = option.disabled or unavailable
+			if unavailable:
+				option.tooltip_text = str(_orientation_reason.get(orientation_name,
+					"当前构形无法独立控制该姿态维度"))
 	_build_diagnostics(parent)
 
 
@@ -1355,6 +1643,12 @@ func _add_slider_row(parent: Node, key: String, label_text: String,
 ## 滑块或数值框变动：先把对端同步过去（抑制回环），再按 key 写入状态
 func _on_param_changed(value: float, key: String, peer: Node) -> void:
 	if _syncing:
+		return
+	if (key in ["x", "y", "z", "roll", "pitch", "yaw"] \
+			or (key.begins_with("j") and key.substr(1).is_valid_int())) \
+			and not _mcu_ready:
+		_mcu_status = "机械臂控制已冻结，请先烧录并连接匹配的 MCU 求解器"
+		_update_status()
 		return
 	_syncing = true
 	if peer is Range:
@@ -1442,6 +1736,8 @@ func _on_link_length_changed(index: int, value: float) -> void:
 	if not _editable or index < 0 or index >= _joints.size():
 		return
 	_joints[index]["len"] = "%.2f" % maxf(value, 0.0)
+	_joint_slots[index] = _joints[index]
+	_mark_solver_stale()
 	_rebuild_arm()
 	_rebuild_static_geometry()
 	_update_config_label()
@@ -1524,7 +1820,7 @@ func _build_joint_calibration(parent: Node) -> void:
 	_add_section(parent, "关节调整与安装标定")
 	var intro := Label.new()
 	intro.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	intro.text = "拖动关节角会直接摆机械臂并同步末端目标；拖动上方 XYZ/φ 则使用逆解。"
+	intro.text = "拖动关节角会向 MCU 发送正解目标；上方 XYZ/Roll/Pitch/Yaw 发送逆解目标。"
 	parent.add_child(intro)
 	for i in range(_jc):
 		var rng: Array = _joint_slider_range(i)
@@ -1562,16 +1858,11 @@ func _build_joint_calibration(parent: Node) -> void:
 
 
 func _apply_joint_pose_from_editor() -> void:
-	var limited: Dictionary = _cg.clamp_angles_to_limits(_fk_angles.slice(0, _jc), _joints)
-	_angles = limited["angles"]
-	_clamped = limited["clamped"]
-	_reachable = true
-	_target = _tip_target(_angles)
-	for i in range(min(_angles.size(), _fk_angles.size())):
-		_fk_angles[i] = _angles[i]
-	_render_arm()
-	_sync_param_widgets()
-	_update_status()
+	if _mcu_ready:
+		_mcu_link.send_joints(_fk_angles.slice(0, _jc), _jc)
+	else:
+		_mcu_status = "未连接匹配的 MCU 求解器，关节命令未发送"
+		_update_status()
 
 
 ## 臂长编辑行（标定与预设模式共用）
@@ -1726,6 +2017,8 @@ func _calibrate_home_from_current() -> void:
 		return
 	for i in range(_jc):
 		_joints[i]["zero"] = "%.2f" % _angles[i]
+		_joint_slots[i] = _joints[i]
+	_mark_solver_stale()
 	_emit_config_changed()
 	_recompute()
 
@@ -1831,7 +2124,7 @@ func _p_float(p: Dictionary, key: String) -> float:
 
 
 func _goto_preset(idx: int) -> void:
-	if idx >= _presets.size():
+	if not _mcu_ready or idx >= _presets.size():
 		return
 	var p: Dictionary = _presets[idx]
 	_play_idx = -1
@@ -1857,11 +2150,14 @@ func _preset_coord_text(p: Dictionary) -> String:
 ## 把当前末端实际位置存为第 idx 个预设点位。
 ## 存实际末端（经限位钳位后的 FK 结果）而非目标值，否则存进去的点位本身就不可达。
 func _save_preset(idx: int) -> void:
-	if not _editable:
+	if not _editable or not _mcu_ready:
+		if not _mcu_ready:
+			_mcu_status = "保存当前姿态需要已连接且指纹匹配的 MCU 求解器"
+			_update_status()
 		return
 	while _presets.size() <= idx:
 		_presets.append(IK_CONFIG.default_preset(_presets.size()))
-	var tip: Dictionary = _tip_target(_angles)
+	var tip: Dictionary = _mcu_actual
 	var position: Vector3 = tip["position"]
 	var rpy: Vector3 = tip["rpy"]
 	var p: Dictionary = _presets[idx]
@@ -1897,6 +2193,9 @@ func _clear_presets() -> void:
 
 
 func _start_play() -> void:
+	if not _mcu_ready:
+		_play_idx = -1
+		return
 	var active: Array = _active_presets()
 	if active.is_empty():
 		return
@@ -1979,15 +2278,28 @@ func _controller_tick() -> void:
 	_update_remote_mode()
 	_calculate_chassis_duty()
 	_integrate_chassis()
+	if not _mcu_ready:
+		# Chassis and gripper simulation stay available, but arm commands are
+		# disabled until HELLO has validated firmware, algorithm and fingerprint.
+		_duty_aux_motor.fill(0)
+		_home_key_held = false
+		_update_status()
+		return
+	var home_hit: bool = _update_remote_home()
 	if _inverse_mode:
 		_duty_aux_motor.fill(0)
-		var preset_hit: bool = _apply_remote_preset()
-		if not preset_hit:
-			_apply_remote_ik_inputs()
-		_apply_controller_ik_step()
+		if not home_hit:
+			var preset_hit: bool = _apply_remote_preset()
+			if not preset_hit:
+				_apply_remote_ik_inputs()
+			if _mcu_ready:
+				_mcu_link.send_pose(_target["position"], _target["rpy"])
+			else:
+				_update_status()
 	else:
-		_apply_forward_mapping()
-		_recompute()
+		if not home_hit and _mcu_ready:
+			_apply_forward_mapping()
+			_mcu_link.send_joints(_requested_angles, _jc)
 
 
 func _update_remote_gripper() -> void:
@@ -2008,9 +2320,35 @@ func _update_remote_mode() -> void:
 		_inverse_mode = not _inverse_mode
 		_mode_key_held = true
 		if _inverse_mode:
-			_target = _tip_target(_angles)
+			_target = _mcu_actual.duplicate(true) if _mcu_ready else _target
+		else:
+			_requested_angles = _angles.duplicate()
 	elif not pressed:
 		_mode_key_held = false
+
+
+## ROCKER2（键盘 Z / 手柄右摇杆按键）按下边沿直接恢复关节初始角。
+## 返回 true 时，本周期跳过机械臂的其他控制，保证回中命令优先。
+func _update_remote_home() -> bool:
+	if not bool(_cfg.get("rocker2_home_enabled", false)):
+		_home_key_held = false
+		return false
+	var pressed: bool = _remote_pressed_id("ROCKER2")
+	if pressed and not _home_key_held:
+		_home_key_held = true
+		_return_arm_home()
+		return true
+	if not pressed:
+		_home_key_held = false
+	return false
+
+
+func _return_arm_home() -> void:
+	if _mcu_ready:
+		_mcu_link.send_home()
+	else:
+		_mcu_status = "未连接匹配的 MCU 求解器，回中命令未发送"
+		_update_status()
 
 
 func _calculate_chassis_duty() -> void:
@@ -2087,7 +2425,6 @@ func _apply_preset_target(preset: Dictionary) -> void:
 
 
 func _apply_remote_ik_inputs() -> void:
-	var previous: Dictionary = _target.duplicate(true)
 	var joy_scale: float = _cfg_float("joy_scale", 5.0)
 	var position: Vector3 = _target["position"]
 	for i in range(3):
@@ -2095,9 +2432,12 @@ func _apply_remote_ik_inputs() -> void:
 		position[i] += float(_remote_joy_value(mapping)) * joy_scale / ROKER_FULL
 	_target["position"] = position
 	var key_speed: float = _cfg_float("keymove_speed", 2.0)
+	var orientation_speed: float = _cfg_float("orientation_key_speed", 1.0)
 	var keymove: Array = _cfg.get("keymove", [])
-	for i in range(min(keymove.size(), 4)):
-		if i == 3 and not bool(_orientation_mask.get("pitch", false)):
+	var orientation_names: Array[String] = ["roll", "pitch", "yaw"]
+	for i in range(min(keymove.size(), 6)):
+		var orientation_name: String = orientation_names[i - 3] if i >= 3 else ""
+		if i >= 3 and not bool(_orientation_mask.get(orientation_name, false)):
 			continue
 		var pressed_plus: bool = _remote_key(str(keymove[i].get("plus", "不使用")))
 		var pressed_minus: bool = _remote_key(str(keymove[i].get("minus", "不使用")))
@@ -2108,25 +2448,14 @@ func _apply_remote_ik_inputs() -> void:
 			_target["position"] = position
 		else:
 			var rpy: Vector3 = _target["rpy"]
-			rpy.y = clampf(rpy.y + (key_speed if pressed_plus else 0.0)
-				- (key_speed if pressed_minus else 0.0), -90.0, 90.0)
+			var delta: float = (orientation_speed if pressed_plus else 0.0) \
+				- (orientation_speed if pressed_minus else 0.0)
+			var rpy_index: int = i - 3
+			if rpy_index == 1:
+				rpy.y = clampf(rpy.y + delta, -90.0, 90.0)
+			else:
+				rpy[rpy_index] = wrapf(rpy[rpy_index] + delta, -180.0, 180.0)
 			_target["rpy"] = rpy
-	if _target_too_far(previous):
-		_target = previous
-
-
-func _apply_controller_ik_step() -> void:
-	var result: Dictionary = _cg.solve_ik_pose(_target["position"], _target_basis(),
-		_orientation_mask, _angles, _joints, _jc)
-	var limited: Dictionary = _cg.clamp_angles_to_limits(result["angles"], _joints)
-	_angles = limited["angles"]
-	_clamped = limited["clamped"]
-	_reachable = bool(result.get("reachable", false))
-	for i in range(min(_angles.size(), _fk_angles.size())):
-		_fk_angles[i] = _angles[i]
-	_render_arm()
-	_sync_param_widgets()
-	_update_status()
 
 
 func _apply_forward_mapping() -> void:
@@ -2145,11 +2474,12 @@ func _apply_forward_mapping() -> void:
 		var parameter: float = _number_or(str(row.get("param", "0")), 0.0)
 		if joint_by_io.has(target) and mode == "增量":
 			var joint: int = int(joint_by_io[target])
-			_angles[joint] += direction * absf(parameter) * (input_value / ROKER_FULL if joystick else input_value)
+			_requested_angles[joint] += direction * absf(parameter) * (
+				input_value / ROKER_FULL if joystick else input_value)
 			continue
 		if joint_by_io.has(target) and mode == "直接" and not joystick:
 			if input_value != 0.0:
-				_angles[int(joint_by_io[target])] = parameter
+				_requested_angles[int(joint_by_io[target])] = parameter
 			continue
 		_apply_forward_aux(target, mode, direction, parameter, input_value, joystick)
 	for i in range(_duty_aux_servo.size()):
@@ -2234,6 +2564,9 @@ func _point_over_ui(pointer: Vector2) -> bool:
 
 ## 预设点位巡航：在目标空间线性插值，走完一个点位停 0.4s 再去下一个
 func _step_play(delta: float) -> void:
+	if not _mcu_ready:
+		_play_idx = -1
+		return
 	var active: Array = _active_presets()
 	if active.is_empty():
 		_play_idx = -1
@@ -2429,6 +2762,8 @@ func _handle_mouse_motion(e: InputEventMouseMotion) -> void:
 ## WASD 走水平面（W/S 是机器人 +X/-X，A/D 是 +Y/-Y），↑↓ 走 Z 高度。
 ## 按住 Shift 加速一倍，按住 Alt 减速到 1/4，便于粗调后微调。
 func _step_key_move(delta: float) -> void:
+	if not _mcu_ready:
+		return
 	var d: Vector3 = _key_move_axis()
 	var dpitch: float = _key_pitch_axis()
 	if d == Vector3.ZERO and is_zero_approx(dpitch):

@@ -25,6 +25,8 @@ const PROJECT_DST: String = "user://stc32g/Projects/ROBOMASTER_INFANTRY"
 ## 工程师项目模板
 const PROJECT_ENGINEER_SRC: String = "res://stc32g/Projects/ROBOMASTER_ENGINEER"
 const PROJECT_ENGINEER_DST: String = "user://stc32g/Projects/ROBOMASTER_ENGINEER"
+const PROJECT_ENGINEER_SIM_SRC: String = "res://stc32g/Projects/ROBOMASTER_ENGINEER"
+const PROJECT_ENGINEER_SIM_DST: String = "user://stc32g/Projects/ROBOMASTER_ENGINEER_SIM"
 ## 库文件（uvproj 通过 ..\..\..\Libraries\ 相对引用，必须保持 stc32g/ 层级）
 const LIBRARIES_SRC: String = "res://stc32g/Libraries"
 const LIBRARIES_DST: String = "user://stc32g/Libraries"
@@ -53,7 +55,7 @@ const TOOLCHAIN_VERSION: String = "keil_noarm_v3"
 ##     ?CO?MAIN（命令字常量）填进 0xFF1003，而那里是 interrupt 0
 ##     的中断入口（bootloader 蹦床 MAPISR 0003H 的转发目标）。
 ##     必须跳过整个中断向量表区（67 个入口 x 8 字节 = 536）。
-const PROJECT_VERSION: String = "proj_v5_nrf_init_timeout"
+const PROJECT_VERSION: String = "proj_v6_mcu_ik_sim"
 
 ## STC 烧录脚本路径（Python）
 const STCFLASH_SRC: String = "res://stc32g/toolchain/stcflash"
@@ -61,9 +63,9 @@ const STCFLASH_SRC: String = "res://stc32g/toolchain/stcflash"
 const STCFLASH_DST: String = "user://stcflash"
 
 ## bootloader 的波特率。它在 PIE_BOOTLOADER/USER/inc/config.h 里由
-## `BAUD = 65536 - FOSC/4/115200` 编译期写死，改那边必须同步改这里。
+## `BAUD = 65536 - FOSC/4/230400` 编译期写死，改那边必须同步改这里。
 ## 蓝牙模块也必须配成同一个波特率。
-const DEFAULT_BOOT_BAUD: int = 115200
+const DEFAULT_BOOT_BAUD: int = 230400
 ## App 的 UART1 波特率，用于发 @PIEIAP# 触发命令。
 ##
 ## 230400 是项目既有约定（见 docs/RM电控指南.md 与四个生成器的 UART_Init），
@@ -71,9 +73,7 @@ const DEFAULT_BOOT_BAUD: int = 115200
 ## 触发字必须按这个波特率发，否则 App 的 UART1 中断收不到，
 ## 表现为"bootloader 没有响应"（踩过：把它改成 115200 后下载全失败）。
 ##
-## 于是下载过程有一次波特率切换：230400 发触发字 → 115200 跟 bootloader 通信。
-## **蓝牙链路上这个切换做不到**（模块波特率配死），所以走蓝牙时必须让
-## App 与 bootloader 同为 115200，见 bluetooth_baud_note()。
+## App 与新版 bootloader 已统一为 230400，USB 与蓝牙下载都不再中途切速。
 const DEFAULT_APP_BAUD: int = 230400
 
 ## UV4 可执行文件候选名，按优先级排序：
@@ -136,6 +136,7 @@ func ensure_deployed() -> bool:
 	for pair in [
 		[PROJECT_SRC, PROJECT_DST, "项目模板"],
 		[PROJECT_ENGINEER_SRC, PROJECT_ENGINEER_DST, "工程项目模板"],
+		[PROJECT_ENGINEER_SIM_SRC, PROJECT_ENGINEER_SIM_DST, "工程仿真项目模板"],
 	]:
 		if need_redeploy or not _project_deployed(str(pair[1])):
 			if not _copy_dir_recursive(str(pair[0]), str(pair[1])):
@@ -437,10 +438,13 @@ func ensure_stcflash_deployed() -> bool:
 
 
 ## 探测系统 Python 可执行文件路径。
-## 优先级：python3 > python > py
+## Windows 优先 python/py，避免探测通常不存在的 python3 时污染 Godot 日志；
+## 其他平台仍优先 python3。
 ## 返回绝对路径，找不到返回空串。
 func find_python() -> String:
-	for name in ["python3", "python", "py"]:
+	var candidates := PackedStringArray(["python", "py", "python3"] \
+		if OS.get_name() == "Windows" else ["python3", "python", "py"])
+	for name in candidates:
 		var output: Array = []
 		var exit_code: int = OS.execute(name, ["--version"], output, true)
 		if exit_code == 0:
@@ -538,7 +542,7 @@ except Exception as e:
 ## app_baud: 用户程序串口波特率（发 @STCISP#）
 ## isp_baud: ISP 监控程序通信波特率（发 0x7F / 协议包）
 ## mode: "uart" 软复位触发；"uart-power" 等待断电上电
-func download_hex_uart(hex_path: String, com_port: String, app_baud: int = 230400, isp_baud: int = 115200, mode: String = "uart") -> Dictionary:
+func download_hex_uart(hex_path: String, com_port: String, app_baud: int = 230400, isp_baud: int = 230400, mode: String = "uart") -> Dictionary:
 	var py: String = find_python()
 	if py.is_empty():
 		return {"ok": false, "log": "未找到 Python"}
@@ -603,12 +607,20 @@ func download_hex_iap(hex_path: String, com_port: String,
 
 	# 脚本退出码可控，以它为准；日志关键字只作兜底
 	var ok: bool = (exit_code == 0) or log_text.contains("烧录成功")
+	var stage: String = "done" if ok else _classify_iap_failure(log_text)
+	# USB 旧板兼容探测：只识别并明确提示物理升级，不继续用旧速率下载。
+	if not ok and stage == "connect" and boot_baud == DEFAULT_BOOT_BAUD:
+		var old_probe: Dictionary = probe_bootloader(com_port, app_baud, 115200)
+		if bool(old_probe.get("ok", false)) and int(old_probe.get("version", 0)) < 0x0200:
+			stage = "bootloader_upgrade"
+			log_text += "\n检测到旧 115200 bootloader（版本 0x%04X）。" % int(old_probe["version"])
+			log_text += "\n请使用官方 STC-ISP 物理升级一次；旧版不支持蓝牙一键重烧。\n"
 
 	return {
 		"ok": ok,
 		"exit": exit_code,
 		"log": log_text,
-		"stage": "done" if ok else _classify_iap_failure(log_text),
+		"stage": stage,
 		"streamed": on_log_line.is_valid(),
 	}
 
@@ -930,20 +942,13 @@ func _kind_name(kind: String) -> String:
 
 ## 走蓝牙时的波特率限制说明。
 ##
-## 下载过程正常需要两段波特率：230400 发触发字给 App，
-## 115200 跟 bootloader 通信。USB 转串口可以随时切，蓝牙模块不行 ——
-## 它的波特率在配对时就固定了，中途切换会让链路直接失联。
-##
-## 所以蓝牙链路要么把 App 也改成 115200（改四个生成器的 UART_Init），
-## 要么把 bootloader 改成 230400（改 config.h 后重新烧底）。
-## 两者都需要人工决定，不能在下载时自动处理，故只给提示。
+## 新版 App、bootloader 与蓝牙模块统一使用 230400，不再中途切速。
+## 旧 115200 bootloader 必须通过官方 STC-ISP 物理升级一次。
 func bluetooth_baud_note() -> PackedStringArray:
 	return PackedStringArray([
-		"检测到走蓝牙链路。注意波特率限制：",
-		"  下载需要先用 %d 发触发命令，再用 %d 与引导程序通信，"
-			% [DEFAULT_APP_BAUD, DEFAULT_BOOT_BAUD],
-		"  而蓝牙模块的波特率是配对时固定的，中途切不了。",
-		"  若下载失败，需要把两端统一成同一个波特率（改代码后重新烧底）。",
+		"蓝牙链路使用统一的 %d 波特率。" % DEFAULT_BOOT_BAUD,
+		"若板上仍是旧 115200 bootloader，蓝牙无法自动升级；",
+		"请先通过官方 STC-ISP 物理烧录一次新版 bootloader。",
 	])
 
 

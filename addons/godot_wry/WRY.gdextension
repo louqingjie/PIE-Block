@@ -1,7 +1,9 @@
 [configuration]
 entry_symbol = "gdext_rust_init"
 compatibility_minimum = 4.1
-reloadable = true
+# WebView owns native WebView2 window resources and cannot be hot reloaded.
+# Godot otherwise attempts an unsupported extension reload while rescanning.
+reloadable = false
 
 [libraries]
 linux.debug.x86_64     = "bin/x86_64-unknown-linux-gnu/libgodot_wry.so"

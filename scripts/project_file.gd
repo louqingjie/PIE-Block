@@ -18,7 +18,7 @@ const EXT: String = "pieproj"
 ## 格式版本，将来迁移用
 const IK_CONFIG = preload("res://scripts/engineer_ik_config.gd")
 
-const FORMAT_VERSION: int = 6
+const FORMAT_VERSION: int = 7
 const GUIDE_STEP_COUNT: int = 7
 
 # ------------------------------------------------------------------ 项目类型
@@ -104,6 +104,7 @@ static func _default_workflow() -> Dictionary:
 		"checked_hash": "",
 		"built_hash": "",
 		"flashed_hash": "",
+		"firmware_mode": "unknown",
 		"hardware_tested": false,
 		"guide_completed": [false, false, false, false, false, false, false],
 	}
@@ -117,6 +118,8 @@ static func normalize_workflow(raw: Variant) -> Dictionary:
 	workflow["checked_hash"] = str(raw.get("checked_hash", ""))
 	workflow["built_hash"] = str(raw.get("built_hash", ""))
 	workflow["flashed_hash"] = str(raw.get("flashed_hash", ""))
+	var firmware_mode: String = str(raw.get("firmware_mode", "unknown"))
+	workflow["firmware_mode"] = firmware_mode if firmware_mode in ["unknown", "simulator", "production"] else "unknown"
 	workflow["hardware_tested"] = bool(raw.get("hardware_tested", false))
 	var raw_progress: Variant = raw.get("guide_completed", [])
 	if raw_progress is Array:

@@ -120,20 +120,17 @@ scripts/codegen/codegen_base.gd 的 APP_BAUD（它写进生成的 C 代码）。
 错误信息离真因很远（踩过两次：先在 GDScript 侧写成 115200，改回后又漏了这里）。
 """
 
-DEFAULT_BOOT_BAUD = 115200
+DEFAULT_BOOT_BAUD = 230400
 """bootloader 的波特率，由 PIE_BOOTLOADER/USER/inc/config.h 编译期写死。
 
-与 App 波特率不同，所以下载过程有一次切换：
-230400 发触发字 → 115200 与 bootloader 通信。
-蓝牙链路做不到这个切换（模块波特率配对时固定），走蓝牙需把两端统一。
+与 App 固定使用相同的 230400，USB 与蓝牙均不再中途切速。
 """
 
 TRIGGER_SETTLE_MIN = 0.05
-"""触发字发送完成后、切换波特率前的最短等待时间。
+"""触发字发送完成后、连接 bootloader 前的最短等待时间。
 
 Windows CH340 的 flush() 只保证数据已交给驱动，不保证 USB 串口芯片已经把
-最后几个字节按旧波特率发完。实测 flush 后立刻从 230400 切到 115200 会让
-@PIEIAP# 尾部损坏，App 收不到完整命令；等待 50ms 后稳定进入 bootloader。
+最后几个字节发完。等待 50ms 后再握手，确保 App 已稳定进入 bootloader。
 """
 
 
@@ -933,7 +930,11 @@ def main(argv) -> int:
 
     try:
         sess.trigger()
-        sess.connect()
+        version = sess.connect()
+        if version < 0x0200:
+            raise ProtocolError(
+                "检测到旧 bootloader 0x%04X；请使用官方 STC-ISP 物理升级到 0x0200"
+                % version)
         sess.download(chunks)
         print("烧录成功")
         return 0

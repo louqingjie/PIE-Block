@@ -94,13 +94,13 @@ def main(argv=None):
     ap.add_argument("action", choices=["connect", "erase", "read", "reboot"])
     ap.add_argument("addr", nargs="?", help="read 的 IAP 起始地址，如 0x11000")
     ap.add_argument("size", nargs="?", type=int, help="read 的字节数")
-    ap.add_argument("--baud", type=int, default=115200)
+    ap.add_argument("--baud", type=int, default=230400)
     args = ap.parse_args(argv)
 
     print(f"串口 {args.port} @ {args.baud}")
 
     if args.action == "connect":
-        print("CONNECT: 期望回 status=OK, payload=01 00 (LDR_VERSION 0x0100)")
+        print("CONNECT: 期望回 status=OK, payload=02 00 (LDR_VERSION 0x0200)")
         got = request(args.port, args.baud, CMD_CONNECT)
     elif args.action == "erase":
         print("ERASE: 擦除 App 区（bootloader 自身受 iap_check_addr 保护）")
@@ -135,7 +135,7 @@ def main(argv=None):
     if args.action == "connect" and status == 0 and len(payload) == 2:
         ver = (payload[0] << 8) | payload[1]
         print(f"      bootloader 版本 {ver:#06x} "
-              f"({'与 LDR_VERSION 一致' if ver == 0x0100 else '与预期 0x0100 不符'})")
+              f"({'与 LDR_VERSION 一致' if ver == 0x0200 else '与预期 0x0200 不符'})")
     return 0 if status == 0 else 2
 
 

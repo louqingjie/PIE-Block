@@ -29,6 +29,9 @@ extern char code STCISPCMD[];
 extern uint8_t isp_cmd_index;
 extern volatile uint8_t iapDownloadReq;
 extern void iapEnterDownload(void);
+/* Generated applications may consume non-IAP UART bytes (the IK simulator
+ * uses this hook). Normal production applications provide a no-op function. */
+extern void IKSimRxByte(uint8_t dat);
 void UART1_Isr() interrupt 4
 {
 	char dat;
@@ -61,6 +64,7 @@ void UART1_Isr() interrupt 4
 			if (dat == STCISPCMD[isp_cmd_index])
 				isp_cmd_index++;
 		}
+		IKSimRxByte((uint8_t)dat);
 		// 接收数据寄存器为：SBUF
 	}
 }

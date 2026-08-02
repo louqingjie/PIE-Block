@@ -102,8 +102,8 @@ func _initialize() -> void:
 
 	# --- 波特率常量
 	# boot 侧必须与 PIE_BOOTLOADER/USER/inc/config.h 的 BAUD 一致
-	if TC.DEFAULT_BOOT_BAUD != 115200:
-		fails.append("boot 波特率应为 115200（与 config.h 一致）")
+	if TC.DEFAULT_BOOT_BAUD != 230400:
+		fails.append("boot 波特率应为 230400（与 config.h 一致）")
 	# App 侧必须与四个生成器的 UART_Init 一致，否则触发字发不进去。
 	# 曾经把它改成 115200 想统一，结果 App 收不到触发字，
 	# 下载全部失败且报错是"bootloader 没有响应"，离真因很远。

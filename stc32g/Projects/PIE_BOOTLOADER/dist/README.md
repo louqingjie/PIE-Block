@@ -19,7 +19,7 @@
 后两项最容易漏，两个都漏不了：
 
 - **频率必须是 33.1776MHz**。bootloader 的波特率是按这个主频算的
-  （`BAUD = 65536 - FOSC/4/115200`），频率不对串口就通不了。
+  （`BAUD = 65536 - FOSC/4/230400`），频率不对串口就通不了。
 - **EEPROM 必须设 128K**，否则 IAP 操作全部返回 `CMD_FAIL`，无法擦写。
 - **烧完必须断电重新上电**，EEPROM 大小的设置只有重新上电才生效。
   官方文档专门标注了"重要，容易被忽略"。只按复位键没用。
@@ -30,7 +30,7 @@
 python ../../../toolchain/stcflash/bootloader_probe.py COM11 connect
 ```
 
-期望输出 `status=OK`、`payload=01 00`（版本号 0x0100）。
+期望输出 `status=OK`、`payload=02 00`（版本号 0x0200）。
 
 此时板上还没有用户程序，bootloader 会因为"App 首字节不是 LJMP"而停在下载模式，
 这是正常的。

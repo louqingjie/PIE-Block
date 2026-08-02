@@ -1,5 +1,11 @@
 // 步兵机器人操作代码
 #include "main.h"
+
+/* UART hook used by the generated MCU IK simulator. The normal engineer
+ * firmware does not consume host protocol bytes. */
+void IKSimRxByte(uint8_t dat)
+{
+}
 #include "MATH.H"
 // ========================= 参数区 =========================
 uint16_t maxSpeed                   = 4000;

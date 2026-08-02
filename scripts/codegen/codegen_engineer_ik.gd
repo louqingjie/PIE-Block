@@ -1,10 +1,9 @@
 class_name CodeGenEngineerIK
 extends CodeGenBase
-
 ## 工程机器人逆解算代码生成器。
 ## 根据配置字典生成工程机械臂逆解算 main.c 代码。
 ## 支持 2~6 关节任意 Pitch/Roll/Yaw 搭配，统一使用雅可比转置数值逆解。
-## 预设点位与摇杆实时目标使用同一套求解器，避免仿真、预计算和真机分叉。
+## 预设点位与摇杆实时目标都由 MCU 上的同一套求解器处理。
 
 
 # 舵机 50Hz 占空比参数继承自 CodeGenBase（SERVO_DUTY_MIN/MID/MAX）
@@ -35,6 +34,97 @@ const MAX_JOINTS: int = 6
 const LOOP_PERIOD_MS: int = 10
 # 发送板间指令后必须留给硬件的响应延时(ms)
 const EXP_SEND_DELAY_MS: int = 5
+const SOLVER_PROTOCOL_VERSION: int = 1
+const SOLVER_ALGORITHM_VERSION: String = "jacobi-pose-v2"
+const SOLVER_ALGORITHM_WIRE_VERSION: int = 2
+
+## 只影响运动学核心的配置指纹。控制映射、IO 和夹爪变化不需要重烧求解器。
+func solver_fingerprint(cfg: Dictionary) -> String:
+	var jc: int = clampi(int(cfg.get("joint_count", 2)), 2, MAX_JOINTS)
+	var joints: Array = cfg.get("joints", [])
+	var canonical: String = SOLVER_ALGORITHM_VERSION + ";jc=" + str(jc)
+	for i in range(jc):
+		var joint: Dictionary = joints[i] if i < joints.size() else {}
+		canonical += ";%s,%.6f,%.6f,%.6f,%.6f" % [
+			str(joint.get("axis", "Pitch")),
+			_to_float(joint.get("len", "0"), 0.0),
+			_to_float(joint.get("zero", "0"), 0.0),
+			_to_float(joint.get("min", "-90"), -90.0),
+			_to_float(joint.get("max", "90"), 90.0)]
+	var hash_ctx := HashingContext.new()
+	hash_ctx.start(HashingContext.HASH_SHA256)
+	hash_ctx.update(canonical.to_utf8_buffer())
+	return hash_ctx.finish().hex_encode().substr(0, 16)
+
+## 生成不初始化任何执行器的 MCU 求解器固件。
+## 该入口与正式工程共用 FK/IK 生成函数；差异仅在输入输出外壳。
+func generate_simulator(cfg: Dictionary) -> String:
+	var normalized: Dictionary = cfg.duplicate(true)
+	var jc: int = clampi(int(normalized.get("joint_count", 2)), 2, MAX_JOINTS)
+	var joints: Array = normalized.get("joints", [])
+	var lens: Array = joint_lengths(joints, jc)
+	var mask: Dictionary = {"roll": true, "pitch": true, "yaw": true}
+	var fingerprint: String = solver_fingerprint(normalized)
+	var code: String = ""
+	code += "// Pie-Block MCU IK simulator firmware; NO actuator IO is initialized.\n"
+	code += "#include \"main.h\"\n#include \"MATH.H\"\n"
+	code += "#define JOINT_COUNT %d\n#define IK_EPS 0.001f\n" % jc
+	code += "#define DEG_TO_RAD 0.0174532925f\n#define RAD_TO_DEG 57.29577951f\n"
+	code += "#define IK_MAX_STEP_DEG %.1ff\n" % JACOBI_MAX_STEP_DEG
+	code += "#define ORIENTATION_WEIGHT %.2ff\n" % _orientation_weight(lens)
+	code += "#define SOLVER_PROTOCOL_VERSION %d\n" % SOLVER_PROTOCOL_VERSION
+	code += "#define SOLVER_ALGORITHM_VERSION %d\n" % SOLVER_ALGORITHM_WIRE_VERSION
+	code += "#define FRAME_DELIMITER 0x7e\n#define FRAME_ESCAPE 0x7d\n"
+	code += "#define RESP_HELLO 0x81\n#define RESP_STATE 0x82\n#define RESP_ERROR 0xff\n"
+	code += "float jointAngle[%d] = {" % jc
+	for i in range(jc):
+		var home: float = _to_float(joints[i].get("zero", "0"), 0.0) if i < joints.size() else 0.0
+		if i > 0: code += ", "
+		code += "%.3ff" % home
+	code += "};\n"
+	code += "float targetX, targetY, targetZ, targetRoll, targetPitch, targetYaw;\n"
+	code += "uint8_t Channal = 0; /* nrf24l01.obj link placeholder; NRF is never initialized. */\n"
+	code += "uint8_t solverMask = 0, solverPositionDof = 0, solverOrientationDof = 0;\n"
+	code += "uint8_t solverStatus = 1, ikDiagnosing = 0, ik_reachable = 1;\n"
+	code += _build_joint_config_arrays(joints, jc)
+	code += _build_kinematics_arrays(joints, jc)
+	code += generate_kinematics_core(jc, joints, lens)
+	code += _gen_isp_monitor()
+	code += _gen_sim_protocol(fingerprint, jc)
+	code += "void main(void)\n{\n"
+	code += "    Board_Init();\n"
+	code += _gen_uart_init_first()
+	code += "    ik_diagnose();\n"
+	code += "    IkSimSyncTarget();\n"
+	code += "    while (1)\n    {\n"
+	code += "        if (ikSimFrameReady) IkSimProcessFrame();\n"
+	code += "        if (iapDownloadReq) iapEnterDownload();\n"
+	code += "    }\n}\n"
+	return code
+
+func _gen_sim_protocol(fingerprint: String, jc: int) -> String:
+	var s: String = ""
+	s += "static uint8_t xdata ikSimFrame[128];\n"
+	s += "static uint8_t xdata ikSimTx[128], ikSimPayload[96];\n"
+	s += "volatile uint8_t ikSimFrameReady = 0;\n"
+	s += "static uint8_t ikSimLen = 0, ikSimInFrame = 0, ikSimEscaped = 0;\n"
+	s += "static const uint8_t solverFingerprint[8] = {"
+	for i in range(0, 16, 2):
+		if i > 0: s += ", "
+		s += "0x%s" % fingerprint.substr(i, 2)
+	s += "};\n"
+	s += "static uint16_t IkSimCrc(uint8_t *p, uint8_t n) { uint16_t c=0xffff; uint8_t i,b; for(i=0;i<n;i++){c^=(uint16_t)p[i]<<8;for(b=0;b<8;b++)c=(c&0x8000)?(uint16_t)((c<<1)^0x1021):(uint16_t)(c<<1);}return c;}\n"
+	s += "static uint8_t IkSimReserved(uint8_t b) { return b==0x7e||b==0x7d||b==0xab||b==0xbc||b==0x40||b==0x50||b==0x49||b==0x45||b==0x41||b==0x23; }\n"
+	s += "static void IkSimPut(uint8_t b) { if(IkSimReserved(b)){UART_PutChar(UART_1,0x7d);UART_PutChar(UART_1,b^0x20);}else UART_PutChar(UART_1,b); }\n"
+	s += "static void IkSimReply(uint8_t type, uint16_t seq, uint8_t *payload, uint8_t n) { uint8_t i=0,total; uint16_t c;ikSimTx[i++]=SOLVER_PROTOCOL_VERSION;ikSimTx[i++]=type;ikSimTx[i++]=(uint8_t)seq;ikSimTx[i++]=(uint8_t)(seq>>8);ikSimTx[i++]=n;for(;i<5+n;i++)ikSimTx[i]=payload[i-5];c=IkSimCrc(ikSimTx,i);ikSimTx[i++]=(uint8_t)c;ikSimTx[i++]=(uint8_t)(c>>8);total=i;UART_PutChar(UART_1,FRAME_DELIMITER);for(i=0;i<total;i++)IkSimPut(ikSimTx[i]);UART_PutChar(UART_1,FRAME_DELIMITER); }\n"
+	s += "static void IkSimPutFloat(uint8_t *p, uint8_t *at, float v) { union { float f; uint32_t i; } u; u.f=v;p[(*at)++]=(uint8_t)(u.i>>24);p[(*at)++]=(uint8_t)(u.i>>16);p[(*at)++]=(uint8_t)(u.i>>8);p[(*at)++]=(uint8_t)u.i; }\n"
+	s += "static float IkSimGetFloat(uint8_t *p) { union { float f; uint32_t i; } u;u.i=((uint32_t)p[0]<<24)|((uint32_t)p[1]<<16)|((uint32_t)p[2]<<8)|(uint32_t)p[3];return u.f; }\n"
+	s += "static uint8_t IkSimFinite(float v) { return v==v&&v<3.402823e38f&&v> -3.402823e38f; }\n"
+	s += "void IKSimRxByte(uint8_t b){if(b==FRAME_DELIMITER){if(ikSimFrameReady)return;if(ikSimInFrame&&ikSimLen>0){ikSimFrameReady=1;ikSimInFrame=0;return;}ikSimInFrame=1;ikSimEscaped=0;ikSimLen=0;return;}if(!ikSimInFrame||ikSimFrameReady)return;if(b==FRAME_ESCAPE){ikSimEscaped=1;return;}if(ikSimEscaped){b^=0x20;ikSimEscaped=0;}if(ikSimLen<sizeof(ikSimFrame))ikSimFrame[ikSimLen++]=b;else{ikSimInFrame=0;ikSimLen=0;}}\n"
+	s += "static void IkSimSyncTarget(void){float ps;ik_fk();targetX=ikPts[JOINT_COUNT][0];targetY=ikPts[JOINT_COUNT][1];targetZ=ikPts[JOINT_COUNT][2];targetRoll=atan2(ikBasis[2][1],ikBasis[2][2])*RAD_TO_DEG;ps=ikBasis[2][0];if(ps>1.0f)ps=1.0f;if(ps< -1.0f)ps=-1.0f;targetPitch=asin(ps)*RAD_TO_DEG;targetYaw=atan2(ikBasis[1][0],ikBasis[0][0])*RAD_TO_DEG;}\n"
+	s += "static void IkSimState(uint8_t type,uint16_t seq){uint8_t n=0,i,t;float r,pit,y,pe,er=0.0f,ep=0.0f,ey=0.0f,e;ik_fk();r=atan2(ikBasis[2][1],ikBasis[2][2])*RAD_TO_DEG;pit=ikBasis[2][0];if(pit>1.0f)pit=1.0f;if(pit< -1.0f)pit=-1.0f;pit=asin(pit)*RAD_TO_DEG;y=atan2(ikBasis[1][0],ikBasis[0][0])*RAD_TO_DEG;pe=sqrt((targetX-ikPts[JOINT_COUNT][0])*(targetX-ikPts[JOINT_COUNT][0])+(targetY-ikPts[JOINT_COUNT][1])*(targetY-ikPts[JOINT_COUNT][1])+(targetZ-ikPts[JOINT_COUNT][2])*(targetZ-ikPts[JOINT_COUNT][2]));ik_orientation_error(targetRoll,targetPitch,targetYaw);ik_build_position_cols();ikRequestedMask=solverMask;ik_build_tasks();for(t=0;t<ikTaskCount;t++){e=(ikOriErr[0]*ikTaskAxes[t][0]+ikOriErr[1]*ikTaskAxes[t][1]+ikOriErr[2]*ikTaskAxes[t][2])*RAD_TO_DEG;if(ikTaskKind[t]==0)ep=e;else if(ikTaskKind[t]==1)ey=e;else er=e;}if(pe<1.0f&&(!(solverMask&1)||fabs(er)<1.0f)&&(!(solverMask&2)||fabs(ep)<1.0f)&&(!(solverMask&4)||fabs(ey)<1.0f))solverStatus|=2;ikSimPayload[n++]=solverStatus;ikSimPayload[n++]=JOINT_COUNT;ikSimPayload[n++]=solverPositionDof;ikSimPayload[n++]=solverOrientationDof;ikSimPayload[n++]=solverMask;for(i=0;i<8;i++)ikSimPayload[n++]=solverFingerprint[i];for(i=0;i<JOINT_COUNT;i++)IkSimPutFloat(ikSimPayload,&n,jointAngle[i]);for(;i<6;i++)IkSimPutFloat(ikSimPayload,&n,0.0f);IkSimPutFloat(ikSimPayload,&n,ikPts[JOINT_COUNT][0]);IkSimPutFloat(ikSimPayload,&n,ikPts[JOINT_COUNT][1]);IkSimPutFloat(ikSimPayload,&n,ikPts[JOINT_COUNT][2]);IkSimPutFloat(ikSimPayload,&n,y);IkSimPutFloat(ikSimPayload,&n,pit);IkSimPutFloat(ikSimPayload,&n,r);IkSimPutFloat(ikSimPayload,&n,pe);IkSimPutFloat(ikSimPayload,&n,er);IkSimPutFloat(ikSimPayload,&n,ep);IkSimPutFloat(ikSimPayload,&n,ey);IkSimReply(type,seq,ikSimPayload,n);}\n"
+	s += "void IkSimProcessFrame(void){uint8_t *p=ikSimFrame,n=ikSimLen,cmd,i,k,valid;float v[6];uint16_t seq,got,want;if(n<7){ikSimFrameReady=0;return;}got=(uint16_t)p[n-2]|((uint16_t)p[n-1]<<8);want=IkSimCrc(p,(uint8_t)(n-2u));if(got!=want||p[0]!=SOLVER_PROTOCOL_VERSION||p[4]+7u!=n){solverStatus=32;ikSimFrameReady=0;return;}cmd=p[1];seq=(uint16_t)p[2]|((uint16_t)p[3]<<8);if(cmd==1&&p[4]==0){k=0;ikSimPayload[k++]=SOLVER_PROTOCOL_VERSION;ikSimPayload[k++]=SOLVER_ALGORITHM_VERSION;ikSimPayload[k++]=1;ikSimPayload[k++]=JOINT_COUNT;ikSimPayload[k++]=solverMask;ikSimPayload[k++]=solverPositionDof;ikSimPayload[k++]=solverOrientationDof;ikSimPayload[k++]=0;for(i=0;i<8;i++)ikSimPayload[k++]=solverFingerprint[i];IkSimReply(RESP_HELLO,seq,ikSimPayload,k);}else if(cmd==2&&p[4]==24){valid=1;for(i=0;i<6;i++){v[i]=IkSimGetFloat(&p[5+i*4]);if(!IkSimFinite(v[i]))valid=0;}if(!valid){solverStatus=32;IkSimReply(RESP_ERROR,seq,ikSimPayload,0);}else{targetX=v[0];targetY=v[1];targetZ=v[2];targetYaw=v[3];targetPitch=v[4];targetRoll=v[5];solverStatus=1;ik_solve(targetX,targetY,targetZ,targetRoll,targetPitch,targetYaw);if(!ik_reachable)solverStatus|=8;if(ikStepClamped)solverStatus|=4;if(ikNumericProtected)solverStatus|=32;if(ikTaskCount<solverOrientationDof)solverStatus|=16;IkSimState(RESP_STATE,seq);}}else if(cmd==3&&p[4]==25&&p[5]==JOINT_COUNT){valid=1;for(i=0;i<JOINT_COUNT;i++){v[i]=IkSimGetFloat(&p[6+i*4]);if(!IkSimFinite(v[i]))valid=0;}if(!valid){solverStatus=32;IkSimReply(RESP_ERROR,seq,ikSimPayload,0);}else{solverStatus=1;for(i=0;i<JOINT_COUNT;i++){jointAngle[i]=v[i];if(jointAngle[i]<jointMin[i]){jointAngle[i]=jointMin[i];solverStatus|=4;}if(jointAngle[i]>jointMax[i]){jointAngle[i]=jointMax[i];solverStatus|=4;}}IkSimSyncTarget();IkSimState(RESP_STATE,seq);}}else if(cmd==4&&p[4]==0){solverStatus=1;for(i=0;i<JOINT_COUNT;i++)jointAngle[i]=jointHome[i];IkSimSyncTarget();IkSimState(RESP_STATE,seq);}else if(cmd==5&&p[4]==0){solverStatus=1;IkSimState(RESP_STATE,seq);}else{solverStatus=32;IkSimReply(RESP_ERROR,seq,ikSimPayload,0);}ikSimFrameReady=0;ikSimLen=0;}\n"
+	return s.replace(";", ";\n")
 
 
 # ------------------------------------------------------------------ 代码生成
@@ -52,17 +142,18 @@ func generate(cfg: Dictionary) -> String:
 	var gripper_enabled: bool = bool(gripper["enabled"])
 	var joy_scale: float = _to_float(cfg.get("joy_scale", "5"), 5.0)
 	var keymove_speed: float = _to_float(cfg.get("keymove_speed", "2"), 2.0)
-	# 姿态角按键步长：沿用位移步长的数值，单位改为度
-	var keymove_pitch_speed: float = keymove_speed
+	var orientation_key_speed: float = _to_float(
+		cfg.get("orientation_key_speed", "1"), 1.0)
+	var rocker2_home_enabled: bool = bool(cfg.get("rocker2_home_enabled", false))
 	# 启用的预设点位数量（0 时不生成预设相关数组与查询循环）
 	var preset_count: int = _active_presets(presets).size()
 	# 逐关节转轴与连杆长度：雅可比逆解算的全部输入
 	var kin_lens: Array = joint_lengths(joints, jc)
-	# 末端俯仰角是否作为控制量。判据是构形能否「位置不动、只转 φ」，
-	# 不是关节数 —— 四个关节全 Pitch 时 φ 同样不可控。
-	# φ 不可控时整条 φ 链路（目标变量、形参、按键映射）都不生成，
-	# 否则 C251 会报未引用参数警告，学生也会以为这个输入有效。
-	var orientation_mask: Dictionary = _orientation_mask(joints, jc)
+	# 每个末端姿态维度是否可独立控制由构形诊断决定，不由关节数猜测。
+	# 不可控维度的目标变量、形参和按键映射都不生成。
+	# MCU 上电诊断是姿态可控性的唯一权威。生产固件始终保留完整 RPY
+	# 目标，运行时再由 solverMask 忽略不可控维度。
+	var orientation_mask: Dictionary = {"roll": true, "pitch": true, "yaw": true}
 	var has_orientation: bool = bool(orientation_mask.get("roll", false)) \
 		or bool(orientation_mask.get("pitch", false)) or bool(orientation_mask.get("yaw", false))
 	var tvars: Array = _target_vars_for(orientation_mask)
@@ -76,6 +167,7 @@ func generate(cfg: Dictionary) -> String:
 		else "// 工程机器人逆解算代码（由 Pie-Block 配置生成器自动生成）\n"
 	code += "#include \"main.h\"\n"
 	code += "#include \"MATH.H\"\n"
+	code += "void IKSimRxByte(uint8_t dat) { if (dat == 0u) return; }\n"
 	code += "// ========================= 参数区 =========================\n"
 	code += "// 关节数：%d。各关节的转轴与连杆长度见下方 jointAxis / jointLen 两张表。\n" % jc
 	code += "// 逆解算是通用的雅可比法，不假定任何特定构型。\n"
@@ -104,10 +196,10 @@ func generate(cfg: Dictionary) -> String:
 	code += "// 摇杆推到满偏时末端每周期位移(mm)\n"
 	code += "#define JOY_SCALE  %.2ff\n" % joy_scale
 	code += "// 按键长按时末端每周期位移(mm)\n"
-	code += "#define KEYMOVE_SPEED  %.2ff\n" % keymove_speed
-	if bool(orientation_mask.get("pitch", false)):
-		code += "// 按键长按时末端俯仰角每周期变化(度)\n"
-		code += "#define KEYMOVE_PITCH_SPEED  %.2ff\n" % keymove_pitch_speed
+	code += "#define KEYMOVE_POSITION_SPEED  %.2ff\n" % keymove_speed
+	if has_orientation:
+		code += "// 按键长按时末端姿态角每周期变化(度)\n"
+		code += "#define KEYMOVE_ORIENTATION_SPEED  %.2ff\n" % orientation_key_speed
 	# 注：关节限位夹紧在 angle_to_duty 内直接比较，无需 LIMIT_VALUE 宏
 	code += _build_protocol_macros()
 	# NRF24L01 通信通道（nrf24l01.c 通过 extern 引用，必须在此定义）
@@ -117,8 +209,15 @@ func generate(cfg: Dictionary) -> String:
 	code += "float    jointAngle[%d];        // 各关节角度(度)\n" % jc
 	code += "float    %s;\n" % ", ".join(tvars)
 	code += "uint8_t  ik_reachable;          // 逆解算可达性标志(1=本步在靠近目标,0=已贴到极限)\n"
+	code += "uint8_t  solverMask = 0;        // bit0=Roll bit1=Pitch bit2=Yaw，由 MCU 上电诊断\n"
+	code += "uint8_t  solverPositionDof = 0, solverOrientationDof = 0;\n"
+	code += "uint8_t  ikDiagnosing = 0;\n"
 	code += "uint8_t  presetHit;             // 本周期是否命中预设点位\n"
 	code += "int16_t  valueOfRoker[2][2];    // 左摇杆水平、竖直；右摇杆水平、竖直\n"
+	if rocker2_home_enabled:
+		code += "uint8_t  valueOfKey[3][4];      // 方向键、ABCD、左右摇杆按键\n"
+		code += "uint8_t  armHomeHit = 0;        // 本周期是否执行机械臂回初始角\n"
+		code += "uint8_t  armHomeKeyHeld = 0;    // ROCKER2 锁存，长按只触发一次\n"
 	code += "uint16_t deadBandOfLeft = %s;\n" % deadzone
 	code += "uint16_t deadBandOfRight = %s;\n" % deadzone
 	if gripper_enabled:
@@ -139,9 +238,9 @@ func generate(cfg: Dictionary) -> String:
 	code += _build_joint_config_arrays(joints, jc)
 	# 运动学常量表：逆解算完全由转轴与连杆长度两张表驱动
 	code += _build_kinematics_arrays(joints, jc)
-	# 逆解算中间结果（必须在 xdata，见函数内注释）
-	code += _gen_ik_workspace(jc)
-	# 预设点位表（末端坐标，附 GUI 端预计算的关节角度注释）
+	# 生产与仿真固件逐字共用的 FK/IK/诊断核心。
+	code += generate_kinematics_core(jc, joints, kin_lens)
+	# 预设点位表只保存末端位姿，关节目标由 MCU 运行时求解。
 	code += _build_preset_table(presets, jc, joints, orientation_mask)
 	code += "\n"
 	# 函数声明
@@ -151,9 +250,11 @@ func generate(cfg: Dictionary) -> String:
 		code += "void UpdateGripper();\n"
 	if dual_mode:
 		code += "void UpdateControlMode();\n"
-		code += "void SyncIKTargetFromJoints();\n"
 		code += "void CalculateForwardControl();\n"
 		code += "void CalculateChassisControl();\n"
+	code += "void SyncIKTargetFromJoints();\n"
+	if rocker2_home_enabled:
+		code += "uint8_t ReturnArmHome();\n"
 	code += "void CalculateIK(uint8_t hit);\n"
 	code += "void ApplyServoControl();\n"
 	if preset_count > 0:
@@ -163,8 +264,11 @@ func generate(cfg: Dictionary) -> String:
 	code += "void axis_rot(float a[3], float ang, float m[3][3]);\n"
 	code += "void mat_mul(float x[3][3], float y[3][3], float out[3][3]);\n"
 	code += "void ik_fk();\n"
+	code += "void ik_diagnose();\n"
 	code += "void ik_solve(%s);\n" % _ik_params_for(orientation_mask)
 	code += "uint8_t ik_target_too_far(float x, float y, float z);\n"
+	if bool(orientation_mask.get("roll", false)) or bool(orientation_mask.get("yaw", false)):
+		code += "float normalize_angle_deg(float angle);\n"
 	code += "void ExpansionBoradControl(uint8_t control_cmd, uint16_t data_p60, uint16_t data_p62, uint16_t data_p64,\n"
 	code += "                           uint16_t data_p66, uint16_t data_p74, uint16_t data_p75, uint16_t data_p76,\n"
 	code += "                           uint16_t data_p77);\n\n"
@@ -174,10 +278,7 @@ func generate(cfg: Dictionary) -> String:
 	code += CodeGenBase.REMOTE_CONTROL_INIT_CODE
 
 	# --- main() ---
-	# 增量模式：target 必须初始化为初始姿态对应的末端位置（正运动学预计算）。
-	# 用通用 fk_chain 而非旧的 _forward_kinematics：φ 的定义已改为末端仰角，
-	# 旧函数算的是 θ1+θ2+θ3，两者在混合转轴构形下不是一回事。
-	var home: Array = _home_targets(joints, jc, orientation_mask)
+	# 增量模式目标由 MCU 在设置初始关节角后通过共享 FK 初始化。
 	# 主控板舵机发送耗时可忽略，扩展板每次发送后需 EXP_SEND_DELAY_MS 延时
 	var has_exp: bool = _has_exp_slot(joints, jc) \
 		or (gripper_enabled and _io_to_exp_slot(str(gripper["io"])) >= 0)
@@ -190,11 +291,9 @@ func generate(cfg: Dictionary) -> String:
 	code += "    // 初始化各关节到初始角度\n"
 	code += "    for (i = 0; i < JOINT_COUNT; i++)\n"
 	code += "        jointAngle[i] = jointHome[i];\n"
-	code += "    // 增量模式起点：初始姿态对应的末端位置（GUI 端正运动学预计算）\n"
-	var home_inits: Array = []
-	for k in range(tvars.size()):
-		home_inits.append("%s = %.2ff;" % [tvars[k], home[k]])
-	code += "    %s\n" % " ".join(home_inits)
+	code += "    ik_diagnose();             // MCU 自行确定同一姿态下可同时控制的姿态维度\n"
+	code += "    // MCU FK 是初始末端目标的唯一来源。\n"
+	code += "    SyncIKTargetFromJoints();\n"
 	code += "    ik_reachable = 1;\n"
 	code += "    while (1)\n"
 	code += "    {\n"
@@ -210,19 +309,39 @@ func generate(cfg: Dictionary) -> String:
 	if dual_mode:
 		code += "        UpdateControlMode();         // 单击切换正解/逆解，长按不连跳\n"
 		code += "        CalculateChassisControl();    // 底盘不受机械臂模式影响\n"
+	if rocker2_home_enabled:
+		code += "        armHomeHit = ReturnArmHome(); // ROCKER2 单击恢复关节初始角\n"
+	if dual_mode:
 		code += "        if (inverseMode)\n"
 		code += "        {\n"
 		code += "            for (i = 0; i < 8; i++)\n"
 		code += "                dutyOfAuxMotor[i] = 0; // 逆解模式停掉正解专用电机\n"
-	if preset_count > 0:
-		code += ("            " if dual_mode else "        ") + "presetHit = CheckPresetKeys(); // 预设点位按键检测\n"
-	else:
-		code += ("            " if dual_mode else "        ") + "presetHit = 0;                 // 未配置预设点位\n"
-	code += ("            " if dual_mode else "        ") + "CalculateIK(presetHit);        // 摇杆/按键增量 + 逆解算\n"
-	if dual_mode:
+		if rocker2_home_enabled:
+			code += "            if (!armHomeHit)\n"
+			code += "            {\n"
+		var inverse_indent: String = "                " if rocker2_home_enabled else "            "
+		if preset_count > 0:
+			code += inverse_indent + "presetHit = CheckPresetKeys(); // 预设点位按键检测\n"
+		else:
+			code += inverse_indent + "presetHit = 0;                 // 未配置预设点位\n"
+		code += inverse_indent + "CalculateIK(presetHit);        // 摇杆/按键增量 + 逆解算\n"
+		if rocker2_home_enabled:
+			code += "            }\n"
 		code += "        }\n"
-		code += "        else\n"
-		code += "            CalculateForwardControl(); // 直接调整各关节角\n"
+		code += "        else"
+		code += " if (!armHomeHit)" if rocker2_home_enabled else ""
+		code += "\n            CalculateForwardControl(); // 直接调整各关节角\n"
+	else:
+		if rocker2_home_enabled:
+			code += "        if (!armHomeHit)\n        {\n"
+		var standalone_indent: String = "            " if rocker2_home_enabled else "        "
+		if preset_count > 0:
+			code += standalone_indent + "presetHit = CheckPresetKeys(); // 预设点位按键检测\n"
+		else:
+			code += standalone_indent + "presetHit = 0;                 // 未配置预设点位\n"
+		code += standalone_indent + "CalculateIK(presetHit);        // 摇杆/按键增量 + 逆解算\n"
+		if rocker2_home_enabled:
+			code += "        }\n"
 	code += "        ApplyServoControl();           // 应用舵机控制\n"
 	code += "        Ms_Delay(%d);                   // 与舵机发送延时合计 %dms/周期\n" % [tail_delay, LOOP_PERIOD_MS]
 	code += "    }\n"
@@ -230,18 +349,17 @@ func generate(cfg: Dictionary) -> String:
 
 	# --- angle_to_duty ---
 	code += _gen_angle_to_duty()
-	# --- 运动学辅助函数与雅可比逆解 ---
-	code += _gen_kinematics_helpers()
-	code += _gen_ik_fk()
-	code += _gen_ik_solve_pose(jc, orientation_mask, kin_lens)
 	# --- ReadControllerInputs ---
-	code += _gen_read_inputs()
+	code += _gen_read_inputs(rocker2_home_enabled)
 	if gripper_enabled:
 		code += _gen_gripper_control(gripper)
+	code += _gen_sync_ik_target(orientation_mask)
 	if dual_mode:
-		code += _gen_mode_control(switch_offset, jc, orientation_mask)
+		code += _gen_mode_control(switch_offset)
 		code += _gen_forward_control(engineer_cfg, joints, jc)
 		code += _gen_chassis_control(engineer_cfg)
+	if rocker2_home_enabled:
+		code += _gen_return_arm_home()
 	# --- CheckPresetKeys ---
 	if preset_count > 0:
 		code += _gen_check_preset_keys(jc, orientation_mask)
@@ -256,6 +374,15 @@ func generate(cfg: Dictionary) -> String:
 	# --- ExpansionBoradControl ---
 	code += _gen_expansion_board_func()
 	return code
+
+
+## 生产固件与仿真求解器固件必须原样拼接这一段，禁止各自维护运动学实现。
+func generate_kinematics_core(jc: int, joints: Array, lens: Array = []) -> String:
+	var actual_lens: Array = lens if not lens.is_empty() else joint_lengths(joints, jc)
+	var full_mask: Dictionary = {"roll": true, "pitch": true, "yaw": true}
+	return _gen_ik_workspace(jc) + _gen_kinematics_helpers() + _gen_ik_fk() \
+		+ _gen_ik_orientation_error() + _gen_ik_task_builder(full_mask) + _gen_ik_diagnose() \
+		+ _gen_ik_solve_pose(jc, full_mask, actual_lens)
 
 
 # ------------------------------------------------------------------ 协议宏
@@ -360,7 +487,7 @@ func _active_presets(presets: Array) -> Array:
 	return active
 
 
-## 预设点位表：存末端坐标，附 GUI 端预计算的关节角度注释便于人工核对
+## 预设点位表只存末端位姿。可达性和关节目标由 MCU 运行时统一求解。
 func _build_preset_table(presets: Array, jc: int, joints: Array,
 		orientation_mask: Dictionary) -> String:
 	var active: Array = _active_presets(presets)
@@ -396,19 +523,7 @@ func _build_preset_table(presets: Array, jc: int, joints: Array,
 			% [x, y, z, roll, pitch, yaw]
 		if i < count - 1:
 			s += ","
-		# 附上 GUI 端预计算的关节角度作为注释，便于人工核对。
-		# 用雅可比数值解并从初始角起解，与真机上电后的收敛过程一致。
-		var conv: Dictionary = solve_ik_pose_converge(Vector3(x, y, z),
-			basis_from_rpy_deg(Vector3(roll, pitch, yaw)), orientation_mask,
-			_joint_home_angles(joints), joints, jc)
-		var angles: Array = conv["angles"]
-		var ang_str: String = ""
-		for k in range(jc):
-			if k > 0:
-				ang_str += ", "
-			ang_str += "%.1f" % float(angles[k])
-		s += "  // P%d 关节角度: [%s] 误差 %.1fmm\n" \
-			% [i + 1, ang_str, float(conv["err"])]
+		s += "\n"
 	s += "};\n"
 	return s
 
@@ -440,7 +555,14 @@ func solve_ik_pose(target_position: Vector3, target_basis: Basis,
 	var tip: Vector3 = pts[pts.size() - 1]
 	var e: Vector3 = target_position - tip
 	var pos_err: float = e.length()
-	var orientation_error: Vector3 = orientation_error_vector(chain["tip_basis"], target_basis)
+	var current_rpy: Vector3 = tip_rpy_deg(chain)
+	var target_rpy: Vector3 = tip_rpy_deg({"tip_basis": target_basis})
+	for pair in [["roll", 0], ["pitch", 1], ["yaw", 2]]:
+		if not bool(orientation_mask.get(pair[0], false)):
+			target_rpy[pair[1]] = current_rpy[pair[1]]
+	var effective_target_basis: Basis = basis_from_rpy_deg(target_rpy)
+	var orientation_error: Vector3 = orientation_error_vector(
+		chain["tip_basis"], effective_target_basis)
 	var task: Dictionary = orientation_task_rows(chain, jc, orientation_mask)
 	var orientation_errors: Dictionary = {}
 	var orientation_max_deg: float = 0.0
@@ -500,8 +622,7 @@ func solve_ik_pose(target_position: Vector3, target_basis: Basis,
 	var clamped: Dictionary = clamp_angles_to_limits(next, joints)
 	var out: Array = clamped["angles"]
 	# 走完这一步的实际误差，用于判断是否还在靠近目标。
-	# 必须把姿态误差一起算进「总误差」：只看位置的话，
-	# 那些纯粹在调 φ 的步会被误判成停滞（位置本来就不该变）。
+	# 必须把姿态误差一起算进总误差，否则纯姿态步骤会被误判为停滞。
 	var chain2: Dictionary = fk_chain(out, joints, jc)
 	var pts2: Array = chain2["points"]
 	var new_pos_err: float = (target_position - (pts2[pts2.size() - 1] as Vector3)).length()
@@ -510,7 +631,7 @@ func solve_ik_pose(target_position: Vector3, target_basis: Basis,
 	if pos_err < 2.0:
 		for name in task["order"]:
 			before += pow(deg_to_rad(float(orientation_errors[name])) * w, 2.0)
-	var error2: Vector3 = orientation_error_vector(chain2["tip_basis"], target_basis)
+	var error2: Vector3 = orientation_error_vector(chain2["tip_basis"], effective_target_basis)
 	var task2: Dictionary = orientation_task_rows(chain2, jc, orientation_mask)
 	if pos_err < 2.0:
 		for name in task2["order"]:
@@ -530,8 +651,8 @@ func _orientation_weight(lens: Array) -> float:
 	return maxf(total, 1.0)
 
 
-## 迭代到收敛（GUI 侧预计算预设点位、仿真显示用；真机是每周期走一步）。
-## max_iter 上限存在的意义是防止奇异位形附近原地打转。
+## 仅供运动学回归测试使用的收敛参考；3D 操控和代码生成均不调用它。
+## max_iter 上限防止测试在奇异位形附近原地打转。
 func solve_ik_pose_converge(target_position: Vector3, target_basis: Basis,
 		orientation_mask: Dictionary, angles: Array, joints: Array, jc: int,
 		max_iter: int = 200) -> Dictionary:
@@ -782,12 +903,32 @@ func orientation_task_rows(chain: Dictionary, jc: int, mask: Dictionary) -> Dict
 		"yaw": Vector3(0.0, 0.0, 1.0),
 		"roll": current.x.normalized(),
 	}
+	var desired_names: Array[String] = []
+	var desired_basis: Array[Vector3] = []
+	for name in ["pitch", "yaw", "roll"]:
+		if bool(mask.get(name, false)):
+			desired_names.append(name)
+			_add_world_direction(desired_basis, world_axes[name])
+	# 约束掉目标姿态子空间之外的角速度。否则 Roll 轴在世界 Z 上有投影时，
+	# 单纯点乘会把 Roll 误判成 Yaw。
+	var complement: Array[Vector3] = []
+	for seed in [Vector3.RIGHT, Vector3.UP, Vector3.BACK]:
+		var value: Vector3 = seed
+		for direction in desired_basis:
+			value -= direction * value.dot(direction)
+		for direction in complement:
+			value -= direction * value.dot(direction)
+		if value.length() > 1.0e-5:
+			complement.append(value.normalized())
+	for direction in complement:
+		var blocked_row: Array = []
+		for axis in chain["axes"]:
+			blocked_row.append((axis as Vector3).dot(direction))
+		_add_independent_row(joint_basis, blocked_row, 1.0e-6)
 	var rows: Dictionary = {}
 	var axes_out: Dictionary = {}
 	var order: Array[String] = []
-	for name in ["pitch", "yaw", "roll"]:
-		if not bool(mask.get(name, false)):
-			continue
+	for name in desired_names:
 		var raw: Array = []
 		for axis in chain["axes"]:
 			raw.append((axis as Vector3).dot(world_axes[name]))
@@ -803,6 +944,30 @@ func orientation_task_rows(chain: Dictionary, jc: int, mask: Dictionary) -> Dict
 		axes_out[name] = world_axes[name]
 		order.append(name)
 	return {"rows": rows, "axes": axes_out, "order": order}
+
+
+func diagnose_orientation_mask_at_chain(chain: Dictionary, jc: int) -> Dictionary:
+	var selected: Dictionary = {"roll": false, "pitch": false, "yaw": false}
+	for name in ["pitch", "yaw", "roll"]:
+		var candidate: Dictionary = selected.duplicate(true)
+		candidate[name] = true
+		var task: Dictionary = orientation_task_rows(chain, jc, candidate)
+		var expected: int = 0
+		for enabled in candidate.values():
+			if bool(enabled): expected += 1
+		if (task["order"] as Array).size() == expected:
+			selected = candidate
+	return selected
+
+
+func _add_world_direction(basis: Array[Vector3], direction: Vector3) -> bool:
+	var value: Vector3 = direction
+	for existing in basis:
+		value -= existing * value.dot(existing)
+	if value.length() <= 1.0e-5:
+		return false
+	basis.append(value.normalized())
+	return true
 
 
 func _row_residual(row: Array, basis_rows: Array) -> Array:
@@ -835,13 +1000,6 @@ func _add_independent_row(basis_rows: Array, row: Array, epsilon: float) -> bool
 	return true
 
 
-# ------------------------------------------------------------------ 目标状态变量
-func _orientation_mask(joints: Array, jc: int) -> Dictionary:
-	var diag = load("res://scripts/arm_diagnosis.gd").new()
-	var res: Dictionary = diag.analyze(joints, jc)
-	return (res.get("orientation_mask", {}) as Dictionary).duplicate(true)
-
-
 func _target_vars_for(mask: Dictionary) -> Array:
 	var out: Array = ["targetX", "targetY", "targetZ"]
 	for name in ["roll", "pitch", "yaw"]:
@@ -857,21 +1015,6 @@ func _ik_params_for(mask: Dictionary) -> String:
 		if bool(mask.get(name, false)):
 			names.append("float " + name)
 	return ", ".join(names)
-
-
-## 初始姿态对应的末端目标值，顺序与 _target_vars_for 一致。
-## 增量模式必须从这里起步，否则上电首帧 target 与实际末端不符会导致关节跳变。
-func _home_targets(joints: Array, jc: int, mask: Dictionary) -> Array:
-	var home_ang: Array = _joint_home_angles(joints)
-	var chain: Dictionary = fk_chain(home_ang, joints, jc)
-	var pts: Array = chain["points"]
-	var tip: Vector3 = pts[pts.size() - 1]
-	var out: Array = [tip.x, tip.y, tip.z]
-	var rpy: Vector3 = tip_rpy_deg(chain)
-	for pair in [["roll", rpy.x], ["pitch", rpy.y], ["yaw", rpy.z]]:
-		if bool(mask.get(pair[0], false)):
-			out.append(pair[1])
-	return out
 
 
 # ------------------------------------------------------------------ 槽位判定
@@ -977,6 +1120,49 @@ func _gen_ik_workspace(jc: int) -> String:
 	s += "static float xdata ikJte[%d];         // J^T e\n" % jc
 	s += "static float xdata ikLa[3], ikLv[3], ikWv[3], ikEv[3];\n"
 	s += "static float xdata ikTargetBasis[3][3], ikOriErr[3];\n"
+	s += "static float xdata ikBasisRows[6][6], ikTaskRows[3][6], ikTaskAxes[3][3], ikTaskDot[3], ikTaskErr[3];\n"
+	s += "static float xdata ikDesiredAxes[3][3], ikComplementAxes[3][3];\n"
+	s += "static uint8_t ikBasisCount, ikPositionRank, ikTaskCount, ikTaskKind[3], ikRequestedMask;\n"
+	s += "static uint8_t ikStepClamped, ikNumericProtected;\n"
+	return s
+
+
+func _gen_ik_task_builder(mask: Dictionary) -> String:
+	var s: String = ""
+	s += "static void ik_build_position_cols(void)\n{\n"
+	s += "    uint8_t k;\n"
+	s += "    for(k=0;k<JOINT_COUNT;k++){ikLv[0]=ikPts[JOINT_COUNT][0]-ikPts[k][0];ikLv[1]=ikPts[JOINT_COUNT][1]-ikPts[k][1];ikLv[2]=ikPts[JOINT_COUNT][2]-ikPts[k][2];ikCols[k][0]=ikAxes[k][1]*ikLv[2]-ikAxes[k][2]*ikLv[1];ikCols[k][1]=ikAxes[k][2]*ikLv[0]-ikAxes[k][0]*ikLv[2];ikCols[k][2]=ikAxes[k][0]*ikLv[1]-ikAxes[k][1]*ikLv[0];}\n"
+	s += "}\n\n"
+	s += "/* Build pure orientation tasks inside the position nullspace. */\n"
+	s += "static void ik_build_tasks(void)\n{\n"
+	s += "    uint8_t i,j,t,c,desiredCount,complementCount;\n"
+	s += "    float dot,norm,ax,ay,az,yawNorm,vx,vy,vz;\n"
+	s += "    ikBasisCount=0; ikTaskCount=0;\n"
+	s += "    for(t=0;t<3;t++){for(i=0;i<JOINT_COUNT;i++)ikBasisRows[t][i]=ikCols[i][t];"
+	s += "for(j=0;j<ikBasisCount;j++){dot=0.0f;for(i=0;i<JOINT_COUNT;i++)dot+=ikBasisRows[t][i]*ikBasisRows[j][i];"
+	s += "for(i=0;i<JOINT_COUNT;i++)ikBasisRows[t][i]-=dot*ikBasisRows[j][i];}"
+	s += "norm=0.0f;for(i=0;i<JOINT_COUNT;i++)norm+=ikBasisRows[t][i]*ikBasisRows[t][i];"
+	s += "norm=sqrt(norm);if(norm>0.000001f){for(i=0;i<JOINT_COUNT;i++)ikBasisRows[ikBasisCount][i]=ikBasisRows[t][i]/norm;ikBasisCount++;}}\n"
+	s += "    ikPositionRank=ikBasisCount;desiredCount=0;\n"
+	s += "    for(t=0;t<3;t++){if(!((t==0&&(ikRequestedMask&2))||(t==1&&(ikRequestedMask&4))||(t==2&&(ikRequestedMask&1))))continue;if(t==0){yawNorm=sqrt(ikBasis[0][0]*ikBasis[0][0]+ikBasis[1][0]*ikBasis[1][0]);if(yawNorm>0.0001f){vx=ikBasis[1][0]/yawNorm;vy=-ikBasis[0][0]/yawNorm;vz=0.0f;}else{vx=0.0f;vy=0.0f;vz=0.0f;}}else if(t==1){vx=0.0f;vy=0.0f;vz=1.0f;}else{vx=ikBasis[0][0];vy=ikBasis[1][0];vz=ikBasis[2][0];}for(j=0;j<desiredCount;j++){dot=vx*ikDesiredAxes[j][0]+vy*ikDesiredAxes[j][1]+vz*ikDesiredAxes[j][2];vx-=dot*ikDesiredAxes[j][0];vy-=dot*ikDesiredAxes[j][1];vz-=dot*ikDesiredAxes[j][2];}norm=sqrt(vx*vx+vy*vy+vz*vz);if(norm>0.00001f){ikDesiredAxes[desiredCount][0]=vx/norm;ikDesiredAxes[desiredCount][1]=vy/norm;ikDesiredAxes[desiredCount][2]=vz/norm;desiredCount++;}}\n"
+	s += "    complementCount=0;for(c=0;c<3;c++){vx=(c==0)?1.0f:0.0f;vy=(c==1)?1.0f:0.0f;vz=(c==2)?1.0f:0.0f;for(j=0;j<desiredCount;j++){dot=vx*ikDesiredAxes[j][0]+vy*ikDesiredAxes[j][1]+vz*ikDesiredAxes[j][2];vx-=dot*ikDesiredAxes[j][0];vy-=dot*ikDesiredAxes[j][1];vz-=dot*ikDesiredAxes[j][2];}for(j=0;j<complementCount;j++){dot=vx*ikComplementAxes[j][0]+vy*ikComplementAxes[j][1]+vz*ikComplementAxes[j][2];vx-=dot*ikComplementAxes[j][0];vy-=dot*ikComplementAxes[j][1];vz-=dot*ikComplementAxes[j][2];}norm=sqrt(vx*vx+vy*vy+vz*vz);if(norm>0.00001f){ikComplementAxes[complementCount][0]=vx/norm;ikComplementAxes[complementCount][1]=vy/norm;ikComplementAxes[complementCount][2]=vz/norm;complementCount++;}}\n"
+	s += "    for(c=0;c<complementCount;c++){for(i=0;i<JOINT_COUNT;i++)ikTaskRows[0][i]=ikAxes[i][0]*ikComplementAxes[c][0]+ikAxes[i][1]*ikComplementAxes[c][1]+ikAxes[i][2]*ikComplementAxes[c][2];for(j=0;j<ikBasisCount;j++){dot=0.0f;for(i=0;i<JOINT_COUNT;i++)dot+=ikTaskRows[0][i]*ikBasisRows[j][i];for(i=0;i<JOINT_COUNT;i++)ikTaskRows[0][i]-=dot*ikBasisRows[j][i];}norm=0.0f;for(i=0;i<JOINT_COUNT;i++)norm+=ikTaskRows[0][i]*ikTaskRows[0][i];norm=sqrt(norm);if(norm>0.000001f&&ikBasisCount<6){for(i=0;i<JOINT_COUNT;i++)ikBasisRows[ikBasisCount][i]=ikTaskRows[0][i]/norm;ikBasisCount++;}}\n"
+	s += "    for(t=0;t<3;t++){if(!((t==0&&(ikRequestedMask&2))||(t==1&&(ikRequestedMask&4))||(t==2&&(ikRequestedMask&1))))continue;if(t==0){yawNorm=sqrt(ikBasis[0][0]*ikBasis[0][0]+ikBasis[1][0]*ikBasis[1][0]);if(yawNorm>0.0001f){ax=ikBasis[1][0]/yawNorm;ay=-ikBasis[0][0]/yawNorm;az=0.0f;}else{ax=0.0f;ay=0.0f;az=0.0f;}}else if(t==1){ax=0.0f;ay=0.0f;az=1.0f;}else{ax=ikBasis[0][0];ay=ikBasis[1][0];az=ikBasis[2][0];}for(i=0;i<JOINT_COUNT;i++)ikTaskRows[ikTaskCount][i]=ikAxes[i][0]*ax+ikAxes[i][1]*ay+ikAxes[i][2]*az;for(j=0;j<ikBasisCount;j++){dot=0.0f;for(i=0;i<JOINT_COUNT;i++)dot+=ikTaskRows[ikTaskCount][i]*ikBasisRows[j][i];for(i=0;i<JOINT_COUNT;i++)ikTaskRows[ikTaskCount][i]-=dot*ikBasisRows[j][i];}norm=0.0f;for(i=0;i<JOINT_COUNT;i++)norm+=ikTaskRows[ikTaskCount][i]*ikTaskRows[ikTaskCount][i];norm=sqrt(norm);if(norm>0.0001f&&ikBasisCount<6){for(i=0;i<JOINT_COUNT;i++)ikBasisRows[ikBasisCount][i]=ikTaskRows[ikTaskCount][i]/norm;ikBasisCount++;ikTaskAxes[ikTaskCount][0]=ax;ikTaskAxes[ikTaskCount][1]=ay;ikTaskAxes[ikTaskCount][2]=az;ikTaskKind[ikTaskCount]=t;ikTaskCount++;}}\n"
+	s += "}\n\n"
+	return s
+
+
+## MCU 上电在四组确定性关节姿态上诊断。每次候选 mask 都来自同一姿态，
+## 只选择其中任务秩最高的一组，绝不合并不同采样姿态的能力。
+func _gen_ik_diagnose() -> String:
+	var s: String = ""
+	s += "void ik_diagnose(void)\n{\n"
+	s += "    uint8_t sample,i,t,candidateBit,required,selected,mask,bestMask,bestPos,bestOri;\n"
+	s += "    uint16_t score,bestScore; float offset;\n"
+	s += "    bestMask=0;bestPos=0;bestOri=0;bestScore=0;ikDiagnosing=1;\n"
+	s += "    for(sample=0;sample<4;sample++){for(i=0;i<JOINT_COUNT;i++){offset=0.0f;if(sample==1)offset=(i&1)?-25.0f:25.0f;else if(sample==2)offset=(i&1)?25.0f:-25.0f;else if(sample==3)offset=((int)(i%3)-1)*35.0f;jointAngle[i]=jointHome[i]+offset;if(jointAngle[i]<jointMin[i])jointAngle[i]=jointMin[i];if(jointAngle[i]>jointMax[i])jointAngle[i]=jointMax[i];}ik_fk();ik_build_position_cols();selected=0;for(t=0;t<3;t++){candidateBit=(t==0)?2:((t==1)?4:1);ikRequestedMask=selected|candidateBit;ik_build_tasks();required=((ikRequestedMask&1)?1:0)+((ikRequestedMask&2)?1:0)+((ikRequestedMask&4)?1:0);if(ikTaskCount==required)selected|=candidateBit;}mask=selected;ikRequestedMask=mask;ik_build_tasks();score=(uint16_t)ikPositionRank*64u+(uint16_t)ikTaskCount*8u+((mask&2)?4u:0u)+((mask&4)?2u:0u)+((mask&1)?1u:0u);if(score>bestScore){bestScore=score;bestMask=mask;bestPos=ikPositionRank;bestOri=ikTaskCount;}}\n"
+	s += "    solverMask=bestMask;solverPositionDof=bestPos;solverOrientationDof=bestOri;ikRequestedMask=solverMask;ikDiagnosing=0;for(i=0;i<JOINT_COUNT;i++)jointAngle[i]=jointHome[i];ik_fk();\n"
+	s += "}\n\n"
 	return s
 
 
@@ -988,6 +1174,29 @@ func _gen_ik_workspace(jc: int) -> String:
 ## 任意关节数与任意 Pitch/Roll/Yaw 搭配的根本原因。
 ##
 ## 与 GDScript 侧 solve_ik_pose 逐行对应，改动必须同步两边。
+func _gen_ik_orientation_error() -> String:
+	var s: String = ""
+	s += "static void ik_orientation_error(float roll,float pitch,float yaw)\n{\n"
+	s += "    float cr,sr,cp,sp,cy,sy,sinAngle,cosAngle,angleScale,currentPitch;\n"
+	s += "    if(!(solverMask&1))roll=atan2(ikBasis[2][1],ikBasis[2][2])*RAD_TO_DEG;\n"
+	s += "    currentPitch=ikBasis[2][0];if(currentPitch>1.0f)currentPitch=1.0f;if(currentPitch< -1.0f)currentPitch=-1.0f;\n"
+	s += "    if(!(solverMask&2))pitch=asin(currentPitch)*RAD_TO_DEG;\n"
+	s += "    if(!(solverMask&4))yaw=atan2(ikBasis[1][0],ikBasis[0][0])*RAD_TO_DEG;\n"
+	s += "    cr=cos(roll*DEG_TO_RAD);sr=sin(roll*DEG_TO_RAD);cp=cos(pitch*DEG_TO_RAD);sp=sin(pitch*DEG_TO_RAD);cy=cos(yaw*DEG_TO_RAD);sy=sin(yaw*DEG_TO_RAD);\n"
+	s += "    ikTargetBasis[0][0]=cy*cp;ikTargetBasis[1][0]=sy*cp;ikTargetBasis[2][0]=sp;\n"
+	s += "    ikTargetBasis[0][1]=-sy*cr-cy*sp*sr;ikTargetBasis[1][1]=cy*cr-sy*sp*sr;ikTargetBasis[2][1]=cp*sr;\n"
+	s += "    ikTargetBasis[0][2]=sy*sr-cy*sp*cr;ikTargetBasis[1][2]=-cy*sr-sy*sp*cr;ikTargetBasis[2][2]=cp*cr;\n"
+	s += "    ikOriErr[0]=0.5f*((ikBasis[1][0]*ikTargetBasis[2][0]-ikBasis[2][0]*ikTargetBasis[1][0])+(ikBasis[1][1]*ikTargetBasis[2][1]-ikBasis[2][1]*ikTargetBasis[1][1])+(ikBasis[1][2]*ikTargetBasis[2][2]-ikBasis[2][2]*ikTargetBasis[1][2]));\n"
+	s += "    ikOriErr[1]=0.5f*((ikBasis[2][0]*ikTargetBasis[0][0]-ikBasis[0][0]*ikTargetBasis[2][0])+(ikBasis[2][1]*ikTargetBasis[0][1]-ikBasis[0][1]*ikTargetBasis[2][1])+(ikBasis[2][2]*ikTargetBasis[0][2]-ikBasis[0][2]*ikTargetBasis[2][2]));\n"
+	s += "    ikOriErr[2]=0.5f*((ikBasis[0][0]*ikTargetBasis[1][0]-ikBasis[1][0]*ikTargetBasis[0][0])+(ikBasis[0][1]*ikTargetBasis[1][1]-ikBasis[1][1]*ikTargetBasis[0][1])+(ikBasis[0][2]*ikTargetBasis[1][2]-ikBasis[1][2]*ikTargetBasis[0][2]));\n"
+	s += "    sinAngle=sqrt(ikOriErr[0]*ikOriErr[0]+ikOriErr[1]*ikOriErr[1]+ikOriErr[2]*ikOriErr[2]);\n"
+	s += "    cosAngle=0.5f*(ikTargetBasis[0][0]*ikBasis[0][0]+ikTargetBasis[1][0]*ikBasis[1][0]+ikTargetBasis[2][0]*ikBasis[2][0]+ikTargetBasis[0][1]*ikBasis[0][1]+ikTargetBasis[1][1]*ikBasis[1][1]+ikTargetBasis[2][1]*ikBasis[2][1]+ikTargetBasis[0][2]*ikBasis[0][2]+ikTargetBasis[1][2]*ikBasis[1][2]+ikTargetBasis[2][2]*ikBasis[2][2]-1.0f);\n"
+	s += "    if(cosAngle>1.0f)cosAngle=1.0f;if(cosAngle< -1.0f)cosAngle=-1.0f;angleScale=(sinAngle>IK_EPS)?atan2(sinAngle,cosAngle)/sinAngle:1.0f;\n"
+	s += "    ikOriErr[0]*=angleScale;ikOriErr[1]*=angleScale;ikOriErr[2]*=angleScale;\n"
+	s += "}\n\n"
+	return s
+
+
 func _gen_ik_solve_pose(jc: int, mask: Dictionary, lens: Array) -> String:
 	var s: String = ""
 	var enabled: Array = []
@@ -997,45 +1206,26 @@ func _gen_ik_solve_pose(jc: int, mask: Dictionary, lens: Array) -> String:
 	s += "/// @brief Position-priority XYZ + Roll/Pitch/Yaw numerical IK.\n"
 	s += "void ik_solve(%s)\n" % _ik_params_for(mask)
 	s += "{\n"
-	s += "    uint8_t k;\n"
-	s += "    float cr, sr, cp, sp, cy, sy, sinAngle, cosAngle, angleScale;\n"
+	s += "    uint8_t k,t;\n"
 	s += "    float num, den, alpha, maxStep, step, errBefore, errAfter, posErr2;\n"
 	s += "    ik_fk();\n"
 	s += "    ikEv[0]=x-ikPts[JOINT_COUNT][0]; ikEv[1]=y-ikPts[JOINT_COUNT][1]; ikEv[2]=z-ikPts[JOINT_COUNT][2];\n"
 	s += "    posErr2=ikEv[0]*ikEv[0]+ikEv[1]*ikEv[1]+ikEv[2]*ikEv[2];\n"
 	if not enabled.is_empty():
-		var rv: String = "roll" if bool(mask.get("roll", false)) \
-			else "(atan2(ikBasis[2][1],ikBasis[2][2])*RAD_TO_DEG)"
-		var pv: String = "pitch" if bool(mask.get("pitch", false)) \
-			else "(asin(ikBasis[2][0])*RAD_TO_DEG)"
-		var yv: String = "yaw" if bool(mask.get("yaw", false)) \
-			else "(atan2(ikBasis[1][0],ikBasis[0][0])*RAD_TO_DEG)"
-		s += "    cr=cos(%s*DEG_TO_RAD);sr=sin(%s*DEG_TO_RAD);cp=cos(%s*DEG_TO_RAD);sp=sin(%s*DEG_TO_RAD);cy=cos(%s*DEG_TO_RAD);sy=sin(%s*DEG_TO_RAD);\n" % [rv, rv, pv, pv, yv, yv]
-		s += "    ikTargetBasis[0][0]=cy*cp;ikTargetBasis[1][0]=sy*cp;ikTargetBasis[2][0]=sp;\n"
-		s += "    ikTargetBasis[0][1]=-sy*cr-cy*sp*sr;ikTargetBasis[1][1]=cy*cr-sy*sp*sr;ikTargetBasis[2][1]=cp*sr;\n"
-		s += "    ikTargetBasis[0][2]=sy*sr-cy*sp*cr;ikTargetBasis[1][2]=-cy*sr-sy*sp*cr;ikTargetBasis[2][2]=cp*cr;\n"
-		s += "    ikOriErr[0]=0.5f*((ikBasis[1][0]*ikTargetBasis[2][0]-ikBasis[2][0]*ikTargetBasis[1][0])+(ikBasis[1][1]*ikTargetBasis[2][1]-ikBasis[2][1]*ikTargetBasis[1][1])+(ikBasis[1][2]*ikTargetBasis[2][2]-ikBasis[2][2]*ikTargetBasis[1][2]));\n"
-		s += "    ikOriErr[1]=0.5f*((ikBasis[2][0]*ikTargetBasis[0][0]-ikBasis[0][0]*ikTargetBasis[2][0])+(ikBasis[2][1]*ikTargetBasis[0][1]-ikBasis[0][1]*ikTargetBasis[2][1])+(ikBasis[2][2]*ikTargetBasis[0][2]-ikBasis[0][2]*ikTargetBasis[2][2]));\n"
-		s += "    ikOriErr[2]=0.5f*((ikBasis[0][0]*ikTargetBasis[1][0]-ikBasis[1][0]*ikTargetBasis[0][0])+(ikBasis[0][1]*ikTargetBasis[1][1]-ikBasis[1][1]*ikTargetBasis[0][1])+(ikBasis[0][2]*ikTargetBasis[1][2]-ikBasis[1][2]*ikTargetBasis[0][2]));\n"
-		s += "    sinAngle=sqrt(ikOriErr[0]*ikOriErr[0]+ikOriErr[1]*ikOriErr[1]+ikOriErr[2]*ikOriErr[2]);\n"
-		s += "    cosAngle=0.5f*(ikTargetBasis[0][0]*ikBasis[0][0]+ikTargetBasis[1][0]*ikBasis[1][0]+ikTargetBasis[2][0]*ikBasis[2][0]+ikTargetBasis[0][1]*ikBasis[0][1]+ikTargetBasis[1][1]*ikBasis[1][1]+ikTargetBasis[2][1]*ikBasis[2][1]+ikTargetBasis[0][2]*ikBasis[0][2]+ikTargetBasis[1][2]*ikBasis[1][2]+ikTargetBasis[2][2]*ikBasis[2][2]-1.0f);\n"
-		s += "    if(cosAngle>1.0f)cosAngle=1.0f;if(cosAngle<-1.0f)cosAngle=-1.0f;angleScale=(sinAngle>IK_EPS)?atan2(sinAngle,cosAngle)/sinAngle:1.0f;\n"
-		s += "    ikOriErr[0]*=angleScale;ikOriErr[1]*=angleScale;ikOriErr[2]*=angleScale;\n"
-	s += "    for(k=0;k<JOINT_COUNT;k++){ikLv[0]=ikPts[JOINT_COUNT][0]-ikPts[k][0];ikLv[1]=ikPts[JOINT_COUNT][1]-ikPts[k][1];ikLv[2]=ikPts[JOINT_COUNT][2]-ikPts[k][2];ikCols[k][0]=ikAxes[k][1]*ikLv[2]-ikAxes[k][2]*ikLv[1];ikCols[k][1]=ikAxes[k][2]*ikLv[0]-ikAxes[k][0]*ikLv[2];ikCols[k][2]=ikAxes[k][0]*ikLv[1]-ikAxes[k][1]*ikLv[0];ikJte[k]=ikCols[k][0]*ikEv[0]+ikCols[k][1]*ikEv[1]+ikCols[k][2]*ikEv[2];"
+		s += "    ik_orientation_error(roll,pitch,yaw);\n"
+	s += "    ik_build_position_cols();for(k=0;k<JOINT_COUNT;k++){ikJte[k]=ikCols[k][0]*ikEv[0]+ikCols[k][1]*ikEv[1]+ikCols[k][2]*ikEv[2];"
 	if not enabled.is_empty():
-		var terms: Array = []
-		if bool(mask.get("pitch", false)):
-			terms.append("(ikAxes[k][0]*sy-ikAxes[k][1]*cy)*(ikOriErr[0]*sy-ikOriErr[1]*cy)")
-		if bool(mask.get("yaw", false)):
-			terms.append("ikAxes[k][2]*ikOriErr[2]")
-		if bool(mask.get("roll", false)):
-			terms.append("(ikAxes[k][0]*ikBasis[0][0]+ikAxes[k][1]*ikBasis[1][0]+ikAxes[k][2]*ikBasis[2][0])*(ikOriErr[0]*ikBasis[0][0]+ikOriErr[1]*ikBasis[1][0]+ikOriErr[2]*ikBasis[2][0])")
-		s += "if(posErr2<4.0f)ikJte[k]+=(%s)*ORIENTATION_WEIGHT*ORIENTATION_WEIGHT;" % "+".join(terms)
+		s += "}ikRequestedMask=solverMask;ik_build_tasks();for(t=0;t<ikTaskCount;t++)ikTaskErr[t]=(ikOriErr[0]*ikTaskAxes[t][0]+ikOriErr[1]*ikTaskAxes[t][1]+ikOriErr[2]*ikTaskAxes[t][2])*ORIENTATION_WEIGHT;for(k=0;k<JOINT_COUNT;k++){if(posErr2<4.0f)for(t=0;t<ikTaskCount;t++)ikJte[k]+=ikTaskRows[t][k]*ikTaskErr[t]*ORIENTATION_WEIGHT;"
 	s += "}\n"
-	s += "    num=0.0f;ikWv[0]=0.0f;ikWv[1]=0.0f;ikWv[2]=0.0f;for(k=0;k<JOINT_COUNT;k++){num+=ikJte[k]*ikJte[k];ikWv[0]+=ikCols[k][0]*ikJte[k];ikWv[1]+=ikCols[k][1]*ikJte[k];ikWv[2]+=ikCols[k][2]*ikJte[k];}den=ikWv[0]*ikWv[0]+ikWv[1]*ikWv[1]+ikWv[2]*ikWv[2];alpha=(den>IK_EPS)?num/den:0.0f;\n"
+	s += "    num=0.0f;ikWv[0]=0.0f;ikWv[1]=0.0f;ikWv[2]=0.0f;for(t=0;t<ikTaskCount;t++)ikTaskDot[t]=0.0f;for(k=0;k<JOINT_COUNT;k++){num+=ikJte[k]*ikJte[k];ikWv[0]+=ikCols[k][0]*ikJte[k];ikWv[1]+=ikCols[k][1]*ikJte[k];ikWv[2]+=ikCols[k][2]*ikJte[k];if(posErr2<4.0f)for(t=0;t<ikTaskCount;t++)ikTaskDot[t]+=ikTaskRows[t][k]*ORIENTATION_WEIGHT*ikJte[k];}den=ikWv[0]*ikWv[0]+ikWv[1]*ikWv[1]+ikWv[2]*ikWv[2];if(posErr2<4.0f)for(t=0;t<ikTaskCount;t++)den+=ikTaskDot[t]*ikTaskDot[t];alpha=(den>IK_EPS)?num/den:0.0f;ikNumericProtected=0;if(alpha!=alpha||alpha>100000.0f||alpha< -100000.0f){alpha=0.0f;ikNumericProtected=1;}\n"
 	s += "    maxStep=0.0f;for(k=0;k<JOINT_COUNT;k++){step=alpha*ikJte[k]*RAD_TO_DEG;if(step<0.0f)step=-step;if(step>maxStep)maxStep=step;}if(maxStep>IK_MAX_STEP_DEG)alpha*=IK_MAX_STEP_DEG/maxStep;errBefore=posErr2;\n"
-	s += "    for(k=0;k<JOINT_COUNT;k++){jointAngle[k]+=alpha*ikJte[k]*RAD_TO_DEG;if(jointAngle[k]<jointMin[k])jointAngle[k]=jointMin[k];if(jointAngle[k]>jointMax[k])jointAngle[k]=jointMax[k];}\n"
-	s += "    ik_fk();errAfter=(x-ikPts[JOINT_COUNT][0])*(x-ikPts[JOINT_COUNT][0])+(y-ikPts[JOINT_COUNT][1])*(y-ikPts[JOINT_COUNT][1])+(z-ikPts[JOINT_COUNT][2])*(z-ikPts[JOINT_COUNT][2]);ik_reachable=(errAfter<errBefore)?1:0;\n"
+	s += "    ikStepClamped=0;for(k=0;k<JOINT_COUNT;k++){jointAngle[k]+=alpha*ikJte[k]*RAD_TO_DEG;if(jointAngle[k]<jointMin[k]){jointAngle[k]=jointMin[k];ikStepClamped=1;}if(jointAngle[k]>jointMax[k]){jointAngle[k]=jointMax[k];ikStepClamped=1;}}\n"
+	if not enabled.is_empty():
+		s += "    if(posErr2<4.0f)for(t=0;t<ikTaskCount;t++)errBefore+=ikTaskErr[t]*ikTaskErr[t];\n"
+	s += "    ik_fk();errAfter=(x-ikPts[JOINT_COUNT][0])*(x-ikPts[JOINT_COUNT][0])+(y-ikPts[JOINT_COUNT][1])*(y-ikPts[JOINT_COUNT][1])+(z-ikPts[JOINT_COUNT][2])*(z-ikPts[JOINT_COUNT][2]);"
+	if not enabled.is_empty():
+		s += "if(posErr2<4.0f){ik_orientation_error(roll,pitch,yaw);ikRequestedMask=solverMask;ik_build_tasks();for(t=0;t<ikTaskCount;t++){step=(ikOriErr[0]*ikTaskAxes[t][0]+ikOriErr[1]*ikTaskAxes[t][1]+ikOriErr[2]*ikTaskAxes[t][2])*ORIENTATION_WEIGHT;errAfter+=step*step;}}"
+	s += "ik_reachable=(errAfter<errBefore-0.0001f)?1:0;\n"
 	s += "}\n\n"
 	return s
 
@@ -1084,9 +1274,9 @@ func _gen_ik_fk() -> String:
 
 
 # ------------------------------------------------------------------ ReadControllerInputs
-func _gen_read_inputs() -> String:
+func _gen_read_inputs(read_rocker2: bool = false) -> String:
 	var s: String = ""
-	s += "/// @brief 读取摇杆并做死区过滤（按键在使用处直接 RcKeyValueRead 读取）\n"
+	s += "/// @brief 读取摇杆并做死区过滤\n"
 	s += "void ReadControllerInputs()\n"
 	s += "{\n"
 	s += "    valueOfRoker[0][0] = RcRockerValueRead(ROCKER_LEFT_HORIZONTAL);\n"
@@ -1101,6 +1291,8 @@ func _gen_read_inputs() -> String:
 	s += "        valueOfRoker[1][0] = 0;\n"
 	s += "    if (abs(valueOfRoker[1][1]) <= deadBandOfRight)\n"
 	s += "        valueOfRoker[1][1] = 0;\n"
+	if read_rocker2:
+		s += "    valueOfKey[2][1] = RcKeyValueRead(KEY_OFFSET_Rocker21);\n"
 	s += "}\n\n"
 	return s
 
@@ -1124,11 +1316,13 @@ func _gen_gripper_control(gripper: Dictionary) -> String:
 	return s
 
 
-## 模式键按下边沿翻转；回到逆解时用当前关节姿态刷新末端目标，避免追逐旧目标。
-func _gen_mode_control(switch_offset: String, jc: int, mask: Dictionary) -> String:
+## 从当前关节姿态刷新完整末端目标，供模式切换与回初始角共用。
+func _gen_sync_ik_target(mask: Dictionary) -> String:
 	var s: String = ""
 	s += "void SyncIKTargetFromJoints()\n"
 	s += "{\n"
+	if bool(mask.get("pitch", false)):
+		s += "    float pitchSin;\n"
 	s += "    ik_fk();\n"
 	s += "    targetX = ikPts[JOINT_COUNT][0];\n"
 	s += "    targetY = ikPts[JOINT_COUNT][1];\n"
@@ -1136,10 +1330,19 @@ func _gen_mode_control(switch_offset: String, jc: int, mask: Dictionary) -> Stri
 	if bool(mask.get("roll", false)):
 		s += "    targetRoll = atan2(ikBasis[2][1], ikBasis[2][2]) * RAD_TO_DEG;\n"
 	if bool(mask.get("pitch", false)):
-		s += "    targetPitch = asin(ikBasis[2][0]) * RAD_TO_DEG;\n"
+		s += "    pitchSin = ikBasis[2][0];\n"
+		s += "    if (pitchSin > 1.0f) pitchSin = 1.0f;\n"
+		s += "    if (pitchSin < -1.0f) pitchSin = -1.0f;\n"
+		s += "    targetPitch = asin(pitchSin) * RAD_TO_DEG;\n"
 	if bool(mask.get("yaw", false)):
 		s += "    targetYaw = atan2(ikBasis[1][0], ikBasis[0][0]) * RAD_TO_DEG;\n"
 	s += "}\n\n"
+	return s
+
+
+## 模式键按下边沿翻转；回到逆解时用当前关节姿态刷新末端目标，避免追逐旧目标。
+func _gen_mode_control(switch_offset: String) -> String:
+	var s: String = ""
 	s += "void UpdateControlMode()\n"
 	s += "{\n"
 	s += "    uint8_t pressed;\n"
@@ -1153,6 +1356,32 @@ func _gen_mode_control(switch_offset: String, jc: int, mask: Dictionary) -> Stri
 	s += "    }\n"
 	s += "    else if (!pressed)\n"
 	s += "        modeKeyHeld = 0;\n"
+	s += "}\n\n"
+	return s
+
+
+func _gen_return_arm_home() -> String:
+	var s: String = ""
+	s += "/// @brief ROCKER2 上升沿恢复关节初始角，并同步完整逆解目标\n"
+	s += "uint8_t ReturnArmHome()\n"
+	s += "{\n"
+	s += "    uint8_t pressed;\n"
+	s += "    pressed = valueOfKey[2][1];\n"
+	s += "    if (pressed && !armHomeKeyHeld)\n"
+	s += "    {\n"
+	s += "        armHomeKeyHeld = 1;\n"
+	s += "        for (i = 0; i < JOINT_COUNT; i++)\n"
+	s += "        {\n"
+	s += "            jointAngle[i] = jointHome[i];\n"
+	s += "            if (jointAngle[i] < jointMin[i]) jointAngle[i] = jointMin[i];\n"
+	s += "            if (jointAngle[i] > jointMax[i]) jointAngle[i] = jointMax[i];\n"
+	s += "        }\n"
+	s += "        SyncIKTargetFromJoints();\n"
+	s += "        return 1;\n"
+	s += "    }\n"
+	s += "    if (!pressed)\n"
+	s += "        armHomeKeyHeld = 0;\n"
+	s += "    return 0;\n"
 	s += "}\n\n"
 	return s
 
@@ -1301,11 +1530,11 @@ func _gen_check_preset_keys(jc: int, mask: Dictionary) -> String:
 	s += "            targetY = presetPose[i][1];\n"
 	s += "            targetZ = presetPose[i][2];\n"
 	if bool(mask.get("roll", false)):
-		s += "            targetRoll = presetPose[i][3];\n"
+		s += "            if (solverMask & 1) targetRoll = presetPose[i][3];\n"
 	if bool(mask.get("pitch", false)):
-		s += "            targetPitch = presetPose[i][4];\n"
+		s += "            if (solverMask & 2) targetPitch = presetPose[i][4];\n"
 	if bool(mask.get("yaw", false)):
-		s += "            targetYaw = presetPose[i][5];\n"
+		s += "            if (solverMask & 4) targetYaw = presetPose[i][5];\n"
 	s += "            return 1;\n"
 	s += "        }\n"
 	s += "    }\n"
@@ -1318,6 +1547,14 @@ func _gen_check_preset_keys(jc: int, mask: Dictionary) -> String:
 func _gen_calculate_ik(cfg: Dictionary, mask: Dictionary) -> String:
 	var jc: int = cfg.get("joint_count", 2)
 	var s: String = ""
+	if bool(mask.get("roll", false)) or bool(mask.get("yaw", false)):
+		s += "/// @brief 将角度环绕到 [-180, 180)\n"
+		s += "float normalize_angle_deg(float angle)\n"
+		s += "{\n"
+		s += "    while (angle >= 180.0f) angle -= 360.0f;\n"
+		s += "    while (angle < -180.0f) angle += 360.0f;\n"
+		s += "    return angle;\n"
+		s += "}\n\n"
 	s += "/// @brief 摇杆/按键输入末端位置增量 -> 逆解算\n"
 	s += "/// @param hit 1=本周期已由预设点位设定目标，跳过增量累加\n"
 	s += "/// @note 采用增量累积模式：摇杆偏移量和长按按键都对 target 做累加，\n"
@@ -1353,7 +1590,7 @@ func _gen_calculate_ik(cfg: Dictionary, mask: Dictionary) -> String:
 	var now_d2: String = "targetX * targetX + targetY * targetY + targetZ * targetZ"
 	var old_d2: String = "lastX * lastX + lastY * lastY + lastZ * lastZ"
 	s += "    if (!hit && ik_target_too_far(%s)\n" % ", ".join(tvars.slice(0, 3))
-	s += "            && %s >= %s)\n" % [now_d2, old_d2]
+	s += "            && %s > %s + IK_EPS)\n" % [now_d2, old_d2]
 	s += "    {\n"
 	s += "        // 撤回继续向外的增量；向内的增量可以逐步进入软边界\n"
 	s += "        %s\n" % " ".join(restore_stmts)
@@ -1419,34 +1656,51 @@ func _build_joy_mapping(cfg: Dictionary) -> String:
 	return s
 
 
-## 按键控制末端移动代码生成（长按持续移动）
-## keymove 索引：0=末端X, 1=末端Y, 2=末端Z, 3=末端姿态角φ
+## 按键控制六维末端目标（长按持续移动）
+## keymove 索引：0=X, 1=Y, 2=Z, 3=Roll, 4=Pitch, 5=Yaw
 func _build_keymove_mapping(cfg: Dictionary, mask: Dictionary) -> String:
 	var keymove: Array = cfg.get("keymove", [])
 	if keymove.is_empty():
 		return ""
-	var target_names: Array = ["targetX", "targetY", "targetZ", "targetPitch"]
-	var axis_labels: Array = ["X", "Y", "Z", "俯仰角"]
-	var step_macros: Array = ["KEYMOVE_SPEED", "KEYMOVE_SPEED", "KEYMOVE_SPEED", "KEYMOVE_PITCH_SPEED"]
+	var target_names: Array = ["targetX", "targetY", "targetZ",
+		"targetRoll", "targetPitch", "targetYaw"]
+	var axis_labels: Array = ["X", "Y", "Z", "Roll", "Pitch", "Yaw"]
+	var step_macros: Array = ["KEYMOVE_POSITION_SPEED", "KEYMOVE_POSITION_SPEED",
+		"KEYMOVE_POSITION_SPEED", "KEYMOVE_ORIENTATION_SPEED",
+		"KEYMOVE_ORIENTATION_SPEED", "KEYMOVE_ORIENTATION_SPEED"]
+	var orientation_names: Array = ["roll", "pitch", "yaw"]
+	var orientation_bits: Array = [1, 2, 4]
 	var s: String = ""
 	var has_any: bool = false
-	for i in range(min(keymove.size(), 4)):
-		# 俯仰角只在构形上真的能单独控时才生成
-		if i == 3 and not bool(mask.get("pitch", false)):
+	for i in range(min(keymove.size(), 6)):
+		# 姿态维度只在构形上真的能独立控制时才生成。
+		if i >= 3 and not bool(mask.get(orientation_names[i - 3], false)):
 			continue
 		var plus_key: String = keymove[i].get("plus", "不使用")
 		var minus_key: String = keymove[i].get("minus", "不使用")
 		if plus_key == "不使用" and minus_key == "不使用":
 			continue
 		if not has_any:
-			s += "    // 按键增量：长按时每周期移动 KEYMOVE_SPEED mm / KEYMOVE_PHI_SPEED 度\n"
+			s += "    // 按键增量：位置与姿态分别使用 mm/周期和度/周期\n"
 			has_any = true
 		if plus_key != "不使用":
-			s += "    if (RcKeyValueRead(%s))\n" % _key_name_to_offset(plus_key)
+			var plus_guard: String = "RcKeyValueRead(%s)" % _key_name_to_offset(plus_key)
+			if i >= 3:
+				plus_guard = "(solverMask & %d) && %s" % [orientation_bits[i - 3], plus_guard]
+			s += "    if (%s)\n" % plus_guard
 			s += "        %s += %s; // 末端%s 正向（按键 %s）\n" % [target_names[i], step_macros[i], axis_labels[i], plus_key]
 		if minus_key != "不使用":
-			s += "    if (RcKeyValueRead(%s))\n" % _key_name_to_offset(minus_key)
+			var minus_guard: String = "RcKeyValueRead(%s)" % _key_name_to_offset(minus_key)
+			if i >= 3:
+				minus_guard = "(solverMask & %d) && %s" % [orientation_bits[i - 3], minus_guard]
+			s += "    if (%s)\n" % minus_guard
 			s += "        %s -= %s; // 末端%s 负向（按键 %s）\n" % [target_names[i], step_macros[i], axis_labels[i], minus_key]
+		if i == 4:
+			s += "    if ((solverMask & 2) && targetPitch > 90.0f) targetPitch = 90.0f;\n"
+			s += "    if ((solverMask & 2) && targetPitch < -90.0f) targetPitch = -90.0f;\n"
+		elif i >= 3:
+			s += "    if (solverMask & %d) %s = normalize_angle_deg(%s);\n" % [
+				orientation_bits[i - 3], target_names[i], target_names[i]]
 	return s
 
 

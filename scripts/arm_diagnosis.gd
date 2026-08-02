@@ -31,7 +31,8 @@ func analyze(joints: Array, jc: int) -> Dictionary:
 		var chain: Dictionary = cg.fk_chain(sample, joints, jc)
 		var cols: Array = cg.jacobian_columns(chain, jc)
 		var position_dof: int = _rank(cols)
-		var task: Dictionary = cg.orientation_task_rows(chain, jc, ALL_ORIENTATION)
+		var sample_mask: Dictionary = cg.diagnose_orientation_mask_at_chain(chain, jc)
+		var task: Dictionary = cg.orientation_task_rows(chain, jc, sample_mask)
 		var order: Array = task["order"]
 		if position_dof > best_position_dof \
 				or (position_dof == best_position_dof and order.size() > best_order.size()):

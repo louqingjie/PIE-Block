@@ -11,8 +11,8 @@
 #define FOSC                    33177600UL
 
 /* 波特率装载值。表达式随 FOSC 自动跟，不要手改成常量。
-   33177600/4/115200 = 72 整，实际波特率误差 0%。 */
-#define BAUD                    (65536 - FOSC / 4 / 115200)
+   33177600/4/230400 = 36 整，实际波特率误差 0%。 */
+#define BAUD                    (65536 - FOSC / 4 / 230400)
 
 /* 启用 READ 命令。原例程默认关掉它，但没有 READ 就无法在下载后读回校验，
    只能靠"PROGRAM 没报错"来推断，那不足以证明写对了。
@@ -25,6 +25,6 @@
      2. USER/src/isr.asm 的 `LDR_SIZE EQU`
      3. 所有 App 项目 uvproj 的 INTVECTOR(...) */
 #define LDR_SIZE                0x1000
-#define LDR_VERSION             0x0100
+#define LDR_VERSION             0x0200
 
 #endif

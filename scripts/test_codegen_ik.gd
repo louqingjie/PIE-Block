@@ -13,8 +13,13 @@ func _initialize() -> void:
 	_test_joy_axis(cg)
 	_test_angle_clamp(cg)
 	_test_no_preset(cg)
+	_test_preset_orientation_mask(cg)
 	_test_dual_mode(cg)
+	_test_six_axis_key_mapping(cg)
+	_test_arm_home(cg)
 	_test_gripper(cg)
+	_test_mcu_simulator(cg)
+	_test_solver_fingerprint_scope(cg)
 	_test_initial_target(cg)
 	_test_joint_offset(cg)
 	_test_config(cg, 2, "2关节")
@@ -33,8 +38,56 @@ func _check(label: String, ok: bool) -> void:
 		print("[✗ FAIL] %s" % label)
 		_fail += 1
 
+func _test_mcu_simulator(cg) -> void:
+	var cfg: Dictionary = _make_cfg(4, [])
+	var code: String = cg.generate_simulator(cfg)
+	_check("MCU 仿真固件非空", not code.is_empty())
+	_check("MCU 仿真固件有协议版本", code.contains("SOLVER_PROTOCOL_VERSION"))
+	_check("MCU 仿真固件有 UART 接收钩子", code.contains("void IKSimRxByte"))
+	_check("MCU 仿真固件没有扩展板输出", not code.contains("ExpansionBoradControl"))
+	_check("MCU 仿真固件没有 PWM 输出", not code.contains("PWM_"))
+	_check("MCU 仿真固件只有一个 main", code.count("void main(") == 1)
+	_check("MCU 仿真固件在改写状态前拒绝 NaN/Inf",
+		code.contains("IkSimFinite") and code.contains("if(!valid){solverStatus=32"))
+	_check("MCU 上电执行四姿态诊断", code.contains("void ik_diagnose(void)")
+		and code.contains("for(sample=0;sample<4;sample++)"))
+	_check("MCU 诊断后从 jointHome 同步初始目标",
+		code.contains("ik_diagnose();\n    IkSimSyncTarget();"))
+	_check("协议序号保持 uint16", code.contains("uint16_t seq")
+		and code.contains("(uint16_t)p[2]|((uint16_t)p[3]<<8)"))
+	_check("协议大缓冲位于 xdata", code.contains("static uint8_t xdata ikSimTx[128]"))
+	var core: String = cg.generate_kinematics_core(4, cfg["joints"])
+	_check("生产与仿真固件拼接同一 C 运动学核心",
+		code.contains(core) and cg.generate(cfg).contains(core))
+	_check("求解器指纹稳定", cg.solver_fingerprint(cfg) == cg.solver_fingerprint(cfg.duplicate(true)))
+
 
 ## 构造测试配置
+func _test_solver_fingerprint_scope(cg) -> void:
+	var cfg: Dictionary = _make_cfg(4, [])
+	var baseline: String = cg.solver_fingerprint(cfg)
+	var changed := cfg.duplicate(true)
+	changed["joint_count"] = 3
+	_check("solver fingerprint includes joint count", cg.solver_fingerprint(changed) != baseline)
+	for mutation in [["axis", "Roll"], ["len", "101"], ["zero", "44"],
+			["min", "-80"], ["max", "80"]]:
+		changed = cfg.duplicate(true)
+		changed["joints"][0][mutation[0]] = mutation[1]
+		_check("solver fingerprint includes joint %s" % mutation[0],
+			cg.solver_fingerprint(changed) != baseline)
+	for mutation in [["io", "P60"], ["dir", "reverse"], ["offset", "12"]]:
+		changed = cfg.duplicate(true)
+		changed["joints"][0][mutation[0]] = mutation[1]
+		_check("solver fingerprint ignores joint %s" % mutation[0],
+			cg.solver_fingerprint(changed) == baseline)
+	for field in ["joy_x", "joy_scale", "keymove_speed", "orientation_key_speed",
+			"rocker2_home_enabled", "mode_switch_key", "gripper"]:
+		changed = cfg.duplicate(true)
+		changed[field] = {"enabled": true, "io": "P77"} if field == "gripper" else "changed"
+		_check("solver fingerprint ignores control field %s" % field,
+			cg.solver_fingerprint(changed) == baseline)
+
+
 func _make_cfg(jc: int, presets: Array) -> Dictionary:
 	var joints: Array = []
 	var io_list: Array = ["P74", "P75", "P76", "MP03", "MP74", "P77"]
@@ -52,11 +105,15 @@ func _make_cfg(jc: int, presets: Array) -> Dictionary:
 		"joy_x": "右X->末端X", "joy_y": "右Y->末端Y", "joy_z": "右X->末端Z",
 		"joy_scale": "5",
 		"keymove_speed": "2",
+		"orientation_key_speed": "1.5",
+		"rocker2_home_enabled": false,
 		"keymove": [
 			{"plus": "↑", "minus": "↓"},
 			{"plus": "←", "minus": "->"},
 			{"plus": "B", "minus": "C"},
+			{"plus": "不使用", "minus": "不使用"},
 			{"plus": "D", "minus": "R"},
+			{"plus": "不使用", "minus": "不使用"},
 		],
 	}
 
@@ -107,6 +164,54 @@ func _test_dual_mode(cg) -> void:
 	_check("只有一个 main", code.count("void main()") == 1)
 	_check("只有一个扩展板函数定义", code.count("/// @brief 板间通信函数") == 1)
 	_check("双模式符合 C89 声明顺序", _check_c89_decl_order(code))
+
+
+func _test_six_axis_key_mapping(cg) -> void:
+	print("\n--- 六维末端按键映射 ---")
+	var cfg: Dictionary = _make_cfg(6, [])
+	cfg["keymove"][3] = {"plus": "A", "minus": "B"}
+	cfg["keymove"][4] = {"plus": "C", "minus": "D"}
+	cfg["keymove"][5] = {"plus": "↑", "minus": "↓"}
+	var mapping: String = cg._build_keymove_mapping(cfg,
+		{"roll": true, "pitch": true, "yaw": true})
+	_check("XYZ uses position step", mapping.contains("targetX += KEYMOVE_POSITION_SPEED"))
+	_check("Roll/Pitch/Yaw use orientation step",
+		mapping.contains("targetRoll += KEYMOVE_ORIENTATION_SPEED")
+		and mapping.contains("targetPitch += KEYMOVE_ORIENTATION_SPEED")
+		and mapping.contains("targetYaw += KEYMOVE_ORIENTATION_SPEED"))
+	_check("Roll/Yaw normalize and Pitch clamps",
+		mapping.contains("targetRoll = normalize_angle_deg(targetRoll)")
+		and mapping.contains("targetYaw = normalize_angle_deg(targetYaw)")
+		and mapping.contains("targetPitch > 90.0f"))
+	var masked: String = cg._build_keymove_mapping(cfg,
+		{"roll": false, "pitch": true, "yaw": false})
+	_check("uncontrollable orientation dimensions are omitted",
+		not masked.contains("targetRoll") and masked.contains("targetPitch")
+		and not masked.contains("targetYaw"))
+
+
+func _test_arm_home(cg) -> void:
+	print("\n--- ROCKER2 回初始角 ---")
+	var cfg: Dictionary = _make_dual_cfg()
+	cfg["ik"]["rocker2_home_enabled"] = true
+	var code: String = cg.generate(cfg)
+	_check("home samples ROCKER2 into valueOfKey",
+		code.contains("valueOfKey[2][1] = RcKeyValueRead(KEY_OFFSET_Rocker21)"))
+	_check("home uses rising-edge latch", code.contains("pressed && !armHomeKeyHeld")
+		and code.contains("if (!pressed)") and code.contains("armHomeKeyHeld = 0"))
+	_check("home restores jointHome with limits and syncs FK target",
+		code.contains("jointAngle[i] = jointHome[i]")
+		and code.contains("jointAngle[i] < jointMin[i]")
+		and code.contains("SyncIKTargetFromJoints();"))
+	_check("home runs after mode and chassis but before arm branches",
+		code.find("UpdateControlMode();") < code.find("armHomeHit = ReturnArmHome();")
+		and code.find("CalculateChassisControl();") < code.find("armHomeHit = ReturnArmHome();")
+		and code.find("armHomeHit = ReturnArmHome();") < code.find("if (inverseMode)"))
+	_check("home hit skips inverse and forward arm control",
+		code.contains("if (!armHomeHit)") and code.contains("else if (!armHomeHit)"))
+	var disabled: String = cg.generate(_make_dual_cfg())
+	_check("disabled home emits no valueOfKey or home function",
+		not disabled.contains("valueOfKey") and not disabled.contains("ReturnArmHome"))
 
 
 func _test_gripper(cg) -> void:
@@ -203,17 +308,18 @@ func _test_config(cg, jc: int, label: String) -> void:
 	_check("%s 有单步限幅" % label, code.find("IK_MAX_STEP_DEG/maxStep") >= 0)
 	# 该测试构型从 4 关节起具备独立姿态自由度，姿态角应可由按键调整。
 	if jc >= 4:
-		_check("4轴 有 Pitch 按键增量", code.find("targetPitch += KEYMOVE_PITCH_SPEED") >= 0)
+		_check("4轴 有 Pitch 按键增量", code.find("targetPitch += KEYMOVE_ORIENTATION_SPEED") >= 0)
 		_check("4轴 有姿态权重", code.find("#define ORIENTATION_WEIGHT") >= 0)
 		_check("4轴 从 RPY 构造目标旋转矩阵", code.find("ikTargetBasis[0][0]=cy*cp") >= 0)
 		_check("4轴 使用最短旋转误差", code.find("atan2(sinAngle,cosAngle)") >= 0)
-	_check("%s 不再生成旧 phi 路径" % label,
+	_check("%s 不再生成旧单姿态路径" % label,
 		not code.contains("targetPhi") and not code.contains("pitch_gradient") and not code.contains("PHI_WEIGHT"))
 	# 可达性拦截不能再依赖 ik_reachable（雅可比法下它只表示「这步有没有靠近」）
 	_check("%s 用臂展判超界" % label, code.find("ik_target_too_far(") >= 0)
 	_check("%s 超界时允许目标朝内移动" % label,
 		code.find("targetX * targetX + targetY * targetY + targetZ * targetZ") >= 0
-		and code.find("lastX * lastX + lastY * lastY + lastZ * lastZ") >= 0)
+		and code.find("lastX * lastX + lastY * lastY + lastZ * lastZ") >= 0
+		and code.find("> lastX * lastX + lastY * lastY + lastZ * lastZ + IK_EPS") >= 0)
 	# C89：变量声明必须在可执行语句之前
 	_check("%s 符合 C89 声明顺序" % label, _check_c89_decl_order(code))
 	# 写入用户临时目录，仍可供开发期 Keil 编译验证
@@ -233,6 +339,23 @@ func _test_no_preset(cg) -> void:
 	_check("不声明 CheckPresetKeys", code.find("uint8_t CheckPresetKeys();") < 0)
 	_check("不调用 CheckPresetKeys", code.find("CheckPresetKeys()") < 0)
 	_check("presetHit 置 0", code.find("presetHit = 0;") >= 0)
+
+
+func _test_preset_orientation_mask(cg) -> void:
+	print("\n--- 预设姿态运行时掩码 ---")
+	var preset: Dictionary = {
+		"enabled": true, "key": "A", "x": "100", "y": "20", "z": "30",
+		"roll": "10", "pitch": "20", "yaw": "30",
+	}
+	var code: String = cg.generate(_make_cfg(4, [preset]))
+	var body: String = _func_body(code, "uint8_t CheckPresetKeys(")
+	_check("预设始终应用 XYZ", body.contains("targetX = presetPose[i][0]")
+		and body.contains("targetY = presetPose[i][1]")
+		and body.contains("targetZ = presetPose[i][2]"))
+	_check("预设 Roll/Pitch/Yaw 由 MCU solverMask 决定是否应用",
+		body.contains("if (solverMask & 1) targetRoll = presetPose[i][3]")
+		and body.contains("if (solverMask & 2) targetPitch = presetPose[i][4]")
+		and body.contains("if (solverMask & 4) targetYaw = presetPose[i][5]"))
 
 
 ## 限位/初始角超出舵机行程 ±90° 时必须夹紧后写入常量数组
@@ -279,22 +402,17 @@ func _test_initial_target(cg) -> void:
 		var cfg: Dictionary = _make_cfg(3, [])
 		cfg["joints"][2]["zero"] = zero
 		var code: String = cg.generate(cfg)
-		# 生成代码里的 target 初值
-		var idx: int = code.find("targetX = ")
-		_check("初始角%s 生成 target 初值" % zero, idx >= 0)
-		if idx < 0:
-			continue
-		var line: String = code.substr(idx, code.find("\n", idx) - idx)
-		# 与 GDScript 侧按初始角正推的末端比对
-		var jc: int = cfg["joint_count"]
-		var home_ang: Array = cg._joint_home_angles(cfg["joints"])
-		var chain: Dictionary = cg.fk_chain(home_ang, cfg["joints"], jc)
-		var pts: Array = chain["points"]
-		var tip: Vector3 = pts[pts.size() - 1]
-		var ok: bool = line.contains("%.2ff" % tip.x) and line.contains("%.2ff" % tip.y)
-		if not ok:
-			print("      生成 %s / 期望 x=%.2f y=%.2f" % [line, tip.x, tip.y])
-		_check("初始角%s target 初值 == 初始姿态末端" % zero, ok)
+		var main_body: String = _func_body(code, "void main(")
+		var sync_body: String = _func_body(code, "void SyncIKTargetFromJoints(")
+		_check("初始角%s 生成 MCU FK target 初始化" % zero,
+			main_body.contains("jointAngle[i] = jointHome[i];")
+			and main_body.contains("SyncIKTargetFromJoints();"))
+		_check("初始角%s target 由共享 C FK 同步完整位姿" % zero,
+			sync_body.contains("ik_fk();") and sync_body.contains("targetX = ikPts")
+			and sync_body.contains("targetRoll = atan2")
+			and sync_body.contains("targetPitch = asin(pitchSin)")
+			and sync_body.contains("pitchSin > 1.0f")
+			and sync_body.contains("targetYaw = atan2"))
 
 
 ## 安装中位朝向：运动学角与舵机指令角分离
@@ -369,10 +487,7 @@ func _func_body(code: String, signature: String) -> String:
 
 ## ik_solve 的形参列表（随构型裁剪，需与生成器保持一致）
 func _ik_sig(jc: int) -> String:
-	var names: Array = ["float x", "float y", "float z"]
-	if jc >= 4:
-		names.append("float pitch")
-	return ", ".join(names)
+	return "float x, float y, float z, float roll, float pitch, float yaw"
 
 
 ## 从生成代码里取回 target 初值，不足 4 个分量时补 0

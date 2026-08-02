@@ -28,6 +28,15 @@ func begin() -> void:
 	show()
 
 
+## 求解器烧录专用：显示进度面板（标题与提示面向"编译并烧录 MCU 求解器"）。
+## 此前该路径只调 set_progress 未 show，导致 3D 页面点击后无任何进度反馈。
+func begin_solver() -> void:
+	_title.text = "编译并烧录 MCU 求解器"
+	_close.hide()
+	set_progress("准备编译求解器", 2.0, "仿真固件不会初始化或输出任何执行器 IO。")
+	show()
+
+
 func set_progress(stage_text: String, value: float, detail_text: String = "") -> void:
 	_stage.text = stage_text
 	_progress.value = clampf(value, 0.0, 100.0)

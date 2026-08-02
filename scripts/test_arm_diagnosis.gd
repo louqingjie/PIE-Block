@@ -34,7 +34,7 @@ func _has_issue(result: Dictionary, text: String) -> bool:
 func _initialize() -> void:
 	_test_valid_spatial_arm()
 	_test_flat_and_dead_arms()
-	_test_phi_control()
+	_test_pitch_control()
 	_test_two_to_six_joint_safety()
 	_test_zero_lengths()
 	print("Result: %s" % ("PASS" if _fail == 0 else "%d failed" % _fail))
@@ -59,7 +59,7 @@ func _test_flat_and_dead_arms() -> void:
 	_check("all Roll message is actionable", _has_issue(dead, "Roll"), str(dead))
 
 
-func _test_phi_control() -> void:
+func _test_pitch_control() -> void:
 	var four: Dictionary = _diag.analyze(
 		_j(["Yaw", "Pitch", "Pitch", "Pitch"], [0, 120, 90, 40]), 4)
 	_check("four joint spatial arm controls pitch", bool(four.orientation_mask.pitch), str(four))

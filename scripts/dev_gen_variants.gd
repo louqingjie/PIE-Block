@@ -4,9 +4,9 @@ extends SceneTree
 ##
 ## 覆盖面按「最容易出编译错误」挑选：
 ##   2 关节        —— 仍使用统一 XYZ 目标
-##   4 关节 Yaw+3Pitch —— φ 可控，走完整的姿态解算路径
+##   4 关节 Yaw+3Pitch —— Pitch 可控，走完整的姿态解算路径
 ##   6 关节含 Roll —— 关节数上限，xdata 用量最大
-##   4 关节全 Pitch —— φ 不可控，整条 φ 链路都不该生成
+##   4 关节全 Pitch —— 独立姿态不可控，不生成姿态任务
 ##   无预设点位     —— C89 禁止零长数组，presetKey/presetPos 整块跳过
 ##
 ## 运行：godot --headless --path . --script scripts/dev_gen_variants.gd

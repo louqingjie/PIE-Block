@@ -19,6 +19,13 @@ class MissingHexToolchain extends RefCounted:
 		return false
 
 
+class SolverReconnectProbe extends Control:
+	var reconnect_count: int = 0
+
+	func reconnect_mcu_solver_after_flash() -> void:
+		reconnect_count += 1
+
+
 ## AppState 是 autoload，--script 模式下没有全局标识符，只能从 root 拿
 func _app() -> Node:
 	return root.get_node("/root/AppState")
@@ -34,7 +41,7 @@ func _check(label: String, ok: bool, detail: String = "") -> void:
 
 func _initialize() -> void:
 	print("=== 项目文件与配置序列化测试 ===\n")
-	_check("项目格式版本已升级到 6", PF.FORMAT_VERSION == 6)
+	_check("项目格式版本已升级到 7", PF.FORMAT_VERSION == 7)
 	DirAccess.make_dir_recursive_absolute(TMP_DIR)
 	_test_kind_mapping()
 	_test_roundtrip()
@@ -71,8 +78,8 @@ func _test_code_edit_focus_setup() -> void:
 	_check("AI 编辑页实例化独立项目引导", guide != null
 		and guide.scene_file_path == "res://scenes/project_guide.tscn")
 	if guide != null:
-		guide.setup(editor.GUIDE_TITLES, editor.GUIDE_HINTS,
-			[true, true, true, true, false, false, false])
+		var completed: Array[bool] = [true, true, true, true, false, false, false]
+		guide.setup(editor.GUIDE_TITLES, editor.GUIDE_HINTS, completed)
 	_check("AI 编辑页引导提供七个步骤", guide != null and guide.get_step_count() == 7)
 	_check("AI 编辑页代码框路径有效", editor.get_node_or_null(editor.P_CODE_EDIT) is CodeEdit)
 	_check("AI 编辑页终端槽路径有效", editor.get_node_or_null(editor.P_WEB_SLOT) is Control)
@@ -158,6 +165,7 @@ func _test_roundtrip() -> void:
 			"checked_hash": "check-123",
 			"built_hash": "build-123",
 			"flashed_hash": "flash-123",
+			"firmware_mode": "simulator" if kind == PF.KIND_ENGINEER else "production",
 			"hardware_tested": stage >= 2,
 			"guide_completed": [true, true, true, true, true, true, stage >= 2],
 		}
@@ -181,7 +189,7 @@ func _test_roundtrip() -> void:
 		_check("%s/阶段%d main_c_ai 一致" % [kind, stage],
 			got["main_c_ai"] == data["main_c_ai"])
 		_check("%s/阶段%d workflow 一致" % [kind, stage],
-			got["workflow"] == data["workflow"])
+			got["workflow"] == PF.normalize_workflow(data["workflow"]))
 	# current_main_c：阶段二优先 AI 版
 	var d2: Dictionary = PF.new_data(PF.KIND_ENGINEER)
 	d2["stage"] = 2
@@ -252,6 +260,21 @@ func _test_normalize() -> void:
 	_check("main_c 非字符串转字符串", weird["main_c_stage1"] == "12345")
 	_check("旧项目补齐七步引导进度",
 		weird["workflow"]["guide_completed"] == [false, false, false, false, false, false, false])
+	_check("缺少固件状态时回退 unknown",
+		str(weird["workflow"]["firmware_mode"]) == "unknown")
+	_check("正式固件状态可规范化保存",
+		str(PF.normalize_workflow({"firmware_mode": "production"})["firmware_mode"])
+			== "production")
+	_check("非法固件状态不会伪装成已烧录",
+		str(PF.normalize_workflow({"firmware_mode": "broken"})["firmware_mode"])
+			== "unknown")
+	var v6: Dictionary = PF.normalize({"format_version": 6, "kind": PF.KIND_ENGINEER,
+		"ik_config": {"keymove": [{}, {}, {}, {}]}})
+	_check("版本6工程补齐六维遥控默认字段",
+		v6["format_version"] == PF.FORMAT_VERSION
+		and v6["ik_config"]["keymove"].size() == 6
+		and v6["ik_config"]["orientation_key_speed"] == "1"
+		and not v6["ik_config"]["rocker2_home_enabled"])
 	var short_progress: Dictionary = PF.normalize({
 		"workflow": {"guide_completed": [true, true, false]},
 	})
@@ -454,7 +477,7 @@ func _test_lifecycle() -> void:
 	var saved_guide_progress: Array = saved["data"]["workflow"]["guide_completed"].duplicate()
 	_check("保存写入了改动的配置",
 		str((saved["data"]["config"] as Dictionary)
-			.get(str(ui.P_CHANNEL).trim_prefix("VBoxContainer/HBoxContainer/HSplitContainer/EditZone/"), {})
+			.get("FirstRow/RemoteSetting/Channel/LineEdit", {})
 			.get("t", "")) == "77")
 
 	# 关掉重开：配置应完全复现
@@ -477,6 +500,45 @@ func _test_lifecycle() -> void:
 	var reopened: Dictionary = PF.load_from(path)
 	_check("重开项目保留七步引导进度",
 		reopened["data"]["workflow"]["guide_completed"] == saved_guide_progress)
+
+	# 仿真求解器烧录会替换主控板上的正式固件，因此必须撤销正式烧录和真机验收状态。
+	var production_hash: String = ui2._code_hash()
+	var workflow_before_sim: Dictionary = ui2._workflow()
+	workflow_before_sim["firmware_mode"] = "production"
+	workflow_before_sim["flashed_hash"] = production_hash
+	workflow_before_sim["hardware_tested"] = true
+	ui2._project["workflow"] = workflow_before_sim
+	var reconnect_probe := SolverReconnectProbe.new()
+	ui2.add_child(reconnect_probe)
+	ui2._arm_sim = reconnect_probe
+	ui2._solver_upgrade_active = true
+	ui2._upgrade_active = true
+	ui2._project_dst_override = ui2.TC.PROJECT_ENGINEER_SIM_DST
+	ui2._on_download_succeeded()
+	await process_frame
+	var after_sim_workflow: Dictionary = ui2._workflow()
+	_check("求解器烧录记录主控板为仿真固件",
+		str(after_sim_workflow["firmware_mode"]) == "simulator")
+	_check("求解器烧录撤销旧正式固件哈希",
+		str(after_sim_workflow["flashed_hash"]).is_empty())
+	_check("求解器烧录撤销旧真机验收", not bool(after_sim_workflow["hardware_tested"]))
+	_check("求解器烧录完成后等待重启并请求串口重连", reconnect_probe.reconnect_count == 1)
+	var sim_guide: Array[bool] = ui2._guide_done_states()
+	_check("仿真固件不会把正式烧录步骤标为完成", not sim_guide[5])
+	_check("仿真固件不会把真机测试步骤标为完成", not sim_guide[6])
+
+	# 用户明确烧录正式工程代码后，仿真警告才清除。
+	ui2._arm_sim = null
+	reconnect_probe.queue_free()
+	ui2._upgrade_active = true
+	ui2._on_download_succeeded()
+	var after_production_workflow: Dictionary = ui2._workflow()
+	_check("正式烧录恢复 production 固件状态",
+		str(after_production_workflow["firmware_mode"]) == "production")
+	_check("正式烧录记录当前代码哈希",
+		str(after_production_workflow["flashed_hash"]) == ui2._code_hash())
+	_check("正式烧录要求重新做真机测试",
+		not bool(after_production_workflow["hardware_tested"]))
 
 	# 点「AI 编辑」应先弹确认框，此时还没升阶段
 	ui2._on_ai_edit_pressed()

@@ -43,12 +43,15 @@ func _initialize() -> void:
 			],
 			"presets": [],
 			"joy_x": "右X->末端X", "joy_y": "右Y->末端Y", "joy_z": "右X->末端Z",
-			"joy_scale": "5", "keymove_speed": "2",
+			"joy_scale": "5", "keymove_speed": "2", "orientation_key_speed": "1",
+			"rocker2_home_enabled": true,
 			"keymove": [
 				{"plus": "↑", "minus": "↓"},
 				{"plus": "←", "minus": "->"},
 				{"plus": "B", "minus": "C"},
+				{"plus": "不使用", "minus": "不使用"},
 				{"plus": "D", "minus": "不使用"},
+				{"plus": "不使用", "minus": "不使用"},
 			],
 		},
 	}
@@ -59,6 +62,13 @@ func _initialize() -> void:
 			_joint(template, "P75", "Pitch", "150", "20"),
 		]},
 		{"name": "4-joint", "joints": cfg["ik"]["joints"]},
+		{"name": "5-joint", "joints": [
+			_joint(template, "P74", "Yaw", "0"),
+			_joint(template, "P75", "Pitch", "120", "20"),
+			_joint(template, "P76", "Roll", "40"),
+			_joint(template, "P77", "Pitch", "90", "30"),
+			_joint(template, "MP74", "Yaw", "30"),
+		]},
 		{"name": "6-joint", "joints": [
 			_joint(template, "P74", "Yaw", "0"),
 			_joint(template, "P75", "Pitch", "120", "20"),
@@ -81,7 +91,10 @@ func _initialize() -> void:
 		case_cfg["engineer"]["key_map"] = []
 		case_cfg["ik"]["joints"] = c["joints"]
 		case_cfg["ik"]["joint_count"] = c["joints"].size()
-		case_cfg["ik"]["keymove"][3] = {"plus": "不使用", "minus": "不使用"}
+		case_cfg["ik"]["keymove"][4] = {"plus": "不使用", "minus": "不使用"}
+		if c["name"] in ["5-joint", "6-joint"]:
+			case_cfg["ik"]["keymove"][3] = {"plus": "A", "minus": "B"}
+			case_cfg["ik"]["keymove"][5] = {"plus": "↑", "minus": "↓"}
 		case_cfg["ik"]["gripper"] = {
 			"enabled": true, "io": "MP03", "dir": "正向", "open_angle": "45",
 			"closed_angle": "-45", "initial_open": true, "key": "D"}
@@ -111,4 +124,16 @@ func _initialize() -> void:
 		else:
 			print("=== C251 %s: FAIL ===" % c["name"])
 			failed = true
+	# 仿真固件必须使用相同运动学核心，但完全不包含执行器输出。
+	var sim_cfg: Dictionary = cfg["ik"].duplicate(true)
+	sim_cfg["joints"] = cases[1]["joints"]
+	sim_cfg["joint_count"] = 4
+	var sim_code: String = CG.new().generate_simulator(sim_cfg)
+	var sim_result: Dictionary = TC.new().build_project(TC.PROJECT_ENGINEER_SIM_DST, sim_code)
+	print(sim_result.get("log", ""))
+	if not sim_result.get("ok", false):
+		print("=== C251 MCU simulator: FAIL ===")
+		failed = true
+	else:
+		print("=== C251 MCU simulator: PASS ===")
 	quit(1 if failed else 0)
