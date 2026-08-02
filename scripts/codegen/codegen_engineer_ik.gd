@@ -20,8 +20,8 @@ const IK_EPS: float = 0.001
 #
 # 注意：瓶颈不是算力。真机实测（STC32G @33.1776MHz）雅可比 IK 单次耗时
 # 2 关节 54.7μs / 4 关节 116.7μs / 6 关节 196.8μs，线性拟合约 13μs + 30.6μs×n。
-# 主循环 10ms 减去扩展板发送 5ms，留给逆解约 4ms，理论可撑上百个关节，
-# 6 关节仅占预算 5%。（早先按 8051 软浮点估的 0.2~0.3ms/关节错了一个数量级。）
+# 每周期做 IK_SUBSTEPS=10 步子迭代，6 关节也仅 ~2ms。
+# 主循环 10ms 减去扩展板发送 5ms，留给逆解约 4ms，预算充裕。
 #
 # 6 这个上限的真实依据：
 #   1. 舵机口只有 10 个（扩展板 P60/P62/P64/P66/P74~P77 + 主控板 MP03/MP74），
@@ -71,6 +71,10 @@ func generate_simulator(cfg: Dictionary) -> String:
 	code += "#define JOINT_COUNT %d\n#define IK_EPS 0.001f\n" % jc
 	code += "#define DEG_TO_RAD 0.0174532925f\n#define RAD_TO_DEG 57.29577951f\n"
 	code += "#define IK_MAX_STEP_DEG %.1ff\n" % JACOBI_MAX_STEP_DEG
+	code += "#define IK_SUBSTEPS %d\n" % IK_SUBSTEPS
+	code += "#define IK_STALL_COUNT %d\n" % IK_STALL_COUNT
+	code += "#define IK_STALL_RELAX %d\n" % IK_STALL_RELAX
+	code += "#define IK_STALL_SNAP %d\n" % IK_STALL_SNAP
 	code += "#define ORIENTATION_WEIGHT %.2ff\n" % _orientation_weight(lens)
 	code += "#define SOLVER_PROTOCOL_VERSION %d\n" % SOLVER_PROTOCOL_VERSION
 	code += "#define SOLVER_ALGORITHM_VERSION %d\n" % SOLVER_ALGORITHM_WIRE_VERSION
@@ -86,6 +90,7 @@ func generate_simulator(cfg: Dictionary) -> String:
 	code += "uint8_t Channal = 0; /* nrf24l01.obj link placeholder; NRF is never initialized. */\n"
 	code += "uint8_t solverMask = 0, solverPositionDof = 0, solverOrientationDof = 0;\n"
 	code += "uint8_t solverStatus = 1, ikDiagnosing = 0, ik_reachable = 1;\n"
+	code += "uint8_t ikStallCount = 0;\n"
 	code += _build_joint_config_arrays(joints, jc)
 	code += _build_kinematics_arrays(joints, jc)
 	code += generate_kinematics_core(jc, joints, lens)
@@ -121,9 +126,9 @@ func _gen_sim_protocol(fingerprint: String, jc: int) -> String:
 	s += "static float IkSimGetFloat(uint8_t *p) { union { float f; uint32_t i; } u;u.i=((uint32_t)p[0]<<24)|((uint32_t)p[1]<<16)|((uint32_t)p[2]<<8)|(uint32_t)p[3];return u.f; }\n"
 	s += "static uint8_t IkSimFinite(float v) { return v==v&&v<3.402823e38f&&v> -3.402823e38f; }\n"
 	s += "void IKSimRxByte(uint8_t b){if(b==FRAME_DELIMITER){if(ikSimFrameReady)return;if(ikSimInFrame&&ikSimLen>0){ikSimFrameReady=1;ikSimInFrame=0;return;}ikSimInFrame=1;ikSimEscaped=0;ikSimLen=0;return;}if(!ikSimInFrame||ikSimFrameReady)return;if(b==FRAME_ESCAPE){ikSimEscaped=1;return;}if(ikSimEscaped){b^=0x20;ikSimEscaped=0;}if(ikSimLen<sizeof(ikSimFrame))ikSimFrame[ikSimLen++]=b;else{ikSimInFrame=0;ikSimLen=0;}}\n"
-	s += "static void IkSimSyncTarget(void){float ps;ik_fk();targetX=ikPts[JOINT_COUNT][0];targetY=ikPts[JOINT_COUNT][1];targetZ=ikPts[JOINT_COUNT][2];targetRoll=atan2(ikBasis[2][1],ikBasis[2][2])*RAD_TO_DEG;ps=ikBasis[2][0];if(ps>1.0f)ps=1.0f;if(ps< -1.0f)ps=-1.0f;targetPitch=asin(ps)*RAD_TO_DEG;targetYaw=atan2(ikBasis[1][0],ikBasis[0][0])*RAD_TO_DEG;}\n"
+	s += "static void IkSimSyncTarget(void){float ps;ik_fk();targetX=ikPts[JOINT_COUNT][0];targetY=ikPts[JOINT_COUNT][1];targetZ=ikPts[JOINT_COUNT][2];targetRoll=atan2(ikBasis[2][1],ikBasis[2][2])*RAD_TO_DEG;ps=ikBasis[2][0];if(ps>1.0f)ps=1.0f;if(ps< -1.0f)ps=-1.0f;targetPitch=asin(ps)*RAD_TO_DEG;targetYaw=atan2(ikBasis[1][0],ikBasis[0][0])*RAD_TO_DEG;ikStallCount=0;}\n"
 	s += "static void IkSimState(uint8_t type,uint16_t seq){uint8_t n=0,i,t;float r,pit,y,pe,er=0.0f,ep=0.0f,ey=0.0f,e;ik_fk();r=atan2(ikBasis[2][1],ikBasis[2][2])*RAD_TO_DEG;pit=ikBasis[2][0];if(pit>1.0f)pit=1.0f;if(pit< -1.0f)pit=-1.0f;pit=asin(pit)*RAD_TO_DEG;y=atan2(ikBasis[1][0],ikBasis[0][0])*RAD_TO_DEG;pe=sqrt((targetX-ikPts[JOINT_COUNT][0])*(targetX-ikPts[JOINT_COUNT][0])+(targetY-ikPts[JOINT_COUNT][1])*(targetY-ikPts[JOINT_COUNT][1])+(targetZ-ikPts[JOINT_COUNT][2])*(targetZ-ikPts[JOINT_COUNT][2]));ik_orientation_error(targetRoll,targetPitch,targetYaw);ik_build_position_cols();ikRequestedMask=solverMask;ik_build_tasks();for(t=0;t<ikTaskCount;t++){e=(ikOriErr[0]*ikTaskAxes[t][0]+ikOriErr[1]*ikTaskAxes[t][1]+ikOriErr[2]*ikTaskAxes[t][2])*RAD_TO_DEG;if(ikTaskKind[t]==0)ep=e;else if(ikTaskKind[t]==1)ey=e;else er=e;}if(pe<1.0f&&(!(solverMask&1)||fabs(er)<1.0f)&&(!(solverMask&2)||fabs(ep)<1.0f)&&(!(solverMask&4)||fabs(ey)<1.0f))solverStatus|=2;ikSimPayload[n++]=solverStatus;ikSimPayload[n++]=JOINT_COUNT;ikSimPayload[n++]=solverPositionDof;ikSimPayload[n++]=solverOrientationDof;ikSimPayload[n++]=solverMask;for(i=0;i<8;i++)ikSimPayload[n++]=solverFingerprint[i];for(i=0;i<JOINT_COUNT;i++)IkSimPutFloat(ikSimPayload,&n,jointAngle[i]);for(;i<6;i++)IkSimPutFloat(ikSimPayload,&n,0.0f);IkSimPutFloat(ikSimPayload,&n,ikPts[JOINT_COUNT][0]);IkSimPutFloat(ikSimPayload,&n,ikPts[JOINT_COUNT][1]);IkSimPutFloat(ikSimPayload,&n,ikPts[JOINT_COUNT][2]);IkSimPutFloat(ikSimPayload,&n,y);IkSimPutFloat(ikSimPayload,&n,pit);IkSimPutFloat(ikSimPayload,&n,r);IkSimPutFloat(ikSimPayload,&n,pe);IkSimPutFloat(ikSimPayload,&n,er);IkSimPutFloat(ikSimPayload,&n,ep);IkSimPutFloat(ikSimPayload,&n,ey);IkSimReply(type,seq,ikSimPayload,n);}\n"
-	s += "void IkSimProcessFrame(void){uint8_t *p=ikSimFrame,n=ikSimLen,cmd,i,k,valid;float v[6];uint16_t seq,got,want;if(n<7){ikSimFrameReady=0;return;}got=(uint16_t)p[n-2]|((uint16_t)p[n-1]<<8);want=IkSimCrc(p,(uint8_t)(n-2u));if(got!=want||p[0]!=SOLVER_PROTOCOL_VERSION||p[4]+7u!=n){solverStatus=32;ikSimFrameReady=0;return;}cmd=p[1];seq=(uint16_t)p[2]|((uint16_t)p[3]<<8);if(cmd==1&&p[4]==0){k=0;ikSimPayload[k++]=SOLVER_PROTOCOL_VERSION;ikSimPayload[k++]=SOLVER_ALGORITHM_VERSION;ikSimPayload[k++]=1;ikSimPayload[k++]=JOINT_COUNT;ikSimPayload[k++]=solverMask;ikSimPayload[k++]=solverPositionDof;ikSimPayload[k++]=solverOrientationDof;ikSimPayload[k++]=0;for(i=0;i<8;i++)ikSimPayload[k++]=solverFingerprint[i];IkSimReply(RESP_HELLO,seq,ikSimPayload,k);}else if(cmd==2&&p[4]==24){valid=1;for(i=0;i<6;i++){v[i]=IkSimGetFloat(&p[5+i*4]);if(!IkSimFinite(v[i]))valid=0;}if(!valid){solverStatus=32;IkSimReply(RESP_ERROR,seq,ikSimPayload,0);}else{targetX=v[0];targetY=v[1];targetZ=v[2];targetYaw=v[3];targetPitch=v[4];targetRoll=v[5];solverStatus=1;ik_solve(targetX,targetY,targetZ,targetRoll,targetPitch,targetYaw);if(!ik_reachable)solverStatus|=8;if(ikStepClamped)solverStatus|=4;if(ikNumericProtected)solverStatus|=32;if(ikTaskCount<solverOrientationDof)solverStatus|=16;IkSimState(RESP_STATE,seq);}}else if(cmd==3&&p[4]==25&&p[5]==JOINT_COUNT){valid=1;for(i=0;i<JOINT_COUNT;i++){v[i]=IkSimGetFloat(&p[6+i*4]);if(!IkSimFinite(v[i]))valid=0;}if(!valid){solverStatus=32;IkSimReply(RESP_ERROR,seq,ikSimPayload,0);}else{solverStatus=1;for(i=0;i<JOINT_COUNT;i++){jointAngle[i]=v[i];if(jointAngle[i]<jointMin[i]){jointAngle[i]=jointMin[i];solverStatus|=4;}if(jointAngle[i]>jointMax[i]){jointAngle[i]=jointMax[i];solverStatus|=4;}}IkSimSyncTarget();IkSimState(RESP_STATE,seq);}}else if(cmd==4&&p[4]==0){solverStatus=1;for(i=0;i<JOINT_COUNT;i++)jointAngle[i]=jointHome[i];IkSimSyncTarget();IkSimState(RESP_STATE,seq);}else if(cmd==5&&p[4]==0){solverStatus=1;IkSimState(RESP_STATE,seq);}else{solverStatus=32;IkSimReply(RESP_ERROR,seq,ikSimPayload,0);}ikSimFrameReady=0;ikSimLen=0;}\n"
+	s += "void IkSimProcessFrame(void){uint8_t *p=ikSimFrame,n=ikSimLen,cmd,i,k,valid,sub,stall,clampAcc,nanAcc;float v[6];uint16_t seq,got,want;if(n<7){ikSimFrameReady=0;return;}got=(uint16_t)p[n-2]|((uint16_t)p[n-1]<<8);want=IkSimCrc(p,(uint8_t)(n-2u));if(got!=want||p[0]!=SOLVER_PROTOCOL_VERSION||p[4]+7u!=n){solverStatus=32;ikSimFrameReady=0;return;}cmd=p[1];seq=(uint16_t)p[2]|((uint16_t)p[3]<<8);if(cmd==1&&p[4]==0){k=0;ikSimPayload[k++]=SOLVER_PROTOCOL_VERSION;ikSimPayload[k++]=SOLVER_ALGORITHM_VERSION;ikSimPayload[k++]=1;ikSimPayload[k++]=JOINT_COUNT;ikSimPayload[k++]=solverMask;ikSimPayload[k++]=solverPositionDof;ikSimPayload[k++]=solverOrientationDof;ikSimPayload[k++]=0;for(i=0;i<8;i++)ikSimPayload[k++]=solverFingerprint[i];IkSimReply(RESP_HELLO,seq,ikSimPayload,k);}else if(cmd==2&&p[4]==24){valid=1;for(i=0;i<6;i++){v[i]=IkSimGetFloat(&p[5+i*4]);if(!IkSimFinite(v[i]))valid=0;}if(!valid){solverStatus=32;IkSimReply(RESP_ERROR,seq,ikSimPayload,0);}else{targetX=v[0];targetY=v[1];targetZ=v[2];targetYaw=v[3];targetPitch=v[4];targetRoll=v[5];solverStatus=1;stall=0;clampAcc=0;nanAcc=0;for(sub=0;sub<IK_SUBSTEPS;sub++){ik_solve(targetX,targetY,targetZ,targetRoll,targetPitch,targetYaw);if(ikStepClamped)clampAcc=1;if(ikNumericProtected)nanAcc=1;if(ik_reachable)stall=0;else{stall++;if(stall>=IK_STALL_COUNT)break;}}if(!ik_reachable)solverStatus|=8;if(clampAcc)solverStatus|=4;if(nanAcc)solverStatus|=32;if(ikTaskCount<solverOrientationDof)solverStatus|=16;IkSimState(RESP_STATE,seq);}}else if(cmd==3&&p[4]==25&&p[5]==JOINT_COUNT){valid=1;for(i=0;i<JOINT_COUNT;i++){v[i]=IkSimGetFloat(&p[6+i*4]);if(!IkSimFinite(v[i]))valid=0;}if(!valid){solverStatus=32;IkSimReply(RESP_ERROR,seq,ikSimPayload,0);}else{solverStatus=1;for(i=0;i<JOINT_COUNT;i++){jointAngle[i]=v[i];if(jointAngle[i]<jointMin[i]){jointAngle[i]=jointMin[i];solverStatus|=4;}if(jointAngle[i]>jointMax[i]){jointAngle[i]=jointMax[i];solverStatus|=4;}}IkSimSyncTarget();IkSimState(RESP_STATE,seq);}}else if(cmd==4&&p[4]==0){solverStatus=1;for(i=0;i<JOINT_COUNT;i++)jointAngle[i]=jointHome[i];IkSimSyncTarget();IkSimState(RESP_STATE,seq);}else if(cmd==5&&p[4]==0){solverStatus=1;IkSimState(RESP_STATE,seq);}else{solverStatus=32;IkSimReply(RESP_ERROR,seq,ikSimPayload,0);}ikSimFrameReady=0;ikSimLen=0;}\n"
 	return s.replace(";", ";\n")
 
 
@@ -184,6 +189,14 @@ func generate(cfg: Dictionary) -> String:
 	code += "#define RAD_TO_DEG  57.29577951f\n"
 	code += "// 逆解单步最大转动量(度)：防大误差时末端猛冲，也避免线性近似失效\n"
 	code += "#define IK_MAX_STEP_DEG  %.1ff\n" % JACOBI_MAX_STEP_DEG
+	code += "// 每周期子迭代次数：单步只走 4°，多步连走加速收敛\n"
+	code += "#define IK_SUBSTEPS  %d\n" % IK_SUBSTEPS
+	code += "// 子迭代连续不靠近目标的退出阈值\n"
+	code += "#define IK_STALL_COUNT  %d\n" % IK_STALL_COUNT
+	code += "// 跨帧停滞阈值：达此周期数后放开姿态门控\n"
+	code += "#define IK_STALL_RELAX  %d\n" % IK_STALL_RELAX
+	code += "// 跨帧停滞阈值：达此周期数后把目标吸到实际末端\n"
+	code += "#define IK_STALL_SNAP  %d\n" % IK_STALL_SNAP
 	if has_orientation:
 		code += "// 姿态误差权重(mm/rad)，取连杆总长：\n"
 		code += "// 让 1 弧度的俯仰角误差与一个臂长的位置误差等重，两者才能相加\n"
@@ -214,6 +227,7 @@ func generate(cfg: Dictionary) -> String:
 	code += "float    jointAngle[%d];        // 各关节角度(度)\n" % jc
 	code += "float    %s;\n" % ", ".join(tvars)
 	code += "uint8_t  ik_reachable;          // 逆解算可达性标志(1=本步在靠近目标,0=已贴到极限)\n"
+	code += "uint8_t  ikStallCount = 0;      // 跨帧停滞计数：连续不靠近目标的周期数\n"
 	code += "uint8_t  solverMask = 0;        // bit0=Roll bit1=Pitch bit2=Yaw，由 MCU 上电诊断\n"
 	code += "uint8_t  solverPositionDof = 0, solverOrientationDof = 0;\n"
 	code += "uint8_t  ikDiagnosing = 0;\n"
@@ -542,6 +556,14 @@ func _build_preset_table(presets: Array, jc: int, joints: Array,
 ## 单步步长上限（度）。一个 10ms 周期内单关节最多转这么多，
 ## 防止大误差时末端猛冲，也避免线性近似在大角度下失效。
 const JACOBI_MAX_STEP_DEG: float = 4.0
+## 每个主循环周期内 ik_solve 的子迭代次数。
+## 单次 ik_solve 只走一个雅可比步（限幅 4°/关节），6 关节仅 ~200μs，
+## 但 5ms 预算只用了 4%。大目标变化要几十个 10ms 周期才收敛（60步=600ms），
+## 手感很慢。多步子迭代在一个周期内连续走 N 步，收敛速度提升 N 倍。
+## 10 步 × 6 关节 ≈ 2ms，远在 5ms 预算内。
+const IK_SUBSTEPS: int = 10
+## 子迭代中连续 N 步误差不下降就提前退出，避免在极限位/奇异点空转。
+const IK_STALL_COUNT: int = 3
 ## 目标可达域的余量系数：只拦「超出臂展 × 该系数」的目标。
 ## 留余量是为了避免在边界处反复拖拽/回退造成拖影。
 const IK_REACH_MARGIN: float = 0.98
@@ -549,6 +571,12 @@ const IK_REACH_MARGIN: float = 0.98
 const JACOBI_POS_TOL: float = 0.05
 ## 判定不可达所需的「误差不下降」连续次数
 const JACOBI_STALL_COUNT: int = 3
+## 跨帧停滞阈值：连续这么多周期误差不下降后，放开姿态门控，
+## 让冗余自由度开始控制 Roll/Yaw（位置够不着时姿态不应冻结）。
+const IK_STALL_RELAX: int = 10
+## 跨帧停滞阈值：连续这么多周期误差不下降后，把目标吸到当前实际末端，
+## 避免操作手把目标推到不可达位置后调不回来。
+const IK_STALL_SNAP: int = 100
 
 
 ## 六维位姿雅可比转置单步。姿态行先投影到位置雅可比的零空间，
@@ -1216,26 +1244,28 @@ func _gen_ik_solve_pose(jc: int, mask: Dictionary, lens: Array) -> String:
 	s += "/// @brief Position-priority XYZ + Roll/Pitch/Yaw numerical IK.\n"
 	s += "void ik_solve(%s)\n" % _ik_params_for(mask)
 	s += "{\n"
-	s += "    uint8_t k,t;\n"
+	s += "    uint8_t k,t,doOrient;\n"
 	s += "    float num, den, alpha, maxStep, step, errBefore, errAfter, posErr2;\n"
 	s += "    ik_fk();\n"
 	s += "    ikEv[0]=x-ikPts[JOINT_COUNT][0]; ikEv[1]=y-ikPts[JOINT_COUNT][1]; ikEv[2]=z-ikPts[JOINT_COUNT][2];\n"
 	s += "    posErr2=ikEv[0]*ikEv[0]+ikEv[1]*ikEv[1]+ikEv[2]*ikEv[2];\n"
 	if not enabled.is_empty():
+		s += "    doOrient=(posErr2<4.0f||ikStallCount>=IK_STALL_RELAX)?1:0;\n"
 		s += "    ik_orientation_error(roll,pitch,yaw);\n"
 	s += "    ik_build_position_cols();for(k=0;k<JOINT_COUNT;k++){ikJte[k]=ikCols[k][0]*ikEv[0]+ikCols[k][1]*ikEv[1]+ikCols[k][2]*ikEv[2];"
 	if not enabled.is_empty():
-		s += "}ikRequestedMask=solverMask;ik_build_tasks();for(t=0;t<ikTaskCount;t++)ikTaskErr[t]=(ikOriErr[0]*ikTaskAxes[t][0]+ikOriErr[1]*ikTaskAxes[t][1]+ikOriErr[2]*ikTaskAxes[t][2])*ORIENTATION_WEIGHT;for(k=0;k<JOINT_COUNT;k++){if(posErr2<4.0f)for(t=0;t<ikTaskCount;t++)ikJte[k]+=ikTaskRows[t][k]*ikTaskErr[t]*ORIENTATION_WEIGHT;"
+		s += "}ikRequestedMask=solverMask;ik_build_tasks();for(t=0;t<ikTaskCount;t++)ikTaskErr[t]=(ikOriErr[0]*ikTaskAxes[t][0]+ikOriErr[1]*ikTaskAxes[t][1]+ikOriErr[2]*ikTaskAxes[t][2])*ORIENTATION_WEIGHT;for(k=0;k<JOINT_COUNT;k++){if(doOrient)for(t=0;t<ikTaskCount;t++)ikJte[k]+=ikTaskRows[t][k]*ikTaskErr[t]*ORIENTATION_WEIGHT;"
 	s += "}\n"
-	s += "    num=0.0f;ikWv[0]=0.0f;ikWv[1]=0.0f;ikWv[2]=0.0f;for(t=0;t<ikTaskCount;t++)ikTaskDot[t]=0.0f;for(k=0;k<JOINT_COUNT;k++){num+=ikJte[k]*ikJte[k];ikWv[0]+=ikCols[k][0]*ikJte[k];ikWv[1]+=ikCols[k][1]*ikJte[k];ikWv[2]+=ikCols[k][2]*ikJte[k];if(posErr2<4.0f)for(t=0;t<ikTaskCount;t++)ikTaskDot[t]+=ikTaskRows[t][k]*ORIENTATION_WEIGHT*ikJte[k];}den=ikWv[0]*ikWv[0]+ikWv[1]*ikWv[1]+ikWv[2]*ikWv[2];if(posErr2<4.0f)for(t=0;t<ikTaskCount;t++)den+=ikTaskDot[t]*ikTaskDot[t];alpha=(den>IK_EPS)?num/den:0.0f;ikNumericProtected=0;if(alpha!=alpha||alpha>100000.0f||alpha< -100000.0f){alpha=0.0f;ikNumericProtected=1;}\n"
+	s += "    num=0.0f;ikWv[0]=0.0f;ikWv[1]=0.0f;ikWv[2]=0.0f;for(t=0;t<ikTaskCount;t++)ikTaskDot[t]=0.0f;for(k=0;k<JOINT_COUNT;k++){num+=ikJte[k]*ikJte[k];ikWv[0]+=ikCols[k][0]*ikJte[k];ikWv[1]+=ikCols[k][1]*ikJte[k];ikWv[2]+=ikCols[k][2]*ikJte[k];if(doOrient)for(t=0;t<ikTaskCount;t++)ikTaskDot[t]+=ikTaskRows[t][k]*ORIENTATION_WEIGHT*ikJte[k];}den=ikWv[0]*ikWv[0]+ikWv[1]*ikWv[1]+ikWv[2]*ikWv[2];if(doOrient)for(t=0;t<ikTaskCount;t++)den+=ikTaskDot[t]*ikTaskDot[t];alpha=(den>IK_EPS)?num/den:0.0f;ikNumericProtected=0;if(alpha!=alpha||alpha>100000.0f||alpha< -100000.0f){alpha=0.0f;ikNumericProtected=1;}\n"
 	s += "    maxStep=0.0f;for(k=0;k<JOINT_COUNT;k++){step=alpha*ikJte[k]*RAD_TO_DEG;if(step<0.0f)step=-step;if(step>maxStep)maxStep=step;}if(maxStep>IK_MAX_STEP_DEG)alpha*=IK_MAX_STEP_DEG/maxStep;errBefore=posErr2;\n"
 	s += "    ikStepClamped=0;for(k=0;k<JOINT_COUNT;k++){jointAngle[k]+=alpha*ikJte[k]*RAD_TO_DEG;if(jointAngle[k]<jointMin[k]){jointAngle[k]=jointMin[k];ikStepClamped=1;}if(jointAngle[k]>jointMax[k]){jointAngle[k]=jointMax[k];ikStepClamped=1;}}\n"
 	if not enabled.is_empty():
-		s += "    if(posErr2<4.0f)for(t=0;t<ikTaskCount;t++)errBefore+=ikTaskErr[t]*ikTaskErr[t];\n"
+		s += "    if(doOrient)for(t=0;t<ikTaskCount;t++)errBefore+=ikTaskErr[t]*ikTaskErr[t];\n"
 	s += "    ik_fk();errAfter=(x-ikPts[JOINT_COUNT][0])*(x-ikPts[JOINT_COUNT][0])+(y-ikPts[JOINT_COUNT][1])*(y-ikPts[JOINT_COUNT][1])+(z-ikPts[JOINT_COUNT][2])*(z-ikPts[JOINT_COUNT][2]);"
 	if not enabled.is_empty():
-		s += "if(posErr2<4.0f){ik_orientation_error(roll,pitch,yaw);ikRequestedMask=solverMask;ik_build_tasks();for(t=0;t<ikTaskCount;t++){step=(ikOriErr[0]*ikTaskAxes[t][0]+ikOriErr[1]*ikTaskAxes[t][1]+ikOriErr[2]*ikTaskAxes[t][2])*ORIENTATION_WEIGHT;errAfter+=step*step;}}"
+		s += "if(doOrient){ik_orientation_error(roll,pitch,yaw);ikRequestedMask=solverMask;ik_build_tasks();for(t=0;t<ikTaskCount;t++){step=(ikOriErr[0]*ikTaskAxes[t][0]+ikOriErr[1]*ikTaskAxes[t][1]+ikOriErr[2]*ikTaskAxes[t][2])*ORIENTATION_WEIGHT;errAfter+=step*step;}}"
 	s += "ik_reachable=(errAfter<errBefore-0.0001f)?1:0;\n"
+	s += "    if(ik_reachable)ikStallCount=0;else if(ikStallCount<255)ikStallCount++;\n"
 	s += "}\n\n"
 	return s
 
@@ -1570,7 +1600,7 @@ func _gen_calculate_ik(cfg: Dictionary, mask: Dictionary) -> String:
 	s += "/// @param hit 1=本周期已由预设点位设定目标，跳过增量累加\n"
 	s += "/// @note 采用增量累积模式：摇杆偏移量和长按按键都对 target 做累加，\n"
 	s += "///       松开后末端保持当前位置不动。\n"
-	s += "///       逆解是雅可比增量法，每周期走一步，连续多个周期逼近目标。\n"
+	s += "///       逆解是雅可比增量法，每周期走 IK_SUBSTEPS 步加速收敛。\n"
 	# 备份变量与 ik_solve 实参都随构型裁剪，避免未使用变量
 	var tvars: Array = _target_vars_for(mask)
 	var backups: Array = []
@@ -1585,6 +1615,7 @@ func _gen_calculate_ik(cfg: Dictionary, mask: Dictionary) -> String:
 	s += "void CalculateIK(uint8_t hit)\n"
 	s += "{\n"
 	s += "    float %s;\n" % ", ".join(backups)
+	s += "    uint8_t sub, stall;\n"
 	s += "    // 备份上次目标：目标跑到臂展外时要把这一步的增量撤掉，\n"
 	s += "    // 否则长推摇杆会让 target 一直飘远，松手后末端要等很久才追回来\n"
 	s += "    %s\n" % " ".join(save_stmts)
@@ -1606,7 +1637,28 @@ func _gen_calculate_ik(cfg: Dictionary, mask: Dictionary) -> String:
 	s += "        // 撤回继续向外的增量；向内的增量可以逐步进入软边界\n"
 	s += "        %s\n" % " ".join(restore_stmts)
 	s += "    }\n"
-	s += "    ik_solve(%s);\n" % call_args
+	s += "    // 多步子迭代：一个周期内连续走 IK_SUBSTEPS 步雅可比，\n"
+	s += "    // 收敛速度提升 N 倍。连续 IK_STALL_COUNT 步不靠近目标就提前退出。\n"
+	s += "    stall = 0;\n"
+	s += "    for (sub = 0; sub < IK_SUBSTEPS; sub++)\n"
+	s += "    {\n"
+	s += "        ik_solve(%s);\n" % call_args
+	s += "        if (ik_reachable)\n"
+	s += "            stall = 0;\n"
+	s += "        else\n"
+	s += "        {\n"
+	s += "            stall++;\n"
+	s += "            if (stall >= IK_STALL_COUNT)\n"
+	s += "                break;\n"
+	s += "        }\n"
+	s += "    }\n"
+	s += "    // 持续停滞（目标够不着）后把目标吸到当前实际末端，\n"
+	s += "    // 避免操作手把目标推到不可达位置后永远调不回来。\n"
+	s += "    if (ikStallCount >= IK_STALL_SNAP)\n"
+	s += "    {\n"
+	s += "        SyncIKTargetFromJoints();\n"
+	s += "        ikStallCount = 0;\n"
+	s += "    }\n"
 	s += "}\n\n"
 	return s
 

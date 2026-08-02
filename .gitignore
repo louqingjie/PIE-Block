@@ -115,3 +115,26 @@ gen2.txt
 gen2err.txt
 p_err.txt
 p_out.txt
+
+# 联调/构建终端输出
+build_apk.txt
+sdk_install.txt
+sdk_output.txt
+inspect_out.txt
+test_static_out.txt
+
+# 手机调试截图（临时产物）
+phone_screen*.png
+phone_screen*.png.import
+
+# Android app 构建产物与本地配置
+android_app/.gradle/
+android_app/build/
+android_app/app/build/
+android_app/local.properties
+android_app/.idea/
+android_app/.kotlin/
+android_app/captures/
+android_app/.externalNativeBuild/
+android_app/.cxx/
+android_app/*.iml

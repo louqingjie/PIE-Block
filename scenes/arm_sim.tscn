@@ -143,6 +143,13 @@ text = "车归位"
 layout_mode = 2
 text = "重置视角"
 
+[node name="VSeparator4" type="VSeparator" parent="TopPanel/HBox"]
+layout_mode = 2
+
+[node name="PhoneToggle" type="CheckButton" parent="TopPanel/HBox"]
+layout_mode = 2
+text = "手机传感器"
+
 [node name="Spacer" type="Control" parent="TopPanel/HBox" unique_id=173532974]
 layout_mode = 2
 size_flags_horizontal = 3

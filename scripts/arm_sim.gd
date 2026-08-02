@@ -34,6 +34,7 @@ const P_FOLLOW_TOGGLE: NodePath = "TopPanel/HBox/FollowToggle"
 const P_RESET_POSE: NodePath = "TopPanel/HBox/ResetPose"
 const P_CONFIG_LABEL: NodePath = "TopPanel/HBox/ConfigLabel"
 const P_HINT: NodePath = "HintLabel"
+const P_PHONE_TOGGLE: NodePath = "TopPanel/HBox/PhoneToggle"
 
 # ------------------------------------------------------------------ 常量
 ## mm -> Godot 单位。臂长通常 100~300mm，缩到 1~3 单位便于相机取景
@@ -93,6 +94,7 @@ const REMOTE_INPUT = preload("res://scripts/sim_remote_input.gd")
 const IK_SIM_LINK = preload("res://scripts/ik_sim_link.gd")
 const IK_SIM_PROTOCOL = preload("res://scripts/ik_sim_protocol.gd")
 const TOOLCHAIN = preload("res://scripts/toolchain.gd")
+const PHONE_RECEIVER = preload("res://scripts/phone_pose_receiver.gd")
 
 # ------------------------------------------------------------------ 配置状态
 var _cfg: Dictionary = {}
@@ -122,6 +124,8 @@ var _angles: Array = []
 var _requested_angles: Array = []
 ## 上一帧逆解是否可达（操控模式的状态显示需要）
 var _reachable: bool = true
+## 连续 stalled 周期计数：达阈值后把目标吸到 MCU 实际末端，避免操作手调不回来。
+var _stall_count: int = 0
 ## 被限位钳住的关节掩码
 var _clamped: Array = []
 ## 逆解编辑页中关节调整滑块给出的姿态
@@ -167,6 +171,13 @@ var _solver_reconnect_generation: int = 0
 var _mcu_actual: Dictionary = {"position": Vector3.ZERO, "rpy": Vector3.ZERO}
 var _mcu_diagnostics: Dictionary = {}
 var _render_model_mismatch: bool = false
+
+# ------------------------------------------------------------------ 手机传感器
+var _phone_receiver: PHONE_RECEIVER = null
+var _phone_enabled: bool = false
+var _phone_clamped_axes: Array[String] = []
+var _phone_active: bool = false
+var _phone_active_timer: int = 0
 
 # ------------------------------------------------------------------ 视图状态
 var _cam_yaw: float = -0.7
@@ -241,6 +252,13 @@ func _ready() -> void:
 	_mcu_link.link_error.connect(_on_mcu_error)
 	_mcu_link.link_warning.connect(_on_mcu_warning)
 	_mcu_link.disconnected.connect(_on_mcu_disconnected)
+	# 手机传感器接收器（默认不启动，用户点按钮后才开始监听）
+	_phone_receiver = PHONE_RECEIVER.new()
+	add_child(_phone_receiver)
+	_phone_receiver.pose_received.connect(_on_phone_pose_received)
+	_phone_receiver.phone_connected.connect(_on_phone_connected)
+	_phone_receiver.phone_disconnected.connect(_on_phone_disconnected)
+	_phone_receiver.reset_requested.connect(_on_phone_reset_requested)
 	# The simulator build workflow reconnects after flashing. Entering controller
 	# mode also reconnects, but opening the configuration page must not launch a
 	# pipe process against an arbitrary serial device.
@@ -278,6 +296,10 @@ func _connect_ui() -> void:
 	var rp: Node = get_node_or_null(P_RESET_POSE)
 	if rp is BaseButton:
 		rp.pressed.connect(_reset_vehicle_pose)
+	var pt: Node = get_node_or_null(P_PHONE_TOGGLE)
+	if pt is BaseButton:
+		pt.toggled.connect(_toggle_phone_sensor)
+		pt.set_meta("created", false)
 
 
 # ------------------------------------------------------------------ 外部接口
@@ -350,6 +372,7 @@ func _apply_config() -> void:
 	_solver_stale = true
 	_mcu_ready = false
 	_mcu_hello_validated = false
+	_stall_count = 0
 	# 初始姿态：与生成的 C 代码上电起点一致
 	_fk_angles = _cg._joint_home_angles(_joints)
 	_target = _tip_target(_fk_angles.slice(0, _jc))
@@ -940,6 +963,64 @@ func _on_chassis_toggled(on: bool) -> void:
 	_update_status()
 
 
+# ------------------------------------------------------------------ 手机传感器注入
+## 手机位姿到达：钳位 + orientation_mask 过滤后写入 _target
+func _on_phone_pose_received(position: Vector3, rpy: Vector3) -> void:
+	if not _mcu_ready:
+		return
+	# 标记手机活跃，200ms 内忽略键盘/手柄的位置与姿态输入
+	_phone_active = true
+	_phone_active_timer = 200
+	# 用 receiver 的 check_clamp 做统一钳位
+	var result: Dictionary = _phone_receiver.check_clamp(position, rpy, _orientation_mask)
+	var clamped_pos: Vector3 = result["position"]
+	var clamped_rpy: Vector3 = result["rpy"]
+	var clamped_axes: Array[String] = result["clamped_axes"]
+	# 过滤 MCU 不支持的姿态轴
+	if not bool(_orientation_mask.get("roll", false)):
+		clamped_rpy.x = _target["rpy"].x
+	if not bool(_orientation_mask.get("pitch", false)):
+		clamped_rpy.y = _target["rpy"].y
+	if not bool(_orientation_mask.get("yaw", false)):
+		clamped_rpy.z = _target["rpy"].z
+	_phone_clamped_axes = clamped_axes
+	if not clamped_axes.is_empty():
+		# 通知手机震动
+		_phone_receiver.send_message({"type": "clamp_warning", "axes": clamped_axes})
+	_target = {"position": clamped_pos, "rpy": clamped_rpy}
+	_recompute()
+
+
+func _on_phone_connected() -> void:
+	_update_status()
+
+
+func _on_phone_disconnected() -> void:
+	_phone_active = false
+	_phone_active_timer = 0
+	_update_status()
+
+
+func _on_phone_reset_requested() -> void:
+	# 重置原点时把当前末端位姿同步为目标，避免跳跃
+	if _mcu_ready:
+		_target = _mcu_actual.duplicate(true)
+		_recompute()
+
+
+## 启动/停止手机传感器监听
+func _toggle_phone_sensor(enabled: bool) -> void:
+	_phone_enabled = enabled
+	if enabled:
+		_phone_receiver.start_listening()
+	else:
+		_phone_receiver.stop_listening()
+		_phone_active = false
+		_phone_active_timer = 0
+	_rebuild_params()
+	_update_status()
+
+
 # ------------------------------------------------------------------ 状态提示
 func _update_status() -> void:
 	var label: Node = get_node_or_null(P_STATUS)
@@ -990,6 +1071,17 @@ func _update_status() -> void:
 			lines.append("MCU 状态 [%s]  姿态误差 R=%.2f° P=%.2f° Y=%.2f°" % [
 				_mcu_status_flags_text(int(_mcu_diagnostics.get("status", 0))),
 				orientation_error.x, orientation_error.y, orientation_error.z])
+	if _phone_enabled:
+		if _phone_receiver.has_phone():
+			lines.append("手机传感器 已连接 %s" % _phone_receiver.client_info)
+			lines.append("手机原始 P=%s RPY=%s" % [
+				str(_phone_receiver.last_phone_position.round()),
+				str(_phone_receiver.last_phone_rpy.round())])
+			if not _phone_clamped_axes.is_empty():
+				lines.append("手机输入超界轴: %s" % ", ".join(_phone_clamped_axes))
+		else:
+			var url: String = _phone_receiver.get_connection_url()
+			lines.append("手机传感器等待连接  %s" % url)
 	if _mode == Mode.CONTROLLER:
 		var roker: Array = _remote_snapshot.get("valueOfRoker", [[0, 0], [0, 0]])
 		var pad_name: String = str(_remote_snapshot.get("pad_name", ""))
@@ -1146,6 +1238,8 @@ func _update_hint() -> void:
 	if not label is Label:
 		return
 	var base: String = "右键旋转视角 · 滚轮缩放 · 中键平移"
+	if _phone_enabled and _phone_receiver.has_phone():
+		base += " · 手机传感器已激活"
 	match _mode:
 		Mode.IK:
 			label.text = "%s · %s · Shift 加速 / Alt 减速" % [base, _key_hint_text()]
@@ -1175,6 +1269,9 @@ func _rebuild_params() -> void:
 			_build_preset_params(params)
 		Mode.CONTROLLER:
 			_build_controller_params(params)
+	# 手机传感器面板在所有模式下都追加显示
+	if _phone_enabled:
+		_build_phone_params(params)
 
 
 func _add_section(parent: Node, text: String) -> void:
@@ -1368,6 +1465,7 @@ func _mark_solver_stale() -> void:
 		"pitch": "构型已变化，请重新烧录 MCU 求解器",
 		"yaw": "构型已变化，请重新烧录 MCU 求解器"}
 	_mcu_status = "构型已变化，机械臂操控已冻结；请编译并烧录 MCU 求解器"
+	_stall_count = 0
 	if _mcu_link != null:
 		_mcu_link.stop()
 
@@ -1516,6 +1614,15 @@ func _on_mcu_state(state: Dictionary) -> void:
 		_requested_angles = _angles.duplicate()
 	_reachable = (status & IK_SIM_PROTOCOL.STATUS_STALLED) == 0 \
 		and (status & IK_SIM_PROTOCOL.STATUS_NUMERIC_ERROR) == 0
+	if _reachable:
+		_stall_count = 0
+	elif _stall_count < 1000:
+		_stall_count += 1
+	# 持续停滞时把目标吸到 MCU 实际末端，让操作手从可达位置重新出发。
+	if _stall_count >= _cg.IK_STALL_SNAP and request_kind not in [
+			IK_SIM_PROTOCOL.CMD_SET_JOINTS, IK_SIM_PROTOCOL.CMD_HOME]:
+		_target = _mcu_actual.duplicate(true)
+		_stall_count = 0
 	var rendered: Dictionary = _tip_target(_angles)
 	var rendered_basis: Basis = _cg.basis_from_rpy_deg(rendered["rpy"])
 	var mcu_basis: Basis = _cg.basis_from_rpy_deg(_mcu_actual["rpy"])
@@ -1689,6 +1796,12 @@ func _on_param_changed(value: float, key: String, peer: Node) -> void:
 			return
 		"cwb", "ctr", "chh", "mx", "my", "mz":
 			_on_chassis_param_changed(key, value)
+			return
+		"phone_pos_scale":
+			_phone_receiver.position_scale = value
+			return
+		"phone_rpy_scale":
+			_phone_receiver.rpy_scale = value
 			return
 	_recompute()
 
@@ -2204,6 +2317,87 @@ func _start_play() -> void:
 	_play_from = _target.duplicate()
 
 
+# --- 手机传感器配置面板
+func _build_phone_params(parent: Node) -> void:
+	_add_section(parent, "手机传感器")
+	# 连接信息
+	var url: String = _phone_receiver.get_connection_url()
+	var all_ips: Array[String] = _phone_receiver.get_local_ips()
+	var conn_label := Label.new()
+	conn_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	if all_ips.is_empty():
+		conn_label.text = "无法获取本机 IP，请手动查看\n端口: %d" % PHONE_RECEIVER.DEFAULT_PORT
+	else:
+		conn_label.text = "连接地址: %s" % " / ".join(all_ips.map(
+			func(ip: String) -> String: return "ws://%s:%d" % [ip, PHONE_RECEIVER.DEFAULT_PORT]))
+	if _phone_receiver.has_phone():
+		conn_label.text += "\n手机已连接: %s" % _phone_receiver.client_info
+	else:
+		conn_label.text += "\n等待手机连接…"
+	parent.add_child(conn_label)
+	# 二维码（供手机扫码连接）
+	if not _phone_receiver.has_phone():
+		var qr_path: String = _phone_receiver.generate_qr_png(url)
+		if not qr_path.is_empty():
+			var img := Image.new()
+			if img.load(qr_path) == OK:
+				var tex := ImageTexture.create_from_image(img)
+				var qr_rect := TextureRect.new()
+				qr_rect.texture = tex
+				qr_rect.custom_minimum_size = Vector2(180, 180)
+				qr_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+				qr_rect.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+				qr_rect.tooltip_text = "用 PieBlock 遥控 APP 扫码自动填入地址"
+				parent.add_child(qr_rect)
+				var qr_label := Label.new()
+				qr_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+				qr_label.text = "↑ 手机 APP 扫码连接"
+				parent.add_child(qr_label)
+	# 位置映射比例
+	_add_slider_row(parent, "phone_pos_scale", "位置映射比例", 0.1, 10.0,
+		_phone_receiver.position_scale, 0.1)
+	# RPY 灵敏度
+	_add_slider_row(parent, "phone_rpy_scale", "RPY 灵敏度", 0.1, 3.0,
+		_phone_receiver.rpy_scale, 0.1)
+	# 坐标轴翻转
+	_add_toggle_row(parent, "翻转 X 轴", _phone_receiver.flip_x,
+		func(v: bool) -> void: _phone_receiver.flip_x = v)
+	_add_toggle_row(parent, "翻转 Y 轴", _phone_receiver.flip_y,
+		func(v: bool) -> void: _phone_receiver.flip_y = v)
+	_add_toggle_row(parent, "翻转 Z 轴", _phone_receiver.flip_z,
+		func(v: bool) -> void: _phone_receiver.flip_z = v)
+	# 各轴开关
+	_add_toggle_row(parent, "启用 X", bool(_phone_receiver.axis_enable.get("x", true)),
+		func(v: bool) -> void: _phone_receiver.axis_enable["x"] = v)
+	_add_toggle_row(parent, "启用 Y", bool(_phone_receiver.axis_enable.get("y", true)),
+		func(v: bool) -> void: _phone_receiver.axis_enable["y"] = v)
+	_add_toggle_row(parent, "启用 Z", bool(_phone_receiver.axis_enable.get("z", true)),
+		func(v: bool) -> void: _phone_receiver.axis_enable["z"] = v)
+	_add_toggle_row(parent, "启用 Roll", bool(_phone_receiver.axis_enable.get("roll", true)),
+		func(v: bool) -> void: _phone_receiver.axis_enable["roll"] = v)
+	_add_toggle_row(parent, "启用 Pitch", bool(_phone_receiver.axis_enable.get("pitch", true)),
+		func(v: bool) -> void: _phone_receiver.axis_enable["pitch"] = v)
+	_add_toggle_row(parent, "启用 Yaw", bool(_phone_receiver.axis_enable.get("yaw", true)),
+		func(v: bool) -> void: _phone_receiver.axis_enable["yaw"] = v)
+	# 回中按钮
+	var reset_btn := Button.new()
+	reset_btn.text = "回中（重置原点）"
+	reset_btn.tooltip_text = "以手机当前姿态为零点，末端 RPY 归零"
+	reset_btn.pressed.connect(func() -> void:
+		_phone_receiver.reset_origin()
+		if _mcu_ready:
+			_target = _mcu_actual.duplicate(true)
+			_recompute())
+	parent.add_child(reset_btn)
+	# 说明
+	var hint := Label.new()
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hint.text = "手机传感器数据在所有模式下均可注入末端目标位姿。\n"
+	hint.text += "手机数据到达后 200ms 内屏蔽键盘/手柄的位置和姿态输入。\n"
+	hint.text += "超界时手机会震动提醒。"
+	parent.add_child(hint)
+
+
 # --- 双模式遥控器模拟
 func _build_controller_params(parent: Node) -> void:
 	_build_control_editor(parent)
@@ -2225,6 +2419,12 @@ func _build_controller_params(parent: Node) -> void:
 
 # ------------------------------------------------------------------ 每帧推进
 func _process(delta: float) -> void:
+	# PhonePoseReceiver 自己在 _process 里 poll WebSocket，不需要在这里调
+	# 手机活跃超时计数：超过 200ms 没收到手机数据就解除"手机优先"
+	if _phone_active_timer > 0:
+		_phone_active_timer -= int(delta * 1000.0)
+		if _phone_active_timer <= 0:
+			_phone_active = false
 	if _mode == Mode.PRESET:
 		if _play_idx >= 0:
 			_step_play(delta)
@@ -2425,6 +2625,9 @@ func _apply_preset_target(preset: Dictionary) -> void:
 
 
 func _apply_remote_ik_inputs() -> void:
+	# 手机传感器活跃时屏蔽遥控器位置/姿态输入
+	if _phone_active:
+		return
 	var joy_scale: float = _cfg_float("joy_scale", 5.0)
 	var position: Vector3 = _target["position"]
 	for i in range(3):
@@ -2763,6 +2966,9 @@ func _handle_mouse_motion(e: InputEventMouseMotion) -> void:
 ## 按住 Shift 加速一倍，按住 Alt 减速到 1/4，便于粗调后微调。
 func _step_key_move(delta: float) -> void:
 	if not _mcu_ready:
+		return
+	# 手机传感器活跃时屏蔽键盘位置/姿态输入
+	if _phone_active:
 		return
 	var d: Vector3 = _key_move_axis()
 	var dpitch: float = _key_pitch_axis()
