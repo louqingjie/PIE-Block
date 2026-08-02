@@ -160,11 +160,18 @@ godot --headless --no-header --path . --script scripts/cli_codegen.gd -- help
       "type": "stdio",
       "command": "<项目根>/.venv/Scripts/python.exe",
       "args": ["tools/pieblock_mcp_server.py"],
-      "cwd": "<项目根>"
+      "cwd": "<项目根>",
+      "env": {
+        "PIEBLOCK_CHANNEL": "36"
+      }
     }
   }
 }
 ```
+
+> `env` 里的 `PIEBLOCK_CHANNEL` 是**默认遥控器通道号**（0-125）。设置了之后，
+> 调用 `generate_code` / `check_config` / `build_code` 时，如果 config 里 `channel`
+> 为空或缺失，会自动填入该值，不用每次都在 JSON 里传。显式传入的 channel 优先。
 
 ### 提供的工具
 
@@ -190,6 +197,7 @@ godot --headless --no-header --path . --script scripts/cli_codegen.gd -- help
 |---|---|---|
 | `PIEBLOCK_GODOT` | PATH 里的 `godot` | Godot 可执行文件 |
 | `PIEBLOCK_ROOT` | server 文件上级×2 | 项目根目录 |
+| `PIEBLOCK_CHANNEL` | 空（不填） | 默认遥控器通道号 0-125；config 里 channel 为空/缺失时自动填入 |
 
 ---
 

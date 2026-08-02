@@ -15,8 +15,7 @@ Copilot、open-code 等）调用。
 
 配置：
   PIEBLOCK_GODOT    godot 可执行文件路径（默认走 PATH 里的 godot）
-  PIEBLOCK_ROOT     项目根目录（默认 = 本文件上两级）
-
+  PIEBLOCK_ROOT     项目根目录（默认 = 本文件上两级）  PIEBLOCK_CHANNEL  默认遥控器通道号（0-125）。设置了的话，config 里 channel 为空时自动填入。
 用法：
   python tools/pieblock_mcp_server.py            # stdio 模式（MCP 客户端用）
   python tools/pieblock_mcp_server.py --help     # 帮助
@@ -47,6 +46,10 @@ ROOT: Path = Path(os.environ.get("PIEBLOCK_ROOT", str(DEFAULT_ROOT)))
 CLI_SCRIPT: Path = ROOT / "scripts" / "cli_codegen.gd"
 
 KINDS = ["infantry", "engineer", "debug"]
+
+# 默认遥控器通道号（0-125）。在 MCP 客户端配置的 env 里设 PIEBLOCK_CHANNEL。
+# 设置了之后，generate/build/check 时若 config 里 channel 为空/缺失会自动填入。
+DEFAULT_CHANNEL: str = os.environ.get("PIEBLOCK_CHANNEL", "").strip()
 
 
 def find_godot() -> str | None:
@@ -107,6 +110,33 @@ def _write_temp_config(cfg: dict[str, Any]) -> str:
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         json.dump(cfg, f, ensure_ascii=False, indent=2)
     return path
+
+
+def _apply_default_channel(cfg: dict[str, Any]) -> dict[str, Any]:
+    """把 PIEBLOCK_CHANNEL 默认通道号填入 config 里 channel 为空/缺失的字段。
+
+    不改变调用方传入的字典（返回新字典）。支持两种结构：
+      - 扁平：{channel, ...}
+      - engineer 双字典：{engineer: {channel, ...}, ik: {...}}
+    debug 模式没有 channel 字段，跳过。
+    """
+    if not DEFAULT_CHANNEL:
+        return cfg
+    out: dict[str, Any] = dict(cfg)
+
+    def _fill(d: dict[str, Any]) -> bool:
+        ch = d.get("channel")
+        if ch is None or (isinstance(ch, str) and not ch.strip()):
+            d["channel"] = DEFAULT_CHANNEL
+            return True
+        return False
+
+    if isinstance(out.get("channel"), str):
+        _fill(out)
+    eng = out.get("engineer")
+    if isinstance(eng, dict):
+        _fill(eng)
+    return out
 
 
 def _result_text(result: dict[str, Any]) -> str:
@@ -195,6 +225,7 @@ def generate_code(kind: str, config: str, out_path: str | None = None) -> str:
     except json.JSONDecodeError as e:
         return f"错误: config 不是合法 JSON: {e}"
 
+    cfg = _apply_default_channel(cfg)
     cfg_path = _write_temp_config(cfg)
     try:
         args = ["generate", "--kind", kind, "--config", cfg_path]
@@ -237,6 +268,7 @@ def check_config(kind: str, config: str) -> str:
     except json.JSONDecodeError as e:
         return f"错误: config 不是合法 JSON: {e}"
 
+    cfg = _apply_default_channel(cfg)
     cfg_path = _write_temp_config(cfg)
     try:
         result = _run_cli(["check", "--kind", kind, "--config", cfg_path])
@@ -301,6 +333,7 @@ def build_code(kind: str, config: str) -> str:
     except json.JSONDecodeError as e:
         return f"错误: config 不是合法 JSON: {e}"
 
+    cfg = _apply_default_channel(cfg)
     cfg_path = _write_temp_config(cfg)
     try:
         result = _run_cli(["build", "--kind", kind, "--config", cfg_path], timeout=300)
