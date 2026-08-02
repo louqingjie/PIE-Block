@@ -124,9 +124,10 @@ func _parse_io_pair(text: String) -> String:
 	return text
 
 
-## 取整数配置项：非法或越界时回退到默认值，保证生成的 C 代码总能编译
-func _int_or_default(text: String, default_val: int, lo: int, hi: int) -> String:
-	var s: String = text.strip_edges()
+## 取整数配置项：非法或越界时回退到默认值，保证生成的 C 代码总能编译。
+## text 用 Variant：JSON 传数字（如 36.0）或布尔时也能安全兜底，不崩溃。
+func _int_or_default(text: Variant, default_val: int, lo: int, hi: int) -> String:
+	var s: String = str(text).strip_edges()
 	if not s.is_valid_int():
 		return str(default_val)
 	return str(clampi(s.to_int(), lo, hi))

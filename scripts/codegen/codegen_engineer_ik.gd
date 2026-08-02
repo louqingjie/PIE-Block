@@ -147,7 +147,9 @@ func generate(cfg: Dictionary) -> String:
 	var keymove_speed: float = _to_float(cfg.get("keymove_speed", "2"), 2.0)
 	var orientation_key_speed: float = _to_float(
 		cfg.get("orientation_key_speed", "1"), 1.0)
-	var rocker2_home_enabled: bool = bool(cfg.get("rocker2_home_enabled", false))
+	# 先 is bool 判类型：畸形输入（字符串/数字）不崩溃，按 false 处理
+	var _rh: Variant = cfg.get("rocker2_home_enabled", false)
+	var rocker2_home_enabled: bool = _rh is bool and _rh == true
 	# 启用的预设点位数量（0 时不生成预设相关数组与查询循环）
 	var preset_count: int = _active_presets(presets).size()
 	# 逐关节转轴与连杆长度：雅可比逆解算的全部输入
@@ -1490,7 +1492,8 @@ func _engineer_input_expr(input_name: String) -> String:
 func _gen_chassis_control(cfg: Dictionary) -> String:
 	var normal_speed: String = _int_or_default(cfg.get("normal_speed", "4000"), 4000, 0, 10000)
 	var sprint_speed: String = _int_or_default(cfg.get("sprint_speed", "8000"), 8000, 0, 10000)
-	var sprint_enabled: bool = cfg.get("sprint_enabled", false)
+	var sprint_enabled: bool = cfg.get("sprint_enabled", false) is bool \
+		and cfg.get("sprint_enabled", false) == true
 	var l1_dir: float = 1.0 if str(cfg.get("l1_dir", "正向")) == "正向" else -1.0
 	var l2_dir: float = 1.0 if str(cfg.get("l2_dir", "正向")) == "正向" else -1.0
 	var r1_dir: float = 1.0 if str(cfg.get("r1_dir", "正向")) == "正向" else -1.0

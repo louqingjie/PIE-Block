@@ -24,7 +24,8 @@ func generate(cfg: Dictionary) -> String:
 	var dz: String = _int_or_default(cfg.get("deadzone", ""), 10, 0, 2047)
 	var normal_spd: String = _int_or_default(cfg.get("normal_speed", ""), 4000, 0, MOTOR_SPEED_MAX)
 	var sprint_spd: String = _int_or_default(cfg.get("sprint_speed", ""), 8000, 0, MOTOR_SPEED_MAX)
-	var sprint_enabled: bool = cfg.get("sprint_enabled", false)
+	var sprint_enabled: bool = cfg.get("sprint_enabled", false) is bool \
+		and cfg.get("sprint_enabled", false) == true
 
 	# --- 底盘 IO 槽位 ---
 	var l1_pin: String = _parse_io_pair(cfg.get("l1_io", "P74 P24"))

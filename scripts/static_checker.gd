@@ -116,7 +116,10 @@ static func _check_speeds(issues: Array, cfg: Dictionary) -> void:
 	_check_int_field(issues, normal_text, "普通速度", 0, 10000, true)
 	_check_int_field(issues, sprint_text, "冲刺速度", 0, 10000)
 	# 冲刺复选框被选中但未设置冲刺速度 -> Error
-	var sprint_checked: bool = bool(cfg.get("sprint_enabled", false))
+	# GDScript 的 == 是强类型："yes" == true 会崩（Invalid operands String/bool），
+	# 必须先用 is bool 判类型。非 bool 输入一律视为 false，不崩。
+	var _sp: Variant = cfg.get("sprint_enabled", false)
+	var sprint_checked: bool = _sp is bool and _sp == true
 	if sprint_checked and sprint_text.is_empty():
 		issues.append({"type": "Error", "msg": "已勾选「按下左摇杆冲刺」但冲刺速度未设置"})
 
@@ -502,7 +505,9 @@ static func _check_engineer_keymap(issues: Array, cfg: Dictionary) -> void:
 # 舵机偏移角 ∈ [-90, 90]（相对中位），电机速度 ∈ [0, 10000]，摩擦轮速度 ∈ [0, 1100]
 static func _check_debug_params(issues: Array, debug_rows: Array) -> void:
 	for row in debug_rows:
-		if not bool(row.get("enabled", false)):
+		# 先 is bool 判类型（enabled 可能是字符串/数字），非 bool 当 false，不崩
+		var _en: Variant = row.get("enabled", false)
+		if not (_en is bool and _en == true):
 			continue # 留空时不报
 		var pin_name: String = str(row.get("pin", "?"))
 		var drive_type: String = str(row.get("drive_type", ""))

@@ -358,7 +358,9 @@ func _generate_code(kind: String, cfg: Dictionary) -> String:
 				dual = {"engineer": cfg.get("engineer", cfg), "ik": cfg.get("ik", IK_CONFIG.default_config())}
 			return CG_ENGINEER_IK.new().generate(dual)
 		PF.KIND_DEBUG:
-			return CG_DEBUG.new().generate(cfg)
+			# debug_rows 可能是 null/字符串等畸形输入，非数组一律按空处理，避免生成器崩
+			var dr2: Variant = cfg.get("debug_rows", [])
+			return CG_DEBUG.new().generate({"debug_rows": dr2 if dr2 is Array else []})
 		_:
 			return CG_INFANTRY.new().generate(cfg)
 
@@ -375,7 +377,9 @@ func _run_check(kind: String, cfg: Dictionary) -> Array:
 			var ik_cfg: Dictionary = cfg.get("ik", IK_CONFIG.default_config())
 			return SC.check_engineer(engineer_cfg, ik_cfg)
 		PF.KIND_DEBUG:
-			return SC.check_debug(cfg.get("debug_rows", cfg.get("rows", [])))
+			# debug_rows 可能是 null/字符串等畸形输入，非数组一律按空处理，避免 check_debug 崩
+			var dr: Variant = cfg.get("debug_rows", cfg.get("rows", []))
+			return SC.check_debug(dr if dr is Array else [])
 		_:
 			return SC.check_infantry(cfg)
 

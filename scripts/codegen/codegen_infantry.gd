@@ -131,11 +131,12 @@ func generate(cfg: Dictionary) -> String:
 	var pitch_lo: int = gp["pitch_lo"]
 	var pitch_hi: int = gp["pitch_hi"]
 	# --- 归中功能使能 ---
-	var zero_enabled: bool = cfg.get("zero_enabled", false)
+	var _ze: Variant = cfg.get("zero_enabled", false)
+	var zero_enabled: bool = _ze is bool and _ze == true
 
 	# --- Yaw/Pitch 驱动类型 ---
-	var yaw_is_servo: bool = cfg.get("yaw_drive", "舵机") == "舵机"
-	var pitch_is_servo: bool = cfg.get("pitch_drive", "舵机") == "舵机"
+	var yaw_is_servo: bool = str(cfg.get("yaw_drive", "舵机")) == "舵机"
+	var pitch_is_servo: bool = str(cfg.get("pitch_drive", "舵机")) == "舵机"
 	var yaw_pin: String = _parse_io_pair(cfg.get("yaw_io", "MP74"))
 	var pitch_pin: String = _parse_io_pair(cfg.get("pitch_io", "MP03"))
 	# 扩展板槽位（-1 表示不在扩展板上，即主控板 PWM 引脚）
@@ -213,8 +214,9 @@ func generate(cfg: Dictionary) -> String:
 	var r2_formula: String = "baseSpeed - turnSpeed" if r2_dir == 1 else "-baseSpeed + turnSpeed"
 
 	# --- 冲刺/移动速度逻辑 ---
-	var arrow_key: String = cfg.get("arrow_key", "移动")
-	var sprint_enabled: bool = cfg.get("sprint_enabled", false)
+	var arrow_key: String = str(cfg.get("arrow_key", "移动"))
+	var _se: Variant = cfg.get("sprint_enabled", false)
+	var sprint_enabled: bool = _se is bool and _se == true
 	# sprint_check: 生成 baseSpeed/turnSpeed 的初始赋值代码块。
 	# 符号约定：baseSpeed > 0 = 前进，turnSpeed > 0 = 向右转，
 	# 与下面方向键的赋值保持一致（早期版本摇杆多了一个取反，

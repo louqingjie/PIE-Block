@@ -97,8 +97,8 @@ func generate(cfg: Dictionary) -> String:
 		var row: Dictionary = active_rows[row_idx]
 		var pin: String = row.get("pin", "")
 		var drive_type: String = row.get("drive_type", "电机")
-		var dir: int = row.get("dir", 1)
-		var value: int = row.get("value", 0)
+		var dir: int = int(row.get("dir", 1))
+		var value: int = int(row.get("value", 0))
 		var slot: int = _io_to_exp_slot(pin)
 		var is_main_board: bool = slot < 0 # MP03 / MP74 在主控板
 
