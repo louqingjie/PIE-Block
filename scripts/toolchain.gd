@@ -396,7 +396,11 @@ func build_sync(uv4_abs: String, project_dst: String) -> Dictionary:
 	var log_abs: String = mdk_abs + "\\" + BUILD_LOG_NAME
 	var uv4_win: String = uv4_abs.replace("/", "\\")
 	var output: Array = []
-	var exit_code: int = OS.execute(uv4_win, ["-b", uvproj_abs, "-o", log_abs], output, true)
+	# 必须用 -r（rebuild）而非 -b（build）：-b 会跳过重编译，
+	# 连续编译不同 main.c 时返回陈旧结果（Program Size 与上次一模一样）。
+	# 实测：4 关节全 Pitch 与 6 关节含 Roll 两次编译报出完全相同的 code=33465，
+	# 6 关节产物从未真正编译。判据：不同构型的尺寸必须各不相同。
+	var exit_code: int = OS.execute(uv4_win, ["-r", uvproj_abs, "-o", log_abs], output, true)
 	var log_text: String = ""
 	if FileAccess.file_exists(log_abs):
 		log_text = FileAccess.get_file_as_string(log_abs)

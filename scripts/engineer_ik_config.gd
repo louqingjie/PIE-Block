@@ -178,8 +178,14 @@ static func servo_init_patch(ik: Dictionary) -> Dictionary:
 
 ## 返回纯数据配置问题。构形自由度、姿态掩码和可达性只由 MCU 诊断。
 static func validate(raw_ik: Dictionary, engineer: Dictionary = {}) -> Dictionary:
-	var ik: Dictionary = normalize(raw_ik)
 	var issues: Array = []
+	# 关节数越界（用户配 7 个等）直接报错：不拦的话生成器会产出缺失
+	# 数组声明的坏代码（jointHome 未定义），编译才暴露。
+	var jc_raw: int = int(raw_ik.get("joint_count", 0)) if raw_ik is Dictionary else 0
+	if jc_raw < MIN_JOINTS or jc_raw > MAX_JOINTS:
+		issues.append({"type": "Error",
+			"msg": "工程逆解算 关节数 %d 超出范围（支持 %d~%d）" % [jc_raw, MIN_JOINTS, MAX_JOINTS]})
+	var ik: Dictionary = normalize(raw_ik)
 	var joints: Array = ik["joints"]
 	var total_len: float = 0.0
 	for i in range(joints.size()):

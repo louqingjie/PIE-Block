@@ -74,9 +74,11 @@ godot --headless --no-header --path . --script scripts/cli_codegen.gd -- help
 
 - 编译通常 10~60 秒（首次含工具链解压更久）
 - 产物 hex 路径见返回 JSON 的 `hex` 字段
-- **已知限制**：`debug` 模式复用步兵模板，但 debug 生成器不定义 `Channal` 变量
-  （`nrf24l01.c` 需要它），故 debug 编译目前会链接失败——这是既有问题，GUI 同样如此。
-  若需编译 debug 固件请先修复 debug 生成器（补 `Channal` 定义）。
+- 已修复的编译漏洞：
+  - `build` 曾用 Keil `-b`（跳过重编译，连续编译不同配置会返回陈旧 hex），
+    已改用 `-r`（rebuild）强制重编译
+  - `debug` 模式曾因未定义 `Channal` 变量（nrf24l01.c 依赖）而链接失败，已修复
+  - 工程 `joint_count` 越界曾产生缺失数组声明的坏代码，已钳位并加检查器校验
 
 ### 退出码
 

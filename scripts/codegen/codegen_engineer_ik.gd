@@ -135,7 +135,10 @@ func generate(cfg: Dictionary) -> String:
 	var engineer_cfg: Dictionary = cfg.get("engineer", {}) if dual_mode else {}
 	if dual_mode:
 		cfg = cfg.get("ik", {})
-	var jc: int = cfg.get("joint_count", 2)
+	# 关节数必须钳到 [2, MAX_JOINTS]：不钳的话 jc 超过 joints 长度会让
+	# 数组生成函数越界，产出缺失声明的 C 代码（jointHome 未定义等，编译报 C67）。
+	# 与其他入口（solver_fingerprint / generate_simulator）保持一致。
+	var jc: int = clampi(int(cfg.get("joint_count", 2)), 2, MAX_JOINTS)
 	var joints: Array = cfg.get("joints", [])
 	var presets: Array = cfg.get("presets", [])
 	var gripper: Dictionary = _gripper_config(cfg.get("gripper", {}))
@@ -405,7 +408,12 @@ func _build_protocol_macros() -> String:
 
 # ------------------------------------------------------------------ 关节配置数组
 func _build_joint_config_arrays(joints: Array, jc: int) -> String:
-	var offsets: Array = joint_offsets(joints, jc)
+	# 越界保护：jc 可能超过 joints 长度（配置不完整时），缺失关节按空字典
+	# 处理，让 joint_offsets 等有默认值兜底，避免运行时中断导致数组声明缺失。
+	var safe_joints: Array = []
+	for k in range(jc):
+		safe_joints.append(joints[k] if k < joints.size() and joints[k] is Dictionary else {})
+	var offsets: Array = joint_offsets(safe_joints, jc)
 	var s: String = ""
 	s += "// 各关节安装中位朝向(度，运动学角)：舵机处于中位时该关节的实际朝向。\n"
 	s += "// 舵机盘装歪时填这里，逆解算不受影响，只在 angle_to_duty 里换算掉。\n"
@@ -418,7 +426,7 @@ func _build_joint_config_arrays(joints: Array, jc: int) -> String:
 	s += "// 各关节初始角度(度，运动学角)\n"
 	s += "const float jointHome[%d] = {" % jc
 	for i in range(jc):
-		var zero: float = _to_float(joints[i].get("zero", "0"), 0.0)
+		var zero: float = _to_float(safe_joints[i].get("zero", "0"), 0.0)
 		if i > 0:
 			s += ", "
 		s += "%.2ff" % clampf(zero, offsets[i] + JOINT_ANGLE_MIN, offsets[i] + JOINT_ANGLE_MAX)
@@ -427,14 +435,14 @@ func _build_joint_config_arrays(joints: Array, jc: int) -> String:
 		% SERVO_MAX_OFFSET_DEG
 	s += "const float jointMin[%d] = {" % jc
 	for i in range(jc):
-		var mn: float = _to_float(joints[i].get("min", str(JOINT_ANGLE_MIN)), JOINT_ANGLE_MIN)
+		var mn: float = _to_float(safe_joints[i].get("min", str(JOINT_ANGLE_MIN)), JOINT_ANGLE_MIN)
 		if i > 0:
 			s += ", "
 		s += "%.2ff" % clampf(mn, offsets[i] + JOINT_ANGLE_MIN, offsets[i] + JOINT_ANGLE_MAX)
 	s += "};\n"
 	s += "const float jointMax[%d] = {" % jc
 	for i in range(jc):
-		var mx: float = _to_float(joints[i].get("max", str(JOINT_ANGLE_MAX)), JOINT_ANGLE_MAX)
+		var mx: float = _to_float(safe_joints[i].get("max", str(JOINT_ANGLE_MAX)), JOINT_ANGLE_MAX)
 		if i > 0:
 			s += ", "
 		s += "%.2ff" % clampf(mx, offsets[i] + JOINT_ANGLE_MIN, offsets[i] + JOINT_ANGLE_MAX)
@@ -442,7 +450,7 @@ func _build_joint_config_arrays(joints: Array, jc: int) -> String:
 	s += "// 各关节方向(1=正向, 0=反向)，仅在 angle_to_duty 中生效\n"
 	s += "const uint8_t jointDir[%d] = {" % jc
 	for i in range(jc):
-		var d: int = 1 if joints[i].get("dir", "正向") == "正向" else 0
+		var d: int = 1 if safe_joints[i].get("dir", "正向") == "正向" else 0
 		if i > 0:
 			s += ", "
 		s += str(d)
@@ -1545,7 +1553,7 @@ func _gen_check_preset_keys(jc: int, mask: Dictionary) -> String:
 
 # ------------------------------------------------------------------ CalculateIK
 func _gen_calculate_ik(cfg: Dictionary, mask: Dictionary) -> String:
-	var jc: int = cfg.get("joint_count", 2)
+	var jc: int = clampi(int(cfg.get("joint_count", 2)), 2, MAX_JOINTS)
 	var s: String = ""
 	if bool(mask.get("roll", false)) or bool(mask.get("yaw", false)):
 		s += "/// @brief 将角度环绕到 [-180, 180)\n"

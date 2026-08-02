@@ -46,6 +46,10 @@ func generate(cfg: Dictionary) -> String:
 	code += "#include \"main.h\"\n"
 	code += "#include \"MATH.H\"\n"
 	code += "// ========================= 参数区 =========================\n"
+	# 调试复用步兵模板，会链接 nrf24l01.c；它通过 extern 引用 Channal，
+	# 必须在此定义，否则链接报 ERROR L127/L128（undefined Channal）。
+	code += "// NRF24L01 通信通道（0-125），与遥控器一致\n"
+	code += "uint8_t Channal = %s;\n" % _int_or_default(cfg.get("channel", "36"), 36, 0, 125)
 	code += "// 蜂鸣器频率定义\n"
 	code += "#define BUZZER_FREQ_READY  500   // 命令开始：准备执行\n"
 	code += "#define BUZZER_FREQ_DONE   700   // 命令完成\n"
