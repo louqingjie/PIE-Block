@@ -44,6 +44,15 @@ godot --headless --no-header --path . --script scripts/cli_codegen.gd -- generat
 # 只跑静态检查，不生成代码
 godot --headless --no-header --path . --script scripts/cli_codegen.gd -- check --kind engineer --config eng_config.json
 
+# 编译为 hex 固件（配置 JSON -> 生成 -> Keil C251 编译）
+godot --headless --no-header --path . --script scripts/cli_codegen.gd -- build --kind infantry --config my_config.json
+
+# 编译已有的 C 代码文件
+godot --headless --no-header --path . --script scripts/cli_codegen.gd -- build --kind infantry --code main.c
+
+# 从 .pieproj 编译（优先用项目里已保存的代码）
+godot --headless --no-header --path . --script scripts/cli_codegen.gd -- build --project "工程项目.pieproj"
+
 # 输出配置 JSON Schema（字段定义）
 godot --headless --no-header --path . --script scripts/cli_codegen.gd -- schema --kind infantry
 
@@ -57,13 +66,25 @@ godot --headless --no-header --path . --script scripts/cli_codegen.gd -- help
 > 必须带 `--no-header`，否则 Godot 启动横幅会混进 stdout，干扰 JSON 解析。
 > 横幅（`Initialize godot-rust ...`）在第一行，真正的 JSON 从第一个 `{` 开始。
 
+### 编译（build）说明
+
+`build` 复用 `scripts/toolchain.gd` 的 `Toolchain.build_project()`（作者已预留为 MCP 等
+非 UI 调用方设计）：先部署 Keil 工具链（首次自动解压到 `user://keil`）→ 写 `main.c` →
+生成 `TOOLS.INI` → 同步编译。成功判据 = Keil 日志含 `0 Error(s)`。
+
+- 编译通常 10~60 秒（首次含工具链解压更久）
+- 产物 hex 路径见返回 JSON 的 `hex` 字段
+- **已知限制**：`debug` 模式复用步兵模板，但 debug 生成器不定义 `Channal` 变量
+  （`nrf24l01.c` 需要它），故 debug 编译目前会链接失败——这是既有问题，GUI 同样如此。
+  若需编译 debug 固件请先修复 debug 生成器（补 `Channal` 定义）。
+
 ### 退出码
 
 | 码 | 含义 |
 |---|---|
 | 0 | 成功 |
 | 1 | 参数错误 |
-| 2 | 生成失败 |
+| 2 | 生成/编译失败 |
 | 3 | IO 错误 |
 
 ### 输出格式
@@ -154,9 +175,14 @@ godot --headless --no-header --path . --script scripts/cli_codegen.gd -- help
 | `generate_code(kind, config, out_path?)` | 生成 main.c + 静态检查 |
 | `check_config(kind, config)` | 只跑静态检查 |
 | `generate_from_project(project_path, out_path?)` | 从 `.pieproj` 生成 |
+| `build_code(kind, config)` | 生成代码并用 Keil C251 编译为 hex 固件 |
+| `build_project(project_path)` | 从 `.pieproj` 编译（优先用已保存代码） |
 
 `config` 是 **JSON 字符串**（不是对象）。`engineer` 需要 `{engineer, ik}` 双字典结构，
 示例见 `tools/test_engineer_config.json`。
+
+> 编译工具 `build_code` / `build_project` 同步阻塞，通常 10~60 秒（首次会先解压 Keil
+> 工具链）。Agent 应在确认 `check_config` 无 Error 后再调用编译。
 
 ### 环境变量
 

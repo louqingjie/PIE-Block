@@ -13,11 +13,14 @@ extends SceneTree
 ##   generate  --project <.pieproj文件> [--out <文件>]
 ##   check     --kind <infantry|engineer|debug> --config <json文件或->
 ##   check     --project <.pieproj文件>
+##   build     --kind <infantry|engineer|debug> --config <json文件或->
+##   build     --code <c文件>   （直接编译已有 C 代码，--kind 指定模板）
+##   build     --project <.pieproj文件>
 ##   schema    --kind <infantry|engineer|debug>
 ##   profiles
 ##
 ## 所有命令均输出 JSON 到 stdout（generate 的 --out 除外，见下文）。
-## 退出码: 0=成功 1=参数错误 2=生成/检查失败 3=IO 错误
+## 退出码: 0=成功 1=参数错误 2=生成/检查/编译失败 3=IO 错误
 ## ====================================================================
 
 # headless 下 class_name 全局类名缓存可能未建立，用 preload
@@ -28,6 +31,7 @@ const CG_ENGINEER = preload("res://scripts/codegen/codegen_engineer.gd")
 const SC = preload("res://scripts/static_checker.gd")
 const PF = preload("res://scripts/project_file.gd")
 const IK_CONFIG = preload("res://scripts/engineer_ik_config.gd")
+const TC = preload("res://scripts/toolchain.gd")
 
 # ---- 颜色码（纯文本终端用，不用 ANSI，方便脚本解析） ----
 const TAG_OK := "[OK]"
@@ -54,6 +58,8 @@ func _initialize() -> void:
 			_cmd_generate(rest)
 		"check":
 			_cmd_check(rest)
+		"build":
+			_cmd_build(rest)
 		"schema":
 			_cmd_schema(rest)
 		"profiles":
@@ -251,6 +257,90 @@ func _cmd_profiles(_args: PackedStringArray) -> void:
 		})
 	print(JSON.stringify({"profiles": profiles}, "\t"))
 	quit(EXIT_OK)
+
+
+# ====================================================================
+# build -- 用 Keil C251 编译为 hex 固件
+# ====================================================================
+## 复用 Toolchain.build_project()（作者已预留为 MCP 等非 UI 调用方设计）。
+## 先部署工具链（首次约 360ms）-> 写 main.c -> 生成 TOOLS.INI -> 同步编译。
+## 成功判据：Keil 日志含 "0 Error(s)"。编译通常耗时 10~60 秒（首次更久）。
+func _cmd_build(args: PackedStringArray) -> void:
+	var parsed: Dictionary = _parse_args(args, ["--kind", "--config", "--code", "--project"])
+	if parsed.has("error"):
+		_print_error(parsed["error"])
+		quit(EXIT_ARG)
+		return
+	var kind: String = parsed.get("--kind", "infantry")
+	if not PF.is_valid_kind(kind):
+		_print_error("未知项目类型: %s（合法值: infantry/engineer/debug）" % kind)
+		quit(EXIT_ARG)
+		return
+
+	var code: String = ""
+	if parsed.has("--code"):
+		# 直接编译已有 C 代码文件
+		var f: FileAccess = FileAccess.open(parsed["--code"], FileAccess.READ)
+		if f == null:
+			_print_error("无法读取代码文件: %s" % parsed["--code"])
+			quit(EXIT_IO)
+			return
+		code = f.get_as_text()
+		f.close()
+	elif parsed.has("--config"):
+		# 先生成代码再编译
+		var config_text: String = _read_config_source(parsed["--config"])
+		if config_text.is_empty() and parsed["--config"] != "-":
+			_print_error("无法读取配置文件: %s" % parsed["--config"])
+			quit(EXIT_IO)
+			return
+		var cfg: Dictionary = _parse_config_json(config_text, kind)
+		code = _generate_code(kind, cfg)
+	elif parsed.has("--project"):
+		# 优先用项目里已保存的代码，其次重新生成
+		var res: Dictionary = PF.load_from(parsed["--project"])
+		if not res["ok"]:
+			_print_error("无法读取项目文件: %s" % res["err"])
+			quit(EXIT_IO)
+			return
+		var data: Dictionary = res["data"]
+		kind = data.get("kind", "infantry")
+		code = str(data.get("main_c_ai", ""))
+		if code.strip_edges().is_empty():
+			code = str(data.get("main_c_stage1", ""))
+		if code.strip_edges().is_empty():
+			code = _generate_code(kind, _config_from_project(data, kind))
+	else:
+		_print_error("build 需要 --config / --code / --project 之一")
+		quit(EXIT_ARG)
+		return
+
+	if code.strip_edges().is_empty():
+		_print_error("没有可编译的代码（配置可能不完整）")
+		quit(EXIT_RUN)
+		return
+
+	# 编译（同步阻塞，Toolchain.build_project 专为 MCP 等非 UI 调用方设计）
+	var tc = TC.new()
+	var dst: String = _project_dst_for_kind(kind)
+	var result: Dictionary = tc.build_project(dst, code)
+	var out: Dictionary = {
+		"ok": bool(result.get("ok", false)),
+		"exit": result.get("exit", -1),
+		"kind": kind,
+		"log": str(result.get("log", "")),
+		"hex": tc.get_hex_path(dst),
+		"hex_exists": tc.hex_exists(dst),
+	}
+	print(JSON.stringify(out, "\t"))
+	quit(EXIT_OK)
+
+
+## 项目类型 -> Toolchain 项目模板路径（与 app_state.gd 的 project_dst_for_kind 一致）
+func _project_dst_for_kind(kind: String) -> String:
+	if kind == PF.KIND_ENGINEER:
+		return TC.PROJECT_ENGINEER_DST
+	return TC.PROJECT_DST
 
 
 # ====================================================================
@@ -810,6 +900,7 @@ Pie-Block 代码生成器 CLI
 命令:
   generate    生成 main.c 代码
   check       运行静态检查
+  build       用 Keil C251 编译为 hex 固件
   schema      输出配置 JSON Schema
   profiles    列出所有项目类型
   help        显示此帮助
@@ -825,6 +916,12 @@ check 参数:
   --config <json文件>                配置 JSON 文件路径
   --project <.pieproj文件>           从项目文件加载
 
+build 参数:
+  --kind <infantry|engineer|debug>   项目类型（决定用哪个项目模板编译）
+  --config <json文件>                配置 JSON 文件路径（先生成再编译）
+  --code <c文件>                     直接编译已有的 C 代码文件
+  --project <.pieproj文件>           从项目文件编译（优先用已保存的代码）
+
 schema 参数:
   --kind <infantry|engineer|debug>   项目类型
 
@@ -834,6 +931,9 @@ schema 参数:
 
   # 检查工程配置
   godot --headless --path . --script scripts/cli_codegen.gd -- check --kind engineer --config eng_config.json
+
+  # 编译步兵配置为 hex 固件
+  godot --headless --path . --script scripts/cli_codegen.gd -- build --kind infantry --config my_config.json
 
   # 输出步兵配置 Schema
   godot --headless --path . --script scripts/cli_codegen.gd -- schema --kind infantry
@@ -845,6 +945,7 @@ schema 参数:
   generate（无 --out）: {"ok": true, "kind": "...", "code": "...", "issues": [...]}
   generate（有 --out）: {"ok": true, "kind": "...", "out": "...", "issues": [...]}
   check:               {"ok": true/false, "kind": "...", "issues": [...], "error_count": N, "warn_count": N}
+  build:               {"ok": true/false, "exit": N, "kind": "...", "log": "...", "hex": "...", "hex_exists": true/false}
   schema:              JSON Schema 对象
   profiles:            {"profiles": [...]}
 

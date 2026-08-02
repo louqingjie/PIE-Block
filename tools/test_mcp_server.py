@@ -18,6 +18,13 @@ def _cfg(name: str) -> dict:
         return json.load(f)
 
 
+def _first_json(text: str) -> dict:
+    """build_* 工具会在 JSON 后追加一行提示文本，取第一个 `{` 到最后一个 `}` 之间的部分。"""
+    start = text.index("{")
+    end = text.rfind("}") + 1
+    return json.loads(text[start:end])
+
+
 async def main() -> int:
     params = StdioServerParameters(
         command=sys.executable,
@@ -34,6 +41,8 @@ async def main() -> int:
         assert "check_config" in names
         assert "get_schema" in names
         assert "generate_from_project" in names
+        assert "build_code" in names
+        assert "build_project" in names
 
         # 2. list_profiles
         r = await client.call_tool("list_profiles", {})
@@ -80,6 +89,23 @@ async def main() -> int:
         })
         data = json.loads(r.content[0].text)
         print(f"[8] generate_from_project OK: kind={data['kind']}, has_error={data['has_error']}")
+
+        # 9. build_code infantry（编译为 hex 固件）
+        r = await client.call_tool("build_code", {
+            "kind": "infantry",
+            "config": json.dumps(_cfg("test_infantry_config.json")),
+        })
+        data = _first_json(r.content[0].text)
+        print(f"[9] build_code OK: ok={data['ok']}, exit={data['exit']}, hex_exists={data['hex_exists']}")
+        assert data["ok"], "编译应当成功（0 Error(s)）"
+        assert data["hex_exists"], "应当生成 hex 固件"
+
+        # 10. build_project（从 .pieproj 编译）
+        r = await client.call_tool("build_project", {
+            "project_path": str(ROOT / "调试项目.pieproj"),
+        })
+        data = _first_json(r.content[0].text)
+        print(f"[10] build_project OK: ok={data['ok']}, kind={data['kind']}, hex_exists={data['hex_exists']}")
 
         print("\n=== 全部 MCP 测试通过 ===")
         return 0

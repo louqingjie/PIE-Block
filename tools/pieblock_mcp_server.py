@@ -60,11 +60,12 @@ def find_godot() -> str | None:
 # ---------------------------------------------------------------------------
 # CLI 子进程封装
 # ---------------------------------------------------------------------------
-def _run_cli(args: list[str]) -> dict[str, Any]:
+def _run_cli(args: list[str], timeout: int = 120) -> dict[str, Any]:
     """调用 Godot CLI，返回解析后的 JSON 结果字典。
 
     CLI stdout 第一行是 GDExtension 插件横幅（"Initialize godot-rust..."），
     真正的 JSON 从第一个 `{` 开始。解析时跳过横幅行。
+    timeout: 秒。编译（build）较耗时，调用方传入更大超时。
     """
     godot = find_godot()
     if godot is None:
@@ -82,10 +83,10 @@ def _run_cli(args: list[str]) -> dict[str, Any]:
             text=True,
             encoding="utf-8",
             errors="replace",
-            timeout=120,
+            timeout=timeout,
         )
     except subprocess.TimeoutExpired:
-        raise RuntimeError("Godot CLI 执行超时（120 秒）")
+        raise RuntimeError(f"Godot CLI 执行超时（{timeout} 秒）")
 
     out = proc.stdout or ""
     # 跳过横幅行：找第一个以 { 开头的行的位置
@@ -267,6 +268,71 @@ def generate_from_project(project_path: str, out_path: str | None = None) -> str
         if out_path:
             args += ["--out", out_path]
         result = _run_cli(args)
+    except RuntimeError as e:
+        return f"错误: {e}"
+    return json.dumps(result, ensure_ascii=False, indent=2)
+
+
+@mcp.tool()
+def build_code(kind: str, config: str) -> str:
+    """生成代码并用 Keil C251 编译为 hex 固件（供真机烧录）。
+
+    参数:
+      kind: infantry / engineer / debug
+      config: JSON 字符串，同 generate_code。字段定义见 get_schema(kind)。
+
+    返回 JSON:
+      ok: 编译是否成功（Keil 日志含 "0 Error(s)"）
+      exit: Keil 退出码
+      kind: 项目类型
+      log: 编译日志（含 Error/Warning 与 Program Size）
+      hex: 编译产物 hex 文件绝对路径
+      hex_exists: hex 固件是否已生成
+
+    注意: 编译同步阻塞，通常 10~60 秒（首次会先解压 Keil 工具链）。
+    生成代码前请先确认 config 无 Error 级问题（用 check_config）。
+    """
+    if kind not in KINDS:
+        return f"错误: 未知 kind「{kind}」，合法值: {', '.join(KINDS)}"
+    try:
+        cfg: dict[str, Any] = json.loads(config)
+        if not isinstance(cfg, dict):
+            return "错误: config 必须是 JSON 对象（字典）"
+    except json.JSONDecodeError as e:
+        return f"错误: config 不是合法 JSON: {e}"
+
+    cfg_path = _write_temp_config(cfg)
+    try:
+        result = _run_cli(["build", "--kind", kind, "--config", cfg_path], timeout=300)
+    except RuntimeError as e:
+        return f"错误: {e}"
+    finally:
+        try:
+            os.remove(cfg_path)
+        except OSError:
+            pass
+
+    out = json.dumps(result, ensure_ascii=False, indent=2)
+    if result.get("ok"):
+        out += "\n\n[✓] 编译成功，hex 固件已生成。"
+    else:
+        out += "\n\n[!] 编译失败，请根据 log 中的 Error 修复配置后重新编译。"
+    return out
+
+
+@mcp.tool()
+def build_project(project_path: str) -> str:
+    """从 .pieproj 项目文件编译为 hex 固件（优先用项目里已保存的代码）。
+
+    参数:
+      project_path: .pieproj 文件绝对路径
+
+    返回 JSON: 同 build_code。
+    """
+    if not os.path.isfile(project_path):
+        return f"错误: 项目文件不存在: {project_path}"
+    try:
+        result = _run_cli(["build", "--project", project_path], timeout=300)
     except RuntimeError as e:
         return f"错误: {e}"
     return json.dumps(result, ensure_ascii=False, indent=2)
