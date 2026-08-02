@@ -1,0 +1,9 @@
+{
+  "debug_rows": [
+    {"pin": "P60", "drive_type": "舵机", "dir": 1, "value": 0, "enabled": true},
+    {"pin": "P62", "drive_type": "电机", "dir": 1, "value": 2000, "enabled": true},
+    {"pin": "P64", "drive_type": "摩擦轮", "dir": 1, "value": 800, "enabled": true},
+    {"pin": "P74", "drive_type": "舵机", "dir": 0, "value": 0, "enabled": false},
+    {"pin": "MP74", "drive_type": "舵机", "dir": 1, "value": 0, "enabled": true}
+  ]
+}

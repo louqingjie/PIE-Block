@@ -98,6 +98,12 @@ stcgal_*.err
 test_isp_*.py
 test_fast_isp.py
 test_combined.py
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
 test_debug_rx.py
 test_trigger*.py
 test_uart_isp_diag.py

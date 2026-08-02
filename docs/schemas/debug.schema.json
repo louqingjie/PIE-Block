@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "调试模式：逐行测试各引脚，每个命令持续3秒，蜂鸣器提示开始/结束。",
+  "kind": "debug",
+  "properties": {
+    "debug_rows": {
+      "description": "调试引脚配置，逐行执行测试命令",
+      "items": {
+        "properties": {
+          "dir": {
+            "description": "1=正向 0=反向",
+            "enum": [
+              0,
+              1
+            ],
+            "type": "integer"
+          },
+          "drive_type": {
+            "enum": [
+              "舵机",
+              "电机",
+              "摩擦轮",
+              "不使用"
+            ],
+            "type": "string"
+          },
+          "enabled": {
+            "description": "是否启用该行",
+            "type": "boolean"
+          },
+          "pin": {
+            "enum": [
+              "P60",
+              "P62",
+              "P64",
+              "P66",
+              "P74",
+              "P75",
+              "P76",
+              "P77",
+              "MP03",
+              "MP74"
+            ],
+            "type": "string"
+          },
+          "value": {
+            "description": "占空比/角度值",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "title": "Pie-Block 调试 配置",
+  "type": "object"
+}

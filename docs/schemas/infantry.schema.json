@@ -1,0 +1,197 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "步兵机器人：底盘4电机+云台(Yaw/Pitch)+摩擦轮+拨弹。P64/P66固定用于摩擦轮。",
+  "kind": "infantry",
+  "properties": {
+    "arrow_key": {
+      "default": "移动",
+      "enum": [
+        "移动",
+        "冲刺",
+        "其他"
+      ],
+      "type": "string"
+    },
+    "booster_dir": {
+      "default": "正向",
+      "enum": [
+        "正向",
+        "反向"
+      ],
+      "type": "string"
+    },
+    "booster_io": {
+      "default": "P60",
+      "description": "拨弹电机 IO（单引脚，扩展板）",
+      "type": "string"
+    },
+    "booster_key": {
+      "description": "摩擦轮开关键",
+      "type": "string"
+    },
+    "channel": {
+      "default": "36",
+      "description": "NRF24L01 通道号 (0-125)",
+      "type": "string"
+    },
+    "deadzone": {
+      "default": "10",
+      "description": "摇杆死区 (0-2047)",
+      "type": "string"
+    },
+    "friction_l_dir": {
+      "default": "正向",
+      "description": "左摩擦轮方向（P64 固定）",
+      "enum": [
+        "正向",
+        "反向"
+      ],
+      "type": "string"
+    },
+    "friction_r_dir": {
+      "default": "正向",
+      "description": "右摩擦轮方向（P66 固定）",
+      "enum": [
+        "正向",
+        "反向"
+      ],
+      "type": "string"
+    },
+    "l1_dir": {
+      "default": "正向",
+      "enum": [
+        "正向",
+        "反向"
+      ],
+      "type": "string"
+    },
+    "l1_io": {
+      "default": "P74 P24",
+      "description": "左前轮 IO（扩展板通信脚+方向脚，如 'P74 P24'）",
+      "type": "string"
+    },
+    "l2_dir": {
+      "default": "正向",
+      "enum": [
+        "正向",
+        "反向"
+      ],
+      "type": "string"
+    },
+    "l2_io": {
+      "default": "P75 P25",
+      "description": "左后轮 IO",
+      "type": "string"
+    },
+    "normal_speed": {
+      "default": "4000",
+      "description": "普通速度 (0-10000)",
+      "type": "string"
+    },
+    "pitch_dir": {
+      "default": "正向",
+      "enum": [
+        "正向",
+        "反向"
+      ],
+      "type": "string"
+    },
+    "pitch_drive": {
+      "default": "舵机",
+      "enum": [
+        "舵机",
+        "电机"
+      ],
+      "type": "string"
+    },
+    "pitch_io": {
+      "description": "Pitch 轴 IO",
+      "type": "string"
+    },
+    "pitch_mid_offset": {
+      "default": "0",
+      "description": "Pitch 归中角偏移 (-90~90)",
+      "type": "string"
+    },
+    "r1_dir": {
+      "default": "正向",
+      "enum": [
+        "正向",
+        "反向"
+      ],
+      "type": "string"
+    },
+    "r1_io": {
+      "default": "P76 P26",
+      "description": "右前轮 IO",
+      "type": "string"
+    },
+    "r2_dir": {
+      "default": "正向",
+      "enum": [
+        "正向",
+        "反向"
+      ],
+      "type": "string"
+    },
+    "r2_io": {
+      "default": "P77 P27",
+      "description": "右后轮 IO",
+      "type": "string"
+    },
+    "sprint_enabled": {
+      "default": false,
+      "description": "按下左摇杆冲刺",
+      "type": "boolean"
+    },
+    "sprint_speed": {
+      "default": "8000",
+      "description": "冲刺速度 (0-10000)",
+      "type": "string"
+    },
+    "trigger_key": {
+      "description": "扳机键（单发拨弹触发键）",
+      "type": "string"
+    },
+    "trigger_speed": {
+      "description": "拨弹速度 (0-10000)",
+      "type": "string"
+    },
+    "trigger_time": {
+      "description": "拨弹时间 ms (0-65535)",
+      "type": "string"
+    },
+    "yaw_dir": {
+      "default": "正向",
+      "enum": [
+        "正向",
+        "反向"
+      ],
+      "type": "string"
+    },
+    "yaw_drive": {
+      "default": "舵机",
+      "enum": [
+        "舵机",
+        "电机"
+      ],
+      "type": "string"
+    },
+    "yaw_io": {
+      "description": "Yaw 轴 IO",
+      "type": "string"
+    },
+    "yaw_mid_offset": {
+      "default": "0",
+      "description": "Yaw 归中角偏移 (-90~90)",
+      "type": "string"
+    },
+    "zero_enabled": {
+      "default": false,
+      "description": "松手归中",
+      "type": "boolean"
+    }
+  },
+  "title": "Pie-Block 步兵 配置",
+  "type": "object"
+}

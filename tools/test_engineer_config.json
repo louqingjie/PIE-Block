@@ -1,0 +1,52 @@
+{
+  "engineer": {
+    "channel": "36",
+    "deadzone": "10",
+    "normal_speed": "4000",
+    "sprint_speed": "8000",
+    "sprint_enabled": false,
+    "l1_io": "P74 P24",
+    "l2_io": "P75 P25",
+    "r1_io": "P76 P26",
+    "r2_io": "P77 P27",
+    "l1_dir": "正向",
+    "l2_dir": "正向",
+    "r1_dir": "正向",
+    "r2_dir": "正向",
+    "io_init": {
+      "P60": "舵机", "P62": "电机", "P64": "电机", "P66": "电机",
+      "P74": "电机", "P75": "电机", "P76": "电机", "P77": "电机"
+    },
+    "key_map": [
+      {"input": "A", "dir": "正向", "mode": "速度", "param": "3000", "target": "P62"},
+      {"input": "B", "dir": "反向", "mode": "速度", "param": "3000", "target": "P62"},
+      {"input": "R", "dir": "正向", "mode": "增量", "param": "5", "target": "MP03"}
+    ]
+  },
+  "ik": {
+    "joint_count": 3,
+    "mode_switch_key": "R",
+    "joints": [
+      {"io": "P74", "dir": "正向", "axis": "Yaw", "len": "0", "offset": "", "zero": "10", "min": "-90", "max": "90"},
+      {"io": "P75", "dir": "正向", "axis": "Pitch", "len": "120", "offset": "", "zero": "10", "min": "-90", "max": "90"},
+      {"io": "P76", "dir": "正向", "axis": "Pitch", "len": "90", "offset": "", "zero": "10", "min": "-90", "max": "90"}
+    ],
+    "gripper": {"enabled": false, "io": "MP03", "dir": "正向", "open_angle": "45", "closed_angle": "-45", "initial_open": true, "key": "D"},
+    "presets": [],
+    "joy_x": "右X->末端X",
+    "joy_y": "右Y->末端Y",
+    "joy_z": "右X->末端Z",
+    "joy_scale": "5",
+    "keymove_speed": "2",
+    "orientation_key_speed": "1",
+    "rocker2_home_enabled": false,
+    "keymove": [
+      {"plus": "上", "minus": "下"},
+      {"plus": "左", "minus": "右"},
+      {"plus": "A", "minus": "B"},
+      {"plus": "C", "minus": "D"},
+      {"plus": "不使用", "minus": "不使用"},
+      {"plus": "不使用", "minus": "不使用"}
+    ]
+  }
+}
