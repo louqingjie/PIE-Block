@@ -170,8 +170,8 @@ godot --headless --no-header --path . --script scripts/cli_codegen.gd -- help
 ```
 
 > `env` 里的 `PIEBLOCK_CHANNEL` 是**默认遥控器通道号**（0-125）。设置了之后，
-> 调用 `generate_code` / `check_config` / `build_code` 时，如果 config 里 `channel`
-> 为空或缺失，会自动填入该值，不用每次都在 JSON 里传。显式传入的 channel 优先。
+> 调用工具时如果 config 里 `channel` 为空或缺失，会自动填入该值。
+> **优先级：工具显式 `channel` 参数 > config 里的 channel > `PIEBLOCK_CHANNEL`。**
 
 ### 提供的工具
 
@@ -179,14 +179,18 @@ godot --headless --no-header --path . --script scripts/cli_codegen.gd -- help
 |---|---|
 | `list_profiles()` | 列出全部项目类型及用途 |
 | `get_schema(kind)` | 获取某类型的配置 JSON Schema（字段/默认值/可选值） |
-| `generate_code(kind, config, out_path?)` | 生成 main.c + 静态检查 |
-| `check_config(kind, config)` | 只跑静态检查 |
+| `generate_code(kind, config, out_path?, channel?)` | 生成 main.c + 静态检查 |
+| `check_config(kind, config, channel?)` | 只跑静态检查 |
 | `generate_from_project(project_path, out_path?)` | 从 `.pieproj` 生成 |
-| `build_code(kind, config)` | 生成代码并用 Keil C251 编译为 hex 固件 |
+| `build_code(kind, config, channel?)` | 生成代码并用 Keil C251 编译为 hex 固件 |
 | `build_project(project_path)` | 从 `.pieproj` 编译（优先用已保存代码） |
 
 `config` 是 **JSON 字符串**（不是对象）。`engineer` 需要 `{engineer, ik}` 双字典结构，
 示例见 `tools/test_engineer_config.json`。
+
+> `channel` 是**可选参数**（0-125）：传了就直接用它，不传则回落到 config 里的
+> `channel` 字段，再没有才用环境变量 `PIEBLOCK_CHANNEL`。三种方式都不必在每次
+> 调用时重复写完整配置。
 
 > 编译工具 `build_code` / `build_project` 同步阻塞，通常 10~60 秒（首次会先解压 Keil
 > 工具链）。Agent 应在确认 `check_config` 无 Error 后再调用编译。

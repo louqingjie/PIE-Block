@@ -112,26 +112,36 @@ def _write_temp_config(cfg: dict[str, Any]) -> str:
     return path
 
 
-def _apply_default_channel(cfg: dict[str, Any]) -> dict[str, Any]:
-    """把 PIEBLOCK_CHANNEL 默认通道号填入 config 里 channel 为空/缺失的字段。
+def _apply_channel(cfg: dict[str, Any], channel: str | None = None) -> dict[str, Any]:
+    """把通道号填入 config 里 channel 为空/缺失的字段。
+
+    优先级：显式参数 channel > 工具参数之外的 PIEBLOCK_CHANNEL 环境变量。
+    显式传入时也允许覆盖 config 里的 channel（以参数为准）。
 
     不改变调用方传入的字典（返回新字典）。支持两种结构：
       - 扁平：{channel, ...}
       - engineer 双字典：{engineer: {channel, ...}, ik: {...}}
     debug 模式没有 channel 字段，跳过。
     """
-    if not DEFAULT_CHANNEL:
+    resolved: str = (channel or "").strip() or DEFAULT_CHANNEL
+    if not resolved:
         return cfg
     out: dict[str, Any] = dict(cfg)
 
-    def _fill(d: dict[str, Any]) -> bool:
-        ch = d.get("channel")
-        if ch is None or (isinstance(ch, str) and not ch.strip()):
-            d["channel"] = DEFAULT_CHANNEL
-            return True
-        return False
+    def _fill(d: dict[str, Any]) -> None:
+        # 参数显式传入则覆盖；否则只在缺失/为空时填入默认值
+        if channel and channel.strip():
+            d["channel"] = channel.strip()
+        else:
+            ch = d.get("channel")
+            if ch is None or (isinstance(ch, str) and not ch.strip()):
+                d["channel"] = resolved
 
-    if isinstance(out.get("channel"), str):
+    # 扁平结构：显式传参则无论有无 channel 字段都填；
+    # 仅用默认值（环境变量）时，只填已有 channel 字段（避免给 debug 等无 channel 的配置乱加）
+    if channel and channel.strip():
+        _fill(out)
+    elif isinstance(out.get("channel"), str):
         _fill(out)
     eng = out.get("engineer")
     if isinstance(eng, dict):
@@ -201,13 +211,14 @@ def get_schema(kind: str) -> str:
 
 
 @mcp.tool()
-def generate_code(kind: str, config: str, out_path: str | None = None) -> str:
+def generate_code(kind: str, config: str, out_path: str | None = None, channel: str | None = None) -> str:
     """根据 JSON 配置生成 main.c 代码，并返回静态检查结果。
 
     参数:
       kind: infantry / engineer / debug
       config: JSON 字符串。字段定义见 get_schema(kind)。engineer 需要 {engineer, ik} 双字典。
       out_path: 可选，把生成的 C 代码写入此绝对路径（不指定则只返回 JSON，code 字段含代码）。
+      channel: 可选，遥控器通道号（0-125）。传入后自动填入 config 的 channel（覆盖环境变量默认值）。
 
     返回 JSON:
       ok: 命令是否执行成功
@@ -225,7 +236,7 @@ def generate_code(kind: str, config: str, out_path: str | None = None) -> str:
     except json.JSONDecodeError as e:
         return f"错误: config 不是合法 JSON: {e}"
 
-    cfg = _apply_default_channel(cfg)
+    cfg = _apply_channel(cfg, channel)
     cfg_path = _write_temp_config(cfg)
     try:
         args = ["generate", "--kind", kind, "--config", cfg_path]
@@ -247,12 +258,13 @@ def generate_code(kind: str, config: str, out_path: str | None = None) -> str:
 
 
 @mcp.tool()
-def check_config(kind: str, config: str) -> str:
+def check_config(kind: str, config: str, channel: str | None = None) -> str:
     """仅运行静态检查，不生成代码。
 
     参数:
       kind: infantry / engineer / debug
       config: JSON 字符串，同 generate_code。
+      channel: 可选，遥控器通道号（0-125），同 generate_code。
 
     返回 JSON:
       ok: 是否有 Error（true = 无 Error）
@@ -268,7 +280,7 @@ def check_config(kind: str, config: str) -> str:
     except json.JSONDecodeError as e:
         return f"错误: config 不是合法 JSON: {e}"
 
-    cfg = _apply_default_channel(cfg)
+    cfg = _apply_channel(cfg, channel)
     cfg_path = _write_temp_config(cfg)
     try:
         result = _run_cli(["check", "--kind", kind, "--config", cfg_path])
@@ -306,12 +318,13 @@ def generate_from_project(project_path: str, out_path: str | None = None) -> str
 
 
 @mcp.tool()
-def build_code(kind: str, config: str) -> str:
+def build_code(kind: str, config: str, channel: str | None = None) -> str:
     """生成代码并用 Keil C251 编译为 hex 固件（供真机烧录）。
 
     参数:
       kind: infantry / engineer / debug
       config: JSON 字符串，同 generate_code。字段定义见 get_schema(kind)。
+      channel: 可选，遥控器通道号（0-125），同 generate_code。
 
     返回 JSON:
       ok: 编译是否成功（Keil 日志含 "0 Error(s)"）
@@ -333,7 +346,7 @@ def build_code(kind: str, config: str) -> str:
     except json.JSONDecodeError as e:
         return f"错误: config 不是合法 JSON: {e}"
 
-    cfg = _apply_default_channel(cfg)
+    cfg = _apply_channel(cfg, channel)
     cfg_path = _write_temp_config(cfg)
     try:
         result = _run_cli(["build", "--kind", kind, "--config", cfg_path], timeout=300)

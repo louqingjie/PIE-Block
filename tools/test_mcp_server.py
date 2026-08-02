@@ -107,6 +107,21 @@ async def main() -> int:
         data = _first_json(r.content[0].text)
         print(f"[10] build_project OK: ok={data['ok']}, kind={data['kind']}, hex_exists={data['hex_exists']}")
 
+        # 11. channel 参数：显式传入应填入/覆盖 config 的 channel
+        import re
+        base = _cfg("test_infantry_config.json")
+        base.pop("channel", None)  # 去掉 channel，看参数能否填入
+        r = await client.call_tool("generate_code", {
+            "kind": "infantry",
+            "config": json.dumps(base),
+            "channel": "55",
+        })
+        data = _first_json(r.content[0].text)  # has_error 时会追加提示文本，须取首个 JSON
+        m = re.search(r"Channal\s*=\s*(\d+)", data["code"])
+        assert m and m.group(1) == "55", f"channel 参数未生效: {m.group(1) if m else '未找到'}"
+        assert not data["has_error"], "channel=55 填入后不应再有通道号 Error"
+        print(f"[11] channel 参数 OK: channel=55 -> Channal = {m.group(1)}, has_error={data['has_error']}")
+
         print("\n=== 全部 MCP 测试通过 ===")
         return 0
 
