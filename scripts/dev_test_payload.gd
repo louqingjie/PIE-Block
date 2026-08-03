@@ -43,7 +43,7 @@ func _initialize() -> void:
 	var injected := 0
 	var vals: Array = ["123.0f", "456.0f", "789.0f"]
 	for suffix in ["0", "1", "2"]:
-		var key := "IkSimPutFloat(ikSimPayload,&n,ikPts[JOINT_COUNT][%s]);" % suffix
+		var key := "IkSimPutFiniteFloat(ikSimPayload,&n,ikPts[JOINT_COUNT][%s]);" % suffix
 		var val: String = vals[suffix.to_int()]
 		if code.contains(key):
 			code = code.replace(key, "IkSimPutFloat(ikSimPayload,&n,%s);" % val)

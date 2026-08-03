@@ -47,7 +47,7 @@ var axis_enable: Dictionary = {
 ## ARCore 坐标系翻转开关（联调用）
 var flip_x: bool = false
 var flip_y: bool = true
-var flip_z: bool = false
+var flip_z: bool = true
 ## ARCore 原点偏移（手机在原点重置时记录）
 var _origin_position: Vector3 = Vector3.ZERO
 ## RPY 参考姿态（"回中"时记录当前手机姿态为零点）

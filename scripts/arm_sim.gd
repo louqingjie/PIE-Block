@@ -35,6 +35,7 @@ const P_RESET_POSE: NodePath = "TopPanel/HBox/ResetPose"
 const P_CONFIG_LABEL: NodePath = "TopPanel/HBox/ConfigLabel"
 const P_HINT: NodePath = "HintLabel"
 const P_PHONE_TOGGLE: NodePath = "TopPanel/HBox/PhoneToggle"
+const P_REACH_MESH: NodePath = "Sim/SubViewport/World/VehicleRoot/ArmMount/ReachMesh"
 
 # ------------------------------------------------------------------ 常量
 ## mm -> Godot 单位。臂长通常 100~300mm，缩到 1~3 单位便于相机取景
@@ -95,6 +96,7 @@ const IK_SIM_LINK = preload("res://scripts/ik_sim_link.gd")
 const IK_SIM_PROTOCOL = preload("res://scripts/ik_sim_protocol.gd")
 const TOOLCHAIN = preload("res://scripts/toolchain.gd")
 const PHONE_RECEIVER = preload("res://scripts/phone_pose_receiver.gd")
+const ARM_WORKSPACE = preload("res://scripts/arm_workspace.gd")
 
 # ------------------------------------------------------------------ 配置状态
 var _cfg: Dictionary = {}
@@ -205,6 +207,15 @@ var _wheel_nodes: Array = []
 var _wheel_centers: Array = []
 var _grid_step_unit: float = 1.0
 
+# ------------------------------------------------------------------ 可达区域缓存
+## 上一次扫描的体素数据与配置指纹。配置未变时直接复用。
+var _reach_dirty: bool = true
+var _reach_voxels: PackedVector3Array = PackedVector3Array()
+var _reach_bounds: AABB = AABB()
+var _reach_voxel_size: float = 10.0
+var _reach_fingerprint: String = ""
+var _reach_thread: Thread = null
+var _reach_busy: bool = false
 # 底盘尺寸与机械臂安装位置（mm，机器人坐标）。
 # 底盘只是视觉参照，不参与逆解；它的作用是看清机械臂装在车上哪里。
 var _chassis_deck_len: float = CHASSIS_DECK_LEN_MM
@@ -227,6 +238,9 @@ var _mat_deck: StandardMaterial3D = null
 var _mat_wheel: StandardMaterial3D = null
 var _mat_mount: StandardMaterial3D = null
 var _mat_grip: StandardMaterial3D = null
+var _mat_reach: StandardMaterial3D = null
+var _reach_toggle_btn: CheckButton = null
+var _reach_recompute_btn: Button = null
 
 # 参数面板控件（按模式重建）
 var _sliders: Dictionary = {} # key -> HSlider
@@ -275,9 +289,21 @@ func _connect_ui() -> void:
 	solver_button.text = "编译并烧录 MCU 求解器"
 	solver_button.tooltip_text = "构型变化后必须重新生成并烧录无 IO 求解器固件"
 	solver_button.pressed.connect(func() -> void: solver_build_requested.emit())
+	var reach_button := CheckButton.new()
+	reach_button.text = "可达"
+	reach_button.button_pressed = false
+	reach_button.toggled.connect(_on_reach_toggled)
+	_reach_toggle_btn = reach_button
+	var reach_recompute_button := Button.new()
+	reach_recompute_button.text = "重新计算可达"
+	reach_recompute_button.tooltip_text = "参数变化后重新扫描机械臂可达区域"
+	reach_recompute_button.pressed.connect(_on_reach_recompute_pressed)
+	_reach_recompute_btn = reach_recompute_button
 	var top: Node = get_node_or_null("TopPanel/HBox")
 	if top is Container:
 		top.add_child(solver_button)
+		top.add_child(reach_button)
+		top.add_child(reach_recompute_button)
 	var tt: Node = get_node_or_null(P_TRAIL_TOGGLE)
 	if tt is BaseButton:
 		tt.toggled.connect(_on_trail_toggled)
@@ -300,7 +326,6 @@ func _connect_ui() -> void:
 	if pt is BaseButton:
 		pt.toggled.connect(_toggle_phone_sensor)
 		pt.set_meta("created", false)
-
 
 # ------------------------------------------------------------------ 外部接口
 ## context = {ik, engineer, editable}。工程配置只用于 IO 冲突与初始化联动。
@@ -373,6 +398,7 @@ func _apply_config() -> void:
 	_mcu_ready = false
 	_mcu_hello_validated = false
 	_stall_count = 0
+	_reach_dirty = true
 	# 初始姿态：与生成的 C 代码上电起点一致
 	_fk_angles = _cg._joint_home_angles(_joints)
 	_target = _tip_target(_fk_angles.slice(0, _jc))
@@ -449,6 +475,11 @@ func _build_materials() -> void:
 	_mat_mount = _make_material(Color(0.55, 0.48, 0.30), 0.5, 0.35)
 	# 夹爪用比末端球更亮的绿，一眼能认出这是"手"
 	_mat_grip = _make_material(Color(0.30, 0.72, 0.48), 0.3, 0.5)
+	_mat_reach = StandardMaterial3D.new()
+	_mat_reach.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_mat_reach.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_mat_reach.vertex_color_use_as_albedo = true
+	_mat_reach.no_depth_test = false
 
 
 func _make_material(c: Color, rough: float, metal: float) -> StandardMaterial3D:
@@ -743,7 +774,7 @@ func _build_grid() -> void:
 	_grid_step_unit = step_mm * MM_TO_UNIT
 	var lim: float = float(half) * step_mm
 	# 网格位于 VehicleRoot 的世界高度：显示底盘时在轮下沿，隐藏时在机械臂底座平面。
-	var plane: float = -_chassis_height if _chassis_visible else _mount.z
+	var plane: float = - _chassis_height if _chassis_visible else _mount.z
 	var im: ImmediateMesh = ImmediateMesh.new()
 	var mat: StandardMaterial3D = StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -953,6 +984,117 @@ func _on_trail_toggled(on: bool) -> void:
 		_clear_trail()
 
 
+# ------------------------------------------------------------------ 可达区域
+func _on_reach_toggled(on: bool) -> void:
+	var mesh: Node = get_node_or_null(P_REACH_MESH)
+	if mesh is MultiMeshInstance3D:
+		mesh.visible = on
+	if not on:
+		return
+	if _reach_busy:
+		return # 配置未变且有缓存 -> 直接渲染
+	if not _reach_dirty and _reach_voxels.size() > 0:
+		_render_reach_volume()
+		return
+	_start_reach_compute()
+
+
+func _on_reach_recompute_pressed() -> void:
+	if _reach_busy:
+		return
+	_reach_dirty = true
+	_reach_voxels = PackedVector3Array()
+	if _reach_toggle_btn != null:
+		_reach_toggle_btn.set_pressed_no_signal(true)
+	_on_reach_toggled(true)
+
+
+## 在子线程中执行关节空间扫描，完成后回主线程渲染。
+func _start_reach_compute() -> void:
+	if _reach_busy:
+		return
+	_reach_busy = true
+	if _reach_toggle_btn != null:
+		_reach_toggle_btn.text = "计算中…"
+		_reach_toggle_btn.disabled = true
+	if _reach_recompute_btn != null:
+		_reach_recompute_btn.disabled = true
+	# 捕获配置快照，避免子线程读到主线程的并发修改
+	var joints: Array = _joints.duplicate(true)
+	var jc: int = _jc
+	_reach_thread = Thread.new()
+	_reach_thread.start(func() -> void:
+		var ws := ARM_WORKSPACE.new()
+		var result: Dictionary = ws.compute_workspace(joints, jc)
+		_render_reach_volume.call_deferred(result, ws.fingerprint(joints, jc))
+	)
+
+
+## 子线程完成后在主线程调用：缓存结果并构建 MultiMesh。
+func _render_reach_volume(result: Dictionary = {}, fp: String = "") -> void:
+	if result.is_empty():
+		# 从缓存渲染
+		if _reach_voxels.is_empty():
+			_finish_reach_toggle()
+			return
+	else:
+		_reach_voxels = result["voxels"]
+		_reach_bounds = result["bounds"]
+		_reach_voxel_size = result["voxel_size"]
+		_reach_fingerprint = fp
+		_reach_dirty = false
+	# 等待线程结束
+	if _reach_thread != null:
+		_reach_thread.wait_to_finish()
+		_reach_thread = null
+	_reach_busy = false
+	var mesh: MultiMeshInstance3D = get_node_or_null(P_REACH_MESH) as MultiMeshInstance3D
+	if mesh == null:
+		return
+	if _reach_voxels.is_empty():
+		mesh.multimesh = null
+		_finish_reach_toggle()
+		return
+	var mm := MultiMesh.new()
+	# 用小球显示离散采样点，避免立方体体素沿视线重叠后形成实体色块。
+	var point := SphereMesh.new()
+	point.radius = 0.018
+	point.height = 0.036
+	point.radial_segments = 4
+	point.rings = 2
+	mm.mesh = point
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = true
+	var n: int = _reach_voxels.size()
+	mm.instance_count = n
+	# 高度色阶：Z 最低=蓝，中间=绿，最高=红。分两段线性插值，避免 HSV 色相造成突兀色带。
+	var z_min: float = _reach_bounds.position.z
+	var z_range: float = maxf(_reach_bounds.size.z, 1.0)
+	for i in range(n):
+		var v: Vector3 = _reach_voxels[i]
+		var t: float = clampf((v.z - z_min) / z_range, 0.0, 1.0)
+		var color: Color
+		if t < 0.5:
+			color = Color(0.18, 0.42, 0.95).lerp(Color(0.18, 0.88, 0.38), t * 2.0)
+		else:
+			color = Color(0.18, 0.88, 0.38).lerp(Color(0.95, 0.22, 0.16), (t - 0.5) * 2.0)
+		# 体素会沿视线重叠，透明度过高会让同色叠加饱和成大片纯蓝/纯红。
+		color.a = 0.12
+		mm.set_instance_color(i, color)
+		mm.set_instance_transform(i, Transform3D(Basis.IDENTITY, _robot_to_godot(v.x, v.y, v.z)))
+	mesh.multimesh = mm
+	mesh.material_override = _mat_reach
+	_finish_reach_toggle()
+
+
+func _finish_reach_toggle() -> void:
+	if _reach_toggle_btn != null:
+		_reach_toggle_btn.text = "可达"
+		_reach_toggle_btn.disabled = false
+	if _reach_recompute_btn != null:
+		_reach_recompute_btn.disabled = false
+
+
 func _on_chassis_toggled(on: bool) -> void:
 	_chassis_visible = on
 	_build_chassis()
@@ -1102,10 +1244,10 @@ func _update_status() -> void:
 			"（按下）" if _home_key_held else ""])
 		lines.append("底盘占空比 L1=%d L2=%d R1=%d R2=%d" % _duty_chassis)
 		var linear_mps: float = float(_base_speed) / 10000.0 * _speed_scale
-		var omega_dps: float = -float(_turn_speed) / 10000.0 * _turn_rate
+		var omega_dps: float = - float(_turn_speed) / 10000.0 * _turn_rate
 		lines.append("车体 X=%+.2f Y=%+.2f m  航向=%+.1f°  v=%+.2f m/s  ω=%+.1f°/s  %s" % [
 			_vehicle_pos.x / (1000.0 * MM_TO_UNIT),
-			-_vehicle_pos.z / (1000.0 * MM_TO_UNIT), rad_to_deg(_vehicle_heading),
+			- _vehicle_pos.z / (1000.0 * MM_TO_UNIT), rad_to_deg(_vehicle_heading),
 			linear_mps, omega_dps, "相机跟随" if _follow else "自由视角"])
 	# 可达性：与生成的 C 代码里的 ik_reachable 同义
 	if _mode == Mode.CONTROLLER and not _inverse_mode:
@@ -1773,7 +1915,7 @@ func _on_param_changed(value: float, key: String, peer: Node) -> void:
 	match key:
 		"x", "y", "z":
 			var position: Vector3 = _target["position"]
-			position[{"x": 0, "y": 1, "z": 2}[key]] = value
+			position[ {"x": 0, "y": 1, "z": 2}[key]] = value
 			_target["position"] = position
 		"roll", "pitch", "yaw":
 			var rpy: Vector3 = _target["rpy"]
@@ -2571,7 +2713,7 @@ func _calculate_chassis_duty() -> void:
 func _integrate_chassis() -> void:
 	var dt: float = SIM_STEP_MS / 1000.0
 	var linear_mps: float = float(_base_speed) / 10000.0 * _speed_scale
-	var omega: float = -float(_turn_speed) / 10000.0 * deg_to_rad(_turn_rate)
+	var omega: float = - float(_turn_speed) / 10000.0 * deg_to_rad(_turn_rate)
 	_vehicle_heading = wrapf(_vehicle_heading + omega * dt, -PI, PI)
 	# 车头在局部机器人 +X；Godot +Y 旋转后方向为 (cos h, 0, -sin h)。
 	var forward: Vector3 = Vector3(cos(_vehicle_heading), 0.0, -sin(_vehicle_heading))

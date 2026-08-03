@@ -163,6 +163,7 @@ func _test_config_editing() -> void:
 		and mode_picker.get_item_text(0).contains("逆解编辑")
 		and not mode_names.contains("标定"))
 	_check("IK editor contains direct joint controls", sim._sliders.has("j0"))
+	_check("reachability recompute button is available", sim._reach_recompute_btn != null)
 	sim._on_param_changed(-30.0, "j0", null)
 	_check("joint editing freezes without MCU", not is_equal_approx(float(sim._angles[0]), -30.0))
 	_check("joint editing does not synthesize an actual pose", sim._solver_stale)
@@ -381,7 +382,7 @@ func _remote(roker: Array = [[0, 0], [0, 0]], pressed: Dictionary = {}) -> Dicti
 	return {
 		"valueOfRoker": roker.duplicate(true),
 		"valueOfKey": [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]],
-		"pressed": pressed.duplicate(true), "pad_id": -1, "pad_name": "",
+		"pressed": pressed.duplicate(true), "pad_id": - 1, "pad_name": "",
 	}
 
 
@@ -399,7 +400,7 @@ func _test_remote_control() -> void:
 		{"input": "右摇杆X", "dir": "正", "mode": "速度", "param": "6000", "target": "P75"},
 	]
 	var cfg: Dictionary = _cfg(2)
-	cfg["presets"] = [{"enabled": true, "key": "A", "x": "20", "y": "30", "z": "40",
+	cfg["presets"] = [ {"enabled": true, "key": "A", "x": "20", "y": "30", "z": "40",
 		"roll": "0", "pitch": "0", "yaw": "0"}]
 	cfg["gripper"] = {
 		"enabled": true, "io": "MP03", "dir": "正向", "open_angle": "45",

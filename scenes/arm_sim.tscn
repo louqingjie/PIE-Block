@@ -77,6 +77,9 @@ light_energy = 0.35
 
 [node name="TargetGhost" type="MeshInstance3D" parent="Sim/SubViewport/World/VehicleRoot/ArmMount" unique_id=620408539]
 
+[node name="ReachMesh" type="MultiMeshInstance3D" parent="Sim/SubViewport/World/VehicleRoot/ArmMount"]
+visible = false
+
 [node name="TopPanel" type="PanelContainer" parent="." unique_id=1338158298]
 layout_mode = 1
 anchors_preset = 10
