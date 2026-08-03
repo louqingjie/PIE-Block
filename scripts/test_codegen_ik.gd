@@ -378,6 +378,11 @@ func _test_joy_axis(cg) -> void:
 	_check("右Y->末端X 取竖直轴", cg.parse_joy_axis("右Y->末端X") == [1, 1])
 	_check("右X->末端Z 取水平轴", cg.parse_joy_axis("右X->末端Z") == [1, 0])
 	_check("右Y->末端Z 取竖直轴", cg.parse_joy_axis("右Y->末端Z") == [1, 1])
+	var reverse_cfg: Dictionary = _make_cfg(3, [])
+	reverse_cfg["joy_x"] = "右X反向->末端X"
+	var reverse_code: String = cg.generate(reverse_cfg)
+	_check("反向摇杆生成负号", reverse_code.contains(
+		"targetX += -(float)valueOfRoker[1][0] * JOY_SCALE / 2047.0f;"))
 	_check("不使用不解析为摇杆轴", cg.parse_joy_axis("不使用").is_empty())
 	var no_joy_cfg: Dictionary = _make_cfg(3, [])
 	no_joy_cfg["joy_x"] = "不使用"

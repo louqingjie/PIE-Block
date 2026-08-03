@@ -304,14 +304,17 @@
         },
         "joy_x": {
           "default": "右X->末端X",
+          "description": "右X/右Y->末端轴；在右X或右Y后加‘反向’可反转该轴",
           "type": "string"
         },
         "joy_y": {
           "default": "右Y->末端Y",
+          "description": "右X/右Y->末端轴；在右X或右Y后加‘反向’可反转该轴",
           "type": "string"
         },
         "joy_z": {
           "default": "右X->末端Z",
+          "description": "右X/右Y->末端轴；在右X或右Y后加‘反向’可反转该轴",
           "type": "string"
         },
         "keymove": {

@@ -1725,8 +1725,9 @@ func _build_joy_mapping(cfg: Dictionary) -> String:
 		if s.is_empty():
 			s += "    // 摇杆增量：摇杆值 -2047~2047 归一化后乘 JOY_SCALE 作为每周期位移\n"
 		var axis: Array = parse_joy_axis(mapping_text)
-		s += "    %s += (float)valueOfRoker[%d][%d] * JOY_SCALE / 2047.0f;\n" \
-			% [mapping[0], axis[0], axis[1]]
+		var sign: String = "-" if "反向" in mapping_text.split("->")[0] else ""
+		s += "    %s += %s(float)valueOfRoker[%d][%d] * JOY_SCALE / 2047.0f;\n" \
+			% [mapping[0], sign, axis[0], axis[1]]
 	return s
 
 
@@ -2064,9 +2065,9 @@ func _gripper_config(raw: Variant) -> Dictionary:
 func _gripper_duty(gripper: Dictionary, opened: bool) -> int:
 	var field: String = "open_angle" if opened else "closed_angle"
 	var angle: float = clampf(_to_float(str(gripper.get(field, "0")), 0.0),
-		-SERVO_MAX_OFFSET_DEG, SERVO_MAX_OFFSET_DEG)
+		- SERVO_MAX_OFFSET_DEG, SERVO_MAX_OFFSET_DEG)
 	if str(gripper.get("dir", "正向")) == "反向":
-		angle = -angle
+		angle = - angle
 	return clampi(SERVO_DUTY_MID + int(round(angle * SERVO_DUTY_PER_DEG)),
 		SERVO_DUTY_MIN, SERVO_DUTY_MAX)
 

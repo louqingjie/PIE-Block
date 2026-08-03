@@ -11,6 +11,9 @@ const IOS: Array[String] = [
 const EXPANSION_IOS: Array[String] = ["P60", "P62", "P64", "P66", "P74", "P75", "P76", "P77"]
 const KEYS: Array[String] = ["R", "↑", "↓", "←", "→", "A", "B", "C", "D"]
 const MOVE_KEYS: Array[String] = ["不使用", "R", "↑", "↓", "←", "→", "A", "B", "C", "D"]
+const JOY_X_OPTIONS: Array[String] = ["不使用", "右X->末端X", "右Y->末端X", "右X反向->末端X", "右Y反向->末端X"]
+const JOY_Y_OPTIONS: Array[String] = ["不使用", "右X->末端Y", "右Y->末端Y", "右X反向->末端Y", "右Y反向->末端Y"]
+const JOY_Z_OPTIONS: Array[String] = ["不使用", "右X->末端Z", "右Y->末端Z", "右X反向->末端Z", "右Y反向->末端Z"]
 
 
 static func default_joint(index: int) -> Dictionary:
@@ -80,11 +83,11 @@ static func normalize(raw: Variant) -> Dictionary:
 	out["joint_count"] = jc
 	out["mode_switch_key"] = _choice(src.get("mode_switch_key", "R"), KEYS, "R")
 	out["joy_x"] = _choice(src.get("joy_x", out["joy_x"]),
-		["不使用", "右X->末端X", "右Y->末端X"], out["joy_x"])
+		JOY_X_OPTIONS, out["joy_x"])
 	out["joy_y"] = _choice(src.get("joy_y", out["joy_y"]),
-		["不使用", "右X->末端Y", "右Y->末端Y"], out["joy_y"])
+		JOY_Y_OPTIONS, out["joy_y"])
 	out["joy_z"] = _choice(src.get("joy_z", out["joy_z"]),
-		["不使用", "右X->末端Z", "右Y->末端Z"], out["joy_z"])
+		JOY_Z_OPTIONS, out["joy_z"])
 	out["joy_scale"] = str(src.get("joy_scale", out["joy_scale"]))
 	out["keymove_speed"] = str(src.get("keymove_speed", out["keymove_speed"]))
 	out["orientation_key_speed"] = str(src.get(

@@ -530,6 +530,13 @@ func _test_remote_control() -> void:
 		absf(sim._target["position"].x - target_before["position"].x - 5.0) < 1.0e-4
 		and absf(sim._target["position"].z - target_before["position"].z - 5.0) < 1.0e-4,
 		str(sim._target))
+	sim._target = target_before.duplicate(true)
+	sim._cfg["joy_x"] = "右X反向->末端X"
+	sim._remote_snapshot = _remote([[0, 0], [2047, 0]])
+	sim._apply_remote_ik_inputs()
+	_check("reversed rocker mapping reverses endpoint increment",
+		is_equal_approx(float(sim._target["position"].x),
+			float(target_before["position"].x) - 5.0), str(sim._target))
 
 	# PC 只维护并发送目标，不判断可达性。超出臂展的目标也必须交给 MCU，
 	# 由 MCU 返回停滞、限位或不可达状态。

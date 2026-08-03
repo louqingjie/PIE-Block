@@ -140,6 +140,7 @@ var _remote_snapshot: Dictionary = REMOTE_INPUT.compose({}, {})
 var _inverse_mode: bool = true
 var _mode_key_held: bool = false
 var _home_key_held: bool = false
+var _home_command_pending: bool = false
 var _gripper_open: bool = true
 var _gripper_key_held: bool = false
 var _duty_chassis: Array = [0, 0, 0, 0]
@@ -397,6 +398,7 @@ func _apply_config() -> void:
 	_solver_stale = true
 	_mcu_ready = false
 	_mcu_hello_validated = false
+	_home_command_pending = false
 	_stall_count = 0
 	_reach_dirty = true
 	# 初始姿态：与生成的 C 代码上电起点一致
@@ -863,7 +865,7 @@ func _recompute() -> void:
 	if _mcu_ready:
 		if _mode == Mode.CONTROLLER and not _inverse_mode:
 			_mcu_link.send_joints(_requested_angles, _jc)
-		else:
+		elif not _home_command_pending:
 			_mcu_link.send_pose(_target["position"], _target["rpy"])
 	_render_arm()
 	_sync_param_widgets()
@@ -1599,6 +1601,7 @@ func _mark_solver_stale() -> void:
 	_solver_stale = true
 	_mcu_ready = false
 	_mcu_hello_validated = false
+	_home_command_pending = false
 	_mcu_fingerprint = ""
 	_mcu_firmware_type = "未知"
 	_mcu_fingerprint_ok = false
@@ -1745,6 +1748,8 @@ func _on_mcu_state(state: Dictionary) -> void:
 	_apply_mcu_orientation_mask(int(state.get("orientation_mask_bits", 0)))
 	_mcu_actual = {"position": position, "rpy": rpy}
 	var request_kind: int = int(state.get("request_kind", 0))
+	if request_kind == IK_SIM_PROTOCOL.CMD_HOME:
+		_home_command_pending = false
 	var initial_state: bool = _mcu_hello_validated
 	if initial_state or request_kind in [IK_SIM_PROTOCOL.CMD_SET_JOINTS,
 			IK_SIM_PROTOCOL.CMD_HOME]:
@@ -1795,6 +1800,7 @@ func _apply_mcu_orientation_mask(bits: int) -> void:
 func _on_mcu_error(message: String) -> void:
 	_mcu_ready = false
 	_mcu_hello_validated = false
+	_home_command_pending = false
 	_mcu_status = message
 	_update_status()
 	_schedule_solver_reconnect_retry()
@@ -1807,6 +1813,7 @@ func _on_mcu_warning(message: String) -> void:
 func _on_mcu_disconnected() -> void:
 	_mcu_ready = false
 	_mcu_hello_validated = false
+	_home_command_pending = false
 	if not is_queued_for_deletion() and not _solver_stale:
 		_mcu_status = "MCU 求解器已断开"
 
@@ -1814,9 +1821,9 @@ func _on_mcu_disconnected() -> void:
 func _build_control_editor(parent: Node) -> void:
 	_add_section(parent, "遥控映射")
 	for row in [
-		["joy_x", "末端 X 摇杆", ["不使用", "右X->末端X", "右Y->末端X"]],
-		["joy_y", "末端 Y 摇杆", ["不使用", "右X->末端Y", "右Y->末端Y"]],
-		["joy_z", "末端 Z 摇杆", ["不使用", "右X->末端Z", "右Y->末端Z"]],
+		["joy_x", "末端 X 摇杆", IK_CONFIG.JOY_X_OPTIONS],
+		["joy_y", "末端 Y 摇杆", IK_CONFIG.JOY_Y_OPTIONS],
+		["joy_z", "末端 Z 摇杆", IK_CONFIG.JOY_Z_OPTIONS],
 	]:
 		_add_option_row(parent, row[1], row[2], str(_cfg[row[0]]),
 			func(value: String) -> void:
@@ -2634,7 +2641,7 @@ func _controller_tick() -> void:
 			var preset_hit: bool = _apply_remote_preset()
 			if not preset_hit:
 				_apply_remote_ik_inputs()
-			if _mcu_ready:
+			if _mcu_ready and not _home_command_pending:
 				_mcu_link.send_pose(_target["position"], _target["rpy"])
 			else:
 				_update_status()
@@ -2678,6 +2685,7 @@ func _update_remote_home() -> bool:
 	var pressed: bool = _remote_pressed_id("ROCKER2")
 	if pressed and not _home_key_held:
 		_home_key_held = true
+		_home_command_pending = true
 		_return_arm_home()
 		return true
 	if not pressed:
@@ -2871,7 +2879,8 @@ func _remote_joy_value(mapping: String) -> int:
 		return 0
 	var source: String = mapping.split("->")[0]
 	var roker: Array = _remote_snapshot["valueOfRoker"]
-	return int(roker[1][1] if "Y" in source else roker[1][0])
+	var value: int = int(roker[1][1] if "Y" in source else roker[1][0])
+	return -value if "反向" in source else value
 
 
 func _remote_key(config_key: String) -> bool:
