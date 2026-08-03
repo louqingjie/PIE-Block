@@ -17,6 +17,8 @@ corner_radius_top_right = 6
 corner_radius_bottom_right = 6
 corner_radius_bottom_left = 6
 
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_ifrym"]
+
 [node name="ArmSim" type="Control" unique_id=1205342130]
 layout_mode = 3
 anchors_preset = 15
@@ -63,11 +65,11 @@ light_energy = 0.35
 
 [node name="Trail" type="MeshInstance3D" parent="Sim/SubViewport/World" unique_id=1367838762]
 
-[node name="VehicleRoot" type="Node3D" parent="Sim/SubViewport/World"]
+[node name="VehicleRoot" type="Node3D" parent="Sim/SubViewport/World" unique_id=647219915]
 
 [node name="Chassis" type="Node3D" parent="Sim/SubViewport/World/VehicleRoot" unique_id=1624271568]
 
-[node name="ArmMount" type="Node3D" parent="Sim/SubViewport/World/VehicleRoot"]
+[node name="ArmMount" type="Node3D" parent="Sim/SubViewport/World/VehicleRoot" unique_id=118085178]
 
 [node name="Axes" type="MeshInstance3D" parent="Sim/SubViewport/World/VehicleRoot/ArmMount" unique_id=644408213]
 
@@ -77,7 +79,7 @@ light_energy = 0.35
 
 [node name="TargetGhost" type="MeshInstance3D" parent="Sim/SubViewport/World/VehicleRoot/ArmMount" unique_id=620408539]
 
-[node name="ReachMesh" type="MultiMeshInstance3D" parent="Sim/SubViewport/World/VehicleRoot/ArmMount"]
+[node name="ReachMesh" type="MultiMeshInstance3D" parent="Sim/SubViewport/World/VehicleRoot/ArmMount" unique_id=2093726584]
 visible = false
 
 [node name="TopPanel" type="PanelContainer" parent="." unique_id=1338158298]
@@ -133,12 +135,12 @@ text = "清空轨迹"
 [node name="VSeparator3" type="VSeparator" parent="TopPanel/HBox" unique_id=1247091508]
 layout_mode = 2
 
-[node name="FollowToggle" type="CheckButton" parent="TopPanel/HBox"]
+[node name="FollowToggle" type="CheckButton" parent="TopPanel/HBox" unique_id=1962876463]
 layout_mode = 2
 button_pressed = true
 text = "跟随"
 
-[node name="ResetPose" type="Button" parent="TopPanel/HBox"]
+[node name="ResetPose" type="Button" parent="TopPanel/HBox" unique_id=719740724]
 layout_mode = 2
 text = "车归位"
 
@@ -146,10 +148,10 @@ text = "车归位"
 layout_mode = 2
 text = "重置视角"
 
-[node name="VSeparator4" type="VSeparator" parent="TopPanel/HBox"]
+[node name="VSeparator4" type="VSeparator" parent="TopPanel/HBox" unique_id=1175666892]
 layout_mode = 2
 
-[node name="PhoneToggle" type="CheckButton" parent="TopPanel/HBox"]
+[node name="PhoneToggle" type="CheckButton" parent="TopPanel/HBox" unique_id=1776362708]
 layout_mode = 2
 text = "手机传感器"
 
@@ -184,6 +186,7 @@ size_flags_horizontal = 3
 theme_override_constants/separation = 6
 
 [node name="StatusPanel" type="PanelContainer" parent="." unique_id=1096446639]
+clip_contents = true
 layout_mode = 1
 anchors_preset = 2
 anchor_top = 1.0
@@ -193,8 +196,7 @@ offset_top = -228.0
 offset_right = 824.0
 offset_bottom = -8.0
 grow_vertical = 0
-clip_contents = true
-theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
+theme_override_styles/panel = SubResource("StyleBoxEmpty_ifrym")
 
 [node name="Status" type="Label" parent="StatusPanel" unique_id=363561654]
 layout_mode = 2
