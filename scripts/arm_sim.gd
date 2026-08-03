@@ -46,6 +46,10 @@ const LINK_RADIUS_MM: float = 7.0
 const JOINT_RADIUS_MM: float = 11.0
 ## 末端球半径（mm），比关节球大一点以便辨认
 const TIP_RADIUS_MM: float = 14.0
+## 目标虚影坐标轴尺寸（mm）
+const TARGET_AXIS_LENGTH_MM: float = 55.0
+const TARGET_AXIS_RADIUS_MM: float = 2.2
+const TARGET_AXIS_HEAD_MM: float = 10.0
 ## 轨迹点数上限（环形缓冲）
 const TRAIL_MAX_POINTS: int = 300
 ## 相机俯仰角限制（弧度），避免翻越极点
@@ -540,14 +544,44 @@ func _rebuild_arm() -> void:
 	_tip_node.mesh = tip_mesh
 	_tip_node.material_override = _mat_tip
 	root.add_child(_tip_node)
-	# 非对称目标块同时显示目标位置和完整末端方向。
-	var ghost: MeshInstance3D = get_node_or_null(P_GHOST)
-	if ghost is MeshInstance3D:
-		var gm: BoxMesh = BoxMesh.new()
-		gm.size = Vector3(48.0, 22.0, 14.0) * MM_TO_UNIT
-		ghost.mesh = gm
-		ghost.material_override = _mat_ghost
+	# 目标虚影使用三维坐标轴显示位置和完整末端方向。
+	var ghost: Node3D = get_node_or_null(P_GHOST)
+	if ghost is Node3D:
+		for child in ghost.get_children():
+			ghost.remove_child(child)
+			child.free()
+		_build_target_axis(ghost, Vector3.RIGHT, Color(0.95, 0.2, 0.18))
+		_build_target_axis(ghost, Vector3.UP, Color(0.25, 0.9, 0.35))
+		_build_target_axis(ghost, Vector3.BACK, Color(0.25, 0.55, 1.0))
 	_rebuild_gripper()
+
+
+func _build_target_axis(parent: Node3D, direction: Vector3, color: Color) -> void:
+	var material: StandardMaterial3D = _make_material(color, 0.35, 0.1)
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	var shaft: MeshInstance3D = MeshInstance3D.new()
+	var shaft_mesh: CylinderMesh = CylinderMesh.new()
+	shaft_mesh.top_radius = TARGET_AXIS_RADIUS_MM * MM_TO_UNIT
+	shaft_mesh.bottom_radius = TARGET_AXIS_RADIUS_MM * MM_TO_UNIT
+	shaft_mesh.height = (TARGET_AXIS_LENGTH_MM - TARGET_AXIS_HEAD_MM) * MM_TO_UNIT
+	shaft_mesh.radial_segments = 8
+	shaft.mesh = shaft_mesh
+	shaft.material_override = material
+	shaft.transform = _segment_transform(Vector3.ZERO,
+		direction * (TARGET_AXIS_LENGTH_MM - TARGET_AXIS_HEAD_MM) * MM_TO_UNIT)
+	parent.add_child(shaft)
+	var head: MeshInstance3D = MeshInstance3D.new()
+	var head_mesh: CylinderMesh = CylinderMesh.new()
+	head_mesh.top_radius = 0.0
+	head_mesh.bottom_radius = TARGET_AXIS_RADIUS_MM * 3.5 * MM_TO_UNIT
+	head_mesh.height = TARGET_AXIS_HEAD_MM * MM_TO_UNIT
+	head_mesh.radial_segments = 8
+	head.mesh = head_mesh
+	head.material_override = material
+	head.transform = _segment_transform(
+		direction * (TARGET_AXIS_LENGTH_MM - TARGET_AXIS_HEAD_MM) * MM_TO_UNIT,
+		direction * TARGET_AXIS_LENGTH_MM * MM_TO_UNIT)
+	parent.add_child(head)
 
 
 # ------------------------------------------------------------------ 夹爪
@@ -904,9 +938,9 @@ func _render_arm() -> void:
 	# 末端球
 	if _tip_node != null:
 		_tip_node.position = pts[pts.size() - 1]
-	# 目标块始终显示；其长边沿目标夹爪 Roll 轴，完整反映目标 RPY。
-	var ghost: MeshInstance3D = get_node_or_null(P_GHOST)
-	if ghost is MeshInstance3D:
+	# 目标坐标轴始终显示，完整反映目标 RPY。
+	var ghost: Node3D = get_node_or_null(P_GHOST)
+	if ghost is Node3D:
 		var target_basis: Basis = _target_basis()
 		var bx: Vector3 = _vec_to_godot(target_basis.x).normalized()
 		var by: Vector3 = _vec_to_godot(target_basis.y).normalized()
