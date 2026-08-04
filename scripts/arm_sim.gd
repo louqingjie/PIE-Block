@@ -550,9 +550,10 @@ func _rebuild_arm() -> void:
 		for child in ghost.get_children():
 			ghost.remove_child(child)
 			child.free()
+		# 机器人坐标映射到 Godot：X=RIGHT，Y=BACK，Z=UP。
 		_build_target_axis(ghost, Vector3.RIGHT, Color(0.95, 0.2, 0.18))
-		_build_target_axis(ghost, Vector3.UP, Color(0.25, 0.9, 0.35))
-		_build_target_axis(ghost, Vector3.BACK, Color(0.25, 0.55, 1.0))
+		_build_target_axis(ghost, Vector3.BACK, Color(0.25, 0.9, 0.35))
+		_build_target_axis(ghost, Vector3.UP, Color(0.25, 0.55, 1.0))
 	_rebuild_gripper()
 
 

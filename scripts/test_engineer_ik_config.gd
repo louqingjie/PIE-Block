@@ -119,6 +119,16 @@ func _initialize() -> void:
 		_has_issue(control_validation, "姿态按键步长必须是正数"))
 	_check("inverse keys conflict with forward mappings",
 		_has_issue(control_validation, "按键A与工程正解映射冲突"))
+	var stale_pose_keys: Dictionary = conflict.duplicate(true)
+	stale_pose_keys["joints"][1]["io"] = "P75"
+	stale_pose_keys["keymove"][3] = {"plus": "A", "minus": "不使用"}
+	stale_pose_keys["keymove"][4] = {"plus": "A", "minus": "不使用"}
+	stale_pose_keys["keymove"][5] = {"plus": "A", "minus": "不使用"}
+	var stale_pose_validation: Dictionary = IK_CONFIG.validate(stale_pose_keys, {
+		"io_init": {"P74": "舵机", "P75": "舵机"}, "key_map": []})
+	_check("stale uncontrollable pose keys do not block compilation",
+		not _has_issue(stale_pose_validation, "按键A被多个末端方向重复使用")
+		and not _has_issue(stale_pose_validation, "同一轴正负方向不能使用同一按键"))
 
 	var preset_cfg: Dictionary = conflict.duplicate(true)
 	preset_cfg["joints"][1]["io"] = "P75"

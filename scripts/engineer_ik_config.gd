@@ -302,11 +302,19 @@ static func _validate_controls(issues: Array, ik: Dictionary, engineer: Dictiona
 		total_len: float) -> void:
 	var switch_key: String = _normalize_key(ik["mode_switch_key"])
 	var used: Dictionary = {}
+	var orientation_used: Dictionary = {}
 	for i in range((ik["keymove"] as Array).size()):
 		var row: Dictionary = ik["keymove"][i]
+		var orientation_axis: bool = i >= 3
 		for side in ["plus", "minus"]:
 			var key: String = _normalize_key(row[side])
 			if key == "不使用":
+				continue
+			if orientation_axis:
+				if orientation_used.has(key):
+					issues.append({"type": "Warn", "msg": "工程逆解算 姿态按键%s被多个姿态方向复用；不可控姿态轴将自动忽略" % key})
+				else:
+					orientation_used[key] = i + 1
 				continue
 			if key == switch_key:
 				issues.append({"type": "Error", "msg": "工程逆解算 切换键%s与末端移动按键冲突" % key})
@@ -314,7 +322,10 @@ static func _validate_controls(issues: Array, ik: Dictionary, engineer: Dictiona
 				issues.append({"type": "Error", "msg": "工程逆解算 按键%s被多个末端方向重复使用" % key})
 			used[key] = true
 		if row["plus"] != "不使用" and _normalize_key(row["plus"]) == _normalize_key(row["minus"]):
-			issues.append({"type": "Error", "msg": "工程逆解算 同一轴正负方向不能使用同一按键"})
+			var duplicate_type: String = "Warn" if orientation_axis else "Error"
+			var duplicate_msg: String = "工程逆解算 姿态轴正负方向复用同一按键；不可控姿态轴将自动忽略" \
+				if orientation_axis else "工程逆解算 同一轴正负方向不能使用同一按键"
+			issues.append({"type": duplicate_type, "msg": duplicate_msg})
 	for preset in ik["presets"]:
 		if preset["enabled"]:
 			var key: String = _normalize_key(preset["key"])
