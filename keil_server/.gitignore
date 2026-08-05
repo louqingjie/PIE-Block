@@ -1,0 +1,6 @@
+# keil_server 数据与运行产物
+data/
+__pycache__/
+*.pyc
+.pytest_cache/
+tests/fixtures/
