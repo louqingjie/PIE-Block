@@ -136,7 +136,10 @@ func _setup_build_controller() -> void:
 	_build_controller.succeeded.connect(_on_build_succeeded)
 	_build_controller.finished.connect(func(result: Dictionary) -> void:
 		_update_guide()
-		_on_upgrade_build_finished(result))
+		_on_upgrade_build_finished(result)
+		if not bool(result.get("ok", false)) and _tc != null \
+				and _tc.detect_license_failure(str(result.get("log", ""))):
+			_show_license_dialog())
 
 
 func _setup_download_controller() -> void:
@@ -596,6 +599,44 @@ func _on_build_succeeded() -> void:
 		_set_upgrade_progress("编译完成", 28.0, "正在连接主控板…")
 		if not _download_controller.start(_project_dst):
 			_fail_upgrade("无法开始烧录", "请查看下方输出中的串口或固件提示。")
+
+
+# ------------------------------------------------------------------ 许可证引导
+## 编译被 Keil 许可证限制（本机缺 C251 许可）时弹出引导：告诉学生领免费密钥并粘贴。
+## 许可证按机器发放，每台电脑需各自的有效密钥；粘贴后写入 TOOLS.INI 并重编。
+func _show_license_dialog() -> void:
+	var keil_dir: String = ProjectSettings.globalize_path(TC.TOOLCHAIN_DST).replace("/", "\\")
+	var dlg := AcceptDialog.new()
+	dlg.title = "需要 Keil C251 许可证"
+	dlg.dialog_text = "本机缺少 Keil C251 许可证，编译被限制在 2KB，无法生成固件。\n\n" \
+		+ "Keil 许可证按机器发放，每台电脑要用各自的免费密钥（约 2 分钟）：\n" \
+		+ "1. 打开 %s\\UV4\\UV4.exe → 菜单 License Management，记下 License ID Code。\n" \
+		+ "2. 浏览器打开 https://www.keil.com/download/product/ ，登录后选 C251，\n" \
+		+ "    输入上面的 License ID Code，免费生成许可证密钥。\n" \
+		+ "3. 把密钥粘贴到下方输入框，点「应用许可证并重试」。\n\n" \
+		+ "之后这台电脑即可正常编译，无需再次配置。" % keil_dir
+	dlg.ok_button_text = "应用许可证并重试"
+	var edit := LineEdit.new()
+	edit.placeholder_text = "在此粘贴 C251 许可证密钥"
+	edit.custom_minimum_size = Vector2(460, 0)
+	dlg.get_vbox().add_child(edit)
+	add_child(dlg)
+	dlg.popup_centered(Vector2i(620, 380))
+	edit.grab_focus()
+	dlg.confirmed.connect(func() -> void:
+		_apply_license_and_rebuild(edit.text.strip_edges()))
+	dlg.close_requested.connect(dlg.queue_free)
+
+
+func _apply_license_and_rebuild(key: String) -> void:
+	if key.is_empty():
+		_append_output("[提示] 未输入许可证密钥")
+		return
+	if not _tc.apply_license_key(key):
+		_append_output("[Error] 写入许可证失败，请检查 user://keil/TOOLS.INI 权限")
+		return
+	_append_output("[✓] 已写入 C251 许可证，正在重新编译…")
+	_on_build_pressed()
 
 
 func _update_built_hash() -> void:

@@ -114,7 +114,56 @@ func _initialize() -> void:
 	_check("阶段二仿真只读", ui._arm_sim != null and not ui._arm_sim._editable)
 	ui._on_arm_sim_closed()
 
+	# 升级主控编译失败：阶段一且未开逆解 -> 致命错误页；阶段二或开逆解 -> 普通错误页
+	ui._project["stage"] = 1
+	ui._ik_confirmed = false
+	ui._upgrade_active = true
+	ui._on_upgrade_build_finished({"ok": false, "log": "fake fatal log"})
+	await process_frame
+	var fatal_gate: Node = _find_gate(ui, "遇到致命错误！")
+	_check("阶段一未开逆解编译失败弹致命错误页", fatal_gate != null)
+	if fatal_gate != null:
+		var fatal_log: Node = fatal_gate.get_node_or_null("VBoxContainer/TextEdit")
+		_check("致命错误页填入编译日志",
+			fatal_log is TextEdit and fatal_log.text.contains("fake fatal log"))
+		fatal_gate.queue_free()
+		await process_frame
+
+	ui._project["stage"] = 2
+	ui._ik_confirmed = false
+	ui._upgrade_active = true
+	ui._on_upgrade_build_finished({"ok": false, "log": "fake error log"})
+	await process_frame
+	var error_gate: Node = _find_gate(ui, "遇到错误！")
+	_check("阶段二编译失败弹普通错误页", error_gate != null)
+	if error_gate != null:
+		var error_log: Node = error_gate.get_node_or_null("VBoxContainer/TextEdit")
+		_check("普通错误页填入编译日志",
+			error_log is TextEdit and error_log.text.contains("fake error log"))
+		error_gate.queue_free()
+		await process_frame
+
+	ui._project["stage"] = 1
+	ui._ik_confirmed = true
+	ui._upgrade_active = true
+	ui._on_upgrade_build_finished({"ok": false, "log": "fake error log 2"})
+	await process_frame
+	var error_gate2: Node = _find_gate(ui, "遇到错误！")
+	_check("开启逆解后编译失败弹普通错误页", error_gate2 != null)
+	if error_gate2 != null:
+		error_gate2.queue_free()
+		await process_frame
+
 	root.remove_child(ui)
 	ui.free()
 	print("=== 结果: %s ===" % ("全部通过" if _fail == 0 else "%d 项失败" % _fail))
 	quit(0 if _fail == 0 else 1)
+
+
+func _find_gate(node: Node, title: String) -> Node:
+	for child in node.get_children():
+		if child is Control and child.has_method("configure"):
+			var label: Node = child.get_node_or_null("VBoxContainer/HBoxContainer/Label")
+			if label is Label and label.text == title:
+				return child
+	return null

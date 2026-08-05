@@ -355,6 +355,78 @@ func generate_tools_ini() -> bool:
 	return true
 
 
+# ------------------------------------------------------------------ C251 许可证
+## Keil C251 的许可证序列号放在部署后 TOOLS.INI 的 [C251] 段 LIC0= 行。
+## 这台机器上装了对应许可证就能全量编译；没有时 Keil 退回 2KB 评估限制
+## （RESTRICTED VERSION / ERROR L250）。以下函数用于应用内读取/写入该序列号。
+## 注意：许可证按机器发放，学生机需各自有效的免费密钥（keil.com 可领）。
+
+## 部署后的 TOOLS.INI [C251] 段是否已写入非空许可证序列号。
+func has_license_key() -> bool:
+	var ini_abs: String = to_abs(TOOLCHAIN_DST).replace("/", "\\") + "\\TOOLS.INI"
+	if not FileAccess.file_exists(ini_abs):
+		return false
+	var lines: PackedStringArray = FileAccess.get_file_as_string(ini_abs).split("\n", false)
+	var in_c251: bool = false
+	for line in lines:
+		var stripped: String = line.strip_edges(true, true)
+		if stripped.to_upper() == "[C251]":
+			in_c251 = true
+		elif in_c251 and stripped.begins_with("[") and stripped.ends_with("]"):
+			in_c251 = false
+		if in_c251 and stripped.to_upper().begins_with("LIC0="):
+			var key: String = stripped.get_slice("=", 1).strip_edges()
+			return not key.is_empty()
+	return false
+
+
+## 把许可证序列号写入部署后 TOOLS.INI 的 [C251] 段 LIC0=（没有则插入该行）。
+## 写完后直接生效，无需重启。返回是否成功。
+func apply_license_key(key: String) -> bool:
+	var keil_abs: String = to_abs(TOOLCHAIN_DST).replace("/", "\\")
+	var ini_abs: String = keil_abs + "\\TOOLS.INI"
+	if not FileAccess.file_exists(ini_abs):
+		return false
+	var lines: PackedStringArray = FileAccess.get_file_as_string(ini_abs).split("\n", false)
+	var in_c251: bool = false
+	var replaced: bool = false
+	var out: PackedStringArray = PackedStringArray()
+	for line in lines:
+		var stripped: String = line.strip_edges(true, true)
+		if stripped.to_upper() == "[C251]":
+			in_c251 = true
+		elif in_c251 and stripped.begins_with("[") and stripped.ends_with("]"):
+			in_c251 = false
+		if in_c251 and stripped.to_upper().begins_with("LIC0="):
+			out.append("LIC0=%s" % key)
+			replaced = true
+		else:
+			out.append(line)
+	if not replaced:
+		var insert_at: int = 0
+		for i in range(out.size()):
+			if out[i].strip_edges(true, true).to_upper() == "[C251]":
+				insert_at = i + 1
+				break
+		out.insert(insert_at, "LIC0=%s" % key)
+	var f: FileAccess = FileAccess.open(ini_abs, FileAccess.WRITE)
+	if f == null:
+		push_error("无法写入 TOOLS.INI: %s" % ini_abs)
+		return false
+	f.store_string("\n".join(out) + "\n")
+	f.close()
+	return true
+
+
+## 编译日志里是否出现 Keil 许可证受限/缺失的典型特征。
+func detect_license_failure(build_log: String) -> bool:
+	if build_log.is_empty():
+		return false
+	return build_log.find("RESTRICTED VERSION") >= 0 \
+		or build_log.find("LICENSE ERROR") >= 0 \
+		or build_log.find("ERROR L250") >= 0
+
+
 # ------------------------------------------------------------------ main.c 读写
 ## 把代码写入指定项目的 USER/src/main.c
 func write_main_c(project_dst: String, code: String) -> bool:

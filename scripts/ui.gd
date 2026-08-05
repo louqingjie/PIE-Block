@@ -878,6 +878,9 @@ func _show_countdown_scene(scene_path: String, title: String, body: String,
 	if dialog.has_method("configure"):
 		dialog.call("configure", title, body, primary_text, secondary_text, 10, error_text)
 	add_child(dialog)
+	# 编译失败时升级进度面板可能正可见，必须把门控页提到最前，否则用户以为没反应
+	if dialog is CanvasItem:
+		dialog.move_to_front()
 	if dialog.has_signal("confirmed") and on_confirm.is_valid():
 		dialog.confirmed.connect(on_confirm)
 	if dialog.has_signal("canceled") and on_cancel.is_valid():
@@ -1945,6 +1948,7 @@ func _on_upgrade_progress_changed(stage: String, percent: float, detail: String)
 func _on_upgrade_build_finished(result: Dictionary) -> void:
 	if _upgrade_active and not bool(result.get("ok", false)):
 		var project_stage: int = int(_project.get("stage", AppState.stage))
+		_show_upgrade_error_scene(project_stage, str(result.get("log", "")))
 		_fail_upgrade("编译失败",
 			UPGRADE_PROGRESS.compile_error_hint(project_stage))
 
@@ -1964,6 +1968,15 @@ func _set_upgrade_progress(stage: String, percent: float, detail: String) -> voi
 func _upgrade_panel_visible() -> bool:
 	var panel: Node = get_node_or_null(P_UPGRADE_PROGRESS)
 	return panel != null and panel.visible
+
+
+## 升级主控编译失败弹窗：阶段一且未开启逆解属于基础功能，编译错误不可容忍，
+## 弹致命错误页；第二阶段或已开启逆解属于高级功能，编译错误可容忍，弹普通错误页。
+## 保留场景自带文案，只把编译日志填进页面的 TextEdit。
+func _show_upgrade_error_scene(project_stage: int, log_text: String) -> void:
+	var advanced: bool = project_stage >= 2 or _ik_confirmed
+	var scene_path: String = ERROR_SCENE if advanced else FATAL_ERROR_SCENE
+	_show_countdown_scene(scene_path, "", "", "", "", log_text)
 
 
 ## 求解器编译失败弹窗：3D 仿真全屏覆盖主界面输出面板，
