@@ -5,7 +5,7 @@
 [ext_resource type="Script" uid="uid://d4e4choqekw3p" path="res://scripts/ui.gd" id="2_yev5y"]
 [ext_resource type="Texture2D" uid="uid://chtiuyk4ow15a" path="res://assets/images/image-1784962225614_transparent.png" id="4_8dubc"]
 [ext_resource type="PackedScene" path="res://scenes/project_guide.tscn" id="4_guide"]
-[ext_resource type="PackedScene" path="res://scenes/upgrade_progress.tscn" id="5_upgrade"]
+[ext_resource type="PackedScene" uid="uid://c04762ivjvghc" path="res://scenes/upgrade_progress.tscn" id="5_upgrade"]
 
 [sub_resource type="Theme" id="Theme_g4v7s"]
 Button/fonts/font = ExtResource("1_nt7q6")
@@ -62,8 +62,14 @@ size_flags_horizontal = 8
 text = "导出 C 代码"
 
 [node name="Button" type="Button" parent="VBoxContainer/TopPanel" unique_id=425375253]
+visible = false
 layout_mode = 2
 text = "进入 C 代码后处理"
+
+[node name="EnableAI" type="Button" parent="VBoxContainer/TopPanel" unique_id=1746512785]
+layout_mode = 2
+toggle_mode = true
+text = "启用 AI 功能"
 
 [node name="AIEdit" type="Button" parent="VBoxContainer/TopPanel" unique_id=144998210]
 layout_mode = 2
@@ -71,6 +77,7 @@ size_flags_horizontal = 8
 text = "AI 编辑"
 
 [node name="ArmSim" type="Button" parent="VBoxContainer/TopPanel" unique_id=1431211771]
+visible = false
 layout_mode = 2
 size_flags_horizontal = 8
 text = "3D 仿真"
@@ -1165,13 +1172,14 @@ size_flags_horizontal = 3
 [node name="TabContainer" type="TabContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow" unique_id=1246727485]
 layout_mode = 2
 size_flags_vertical = 3
-current_tab = 0
+current_tab = 2
 tab_0/title = "步兵"
 tab_1/title = "工程"
 tab_2/title = "工程逆解算"
 tab_3/title = "调试"
 
 [node name="Infantry" type="VBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer" unique_id=1911259566]
+visible = false
 layout_mode = 2
 metadata/_tab_index = 0
 metadata/_tab_name = "步兵"
@@ -2338,17 +2346,31 @@ popup/item_10/text = "MP74"
 popup/item_10/id = 10
 
 [node name="EngineerAdvanced" type="VBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer" unique_id=2017398683]
-visible = false
 layout_mode = 2
 metadata/_tab_index = 2
 metadata/_tab_name = "工程逆解算"
 
-[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced"]
+[node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=431547703]
+layout_mode = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/HBoxContainer" unique_id=306233742]
+layout_mode = 2
+text = "启用机械臂逆解算"
+
+[node name="CheckButton" type="CheckButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced/HBoxContainer" unique_id=1883012035]
+layout_mode = 2
+size_flags_horizontal = 10
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=1541515542]
+visible = false
 layout_mode = 2
 size_flags_horizontal = 4
 text = "机械臂 3D 配置"
 
-[node name="Summary" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced"]
+[node name="Summary" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=1574468163]
+visible = false
 layout_mode = 2
 size_flags_vertical = 3
 text = "配置尚未检查"
@@ -2356,7 +2378,8 @@ horizontal_alignment = 1
 vertical_alignment = 1
 autowrap_mode = 3
 
-[node name="OpenSim" type="Button" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced"]
+[node name="OpenSim" type="Button" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced" unique_id=1785924540]
+visible = false
 custom_minimum_size = Vector2(220, 48)
 layout_mode = 2
 size_flags_horizontal = 4
