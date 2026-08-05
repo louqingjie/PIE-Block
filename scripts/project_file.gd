@@ -101,6 +101,8 @@ static func new_data(kind: String) -> Dictionary:
 static func _default_workflow() -> Dictionary:
 	return {
 		"hardware_confirmed": false,
+		"ai_enabled": false,
+		"ik_confirmed": false,
 		"checked_hash": "",
 		"built_hash": "",
 		"flashed_hash": "",
@@ -115,6 +117,8 @@ static func normalize_workflow(raw: Variant) -> Dictionary:
 	if not raw is Dictionary:
 		return workflow
 	workflow["hardware_confirmed"] = bool(raw.get("hardware_confirmed", false))
+	workflow["ai_enabled"] = bool(raw.get("ai_enabled", false))
+	workflow["ik_confirmed"] = bool(raw.get("ik_confirmed", false))
 	workflow["checked_hash"] = str(raw.get("checked_hash", ""))
 	workflow["built_hash"] = str(raw.get("built_hash", ""))
 	workflow["flashed_hash"] = str(raw.get("flashed_hash", ""))

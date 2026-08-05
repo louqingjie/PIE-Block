@@ -92,7 +92,14 @@ func _initialize() -> void:
 		and output.text.contains("MCU 求解器构型无效"))
 	ui._ik_config = changed
 
+	ui._ik_confirmed = false
+	ui._apply_ik_gate(false)
 	ui._stage2_preview = false
+	_check("未确认时 3D 配置按钮不可用",
+		ui.get_node_or_null(ik_root + "/OpenSim") is Button
+		and ui.get_node(ik_root + "/OpenSim").disabled)
+	_check("未确认时 IK 摘要不可见", not ui.get_node(ik_root + "/Summary").visible)
+	ui._on_ik_gate_confirmed()
 	ui._on_arm_sim_pressed()
 	await process_frame
 	_check("入口传入双模式配置", ui._arm_sim != null and ui._arm_sim._jc == 4)
@@ -100,6 +107,8 @@ func _initialize() -> void:
 	ui._on_arm_sim_closed()
 	await process_frame
 	ui._stage2_preview = true
+	ui._ik_confirmed = true
+	ui._apply_ik_gate(true)
 	ui._on_arm_sim_pressed()
 	await process_frame
 	_check("阶段二仿真只读", ui._arm_sim != null and not ui._arm_sim._editable)

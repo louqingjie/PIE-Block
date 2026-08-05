@@ -104,8 +104,11 @@ const ENG_KEY_LABELS: Array = [
 ]
 # 工程逆解算界面（Tab 2）
 const IK: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced"
+const P_IK: NodePath = IK
 const P_IK_SUMMARY: NodePath = IK + "/Summary"
 const P_IK_OPEN_SIM: NodePath = IK + "/OpenSim"
+const P_IK_ENABLE_CB: NodePath = IK + "/HBoxContainer/CheckButton"
+const P_IK_PANEL_LABEL: NodePath = IK + "/Label"
 # TabContainer（用于切换代码生成器）
 const P_TAB_CONTAINER: NodePath = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer"
 # 输出
@@ -131,6 +134,8 @@ const P_OPEN_BTN: NodePath = "VBoxContainer/TopPanel/Open"
 const P_SAVE_BTN: NodePath = "VBoxContainer/TopPanel/Save"
 # 顶栏标题（显示 项目名 · 构型 · 阶段）
 const P_TITLE_LABEL: NodePath = "VBoxContainer/TopPanel/Label"
+# AI 功能开关（启用后才显示 AI 编辑按钮）
+const P_ENABLE_AI_BTN: NodePath = "VBoxContainer/TopPanel/EnableAI"
 # 无项目时需要禁用的按钮（只留 新建 / 打开 可用）
 const PROJECT_GATED_BTNS: Array = [
 	"VBoxContainer/TopPanel/Save",
@@ -146,6 +151,10 @@ const PROJECT_GATED_BTNS: Array = [
 const P_AI_EDIT_BTN: NodePath = "VBoxContainer/TopPanel/AIEdit"
 # AI 代码编辑器场景
 const AI_EDIT_SCENE: String = "res://scenes/code_edit.tscn"
+const WARN_AI_SCENE: String = "res://scenes/warn_ai.tscn"
+const WARN_IK_SCENE: String = "res://scenes/warn_ik.tscn"
+const ERROR_SCENE: String = "res://scenes/error.tscn"
+const FATAL_ERROR_SCENE: String = "res://scenes/fatal_error.tscn"
 # 启动页（新建 / 打开项目都在那里做）
 const LAUNCHER_SCENE: String = "res://scenes/launcher.tscn"
 # 3D 仿真入口
@@ -197,6 +206,10 @@ var _frozen_config: Dictionary = {}
 var _ik_config: Dictionary = {}
 ## 阶段二只读预览时用于恢复结构化逆解配置。
 var _frozen_ik_config: Dictionary = {}
+## 工程逆解系统门控是否已经确认
+var _ik_confirmed: bool = false
+## AI 功能是否已经启用
+var _ai_enabled: bool = false
 ## 已经弹过「继续修改将丢弃 AI 代码」确认框，避免连点堆叠弹窗
 var _discard_dialog_open: bool = false
 ## 最近一次静态检查的结果，进入 AI 编辑前的提示要拿它报问题数
@@ -262,6 +275,12 @@ func _connect_signals() -> void:
 	var gate_confirm: Node = get_node_or_null(P_GATE_CONFIRM)
 	if gate_confirm is BaseButton:
 		gate_confirm.pressed.connect(_on_hardware_gate_confirmed)
+	var ai_enable_btn: Node = get_node_or_null(P_ENABLE_AI_BTN)
+	if ai_enable_btn is BaseButton:
+		ai_enable_btn.toggled.connect(_on_ai_enable_toggled)
+	var ik_gate: Node = get_node_or_null(P_IK_ENABLE_CB)
+	if ik_gate is BaseButton:
+		ik_gate.toggled.connect(_on_ik_gate_toggled)
 	var gate_back: Node = get_node_or_null(P_GATE_BACK)
 	if gate_back is BaseButton:
 		gate_back.pressed.connect(_go_to_launcher)
@@ -361,6 +380,11 @@ func _connect_signals() -> void:
 	var create_btn: Node = get_node_or_null(P_CREATE_BTN)
 	if create_btn is BaseButton:
 		create_btn.pressed.connect(_on_create_pressed)
+	var enable_ai_btn: Node = get_node_or_null(P_ENABLE_AI_BTN)
+	if enable_ai_btn is BaseButton:
+		var ai_toggle_cb: Callable = Callable(self, "_on_ai_enable_toggled")
+		if not enable_ai_btn.toggled.is_connected(ai_toggle_cb):
+			enable_ai_btn.toggled.connect(ai_toggle_cb)
 	var open_btn: Node = get_node_or_null(P_OPEN_BTN)
 	if open_btn is BaseButton:
 		open_btn.pressed.connect(_on_open_pressed)
@@ -396,6 +420,8 @@ func _snapshot_config() -> Dictionary:
 
 func _snapshot_node(node: Node, zone: Node, out: Dictionary) -> void:
 	for child in node.get_children():
+		if child == get_node_or_null(P_IK_ENABLE_CB):
+			continue
 		var value: Variant = _control_value(child)
 		if value != null:
 			out[str(zone.get_path_to(child))] = value
@@ -405,6 +431,8 @@ func _snapshot_node(node: Node, zone: Node, out: Dictionary) -> void:
 ## 取单个控件的可序列化值，非输入控件返回 null。
 ## OptionButton 同时存索引和文本：选项顺序变了还能按文本找回。
 func _control_value(node: Node) -> Variant:
+	if node == get_node_or_null(P_IK_ENABLE_CB):
+		return null
 	if node is OptionButton:
 		return {"i": _option_index(node), "s": _option_text(node)}
 	if node is LineEdit:
@@ -436,6 +464,8 @@ func _apply_config(cfg: Dictionary) -> void:
 	_loading = true
 	for key in cfg.keys():
 		var path: String = str(key)
+		if path == String(P_IK_ENABLE_CB):
+			continue
 		var node: Node = first_row.get_parent().get_node_or_null(NodePath(path)) \
 			if path.begins_with("FirstRow/") else zone.get_node_or_null(NodePath(path))
 		if node == null:
@@ -482,6 +512,8 @@ func _connect_config_watchers() -> void:
 
 func _watch_node(node: Node) -> void:
 	for child in node.get_children():
+		if child == get_node_or_null(P_IK_ENABLE_CB):
+			continue
 		if child is OptionButton:
 			child.item_selected.connect(_on_config_touched.unbind(1))
 		elif child is LineEdit:
@@ -751,7 +783,11 @@ func _restore_project_context() -> void:
 func _apply_no_project_state() -> void:
 	_project = {}
 	_ik_config = IK_CONFIG.default_config()
+	_ai_enabled = false
+	_ik_confirmed = false
+	_apply_ai_gate(false)
 	_apply_hardware_gate(false)
+	_apply_ik_gate(false)
 	_stage2_preview = false
 	_dirty = false
 	var tab_container: Node = get_node_or_null(P_TAB_CONTAINER)
@@ -787,10 +823,127 @@ func _set_node_tree_enabled(node: Node, enabled: bool) -> void:
 		_set_node_tree_enabled(child, enabled)
 
 
+func _apply_ai_gate(enabled: bool) -> void:
+	_ai_enabled = enabled
+	var enable_btn: Node = get_node_or_null(P_ENABLE_AI_BTN)
+	if enable_btn is BaseButton:
+		enable_btn.button_pressed = enabled
+	var ai_btn: Node = get_node_or_null(P_AI_EDIT_BTN)
+	if ai_btn is CanvasItem:
+		ai_btn.visible = enabled
+	if ai_btn is BaseButton:
+		ai_btn.disabled = not enabled
+	var ai_btn2: Node = get_node_or_null(P_AI_EDIT_BTN)
+	if ai_btn2 is BaseButton:
+		ai_btn2.disabled = not enabled
+
+
+func _apply_ik_gate(confirmed: bool) -> void:
+	_ik_confirmed = confirmed
+	var root: Node = get_node_or_null(P_IK)
+	if root != null:
+		_set_node_tree_enabled(root, confirmed)
+	var gate_row: Node = get_node_or_null(NodePath(IK + "/HBoxContainer"))
+	if gate_row != null:
+		_set_node_tree_enabled(gate_row, true)
+	var panel_label: Node = get_node_or_null(P_IK_PANEL_LABEL)
+	if panel_label is CanvasItem:
+		panel_label.visible = confirmed
+	var summary: Node = get_node_or_null(P_IK_SUMMARY)
+	if summary is CanvasItem:
+		summary.visible = confirmed
+	var open_sim: Node = get_node_or_null(P_IK_OPEN_SIM)
+	if open_sim is CanvasItem:
+		open_sim.visible = confirmed
+	if open_sim is BaseButton:
+		open_sim.disabled = not confirmed
+	var gate_cb: Node = get_node_or_null(P_IK_ENABLE_CB)
+	if gate_cb is BaseButton:
+		gate_cb.disabled = false
+		if gate_cb.button_pressed != confirmed:
+			_loading = true
+			gate_cb.button_pressed = confirmed
+			_loading = false
+	_update_ik_summary()
+
+
+func _show_countdown_scene(scene_path: String, title: String, body: String,
+		primary_text: String, secondary_text: String = "", error_text: String = "",
+		on_confirm: Callable = Callable(), on_cancel: Callable = Callable()) -> void:
+	var packed: PackedScene = load(scene_path) as PackedScene
+	if packed == null:
+		push_error("无法加载确认页面：%s" % scene_path)
+		return
+	var dialog: Node = packed.instantiate()
+	if dialog.has_method("configure"):
+		dialog.call("configure", title, body, primary_text, secondary_text, 10, error_text)
+	add_child(dialog)
+	if dialog.has_signal("confirmed") and on_confirm.is_valid():
+		dialog.confirmed.connect(on_confirm)
+	if dialog.has_signal("canceled") and on_cancel.is_valid():
+		dialog.canceled.connect(on_cancel)
+	if dialog.has_signal("confirmed"):
+		dialog.confirmed.connect(dialog.queue_free)
+	if dialog.has_signal("canceled"):
+		dialog.canceled.connect(dialog.queue_free)
+
+
+func _on_ik_gate_toggled(pressed: bool) -> void:
+	if _loading:
+		return
+	if pressed:
+		if _ik_confirmed:
+			_apply_ik_gate(true)
+			if not AppState.project_path.is_empty():
+				var workflow: Dictionary = _workflow()
+				workflow["ik_confirmed"] = true
+				_project["workflow"] = workflow
+				_save_project(false)
+			return
+		_show_countdown_scene(WARN_IK_SCENE,
+			"确认机械臂逆解",
+			"机械臂逆解和 3D 仿真属于实验性功能。\n请确认你理解其风险后再继续。",
+			"确认，继续使用机械臂逆解", "取消，不使用机械臂逆解功能", "",
+			Callable(self, "_on_ik_gate_confirmed"), Callable(self, "_on_ik_gate_canceled"))
+		return
+	_apply_ik_gate(false)
+	if not AppState.project_path.is_empty():
+		var workflow2: Dictionary = _workflow()
+		workflow2["ik_confirmed"] = false
+		_project["workflow"] = workflow2
+		_save_project(false)
+
+
+func _on_ik_gate_confirmed() -> void:
+	_apply_ik_gate(true)
+	if not AppState.project_path.is_empty():
+		var workflow: Dictionary = _workflow()
+		workflow["ik_confirmed"] = true
+		_project["workflow"] = workflow
+		_save_project(false)
+
+
+func _on_ik_gate_confirmed_and_open_sim() -> void:
+	_on_ik_gate_confirmed()
+	_on_arm_sim_pressed()
+
+
+func _on_ik_gate_canceled() -> void:
+	_loading = true
+	var gate_cb: Node = get_node_or_null(P_IK_ENABLE_CB)
+	if gate_cb is BaseButton:
+		gate_cb.button_pressed = false
+	_loading = false
+	_apply_ik_gate(false)
+
+
 ## 把一份项目数据装载进界面
 func _adopt_project(data: Dictionary, path: String) -> void:
 	_project = data
 	_ik_config = IK_CONFIG.normalize(data.get("ik_config", {}))
+	_ai_enabled = bool(_workflow().get("ai_enabled", false))
+	_ik_confirmed = bool(_workflow().get("ik_confirmed", false))
+	_apply_ai_gate(_ai_enabled)
 	_apply_hardware_gate(not bool(_workflow().get("hardware_confirmed", false)))
 	var kind: String = str(data["kind"])
 	AppState.project_path = path
@@ -809,6 +962,8 @@ func _adopt_project(data: Dictionary, path: String) -> void:
 	_frozen_ik_config = _ik_config.duplicate(true)
 	_stage2_preview = int(data["stage"]) >= 2
 	_dirty = false
+	_apply_ai_gate(_ai_enabled)
+	_apply_ik_gate(_ik_confirmed)
 	_update_title()
 
 
@@ -1412,45 +1567,57 @@ func _on_build_succeeded() -> void:
 			_fail_upgrade("无法开始烧录", "请查看下方输出中的串口或固件提示。")
 
 
-## AI 编辑入口（阶段一 -> 阶段二）。先弹一次确认，再真正进入。
-## 这一步不可逆，用户通常意识不到「图形化配置就此定稿」，所以必须显式提醒。
+## AI 编辑入口（阶段一 -> 阶段二）。仅在 AI 功能已启用后可见。
 func _on_ai_edit_pressed() -> void:
-	# 无项目（直跑本场景）时没有阶段概念，不必提醒
+	if not _ai_enabled and not _project.is_empty():
+		return
 	if _project.is_empty():
 		_enter_ai_edit()
 		return
-	# 阶段二再点一次只是回到 AI 编辑器，没有新的不可逆动作
 	if int(_project["stage"]) >= 2:
 		_enter_ai_edit()
 		return
 	_run_check()
-	var errors: int = 0
-	var warns: int = 0
-	for issue in _last_issues:
-		if str(issue.get("type", "")) == "Error":
-			errors += 1
-		else:
-			warns += 1
-	var text: String = "进入 AI 编辑后，图形化配置就定稿了：\n" \
-		+"之后这边只能预览，想改动必须丢弃 AI 编辑的代码。\n\n" \
-		+"请确认配置已经全部填好，再继续。"
-	if errors > 0:
-		text = "当前配置还有 %d 个错误（见下方「问题 & 输出」）。\n" % errors \
-			+"带着错误进入 AI 编辑，生成的代码很可能编译不过。\n\n" + text
-	elif warns > 0:
-		text = "当前配置有 %d 个警告（见下方「问题 & 输出」）。\n\n" % warns + text
-	var dlg := ConfirmationDialog.new()
-	dlg.title = "确认进入 AI 编辑"
-	dlg.dialog_text = text
-	dlg.get_ok_button().text = "配置已完成，进入"
-	dlg.get_cancel_button().text = "再检查一下"
-	dlg.confirmed.connect(_enter_ai_edit)
-	add_child(dlg)
-	# 不给尺寸的话多行文本会把对话框撑到视口高度
-	dlg.popup_centered(Vector2i(480, 260))
-	dlg.confirmed.connect(dlg.queue_free)
-	dlg.canceled.connect(dlg.queue_free)
-	dlg.close_requested.connect(dlg.queue_free)
+	_enter_ai_edit()
+
+
+func _on_ai_enable_toggled(pressed: bool) -> void:
+	if _loading:
+		return
+	if pressed:
+		if _ai_enabled:
+			_apply_ai_gate(true)
+			return
+		_show_countdown_scene(WARN_AI_SCENE,
+			"确认启用 AI 功能",
+			"内置 AI 编辑功能是实验性的。\n启用后，AI 编辑按钮才会显示。\n请确认你理解其风险后再继续。",
+			"确认，启用 AI 功能", "取消，不启用 AI 功能", "",
+			Callable(self, "_on_ai_enable_confirmed"), Callable(self, "_on_ai_enable_canceled"))
+		return
+	_apply_ai_gate(false)
+	if not AppState.project_path.is_empty():
+		var workflow: Dictionary = _workflow()
+		workflow["ai_enabled"] = false
+		_project["workflow"] = workflow
+		_save_project(false)
+
+
+func _on_ai_enable_confirmed() -> void:
+	_apply_ai_gate(true)
+	if not AppState.project_path.is_empty():
+		var workflow: Dictionary = _workflow()
+		workflow["ai_enabled"] = true
+		_project["workflow"] = workflow
+		_save_project(false)
+
+
+func _on_ai_enable_canceled() -> void:
+	_loading = true
+	var enable_btn: Node = get_node_or_null(P_ENABLE_AI_BTN)
+	if enable_btn is BaseButton:
+		enable_btn.button_pressed = false
+	_loading = false
+	_apply_ai_gate(false)
 
 
 ## 真正进入 AI 编辑：把阶段一的配置与生成代码冻结进 .pieproj，然后切场景
@@ -1499,6 +1666,12 @@ func _on_arm_sim_pressed() -> void:
 		return
 	var tab_container: Node = get_node_or_null(P_TAB_CONTAINER)
 	var tab: int = tab_container.current_tab if tab_container is TabContainer else 0
+	if tab == 2 and not _ik_confirmed:
+		_show_countdown_scene(WARN_IK_SCENE,
+			"确认机械臂逆解", "机械臂逆解和 3D 仿真属于实验性功能。\n请确认你理解其风险后再继续。",
+			"确认，继续使用机械臂逆解", "取消，不使用机械臂逆解功能", "",
+			Callable(self, "_on_ik_gate_confirmed_and_open_sim"), Callable(self, "_on_ik_gate_canceled"))
+		return
 	var scene_path: String = ""
 	var cfg: Dictionary = {}
 	match tab:
@@ -1797,13 +1970,11 @@ func _upgrade_panel_visible() -> bool:
 ## 求解器编译失败弹窗：3D 仿真全屏覆盖主界面输出面板，
 ## 错误必须弹出可见对话框，否则用户以为「点击没反应」。
 func _show_solver_error_dialog(title: String, messages: Array) -> void:
-	var dialog := AcceptDialog.new()
-	dialog.title = title
-	dialog.dialog_text = "\n".join(messages)
-	dialog.ok_button_text = "知道了"
-	add_child(dialog)
-	dialog.popup_centered(Vector2i(560, 360))
-	dialog.close_requested.connect(dialog.queue_free)
+	var scene_path: String = ERROR_SCENE if title.contains("构型") else FATAL_ERROR_SCENE
+	_show_countdown_scene(scene_path,
+		title,
+		"您在使用高级功能时遇到了编译错误，这是可被容忍的，但在修复范围内",
+		"确认并导出错误的项目文件", "", "\n".join(messages))
 
 
 func _fail_upgrade(stage: String, detail: String) -> void:

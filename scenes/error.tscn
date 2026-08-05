@@ -1,8 +1,10 @@
 [gd_scene format=3 uid="uid://c4bwxkmq314ry"]
 
 [ext_resource type="Theme" uid="uid://cryqvh2g7gqj" path="res://assets/themes/main.tres" id="1_o0aib"]
+[ext_resource type="StyleBox" uid="uid://bmthpuwsefkyj" path="res://assets/themes/warn_panel.tres" id="2_cor4c"]
 [ext_resource type="Texture2D" uid="uid://u1r0v3mfgat3" path="res://assets/images/error.svg" id="2_o0aib"]
 [ext_resource type="FontFile" uid="uid://bs174vxb8p5iv" path="res://assets/fonts/NotoSansCJK-Regular.ttc" id="3_cor4c"]
+[ext_resource type="Script" uid="uid://dw4ksx6m0pywd" path="res://scripts/countdown_gate.gd" id="4_7w9aa"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_ynwaf"]
 font = ExtResource("3_cor4c")
@@ -12,14 +14,15 @@ font_size = 72
 font = ExtResource("3_cor4c")
 font_size = 36
 
-[node name="Warn" type="Control" unique_id=92850754]
-layout_mode = 3
+[node name="Panel" type="Panel" unique_id=2040234375]
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 theme = ExtResource("1_o0aib")
+theme_override_styles/panel = ExtResource("2_cor4c")
+script = ExtResource("4_7w9aa")
 
 [node name="VBoxContainer" type="VBoxContainer" parent="." unique_id=1392620216]
 layout_mode = 1

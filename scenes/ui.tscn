@@ -72,6 +72,7 @@ toggle_mode = true
 text = "启用 AI 功能"
 
 [node name="AIEdit" type="Button" parent="VBoxContainer/TopPanel" unique_id=144998210]
+visible = false
 layout_mode = 2
 size_flags_horizontal = 8
 text = "AI 编辑"

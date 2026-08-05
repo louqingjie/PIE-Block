@@ -540,28 +540,36 @@ func _test_lifecycle() -> void:
 	_check("正式烧录要求重新做真机测试",
 		not bool(after_production_workflow["hardware_tested"]))
 
-	# 点「AI 编辑」应先弹确认框，此时还没升阶段
-	ui2._on_ai_edit_pressed()
+	_check("AI 编辑按钮初始隐藏", not bool(ui2.get_node(ui2.P_AI_EDIT_BTN).visible))
+	# 点「启用 AI 功能」应先弹确认框，此时还没解锁 AI 编辑
+	ui2._on_ai_enable_toggled(true)
 	await process_frame
-	var confirm: Node = _find_dialog(ui2, "确认进入 AI 编辑")
-	_check("点 AI 编辑先弹确认框", confirm != null)
-	_check("确认框弹出时还没升阶段", int(ui2._project["stage"]) == 1)
+	var confirm: Node = _find_dialog(ui2, "确认启用 AI 功能")
+	_check("点启用 AI 功能先弹确认框", confirm != null)
+	_check("确认框弹出时 AI 编辑仍隐藏", not bool(ui2.get_node(ui2.P_AI_EDIT_BTN).visible))
 	if confirm != null:
 		# 取消：不该有任何变化
 		confirm.canceled.emit()
-		confirm.hide()
+		confirm.queue_free()
 		await process_frame
-		_check("取消后仍是阶段一", int(ui2._project["stage"]) == 1)
+		_check("取消后 AI 仍未启用", not bool(ui2._ai_enabled))
+		_check("取消后 AI 编辑仍隐藏", not bool(ui2.get_node(ui2.P_AI_EDIT_BTN).visible))
 		var still1: Dictionary = PF.load_from(path)
-		_check("取消后磁盘上仍是阶段一", int(still1["data"]["stage"]) == 1)
-	# 对话框尺寸要显式给，否则多行文本会把它撑到视口高度
-	ui2._on_ai_edit_pressed()
+		_check("取消后磁盘上仍未启用 AI", not bool((still1["data"]["workflow"] as Dictionary).get("ai_enabled", false)))
+	# 倒计时门控页应该先禁用主按钮
+	ui2._on_ai_enable_toggled(true)
 	await process_frame
-	var confirm2: Node = _find_dialog(ui2, "确认进入 AI 编辑")
+	var confirm2: Node = _find_dialog(ui2, "确认启用 AI 功能")
 	if confirm2 != null:
-		_check("确认框高度未被撑满视口", confirm2.size.y < 600,
-			"实际 %d" % confirm2.size.y)
-		confirm2.hide()
+		var primary: Node = confirm2.get_node_or_null("VBoxContainer/HBoxContainer2/Button")
+		_check("确认框按钮初始禁用", primary is BaseButton and primary.disabled)
+		confirm2.confirmed.emit()
+		confirm2.queue_free()
+		await process_frame
+		_check("确认后 AI 已启用", bool(ui2._ai_enabled))
+		_check("确认后 AI 编辑已显示", bool(ui2.get_node(ui2.P_AI_EDIT_BTN).visible))
+		var still2: Dictionary = PF.load_from(path)
+		_check("确认后磁盘上记录 AI 已启用", bool((still2["data"]["workflow"] as Dictionary).get("ai_enabled", false)))
 
 	# 进入阶段二（不切场景，直接走冻结逻辑）
 	var code: String = ui2._current_preview_code()
@@ -590,13 +598,17 @@ func _test_lifecycle() -> void:
 	root.add_child(ui3)
 	await process_frame
 	await process_frame
+	var preview_dlg: Node = _find_dialog(ui3, "只能预览")
+	if preview_dlg != null:
+		preview_dlg.queue_free()
+		await process_frame
 	_check("阶段二重开进入预览态", ui3._stage2_preview)
 	# 已在阶段二，再点 AI 编辑不该重复弹确认框（没有新的不可逆动作）
 	var dlg_before: int = _count_dialogs(ui3)
 	ui3._on_ai_edit_pressed()
 	await process_frame
 	_check("阶段二点 AI 编辑不再弹确认框",
-		_find_dialog(ui3, "确认进入 AI 编辑") == null and _count_dialogs(ui3) == dlg_before)
+		_find_dialog(ui3, "确认启用 AI 功能") == null and _count_dialogs(ui3) == dlg_before)
 	# 阶段二在图形化界面保存时，冻结的 config 与 main_c_stage1 都不能被改写
 	var frozen_cfg: Dictionary = (s2d["config"] as Dictionary).duplicate(true)
 	ui3._save_project(false)
@@ -774,11 +786,15 @@ func _clear_recent() -> void:
 		PF.recent_remove(str(p))
 
 
-## 按标题找运行时 add_child 上去的对话框
-func _find_dialog(node: Node, title: String) -> Window:
+## 按标题找运行时 add_child 上去的对话框 / 门控页
+func _find_dialog(node: Node, title: String) -> Node:
 	for child in node.get_children():
 		if child is AcceptDialog and child.title == title:
 			return child
+		if child is Control and child.has_method("configure"):
+			var label: Node = child.get_node_or_null("VBoxContainer/HBoxContainer/Label")
+			if label is Label and label.text == title:
+				return child
 	return null
 
 
@@ -786,6 +802,8 @@ func _count_dialogs(node: Node) -> int:
 	var n: int = 0
 	for child in node.get_children():
 		if child is AcceptDialog:
+			n += 1
+		elif child is Control and child.has_method("configure"):
 			n += 1
 	return n
 

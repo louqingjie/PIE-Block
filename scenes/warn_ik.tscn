@@ -2,7 +2,9 @@
 
 [ext_resource type="Texture2D" uid="uid://brxa5vceejcmx" path="res://assets/images/warn.svg" id="1_rd40u"]
 [ext_resource type="Theme" uid="uid://cryqvh2g7gqj" path="res://assets/themes/main.tres" id="1_u2cf7"]
+[ext_resource type="StyleBox" uid="uid://bmthpuwsefkyj" path="res://assets/themes/warn_panel.tres" id="2_3mci8"]
 [ext_resource type="FontFile" uid="uid://bs174vxb8p5iv" path="res://assets/fonts/NotoSansCJK-Regular.ttc" id="2_u2cf7"]
+[ext_resource type="Script" uid="uid://dw4ksx6m0pywd" path="res://scripts/countdown_gate.gd" id="3_7w9aa"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_ynwaf"]
 font = ExtResource("2_u2cf7")
@@ -12,14 +14,15 @@ font_size = 72
 font = ExtResource("2_u2cf7")
 font_size = 36
 
-[node name="Warn" type="Control" unique_id=92850754]
-layout_mode = 3
+[node name="Panel" type="Panel" unique_id=750679522]
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 theme = ExtResource("1_u2cf7")
+theme_override_styles/panel = ExtResource("2_3mci8")
+script = ExtResource("3_7w9aa")
 
 [node name="VBoxContainer" type="VBoxContainer" parent="." unique_id=1392620216]
 layout_mode = 1
@@ -69,7 +72,7 @@ layout_mode = 2
 layout_mode = 2
 size_flags_horizontal = 6
 theme_override_font_sizes/font_size = 30
-text = "确认，继续使用机械臂逆解（10s）"
+text = "确认，继续使用机械臂逆解"
 
 [node name="Button2" type="Button" parent="VBoxContainer/HBoxContainer2" unique_id=250513832]
 layout_mode = 2
