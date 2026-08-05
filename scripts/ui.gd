@@ -1588,10 +1588,9 @@ func _on_ai_enable_toggled(pressed: bool) -> void:
 		if _ai_enabled:
 			_apply_ai_gate(true)
 			return
+		# warn_ai 页面自带文案（启用 AI 编辑），这里不改动它的文本，只接回调
 		_show_countdown_scene(WARN_AI_SCENE,
-			"确认启用 AI 功能",
-			"内置 AI 编辑功能是实验性的。\n启用后，AI 编辑按钮才会显示。\n请确认你理解其风险后再继续。",
-			"确认，启用 AI 功能", "取消，不启用 AI 功能", "",
+			"", "", "", "", "",
 			Callable(self, "_on_ai_enable_confirmed"), Callable(self, "_on_ai_enable_canceled"))
 		return
 	_apply_ai_gate(false)

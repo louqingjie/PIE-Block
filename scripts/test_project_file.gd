@@ -544,7 +544,7 @@ func _test_lifecycle() -> void:
 	# 点「启用 AI 功能」应先弹确认框，此时还没解锁 AI 编辑
 	ui2._on_ai_enable_toggled(true)
 	await process_frame
-	var confirm: Node = _find_dialog(ui2, "确认启用 AI 功能")
+	var confirm: Node = _find_dialog(ui2, "警告")
 	_check("点启用 AI 功能先弹确认框", confirm != null)
 	_check("确认框弹出时 AI 编辑仍隐藏", not bool(ui2.get_node(ui2.P_AI_EDIT_BTN).visible))
 	if confirm != null:
@@ -559,7 +559,7 @@ func _test_lifecycle() -> void:
 	# 倒计时门控页应该先禁用主按钮
 	ui2._on_ai_enable_toggled(true)
 	await process_frame
-	var confirm2: Node = _find_dialog(ui2, "确认启用 AI 功能")
+	var confirm2: Node = _find_dialog(ui2, "警告")
 	if confirm2 != null:
 		var primary: Node = confirm2.get_node_or_null("VBoxContainer/HBoxContainer2/Button")
 		_check("确认框按钮初始禁用", primary is BaseButton and primary.disabled)
@@ -608,7 +608,7 @@ func _test_lifecycle() -> void:
 	ui3._on_ai_edit_pressed()
 	await process_frame
 	_check("阶段二点 AI 编辑不再弹确认框",
-		_find_dialog(ui3, "确认启用 AI 功能") == null and _count_dialogs(ui3) == dlg_before)
+		_find_dialog(ui3, "警告") == null and _count_dialogs(ui3) == dlg_before)
 	# 阶段二在图形化界面保存时，冻结的 config 与 main_c_stage1 都不能被改写
 	var frozen_cfg: Dictionary = (s2d["config"] as Dictionary).duplicate(true)
 	ui3._save_project(false)
