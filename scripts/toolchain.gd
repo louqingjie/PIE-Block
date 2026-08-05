@@ -173,11 +173,12 @@ func _project_deployed(project_dst: String) -> bool:
 ## 从 res://stc32g/toolchain/Keil_noarm 递归复制到 user://keil/
 func _extract_toolchain() -> bool:
 	_emit("首次运行：正在解压 Keil 工具链到 user://（约 68MB，请稍候）…")
-	var src_abs: String = to_abs(TOOLCHAIN_SRC)
-	var dst_abs: String = to_abs(TOOLCHAIN_DST)
-	if not DirAccess.dir_exists_absolute(src_abs):
-		_emit("[Error] 工具链源目录不存在: %s" % src_abs)
+	# 源在 res://（导出后是 PCK 虚拟路径），必须用 res:// 路径直接访问；
+	# 不能用 globalize_path 转 OS 路径 —— 导出模式下 PCK 内容没有对应磁盘目录。
+	if not DirAccess.dir_exists_absolute(TOOLCHAIN_SRC):
+		_emit("[Error] 工具链源目录不存在: %s" % TOOLCHAIN_SRC)
 		return false
+	var dst_abs: String = to_abs(TOOLCHAIN_DST)
 	if DirAccess.dir_exists_absolute(dst_abs):
 		_remove_dir_recursive(TOOLCHAIN_DST)
 	if not _copy_dir_recursive(TOOLCHAIN_SRC, TOOLCHAIN_DST):
@@ -193,16 +194,16 @@ func _extract_toolchain() -> bool:
 
 ## 递归复制目录（res:// -> user:// 或任意路径组合）
 func _copy_dir_recursive(src_path: String, dst_path: String) -> bool:
-	var src_abs: String = to_abs(src_path)
 	var dst_abs: String = to_abs(dst_path)
 	if not DirAccess.dir_exists_absolute(dst_abs):
 		var err: int = DirAccess.make_dir_recursive_absolute(dst_abs)
 		if err != OK:
 			push_error("无法创建目录 %s（错误码 %d）" % [dst_abs, err])
 			return false
-	var da: DirAccess = DirAccess.open(src_abs)
+	# 源用 res:// 虚拟路径打开（导出后是 PCK，globalize 成 OS 路径会失败）
+	var da: DirAccess = DirAccess.open(src_path)
 	if da == null:
-		push_error("无法打开源目录: %s" % src_abs)
+		push_error("无法打开源目录: %s" % src_path)
 		return false
 	da.list_dir_begin()
 	var entry_name: String = da.get_next()
@@ -257,11 +258,11 @@ func _remove_dir_recursive(dir_path: String) -> void:
 
 ## 复制单个文件
 func _copy_file(src_path: String, dst_path: String) -> bool:
-	var src_abs: String = to_abs(src_path)
 	var dst_abs: String = to_abs(dst_path)
-	var src_f: FileAccess = FileAccess.open(src_abs, FileAccess.READ)
+	# 源用 res:// 虚拟路径读（导出后是 PCK）
+	var src_f: FileAccess = FileAccess.open(src_path, FileAccess.READ)
 	if src_f == null:
-		push_error("无法读取: %s" % src_abs)
+		push_error("无法读取: %s" % src_path)
 		return false
 	var dst_f: FileAccess = FileAccess.open(dst_abs, FileAccess.WRITE)
 	if dst_f == null:
@@ -322,10 +323,11 @@ func generate_tools_ini() -> bool:
 	var keil_abs: String = to_abs(TOOLCHAIN_DST).replace("/", "\\")
 	var c251_path: String = keil_abs + "\\C251\\"
 	var ini_abs: String = keil_abs + "\\TOOLS.INI"
-	var template_abs: String = to_abs(TOOLCHAIN_SRC.path_join("TOOLS.INI"))
+	# 模板在 res://（PCK 虚拟路径），直接以 res:// 读，不能 globalize
+	var template_path: String = TOOLCHAIN_SRC.path_join("TOOLS.INI")
 	var content: String = ""
-	if FileAccess.file_exists(template_abs):
-		content = FileAccess.get_file_as_string(template_abs)
+	if FileAccess.file_exists(template_path):
+		content = FileAccess.get_file_as_string(template_path)
 	else:
 		content = "[C251]\nPATH=\"\"\nVERSION=5.60\n"
 	# 替换 [C251] 段的 PATH 为绝对路径。
