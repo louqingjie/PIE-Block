@@ -269,7 +269,7 @@ func _test_normalize() -> void:
 		str(PF.normalize_workflow({"firmware_mode": "broken"})["firmware_mode"])
 			== "unknown")
 	var v6: Dictionary = PF.normalize({"format_version": 6, "kind": PF.KIND_ENGINEER,
-		"ik_config": {"keymove": [{}, {}, {}, {}]}})
+		"ik_config": {"keymove": [ {}, {}, {}, {}]}})
 	_check("版本6工程补齐六维遥控默认字段",
 		v6["format_version"] == PF.FORMAT_VERSION
 		and v6["ik_config"]["keymove"].size() == 6

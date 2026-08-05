@@ -15,7 +15,7 @@ run/main_scene="res://scenes/launcher.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 boot_splash/stretch_mode=4
 boot_splash/image="uid://d8rccasyb7yp"
-config/icon="res://icon.svg"
+config/icon="uid://dcd1c1ner1ogs"
 
 [autoload]
 

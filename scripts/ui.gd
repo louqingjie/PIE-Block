@@ -843,7 +843,7 @@ func _apply_ik_gate(confirmed: bool) -> void:
 	var root: Node = get_node_or_null(P_IK)
 	if root != null:
 		_set_node_tree_enabled(root, confirmed)
-	var gate_row: Node = get_node_or_null(NodePath(IK + "/HBoxContainer"))
+	var gate_row: Node = get_node_or_null(NodePath(IK +"/HBoxContainer"))
 	if gate_row != null:
 		_set_node_tree_enabled(gate_row, true)
 	var panel_label: Node = get_node_or_null(P_IK_PANEL_LABEL)
