@@ -147,20 +147,13 @@ func generate(cfg: Dictionary) -> String:
 	code += "void All_Init()\n{\n"
 	code += "    Board_Init();\n"
 	code += _gen_uart_init_first()
-	if _lcd_enabled(cfg):
-		code += _gen_lcd_boot()
-		code += _gen_lcd_step(1, "UART   OK")
 	# 蜂鸣器引脚初始化（PWM 模式）
 	code += "    PWM_Init(%s, BUZZER_FREQ_READY, 0); // 蜂鸣器 P33\n" % BUZZER_PWM_CH
-	if _lcd_enabled(cfg):
-		code += _gen_lcd_step(2, "BUZZER OK")
 	# 扩展板初始化（所有引脚先置零频率，后续按行重新初始化）
 	code += "    ExpansionBoradControl(Init_Order,\n"
 	code += "                          0, 0, 0, 0, 0, 0, 0, 0);\n"
 	code += "    Ms_Delay(20);\n"
-	if _lcd_enabled(cfg):
-		code += _gen_lcd_step(3, "EXP    OK")
-		code += _gen_lcd_done("Buzzer_Play")
+	code += _gen_init_done("Buzzer_Play")
 	code += "}\n\n"
 
 	# --- Buzzer_Play() ---

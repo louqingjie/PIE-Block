@@ -16,16 +16,8 @@ func _initialize() -> void:
 		printerr("生成代码没有可供 UART ISR 调用的 iapEnterDownload")
 		quit(1)
 		return
-	var code_off: String = CG.new().generate({"lcd_debug": false})
-	if not code.contains("LCD_Init();") \
-			or not code.contains("LCD_CLS();") \
-			or not code.contains("LCD_P6x8Str(0, 0, \"PIE-BLOCK BOOT\");") \
-			or not code.contains("burnBeep(1047, 240);"):
-		printerr("生成代码缺少 LCD 初始化调试输出（默认应开启）")
-		quit(1)
-		return
-	if code_off.contains("LCD_Init();") or code_off.contains("LCD_CLS();"):
-		printerr("lcd_debug=false 时不应生成 LCD 调试代码")
+	if not code.contains("burnBeep(1047, 240);"):
+		printerr("生成代码缺少初始化完成提示音")
 		quit(1)
 		return
 	var tc = TC.new(func(line: String) -> void: print(line))
