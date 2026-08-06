@@ -408,15 +408,27 @@ func generate(cfg: Dictionary) -> String:
 	code += "{\n"
 	code += "    Board_Init();\n"
 	code += _gen_uart_init_first()
+	if _lcd_enabled(cfg):
+		code += _gen_lcd_boot()
+		code += _gen_lcd_step(1, "UART   OK")
 	code += "    GPIO_Init(GPIO_P3, GPIO_Pin_4, GPIO_OUT_PP);\n"
 	code += "    GPIO_Write_Bit(GPIO_P3, GPIO_Pin_4, 0);\n"
 	code += "    remoteControlInitWithTimeout();\n"
 	code += "    GPIO_Write_Bit(GPIO_P3, GPIO_Pin_4, 1);\n"
+	if _lcd_enabled(cfg):
+		code += _gen_lcd_step(2, "RC     OK")
 	code += "    ExpansionBoradControl(Init_Order,\n"
 	code += "                          %s); // p60,p62,p64,p66,p74,p75,p76,p77\n" % init_str
 	code += "    Ms_Delay(20);\n"
+	if _lcd_enabled(cfg):
+		code += _gen_lcd_step(3, "EXP    OK")
 	code += pwm_init_lines
+	if _lcd_enabled(cfg) and not pwm_init_lines.is_empty():
+		code += _gen_lcd_step(4, "PWM    OK")
 	code += _gen_burn_mode_init()
+	if _lcd_enabled(cfg):
+		code += _gen_lcd_step(5, "BUZZER OK")
+		code += _gen_lcd_done("burnBeep")
 	code += "}\n\n"
 
 	# --- Read_Controller_Inputs ---

@@ -45,6 +45,7 @@ func _test_mcu_simulator(cg) -> void:
 	_check("MCU 仿真固件有协议版本", code.contains("SOLVER_PROTOCOL_VERSION"))
 	_check("MCU 仿真固件有 UART 接收钩子", code.contains("void IKSimRxByte"))
 	_check("MCU 仿真固件没有扩展板输出", not code.contains("ExpansionBoradControl"))
+	_check("MCU 仿真固件没有 LCD 调试", not code.contains("LCD_Init"))
 	_check("MCU 仿真固件没有 PWM 输出", not code.contains("PWM_"))
 	_check("MCU 仿真固件只有一个 main", code.count("void main(") == 1)
 	_check("MCU 仿真固件在改写状态前拒绝 NaN/Inf",
@@ -274,6 +275,16 @@ func _test_config(cg, jc: int, label: String) -> void:
 	_check("%s 有 ApplyServoControl" % label, code.find("void ApplyServoControl()") >= 0)
 	_check("%s 有 ReadControllerInputs" % label, code.find("void ReadControllerInputs()") >= 0)
 	_check("%s 有 All_Init" % label, code.find("void All_Init()") >= 0)
+	_check("%s 有 LCD 调试输出" % label, code.contains("LCD_Init();")
+		and code.contains("LCD_CLS();")
+		and code.contains("LCD_P6x8Str(0, 0, \"PIE-BLOCK BOOT\");"))
+	_check("%s 有初始化完成提示音" % label, code.contains("burnBeep(1047, 240);"))
+	# LCD 开关：dual 结构下读 engineer.lcd_debug，关闭时整块不生成
+	var lcd_off: String = cg.generate({
+		"ik": _make_cfg(jc, []),
+		"engineer": {"lcd_debug": false},
+	})
+	_check("%s 关闭 LCD 调试输出" % label, not lcd_off.contains("LCD_Init"))
 	_check("%s 有 main" % label, code.find("void main()") >= 0)
 	_check("%s 有 ExpansionBoradControl" % label, code.find("void ExpansionBoradControl(") >= 0)
 	_check("%s 定义 Channal" % label, code.find("uint8_t Channal =") >= 0)

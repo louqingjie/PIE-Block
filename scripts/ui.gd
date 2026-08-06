@@ -33,6 +33,8 @@ const P_NORMAL_SPEED: NodePath = "VBoxContainer/HBoxContainer/HSplitContainer/Fi
 const P_SPRINT_SPEED: NodePath = "VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/Chassis/SprintSpeed/LineEdit"
 # 冲刺开关放在 FirstRow/Chassis（步兵与工程共用底盘设置）
 const P_SPRINT_CB: NodePath = "VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/Chassis/Sprint/CheckBox"
+# LCD 启动调试输出开关（共享，默认开启）
+const P_LCD_CB: NodePath = "VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/LcdDebug/CheckBox"
 # 底盘方向（正向 id=0 / 反向 id=1）
 const CHASSIS: String = "VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/Chassis"
 const P_L1_DIR: NodePath = CHASSIS + "/L1/OptionButton2"
@@ -321,6 +323,10 @@ func _connect_signals() -> void:
 	var zero_cb: Node = get_node_or_null(P_ZERO_CB)
 	if zero_cb is BaseButton:
 		zero_cb.toggled.connect(_run_check)
+	# LCD 调试输出复选框
+	var lcd_cb: Node = get_node_or_null(P_LCD_CB)
+	if lcd_cb is BaseButton:
+		lcd_cb.toggled.connect(_run_check)
 	# 工程师界面：IO 初始化区变化触发检查（也会改变参数框的含义）
 	for p in [P_ENG_P60, P_ENG_P62, P_ENG_P64, P_ENG_P66,
 			P_ENG_P74, P_ENG_P75, P_ENG_P76, P_ENG_P77,
@@ -1290,6 +1296,7 @@ func _collect_engineer_dual_config() -> Dictionary:
 	return {
 		"engineer": _collect_engineer_config(),
 		"ik": _collect_ik_config(),
+		"lcd_debug": _lcd_debug_enabled(),
 	}
 
 
@@ -1323,7 +1330,8 @@ func _run_check(_a = null, _b = null) -> void:
 	var cfg: Dictionary
 	match current_tab:
 		3:
-			cfg = {"debug_rows": _collect_debug_config()}
+			cfg = {"debug_rows": _collect_debug_config(),
+				"lcd_debug": _lcd_debug_enabled()}
 		1, 2:
 			cfg = _collect_engineer_dual_config()
 		_:
@@ -1379,6 +1387,12 @@ func _set_line_text(path: NodePath, text: String) -> void:
 
 
 # ------------------------------------------------------------------ 配置收集
+## 读取共享的「LCD 调试输出」开关。控件不存在时默认开启。
+func _lcd_debug_enabled() -> bool:
+	var lcd_cb: Node = get_node_or_null(P_LCD_CB)
+	return not (lcd_cb is BaseButton) or lcd_cb.button_pressed
+
+
 ## 从 UI 控件收集所有参数，返回字典供代码生成使用
 func _collect_config() -> Dictionary:
 	var cfg: Dictionary = {}
@@ -1420,6 +1434,7 @@ func _collect_config() -> Dictionary:
 	cfg["booster_key"] = _get_option_text(P_BOOSTER_KEY)
 	var zero_cb: Node = get_node_or_null(P_ZERO_CB)
 	cfg["zero_enabled"] = (zero_cb is BaseButton) and zero_cb.button_pressed
+	cfg["lcd_debug"] = _lcd_debug_enabled()
 	return cfg
 
 
@@ -1470,6 +1485,7 @@ func _collect_engineer_config() -> Dictionary:
 			"target": target_text,
 		})
 	cfg["key_map"] = key_map
+	cfg["lcd_debug"] = _lcd_debug_enabled()
 	return cfg
 
 
@@ -1621,6 +1637,8 @@ func _open_hex_save_dialog() -> void:
 	dlg.title = "导出 HEX 固件"
 	dlg.access = FileDialog.ACCESS_FILESYSTEM
 	dlg.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+	# 与启动页 SaveDialog 一致：走 Windows 原生保存对话框
+	dlg.use_native_dialog = true
 	dlg.current_file = "output.hex"
 	dlg.add_filter("*.hex", "Keil HEX 固件")
 	dlg.file_selected.connect(func(path: String) -> void:

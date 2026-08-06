@@ -237,6 +237,50 @@ func _gen_burn_mode_init() -> String:
 	return code
 
 
+# ============================================================ LCD 启动调试输出
+## 读取 lcd_debug 开关：缺省开启（true）。
+## 兼容工程逆解算的 dual 结构（cfg = {engineer:{...}, ik:{...}}），
+## 顶层没有时回退查 cfg["engineer"]["lcd_debug"]。
+func _lcd_enabled(cfg: Dictionary) -> bool:
+	var v: Variant = cfg.get("lcd_debug", null)
+	if v == null and cfg.has("engineer"):
+		var eng: Variant = cfg.get("engineer", {})
+		if eng is Dictionary:
+			v = eng.get("lcd_debug", true)
+	if v == null:
+		return true
+	return not (v is bool and v == false)
+
+
+## 生成 LCD 调试块头部：初始化屏幕 + 清屏 + 标题。
+## 必须放在 UART 初始化之后（串口是 OTA 唯一入口，须最先初始化）。
+## LCD_Init 内部会画 WPIE logo 并自带延时，随后 LCD_CLS 清屏。
+func _gen_lcd_boot() -> String:
+	return ("    // ===== LCD 启动调试输出（P2.2~P2.6 OLED）=====\n"
+		+ "    LCD_Init();\n"
+		+ "    LCD_CLS();\n"
+		+ "    LCD_P6x8Str(0, 0, \"PIE-BLOCK BOOT\");\n")
+
+
+## 生成一步状态显示：第 row 行显示 text，再延时让用户可见。
+## LCD 为 128x64，P6x8 字体共 8 行（row 0~7），每行约 20 个 ASCII 字符。
+## 文本仅支持 ASCII（LCD 字库只含 32~126），禁止中文。
+func _gen_lcd_step(row: int, text: String) -> String:
+	return "    LCD_P6x8Str(0, %d, \"%s\");\n    Ms_Delay(200);\n" % [row, text]
+
+
+## 生成初始化完成提示音（P33 蜂鸣器，上行琶音）+ 关闭 LCD（清屏）。
+## buzzer 形参为构型自己的蜂鸣器函数名：burnBeep（步兵/工程/工程IK）或 Buzzer_Play（调试）。
+func _gen_lcd_done(buzzer: String) -> String:
+	return ("    // 初始化完成提示音：P33 蜂鸣器演奏上行琶音\n"
+		+ "    %s(523, 120);\n" % buzzer
+		+ "    %s(659, 120);\n" % buzzer
+		+ "    %s(784, 120);\n" % buzzer
+		+ "    %s(1047, 240);\n" % buzzer
+		+ "    // 关闭 LCD（清屏）\n"
+		+ "    LCD_CLS();\n")
+
+
 # ============================================================ 共享工具函数
 ## 从 IO 对字符串中提取通信脚（前半），如 "P77 P27" -> "P77"
 func _parse_io_pair(text: String) -> String:

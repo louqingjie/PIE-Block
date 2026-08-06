@@ -364,6 +364,19 @@ button_pressed = true
 [node name="HSeparator3" type="HSeparator" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/Chassis" unique_id=1551022486]
 layout_mode = 2
 
+[node name="LcdDebug" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow" unique_id=2026080601]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/LcdDebug" unique_id=2026080602]
+layout_mode = 2
+size_flags_horizontal = 2
+text = "LCD 调试输出"
+
+[node name="CheckBox" type="CheckBox" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/LcdDebug" unique_id=2026080603]
+layout_mode = 2
+size_flags_horizontal = 10
+button_pressed = true
+
 [node name="Control" type="Control" parent="VBoxContainer/HBoxContainer/HSplitContainer/FirstRow" unique_id=1164344812]
 layout_mode = 2
 size_flags_vertical = 3

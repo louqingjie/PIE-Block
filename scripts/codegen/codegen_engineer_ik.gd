@@ -1909,10 +1909,15 @@ func _gen_all_init(joints: Array, jc: int, engineer_cfg: Dictionary = {},
 	s += "{\n"
 	s += "    Board_Init();\n"
 	s += _gen_uart_init_first()
+	if _lcd_enabled(engineer_cfg):
+		s += _gen_lcd_boot()
+		s += _gen_lcd_step(1, "UART   OK")
 	s += "    GPIO_Init(GPIO_P3, GPIO_Pin_4, GPIO_OUT_PP);\n"
 	s += "    GPIO_Write_Bit(GPIO_P3, GPIO_Pin_4, 0);\n"
 	s += "    remoteControlInitWithTimeout();\n"
 	s += "    GPIO_Write_Bit(GPIO_P3, GPIO_Pin_4, 1);\n"
+	if _lcd_enabled(engineer_cfg):
+		s += _gen_lcd_step(2, "RC     OK")
 	# 扩展板槽位（P60~P77）走 ExpansionBoradControl，主控板 MP03/MP74 走 PWM_Init
 	var exp_slots: Dictionary = _exp_slot_map(joints, jc)
 	var main_pwm: Array = _main_pwm_list(joints, jc)
@@ -1956,6 +1961,8 @@ func _gen_all_init(joints: Array, jc: int, engineer_cfg: Dictionary = {},
 		s += "    ExpansionBoradControl(Duty_Change_Order,\n"
 		s += "                          %s);\n" % _exp_args(home_vals)
 		s += "    Ms_Delay(20);\n"
+	if _lcd_enabled(engineer_cfg):
+		s += _gen_lcd_step(3, "EXP    OK")
 	# 主控板 PWM 初始化
 	if main_pwm.size() > 0:
 		s += "    // 主控板舵机 PWM 初始化，初始占空比 = 初始角度对应值\n"
@@ -1970,7 +1977,14 @@ func _gen_all_init(joints: Array, jc: int, engineer_cfg: Dictionary = {},
 	if not engineer_cfg.is_empty():
 		s += "    for (i = 0; i < 8; i++) dutyOfAuxServo[i] = SERVO_MID_DUTY;\n"
 		s += "    for (i = 0; i < 2; i++) dutyOfAuxMainServo[i] = SERVO_MID_DUTY;\n"
+	if _lcd_enabled(engineer_cfg) and (not main_pwm.is_empty()
+			or not aux_main_servos.is_empty()
+			or (gripper_enabled and gripper_slot < 0)):
+		s += _gen_lcd_step(4, "PWM    OK")
 	s += _gen_burn_mode_init()
+	if _lcd_enabled(engineer_cfg):
+		s += _gen_lcd_step(5, "BUZZER OK")
+		s += _gen_lcd_done("burnBeep")
 	s += "}\n\n"
 	return s
 

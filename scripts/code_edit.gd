@@ -643,6 +643,8 @@ func _open_hex_save_dialog() -> void:
 	dlg.title = "导出 HEX 固件"
 	dlg.access = FileDialog.ACCESS_FILESYSTEM
 	dlg.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+	# 与启动页 SaveDialog 一致：走 Windows 原生保存对话框
+	dlg.use_native_dialog = true
 	dlg.current_file = "output.hex"
 	dlg.add_filter("*.hex", "Keil HEX 固件")
 	dlg.file_selected.connect(func(path: String) -> void:
@@ -684,12 +686,12 @@ func _show_license_dialog() -> void:
 	var dlg := AcceptDialog.new()
 	dlg.title = "需要 Keil C251 许可证"
 	dlg.dialog_text = "本机缺少 Keil C251 许可证，编译被限制在 2KB，无法生成固件。\n\n" \
-		+ "Keil 许可证按机器发放，每台电脑要用各自的免费密钥（约 2 分钟）：\n" \
-		+ "1. 打开 %s\\UV4\\UV4.exe → 菜单 License Management，记下 License ID Code。\n" \
-		+ "2. 浏览器打开 https://www.keil.com/download/product/ ，登录后选 C251，\n" \
-		+ "    输入上面的 License ID Code，免费生成许可证密钥。\n" \
-		+ "3. 把密钥粘贴到下方输入框，点「应用许可证并重试」。\n\n" \
-		+ "之后这台电脑即可正常编译，无需再次配置。" % keil_dir
+		+"Keil 许可证按机器发放，每台电脑要用各自的免费密钥（约 2 分钟）：\n" \
+		+"1. 打开 %s\\UV4\\UV4.exe → 菜单 License Management，记下 License ID Code。\n" \
+		+"2. 浏览器打开 https://www.keil.com/download/product/ ，登录后选 C251，\n" \
+		+"    输入上面的 License ID Code，免费生成许可证密钥。\n" \
+		+"3. 把密钥粘贴到下方输入框，点「应用许可证并重试」。\n\n" \
+		+"之后这台电脑即可正常编译，无需再次配置。" % keil_dir
 	dlg.ok_button_text = "应用许可证并重试"
 	var edit := LineEdit.new()
 	edit.placeholder_text = "在此粘贴 C251 许可证密钥"
