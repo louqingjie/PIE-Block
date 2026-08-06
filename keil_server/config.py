@@ -24,13 +24,18 @@ DATA_DIR = Path(os.environ.get("KEIL_SERVER_DATA_DIR", str(SERVICE_ROOT / "data"
 KEIL_PATH = os.environ.get("KEIL_PATH", "").strip()
 
 # 自动探测候选路径（按顺序）：
-#   1/2. 常见完整版安装位置（C251 与 MDK 同装在 Keil_v5）
-#   3.   项目内分发的精简工具链（开发/冒烟用，结构一致；会被部署副本后使用）
-KEIL_CANDIDATE_PATHS: list[str] = [
-    r"C:\Keil_v5",
+#   1. 常见完整版安装位置（C251 与 MDK 同装在 Keil_v5）
+#   2. %LOCALAPPDATA%\Keil_v5 —— Keil「仅当前用户」安装的位置（本机即在此）
+#   3. 项目内分发的精简工具链（开发/冒烟用，结构一致；会被部署副本后使用）
+_keil_candidates: list[str] = [r"C:\Keil_v5"]
+_local_appdata = os.environ.get("LOCALAPPDATA", "").strip()
+if _local_appdata:
+    _keil_candidates.append(str(Path(_local_appdata) / "Keil_v5"))
+_keil_candidates += [
     r"C:\Keil",
     str(PROJECT_ROOT / "stc32g" / "toolchain" / "Keil_noarm"),
 ]
+KEIL_CANDIDATE_PATHS: list[str] = _keil_candidates
 
 # ------------------------------------------------------------------ 编译
 # 最大并发编译数。Keil 共享 TOOLS.INI 且为 CPU 密集任务，默认 1 最稳。

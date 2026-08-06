@@ -8,11 +8,11 @@ void sys_init();
 void main()
 {
     dfu_check();
-    
+
     sys_init();
     uart_init();
     iap_init();
-    
+
     while (1)
     {
         uart_isr();
@@ -33,4 +33,3 @@ void sys_init()
     P4M0 &= ~0x18;
     P4M1 &= ~0x18;
 }
-

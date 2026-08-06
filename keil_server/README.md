@@ -75,8 +75,9 @@ keil_server/
 ```
 
 Keil 路径解析优先级：
-1. 环境变量 `KEIL_PATH`（推荐：装好完整版后指向 `C:\Keil_v5`）
-2. 自动探测候选：`C:\Keil_v5`、`C:\Keil`、项目内 `stc32g/toolchain/Keil_noarm`
+1. 环境变量 `KEIL_PATH`（推荐：装好完整版后指向安装目录）
+2. 自动探测候选：`C:\Keil_v5`、`%LOCALAPPDATA%\Keil_v5`（Keil「仅当前用户」安装位置）、
+   `C:\Keil`、项目内 `stc32g/toolchain/Keil_noarm`
 
 > 开发/冒烟：没装完整版时，服务会自动用项目内分发的精简工具链
 > `Keil_noarm`（结构与完整版一致）。它会先被**部署副本**到

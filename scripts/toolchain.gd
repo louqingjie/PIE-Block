@@ -1018,6 +1018,27 @@ func _kind_name(kind: String) -> String:
 			return "未知类型串口"
 
 
+## 返回按可信度排序的候选下载端口，供"逐个尝试"下载使用。
+##
+## 与 pick_download_port 不同：这里不做"只有一个才敢选"的保守判断，
+## 而是把 USB > 蓝牙 > 未知 全部按顺序排出来交给调用方逐个试。
+## 系统虚拟口（串行鼠标、自带的 COM1 之类）直接排除，试它们没意义。
+func ordered_candidate_ports(ports: Array = []) -> Array:
+	var list: Array = ports if not ports.is_empty() else list_serial_ports_detailed()
+	var groups: Dictionary = {"usb_serial": [], "bluetooth": [], "unknown": []}
+	for info in list:
+		var kind: String = str(info.get("kind", "unknown"))
+		if kind == "virtual":
+			continue
+		if not groups.has(kind):
+			kind = "unknown"
+		groups[kind].append(info)
+	var result: Array = []
+	for kind in ["usb_serial", "bluetooth", "unknown"]:
+		result.append_array(groups[kind])
+	return result
+
+
 ## 走蓝牙时的波特率限制说明。
 ##
 ## 新版 App、bootloader 与蓝牙模块统一使用 230400，不再中途切速。

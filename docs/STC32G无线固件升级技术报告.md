@@ -149,8 +149,12 @@ STC-ISP 物理升级一次；旧版不支持蓝牙一键重烧。这一限制在
   编译成功后可一键触发。`scripts/download_controller.gd` 负责在线程中执行下载、
   把 Python 脚本的逐行输出通过 `call_deferred` 回传主线程显示
 - **串口自动识别**：`scripts/toolchain.gd` 的 `list_serial_ports_detailed()` 枚举
-  所有 COM 口并按 VID/PID 分类（`_classify_port`），`pick_download_port()` 按优先级
-  挑选：USB 转串口 > 蓝牙 > 未知 > 虚拟口。同类型多个时不猜，把候选都列给用户
+  所有 COM 口并按 VID/PID 分类（`_classify_port`）。下载路径（`download_controller.gd`）
+  用 `ordered_candidate_ports()` 拿到按可信度排序的候选（USB 转串口 > 蓝牙 > 未知，
+  排除系统虚拟口），**逐个尝试烧录，连上为止**；蓝牙 SPP 成对的"传入/传出"两个口
+  因此会自动跳过不对的那一个。若中途擦除/写入/校验失败则停止遍历（那是板子所在的
+  口，换口无意义）。MCU 仿真求解器连接仍走保守的 `pick_download_port()`：同类型
+  多个时不猜，把候选都列给用户
 - **进度显示**：`_progress_from_log_line()` 把 Python 脚本的关键日志行映射到
   阶段名与百分比（触发 -> 连接 -> 擦除 -> 写入 -> 校验 -> 重启），实时刷新进度条
 - **失败诊断**：`_classify_iap_failure()` 从日志判断失败阶段

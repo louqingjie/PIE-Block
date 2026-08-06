@@ -35,35 +35,30 @@ func start(project_dst: String) -> bool:
 		_append("       期望路径: %s" % hex_path)
 		return false
 
-	var pick: Dictionary = _toolchain.pick_download_port()
-	var candidates: Array = pick.get("candidates", [])
-	if not bool(pick.get("ok", false)):
-		_append("[Error] %s" % str(pick.get("reason", "无法确定串口")))
-		if candidates.is_empty():
-			_append("       请确认板子已通过 USB 线或蓝牙连接到电脑")
-		else:
-			_append("       检测到这些端口：")
-			for info in candidates:
-				_append("         %s" % str(info.get("label", "")))
-			_append("       请拔掉不相关的串口设备后重试")
+	var candidates: Array = _toolchain.ordered_candidate_ports()
+	if candidates.is_empty():
+		_append("[Error] 未检测到可用串口，请确认板子已通过 USB 线或蓝牙连接到电脑")
+		_append("       若用蓝牙，请先在系统设置里配对好模块")
 		return false
 
-	var com_port: String = str(pick.get("device", ""))
-	_append("串口: %s" % str(pick.get("reason", com_port)))
-	_port_kind = ""
+	# 候选里有蓝牙口时提示波特率限制
 	for info in candidates:
-		if str(info.get("device", "")) == com_port:
-			_port_kind = str(info.get("kind", ""))
-			if _port_kind == "bluetooth":
-				for line in _toolchain.bluetooth_baud_note():
-					_append("  %s" % line)
+		if str(info.get("kind", "")) == "bluetooth":
+			for line in _toolchain.bluetooth_baud_note():
+				_append("  %s" % line)
 			break
 
 	_set_busy(true)
-	_append("开始烧录，不需要断电或按复位键…")
+	if candidates.size() == 1:
+		_append("开始烧录，不需要断电或按复位键…")
+	else:
+		_append("检测到 %d 个串口，将逐个尝试直到连上主控板：" % candidates.size())
+		for info in candidates:
+			_append("  · %s" % str(info.get("label", str(info.get("device", "")))))
+		_append("开始烧录，不需要断电或按复位键…")
 	progress_changed.emit("连接主控板", 30.0, "正在启动烧录程序…")
 	_thread = Thread.new()
-	var error: int = _thread.start(_worker.bind(hex_path, com_port))
+	var error: int = _thread.start(_worker.bind(hex_path, candidates))
 	if error != OK:
 		_thread = null
 		_set_busy(false)
@@ -84,11 +79,70 @@ func _exit_tree() -> void:
 	shutdown()
 
 
-func _worker(hex_path: String, com_port: String) -> void:
-	var result: Dictionary = _toolchain.download_hex_iap(
-		hex_path, com_port, _toolchain.DEFAULT_APP_BAUD, _toolchain.DEFAULT_BOOT_BAUD,
-		_on_download_line_from_worker)
-	call_deferred("_on_worker_finished", result)
+func _worker(hex_path: String, candidates: Array) -> void:
+	var total: int = candidates.size()
+	var failed: Array = []
+	for i in total:
+		var info: Dictionary = candidates[i]
+		var com_port: String = str(info.get("device", ""))
+		var kind: String = str(info.get("kind", ""))
+		if total > 1:
+			_on_download_line_from_worker("— 尝试串口 %s（%d/%d）—" % [com_port, i + 1, total])
+		var result: Dictionary = _toolchain.download_hex_iap(
+			hex_path, com_port, _toolchain.DEFAULT_APP_BAUD, _toolchain.DEFAULT_BOOT_BAUD,
+			_on_download_line_from_worker)
+		if bool(result.get("ok", false)):
+			call_deferred("_on_worker_finished", result)
+			return
+		var stage: String = str(result.get("stage", "unknown"))
+		# 连上了但中途失败（擦除/写入/校验）或固件问题：这个口就是板子所在的
+		# 口，换别的口没有意义（板子已停在下载模式等这个口），直接按单次失败收尾。
+		if stage in ["erase", "program", "verify", "bootloader_upgrade", "hex"]:
+			result["port_kind"] = kind
+			call_deferred("_on_worker_finished", result)
+			return
+		# 没连上板子（口打不开 / bootloader 无响应）：记下并试下一个
+		failed.append({"port": com_port, "stage": stage, "kind": kind})
+		if total > 1:
+			_on_download_line_from_worker("      %s 不行（%s），试下一个"
+				% [com_port, _stage_name(stage)])
+
+	# 全部尝试都失败：把汇总摘要走日志流输出（用户能看到），
+	# result 里的 log 置空避免与流式输出重复。提示按最后试的端口给。
+	var last: Dictionary = failed.back() if not failed.is_empty() else {}
+	_on_download_line_from_worker("烧录失败：%d 个串口都没能连上主控板。" % failed.size())
+	for f in failed:
+		_on_download_line_from_worker("  %s：%s" % [f["port"], _stage_name(f["stage"])])
+	call_deferred("_on_worker_finished", {
+		"ok": false,
+		"stage": str(last.get("stage", "connect")),
+		"log": "",
+		"streamed": true,
+		"port_kind": str(last.get("kind", "")),
+	})
+
+
+## 把失败阶段翻成一句简短说明（用于逐个尝试时的中间提示）。
+func _stage_name(stage: String) -> String:
+	match stage:
+		"port":
+			return "串口打不开"
+		"connect":
+			return "联系不上板子"
+		"erase":
+			return "擦除失败"
+		"program":
+			return "写入失败"
+		"verify":
+			return "校验失败"
+		"hex":
+			return "固件文件问题"
+		"env":
+			return "环境问题"
+		"bootloader_upgrade":
+			return "旧版引导程序"
+		_:
+			return "未知原因"
 
 
 func _on_download_line_from_worker(line: String) -> void:
@@ -155,7 +209,8 @@ func _on_worker_finished(result: Dictionary) -> void:
 	else:
 		_append("✗ 烧录失败")
 		for line in _toolchain.iap_failure_hint(
-				str(result.get("stage", "unknown")), _port_kind):
+				str(result.get("stage", "unknown")),
+				str(result.get("port_kind", _port_kind))):
 			_append("  %s" % line)
 		if not streamed:
 			_append_download_log(log_text, false)

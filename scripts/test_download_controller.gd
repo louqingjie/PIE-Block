@@ -12,7 +12,9 @@ class FakeToolchain extends RefCounted:
 	const DEFAULT_BOOT_BAUD: int = 230400
 
 	var has_hex: bool = false
-	var pick: Dictionary = {"ok": false, "reason": "没有串口", "candidates": []}
+	var candidates: Array = []
+	var attempts: Array = []
+	var per_port_result: Dictionary = {}
 
 	func get_hex_path(_project_dst: String) -> String:
 		return "C:/fake/app.hex"
@@ -20,8 +22,8 @@ class FakeToolchain extends RefCounted:
 	func hex_exists(_project_dst: String) -> bool:
 		return has_hex
 
-	func pick_download_port() -> Dictionary:
-		return pick
+	func ordered_candidate_ports() -> Array:
+		return candidates
 
 	func bluetooth_baud_note() -> PackedStringArray:
 		return PackedStringArray(["蓝牙提示"])
@@ -31,6 +33,12 @@ class FakeToolchain extends RefCounted:
 
 	func download_hex_iap(_hex_path: String, _com_port: String, _app_baud: int,
 			_boot_baud: int, on_log_line: Callable) -> Dictionary:
+		attempts.append(_com_port)
+		if per_port_result.has(_com_port):
+			var r: Dictionary = per_port_result[_com_port]
+			if bool(r.get("streamed", false)):
+				on_log_line.call(str(r.get("log", "")))
+			return r
 		on_log_line.call("实时进度 50%")
 		return {"ok": true, "stage": "done", "log": "实时进度 50%", "streamed": true}
 
@@ -58,7 +66,7 @@ func _initialize() -> void:
 	toolchain.has_hex = true
 	_lines.clear()
 	_check("无串口时不启动", not controller.start("project"))
-	_check("无串口显示原因", _contains("没有串口"))
+	_check("无串口显示原因", _contains("未检测到可用串口"))
 
 	var succeeded_count: Array[int] = [0]
 	controller.succeeded.connect(func() -> void: succeeded_count[0] += 1)
@@ -91,12 +99,8 @@ func _initialize() -> void:
 			progress_count += 1
 	_check("流式日志实时追加且完成后不重复", progress_count == 1)
 
-	toolchain.pick = {
-		"ok": true,
-		"device": "COM11",
-		"reason": "测试串口",
-		"candidates": [ {"device": "COM11", "kind": "usb_serial"}],
-	}
+	toolchain.candidates = [ {"device": "COM11", "kind": "usb_serial", "label": "COM11 test"}]
+	toolchain.attempts.clear()
 	_lines.clear()
 	var finished_seen: Array[bool] = [false]
 	controller.finished.connect(func(_result: Dictionary) -> void: finished_seen[0] = true, CONNECT_ONE_SHOT)
@@ -105,6 +109,47 @@ func _initialize() -> void:
 		await process_frame
 	_check("worker 流式行在完成结果中保留", _contains("实时进度 50%"))
 	_check("异步下载发出 finished", finished_seen[0])
+	_check("单候选直接使用", toolchain.attempts == ["COM11"])
+
+	# --- 多个候选（如蓝牙传入/传出两个口）：逐个尝试，连上为止 ---
+	toolchain.candidates = [
+		{"device": "COM5", "kind": "bluetooth", "label": "COM5 bluetooth"},
+		{"device": "COM6", "kind": "bluetooth", "label": "COM6 bluetooth"},
+	]
+	toolchain.attempts.clear()
+	toolchain.per_port_result = {
+		"COM5": {"ok": false, "stage": "connect", "log": "bootloader 没有响应", "streamed": true},
+	}
+	_lines.clear()
+	var finished_multi: Array[Dictionary] = []
+	controller.finished.connect(
+		func(r: Dictionary) -> void: finished_multi.append(r), CONNECT_ONE_SHOT)
+	_check("多候选逐个尝试启动", controller.start("project"))
+	while controller.is_busy():
+		await process_frame
+	_check("失败口跳过、第二个口成功", toolchain.attempts == ["COM5", "COM6"])
+	_check("逐个尝试成功发出 finished",
+		finished_multi.size() == 1 and bool(finished_multi[0].get("ok", false)))
+	_check("显示尝试提示", _contains("尝试串口 COM5"))
+
+	# --- 全部失败：汇总报错，且逐口给出阶段提示 ---
+	toolchain.per_port_result = {
+		"COM5": {"ok": false, "stage": "connect", "log": "bootloader 没有响应", "streamed": true},
+		"COM6": {"ok": false, "stage": "connect", "log": "bootloader 没有响应", "streamed": true},
+	}
+	toolchain.attempts.clear()
+	_lines.clear()
+	var finished_allfail: Array[Dictionary] = []
+	controller.finished.connect(
+		func(r: Dictionary) -> void: finished_allfail.append(r), CONNECT_ONE_SHOT)
+	_check("多候选全失败启动", controller.start("project"))
+	while controller.is_busy():
+		await process_frame
+	_check("全失败时两个口都试过", toolchain.attempts == ["COM5", "COM6"])
+	_check("全失败发出 finished 且 ok=false",
+		finished_allfail.size() == 1 and not bool(finished_allfail[0].get("ok", false)))
+	_check("全失败显示汇总提示", _contains("都没能连上主控板"))
+	_check("全失败仍给出阶段提示", _contains("阶段提示: connect (bluetooth)"))
 
 	var write_progress: Dictionary = controller._progress_from_log_line(
 		"  14848/29566 字节 (50%)")

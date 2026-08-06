@@ -71,6 +71,21 @@ func _initialize() -> void:
 	if r["ok"]:
 		fails.append("多个蓝牙口不该自动选")
 
+	# --- 逐个尝试用的候选排序：USB > 蓝牙 > 未知，虚拟口排除 ---
+	var ord_list: Array = tc.ordered_candidate_ports([
+		mk.call("COM3", "virtual"),
+		mk.call("COM7", "unknown"),
+		mk.call("COM5", "bluetooth"),
+		mk.call("COM6", "bluetooth"),
+		mk.call("COM11", "usb_serial"),
+		mk.call("COM12", "usb_serial"),
+	])
+	var order_names: Array = []
+	for o in ord_list:
+		order_names.append(o["device"])
+	if order_names != ["COM11", "COM12", "COM5", "COM6", "COM7"]:
+		fails.append("候选排序不对，得到 %s" % str(order_names))
+
 	# --- 失败阶段分类
 	var stage_cases: Array = [
 		{"log": "打开串口 COM11 失败: 拒绝访问", "want": "port"},
