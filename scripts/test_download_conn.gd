@@ -116,18 +116,24 @@ func _initialize() -> void:
 		fails.append("蓝牙连接提示应检查模块波特率")
 
 	# --- 波特率常量
-	# boot 侧必须与 PIE_BOOTLOADER/USER/inc/config.h 的 BAUD 一致
-	if TC.DEFAULT_BOOT_BAUD != 230400:
-		fails.append("boot 波特率应为 230400（与 config.h 一致）")
-	# App 侧必须与四个生成器的 UART_Init 一致，否则触发字发不进去。
-	# 曾经把它改成 115200 想统一，结果 App 收不到触发字，
-	# 下载全部失败且报错是"bootloader 没有响应"，离真因很远。
-	if TC.DEFAULT_APP_BAUD != 230400:
-		fails.append("App 波特率应为 230400（与生成器的 UART_Init 一致）")
-	# 两者不同意味着下载中途要切波特率，蓝牙链路做不到，必须有提示
+	# 下载链路三段统一 115200：上位机触发/连 bootloader（DEFAULT_APP_BAUD /
+	# DEFAULT_BOOT_BAUD）、App 烧录模式蓝牙口（BURN_MODE_BAUD）、
+	# bootloader（PIE_BOOTLOADER config.h BAUD）。115200 是蓝牙 SPP 稳定上限。
+	if TC.DEFAULT_BOOT_BAUD != 115200:
+		fails.append("boot 波特率应为 115200（与 config.h 一致）")
+	if TC.DEFAULT_APP_BAUD != 115200:
+		fails.append("触发波特率应为 115200（与 App 烧录模式 BURN_MODE_BAUD 一致）")
 	if TC.DEFAULT_APP_BAUD != TC.DEFAULT_BOOT_BAUD:
-		if tc.bluetooth_baud_note().is_empty():
-			fails.append("两段波特率不同时必须给蓝牙用户提示")
+		fails.append("触发与 boot 波特率应统一（下载中途蓝牙无法切速）")
+	if CODEGEN_BASE.BURN_MODE_BAUD != TC.DEFAULT_APP_BAUD:
+		fails.append("CodeGenBase.BURN_MODE_BAUD 与 DEFAULT_APP_BAUD 不一致")
+	# App 正常运行的拓展板口（P30/P31）波特率与下载链路解耦，保持 230400
+	if CODEGEN_BASE.APP_BAUD != 230400:
+		fails.append("App 正常运行波特率应为 230400（拓展板 P30/P31）")
+	var boot_cfg_src: String = FileAccess.get_file_as_string(
+		"res://stc32g/Projects/PIE_BOOTLOADER/USER/inc/config.h")
+	if not boot_cfg_src.contains("FOSC / 4 / 115200"):
+		fails.append("bootloader config.h 的 BAUD 应为 115200")
 	var iap_src: String = FileAccess.get_file_as_string(
 		"res://stc32g/toolchain/stcflash/pie_block_iap.py")
 	if not iap_src.contains("TRIGGER_SETTLE_MIN") \
@@ -136,8 +142,14 @@ func _initialize() -> void:
 
 	# --- 跨文件约束：共享生成器写进 C 代码的波特率必须与工具链一致，
 	# 四个具体生成器则必须调用共享初始化函数。
-	if CODEGEN_BASE.APP_BAUD != TC.DEFAULT_APP_BAUD:
-		fails.append("CodeGenBase.APP_BAUD 与 DEFAULT_APP_BAUD 不一致")
+	if CODEGEN_BASE.APP_BAUD != 230400:
+		fails.append("CodeGenBase.APP_BAUD 应保持 230400（拓展板口）")
+	# 主控构型（步兵/工程）必须接入烧录模式（P06+P07 进入）
+	for p in ["res://scripts/codegen/codegen_infantry.gd",
+			"res://scripts/codegen/codegen_engineer.gd"]:
+		var gen_src: String = FileAccess.get_file_as_string(p)
+		if not gen_src.contains("_gen_burn_mode_shared()"):
+			fails.append("%s 未接入烧录模式" % p.get_file())
 	var base_src: String = FileAccess.get_file_as_string(
 		"res://scripts/codegen/codegen_base.gd")
 	if not base_src.contains('code += "void iapEnterDownload(void)'):

@@ -111,19 +111,19 @@ MAX_PAYLOAD = 128
 取 128 留足余量，也让进度显示更平滑。
 """
 
-DEFAULT_APP_BAUD = 230400
-"""App 的 UART1 波特率，用于发 @PIEIAP# 触发命令。
+DEFAULT_APP_BAUD = 115200
+"""触发 @PIEIAP# 命令用的波特率。
 
-必须与三处保持一致：本常量、scripts/toolchain.gd 的 DEFAULT_APP_BAUD、
-scripts/codegen/codegen_base.gd 的 APP_BAUD（它写进生成的 C 代码）。
-不一致时 App 的 UART1 中断收不到触发字，现象却是"bootloader 没有响应"，
-错误信息离真因很远（踩过两次：先在 GDScript 侧写成 115200，改回后又漏了这里）。
+下载前须先进"烧录模式"（App 按 P06+P07 把 UART1 切到蓝牙口 P43/P44 并以
+BURN_MODE_BAUD 等待触发字）。触发字、bootloader、蓝牙三者统一为 115200。
+必须与 scripts/toolchain.gd 的 DEFAULT_APP_BAUD 和
+scripts/codegen/codegen_base.gd 的 BURN_MODE_BAUD 一致。
 """
 
-DEFAULT_BOOT_BAUD = 230400
+DEFAULT_BOOT_BAUD = 115200
 """bootloader 的波特率，由 PIE_BOOTLOADER/USER/inc/config.h 编译期写死。
 
-与 App 固定使用相同的 230400，USB 与蓝牙均不再中途切速。
+115200 是蓝牙 SPP 稳定传输的上限（230400 对蓝牙过高）。
 """
 
 TRIGGER_SETTLE_MIN = 0.05

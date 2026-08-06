@@ -3,11 +3,11 @@ extends SceneTree
 ## 探测主控板上的 bootloader 版本（Phase 1 验收项）。
 ##
 ## 运行：godot --headless --path . --script scripts/dev_probe_bootloader.gd -- --port=COM3
-## 可指定波特率组合：--app-baud=230400 --boot-baud=115200
+## 可指定波特率组合：--app-baud=115200 --boot-baud=115200
 ##
 ## 用产品同一套 probe_bootloader 逻辑：
-##   - 新版（230400）：PROBE_OK，返回版本号
-##   - 旧版（115200）：在 230400 下 connect 失败，返回 ok=false
+##   - 新版（115200）：PROBE_OK，返回版本号
+##   - 旧版（230400 历史版）：在 115200 下 connect 失败
 ## 副作用：探测成功后芯片停在 bootloader 下载模式，需随后烧录固件恢复运行。
 
 func _initialize() -> void:
@@ -18,8 +18,8 @@ func _initialize() -> void:
 		quit(2)
 		return
 	var tc = load("res://scripts/toolchain.gd").new()
-	var app_baud: int = int(options.get("app-baud", 230400))
-	var boot_baud: int = int(options.get("boot-baud", 230400))
+	var app_baud: int = int(options.get("app-baud", 115200))
+	var boot_baud: int = int(options.get("boot-baud", 115200))
 	var result: Dictionary = tc.probe_bootloader(port, app_baud, boot_baud)
 	print("PROBE_RESULT ok=%s version=0x%04X" % [str(result.get("ok", false)), int(result.get("version", 0))])
 	print("--- bootloader probe log (app=%d boot=%d) ---" % [app_baud, boot_baud])

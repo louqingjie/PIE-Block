@@ -63,18 +63,17 @@ const STCFLASH_SRC: String = "res://stc32g/toolchain/stcflash"
 const STCFLASH_DST: String = "user://stcflash"
 
 ## bootloader 的波特率。它在 PIE_BOOTLOADER/USER/inc/config.h 里由
-## `BAUD = 65536 - FOSC/4/230400` 编译期写死，改那边必须同步改这里。
-## 蓝牙模块也必须配成同一个波特率。
-const DEFAULT_BOOT_BAUD: int = 230400
-## App 的 UART1 波特率，用于发 @PIEIAP# 触发命令。
+## `BAUD = 65536 - FOSC/4/115200` 编译期写死，改那边必须同步改这里。
+## 蓝牙模块也必须配成同一个波特率（115200 是蓝牙 SPP 稳定上限）。
+const DEFAULT_BOOT_BAUD: int = 115200
+## 触发 @PIEIAP# 命令用的波特率。
 ##
-## 230400 是项目既有约定（见 docs/RM电控指南.md 与四个生成器的 UART_Init），
-## 不要为了迁就 bootloader 而改它 —— 那个数值可能还牵涉遥控器与调试工具。
-## 触发字必须按这个波特率发，否则 App 的 UART1 中断收不到，
-## 表现为"bootloader 没有响应"（踩过：把它改成 115200 后下载全失败）。
-##
-## App 与新版 bootloader 已统一为 230400，USB 与蓝牙下载都不再中途切速。
-const DEFAULT_APP_BAUD: int = 230400
+## 现在下载前必须先进"烧录模式"（App 按 P06+P07 把 UART1 切到蓝牙口
+## P43/P44 并以 115200 等待触发字，见 codegen_base.gd BURN_MODE_BAUD），
+## 所以触发字、bootloader、蓝牙三者统一为 115200。
+## 这与 App 正常运行时的拓展板波特率（230400，P30/P31）无关 ——
+## 运行时 App 的 UART1 在 P30/P31 收拓展板，蓝牙口不参与。
+const DEFAULT_APP_BAUD: int = 115200
 
 ## UV4 可执行文件候选名，按优先级排序：
 ## uVision.com 是控制台子系统版本，-b 批处理时不会弹出 GUI 窗口盖住本程序；
@@ -1039,15 +1038,15 @@ func ordered_candidate_ports(ports: Array = []) -> Array:
 	return result
 
 
-## 走蓝牙时的波特率限制说明。
+## 走蓝牙/烧录模式时的说明。
 ##
-## 新版 App、bootloader 与蓝牙模块统一使用 230400，不再中途切速。
-## 旧 115200 bootloader 必须通过官方 STC-ISP 物理升级一次。
+## 下载链路（触发字、bootloader、蓝牙）统一 115200；
+## 下载前需按 P06+P07 进烧录模式把 UART1 切到蓝牙口。
 func bluetooth_baud_note() -> PackedStringArray:
 	return PackedStringArray([
-		"蓝牙链路使用统一的 %d 波特率。" % DEFAULT_BOOT_BAUD,
-		"若板上仍是旧 115200 bootloader，蓝牙无法自动升级；",
-		"请先通过官方 STC-ISP 物理烧录一次新版 bootloader。",
+		"下载链路使用统一的 %d 波特率（烧录模式/蓝牙/bootloader 一致）。" % DEFAULT_BOOT_BAUD,
+		"下载前请先在板上按住 P06+P07 进入烧录模式（蜂鸣器响），",
+		"此时 UART1 切到蓝牙口等待触发字。",
 	])
 
 

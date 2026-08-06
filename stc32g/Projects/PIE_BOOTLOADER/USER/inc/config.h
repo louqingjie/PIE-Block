@@ -8,11 +8,14 @@
 /* 主频。官方例程是 24000000UL，我们的板子跑 33.1776MHz
    （与 stc32g/Libraries/startup/inc/common.h 的 FOSC 一致）。
    烧录 bootloader 时 STC-ISP 里的工作频率也必须选 33.1776MHz。 */
-#define FOSC                    33177600UL
+#define FOSC 33177600UL
 
 /* 波特率装载值。表达式随 FOSC 自动跟，不要手改成常量。
-   33177600/4/230400 = 36 整，实际波特率误差 0%。 */
-#define BAUD                    (65536 - FOSC / 4 / 230400)
+   33177600/4/115200 = 72 整，实际波特率误差 0%。
+   115200 是蓝牙 SPP 链路稳定传输的上限（230400 对蓝牙过高会丢包）。
+   必须与 App 烧录模式（codegen_base.gd BURN_MODE_BAUD）和上位机
+   （toolchain.gd DEFAULT_APP_BAUD / DEFAULT_BOOT_BAUD）三处一致。 */
+#define BAUD (65536 - FOSC / 4 / 115200)
 
 /* 启用 READ 命令。原例程默认关掉它，但没有 READ 就无法在下载后读回校验，
    只能靠"PROGRAM 没报错"来推断，那不足以证明写对了。
@@ -24,7 +27,7 @@
      1. 本文件
      2. USER/src/isr.asm 的 `LDR_SIZE EQU`
      3. 所有 App 项目 uvproj 的 INTVECTOR(...) */
-#define LDR_SIZE                0x1000
-#define LDR_VERSION             0x0200
+#define LDR_SIZE 0x1000
+#define LDR_VERSION 0x0200
 
 #endif

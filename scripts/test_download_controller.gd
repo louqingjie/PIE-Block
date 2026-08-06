@@ -8,8 +8,8 @@ var _clear_count: int = 0
 
 
 class FakeToolchain extends RefCounted:
-	const DEFAULT_APP_BAUD: int = 230400
-	const DEFAULT_BOOT_BAUD: int = 230400
+	const DEFAULT_APP_BAUD: int = 115200
+	const DEFAULT_BOOT_BAUD: int = 115200
 
 	var has_hex: bool = false
 	var candidates: Array = []
