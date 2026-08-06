@@ -5,20 +5,24 @@ extends RefCounted
 ## 从 ui.gd 抽出，供图形化界面、AI 代码编辑器、以及后续编译 MCP 共用。
 ##
 ## 职责：
-##   - 把 res://（导出后是 PCK 只读）中的工具链/项目模板/库文件部署到 user://（可写）
-##   - 动态生成 TOOLS.INI（PATH 必须是绝对路径 + 反斜杠）
-##   - 探测 uVision.com / UV4.exe
+##   - 把 res://（导出后是 PCK 只读）中的项目模板/库文件部署到 user://（可写）
+##   - 管理用户指定的外部 Keil 目录（校验、持久化到 user://keil_settings.json）
+##   - 探测外部 Keil 的 uVision.com / UV4.exe
 ##   - 同步执行编译并返回日志
+##
+## 内置精简工具链（Keil_noarm）已完全废弃，编译只使用用户指定的外部 Keil 安装，
+## 无任何内置回退。外部目录来源：环境变量 PIEBLOCK_KEIL > user://keil_settings.json。
 ##
 ## 日志通过构造时传入的 Callable 输出（一般接到 output.gd 的 append_line），
 ## 这样非 UI 调用方（如 MCP 工具）也能复用同一套逻辑。
 
 
 # ------------------------------------------------------------------ 路径常量
-## Keil 工具链源路径（res://，打包进 pck，只读）
-const TOOLCHAIN_SRC: String = "res://stc32g/toolchain/Keil_noarm"
-## 工具链解压目标路径（user://，可写，TOOLS.INI 需动态生成绝对路径）
-const TOOLCHAIN_DST: String = "user://keil"
+## 外部 Keil 目录配置文件（user://，记录用户指定的 Keil 安装根目录）。
+## JSON 格式 {"path": "C:\\Keil_v5"}；环境变量 PIEBLOCK_KEIL 优先级更高。
+const KEIL_SETTINGS_PATH: String = "user://keil_settings.json"
+## 指定外部 Keil 目录的环境变量（headless/CLI/CI 用，优先级高于配置文件）
+const KEIL_ENV_VAR: String = "PIEBLOCK_KEIL"
 ## 步兵项目模板
 const PROJECT_SRC: String = "res://stc32g/Projects/ROBOMASTER_INFANTRY"
 const PROJECT_DST: String = "user://stc32g/Projects/ROBOMASTER_INFANTRY"
@@ -38,8 +42,6 @@ const BUILD_LOG_NAME: String = "pie_block_build.log"
 ## 走文件而不是 OS.execute 的 output 数组：后者在 Windows 中文环境按 GBK
 ## 解码，我们的脚本输出 UTF-8，直接读会乱码。
 const DOWNLOAD_LOG_NAME: String = "pie_block_download.log"
-## 工具链版本标记（内容变更时触发重新解压）
-const TOOLCHAIN_VERSION: String = "keil_noarm_v3"
 
 ## 项目模板版本。**改动 uvproj 或库文件后必须跡这个字符串**，
 ## 否则已经跑过一次的用户那里 user:// 不会更新，他们会拿旧配置编译
@@ -107,21 +109,12 @@ static func to_abs(virt_path: String) -> String:
 
 
 # ------------------------------------------------------------------ 部署
-## 确保工具链和项目模板已从 res://（PCK 只读）解压到 user://（可写）。
-## 首次运行或版本变更时执行全量复制；通过版本标记文件判断是否需要重新解压。
+## 确保项目模板与库文件已从 res://（PCK 只读）部署到 user://（可写）。
+## 内置 Keil 工具链已废弃，编译只使用用户指定的外部 Keil（见 resolve_keil_root），
+## 此处只部署项目模板与库文件。
+## 首次运行或版本变更时执行全量复制；通过版本标记文件判断是否需要重新部署。
 ## 返回 true 表示就绪，false 表示失败（错误信息已通过日志回调输出）。
 func ensure_deployed() -> bool:
-	var ver_file: String = to_abs("user://keil/.pie_block_version")
-	var need_extract: bool = true
-	if FileAccess.file_exists(ver_file):
-		var cur_ver: String = FileAccess.get_file_as_string(ver_file).strip_edges()
-		if cur_ver == TOOLCHAIN_VERSION:
-			# 工具链已解压且版本一致，检查关键文件是否还在
-			if FileAccess.file_exists(to_abs(TOOLCHAIN_DST).path_join("UV4/uVision.com")):
-				need_extract = false
-	if need_extract:
-		if not _extract_toolchain():
-			return false
 	# 项目模板与库文件：版本不匹配或内容缺失时重新部署。
 	#
 	# 两个判据都必要：
@@ -172,28 +165,6 @@ func _project_deployed(project_dst: String) -> bool:
 		return false
 	if not DirAccess.dir_exists_absolute(base.path_join("USER/src")):
 		return false
-	return true
-
-
-## 从 res://stc32g/toolchain/Keil_noarm 递归复制到 user://keil/
-func _extract_toolchain() -> bool:
-	_emit("首次运行：正在解压 Keil 工具链到 user://（约 68MB，请稍候）…")
-	# 源在 res://（导出后是 PCK 虚拟路径），必须用 res:// 路径直接访问；
-	# 不能用 globalize_path 转 OS 路径 —— 导出模式下 PCK 内容没有对应磁盘目录。
-	if not DirAccess.dir_exists_absolute(TOOLCHAIN_SRC):
-		_emit("[Error] 工具链源目录不存在: %s" % TOOLCHAIN_SRC)
-		return false
-	var dst_abs: String = to_abs(TOOLCHAIN_DST)
-	if DirAccess.dir_exists_absolute(dst_abs):
-		_remove_dir_recursive(TOOLCHAIN_DST)
-	if not _copy_dir_recursive(TOOLCHAIN_SRC, TOOLCHAIN_DST):
-		_emit("[Error] 工具链解压失败")
-		return false
-	var vf: FileAccess = FileAccess.open("user://keil/.pie_block_version", FileAccess.WRITE)
-	if vf:
-		vf.store_string(TOOLCHAIN_VERSION)
-		vf.close()
-	_emit("工具链解压完成")
 	return true
 
 
@@ -282,11 +253,144 @@ func _copy_file(src_path: String, dst_path: String) -> bool:
 	return true
 
 
+# ------------------------------------------------------------------ 外部 Keil 目录
+## 读取用户配置的外部 Keil 根目录（user://keil_settings.json 的 {"path": "..."}）。
+## 返回绝对路径；未配置或文件非法返回空串。不做存在性校验。
+func get_configured_keil_path() -> String:
+	if not FileAccess.file_exists(KEIL_SETTINGS_PATH):
+		return ""
+	var text: String = FileAccess.get_file_as_string(KEIL_SETTINGS_PATH)
+	var parsed: Variant = JSON.parse_string(text)
+	if not parsed is Dictionary:
+		return ""
+	return str(parsed.get("path", "")).strip_edges()
+
+
+## 写入用户配置的外部 Keil 根目录。path 为空表示清除配置。
+## 返回是否写入成功。
+func set_configured_keil_path(path: String) -> bool:
+	var f: FileAccess = FileAccess.open(KEIL_SETTINGS_PATH, FileAccess.WRITE)
+	if f == null:
+		push_error("无法写入 Keil 目录配置: %s（%s）"
+			% [KEIL_SETTINGS_PATH, FileAccess.get_open_error()])
+		return false
+	f.store_string(JSON.stringify({"path": path}))
+	f.close()
+	return true
+
+
+## 校验一个目录是否是合法的 Keil C251 安装根：
+##   - UV4/uVision.com（回退 UV4.exe）
+##   - C251/BIN/C251.EXE
+##   - TOOLS.INI（存在性；[C251] PATH 由安装程序配置，不在此处改写）
+## 返回 {ok: bool, reason: String, uv4: String, c251: String, tools_ini: String}
+func validate_keil_dir(dir_abs: String) -> Dictionary:
+	var empty: Dictionary = {"ok": false, "reason": "", "uv4": "", "c251": "", "tools_ini": ""}
+	if dir_abs.is_empty():
+		empty["reason"] = "目录为空"
+		return empty
+	if not DirAccess.dir_exists_absolute(dir_abs):
+		empty["reason"] = "目录不存在: %s" % dir_abs
+		return empty
+	# UV4 标准布局 UV4/，回退递归扫描
+	var uv4: String = ""
+	var uv4_dir: String = dir_abs.path_join("UV4")
+	for cand in UV4_CANDIDATES:
+		var p: String = uv4_dir.path_join(cand)
+		if FileAccess.file_exists(p):
+			uv4 = p
+			break
+	if uv4.is_empty():
+		uv4 = _find_named_abs(dir_abs, "uVision.com")
+	if uv4.is_empty():
+		uv4 = _find_named_abs(dir_abs, "UV4.exe")
+	# C251 标准布局 C251/BIN/
+	var c251: String = dir_abs.path_join("C251").path_join("BIN").path_join("C251.EXE")
+	if not FileAccess.file_exists(c251):
+		c251 = _find_named_abs(dir_abs, "C251.EXE")
+	# TOOLS.INI
+	var tools_ini: String = dir_abs.path_join("TOOLS.INI")
+	if not FileAccess.file_exists(tools_ini):
+		tools_ini = ""
+
+	empty["uv4"] = uv4
+	empty["c251"] = c251
+	empty["tools_ini"] = tools_ini
+	if uv4.is_empty():
+		empty["reason"] = "未找到 uVision.com / UV4.exe（不是有效的 Keil 安装）"
+		return empty
+	if c251.is_empty():
+		empty["reason"] = "未找到 C251.EXE（该安装没有 C251 工具链）"
+		return empty
+	empty["ok"] = true
+	return empty
+
+
+## 递归找指定名字的文件（作回退扫描，正常布局不触发）。返回绝对路径或空串。
+func _find_named_abs(dir_abs: String, name: String, depth: int = 0) -> String:
+	if depth > 6:
+		return ""
+	var da: DirAccess = DirAccess.open(dir_abs)
+	if da == null:
+		return ""
+	da.list_dir_begin()
+	var found: String = ""
+	var entry: String = da.get_next()
+	while entry != "" and found.is_empty():
+		if not entry.begins_with("."):
+			var item: String = dir_abs.path_join(entry)
+			if da.current_is_dir():
+				found = _find_named_abs(item, name, depth + 1)
+			elif entry.to_lower() == name.to_lower():
+				found = item
+		entry = da.get_next()
+	da.list_dir_end()
+	return found
+
+
+## 当前生效的 Keil 根目录。
+## 优先级：环境变量 PIEBLOCK_KEIL > user://keil_settings.json；
+## 返回第一个通过 validate_keil_dir 校验的绝对路径，否则返回空串。
+## 内置精简工具链已废弃，无任何内置回退。
+func resolve_keil_root() -> String:
+	var candidates: Array[String] = []
+	var env_path: String = OS.get_environment(KEIL_ENV_VAR).strip_edges()
+	if not env_path.is_empty():
+		candidates.append(env_path)
+	var cfg_path: String = get_configured_keil_path()
+	if not cfg_path.is_empty():
+		candidates.append(cfg_path)
+	for cand in candidates:
+		if validate_keil_dir(cand).ok:
+			return cand
+	return ""
+
+
+## 检查当前是否具备可用的外部 Keil（编译前置条件）。
+## 返回 {ok: bool, reason: String}；ok=false 时 reason 区分「未指定」与「已失效」。
+func ensure_external_keil_ready() -> Dictionary:
+	var env_path: String = OS.get_environment(KEIL_ENV_VAR).strip_edges()
+	if not env_path.is_empty():
+		var check: Dictionary = validate_keil_dir(env_path)
+		if check.ok:
+			return {"ok": true, "reason": ""}
+		return {"ok": false, "reason": "环境变量 %s 指向的目录失效：%s" % [KEIL_ENV_VAR, check.reason]}
+	var cfg_path: String = get_configured_keil_path()
+	if cfg_path.is_empty():
+		return {"ok": false, "reason": "未指定 Keil 目录"}
+	var check_cfg: Dictionary = validate_keil_dir(cfg_path)
+	if check_cfg.ok:
+		return {"ok": true, "reason": ""}
+	return {"ok": false, "reason": "已配置的 Keil 目录失效（%s）：%s" % [cfg_path, check_cfg.reason]}
+
+
 # ------------------------------------------------------------------ 编译器探测
-## 在 user://keil/ 中探测 Keil 命令行编译器；找不到返回空串
+## 在当前生效的外部 Keil 根目录中探测命令行编译器；找不到返回空串。
 ## 优先 uVision.com（控制台子系统，-b 不弹 GUI 窗口），回退 UV4.exe（GUI 子系统，会弹窗）
 func find_uv4() -> String:
-	var dir_abs: String = to_abs(TOOLCHAIN_DST)
+	var dir_abs: String = resolve_keil_root()
+	if dir_abs.is_empty():
+		return ""
 	# UV4 子目录是标准布局
 	var uv4_dir: String = dir_abs.path_join("UV4")
 	for cand in UV4_CANDIDATES:
@@ -320,55 +424,25 @@ func _find_uv4_recursive(dir_abs: String) -> String:
 
 
 # ------------------------------------------------------------------ TOOLS.INI
-## 动态生成 TOOLS.INI：PATH 用绝对路径指向 user://keil/C251/
-## TOOLS.INI 必须与 uVision.com 同级或在其上级目录（UV4/ 的上级 = keil/）
-## 注意：Keil C251 的 PATH 必须使用反斜杠（\\），正斜杠会导致
-## "failed to execute C251.EXE" 错误。末尾必须以单个反斜杠结尾。
+## 生成 TOOLS.INI 的兼容性入口（保留签名，旧调用点仍能编译）。
+## 内置工具链已废弃：现在只用用户指定的外部 Keil，其 TOOLS.INI 由安装程序
+## 配置好（[C251] PATH 指向安装的 C251 目录），这里不越权改写，恒返回 true。
 func generate_tools_ini() -> bool:
-	var keil_abs: String = to_abs(TOOLCHAIN_DST).replace("/", "\\")
-	var c251_path: String = keil_abs + "\\C251\\"
-	var ini_abs: String = keil_abs + "\\TOOLS.INI"
-	# 模板在 res://（PCK 虚拟路径），直接以 res:// 读，不能 globalize
-	var template_path: String = TOOLCHAIN_SRC.path_join("TOOLS.INI")
-	var content: String = ""
-	if FileAccess.file_exists(template_path):
-		content = FileAccess.get_file_as_string(template_path)
-	else:
-		content = "[C251]\nPATH=\"\"\nVERSION=5.60\n"
-	# 替换 [C251] 段的 PATH 为绝对路径。
-	# 注意：源文件是 CRLF 换行，split("\n") 后行末残留 \r，
-	# 因此 strip_edges 必须同时去掉首尾空白，否则段名匹配永远失败。
-	var lines: PackedStringArray = content.split("\n", false)
-	var in_c251: bool = false
-	var output_lines: PackedStringArray = PackedStringArray()
-	for line in lines:
-		var stripped: String = line.strip_edges(true, true)
-		if stripped.to_upper() == "[C251]":
-			in_c251 = true
-		elif stripped.begins_with("[") and stripped.ends_with("]") and in_c251:
-			in_c251 = false
-		if in_c251 and stripped.to_upper().begins_with("PATH="):
-			output_lines.append('PATH="%s"' % c251_path)
-		else:
-			output_lines.append(line)
-	var f: FileAccess = FileAccess.open(ini_abs, FileAccess.WRITE)
-	if f == null:
-		push_error("无法写入 TOOLS.INI: %s" % ini_abs)
-		return false
-	f.store_string("\n".join(output_lines) + "\n")
-	f.close()
 	return true
 
 
 # ------------------------------------------------------------------ C251 许可证
-## Keil C251 的许可证序列号放在部署后 TOOLS.INI 的 [C251] 段 LIC0= 行。
+## Keil C251 的许可证序列号放在外部 Keil 安装的 TOOLS.INI [C251] 段 LIC0= 行。
 ## 这台机器上装了对应许可证就能全量编译；没有时 Keil 退回 2KB 评估限制
 ## （RESTRICTED VERSION / ERROR L250）。以下函数用于应用内读取/写入该序列号。
 ## 注意：许可证按机器发放，学生机需各自有效的免费密钥（keil.com 可领）。
 
-## 部署后的 TOOLS.INI [C251] 段是否已写入非空许可证序列号。
+## 当前生效 Keil 根的 TOOLS.INI [C251] 段是否已写入非空许可证序列号。
 func has_license_key() -> bool:
-	var ini_abs: String = to_abs(TOOLCHAIN_DST).replace("/", "\\") + "\\TOOLS.INI"
+	var root: String = resolve_keil_root().replace("/", "\\")
+	if root.is_empty():
+		return false
+	var ini_abs: String = root + "\\TOOLS.INI"
 	if not FileAccess.file_exists(ini_abs):
 		return false
 	var lines: PackedStringArray = FileAccess.get_file_as_string(ini_abs).split("\n", false)
@@ -385,11 +459,13 @@ func has_license_key() -> bool:
 	return false
 
 
-## 把许可证序列号写入部署后 TOOLS.INI 的 [C251] 段 LIC0=（没有则插入该行）。
+## 把许可证序列号写入当前生效 Keil 根的 TOOLS.INI [C251] 段 LIC0=（没有则插入该行）。
 ## 写完后直接生效，无需重启。返回是否成功。
 func apply_license_key(key: String) -> bool:
-	var keil_abs: String = to_abs(TOOLCHAIN_DST).replace("/", "\\")
-	var ini_abs: String = keil_abs + "\\TOOLS.INI"
+	var root: String = resolve_keil_root().replace("/", "\\")
+	if root.is_empty():
+		return false
+	var ini_abs: String = root + "\\TOOLS.INI"
 	if not FileAccess.file_exists(ini_abs):
 		return false
 	var lines: PackedStringArray = FileAccess.get_file_as_string(ini_abs).split("\n", false)
@@ -490,20 +566,23 @@ func build_sync(uv4_abs: String, project_dst: String) -> Dictionary:
 	}
 
 
-## 一步到位的编译入口：部署 -> 写盘 -> 生成 TOOLS.INI -> 编译。
+## 一步到位的编译入口：校验外部 Keil -> 部署项目/库 -> 写盘 -> 编译。
 ## 供 MCP 工具等非 UI 调用方使用（同步阻塞）。
 ## 返回 {exit, log, ok} 或 {ok: false, log: "<错误说明>"}
 func build_project(project_dst: String, code: String = "") -> Dictionary:
+	var keil_ready: Dictionary = ensure_external_keil_ready()
+	if not keil_ready.ok:
+		return {"ok": false, "exit": - 1, "log": keil_ready.reason
+			+ "（请配置 Keil 目录：GUI 编译时引导选择，或写 %s，或设环境变量 %s）"
+			% [KEIL_SETTINGS_PATH, KEIL_ENV_VAR]}
 	if not ensure_deployed():
-		return {"ok": false, "exit": - 1, "log": "工具链部署失败"}
+		return {"ok": false, "exit": - 1, "log": "项目部署失败"}
 	if not code.is_empty():
 		if not write_main_c(project_dst, code):
 			return {"ok": false, "exit": - 1, "log": "写入 main.c 失败"}
 	var uv4_abs: String = find_uv4()
 	if uv4_abs.is_empty():
 		return {"ok": false, "exit": - 1, "log": "未找到 uVision.com / UV4.exe"}
-	if not generate_tools_ini():
-		_emit("[Warn] TOOLS.INI 生成失败，编译可能报错")
 	return build_sync(uv4_abs, project_dst)
 
 

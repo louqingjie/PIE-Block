@@ -171,6 +171,7 @@ const TC = preload("res://scripts/toolchain.gd")
 const BC = preload("res://scripts/build_controller.gd")
 const DC = preload("res://scripts/download_controller.gd")
 const UPGRADE_PROGRESS = preload("res://scripts/upgrade_progress.gd")
+const KG = preload("res://scripts/keil_guide.gd")
 ## 构形诊断（判定末端可控自由度与俯仰角是否解耦）
 # 项目文件（.pieproj）读写与「项目类型 <-> Tab」映射表
 const PF = preload("res://scripts/project_file.gd")
@@ -1535,11 +1536,16 @@ func _get_current_project_dst() -> String:
 	return AppState.project_dst_for_kind(PF.tab_to_kind(current_tab))
 
 
-## 编译按钮回调：解压工具链 -> 写盘 -> 生成 TOOLS.INI -> 异步编译
+## 编译按钮回调：确认外部 Keil 目录 -> 写盘 -> 异步编译
 func _on_build_pressed() -> void:
 	if _build_controller == null or _build_controller.is_busy() \
 			or (_download_controller != null and _download_controller.is_busy()):
 		return # 防重入
+	# 未配置/失效的外部 Keil 会先弹引导，引导成功后才真正编译
+	KG.ensure_keil(self, _toolchain(), _do_build, _on_keil_guide_cancel)
+
+
+func _do_build() -> void:
 	var code_edit: Node = get_node_or_null(P_CODE_EDIT)
 	var code: String = ""
 	if code_edit is CodeEdit:
@@ -1554,12 +1560,22 @@ func _on_build_pressed() -> void:
 	_build_controller.start(_get_current_project_dst(), code)
 
 
+## 用户在 Keil 目录引导对话框里点「取消」时中止编译并提示。
+func _on_keil_guide_cancel() -> void:
+	_append_output("[Error] 未指定 Keil 目录，编译已中止（可在下次编译时选择）")
+
+
 ## 导出 HEX 按钮：先按「编译」的流程编译，成功后弹保存对话框
 ## （复用 build_controller；成功回调见 _on_build_succeeded 的 pending 分支）
 func _on_hex_export_pressed() -> void:
 	if _build_controller == null or _build_controller.is_busy() \
 			or (_download_controller != null and _download_controller.is_busy()):
 		return # 防重入
+	# 引导成功后在 _do_hex_export 内重跑原流程，_hex_export_pending 状态不丢
+	KG.ensure_keil(self, _toolchain(), _do_hex_export, _on_keil_guide_cancel)
+
+
+func _do_hex_export() -> void:
 	var code_edit: Node = get_node_or_null(P_CODE_EDIT)
 	var code: String = ""
 	if code_edit is CodeEdit:
@@ -1829,6 +1845,8 @@ func _on_solver_build_requested() -> void:
 		if not reason.is_empty():
 			_append_output("[Warn] 暂无法开始求解器编译：%s" % reason)
 		return
+	# 配置校验/代码生成是纯计算、不依赖 Keil，先做（配置错误的提示优先级更高）；
+	# 校验与生成都通过后，才需要确认外部 Keil 目录（引导成功再进入状态置位与编译）。
 	var ik_config: Dictionary = IK_CONFIG.normalize(_collect_ik_config())
 	var validation: Dictionary = IK_CONFIG.validate(ik_config, _collect_engineer_config())
 	var errors: Array[String] = []
@@ -1861,6 +1879,11 @@ func _on_solver_build_requested() -> void:
 		_append_output("[Error] 无法生成 MCU 求解器固件")
 		_show_solver_error_dialog("无法生成 MCU 求解器固件", ["生成器返回空代码，请检查配置。"])
 		return
+	# 确认外部 Keil 目录（引导成功）后再编译；状态置位在 _start_solver_build 内，取消不残留
+	KG.ensure_keil(self, _toolchain(), _start_solver_build.bind(code), _on_keil_guide_cancel)
+
+
+func _start_solver_build(code: String) -> void:
 	if _arm_sim != null and _arm_sim.has_method("prepare_solver_build"):
 		_arm_sim.prepare_solver_build()
 	_solver_upgrade_active = true
@@ -2015,6 +2038,11 @@ func _on_upgrade_pressed() -> void:
 	if _upgrade_active or _build_controller == null or _build_controller.is_busy() \
 			or _download_controller == null or _download_controller.is_busy():
 		return
+	# 引导成功后才进入升级流程（_upgrade_active 在 _do_upgrade 内置位，取消不残留）
+	KG.ensure_keil(self, _toolchain(), _do_upgrade, _on_keil_guide_cancel)
+
+
+func _do_upgrade() -> void:
 	var code_edit: Node = get_node_or_null(P_CODE_EDIT)
 	var code: String = code_edit.text if code_edit is CodeEdit else ""
 	if code.strip_edges().is_empty():

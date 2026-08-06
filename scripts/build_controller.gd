@@ -38,7 +38,7 @@ func start(project_dst: String, code: String) -> bool:
 	var uv4_abs: String = _toolchain.find_uv4()
 	if uv4_abs.is_empty():
 		_append("[Error] 未找到 uVision.com / UV4.exe")
-		_append("       请尝试删除 user://keil/ 后重新编译（触发重新解压）")
+		_append("       请先配置 Keil 目录（编译时会弹出引导，或直接写 user://keil_settings.json）")
 		return false
 	if not _toolchain.generate_tools_ini():
 		_append("[Warn] TOOLS.INI 生成失败，编译可能报错")

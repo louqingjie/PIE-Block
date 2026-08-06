@@ -69,10 +69,16 @@ godot --headless --no-header --path . --script scripts/cli_codegen.gd -- help
 ### 编译（build）说明
 
 `build` 复用 `scripts/toolchain.gd` 的 `Toolchain.build_project()`（作者已预留为 MCP 等
-非 UI 调用方设计）：先部署 Keil 工具链（首次自动解压到 `user://keil`）→ 写 `main.c` →
-生成 `TOOLS.INI` → 同步编译。成功判据 = Keil 日志含 `0 Error(s)`。
+非 UI 调用方设计）：校验外部 Keil 目录 → 部署项目模板/库 → 写 `main.c` → 同步编译。
+成功判据 = Keil 日志含 `0 Error(s)`。
 
-- 编译通常 10~60 秒（首次含工具链解压更久）
+> 内置精简工具链（Keil_noarm）已废弃，编译**必须**指定一个外部 Keil C251 安装目录。
+> headless 下没有图形引导，需在运行前指定路径，二选一：
+> 1. 环境变量：`$env:PIEBLOCK_KEIL="C:\Keil_v5"`
+> 2. 配置文件：往 `user://keil_settings.json` 写 `{"path": "C:\\Keil_v5"}`
+>    （GUI 编译时也会引导填写同一文件）
+
+- 编译通常 10~60 秒
 - 产物 hex 路径见返回 JSON 的 `hex` 字段
 - 已修复的编译漏洞：
   - `build` 曾用 Keil `-b`（跳过重编译，连续编译不同配置会返回陈旧 hex），

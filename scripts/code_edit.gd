@@ -41,6 +41,7 @@ const DC = preload("res://scripts/download_controller.gd")
 const AT = preload("res://scripts/agent_terminal.gd")
 const PF = preload("res://scripts/project_file.gd")
 const UPGRADE_PROGRESS = preload("res://scripts/upgrade_progress.gd")
+const KG = preload("res://scripts/keil_guide.gd")
 
 ## AI 随时会在终端里改盘上的 main.c，靠轮询 mtime 发现
 const RELOAD_POLL_SEC: float = 1.5
@@ -585,11 +586,21 @@ func _on_build_pressed() -> void:
 	if _build_controller == null or _build_controller.is_busy() \
 			or (_download_controller != null and _download_controller.is_busy()):
 		return
+	# 编译前先确认外部 Keil 目录：未配置/失效时弹引导，成功后再真正编译
+	KG.ensure_keil(self, _tc, _do_build, _on_keil_guide_cancel)
+
+
+func _do_build() -> void:
 	if not _flush_to_disk():
 		return
 	var code_edit: Node = get_node_or_null(P_CODE_EDIT)
 	var code: String = code_edit.text if code_edit is CodeEdit else ""
 	_build_controller.start(_project_dst, code)
+
+
+## 用户在 Keil 目录引导对话框里点「取消」时中止编译并提示。
+func _on_keil_guide_cancel() -> void:
+	_append_output("[Error] 未指定 Keil 目录，编译已中止（可在下次编译时选择）")
 
 
 ## 导出 HEX 按钮：先按「编译」的流程编译，成功后弹保存对话框
@@ -598,6 +609,11 @@ func _on_hex_export_pressed() -> void:
 	if _build_controller == null or _build_controller.is_busy() \
 			or (_download_controller != null and _download_controller.is_busy()):
 		return
+	# 引导成功后重跑原流程，_hex_export_pending 在 _do_hex_export 内设置，状态不丢
+	KG.ensure_keil(self, _tc, _do_hex_export, _on_keil_guide_cancel)
+
+
+func _do_hex_export() -> void:
 	if not _flush_to_disk():
 		return
 	var ce: Node = get_node_or_null(P_CODE_EDIT)
@@ -682,7 +698,7 @@ func _save_hex_to(dst_path: String) -> void:
 ## 编译被 Keil 许可证限制（本机缺 C251 许可）时弹出引导：告诉学生领免费密钥并粘贴。
 ## 许可证按机器发放，每台电脑需各自的有效密钥；粘贴后写入 TOOLS.INI 并重编。
 func _show_license_dialog() -> void:
-	var keil_dir: String = ProjectSettings.globalize_path(TC.TOOLCHAIN_DST).replace("/", "\\")
+	var keil_dir: String = _tc.resolve_keil_root().replace("/", "\\")
 	var dlg := AcceptDialog.new()
 	dlg.title = "需要 Keil C251 许可证"
 	dlg.dialog_text = "本机缺少 Keil C251 许可证，编译被限制在 2KB，无法生成固件。\n\n" \
@@ -710,7 +726,8 @@ func _apply_license_and_rebuild(key: String) -> void:
 		_append_output("[提示] 未输入许可证密钥")
 		return
 	if not _tc.apply_license_key(key):
-		_append_output("[Error] 写入许可证失败，请检查 user://keil/TOOLS.INI 权限")
+		var root: String = _tc.resolve_keil_root().replace("/", "\\")
+		_append_output("[Error] 写入许可证失败，请检查 %s\\TOOLS.INI 权限" % root)
 		return
 	_append_output("[✓] 已写入 C251 许可证，正在重新编译…")
 	_on_build_pressed()
@@ -777,6 +794,11 @@ func _on_upgrade_pressed() -> void:
 	if _upgrade_active or _build_controller == null or _build_controller.is_busy() \
 			or _download_controller == null or _download_controller.is_busy():
 		return
+	# 引导成功后才进入升级流程（_upgrade_active 在 _do_upgrade 内置位，取消不残留状态）
+	KG.ensure_keil(self, _tc, _do_upgrade, _on_keil_guide_cancel)
+
+
+func _do_upgrade() -> void:
 	if not _flush_to_disk():
 		return
 	var code_edit: Node = get_node_or_null(P_CODE_EDIT)
