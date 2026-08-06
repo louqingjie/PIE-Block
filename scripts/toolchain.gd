@@ -75,6 +75,12 @@ const DEFAULT_BOOT_BAUD: int = 115200
 ## 运行时 App 的 UART1 在 P30/P31 收拓展板，蓝牙口不参与。
 const DEFAULT_APP_BAUD: int = 115200
 
+## _run_python_logged 在「用户取消」/「硬超时」时返回的哨兵退出码。
+## 进程是被 taskkill 树杀的，get_process_exit_code 不可靠，用哨兵区分；
+## 调用方据此把失败阶段标成 canceled / timeout，而不是按日志乱猜。
+const EXIT_CANCELED: int = -2
+const EXIT_TIMEOUT: int = -3
+
 ## UV4 可执行文件候选名，按优先级排序：
 ## uVision.com 是控制台子系统版本，-b 批处理时不会弹出 GUI 窗口盖住本程序；
 ## UV4.exe 是 GUI 子系统版本，会弹窗抢焦点，仅作回退。
@@ -668,7 +674,9 @@ func download_hex_uart(hex_path: String, com_port: String, app_baud: int = 23040
 func download_hex_iap(hex_path: String, com_port: String,
 		app_baud: int = DEFAULT_APP_BAUD,
 		boot_baud: int = DEFAULT_BOOT_BAUD,
-		on_log_line: Callable = Callable()) -> Dictionary:
+		on_log_line: Callable = Callable(),
+		token = null,
+		timeout_sec: float = 0.0) -> Dictionary:
 	var py: String = find_python()
 	if py.is_empty():
 		return {"ok": false, "exit": - 1, "log": "未找到 Python", "stage": "env"}
@@ -679,15 +687,22 @@ func download_hex_iap(hex_path: String, com_port: String,
 	var log_abs: String = to_abs(STCFLASH_DST).path_join(DOWNLOAD_LOG_NAME)
 	var exit_code: int = _run_python_logged(
 		py, [script, hex_path, com_port, str(app_baud), str(boot_baud)], log_abs,
-		on_log_line)
+		on_log_line, token, timeout_sec)
 	var log_text: String = _read_log(log_abs)
+
+	# 用户取消 / 硬超时：进程已被树杀，退出码是哨兵，直接映射成对应阶段，
+	# 不按日志猜（日志可能只有半句）；也不继续走旧 bootloader 探测。
+	if exit_code == EXIT_CANCELED:
+		return {"ok": false, "exit": exit_code, "log": log_text, "stage": "canceled"}
+	if exit_code == EXIT_TIMEOUT:
+		return {"ok": false, "exit": exit_code, "log": log_text, "stage": "timeout"}
 
 	# 脚本退出码可控，以它为准；日志关键字只作兜底
 	var ok: bool = (exit_code == 0) or log_text.contains("烧录成功")
 	var stage: String = "done" if ok else _classify_iap_failure(log_text)
 	# USB 旧板兼容探测：只识别并明确提示物理升级，不继续用旧速率下载。
 	if not ok and stage == "connect" and boot_baud == DEFAULT_BOOT_BAUD:
-		var old_probe: Dictionary = probe_bootloader(com_port, app_baud, 115200)
+		var old_probe: Dictionary = probe_bootloader(com_port, app_baud, 115200, token)
 		if bool(old_probe.get("ok", false)) and int(old_probe.get("version", 0)) < 0x0200:
 			stage = "bootloader_upgrade"
 			log_text += "\n检测到旧 115200 bootloader（版本 0x%04X）。" % int(old_probe["version"])
@@ -709,7 +724,9 @@ func download_hex_iap(hex_path: String, com_port: String,
 ## （实测下载日志全是"鍥轰欢 30252 瀛楄妭"这种）。
 ## 编译路径一直是读日志文件所以没这个问题，这里跟它对齐。
 func _run_python_logged(py: String, args: Array, log_abs: String,
-		on_log_line: Callable = Callable()) -> int:
+		on_log_line: Callable = Callable(),
+		token = null,
+		timeout_sec: float = 0.0) -> int:
 	# 用 cmd /c 做重定向。PYTHONIOENCODING 保证脚本内的 print 输出 UTF-8，
 	# 不依赖控制台代码页。
 	var parts: PackedStringArray = PackedStringArray()
@@ -723,13 +740,35 @@ func _run_python_logged(py: String, args: Array, log_abs: String,
 	var pid: int = OS.create_process("cmd.exe", ["/c", cmd_line], false)
 	if pid <= 0:
 		return -1
+	# 把 pid 记进取消令牌，取消时可立即树杀（下面 30ms 轮询也兜底）。
+	if token != null:
+		token.set_pid(pid)
 
+	var deadline: int = 0
+	if timeout_sec > 0.0:
+		deadline = Time.get_ticks_msec() + int(timeout_sec * 1000.0)
 	var log_offset: int = 0
 	while OS.is_process_running(pid):
+		# 取消或硬超时：树杀进程（cmd 连同 python 子进程一起死），
+		# 轮询随后退出，worker 线程即可收尾，不再无限阻塞。
+		var canceled: bool = token != null and token.is_canceled()
+		var timed_out: bool = timeout_sec > 0.0 and Time.get_ticks_msec() > deadline
+		if canceled or timed_out:
+			kill_process_tree(pid)
+			return EXIT_CANCELED if canceled else EXIT_TIMEOUT
 		log_offset = _emit_complete_log_lines(log_abs, log_offset, on_log_line, false)
 		OS.delay_msec(30)
 	_emit_complete_log_lines(log_abs, log_offset, on_log_line, true)
 	return OS.get_process_exit_code(pid)
+
+
+## 树杀子进程（taskkill /T /F）。cmd.exe 会带着它拉起的 python 一起退出；
+## 只杀 cmd 的话 python 会变成孤儿进程，继续锁着串口，重启也无法重试。
+func kill_process_tree(pid: int) -> void:
+	if pid <= 0:
+		return
+	var out: Array = []
+	OS.execute("taskkill.exe", ["/T", "/F", "/PID", str(pid)], out, false)
 
 
 ## 增量发送日志中的完整行。每次从上一个换行位置重新读取完整 UTF-8 文件，
@@ -1065,7 +1104,8 @@ func bluetooth_baud_note() -> PackedStringArray:
 ##
 ## 返回 {ok: bool, version: int, log: String}
 func probe_bootloader(com_port: String, app_baud: int = DEFAULT_APP_BAUD,
-		boot_baud: int = DEFAULT_BOOT_BAUD) -> Dictionary:
+		boot_baud: int = DEFAULT_BOOT_BAUD,
+		token = null) -> Dictionary:
 	var py: String = find_python()
 	if py.is_empty():
 		return {"ok": false, "version": 0, "log": "未找到 Python"}
@@ -1111,7 +1151,7 @@ finally:
 	var exit_code: int = _run_python_logged(
 		py,
 		[script, to_abs(STCFLASH_DST), com_port, str(app_baud), str(boot_baud)],
-		log_abs)
+		log_abs, Callable(), token, 15.0)
 	var log_text: String = _read_log(log_abs)
 
 	var version: int = 0

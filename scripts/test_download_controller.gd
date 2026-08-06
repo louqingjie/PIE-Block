@@ -15,6 +15,7 @@ class FakeToolchain extends RefCounted:
 	var candidates: Array = []
 	var attempts: Array = []
 	var per_port_result: Dictionary = {}
+	var last_token = null
 
 	func get_hex_path(_project_dst: String) -> String:
 		return "C:/fake/app.hex"
@@ -32,8 +33,10 @@ class FakeToolchain extends RefCounted:
 		return PackedStringArray(["阶段提示: %s (%s)" % [stage, port_kind]])
 
 	func download_hex_iap(_hex_path: String, _com_port: String, _app_baud: int,
-			_boot_baud: int, on_log_line: Callable) -> Dictionary:
+			_boot_baud: int, on_log_line: Callable = Callable(),
+			token = null, timeout_sec: float = 0.0) -> Dictionary:
 		attempts.append(_com_port)
+		last_token = token
 		if per_port_result.has(_com_port):
 			var r: Dictionary = per_port_result[_com_port]
 			if bool(r.get("streamed", false)):
@@ -49,6 +52,43 @@ func _check(label: String, ok: bool) -> void:
 	else:
 		print("[✗ FAIL] %s" % label)
 		_fail += 1
+
+
+## 模拟「卡死在触发阶段」的烧录：download_hex_iap 一直阻塞，
+## 直到主线程请求取消（等价于真实场景里 Python 进程挂死）。
+class FakeBlockingToolchain extends RefCounted:
+	const DEFAULT_APP_BAUD: int = 115200
+	const DEFAULT_BOOT_BAUD: int = 115200
+
+	var cancel_seen: Array[bool] = [false]
+
+	func get_hex_path(_project_dst: String) -> String:
+		return "C:/fake/app.hex"
+
+	func hex_exists(_project_dst: String) -> bool:
+		return true
+
+	func ordered_candidate_ports() -> Array:
+		return [{"device": "COM9", "kind": "usb_serial", "label": "COM9 test"}]
+
+	func bluetooth_baud_note() -> PackedStringArray:
+		return PackedStringArray()
+
+	func iap_failure_hint(stage: String, port_kind: String = "") -> PackedStringArray:
+		return PackedStringArray(["hint " + stage])
+
+	func kill_process_tree(_pid: int) -> void:
+		pass
+
+	func download_hex_iap(_hex_path: String, _com_port: String, _app_baud: int,
+			_boot_baud: int, on_log_line: Callable = Callable(),
+			token = null, timeout_sec: float = 0.0) -> Dictionary:
+		# 阻塞直到收到取消标志（模拟触发阶段挂死）
+		while token == null or not token.is_canceled():
+			OS.delay_msec(10)
+		cancel_seen[0] = true
+		on_log_line.call("发送触发命令 @PIEIAP# @ 115200 baud")
+		return {"ok": false, "stage": "canceled", "log": "", "streamed": true, "canceled": true}
 
 
 func _initialize() -> void:
@@ -165,6 +205,34 @@ func _initialize() -> void:
 	_check("校验通过显示 99%",
 		str(verified.get("stage", "")) == "校验完成"
 		and is_equal_approx(float(verified.get("percent", 0.0)), 99.0))
+
+	# --- 取消：卡在触发阶段时点取消，应终止并释放 busy，不发 succeeded ---
+	var bt := FakeBlockingToolchain.new()
+	var c2 = DC.new()
+	root.add_child(c2)
+	c2.configure(bt, _clear, _append)
+	var finished_cancel: Array[Dictionary] = []
+	c2.finished.connect(
+		func(r: Dictionary) -> void: finished_cancel.append(r), CONNECT_ONE_SHOT)
+	var succeeded_cancel: Array[int] = [0]
+	c2.succeeded.connect(func() -> void: succeeded_cancel[0] += 1)
+	_check("取消场景下载启动", c2.start("project"))
+	# 等 worker 真正进入阻塞的 download_hex_iap（确保取消令牌已创建）
+	await process_frame
+	await process_frame
+	c2.cancel()
+	# cancel() 不 wait_to_finish，worker 收到标志后很快返回
+	while c2.is_busy():
+		await process_frame
+	_check("取消后 worker 收到取消标志", bt.cancel_seen[0])
+	_check("取消后 finished 带 canceled 字段",
+		finished_cancel.size() == 1
+		and bool(finished_cancel[0].get("canceled", false)))
+	_check("取消后不发 succeeded", succeeded_cancel[0] == 0)
+	_check("取消后 busy 复位", not c2.is_busy())
+	_check("取消令牌透传给工具链", bt.cancel_seen[0])
+	root.remove_child(c2)
+	c2.free()
 
 	root.remove_child(controller)
 	controller.free()

@@ -2,6 +2,7 @@ class_name UpgradeProgress
 extends Control
 
 signal closed
+signal cancel_requested
 
 
 static func compile_error_hint(project_stage: int) -> String:
@@ -14,16 +15,20 @@ static func compile_error_hint(project_stage: int) -> String:
 @onready var _progress: ProgressBar = get_node("Dim/Center/Panel/Content/Progress")
 @onready var _detail: Label = get_node("Dim/Center/Panel/Content/Detail")
 @onready var _close: Button = get_node("Dim/Center/Panel/Content/Close")
+@onready var _cancel: Button = get_node("Dim/Center/Panel/Content/Cancel")
 
 
 func _ready() -> void:
 	_close.pressed.connect(_on_close_pressed)
+	_cancel.pressed.connect(_on_cancel_pressed)
 	hide()
 
 
 func begin() -> void:
 	_title.text = "升级主控板"
 	_close.hide()
+	_cancel.show()
+	_cancel.disabled = true
 	set_progress("准备升级", 2.0, "正在保存当前程序…")
 	_show_on_top()
 
@@ -33,6 +38,8 @@ func begin() -> void:
 func begin_solver() -> void:
 	_title.text = "编译并烧录 MCU 求解器"
 	_close.hide()
+	_cancel.show()
+	_cancel.disabled = true
 	set_progress("准备编译求解器", 2.0, "仿真固件不会初始化或输出任何执行器 IO。")
 	_show_on_top()
 
@@ -52,6 +59,7 @@ func set_progress(stage_text: String, value: float, detail_text: String = "") ->
 
 func complete() -> void:
 	_title.text = "升级完成"
+	_cancel.hide()
 	set_progress("主控板已运行新程序", 100.0)
 	_close.text = "完成"
 	_show_close_on_top()
@@ -59,10 +67,33 @@ func complete() -> void:
 
 func fail(stage_text: String, detail_text: String) -> void:
 	_title.text = "升级未完成"
+	_cancel.hide()
 	_stage.text = stage_text
 	_detail.text = detail_text
 	_close.text = "关闭"
 	_show_close_on_top()
+
+
+## 用户取消或硬超时自动取消后调用：显示「已取消」状态与关闭按钮。
+func canceled(detail_text: String = "已取消烧录，串口已释放，可以重新升级。") -> void:
+	_title.text = "升级已取消"
+	_stage.text = "已取消"
+	_detail.text = detail_text
+	_cancel.hide()
+	_close.text = "关闭"
+	_show_close_on_top()
+
+
+## 下载阶段开始（busy 变化）时启用/禁用取消按钮。
+## 编译阶段不可中断，保持禁用；进入烧录阶段后启用。
+func set_cancel_enabled(enabled: bool) -> void:
+	_cancel.disabled = not enabled
+
+
+func _on_cancel_pressed() -> void:
+	if _cancel.disabled:
+		return
+	cancel_requested.emit()
 
 
 ## 显示关闭按钮并确保面板在最前（可接收鼠标与键盘）。

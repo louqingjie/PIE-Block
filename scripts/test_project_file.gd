@@ -91,6 +91,12 @@ func _test_code_edit_focus_setup() -> void:
 		== "res://scripts/download_controller.gd")
 	_check("AI 编辑页使用共享编译控制器", editor.BC.resource_path
 		== "res://scripts/build_controller.gd")
+	var hex_btn: Node = editor.get_node_or_null(editor.P_HEX_EXPORT)
+	_check("AI 编辑页提供导出 HEX 按钮", hex_btn is Button
+		and hex_btn.text == "导出 HEX")
+	# 编辑器实例未加入场景树（_ready 不执行，避免启动 AI 子进程），
+	# 信号连接无法验证，故只断言入口方法存在（与烧录入口检查一致）
+	_check("AI 编辑脚本提供导出入口", editor.has_method("_on_hex_export_pressed"))
 	_check("WebView 不在创建时抢焦点", webview != null
 		and not bool(webview.get("focused_when_created")))
 	_check("脚本提供代码面板聚焦入口", editor.has_method("_focus_code_input"))
@@ -771,6 +777,13 @@ func _test_launcher() -> void:
 	_check("直跑主界面时 Tab 全可见", not any_hidden)
 	_check("直跑主界面时配置区可编辑", ui.get_node(ui.P_CHANNEL).editable)
 	_check("直跑主界面时编译按钮可用", not ui.get_node(ui.P_BUILD_BTN).disabled)
+	var ui_hex_btn: Node = ui.get_node_or_null(ui.P_HEX_EXPORT_BTN)
+	_check("图形化页提供导出 HEX 按钮", ui_hex_btn is Button
+		and ui_hex_btn.text == "导出 HEX")
+	_check("图形化页导出按钮已接线", ui_hex_btn is BaseButton
+		and ui_hex_btn.pressed.is_connected(Callable(ui, "_on_hex_export_pressed")))
+	_check("自由编辑模式下导出按钮可用", ui_hex_btn is BaseButton
+		and not ui_hex_btn.disabled)
 	root.remove_child(ui)
 	ui.free()
 

@@ -120,6 +120,7 @@ const P_FIRST_ROW: NodePath = "VBoxContainer/HBoxContainer/HSplitContainer/First
 # 顶栏按钮
 const P_BUILD_BTN: NodePath = "VBoxContainer/TopPanel/Build"
 const P_DOWNLOAD_BTN: NodePath = "VBoxContainer/TopPanel/Download"
+const P_HEX_EXPORT_BTN: NodePath = "VBoxContainer/TopPanel/HEXExport"
 const P_UPGRADE_BTN: NodePath = "VBoxContainer/TopPanel/Upgrade"
 const P_UPGRADE_PROGRESS: NodePath = "UpgradeProgress"
 # 项目引导
@@ -145,6 +146,7 @@ const PROJECT_GATED_BTNS: Array = [
 	"VBoxContainer/TopPanel/ArmSim",
 	"VBoxContainer/TopPanel/Build",
 	"VBoxContainer/TopPanel/Download",
+	"VBoxContainer/TopPanel/HEXExport",
 	"VBoxContainer/TopPanel/Upgrade",
 ]
 # AI 编辑入口（跳转到 code_edit.tscn）
@@ -182,6 +184,8 @@ var _download_controller = null
 var _upgrade_active: bool = false
 var _solver_upgrade_active: bool = false
 var _project_dst_override: String = ""
+## 正在走「导出 HEX」流程：编译成功回调改弹保存对话框而不是烧录
+var _hex_export_pending: bool = false
 # 当前选中的代码生成器（随 Tab 切换）
 var _codegen: CodeGenBase = null
 # 工具链管理器（惰性创建，见 _toolchain()）
@@ -257,7 +261,10 @@ func _setup_build_controller() -> void:
 	_build_controller.succeeded.connect(_on_build_succeeded)
 	_build_controller.finished.connect(func(result: Dictionary) -> void:
 		_update_guide()
-		_on_upgrade_build_finished(result))
+		_on_upgrade_build_finished(result)
+		if _hex_export_pending:
+			_hex_export_pending = false
+			_append_output("[Error] 编译失败，未导出 HEX"))
 
 
 func _setup_download_controller() -> void:
@@ -342,6 +349,10 @@ func _connect_signals() -> void:
 	var download_btn: Node = get_node_or_null(P_DOWNLOAD_BTN)
 	if download_btn is BaseButton:
 		download_btn.pressed.connect(_on_download_pressed)
+	# 导出 HEX 按钮
+	var hex_export_btn: Node = get_node_or_null(P_HEX_EXPORT_BTN)
+	if hex_export_btn is BaseButton:
+		hex_export_btn.pressed.connect(_on_hex_export_pressed)
 	var upgrade_btn: Node = get_node_or_null(P_UPGRADE_BTN)
 	if upgrade_btn is BaseButton:
 		upgrade_btn.pressed.connect(_on_upgrade_pressed)
@@ -395,6 +406,8 @@ func _connect_signals() -> void:
 	var upgrade_progress: Node = get_node_or_null(P_UPGRADE_PROGRESS)
 	if upgrade_progress != null and upgrade_progress.has_signal("closed"):
 		upgrade_progress.closed.connect(_on_upgrade_panel_closed)
+	if upgrade_progress != null and upgrade_progress.has_signal("cancel_requested"):
+		upgrade_progress.cancel_requested.connect(_on_upgrade_cancel_pressed)
 	# 配置区所有控件统一挂一个「改动」监听，用于脏标记与阶段二锁定。
 	# 走通用遍历而非逐个列举：上面那些 _run_check 连接是按语义挑的，
 	# 这里要的是「任何控件动了」，漏一个就会让脏标记或锁定失效。
@@ -1541,6 +1554,28 @@ func _on_build_pressed() -> void:
 	_build_controller.start(_get_current_project_dst(), code)
 
 
+## 导出 HEX 按钮：先按「编译」的流程编译，成功后弹保存对话框
+## （复用 build_controller；成功回调见 _on_build_succeeded 的 pending 分支）
+func _on_hex_export_pressed() -> void:
+	if _build_controller == null or _build_controller.is_busy() \
+			or (_download_controller != null and _download_controller.is_busy()):
+		return # 防重入
+	var code_edit: Node = get_node_or_null(P_CODE_EDIT)
+	var code: String = ""
+	if code_edit is CodeEdit:
+		code = code_edit.text
+	if code.strip_edges().is_empty():
+		_run_check()
+		if code_edit is CodeEdit:
+			code = code_edit.text
+		if code.strip_edges().is_empty():
+			_append_output("[Error] 没有可导出的代码，请先完成配置")
+			return
+	_hex_export_pending = true
+	if not _build_controller.start(_get_current_project_dst(), code):
+		_hex_export_pending = false
+
+
 func _on_build_busy_changed(is_busy: bool) -> void:
 	var btn: Node = get_node_or_null(P_BUILD_BTN)
 	if btn is BaseButton:
@@ -1549,10 +1584,17 @@ func _on_build_busy_changed(is_busy: bool) -> void:
 	var download_button: Node = get_node_or_null(P_DOWNLOAD_BTN)
 	if download_button is BaseButton:
 		download_button.disabled = is_busy
+	var hex_export_btn: Node = get_node_or_null(P_HEX_EXPORT_BTN)
+	if hex_export_btn is BaseButton:
+		hex_export_btn.disabled = is_busy
 	_set_upgrade_button_busy(is_busy)
 
 
 func _on_build_succeeded() -> void:
+	if _hex_export_pending:
+		_hex_export_pending = false
+		_open_hex_save_dialog()
+		return
 	if _solver_upgrade_active:
 		_set_upgrade_progress("求解器编译完成", 28.0, "正在连接主控板…")
 		if not _download_controller.start(TC.PROJECT_ENGINEER_SIM_DST):
@@ -1568,6 +1610,48 @@ func _on_build_succeeded() -> void:
 		_set_upgrade_progress("编译完成", 28.0, "正在连接主控板…")
 		if not _download_controller.start(_get_current_project_dst()):
 			_fail_upgrade("无法开始烧录", "请查看下方输出中的串口或固件提示。")
+
+
+## 编译成功后弹出保存对话框，让用户选择 hex 导出位置
+func _open_hex_save_dialog() -> void:
+	if not _toolchain().hex_exists(_get_current_project_dst()):
+		_append_output("[Error] 未找到编译产物 hex，导出中止")
+		return
+	var dlg := FileDialog.new()
+	dlg.title = "导出 HEX 固件"
+	dlg.access = FileDialog.ACCESS_FILESYSTEM
+	dlg.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+	dlg.current_file = "output.hex"
+	dlg.add_filter("*.hex", "Keil HEX 固件")
+	dlg.file_selected.connect(func(path: String) -> void:
+		_save_hex_to(path)
+		dlg.queue_free())
+	dlg.close_requested.connect(dlg.queue_free)
+	add_child(dlg)
+	dlg.popup_centered(Vector2i(640, 480))
+
+
+## 把编译产物复制到用户选择的位置（自动补 .hex 扩展名）
+func _save_hex_to(dst_path: String) -> void:
+	var dst: String = dst_path
+	if not dst.to_lower().ends_with(".hex"):
+		dst += ".hex"
+	var src: String = _toolchain().get_hex_path(_get_current_project_dst())
+	var src_f: FileAccess = FileAccess.open(src, FileAccess.READ)
+	if src_f == null:
+		_append_output("[Error] 读取编译产物失败：%s" % src)
+		return
+	var dst_f: FileAccess = FileAccess.open(dst, FileAccess.WRITE)
+	if dst_f == null:
+		src_f.close()
+		_append_output("[Error] 无法写入：%s" % dst)
+		return
+	var buf_size: int = 65536
+	while src_f.get_position() < src_f.get_length():
+		dst_f.store_buffer(src_f.get_buffer(buf_size))
+	src_f.close()
+	dst_f.close()
+	_append_output("[✓] 已导出 HEX：%s" % dst)
 
 
 ## AI 编辑入口（阶段一 -> 阶段二）。仅在 AI 功能已启用后可见。
@@ -1877,7 +1961,14 @@ func _on_download_busy_changed(is_busy: bool) -> void:
 	var build_button: Node = get_node_or_null(P_BUILD_BTN)
 	if build_button is BaseButton:
 		build_button.disabled = is_busy
+	var hex_export_btn: Node = get_node_or_null(P_HEX_EXPORT_BTN)
+	if hex_export_btn is BaseButton:
+		hex_export_btn.disabled = is_busy
 	_set_upgrade_button_busy(is_busy)
+	# 烧录阶段允许取消（编译阶段取消按钮保持禁用）。
+	var panel: Node = get_node_or_null(P_UPGRADE_PROGRESS)
+	if panel != null and panel.has_method("set_cancel_enabled"):
+		panel.set_cancel_enabled(is_busy)
 
 
 func _on_download_succeeded() -> void:
@@ -1954,8 +2045,29 @@ func _on_upgrade_build_finished(result: Dictionary) -> void:
 
 
 func _on_upgrade_download_finished(result: Dictionary) -> void:
+	# 用户取消 / 硬超时：显示「已取消」状态，而不是「烧录失败」。
+	if bool(result.get("canceled", false)):
+		if not (_upgrade_active or _solver_upgrade_active):
+			return
+		_upgrade_active = false
+		_solver_upgrade_active = false
+		_project_dst_override = ""
+		var panel: Node = get_node_or_null(P_UPGRADE_PROGRESS)
+		if panel != null and panel.has_method("canceled"):
+			if str(result.get("stage", "")) == "timeout":
+				panel.canceled("烧录超时，已自动取消并释放串口，可以重新升级。")
+			else:
+				panel.canceled()
+		_set_upgrade_button_busy(false)
+		return
 	if _upgrade_active and not bool(result.get("ok", false)):
 		_fail_upgrade("烧录失败", "连接或写入未完成，请查看下方输出。")
+
+
+func _on_upgrade_cancel_pressed() -> void:
+	if _download_controller != null and _download_controller.is_busy():
+		_download_controller.cancel()
+	# 编译阶段取消按钮是禁用的，无需处理。
 
 
 func _set_upgrade_progress(stage: String, percent: float, detail: String) -> void:

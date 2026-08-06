@@ -6,12 +6,20 @@ signal succeeded
 signal finished(result: Dictionary)
 signal progress_changed(stage: String, percent: float, detail: String)
 
+## 跨线程取消令牌（worker 线程读、主线程写）。
+const CT = preload("res://scripts/cancel_token.gd")
+
+## 整体烧录硬超时（秒）。无论 Python 侧是否挂死，超过时限就树杀进程、
+## 释放串口并按「超时已取消」收尾 —— 防止任何未知挂起永久卡死程序。
+const DOWNLOAD_HARD_TIMEOUT_SEC: float = 90.0
+
 var _toolchain = null
 var _clear_output: Callable
 var _append_output: Callable
 var _thread: Thread = null
 var _busy: bool = false
 var _port_kind: String = ""
+var _cancel_token = null
 
 
 func configure(toolchain, clear_output: Callable, append_output: Callable) -> void:
@@ -57,8 +65,9 @@ func start(project_dst: String) -> bool:
 			_append("  · %s" % str(info.get("label", str(info.get("device", "")))))
 		_append("开始烧录，不需要断电或按复位键…")
 	progress_changed.emit("连接主控板", 30.0, "正在启动烧录程序…")
+	_cancel_token = CT.new()
 	_thread = Thread.new()
-	var error: int = _thread.start(_worker.bind(hex_path, candidates))
+	var error: int = _thread.start(_worker.bind(hex_path, candidates, _cancel_token))
 	if error != OK:
 		_thread = null
 		_set_busy(false)
@@ -68,6 +77,10 @@ func start(project_dst: String) -> bool:
 
 
 func shutdown() -> void:
+	# 先请求取消并树杀烧录进程，再等线程结束：
+	# 否则 worker 卡死在死循环的 Python 进程上时，wait_to_finish 会永远
+	# 阻塞主线程（关窗口/退出场景会直接卡死整个程序）。
+	cancel()
 	if _thread:
 		_thread.wait_to_finish()
 	_thread = null
@@ -79,10 +92,27 @@ func _exit_tree() -> void:
 	shutdown()
 
 
-func _worker(hex_path: String, candidates: Array) -> void:
+## 请求取消当前烧录：置取消标志并立即树杀烧录进程（释放串口）。
+## 线程本身由 worker 收尾（进程被杀后很快结束），这里不 wait_to_finish。
+func cancel() -> void:
+	if _cancel_token == null:
+		return
+	_cancel_token.request_cancel()
+	if _toolchain != null and _toolchain.has_method("kill_process_tree"):
+		_toolchain.kill_process_tree(_cancel_token.get_pid())
+
+
+func _worker(hex_path: String, candidates: Array, token) -> void:
 	var total: int = candidates.size()
 	var failed: Array = []
 	for i in total:
+		# 用户在候选之间取消了：不再尝试下一个端口，直接收尾。
+		if token != null and token.is_canceled():
+			call_deferred("_on_worker_finished", {
+				"ok": false, "stage": "canceled", "log": "", "streamed": true,
+				"canceled": true,
+			})
+			return
 		var info: Dictionary = candidates[i]
 		var com_port: String = str(info.get("device", ""))
 		var kind: String = str(info.get("kind", ""))
@@ -90,11 +120,19 @@ func _worker(hex_path: String, candidates: Array) -> void:
 			_on_download_line_from_worker("— 尝试串口 %s（%d/%d）—" % [com_port, i + 1, total])
 		var result: Dictionary = _toolchain.download_hex_iap(
 			hex_path, com_port, _toolchain.DEFAULT_APP_BAUD, _toolchain.DEFAULT_BOOT_BAUD,
-			_on_download_line_from_worker)
+			_on_download_line_from_worker, token, DOWNLOAD_HARD_TIMEOUT_SEC)
 		if bool(result.get("ok", false)):
 			call_deferred("_on_worker_finished", result)
 			return
 		var stage: String = str(result.get("stage", "unknown"))
+		# 用户取消 / 硬超时：不再试别的口（超时往往意味着链路整体卡死），
+		# 直接按取消收尾，让串口立刻释放。
+		if stage in ["canceled", "timeout"]:
+			call_deferred("_on_worker_finished", {
+				"ok": false, "stage": stage, "log": "", "streamed": true,
+				"canceled": true,
+			})
+			return
 		# 连上了但中途失败（擦除/写入/校验）或固件问题：这个口就是板子所在的
 		# 口，换别的口没有意义（板子已停在下载模式等这个口），直接按单次失败收尾。
 		if stage in ["erase", "program", "verify", "bootloader_upgrade", "hex"]:
@@ -141,6 +179,10 @@ func _stage_name(stage: String) -> String:
 			return "环境问题"
 		"bootloader_upgrade":
 			return "旧版引导程序"
+		"canceled":
+			return "已取消"
+		"timeout":
+			return "超时"
 		_:
 			return "未知原因"
 
@@ -196,7 +238,17 @@ func _on_worker_finished(result: Dictionary) -> void:
 	if _thread:
 		_thread.wait_to_finish()
 	_thread = null
+	_cancel_token = null
 	_set_busy(false)
+
+	# 用户取消 / 硬超时：不是真正的失败，不发 succeeded、不弹排查建议。
+	if bool(result.get("canceled", false)):
+		if str(result.get("stage", "")) == "timeout":
+			_append("✗ 烧录超时，已自动取消并释放串口。可以重新点「升级主控板」。")
+		else:
+			_append("✗ 已取消烧录，串口已释放。")
+		finished.emit(result)
+		return
 
 	var ok: bool = bool(result.get("ok", false))
 	var log_text: String = str(result.get("log", ""))

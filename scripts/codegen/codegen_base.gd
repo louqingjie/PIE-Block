@@ -122,13 +122,18 @@ func _gen_uart_init_first() -> String:
 
 
 # ============================================================ 烧录模式（蓝牙 OTA）
-## 生成"烧录模式"共享代码块（P06+P07 进入、P33 蜂鸣器、UART1 切蓝牙口等 OTA）。
+## 生成"烧录模式"共享代码块（P06/P07/P42 任一进入、P33 蜂鸣器、UART1 切蓝牙口等 OTA）。
 ##
-## 机制：正常运行时 UART1 在 P30/P31（拓展板 230400）；同时按下 P06+P07 后
-## 进入烧录模式，先把电机/摩擦轮安全停机，再把 UART1 切到 P43/P44（蓝牙）
-## 用 BURN_MODE_BAUD 等待上位机触发字 @PIEIAP#。触发字由 UART1 中断（isr.c）
-## 匹配后软复位进 bootloader 完成 OTA（bootloader 也在 P43/P44 用同一波特率）。
-## 再按 P06 或 P07 退出，切回拓展板口并重新初始化拓展板。
+## 机制：正常运行时 UART1 在 P30/P31（拓展板 230400）；P06 或 P07 或 P42
+## 任一被按下后进入烧录模式，先把电机/摩擦轮安全停机，再把 UART1 切到
+## P43/P44（蓝牙）用 BURN_MODE_BAUD 等待上位机触发字 @PIEIAP#。触发字由
+## UART1 中断（isr.c）匹配后软复位进 bootloader 完成 OTA（bootloader 也在
+## P43/P44 用同一波特率）。烧录模式中先松开再按任一键退出，切回拓展板口
+## 并重新初始化拓展板。
+##
+## 按键极性自适应：三个按键用高阻输入（不配内部上下拉），上电时采样空闲
+## 电平，按下 = 电平与空闲不同（低/高有效均可，不依赖接线）；加连续 3 周期
+## 防抖，避免悬空引脚噪声误触发。
 ##
 ## 依赖各构型实现两个函数（本方法只声明）：
 ##   void burnSafeStop(void)  —— 进入前安全停机（电机归零、摩擦轮逐步降）
@@ -136,18 +141,24 @@ func _gen_uart_init_first() -> String:
 ## 必须在 main() 之前、两个构型函数定义之前调用本方法（含前向声明）。
 func _gen_burn_mode_shared() -> String:
 	var code: String = ""
-	code += "// ==================== 烧录模式（P06+P07 进入，蓝牙 OTA）====================\n"
-	code += "// 进入：同时按下 P06+P07 -> 安全停机 -> UART1 切到 P43/P44(蓝牙) 等触发字。\n"
+	code += "// ==================== 烧录模式（P06/P07/P42 进入，蓝牙 OTA）====================\n"
+	code += "// 进入：P06 或 P07 或 P42 任一按下 -> 安全停机 -> UART1 切到 P43/P44(蓝牙) 等触发字。\n"
 	code += "// 上位机发 @PIEIAP# 后由 UART1 中断(见 isr.c)匹配并软复位进 bootloader 完成 OTA。\n"
-	code += "// 退出：烧录模式中按 P06 或 P07 -> 切回拓展板口并重新初始化。\n"
+	code += "// 退出：烧录模式中先松开再按任一键 -> 切回拓展板口并重新初始化。\n"
+	code += "// 按键极性自适应：上电采样空闲电平，按下 = 电平与空闲不同（低/高有效均可）。\n"
 	code += "#define BURN_MODE_BAUD %d\n" % BURN_MODE_BAUD
-	code += "#define BURN_KEY_PORT GPIO_P0\n"
-	code += "#define BURN_ENTER_PIN GPIO_Pin_6 // P06\n"
-	code += "#define BURN_EXIT_PIN  GPIO_Pin_7 // P07\n"
-	code += "#define BURN_KEY_DOWN(p) (GPIO_Read_Bit(BURN_KEY_PORT, (p)) == GPIO_LOW)\n"
-	code += "uint8_t burnMode = 0;      // 1 = 正在烧录模式\n"
-	code += "uint8_t burnBothPrev = 0;  // 上一次\"同时按下\"状态（进入边沿）\n"
-	code += "uint8_t burnAnyPrev = 0;   // 上一次\"任一按下\"状态（退出边沿）\n\n"
+	code += "#define BURN_KEY_PORT_A GPIO_P0\n"
+	code += "#define BURN_KEY_PIN_6  GPIO_Pin_6 // P06\n"
+	code += "#define BURN_KEY_PIN_7  GPIO_Pin_7 // P07\n"
+	code += "#define BURN_KEY_PORT_B GPIO_P4\n"
+	code += "#define BURN_KEY_PIN_2  GPIO_Pin_2 // P42\n"
+	code += "uint8_t burnIdle06 = 1, burnIdle07 = 1, burnIdle42 = 1; // 上电采样空闲电平\n"
+	code += "#define BURN_KEY_DOWN() (GPIO_Read_Bit(BURN_KEY_PORT_A, BURN_KEY_PIN_6) != burnIdle06 \\\n"
+	code += "    || GPIO_Read_Bit(BURN_KEY_PORT_A, BURN_KEY_PIN_7) != burnIdle07 \\\n"
+	code += "    || GPIO_Read_Bit(BURN_KEY_PORT_B, BURN_KEY_PIN_2) != burnIdle42)\n"
+	code += "uint8_t burnMode = 0;    // 1 = 正在烧录模式\n"
+	code += "uint8_t burnKeyCnt = 0;  // 防抖计数（连续 3 周期才算按下）\n"
+	code += "uint8_t burnKeyPrev = 0; // 上一次稳定按下状态（边沿触发）\n\n"
 	code += "// 蜂鸣器（P33，PWM 驱动）播放一个音符\n"
 	code += "void burnBeep(uint16_t freq, uint16_t ms)\n{\n"
 	code += "    PWM_SET_Frequency(PWMB_CH3_P33, freq, 500);\n"
@@ -157,9 +168,9 @@ func _gen_burn_mode_shared() -> String:
 	code += "void burnSafeStop(void);\n"
 	code += "void burnExtReinit(void);\n\n"
 	code += "void burnEnter(void)\n{\n"
+	code += "    GPIO_Write_Bit(GPIO_P3, GPIO_Pin_4, 0); // 立即点亮 LED：检测到按下的即时反馈\n"
 	code += "    burnSafeStop();   // 电机/摩擦轮安全停机\n"
 	code += "    UART_Init(UART_1, UART1_RX_P43, UART1_TX_P44, BURN_MODE_BAUD, TIM1); // 切蓝牙口\n"
-	code += "    GPIO_Write_Bit(GPIO_P3, GPIO_Pin_4, 0); // 板上 LED 点亮（已进入烧录模式）\n"
 	code += "    burnBeep(700, 120);\n"
 	code += "    burnBeep(1000, 120);\n"
 	code += "    burnBeep(1400, 240); // 进入提示音\n"
@@ -177,47 +188,50 @@ func _gen_burn_mode_shared() -> String:
 ## 每周期调用一次；正常模式检测进入，烧录模式检测退出并跳过正常控制。
 func _gen_burn_mode_loop() -> String:
 	var code: String = ""
-	code += "        // ---- 烧录模式：P06+P07 进入 / 任一键退出 ----\n"
+	code += "        // ---- 烧录模式：P06/P07/P42 任一进入 / 再按退出（极性自适应+防抖）----\n"
+	code += "        if (BURN_KEY_DOWN())\n"
+	code += "        {\n"
+	code += "            if (burnKeyCnt < 3)\n"
+	code += "                burnKeyCnt++;\n"
+	code += "        }\n"
+	code += "        else\n"
+	code += "            burnKeyCnt = 0;\n"
 	code += "        if (!burnMode)\n"
 	code += "        {\n"
-	code += "            if (BURN_KEY_DOWN(BURN_ENTER_PIN) && BURN_KEY_DOWN(BURN_EXIT_PIN))\n"
+	code += "            if (burnKeyCnt >= 3 && !burnKeyPrev) // 稳定按下边沿\n"
 	code += "            {\n"
-	code += "                if (!burnBothPrev)\n"
-	code += "                {\n"
-	code += "                    burnBothPrev = 1;\n"
-	code += "                    burnEnter(); // 安全停机 + 切蓝牙口 + 奏乐（阻塞）\n"
-	code += "                    burnAnyPrev = (BURN_KEY_DOWN(BURN_ENTER_PIN)\n"
-	code += "                        || BURN_KEY_DOWN(BURN_EXIT_PIN)) ? 1 : 0;\n"
-	code += "                }\n"
+	code += "                burnKeyPrev = 1;\n"
+	code += "                burnEnter(); // 安全停机 + 切蓝牙口 + 奏乐（阻塞）\n"
 	code += "                continue; // 本周期不执行正常控制\n"
 	code += "            }\n"
-	code += "            burnBothPrev = 0;\n"
+	code += "            burnKeyPrev = (burnKeyCnt >= 3) ? 1 : 0;\n"
 	code += "        }\n"
 	code += "        else\n"
 	code += "        {\n"
-	code += "            // 烧录模式：等 UART1 触发字（isr.c 处理）或按任一键退出\n"
-	code += "            if (BURN_KEY_DOWN(BURN_ENTER_PIN) || BURN_KEY_DOWN(BURN_EXIT_PIN))\n"
+	code += "            // 烧录模式：等 UART1 触发字（isr.c 处理）或松开后再按任一键退出\n"
+	code += "            if (burnKeyCnt >= 3 && !burnKeyPrev)\n"
 	code += "            {\n"
-	code += "                if (!burnAnyPrev)\n"
-	code += "                {\n"
-	code += "                    burnAnyPrev = 1;\n"
-	code += "                    burnExit(); // 切回拓展板口 + 重初始化\n"
-	code += "                }\n"
+	code += "                burnKeyPrev = 1;\n"
+	code += "                burnExit(); // 切回拓展板口 + 重初始化\n"
 	code += "                continue;\n"
 	code += "            }\n"
-	code += "            burnAnyPrev = 0;\n"
+	code += "            burnKeyPrev = (burnKeyCnt >= 3) ? 1 : 0;\n"
 	code += "            Ms_Delay(10);\n"
 	code += "            continue; // 烧录模式不执行正常控制\n"
 	code += "        }\n\n"
 	return code
 
 
-## 生成 All_Init() 中的烧录模式初始化：P06/P07 按键（上拉输入）+ P33 蜂鸣器 PWM。
+## 生成 All_Init() 中的烧录模式初始化：P06/P07/P42 按键（高阻输入+空闲采样）+ P33 蜂鸣器 PWM。
 func _gen_burn_mode_init() -> String:
 	var code: String = ""
-	code += "    // 烧录模式按键：P06/P07 上拉输入（按下为低）\n"
+	code += "    // 烧录模式按键：P06/P07/P42 高阻输入（不配内部上下拉，由外部电路决定电平）\n"
 	code += "    GPIO_Init(GPIO_P0, (GPIO_Pin_enum)(GPIO_Pin_6 | GPIO_Pin_7), GPIO_HighZ);\n"
-	code += "    GPIO_PinPullConfig(GPIO_P0, (GPIO_Pin_enum)(GPIO_Pin_6 | GPIO_Pin_7), GPIO_Pull_Up);\n"
+	code += "    GPIO_Init(GPIO_P4, GPIO_Pin_2, GPIO_HighZ);\n"
+	code += "    // 上电采样空闲电平（假设上电时未按键），按下 = 电平与此不同\n"
+	code += "    burnIdle06 = GPIO_Read_Bit(GPIO_P0, GPIO_Pin_6);\n"
+	code += "    burnIdle07 = GPIO_Read_Bit(GPIO_P0, GPIO_Pin_7);\n"
+	code += "    burnIdle42 = GPIO_Read_Bit(GPIO_P4, GPIO_Pin_2);\n"
 	code += "    // 蜂鸣器 P33（PWM 驱动，占空比 0 不响）\n"
 	code += "    PWM_Init(PWMB_CH3_P33, 1000, 0);\n"
 	return code

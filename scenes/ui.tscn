@@ -101,6 +101,10 @@ layout_mode = 2
 size_flags_horizontal = 8
 text = "升级主控板"
 
+[node name="HEXExport" type="Button" parent="VBoxContainer/TopPanel" unique_id=1256119099]
+layout_mode = 2
+text = "导出 HEX"
+
 [node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer" unique_id=1859188522]
 layout_mode = 2
 size_flags_vertical = 3

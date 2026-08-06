@@ -4,7 +4,7 @@
 [ext_resource type="Script" uid="uid://dp6x4avofe57m" path="res://scripts/output.gd" id="2_out"]
 [ext_resource type="Script" uid="uid://b58ii2xd5iin2" path="res://scripts/code_edit.gd" id="3_main"]
 [ext_resource type="PackedScene" path="res://scenes/project_guide.tscn" id="4_guide"]
-[ext_resource type="PackedScene" path="res://scenes/upgrade_progress.tscn" id="5_upgrade"]
+[ext_resource type="PackedScene" uid="uid://c04762ivjvghc" path="res://scenes/upgrade_progress.tscn" id="5_upgrade"]
 
 [node name="Control" type="Control" unique_id=1016157835]
 layout_mode = 3
@@ -45,6 +45,7 @@ size_flags_horizontal = 6
 text = "项目名称"
 
 [node name="Export" type="Button" parent="VBoxContainer/TopPanel" unique_id=55558203]
+visible = false
 layout_mode = 2
 size_flags_horizontal = 8
 text = "导出 C 代码"
@@ -59,22 +60,26 @@ layout_mode = 2
 size_flags_horizontal = 8
 text = "编译"
 
-[node name="Download" type="Button" parent="VBoxContainer/TopPanel"]
+[node name="Download" type="Button" parent="VBoxContainer/TopPanel" unique_id=1667886255]
 visible = false
 layout_mode = 2
 size_flags_horizontal = 8
 text = "烧录主控板"
 
-[node name="Upgrade" type="Button" parent="VBoxContainer/TopPanel"]
+[node name="Upgrade" type="Button" parent="VBoxContainer/TopPanel" unique_id=2069391487]
 layout_mode = 2
 size_flags_horizontal = 8
 text = "升级主控板"
 
-[node name="Workspace" type="HBoxContainer" parent="VBoxContainer"]
+[node name="HEXExport" type="Button" parent="VBoxContainer/TopPanel" unique_id=526182988]
+layout_mode = 2
+text = "导出 HEX"
+
+[node name="Workspace" type="HBoxContainer" parent="VBoxContainer" unique_id=1760711511]
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="ProjectGuide" parent="VBoxContainer/Workspace" instance=ExtResource("4_guide")]
+[node name="ProjectGuide" parent="VBoxContainer/Workspace" unique_id=1882753869 instance=ExtResource("4_guide")]
 
 [node name="HSplitContainer" type="HSplitContainer" parent="VBoxContainer/Workspace" unique_id=942933507]
 layout_mode = 2
@@ -153,12 +158,14 @@ size_flags_vertical = 3
 
 [node name="WebView" type="WebView" parent="." unique_id=842435095]
 full_window_size = false
-focused_when_created = false
 url = ""
 html = "<html><body style=\"margin:0;padding:24px;font-family:system-ui,sans-serif;background:#1d2229;color:#c8cdd4\">正在启动 AI 终端…</body></html>"
 data_directory = "user://webview"
+focused_when_created = false
 layout_mode = 0
 offset_right = 320.0
 offset_bottom = 240.0
 
-[node name="UpgradeProgress" parent="." instance=ExtResource("5_upgrade")]
+[node name="UpgradeProgress" parent="." unique_id=227039433 instance=ExtResource("5_upgrade")]
+visible = false
+layout_mode = 1

@@ -21,6 +21,7 @@ const P_WEB_SLOT: NodePath = "VBoxContainer/Workspace/HSplitContainer/AIPanel/We
 const P_RESTART: NodePath = "VBoxContainer/Workspace/HSplitContainer/AIPanel/Header/Restart"
 const P_BUILD: NodePath = "VBoxContainer/TopPanel/Build"
 const P_DOWNLOAD: NodePath = "VBoxContainer/TopPanel/Download"
+const P_HEX_EXPORT: NodePath = "VBoxContainer/TopPanel/HEXExport"
 const P_UPGRADE: NodePath = "VBoxContainer/TopPanel/Upgrade"
 const P_UPGRADE_PROGRESS: NodePath = "UpgradeProgress"
 const P_BACK: NodePath = "VBoxContainer/TopPanel/Button"
@@ -67,6 +68,8 @@ var _last_mtime: int = 0
 var _build_controller = null
 var _download_controller = null
 var _upgrade_active: bool = false
+## 正在走「导出 HEX」流程：编译成功回调改弹保存对话框而不是烧录
+var _hex_export_pending: bool = false
 var _wv: Control = null
 ## 置 true 可打印 WebView 的 DPI 修正过程，排查偏移时用
 var _wv_debug: bool = false
@@ -137,6 +140,9 @@ func _setup_build_controller() -> void:
 	_build_controller.finished.connect(func(result: Dictionary) -> void:
 		_update_guide()
 		_on_upgrade_build_finished(result)
+		if _hex_export_pending:
+			_hex_export_pending = false
+			_append_output("[Error] 编译失败，未导出 HEX")
 		if not bool(result.get("ok", false)) and _tc != null \
 				and _tc.detect_license_failure(str(result.get("log", ""))):
 			_show_license_dialog())
@@ -159,12 +165,17 @@ func _connect_signals() -> void:
 	var download: Node = get_node_or_null(P_DOWNLOAD)
 	if download is BaseButton:
 		download.pressed.connect(_on_download_pressed)
+	var hex_export: Node = get_node_or_null(P_HEX_EXPORT)
+	if hex_export is BaseButton:
+		hex_export.pressed.connect(_on_hex_export_pressed)
 	var upgrade: Node = get_node_or_null(P_UPGRADE)
 	if upgrade is BaseButton:
 		upgrade.pressed.connect(_on_upgrade_pressed)
 	var upgrade_progress: Node = get_node_or_null(P_UPGRADE_PROGRESS)
 	if upgrade_progress != null and upgrade_progress.has_signal("closed"):
 		upgrade_progress.closed.connect(_on_upgrade_panel_closed)
+	if upgrade_progress != null and upgrade_progress.has_signal("cancel_requested"):
+		upgrade_progress.cancel_requested.connect(_on_upgrade_cancel_pressed)
 	var back: Node = get_node_or_null(P_BACK)
 	if back is BaseButton:
 		back.pressed.connect(_on_back_pressed)
@@ -581,6 +592,21 @@ func _on_build_pressed() -> void:
 	_build_controller.start(_project_dst, code)
 
 
+## 导出 HEX 按钮：先按「编译」的流程编译，成功后弹保存对话框
+## （复用 build_controller；成功回调见 _on_build_succeeded 的 pending 分支）
+func _on_hex_export_pressed() -> void:
+	if _build_controller == null or _build_controller.is_busy() \
+			or (_download_controller != null and _download_controller.is_busy()):
+		return
+	if not _flush_to_disk():
+		return
+	var ce: Node = get_node_or_null(P_CODE_EDIT)
+	var code2: String = ce.text if ce is CodeEdit else ""
+	_hex_export_pending = true
+	if not _build_controller.start(_project_dst, code2):
+		_hex_export_pending = false
+
+
 func _on_build_busy_changed(is_busy: bool) -> void:
 	var btn: Node = get_node_or_null(P_BUILD)
 	if btn is BaseButton:
@@ -589,16 +615,65 @@ func _on_build_busy_changed(is_busy: bool) -> void:
 	var download_button: Node = get_node_or_null(P_DOWNLOAD)
 	if download_button is BaseButton:
 		download_button.disabled = is_busy
+	var hex_export_btn: Node = get_node_or_null(P_HEX_EXPORT)
+	if hex_export_btn is BaseButton:
+		hex_export_btn.disabled = is_busy
 	_set_upgrade_button_busy(is_busy)
 
 
 func _on_build_succeeded() -> void:
+	if _hex_export_pending:
+		_hex_export_pending = false
+		_open_hex_save_dialog()
+		return
 	_update_built_hash()
 	_update_guide()
 	if _upgrade_active:
 		_set_upgrade_progress("编译完成", 28.0, "正在连接主控板…")
 		if not _download_controller.start(_project_dst):
 			_fail_upgrade("无法开始烧录", "请查看下方输出中的串口或固件提示。")
+
+
+## 编译成功后弹出保存对话框，让用户选择 hex 导出位置
+func _open_hex_save_dialog() -> void:
+	if not _tc.hex_exists(_project_dst):
+		_append_output("[Error] 未找到编译产物 hex，导出中止")
+		return
+	var dlg := FileDialog.new()
+	dlg.title = "导出 HEX 固件"
+	dlg.access = FileDialog.ACCESS_FILESYSTEM
+	dlg.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+	dlg.current_file = "output.hex"
+	dlg.add_filter("*.hex", "Keil HEX 固件")
+	dlg.file_selected.connect(func(path: String) -> void:
+		_save_hex_to(path)
+		dlg.queue_free())
+	dlg.close_requested.connect(dlg.queue_free)
+	add_child(dlg)
+	dlg.popup_centered(Vector2i(640, 480))
+
+
+## 把编译产物复制到用户选择的位置（自动补 .hex 扩展名）
+func _save_hex_to(dst_path: String) -> void:
+	var dst: String = dst_path
+	if not dst.to_lower().ends_with(".hex"):
+		dst += ".hex"
+	var src: String = _tc.get_hex_path(_project_dst)
+	var src_f: FileAccess = FileAccess.open(src, FileAccess.READ)
+	if src_f == null:
+		_append_output("[Error] 读取编译产物失败：%s" % src)
+		return
+	var dst_f: FileAccess = FileAccess.open(dst, FileAccess.WRITE)
+	if dst_f == null:
+		src_f.close()
+		_append_output("[Error] 无法写入：%s" % dst)
+		return
+	var buf_size: int = 65536
+	while src_f.get_position() < src_f.get_length():
+		dst_f.store_buffer(src_f.get_buffer(buf_size))
+	src_f.close()
+	dst_f.close()
+	_append_output("[✓] 已导出 HEX：%s" % dst)
 
 
 # ------------------------------------------------------------------ 许可证引导
@@ -675,7 +750,14 @@ func _on_download_busy_changed(is_busy: bool) -> void:
 	var build_button: Node = get_node_or_null(P_BUILD)
 	if build_button is BaseButton:
 		build_button.disabled = is_busy
+	var hex_export_btn: Node = get_node_or_null(P_HEX_EXPORT)
+	if hex_export_btn is BaseButton:
+		hex_export_btn.disabled = is_busy
 	_set_upgrade_button_busy(is_busy)
+	# 烧录阶段允许取消（编译阶段取消按钮保持禁用）。
+	var panel: Node = get_node_or_null(P_UPGRADE_PROGRESS)
+	if panel != null and panel.has_method("set_cancel_enabled"):
+		panel.set_cancel_enabled(is_busy)
 
 
 func _on_download_succeeded() -> void:
@@ -718,8 +800,27 @@ func _on_upgrade_progress_changed(stage: String, percent: float, detail: String)
 
 
 func _on_upgrade_download_finished(result: Dictionary) -> void:
+	# 用户取消 / 硬超时：显示「已取消」状态，而不是「烧录失败」。
+	if bool(result.get("canceled", false)):
+		if not _upgrade_active:
+			return
+		_upgrade_active = false
+		var panel: Node = get_node_or_null(P_UPGRADE_PROGRESS)
+		if panel != null and panel.has_method("canceled"):
+			if str(result.get("stage", "")) == "timeout":
+				panel.canceled("烧录超时，已自动取消并释放串口，可以重新升级。")
+			else:
+				panel.canceled()
+		_set_upgrade_button_busy(false)
+		return
 	if _upgrade_active and not bool(result.get("ok", false)):
 		_fail_upgrade("烧录失败", "连接或写入未完成，请查看下方输出。")
+
+
+func _on_upgrade_cancel_pressed() -> void:
+	if _download_controller != null and _download_controller.is_busy():
+		_download_controller.cancel()
+	# 编译阶段取消按钮是禁用的，无需处理。
 
 
 func _on_upgrade_build_finished(result: Dictionary) -> void:

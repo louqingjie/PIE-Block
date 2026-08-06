@@ -30,6 +30,12 @@ from __future__ import annotations
 import sys
 import time
 
+try:
+    import serial
+except ImportError:
+    # --selftest 不需要 pyserial（用 FakeSerial 替身），只有真正烧录时才用到。
+    serial = None
+
 # ------------------------------------------------------------------ 协议常量
 
 REQ_HEAD = 0x23    # '#'  主机发出的帧头
@@ -412,9 +418,14 @@ class IapSession:
             print(msg, flush=True)
 
     def open(self) -> None:
-        import serial
+        if serial is None:
+            raise RuntimeError("缺少 pyserial，请先安装：pip install pyserial")
         self.ser = serial.Serial(
             self.port, self.app_baud, timeout=0,
+            # write_timeout：write()/flush() 超时会抛 SerialTimeoutException，
+            # 防止驱动（CH340/蓝牙 SPP）停止排水时无限阻塞 ——
+            # 这是 OTA 卡死在「发送触发命令」阶段的根因。
+            write_timeout=3.0,
             parity=serial.PARITY_NONE, stopbits=1, bytesize=8,
         )
 
@@ -443,16 +454,24 @@ class IapSession:
         这一步没有回应也无妨，后面 CONNECT 会兜住。
         """
         self.log("发送触发命令 %s @ %d baud" % (TRIGGER.decode(), self.app_baud))
-        self.set_baud(self.app_baud)
-        self.ser.reset_input_buffer()
-        self.ser.write(TRIGGER)
-        self.ser.flush()
+        try:
+            self.set_baud(self.app_baud)
+            self.ser.reset_input_buffer()
+            self.ser.write(TRIGGER)
+            self.ser.flush()
+        except (serial.SerialTimeoutException, serial.SerialException) as exc:
+            # 驱动停排/超时：不能无限阻塞，报错交给 connect 兜底。
+            raise ProtocolError("触发命令发送失败（串口无响应）: %s" % exc)
         wire_time = len(TRIGGER) * 10.0 / self.app_baud
         time.sleep(max(TRIGGER_SETTLE_MIN, wire_time * 4.0))
 
     def send(self, cmd: int, payload: bytes = b"") -> None:
-        self.ser.write(build_frame(cmd, payload))
-        self.ser.flush()
+        try:
+            self.ser.write(build_frame(cmd, payload))
+            self.ser.flush()
+        except (serial.SerialTimeoutException, serial.SerialException) as exc:
+            # 与 trigger() 同理：write/flush 超时不再无限阻塞，直接报错。
+            raise ProtocolError("发送帧失败（串口无响应）: %s" % exc)
 
     def recv(self, timeout: float = 1.0):
         """读一个完整回应帧。超时返回 None。
@@ -466,8 +485,11 @@ class IapSession:
         """
         deadline = time.time() + timeout
         while time.time() < deadline:
-            waiting = self.ser.in_waiting
-            chunk = self.ser.read(min(waiting, 256)) if waiting else b""
+            try:
+                waiting = self.ser.in_waiting
+                chunk = self.ser.read(min(waiting, 256)) if waiting else b""
+            except serial.SerialException as exc:
+                raise ProtocolError("读取串口失败: %s" % exc)
             if chunk:
                 self._rx.extend(chunk)
 
@@ -512,9 +534,12 @@ class IapSession:
     def connect(self, total_timeout: float = 5.0) -> int:
         """切到 bootloader 波特率反复 CONNECT，返回 bootloader 版本号。"""
         self.log("等待 bootloader（%d baud）…" % self.boot_baud)
-        self.set_baud(self.boot_baud)
-        self._rx.clear()
-        self.ser.reset_input_buffer()
+        try:
+            self.set_baud(self.boot_baud)
+            self._rx.clear()
+            self.ser.reset_input_buffer()
+        except serial.SerialException as exc:
+            raise ProtocolError("切换 bootloader 波特率失败: %s" % exc)
 
         deadline = time.time() + total_timeout
         while time.time() < deadline:

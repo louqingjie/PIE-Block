@@ -100,6 +100,12 @@ horizontal_alignment = 1
 vertical_alignment = 1
 autowrap_mode = 2
 
+[node name="Cancel" type="Button" parent="Dim/Center/Panel/Content" unique_id=2077711666]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+visible = false
+text = "取消"
+
 [node name="Close" type="Button" parent="Dim/Center/Panel/Content" unique_id=1416221568]
 custom_minimum_size = Vector2(0, 36)
 layout_mode = 2
