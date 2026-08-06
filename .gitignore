@@ -6,8 +6,13 @@
 .vscode/
 
 # Keil MDK build output
-**/Objects/
-**/Listings/
+# 忽略目录内的编译产物，但保留 .gdignore 本身可被 git 跟踪
+# （注意不能用 `**/Objects/` 目录级忽略，否则 git 不会进入目录，
+#  里面的 .gdignore 也一起被忽略、无法提交）
+**/Objects/**
+!**/Objects/.gdignore
+**/Listings/**
+!**/Listings/.gdignore
 
 # Keil user and workspace state
 *.uvopt

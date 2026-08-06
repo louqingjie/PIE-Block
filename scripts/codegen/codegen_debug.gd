@@ -86,6 +86,9 @@ func generate(cfg: Dictionary) -> String:
 
 	# ISP 自烧录监听代码
 	code += _gen_isp_monitor()
+	# 初始化诊断工具（LED + 蜂鸣器）与 UART1 查询发送（修复 UART 死锁）
+	code += _gen_led_diag_tools()
+	code += CodeGenBase.UART_TX_QUERY_CODE
 
 	# --- main() ---
 	code += "void main()\n{\n"
@@ -145,14 +148,28 @@ func generate(cfg: Dictionary) -> String:
 
 	# --- All_Init() ---
 	code += "void All_Init()\n{\n"
+	code += "    // 初始化诊断分步：卡在哪步，LED 就停在对应编码（P37 P36 P35 二进制）\n"
+	code += "    //   000 上电   001 Board_Init   010 UART1   011 LED 自检\n"
+	code += "    //   100 蜂鸣器PWM 101 拓展板 Init 111 完成\n"
+	code += "    StepBegin(0);\n"
 	code += "    Board_Init();\n"
+	code += "    StepDone(0);\n"
+	code += "    StepBegin(1);\n"
 	code += _gen_uart_init_first()
+	code += "    StepDone(1);\n"
+	code += "    StepBegin(2);\n"
+	code += _gen_led_diag_init()
+	code += "    StepDone(2);\n"
+	code += "    StepBegin(3);\n"
 	# 蜂鸣器引脚初始化（PWM 模式）
 	code += "    PWM_Init(%s, BUZZER_FREQ_READY, 0); // 蜂鸣器 P33\n" % BUZZER_PWM_CH
+	code += "    StepDone(3);\n"
+	code += "    StepBegin(4);\n"
 	# 扩展板初始化（所有引脚先置零频率，后续按行重新初始化）
 	code += "    ExpansionBoradControl(Init_Order,\n"
 	code += "                          0, 0, 0, 0, 0, 0, 0, 0);\n"
 	code += "    Ms_Delay(20);\n"
+	code += "    StepDone(4);\n"
 	code += _gen_init_done("Buzzer_Play")
 	code += "}\n\n"
 
@@ -204,7 +221,7 @@ func generate(cfg: Dictionary) -> String:
 	code += "    control_frame_pack[17] = (uint8_t)((data_p77 >> 8) & 0xFF);\n"
 	code += "    control_frame_pack[18] = (uint8_t)(data_p77 & 0xFF);\n"
 	code += "    for (i = 0; i < 21; i++)\n"
-	code += "        UART_PutChar(UART_1, control_frame_pack[i]);\n"
+	code += "        Uart1TxQuery(control_frame_pack[i]); // 查询发送，不依赖 TX 中断\n"
 	code += "}\n"
 
 	return code

@@ -361,6 +361,9 @@ func generate(cfg: Dictionary) -> String:
 	code += "    Ms_Delay(20);\n"
 	code += "}\n\n"
 	code += CodeGenBase.REMOTE_CONTROL_INIT_CODE
+	# 初始化诊断工具（LED + 蜂鸣器）与 UART1 查询发送（修复 UART 死锁）
+	code += _gen_led_diag_tools()
+	code += CodeGenBase.UART_TX_QUERY_CODE
 
 	# --- main() ---
 	code += "void main()\n"
@@ -370,6 +373,7 @@ func generate(cfg: Dictionary) -> String:
 	code += "    while (1)\n"
 	code += "    {\n"
 	code += _gen_isp_check_call()
+	code += _gen_nrf_poll()
 	code += _gen_burn_mode_loop()
 	code += "        // 测试手柄连接状态\n"
 	code += "        if (RcKeyValueRead(KEY_OFFSET_UP))\n"
@@ -406,17 +410,30 @@ func generate(cfg: Dictionary) -> String:
 	# --- All_Init ---
 	code += "void All_Init()\n"
 	code += "{\n"
+	code += "    // 初始化诊断分步：卡在哪步，LED 就停在对应编码（P37 P36 P35 二进制）\n"
+	code += "    //   000 上电   001 Board_Init   010 UART1   011 LED 自检\n"
+	code += "    //   100 NRF遥控 101 拓展板 Init 110 PWM/舵机 111 完成\n"
+	code += "    StepBegin(0);\n"
 	code += "    Board_Init();\n"
+	code += "    StepDone(0);\n"
+	code += "    StepBegin(1);\n"
 	code += _gen_uart_init_first()
-	code += "    GPIO_Init(GPIO_P3, GPIO_Pin_4, GPIO_OUT_PP);\n"
-	code += "    GPIO_Write_Bit(GPIO_P3, GPIO_Pin_4, 0);\n"
-	code += "    remoteControlInitWithTimeout();\n"
-	code += "    GPIO_Write_Bit(GPIO_P3, GPIO_Pin_4, 1);\n"
+	code += "    StepDone(1);\n"
+	code += "    StepBegin(2);\n"
+	code += _gen_led_diag_init()
+	code += "    StepDone(2);\n"
+	code += "    StepBegin(3);\n"
+	code += _gen_nrf_init_safe()
+	code += "    StepDone(3);\n"
+	code += "    StepBegin(4);\n"
 	code += "    ExpansionBoradControl(Init_Order,\n"
 	code += "                          %s); // p60,p62,p64,p66,p74,p75,p76,p77\n" % init_str
 	code += "    Ms_Delay(20);\n"
+	code += "    StepDone(4);\n"
+	code += "    StepBegin(5);\n"
 	code += pwm_init_lines
 	code += _gen_burn_mode_init()
+	code += "    StepDone(5);\n"
 	code += _gen_init_done("burnBeep")
 	code += "}\n\n"
 
@@ -689,6 +706,6 @@ func _gen_expansion_board_control() -> String:
 	code += "    control_frame_pack[17] = (uint8_t)((data_p77 >> 8) & 0xFF);\n"
 	code += "    control_frame_pack[18] = (uint8_t)(data_p77 & 0xFF);\n"
 	code += "    for (i = 0; i < 21; i++)\n"
-	code += "        UART_PutChar(UART_1, control_frame_pack[i]);\n"
+	code += "        Uart1TxQuery(control_frame_pack[i]); // 查询发送，不依赖 TX 中断\n"
 	code += "}\n"
 	return code

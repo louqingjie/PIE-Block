@@ -314,6 +314,9 @@ func generate(cfg: Dictionary) -> String:
 	code += "    Ms_Delay(20);\n"
 	code += "}\n\n"
 	code += CodeGenBase.REMOTE_CONTROL_INIT_CODE
+	# 初始化诊断工具（LED + 蜂鸣器）与 UART1 查询发送（修复 UART 死锁）
+	code += _gen_led_diag_tools()
+	code += CodeGenBase.UART_TX_QUERY_CODE
 
 	# --- main() ---
 	# 增量模式目标由 MCU 在设置初始关节角后通过共享 FK 初始化。
@@ -336,6 +339,7 @@ func generate(cfg: Dictionary) -> String:
 	code += "    while (1)\n"
 	code += "    {\n"
 	code += _gen_isp_check_call()
+	code += _gen_nrf_poll()
 	code += _gen_burn_mode_loop()
 	code += "        // 测试手柄连接状态\n"
 	code += "        if (RcKeyValueRead(KEY_OFFSET_UP))\n"
@@ -1907,12 +1911,22 @@ func _gen_all_init(joints: Array, jc: int, engineer_cfg: Dictionary = {},
 	var s: String = ""
 	s += "void All_Init()\n"
 	s += "{\n"
+	s += "    // 初始化诊断分步：卡在哪步，LED 就停在对应编码（P37 P36 P35 二进制）\n"
+	s += "    //   000 上电   001 Board_Init   010 UART1   011 LED 自检\n"
+	s += "    //   100 NRF遥控 101 拓展板 Init 110 PWM/舵机 111 完成\n"
+	s += "    StepBegin(0);\n"
 	s += "    Board_Init();\n"
+	s += "    StepDone(0);\n"
+	s += "    StepBegin(1);\n"
 	s += _gen_uart_init_first()
-	s += "    GPIO_Init(GPIO_P3, GPIO_Pin_4, GPIO_OUT_PP);\n"
-	s += "    GPIO_Write_Bit(GPIO_P3, GPIO_Pin_4, 0);\n"
-	s += "    remoteControlInitWithTimeout();\n"
-	s += "    GPIO_Write_Bit(GPIO_P3, GPIO_Pin_4, 1);\n"
+	s += "    StepDone(1);\n"
+	s += "    StepBegin(2);\n"
+	s += _gen_led_diag_init()
+	s += "    StepDone(2);\n"
+	s += "    StepBegin(3);\n"
+	s += _gen_nrf_init_safe()
+	s += "    StepDone(3);\n"
+	s += "    StepBegin(4);\n"
 	# 扩展板槽位（P60~P77）走 ExpansionBoradControl，主控板 MP03/MP74 走 PWM_Init
 	var exp_slots: Dictionary = _exp_slot_map(joints, jc)
 	var main_pwm: Array = _main_pwm_list(joints, jc)
@@ -1956,6 +1970,8 @@ func _gen_all_init(joints: Array, jc: int, engineer_cfg: Dictionary = {},
 		s += "    ExpansionBoradControl(Duty_Change_Order,\n"
 		s += "                          %s);\n" % _exp_args(home_vals)
 		s += "    Ms_Delay(20);\n"
+	s += "    StepDone(4);\n"
+	s += "    StepBegin(5);\n"
 	# 主控板 PWM 初始化
 	if main_pwm.size() > 0:
 		s += "    // 主控板舵机 PWM 初始化，初始占空比 = 初始角度对应值\n"
@@ -1970,6 +1986,7 @@ func _gen_all_init(joints: Array, jc: int, engineer_cfg: Dictionary = {},
 	if not engineer_cfg.is_empty():
 		s += "    for (i = 0; i < 8; i++) dutyOfAuxServo[i] = SERVO_MID_DUTY;\n"
 		s += "    for (i = 0; i < 2; i++) dutyOfAuxMainServo[i] = SERVO_MID_DUTY;\n"
+	s += "    StepDone(5);\n"
 	s += _gen_burn_mode_init()
 	s += _gen_init_done("burnBeep")
 	s += "}\n\n"
@@ -2064,7 +2081,7 @@ func _gen_expansion_board_func() -> String:
 	s += "    control_frame_pack[17] = (uint8_t)((data_p77 >> 8) & 0xFF);\n"
 	s += "    control_frame_pack[18] = (uint8_t)(data_p77 & 0xFF);\n"
 	s += "    for (i = 0; i < 21; i++)\n"
-	s += "        UART_PutChar(UART_1, control_frame_pack[i]);\n"
+	s += "        Uart1TxQuery(control_frame_pack[i]); // 查询发送，不依赖 TX 中断\n"
 	s += "}\n"
 	return s
 
