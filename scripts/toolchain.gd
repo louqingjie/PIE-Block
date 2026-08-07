@@ -68,19 +68,6 @@ const STCFLASH_SRC: String = "res://stc32g/toolchain/stcflash"
 ## 烧录脚本部署目标
 const STCFLASH_DST: String = "user://stcflash"
 
-## bootloader 的波特率。它在 PIE_BOOTLOADER/USER/inc/config.h 里由
-## `BAUD = 65536 - FOSC/4/115200` 编译期写死，改那边必须同步改这里。
-## 蓝牙模块也必须配成同一个波特率（115200 是蓝牙 SPP 稳定上限）。
-const DEFAULT_BOOT_BAUD: int = 115200
-## 触发 @PIEIAP# 命令用的波特率。
-##
-## 现在下载前必须先进"烧录模式"（App 按 P06+P07 把 UART1 切到蓝牙口
-## P43/P44 并以 115200 等待触发字，见 codegen_base.gd BURN_MODE_BAUD），
-## 所以触发字、bootloader、蓝牙三者统一为 115200。
-## 这与 App 正常运行时的拓展板波特率（230400，P30/P31）无关 ——
-## 运行时 App 的 UART1 在 P30/P31 收拓展板，蓝牙口不参与。
-const DEFAULT_APP_BAUD: int = 115200
-
 ## _run_python_logged 在「用户取消」/「硬超时」时返回的哨兵退出码。
 ## 进程是被 taskkill 树杀的，get_process_exit_code 不可靠，用哨兵区分；
 ## 调用方据此把失败阶段标成 canceled / timeout，而不是按日志乱猜。
@@ -626,11 +613,18 @@ func ensure_stcflash_deployed() -> bool:
 	return true
 
 
-## 探测系统 Python 可执行文件路径。
-## Windows 优先 python/py，避免探测通常不存在的 python3 时污染 Godot 日志；
-## 其他平台仍优先 python3。
+## 探测 Python 可执行文件路径。
+##
+## 优先使用项目自带 .venv 的 python（保证有烧录所需的 hid / intelhex 依赖），
+## 其次回退到系统 python / py / python3。
 ## 返回绝对路径，找不到返回空串。
 func find_python() -> String:
+	# 项目 .venv（Windows: .venv/Scripts/python.exe；其他平台: .venv/bin/python）
+	var venv_py: String = ProjectSettings.globalize_path("res://.venv/Scripts/python.exe") \
+		if OS.get_name() == "Windows" else ProjectSettings.globalize_path("res://.venv/bin/python")
+	if FileAccess.file_exists(venv_py):
+		return venv_py
+
 	var candidates := PackedStringArray(["python", "py", "python3"] \
 		if OS.get_name() == "Windows" else ["python3", "python", "py"])
 	for name in candidates:
@@ -662,124 +656,14 @@ func hex_exists(project_dst: String) -> bool:
 	return FileAccess.file_exists(get_hex_path(project_dst))
 
 
-## 向串口发送 @STCISP# 命令触发芯片软复位进 ISP 模式
-## 返回 true 表示发送成功
-func trigger_isp(com_port: String) -> bool:
-	var py: String = find_python()
-	if py.is_empty():
-		_emit("[Error] 未找到 Python，无法发送 ISP 触发命令")
-		return false
-	if not ensure_stcflash_deployed():
-		return false
-
-	var script: String = to_abs(STCFLASH_DST).path_join("trigger_isp.py")
-	var f: FileAccess = FileAccess.open(script, FileAccess.WRITE)
-	if f == null:
-		_emit("[Error] 无法创建 trigger_isp.py")
-		return false
-	f.store_string("""
-import sys
-import time
-try:
-    import serial
-except ImportError:
-    print("ERROR: pyserial not installed")
-    sys.exit(1)
-
-port = sys.argv[1]
-baud = int(sys.argv[2]) if len(sys.argv) > 2 else 230400
-try:
-    ser = serial.Serial(port, baud, timeout=0.5, parity=serial.PARITY_NONE)
-    ser.reset_input_buffer()
-    ser.write(b"@STCISP#")
-    ser.flush()
-    time.sleep(0.1)
-    ser.close()
-    print("OK")
-except Exception as e:
-    print("ERROR: " + str(e))
-    sys.exit(1)
-""")
-	f.close()
-
-	var output: Array = []
-	var cmd: String = py.replace("/", "\\")
-	# 用户程序 UART1 默认 230400；必须匹配，否则 @STCISP# 收不到
-	var exit_code: int = OS.execute(cmd, [script, com_port, "230400"], output, true)
-	var result: String = ""
-	if output.size() > 0:
-		result = output[0].strip_edges()
-
-	if exit_code != 0 or not result.contains("OK"):
-		_emit("[Error] 发送 ISP 触发命令失败: %s" % result)
-		return false
-
-	_emit("已发送 @STCISP# 命令，芯片将软复位进 ISP 模式")
-	return true
-
-
-## 走芯片 ROM ISP + stcgal 烧录 hex。**日常下载不要用这个，用 download_hex_iap。**
+## 走 USB-HID 烧录 hex（当前板子只支持 USB-HID，无串口/蓝牙路径）
 ##
-## 保留它的理由：ROM ISP 是芯片固化的，任何情况下都能用，
-## 属于兜底手段。但它有三个硬伤，正是我们做自建 bootloader 的动因：
-##   · 依赖 IRC 频率校准，trim 不准就连不上
-##   · 握手固定 2400 波特率，蓝牙模块波特率配死后无法切换
-##   · 必须在上电瞬间介入，意味着每次都要断电或按 Reset
-## 出厂烧底走的是官方 STC-ISP 软件，也不经这个函数。
+## 通过标准 USB-HID 与 STC32G ROM bootloader 通信（VID 0x34BF / PID 0x1001），
+## 调用 pie_block_hid.py。板子需处于 ISP 模式（上电冷启动进 ISP）。
 ##
-## 返回 {ok: bool, log: String}
-## app_baud: 用户程序串口波特率（发 @STCISP#）
-## isp_baud: ISP 监控程序通信波特率（发 0x7F / 协议包）
-## mode: "uart" 软复位触发；"uart-power" 等待断电上电
-func download_hex_uart(hex_path: String, com_port: String, app_baud: int = 230400, isp_baud: int = 230400, mode: String = "uart") -> Dictionary:
-	var py: String = find_python()
-	if py.is_empty():
-		return {"ok": false, "log": "未找到 Python"}
-	if not ensure_stcflash_deployed():
-		return {"ok": false, "log": "烧录脚本部署失败"}
-
-	var script: String = to_abs(STCFLASH_DST).path_join("pie_block_flash.py")
-	var cmd: String = py.replace("/", "\\")
-	var output: Array = []
-	var args: PackedStringArray = PackedStringArray()
-	if mode == "uart-power":
-		args = PackedStringArray([script, "uart-power", hex_path, com_port, str(isp_baud)])
-	else:
-		args = PackedStringArray([script, "uart", hex_path, com_port, str(app_baud), str(isp_baud)])
-	var exit_code: int = OS.execute(cmd, args, output, true)
-
-	var log_text: String = ""
-	if output.size() > 0:
-		log_text = output[0]
-
-	# stcgal 在管道场景下退出码可能非 0，但日志含 Disconnected!/Setting options 即视为成功
-	var ok: bool = (exit_code == 0) \
-		or (log_text.find("Disconnected!") >= 0) \
-		or (log_text.find("Setting options: done") >= 0) \
-		or (log_text.find("烧录成功") >= 0)
-
-	return {
-		"ok": ok,
-		"exit": exit_code,
-		"log": log_text,
-	}
-
-
-## 通过自建 bootloader 的 IAP 协议烧录 hex（日常下载路径）
-##
-## 与 download_hex_uart 的区别：对话对象是常驻 0xFF0000 的自己的 bootloader，
-## 不经 ROM ISP，因此不受 IRC trim 与 2400 握手波特率影响，
-## 也不需要断电或按 Reset。物理链路可以是蓝牙串口。
-## 前提是芯片出厂时已用官方 STC-ISP 烧过一次 bootloader
-## （参数见 stc32g/Projects/PIE_BOOTLOADER/dist/README.md）。
-##
-## app_baud: App 的 UART1 波特率（发 @PIEIAP# 触发命令用）
-## boot_baud: bootloader 的波特率，编译期写死在 config.h 里
 ## 返回 {ok: bool, exit: int, log: String, stage: String}
-##   stage 用于失败时定位卡在哪一步，取值见 _classify_iap_failure
-func download_hex_iap(hex_path: String, com_port: String,
-		app_baud: int = DEFAULT_APP_BAUD,
-		boot_baud: int = DEFAULT_BOOT_BAUD,
+##   stage 用于失败时定位，取值：env/connect/erase/program/verify/hex/canceled/timeout/done
+func flash_hid(hex_path: String,
 		on_log_line: Callable = Callable(),
 		token = null,
 		timeout_sec: float = 0.0) -> Dictionary:
@@ -789,31 +673,20 @@ func download_hex_iap(hex_path: String, com_port: String,
 	if not ensure_stcflash_deployed():
 		return {"ok": false, "exit": - 1, "log": "烧录脚本部署失败", "stage": "env"}
 
-	var script: String = to_abs(STCFLASH_DST).path_join("pie_block_iap.py")
+	var script: String = to_abs(STCFLASH_DST).path_join("pie_block_hid.py")
 	var log_abs: String = to_abs(STCFLASH_DST).path_join(DOWNLOAD_LOG_NAME)
 	var exit_code: int = _run_python_logged(
-		py, [script, hex_path, com_port, str(app_baud), str(boot_baud)], log_abs,
+		py, [script, hex_path], log_abs,
 		on_log_line, token, timeout_sec)
 	var log_text: String = _read_log(log_abs)
 
-	# 用户取消 / 硬超时：进程已被树杀，退出码是哨兵，直接映射成对应阶段，
-	# 不按日志猜（日志可能只有半句）；也不继续走旧 bootloader 探测。
 	if exit_code == EXIT_CANCELED:
 		return {"ok": false, "exit": exit_code, "log": log_text, "stage": "canceled"}
 	if exit_code == EXIT_TIMEOUT:
 		return {"ok": false, "exit": exit_code, "log": log_text, "stage": "timeout"}
 
-	# 脚本退出码可控，以它为准；日志关键字只作兜底
 	var ok: bool = (exit_code == 0) or log_text.contains("烧录成功")
-	var stage: String = "done" if ok else _classify_iap_failure(log_text)
-	# USB 旧板兼容探测：只识别并明确提示物理升级，不继续用旧速率下载。
-	if not ok and stage == "connect" and boot_baud == DEFAULT_BOOT_BAUD:
-		var old_probe: Dictionary = probe_bootloader(com_port, app_baud, 115200, token)
-		if bool(old_probe.get("ok", false)) and int(old_probe.get("version", 0)) < 0x0200:
-			stage = "bootloader_upgrade"
-			log_text += "\n检测到旧 115200 bootloader（版本 0x%04X）。" % int(old_probe["version"])
-			log_text += "\n请使用官方 STC-ISP 物理升级一次；旧版不支持蓝牙一键重烧。\n"
-
+	var stage: String = "done" if ok else _classify_hid_failure(log_text)
 	return {
 		"ok": ok,
 		"exit": exit_code,
@@ -821,6 +694,41 @@ func download_hex_iap(hex_path: String, com_port: String,
 		"stage": stage,
 		"streamed": on_log_line.is_valid(),
 	}
+
+
+## 从 HID 烧录日志判断失败阶段，用于给出针对性提示。
+func _classify_hid_failure(log_text: String) -> String:
+	if log_text.contains("info OK") and log_text.contains("unlock OK") \
+			and log_text.contains("写块") and log_text.contains("失败"):
+		return "program"
+	if log_text.contains("erase OK"):
+		return "program" if log_text.contains("写块") else "erase"
+	if log_text.contains("未找到 STC USB-HID 设备"):
+		return "connect"
+	if log_text.contains("hex 不存在") or log_text.contains("Loading flash"):
+		return "hex" if log_text.contains("错误") else "connect"
+	return "unknown"
+
+
+## 探测 USB-HID 烧录设备（STC32G bootloader，VID 0x34BF / PID 0x1001）是否在线。
+## 板子需处于 ISP 模式（上电冷启动进入）才会枚举为该 HID 设备。
+func detect_hid_device() -> bool:
+	var py: String = find_python()
+	if py.is_empty():
+		return false
+	if not ensure_stcflash_deployed():
+		return false
+
+	var script: String = to_abs(STCFLASH_DST).path_join("enumerate_hid.py")
+	var output: Array = []
+	var exit_code: int = OS.execute(py.replace("/", "\\"), [script], output, true)
+	if exit_code != 0 or output.is_empty():
+		return false
+	# enumerate_hid.py 找到 STC 设备时输出 "Found N STC HID device(s):" 或
+	# "vid=34bf pid=1001 ..."；没找到输出 "NO STC (0x34BF) HID DEVICE FOUND"
+	var text: String = str(output[0])
+	return text.contains("vid=34bf") and not text.contains("NO STC")
+
 
 
 ## 跑 Python 脚本并把输出重定向到文件，返回退出码。
@@ -904,58 +812,26 @@ func _read_log(log_abs: String) -> String:
 	return FileAccess.get_file_as_string(log_abs)
 
 
-## 从下载日志判断失败发生在哪一阶段，用于给出针对性提示。
-##
-## 顺序很重要：越靠后的阶段先判，因为日志是累积的 ——
-## 卡在 PROGRAM 时日志里同样有前面 CONNECT 成功的字样。
-func _classify_iap_failure(log_text: String) -> String:
-	if log_text.contains("读回校验"):
-		return "verify"
-	if log_text.contains("PROGRAM"):
-		return "program"
-	if log_text.contains("ERASE"):
-		return "erase"
-	if log_text.contains("bootloader 没有响应"):
-		return "connect"
-	if log_text.contains("读取固件失败"):
-		return "hex"
-	if log_text.contains("打开串口"):
-		return "port"
-	return "unknown"
-
-
-## 把失败阶段翻译成给用户看的排查建议。
+## 把 HID 烧录失败阶段翻译成给用户看的排查建议。
 ## 目标用户没有嵌入式背景，所以每条都给可执行的动作而不是术语。
-func iap_failure_hint(stage: String, port_kind: String = "") -> PackedStringArray:
+func hid_failure_hint(stage: String) -> PackedStringArray:
 	match stage:
-		"port":
-			return PackedStringArray([
-				"串口打不开。可能是：",
-				"  · 端口被别的程序占用（串口助手、另一个 pie-block 窗口）",
-				"  · 蓝牙已断开，重新配对一次",
-			])
 		"connect":
-			var hints := PackedStringArray([
-				"联系不上板子上的引导程序。按顺序检查：",
-				"  · 板子是否通电",
-				"  · 选的串口是否正确（换个端口再试）",
-			])
-			if port_kind == "bluetooth":
-				hints.append("  · 蓝牙模块波特率是否与程序一致")
-			hints.append("把 P32 接到 GND 后重新上电，再点一次烧录。")
-			hints.append("若仍无响应，需用官方 STC-ISP 烧一次 PIE_BOOTLOADER。")
-			return hints
-		"erase", "program":
 			return PackedStringArray([
-				"写入过程中断。板上的程序已被清除，但这不会损坏板子 ——",
+				"没有检测到 USB-HID 设备。请确认：",
+				"  · 板子已通过 USB 线连接到电脑",
+				"  · 板子处于 ISP 模式（拔下 USB 再插上，冷启动进入）",
+			])
+		"erase":
+			return PackedStringArray([
+				"擦除失败。板上的程序可能已被清除，但这不会损坏板子 ——",
 				"引导程序会停在下载模式，直接再点一次下载即可。",
-				"若反复失败，检查蓝牙信号或换用 USB 线。",
+				"若反复失败，请重新插拔 USB 让板子回到 ISP 模式。",
 			])
-		"verify":
+		"program", "verify":
 			return PackedStringArray([
-				"固件已经写入，但读回校验没有完成。",
-				"引导程序仍在下载模式，可以直接重试。",
-				"请保持串口连接；若反复停在这里，重新插拔 USB 后再试。",
+				"写入中断。板上的程序可能已被清除，但这不会损坏板子 ——",
+				"重新插拔 USB 让板子回到 ISP 模式，再点一次下载即可。",
 			])
 		"hex":
 			return PackedStringArray([
@@ -968,24 +844,6 @@ func iap_failure_hint(stage: String, port_kind: String = "") -> PackedStringArra
 			])
 		_:
 			return PackedStringArray()
-
-
-## 跑 IAP 协议脚本的自测（不需要串口，也不需要板子）
-## 返回 {ok: bool, log: String}，供开发期回归用
-func run_iap_selftest() -> Dictionary:
-	var py: String = find_python()
-	if py.is_empty():
-		return {"ok": false, "log": "未找到 Python"}
-	if not ensure_stcflash_deployed():
-		return {"ok": false, "log": "烧录脚本部署失败"}
-
-	var script: String = to_abs(STCFLASH_DST).path_join("pie_block_iap.py")
-	var output: Array = []
-	var exit_code: int = OS.execute(py.replace("/", "\\"), [script, "--selftest"], output, true)
-	var log_text: String = ""
-	if output.size() > 0:
-		log_text = output[0]
-	return {"ok": exit_code == 0, "log": log_text}
 
 
 ## 列举可用串口（只返回 COM 口名，保留给旧调用点）
@@ -1160,114 +1018,3 @@ func _kind_name(kind: String) -> String:
 			return "系统虚拟串口"
 		_:
 			return "未知类型串口"
-
-
-## 返回按可信度排序的候选下载端口，供"逐个尝试"下载使用。
-##
-## 与 pick_download_port 不同：这里不做"只有一个才敢选"的保守判断，
-## 而是把 USB > 蓝牙 > 未知 全部按顺序排出来交给调用方逐个试。
-## 系统虚拟口（串行鼠标、自带的 COM1 之类）直接排除，试它们没意义。
-func ordered_candidate_ports(ports: Array = []) -> Array:
-	var list: Array = ports if not ports.is_empty() else list_serial_ports_detailed()
-	var groups: Dictionary = {"usb_serial": [], "bluetooth": [], "unknown": []}
-	for info in list:
-		var kind: String = str(info.get("kind", "unknown"))
-		if kind == "virtual":
-			continue
-		if not groups.has(kind):
-			kind = "unknown"
-		groups[kind].append(info)
-	var result: Array = []
-	for kind in ["usb_serial", "bluetooth", "unknown"]:
-		result.append_array(groups[kind])
-	return result
-
-
-## 走蓝牙/烧录模式时的说明。
-##
-## 下载链路（触发字、bootloader、蓝牙）统一 115200；
-## 下载前需按 P06+P07 进烧录模式把 UART1 切到蓝牙口。
-func bluetooth_baud_note() -> PackedStringArray:
-	return PackedStringArray([
-		"下载链路使用统一的 %d 波特率（烧录模式/蓝牙/bootloader 一致）。" % DEFAULT_BOOT_BAUD,
-		"下载前请先在板上按住 P06+P07 进入烧录模式（蜂鸣器响），",
-		"此时 UART1 切到蓝牙口等待触发字。",
-	])
-
-
-## 探测某个串口上的 bootloader 是否在线。
-##
-## 用途：下载前确认端口选对了、板子上有 bootloader，
-## 这样失败时能给出确切原因，而不是让用户面对一堆下载日志猜。
-##
-## 注意：正常情况下芯片跑的是 App 而不是 bootloader，直接发 CONNECT
-## 会被 App 当成普通串口数据（实测会收到 App 自己的输出）。
-## 所以这里必须先发触发字让 App 交出控制权 —— 与 download_hex_iap
-## 的第一步是同一套逻辑，复用 pie_block_iap.py 的 connect 流程。
-##
-## 副作用：探测成功后芯片停在 bootloader 的下载模式，不再跑 App。
-## 要恢复运行需重新下载固件或断电重启。因此不要在后台轮询调用它。
-##
-## 返回 {ok: bool, version: int, log: String}
-func probe_bootloader(com_port: String, app_baud: int = DEFAULT_APP_BAUD,
-		boot_baud: int = DEFAULT_BOOT_BAUD,
-		token = null) -> Dictionary:
-	var py: String = find_python()
-	if py.is_empty():
-		return {"ok": false, "version": 0, "log": "未找到 Python"}
-	if not ensure_stcflash_deployed():
-		return {"ok": false, "version": 0, "log": "烧录脚本部署失败"}
-
-	var script: String = to_abs(STCFLASH_DST).path_join("pie_block_probe.py")
-	var f: FileAccess = FileAccess.open(script, FileAccess.WRITE)
-	if f == null:
-		return {"ok": false, "version": 0, "log": "无法写探测脚本"}
-	# 复用 pie_block_iap 的会话逻辑：trigger 让 App 复位，再 connect。
-	# 写成独立脚本而不是给 pie_block_iap.py 加子命令，是为了让
-	# 那个文件保持"只做下载"的单一职责。
-	f.store_string("""
-import sys
-sys.path.insert(0, sys.argv[1])
-import pie_block_iap as m
-
-port = sys.argv[2]
-app_baud = int(sys.argv[3])
-boot_baud = int(sys.argv[4])
-
-sess = m.IapSession(port, app_baud, boot_baud, verbose=True)
-try:
-    sess.open()
-except Exception as exc:
-    print("打开串口 %s 失败: %s" % (port, exc))
-    sys.exit(1)
-try:
-    sess.trigger()
-    ver = sess.connect()
-    print("PROBE_OK version=0x%04X" % ver)
-    sys.exit(0)
-except m.ProtocolError as exc:
-    print("探测失败: %s" % exc)
-    sys.exit(1)
-finally:
-    sess.close()
-""")
-	f.close()
-
-	var log_abs: String = to_abs(STCFLASH_DST).path_join("pie_block_probe.log")
-	var exit_code: int = _run_python_logged(
-		py,
-		[script, to_abs(STCFLASH_DST), com_port, str(app_baud), str(boot_baud)],
-		log_abs, Callable(), token, 15.0)
-	var log_text: String = _read_log(log_abs)
-
-	var version: int = 0
-	var marker: String = "PROBE_OK version=0x"
-	var idx: int = log_text.find(marker)
-	if idx >= 0:
-		version = log_text.substr(idx + marker.length(), 4).hex_to_int()
-
-	return {
-		"ok": exit_code == 0 and version > 0,
-		"version": version,
-		"log": log_text,
-	}
