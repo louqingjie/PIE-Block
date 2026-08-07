@@ -75,6 +75,8 @@ var _download_controller = null
 ## 编译方式下拉（本地/云端）
 var _build_mode: OptionButton = null
 var _upgrade_active: bool = false
+## 「无法开始烧录（HID 未连接）」重试时要用到的编译产物路径
+var _retry_download_dst: String = ""
 ## 正在走「导出 HEX」流程：编译成功回调改弹保存对话框而不是烧录
 var _hex_export_pending: bool = false
 var _wv: Control = null
@@ -213,6 +215,8 @@ func _connect_signals() -> void:
 		upgrade_progress.closed.connect(_on_upgrade_panel_closed)
 	if upgrade_progress != null and upgrade_progress.has_signal("cancel_requested"):
 		upgrade_progress.cancel_requested.connect(_on_upgrade_cancel_pressed)
+	if upgrade_progress != null and upgrade_progress.has_signal("retry_requested"):
+		upgrade_progress.retry_requested.connect(_on_upgrade_retry_pressed)
 	var back: Node = get_node_or_null(P_BACK)
 	if back is BaseButton:
 		back.pressed.connect(_on_back_pressed)
@@ -690,7 +694,8 @@ func _on_build_succeeded() -> void:
 	if _upgrade_active:
 		_set_upgrade_progress("编译完成", 28.0, "正在连接主控板…")
 		if not _download_controller.start(_project_dst):
-			_fail_upgrade("无法开始烧录", "请查看下方输出中的串口或固件提示。")
+			_fail_upgrade_retry("无法开始烧录",
+				"未检测到 USB-HID 设备。\n请确认板子已通过 USB 线连接，并处于 ISP 模式（拔下 USB 再插上）。")
 
 
 ## 编译成功后弹出保存对话框，让用户选择 hex 导出位置
@@ -881,7 +886,12 @@ func _on_upgrade_download_finished(result: Dictionary) -> void:
 		_set_upgrade_button_busy(false)
 		return
 	if _upgrade_active and not bool(result.get("ok", false)):
-		_fail_upgrade("烧录失败", "连接或写入未完成，请查看下方输出。")
+		# 连不上主控板（HID 未连接/中途掉线）：弹窗带「重试」，重新连接后可直接重试
+		if str(result.get("stage", "")) in ["", "connect"]:
+			_fail_upgrade_retry("烧录失败",
+				"未能连接主控板。\n请确认板子已通过 USB 线连接，并处于 ISP 模式（拔下 USB 再插上）。")
+		else:
+			_fail_upgrade("烧录失败", "连接或写入未完成，请查看下方输出。")
 
 
 func _on_upgrade_cancel_pressed() -> void:
@@ -904,10 +914,41 @@ func _set_upgrade_progress(stage: String, percent: float, detail: String) -> voi
 
 func _fail_upgrade(stage: String, detail: String) -> void:
 	_upgrade_active = false
+	_retry_download_dst = ""
 	var panel: Node = get_node_or_null(P_UPGRADE_PROGRESS)
 	if panel != null and panel.has_method("fail"):
 		panel.fail(stage, detail)
 	_set_upgrade_button_busy(false)
+
+
+## 烧录前连接失败（如未检测到 USB-HID 设备）：弹窗带「重试」按钮，
+## 用户重新连接设备后点重试可直接烧录，无需重新编译。
+func _fail_upgrade_retry(stage: String, detail: String) -> void:
+	_retry_download_dst = _project_dst
+	_upgrade_active = false
+	var panel: Node = get_node_or_null(P_UPGRADE_PROGRESS)
+	if panel != null and panel.has_method("fail_with_retry"):
+		panel.fail_with_retry(stage, detail)
+	_set_upgrade_button_busy(false)
+
+
+## 弹窗「重试」按钮：设备重新连接后重跑烧录（编译产物已存在，无需重新编译）。
+func _on_upgrade_retry_pressed() -> void:
+	var dst: String = _retry_download_dst
+	_retry_download_dst = ""
+	if dst.is_empty() or _download_controller == null \
+			or _download_controller.is_busy() \
+			or (_build_controller != null and _build_controller.is_busy()):
+		return
+	var panel: Node = get_node_or_null(P_UPGRADE_PROGRESS)
+	if panel != null and panel.has_method("begin"):
+		panel.begin()
+	_upgrade_active = true
+	_set_upgrade_progress("正在连接主控板", 30.0, "正在启动烧录程序…")
+	_set_upgrade_button_busy(true)
+	if not _download_controller.start(dst):
+		_fail_upgrade_retry("无法开始烧录",
+			"未检测到 USB-HID 设备。\n请确认板子已通过 USB 线连接，并处于 ISP 模式（拔下 USB 再插上）。")
 
 
 func _set_upgrade_button_busy(is_busy: bool) -> void:

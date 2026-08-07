@@ -64,12 +64,12 @@ const UART_TX_QUERY_CODE: String = \
 ## 要求：主循环必须调用 _gen_nrf_poll()，否则遥控器收不到数据。
 func _gen_nrf_init_safe() -> String:
 	return ("    // NRF 遥控器初始化：全程关中断 + 初始化后关 P2.6 EXTI\n"
-		+ "    // （P2.6 高优先级中断在 ISR 里做 SPI/reentrant，遥控器开着会卡死；\n"
-		+ "    //  接收改为主循环轮询 nrf_handler()，见主循环开头）\n"
-		+ "    EA = 0;\n"
-		+ "    remoteControlInitWithTimeout();\n"
-		+ "    P2INTE &= ~GPIO_Pin_6; // 关 P2.6 EXTI：接收改主循环轮询\n"
-		+ "    EA = 1;\n")
+		+"    // （P2.6 高优先级中断在 ISR 里做 SPI/reentrant，遥控器开着会卡死；\n"
+		+"    //  接收改为主循环轮询 nrf_handler()，见主循环开头）\n"
+		+"    EA = 0;\n"
+		+"    remoteControlInitWithTimeout();\n"
+		+"    P2INTE &= ~GPIO_Pin_6; // 关 P2.6 EXTI：接收改主循环轮询\n"
+		+"    EA = 1;\n")
 
 
 ## 主循环开头的 NRF 轮询接收（P2.6 中断已关，靠这里读遥控器数据）。
@@ -107,7 +107,7 @@ func _gen_led_diag_tools(led_port: String = "GPIO_P3",
 	code += "    GPIO_Write_Bit(LED_PORT, LED3_PIN, (show & 0x04) ? 0 : 1);\n}\n\n"
 	code += "// 蜂鸣器响一声（PWM 驱动，freq 音调 / ms 时长）\n"
 	code += "static void Beep(uint16_t freq, uint16_t ms)\n{\n"
-	code += "    PWM_SET_Frequency(BUZZER_CH, freq, 500);\n"
+	code += "    PWM_SET_Frequency(BUZZER_CH, freq, 5000);\n"
 	code += "    Ms_Delay(ms);\n"
 	code += "    PWM_SET_Frequency(BUZZER_CH, freq, 0);\n}\n\n"
 	code += "// 进入某步：先显示编码（若该步阻塞，LED 就停在这里）\n"
@@ -122,10 +122,10 @@ func _gen_led_diag_tools(led_port: String = "GPIO_P3",
 ## 生成 All_Init 开头的 LED GPIO 初始化（三颗 LED 推挽输出 + 全亮自检）。
 func _gen_led_diag_init() -> String:
 	return ("    // 诊断 LED（P35/P36/P37）推挽输出，全亮自检后熄灭\n"
-		+ "    GPIO_Init(LED_PORT, (GPIO_Pin_enum)(LED1_PIN | LED2_PIN | LED3_PIN), GPIO_OUT_PP);\n"
-		+ "    LedShow(7);\n"
-		+ "    Ms_Delay(200);\n"
-		+ "    LedShow(0);\n")
+		+"    GPIO_Init(LED_PORT, (GPIO_Pin_enum)(LED1_PIN | LED2_PIN | LED3_PIN), GPIO_OUT_PP);\n"
+		+"    LedShow(7);\n"
+		+"    Ms_Delay(200);\n"
+		+"    LedShow(0);\n")
 
 
 ## 生成串口初始化，**必须放在所有外设初始化之前**。
@@ -152,10 +152,10 @@ func _gen_uart_init_first() -> String:
 ## buzzer 形参为构型自己的蜂鸣器函数名：Buzzer_Play（调试）。
 func _gen_init_done(buzzer: String) -> String:
 	return ("    // 初始化完成提示音：P33 蜂鸣器演奏上行琶音\n"
-		+ "    %s(523, 120);\n" % buzzer
-		+ "    %s(659, 120);\n" % buzzer
-		+ "    %s(784, 120);\n" % buzzer
-		+ "    %s(1047, 240);\n" % buzzer)
+		+"    %s(523, 120);\n" % buzzer
+		+"    %s(659, 120);\n" % buzzer
+		+"    %s(784, 120);\n" % buzzer
+		+"    %s(1047, 240);\n" % buzzer)
 
 
 # ============================================================ 共享工具函数

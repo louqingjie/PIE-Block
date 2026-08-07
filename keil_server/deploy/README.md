@@ -1,12 +1,12 @@
 # deploy/ — 服务器部署与运维脚本
 
-把编译服务器从「手动开个窗口跑」升级为「Windows 服务 + 自动监控」，共 6 个脚本：
+把编译服务器从「手动开个窗口跑」升级为「Windows 服务 + 自动监控」，共 7 个脚本：
 
 | 脚本 | 作用 |
-|---|---|
+| --- | --- |
 | `install_nssm.ps1` | **一键托管**：把 keil_server（PieBlockKeil）和 cloudflared 隧道（PieBlockTunnel）装成 NSSM 服务：崩溃自动重启、开机自启、日志落盘与 1MB 轮转、SYSTEM 账号环境变量固化（KEIL_API_KEY / KEIL_PATH）。可重复运行（幂等） |
 | `uninstall_nssm.ps1` | 停止并删除上述两个服务（`-AlsoRemoveTasks` 连计划任务一起删） |
-| `install_scheduled_tasks.ps1` | 注册两个计划任务：健康监控（每 60 秒，任务计划程序最小间隔 1 分钟）+ 每日备份（03:00） |
+| `install_scheduled_tasks.ps1` | 注册两个计划任务：健康监控（每 60 秒）+ 每日备份（03:00） |
 | `stop_server.ps1` / `start_server.ps1` | 停用/恢复整个编译服务（不删服务）：停止服务 + 改手动启动 + 停/启健康监控任务 |
 | `monitor_health.ps1` | 健康检查：`/health` 连续失败 3 次自动重启服务；检查隧道服务存活；可选公网全链路探测（需 `-PublicUrl`） |
 | `backup_data.ps1` | 每日备份不可再生数据：`api_keys.json`（用户 key 表）、`admin_key.txt`、隧道配置与凭证 json、环境快照；默认保留 14 天 |
@@ -45,12 +45,14 @@ nssm restart PieBlockKeil
 
 ## 设计说明
 
-- **环境变量为什么在脚本里写死**：NSSM 服务以 SYSTEM 账号运行，读不到你登录用户的
-  `KEIL_API_KEY` / `KEIL_PATH`，所以安装时必须显式写入服务（`AppEnvironmentExtra`）。
-- **监控为什么用计划任务而不是 NSSM 内嵌**：NSSM 只管"进程死没死"，卡死/Keil 丢失
-  它不知道；30 秒一次的 `/health` 探测能发现"进程活着但服务不可用"。
+- **环境变量为什么在脚本里写死**：NSSM 服务以 SYSTEM 账号运行，读不到你登录
+  用户的 `KEIL_API_KEY` / `KEIL_PATH`，所以安装时必须显式写入服务
+  （`AppEnvironmentExtra`）
+- **监控为什么用计划任务而不是 NSSM 内嵌**：NSSM 只管「进程死没死」，卡死/Keil
+  丢失它不知道；定时 `/health` 探测能发现「进程活着但服务不可用」
 - **重启防抖**：`monitor_health.ps1` 两次重启至少间隔 60 秒，避免服务起不来时
-  每 30 秒重启一次打循环。
-- **备份目标**：默认 `C:\pieblock-backup`（计划任务以最高权限运行，可写系统盘根）。
-  恢复到新机器 = 把 `api_keys.json` / `admin_key.txt` 复制回 `keil_server\data\`，
-  隧道配置与凭证复制回原位置。注意 Keil 许可证机器绑定，换机要重新申请。
+  反复重启打循环
+- **备份目标**：默认 `C:\pieblock-backup`（计划任务以最高权限运行，可写系统盘
+  根）。恢复到新机器 = 把 `api_keys.json` / `admin_key.txt` 复制回
+  `keil_server\data\`，隧道配置与凭证复制回原位置。注意 Keil 许可证机器绑定，
+  换机要重新申请

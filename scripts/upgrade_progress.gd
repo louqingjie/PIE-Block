@@ -3,6 +3,8 @@ extends Control
 
 signal closed
 signal cancel_requested
+## 用户点「重试」（烧录前连接失败时出现）：由调用方重新尝试烧录。
+signal retry_requested
 
 
 static func compile_error_hint(project_stage: int) -> String:
@@ -16,11 +18,13 @@ static func compile_error_hint(project_stage: int) -> String:
 @onready var _detail: Label = get_node("Dim/Center/Panel/Content/Detail")
 @onready var _close: Button = get_node("Dim/Center/Panel/Content/Close")
 @onready var _cancel: Button = get_node("Dim/Center/Panel/Content/Cancel")
+@onready var _retry: Button = get_node("Dim/Center/Panel/Content/Retry")
 
 
 func _ready() -> void:
 	_close.pressed.connect(_on_close_pressed)
 	_cancel.pressed.connect(_on_cancel_pressed)
+	_retry.pressed.connect(_on_retry_pressed)
 	hide()
 
 
@@ -29,6 +33,7 @@ func begin() -> void:
 	_close.hide()
 	_cancel.show()
 	_cancel.disabled = true
+	_retry.hide()
 	set_progress("准备升级", 2.0, "正在保存当前程序…")
 	_show_on_top()
 
@@ -40,6 +45,7 @@ func begin_solver() -> void:
 	_close.hide()
 	_cancel.show()
 	_cancel.disabled = true
+	_retry.hide()
 	set_progress("准备编译求解器", 2.0, "仿真固件不会初始化或输出任何执行器 IO。")
 	_show_on_top()
 
@@ -68,10 +74,24 @@ func complete() -> void:
 func fail(stage_text: String, detail_text: String) -> void:
 	_title.text = "升级未完成"
 	_cancel.hide()
+	_retry.hide()
 	_stage.text = stage_text
 	_detail.text = detail_text
 	_close.text = "关闭"
 	_show_close_on_top()
+
+
+## 失败状态显示「重试」按钮（如烧录前未检测到 USB-HID 设备），
+## 用户重新连接设备后可点击重试，不需要重新编译。
+func fail_with_retry(stage_text: String, detail_text: String) -> void:
+	_title.text = "升级未完成"
+	_cancel.hide()
+	_stage.text = stage_text
+	_detail.text = detail_text
+	_close.text = "关闭"
+	_show_close_on_top()
+	_retry.show()
+	_retry.grab_focus()
 
 
 ## 用户取消或硬超时自动取消后调用：显示「已取消」状态与关闭按钮。
@@ -94,6 +114,11 @@ func _on_cancel_pressed() -> void:
 	if _cancel.disabled:
 		return
 	cancel_requested.emit()
+
+
+func _on_retry_pressed() -> void:
+	_retry.hide()
+	retry_requested.emit()
 
 
 ## 显示关闭按钮并确保面板在最前（可接收鼠标与键盘）。

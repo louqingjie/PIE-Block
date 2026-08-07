@@ -175,7 +175,7 @@ func generate(cfg: Dictionary) -> String:
 	code += "/// @param freq 频率（Hz）\n"
 	code += "/// @param duration_ms 持续时间（ms）\n"
 	code += "void Buzzer_Play(uint32_t freq, uint16_t duration_ms)\n{\n"
-	code += "    PWM_SET_Frequency(%s, freq, 500); // 50%% 占空比驱动蜂鸣器\n" % BUZZER_PWM_CH
+	code += "    PWM_SET_Frequency(%s, freq, 5000); // 50%% 占空比驱动蜂鸣器\n" % BUZZER_PWM_CH
 	code += "    Ms_Delay(duration_ms);\n"
 	code += "    PWM_SET_Frequency(%s, freq, 0); // 停止蜂鸣\n" % BUZZER_PWM_CH
 	code += "}\n\n"
