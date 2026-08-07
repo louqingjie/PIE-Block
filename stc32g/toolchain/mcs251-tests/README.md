@@ -1,9 +1,9 @@
 # MCS-251 differential tests
 
-This directory contains architecture-level tests shared by the Keil C251
-baseline, the SDCC `mcs251` port, and the instruction simulator.
+Architecture-level tests shared by the Keil C251 baseline, the SDCC `mcs251`
+port, and the instruction simulator.
 
-The calibration cases currently cover:
+## Calibration cases
 
 - `uart_smoke.c`: reset, near call, direct SFR write, and an infinite loop.
 - `integer_control.c`: source-mode registers, function arguments and returns,
@@ -14,7 +14,9 @@ The calibration cases currently cover:
 Keil and SDCC HEX files may differ in layout and instruction selection. Their
 observable UART traces and declared memory end states must match.
 
-Run the simulator tests from the repository root:
+## Running the tests
+
+From the repository root:
 
 ```powershell
 .venv\Scripts\python.exe -m unittest discover `

@@ -95,7 +95,9 @@ class HidFlasher:
             if len(wire) < 64:
                 wire += b"\x00" * (64 - len(wire))
             self.h.write(wire)
-            time.sleep(0.03)
+            # 报告间仅留 1ms 余量：USB HID 中断端点自带流控（设备忙时 NAK，
+            # 主机自动重试），不需要 30ms 级的节流；官方 ISP 即连续发送。
+            time.sleep(0.001)
         return self._read(timeout_ms)
 
     def _expect_ack(self, pkt: bytes, label: str, timeout_ms: int = 3000) -> bytes:

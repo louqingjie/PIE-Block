@@ -106,6 +106,12 @@ layout_mode = 2
 visible = false
 text = "取消"
 
+[node name="Retry" type="Button" parent="Dim/Center/Panel/Content" unique_id=1096837452]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+visible = false
+text = "重试"
+
 [node name="Close" type="Button" parent="Dim/Center/Panel/Content" unique_id=1416221568]
 custom_minimum_size = Vector2(0, 36)
 layout_mode = 2

@@ -193,6 +193,9 @@ var _download_controller = null
 var _build_mode: OptionButton = null
 var _upgrade_active: bool = false
 var _solver_upgrade_active: bool = false
+## 「无法开始烧录（HID 未连接）」重试时要用到的编译产物路径与构型
+var _retry_download_dst: String = ""
+var _retry_is_solver: bool = false
 var _project_dst_override: String = ""
 ## 正在走「导出 HEX」流程：编译成功回调改弹保存对话框而不是烧录
 var _hex_export_pending: bool = false
@@ -453,6 +456,8 @@ func _connect_signals() -> void:
 		upgrade_progress.closed.connect(_on_upgrade_panel_closed)
 	if upgrade_progress != null and upgrade_progress.has_signal("cancel_requested"):
 		upgrade_progress.cancel_requested.connect(_on_upgrade_cancel_pressed)
+	if upgrade_progress != null and upgrade_progress.has_signal("retry_requested"):
+		upgrade_progress.retry_requested.connect(_on_upgrade_retry_pressed)
 	# 配置区所有控件统一挂一个「改动」监听，用于脏标记与阶段二锁定。
 	# 走通用遍历而非逐个列举：上面那些 _run_check 连接是按语义挑的，
 	# 这里要的是「任何控件动了」，漏一个就会让脏标记或锁定失效。
@@ -1694,7 +1699,7 @@ func _on_build_succeeded() -> void:
 	if _solver_upgrade_active:
 		_set_upgrade_progress("求解器编译完成", 28.0, "正在连接主控板…")
 		if not _download_controller.start(TC.PROJECT_ENGINEER_SIM_DST):
-			_fail_upgrade("无法开始烧录",
+			_fail_upgrade_retry(true, "无法开始烧录",
 				"未检测到 USB-HID 设备。\n请确认板子已通过 USB 线连接，并处于 ISP 模式（拔下 USB 再插上）。")
 		return
 	if not _project.is_empty():
@@ -1706,7 +1711,7 @@ func _on_build_succeeded() -> void:
 	if _upgrade_active:
 		_set_upgrade_progress("编译完成", 28.0, "正在连接主控板…")
 		if not _download_controller.start(_get_current_project_dst()):
-			_fail_upgrade("无法开始烧录",
+			_fail_upgrade_retry(false, "无法开始烧录",
 				"未检测到 USB-HID 设备。\n请确认板子已通过 USB 线连接，并处于 ISP 模式（拔下 USB 再插上）。")
 
 
@@ -2173,10 +2178,16 @@ func _on_upgrade_download_finished(result: Dictionary) -> void:
 		_set_upgrade_button_busy(false)
 		return
 	if not bool(result.get("ok", false)):
+		var failed_stage: String = str(result.get("stage", ""))
 		if _upgrade_active:
-			_fail_upgrade("烧录失败", "连接或写入未完成，请查看下方输出。")
+			# 连不上主控板（HID 未连接/中途掉线）：弹窗带「重试」，重新连接后可直接重试
+			if failed_stage in ["", "connect"]:
+				_fail_upgrade_retry(_solver_upgrade_active, "烧录失败",
+					"未能连接主控板。\n请确认板子已通过 USB 线连接，并处于 ISP 模式（拔下 USB 再插上）。")
+			else:
+				_fail_upgrade("烧录失败", "连接或写入未完成，请查看下方输出。")
 		# 连不上板子（connect 阶段）时，提示重新插拔 USB 让板子回到 ISP 模式
-		if str(result.get("stage", "")) in ["", "connect", "env"]:
+		if failed_stage in ["", "connect"]:
 			_append_output("\n[提示] 烧录没能连上主控板。")
 			_append_output("请确认板子已通过 USB 线连接，并处于 ISP 模式：")
 			_append_output("  拔下 USB 线再插上（冷启动进入 ISP），然后重新点「烧录主控板」。")
@@ -2223,10 +2234,52 @@ func _fail_upgrade(stage: String, detail: String) -> void:
 	_upgrade_active = false
 	_solver_upgrade_active = false
 	_project_dst_override = ""
+	_retry_download_dst = ""
+	_retry_is_solver = false
 	var panel: Node = get_node_or_null(P_UPGRADE_PROGRESS)
 	if panel != null and panel.has_method("fail"):
 		panel.fail(stage, detail)
 	_set_upgrade_button_busy(false)
+
+
+## 烧录前连接失败（如未检测到 USB-HID 设备）：弹窗带「重试」按钮，
+## 用户重新连接设备后点重试可直接烧录，无需重新编译。
+func _fail_upgrade_retry(is_solver: bool, stage: String, detail: String) -> void:
+	_retry_download_dst = TC.PROJECT_ENGINEER_SIM_DST if is_solver \
+		else _get_current_project_dst()
+	_retry_is_solver = is_solver
+	_upgrade_active = false
+	_solver_upgrade_active = false
+	_project_dst_override = ""
+	var panel: Node = get_node_or_null(P_UPGRADE_PROGRESS)
+	if panel != null and panel.has_method("fail_with_retry"):
+		panel.fail_with_retry(stage, detail)
+	_set_upgrade_button_busy(false)
+
+
+## 弹窗「重试」按钮：设备重新连接后重跑烧录（编译产物已存在，无需重新编译）。
+func _on_upgrade_retry_pressed() -> void:
+	var dst: String = _retry_download_dst
+	var is_solver: bool = _retry_is_solver
+	_retry_download_dst = ""
+	_retry_is_solver = false
+	if dst.is_empty() or _download_controller == null \
+			or _download_controller.is_busy() \
+			or (_build_controller != null and _build_controller.is_busy()):
+		return
+	var panel: Node = get_node_or_null(P_UPGRADE_PROGRESS)
+	if panel != null:
+		if is_solver and panel.has_method("begin_solver"):
+			panel.begin_solver()
+		elif panel.has_method("begin"):
+			panel.begin()
+	_upgrade_active = true
+	_solver_upgrade_active = is_solver
+	_set_upgrade_progress("正在连接主控板", 30.0, "正在启动烧录程序…")
+	_set_upgrade_button_busy(true)
+	if not _download_controller.start(dst):
+		_fail_upgrade_retry(is_solver, "无法开始烧录",
+			"未检测到 USB-HID 设备。\n请确认板子已通过 USB 线连接，并处于 ISP 模式（拔下 USB 再插上）。")
 
 
 func _set_upgrade_button_busy(is_busy: bool) -> void:

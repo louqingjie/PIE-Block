@@ -54,6 +54,24 @@ func _initialize() -> void:
 		progress.get_node("Dim/Center/Panel/Content/Close").visible)
 	_check("失败状态取消按钮隐藏",
 		not progress.get_node("Dim/Center/Panel/Content/Cancel").visible)
+	_check("普通失败状态隐藏重试按钮",
+		not progress.get_node("Dim/Center/Panel/Content/Retry").visible)
+	progress.fail_with_retry("无法开始烧录", "未检测到 USB-HID 设备")
+	_check("连接失败状态显示重试按钮",
+		progress.get_node("Dim/Center/Panel/Content/Retry").visible)
+	_check("连接失败状态仍显示关闭按钮",
+		progress.get_node("Dim/Center/Panel/Content/Close").visible)
+
+	# 重试信号：点重试发出 retry_requested 且隐藏按钮
+	var retry_count: Array[int] = [0]
+	progress.retry_requested.connect(func() -> void: retry_count[0] += 1)
+	var retry_btn: Button = progress.get_node("Dim/Center/Panel/Content/Retry")
+	retry_btn.pressed.emit()
+	_check("点重试发出 retry_requested", retry_count[0] == 1)
+	_check("点重试后按钮隐藏", not retry_btn.visible)
+	progress.begin()
+	_check("开始升级后重试按钮隐藏",
+		not progress.get_node("Dim/Center/Panel/Content/Retry").visible)
 
 	# 取消信号：启用状态下点取消发出 cancel_requested，禁用状态不发出
 	var cancel_count: Array[int] = [0]

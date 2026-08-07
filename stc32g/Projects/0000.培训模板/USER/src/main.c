@@ -79,10 +79,11 @@ void main(void)
         Ms_Delay(5);
         ExpansionBoradControl(Duty_Change_Order, 0, 0, 0, 0, (uint16_t)pie_abs(_wheel[0]), (uint16_t)pie_abs(_wheel[1]), (uint16_t)pie_abs(_wheel[2]), (uint16_t)pie_abs(_wheel[3]));
         Ms_Delay(5);
-        if (RcKeyValueRead(KEY_OFFSET_1) && !_rm_shoot_last_key) {
-          ExpansionBoradControl(Duty_Change_Order, ((3000) < 0 ? 0 : ((3000) > 10000 ? 10000 : (3000))), 0, 0, 0, 0, 0, 0, 0);
-          Ms_Delay(100);
-          ExpansionBoradControl(Duty_Change_Order, 0, 0, 0, 0, 0, 0, 0, 0);
+        if (RcKeyValueRead(KEY_OFFSET_1) && !_rm_shoot_last_key)
+        {
+            ExpansionBoradControl(Duty_Change_Order, ((3000) < 0 ? 0 : ((3000) > 10000 ? 10000 : (3000))), 0, 0, 0, 0, 0, 0, 0);
+            Ms_Delay(100);
+            ExpansionBoradControl(Duty_Change_Order, 0, 0, 0, 0, 0, 0, 0, 0);
         }
         _rm_shoot_last_key = RcKeyValueRead(KEY_OFFSET_1);
     }

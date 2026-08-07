@@ -1,8 +1,8 @@
 # 代码生成器 CLI 与 MCP 接入指南
 
 把 Pie-Block 图形化代码生成器做成**命令行工具**（Godot headless CLI），再包一层
-**MCP Server**，让任何 AI Agent（Claude、GitHub Copilot、opencode 等）都能直接调用
-同一个代码生成逻辑，生成步兵 / 工程 / 调试机器人固件。
+**MCP Server**，让任何 AI Agent（Claude、GitHub Copilot、opencode 等）都能直接
+调用同一套代码生成逻辑，生成步兵 / 工程 / 调试机器人固件。
 
 **零逻辑重复**：CLI 直接复用 `scripts/codegen/*.gd` 和 `scripts/static_checker.gd`，
 不重写任何生成规则。改 GUI 的生成器，CLI / MCP 自动跟着变。
@@ -20,13 +20,12 @@
                                                                         └─────────────────┘
 ```
 
----
-
 ## 一、命令行 CLI
 
 ### 环境要求
 
-- Godot 4.x（本项目用 4.7）在 PATH 中，或设置环境变量 `PIEBLOCK_GODOT` 指向可执行文件
+- Godot 4.x（本项目用 4.7）在 PATH 中，或设置环境变量 `PIEBLOCK_GODOT` 指向
+  可执行文件
 - 无需打开 GUI，全 headless 运行
 
 ### 命令
@@ -68,12 +67,13 @@ godot --headless --no-header --path . --script scripts/cli_codegen.gd -- help
 
 ### 编译（build）说明
 
-`build` 复用 `scripts/toolchain.gd` 的 `Toolchain.build_project()`（作者已预留为 MCP 等
-非 UI 调用方设计）：校验外部 Keil 目录 → 部署项目模板/库 → 写 `main.c` → 同步编译。
-成功判据 = Keil 日志含 `0 Error(s)`。
+`build` 复用 `scripts/toolchain.gd` 的 `Toolchain.build_project()`：校验外部 Keil
+目录 → 部署项目模板/库 → 写 `main.c` → 同步编译。成功判据 = Keil 日志含
+`0 Error(s)`。
 
-> 编译**必须**指定一个外部 Keil C251 安装目录。
-> headless 下没有图形引导，需在运行前指定路径，二选一：
+> 编译**必须**指定一个外部 Keil C251 安装目录。headless 下没有图形引导，
+> 需在运行前指定路径，二选一：
+>
 > 1. 环境变量：`$env:PIEBLOCK_KEIL="C:\Keil_v5"`
 > 2. 配置文件：往 `user://keil_settings.json` 写 `{"path": "C:\\Keil_v5"}`
 >    （GUI 编译时也会引导填写同一文件）
@@ -84,8 +84,7 @@ godot --headless --no-header --path . --script scripts/cli_codegen.gd -- help
   `http://127.0.0.1:8000`），则本机**不装 Keil**，改为把工程打包上传到
   `keil_server` 编译服务，服务器端 Keil C251 编译后返回 hex。可用
   `PIEBLOCK_PYTHON` 指定 python 解释器（建议指向项目 `.venv`）。
-  不带 `--remote` 时仍是本地编译，行为不变。服务搭建见
-  `keil_server/README.md`。
+  不带 `--remote` 时仍是本地编译，行为不变。服务搭建见 `keil_server/README.md`
 - 已修复的编译漏洞：
   - `build` 曾用 Keil `-b`（跳过重编译，连续编译不同配置会返回陈旧 hex），
     已改用 `-r`（rebuild）强制重编译
@@ -95,7 +94,7 @@ godot --headless --no-header --path . --script scripts/cli_codegen.gd -- help
 ### 退出码
 
 | 码 | 含义 |
-|---|---|
+| --- | --- |
 | 0 | 成功 |
 | 1 | 参数错误 |
 | 2 | 生成/编译失败 |
@@ -127,9 +126,8 @@ godot --headless --no-header --path . --script scripts/cli_codegen.gd -- help
 }
 ```
 
-> `has_error` = 配置存在 Error 级问题。**代码仍会生成**（供参考），但真机烧录前必须清零。
-
----
+> `has_error` = 配置存在 Error 级问题。**代码仍会生成**（供参考），
+> 但真机烧录前必须清零。
 
 ## 二、MCP Server
 
@@ -190,7 +188,7 @@ godot --headless --no-header --path . --script scripts/cli_codegen.gd -- help
 ### 提供的工具
 
 | 工具 | 作用 |
-|---|---|
+| --- | --- |
 | `list_profiles()` | 列出全部项目类型及用途 |
 | `get_schema(kind)` | 获取某类型的配置 JSON Schema（字段/默认值/可选值） |
 | `generate_code(kind, config, out_path?, channel?)` | 生成 main.c + 静态检查 |
@@ -199,42 +197,40 @@ godot --headless --no-header --path . --script scripts/cli_codegen.gd -- help
 | `build_code(kind, config, channel?)` | 生成代码并用 Keil C251 编译为 hex 固件 |
 | `build_project(project_path)` | 从 `.pieproj` 编译（优先用已保存代码） |
 
-`config` 是 **JSON 字符串**（不是对象）。`engineer` 需要 `{engineer, ik}` 双字典结构，
-示例见 `tools/test_engineer_config.json`。
+`config` 是 **JSON 字符串**（不是对象）。`engineer` 需要 `{engineer, ik}`
+双字典结构，示例见 `tools/test_engineer_config.json`。
 
 > `channel` 是**可选参数**（0-125）：传了就直接用它，不传则回落到 config 里的
 > `channel` 字段，再没有才用环境变量 `PIEBLOCK_CHANNEL`。三种方式都不必在每次
 > 调用时重复写完整配置。
 
-> 编译工具 `build_code` / `build_project` 同步阻塞，通常 10~60 秒。Agent 应在确认
-> `check_config` 无 Error 后再调用编译。
+> 编译工具 `build_code` / `build_project` 同步阻塞，通常 10~60 秒。Agent 应在
+> 确认 `check_config` 无 Error 后再调用编译。
 
 ### 环境变量
 
 | 变量 | 默认 | 说明 |
-|---|---|---|
+| --- | --- | --- |
 | `PIEBLOCK_GODOT` | PATH 里的 `godot` | Godot 可执行文件 |
 | `PIEBLOCK_ROOT` | server 文件上级×2 | 项目根目录 |
 | `PIEBLOCK_CHANNEL` | 空（不填） | 默认遥控器通道号 0-125；config 里 channel 为空/缺失时自动填入 |
 | `PIEBLOCK_KEIL_SERVER_URL` | 空（本地编译） | 设置后 `build_code` / `build_project` 改为**云端编译**（如 `http://127.0.0.1:8000`），本机无需装 Keil |
-| `PIEBLOCK_KEIL_API_KEY` | 空 | 云端编译服务器的 API Key（服务器启用 `KEIL_API_KEY` 鉴权时必填） |
+| `PIEBLOCK_KEIL_API_KEY` | 空 | 云端编译服务器的 API Key（服务器启用鉴权时必填） |
 
 > 云端编译：设了 `PIEBLOCK_KEIL_SERVER_URL` 后，`build_code` / `build_project`
 > 会把工程打包上传到该地址的 `keil_server` 编译服务，服务器端用 Keil C251 编译
 > 并返回 hex（生成 main.c 仍在本机）。服务搭建见 `keil_server/README.md`。
 > 不设置则保持本地编译，行为不变。
 
----
-
 ## 三、配置结构速查
 
-每种 kind 的完整字段定义见 `docs/schemas/*.schema.json`（由 CLI `schema` 命令生成，
-与代码保持同步）。核心字段：
+每种 kind 的完整字段定义见 `docs/schemas/*.schema.json`（由 CLI `schema` 命令
+生成，与代码保持同步）。核心字段：
 
 ### infantry（步兵）
 
 | 字段 | 说明 | 默认 |
-|---|---|---|
+| --- | --- | --- |
 | `channel` | NRF24L01 通道号 0-125 | "36" |
 | `l1_io`…`r2_io` | 底盘四轮 IO（"通信脚 方向脚"，如 "P74 P24"） | P74-P77 |
 | `booster_io` | 拨弹电机 IO | "P60" |
@@ -279,15 +275,13 @@ godot --headless --no-header --path . --script scripts/cli_codegen.gd -- help
 }
 ```
 
----
-
 ## 四、硬件红线（Agent 必须遵守）
 
 来自 `AGENTS.md` 与 `docs/RM电控指南.md`，违反会烧坏机构或让车失控：
 
 1. **只烧录主控板**，绝不向机械扩展板烧录程序
-2. **扩展板 IO（P60/P62/P64/P66/P74/P75/P76/P77）只能通过 `ExpansionBoradControl`
-   控制，禁止用 `PWM_*` 函数**，且使用前必须初始化
+2. **扩展板 IO（P60/P62/P64/P66/P74/P75/P76/P77）只能通过
+   `ExpansionBoradControl` 控制，禁止用 `PWM_*` 函数**，且使用前必须初始化
 3. 步兵上 **P64/P66 固定用于两个摩擦轮**，不可改作他用
 4. 主控板 **MP74 / MP03 只能驱动舵机**，且与扩展板 P74 不是同一个 IO
 5. 舵机角度都是「相对中位的偏移角」，区间 **[-90, +90]**
@@ -297,5 +291,5 @@ godot --headless --no-header --path . --script scripts/cli_codegen.gd -- help
 
 - **"找不到 godot"**：装 Godot 4.x 加入 PATH，或设 `PIEBLOCK_GODOT`。
 - **stdout 里第一个 `{` 之前有横幅**：属正常，解析时跳过即可（server 已处理）。
-- **旧 `.pieproj` 还原不全**：旧版本项目 config 用旧节点路径，`--project` 会回退默认值
-  并报检查错误。推荐用 `generate_code` 传结构化 JSON。
+- **旧 `.pieproj` 还原不全**：旧版本项目 config 用旧节点路径，`--project` 会回退
+  默认值并报检查错误。推荐用 `generate_code` 传结构化 JSON。
