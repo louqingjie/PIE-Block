@@ -32,7 +32,9 @@ param(
     [switch]$SkipTunnel,
     [string]$TunnelName = "pieblock",
     [string]$CloudflaredExe = "C:\cloudflared\cloudflared.exe",
-    [int]$Port = 8000
+    [int]$Port = 8000,
+    [string]$BuildUser = "",
+    [string]$BuildPassword = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -115,7 +117,19 @@ if (-not $ApiKey -and (Test-Path $adminKeyFile)) {
     Say-Ok "[OK] 已启用 API Key 鉴权（管理员 key = 你指定的）"
 }
 
-# ---- 4. 日志目录 ----
+# ---- 4. 编译降权用户：-BuildUser 参数 > data\build_user.txt > 不降权 ----
+$buildUserFile = Join-Path $dataDir "build_user.txt"
+if (-not $BuildUser -and (Test-Path $buildUserFile)) {
+    $BuildUser = "PieBuild"
+    $BuildPassword = (Get-Content $buildUserFile -Raw).Trim()
+    Say-Ok "[OK] 已启用编译降权用户：$BuildUser（密码来自 $buildUserFile）"
+} elseif ($BuildUser) {
+    Say-Ok "[OK] 已启用编译降权用户：$BuildUser（-BuildUser 参数指定）"
+} else {
+    Say-Warn "[警告] 未配置编译降权用户，编译将以服务账户（SYSTEM）身份运行"
+}
+
+# ---- 5. 日志目录 ----
 if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Force -Path $logDir | Out-Null }
 
 # ---- 5. 端口预检：端口被旧实例（手动启动的 python）占用时自动停止，
@@ -149,6 +163,10 @@ $null = Invoke-Nssm @("set", $KeilServiceName, "AppDirectory", $root)
 $envArgs = @("KEIL_API_KEY=$ApiKey")
 if ($ApiKeys)  { $envArgs += "KEIL_API_KEYS=$ApiKeys" }
 if ($KeilPath) { $envArgs += "KEIL_PATH=$KeilPath" }
+if ($BuildUser -and $BuildPassword) {
+    $envArgs += "KEIL_BUILD_USER=$BuildUser"
+    $envArgs += "KEIL_BUILD_PASSWORD=$BuildPassword"
+}
 $envSet = @("set", $KeilServiceName, "AppEnvironmentExtra") + @($envArgs)
 $null = Invoke-Nssm $envSet
 # 崩溃自动重启 + 日志轮转

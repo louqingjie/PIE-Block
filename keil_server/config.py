@@ -32,6 +32,13 @@ KEYS_FILE = Path(os.environ.get(
 # 服务启动/读取时并入 key 表（文件里已有的不覆盖）。便于脚本/一键部署注入。
 API_KEYS_CSV = os.environ.get("KEIL_API_KEYS", "").strip()
 
+# 编译降权用户（KEIL_BUILD_USER / KEIL_BUILD_PASSWORD）。
+# 服务本身可以 SYSTEM 运行，但编译子进程（uVision）用此低权限账户启动：
+# 恶意工程即使打穿 uVision 也只拿到普通用户权限，无法触碰 SYSTEM 资源。
+# 留空则退化为当前账户直接启动（降权不可用）。
+BUILD_USER = os.environ.get("KEIL_BUILD_USER", "").strip()
+BUILD_PASSWORD = os.environ.get("KEIL_BUILD_PASSWORD", "").strip()
+
 
 # ------------------------------------------------------------------ Keil 安装
 # 手动指定 Keil 根目录（完整正版安装位置），优先级最高。
