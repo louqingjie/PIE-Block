@@ -107,27 +107,169 @@ def find_hex(mdk_dir: Path) -> Path | None:
 
 
 # ------------------------------------------------------------------ 进程终止
-def _kill_process_tree(proc: subprocess.Popen) -> None:
+def _kill_pid_tree(pid: int) -> None:
     """强杀进程树（uVision.com 会拉起 UV4.exe，超时必须整树终止）。"""
     if sys.platform == "win32":
         try:
             subprocess.run(
-                ["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+                ["taskkill", "/T", "/F", "/PID", str(pid)],
                 capture_output=True, timeout=15,
             )
         except Exception:
-            try:
-                proc.kill()
-            except Exception:
-                pass
+            pass
     else:
         try:
-            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            os.killpg(os.getpgid(pid), signal.SIGKILL)
         except Exception:
+            pass
+
+
+def _kill_process_tree(proc: subprocess.Popen) -> None:
+    """兼容旧调用：按 Popen.pid 终止进程树。"""
+    _kill_pid_tree(proc.pid)
+
+
+def _start_build_process(cmd: list[str], cwd: Path):
+    """启动编译进程；配置了降权用户（KEIL_BUILD_USER）时以该低权限账户启动。
+
+    返回 (pid, out_file, err_file)：
+      - pid         子进程 PID（超时整树终止用）
+      - out/err     file-like 对象，可阻塞读取（utf-8 文本，替代 Popen 管道）
+    """
+    if (
+        sys.platform == "win32"
+        and config.BUILD_USER
+        and config.BUILD_PASSWORD
+    ):
+        import msvcrt
+        import win32api
+        import win32con
+        import win32file
+        import win32pipe
+        import win32process
+        import win32security
+
+        r_out, w_out = win32pipe.CreatePipe(None, 0)
+        r_err, w_err = win32pipe.CreatePipe(None, 0)
+        win32api.SetHandleInformation(w_out, win32con.HANDLE_FLAG_INHERIT, 1)
+        win32api.SetHandleInformation(w_err, win32con.HANDLE_FLAG_INHERIT, 1)
+        si = win32process.STARTUPINFO()
+        si.dwFlags = win32con.STARTF_USESTDHANDLES
+        si.hStdInput = win32api.GetStdHandle(win32api.STD_INPUT_HANDLE)
+        si.hStdOutput = int(w_out)
+        si.hStdError = int(w_err)
+        si.wShowWindow = win32con.SW_HIDE
+        try:
+            h_token = win32security.LogonUser(
+                config.BUILD_USER, None, config.BUILD_PASSWORD,
+                win32con.LOGON32_LOGON_INTERACTIVE,
+                win32con.LOGON32_PROVIDER_DEFAULT,
+            )
+            h, t, pid, _tid = win32process.CreateProcessAsUser(
+                h_token, None, subprocess.list2cmdline(cmd), None, None, 1,
+                win32con.CREATE_NO_WINDOW, None, str(cwd), si,
+            )
+        finally:
+            win32file.CloseHandle(int(w_out))
+            win32file.CloseHandle(int(w_err))
+        win32api.CloseHandle(h_token)
+        win32api.CloseHandle(h)
+        win32api.CloseHandle(t)
+        fd_out = msvcrt.open_osfhandle(int(r_out), os.O_RDONLY)
+        fd_err = msvcrt.open_osfhandle(int(r_err), os.O_RDONLY)
+        return (
+            pid,
+            os.fdopen(fd_out, "rb", closefd=True),
+            os.fdopen(fd_err, "rb", closefd=True),
+        )
+    proc = subprocess.Popen(
+        cmd, cwd=str(cwd),
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, encoding="utf-8", errors="replace",
+        creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+    )
+    return proc.pid, proc.stdout, proc.stderr
+
+
+def _communicate_timeout(
+    pid: int, out_file, err_file, timeout: int,
+) -> tuple[str, str, bool]:
+    """并行读取 stdout/stderr，超时则整树终止。返回 (stdout, stderr, timed_out)。"""
+    import threading
+
+    chunks: dict[str, list[bytes]] = {"out": [], "err": []}
+
+    def pump(handle, key: str) -> None:
+        while True:
             try:
-                proc.kill()
+                data = handle.read(65536)
             except Exception:
-                pass
+                break
+            if not data:
+                break
+            chunks[key].append(data)
+
+    threads = [
+        threading.Thread(target=pump, args=(out_file, "out"), daemon=True),
+        threading.Thread(target=pump, args=(err_file, "err"), daemon=True),
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout)
+    timed_out = any(t.is_alive() for t in threads)
+    if timed_out:
+        _kill_pid_tree(pid)
+        for t in threads:
+            t.join(10)
+    for f in (out_file, err_file):
+        try:
+            f.close()
+        except Exception:
+            pass
+    stdout = b"".join(chunks["out"]).decode("utf-8", "replace")
+    stderr = b"".join(chunks["err"]).decode("utf-8", "replace")
+    return stdout, stderr, timed_out
+
+
+def _is_uv4_running() -> bool:
+    """是否有 uVision 编译进程在跑（后台 UV4.exe）。"""
+    if sys.platform != "win32":
+        return False
+    try:
+        r = subprocess.run(
+            ["tasklist", "/FI", "IMAGENAME eq UV4.exe", "/FO", "CSV"],
+            capture_output=True, text=True, timeout=10,
+        )
+        return "UV4.exe" in r.stdout
+    except Exception:
+        return False
+
+
+def _wait_for_build_done(log_abs: Path, timeout: int) -> None:
+    """uVision.com 可能启动 UV4.exe 后立即退出（快速退出模式），
+    管道 EOF 不代表编译结束，UV4 会在后台继续编译写 log。
+    轮询：UV4 进程消失 且 log 文件大小稳定 2 秒 视为完成；超时兜底。"""
+    import time
+
+    deadline = time.time() + timeout
+    last_size = -1
+    stable_since: float | None = None
+    while time.time() < deadline:
+        uv4_alive = _is_uv4_running()
+        try:
+            size = log_abs.stat().st_size if log_abs.exists() else 0
+        except OSError:
+            size = 0
+        if not uv4_alive and size > 0 and size == last_size:
+            if stable_since is None:
+                stable_since = time.time()
+            elif time.time() - stable_since >= 2.0:
+                return
+        else:
+            stable_since = None
+        last_size = size
+        time.sleep(0.5)
 
 
 # ------------------------------------------------------------------ 编译
@@ -161,29 +303,16 @@ def compile_dir(work_dir: Path, timeout: int) -> CompileResult:
             pass
 
     cmd = [str(keil.uv4_path), "-r", str(uvproj), "-o", str(log_abs)]
-    kwargs: dict = {
-        "cwd": str(mdk_dir),
-        "stdout": subprocess.PIPE,
-        "stderr": subprocess.PIPE,
-        "text": True,
-        "encoding": "utf-8",
-        "errors": "replace",
-    }
-    if sys.platform == "win32":
-        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
-    else:
-        kwargs["start_new_session"] = True
-
-    proc = subprocess.Popen(cmd, **kwargs)
+    comm_timeout = max(15, timeout // 2)
+    pid, fh_out, fh_err = _start_build_process(cmd, mdk_dir)
     try:
-        stdout, stderr = proc.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        _kill_process_tree(proc)
-        try:
-            stdout, stderr = proc.communicate(timeout=10)
-        except Exception:
-            stdout, stderr = "", ""
+        stdout, stderr, timed_out = _communicate_timeout(pid, fh_out, fh_err, comm_timeout)
+    except Exception:
+        _kill_pid_tree(pid)
+        return CompileResult(ok=False, error=f"编译内部错误: 无法读取编译输出")
+    if timed_out:
         return CompileResult(ok=False, error=f"编译超时（>{timeout} 秒），已终止进程树")
+    _wait_for_build_done(log_abs, timeout - comm_timeout)
 
     if log_abs.exists():
         log_text = _read_text_lossless(log_abs)
