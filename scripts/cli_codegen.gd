@@ -394,11 +394,15 @@ func _generate_code(kind: String, cfg: Dictionary) -> String:
 		PF.KIND_INFANTRY:
 			return CG_INFANTRY.new().generate(cfg)
 		PF.KIND_ENGINEER:
-			# 工程逆解算生成器需要 {engineer, ik} 双字典
+			# 工程逆解算生成器需要 {engineer, ik} 双字典。
+			# 未启用逆解算（enabled=false）时走纯正解生成器，不含任何逆解内容。
 			var dual: Dictionary = cfg.get("dual", {})
 			if dual.is_empty():
 				# 如果传入的不是 dual 结构，尝试包装
 				dual = {"engineer": cfg.get("engineer", cfg), "ik": cfg.get("ik", IK_CONFIG.default_config())}
+			var ik_cfg: Dictionary = dual.get("ik", {})
+			if not bool(ik_cfg.get("enabled", true)):
+				return CG_ENGINEER.new().generate(dual.get("engineer", {}))
 			return CG_ENGINEER_IK.new().generate(dual)
 		PF.KIND_DEBUG:
 			# debug_rows 可能是 null/字符串等畸形输入，非数组一律按空处理，避免生成器崩
@@ -447,6 +451,9 @@ func _config_from_project(data: Dictionary, kind: String) -> Dictionary:
 		PF.KIND_ENGINEER:
 			var engineer_cfg: Dictionary = _flatten_engineer_config(config)
 			var ik_cfg: Dictionary = IK_CONFIG.normalize(data.get("ik_config", {}))
+			# 门控状态（workflow.ik_confirmed）是工程是否启用逆解算的唯一可信源，
+			# 旧存档缺字段一律视为未启用
+			ik_cfg["enabled"] = bool(PF.normalize_workflow(data.get("workflow", {})).get("ik_confirmed", false))
 			return {"engineer": engineer_cfg, "ik": ik_cfg,
 				"dual": {"engineer": engineer_cfg, "ik": ik_cfg}}
 		PF.KIND_DEBUG:
@@ -536,16 +543,22 @@ func _flatten_engineer_config(config: Dictionary) -> Dictionary:
 	# IO 初始化区（Engineer 下）
 	var eng: String = "SecondRow/TabContainer/Engineer"
 	var io_init: Dictionary = {}
-	var eng_pins: Array = ["P60", "P62", "P64", "P66", "P74", "P75", "P76", "P77"]
+	var eng_pins: Array = ["P60", "P62", "P64", "P66", "P74", "P75", "P76", "P77", "MP03", "MP74"]
 	for pin in eng_pins:
 		var pin_path: String = _engineer_io_path(pin)
 		io_init[pin] = str(_config_val(config, pin_path))
 	flat["io_init"] = io_init
+	# IO 初始化区：各引脚舵机初始角（相对中位偏移）
+	var io_mid: Dictionary = {}
+	for pin in eng_pins:
+		var mid_path: String = _engineer_io_mid_path(pin)
+		io_mid[pin] = str(_config_val(config, mid_path))
+	flat["io_mid"] = io_mid
 	# 按键映射区（ENG_KEY_ROWS 与 ENG_KEY_LABELS 一一对应）
 	var rows: Array = [
 		["RightJoystickX", "右摇杆X"], ["RightJoystickY", "右摇杆Y"],
 		["A", "A"], ["B", "B"], ["C", "C"], ["D", "D"],
-		["Up", "↑"], ["Down", "↓"], ["Left", "←"], ["Right", "->"], ["R", "R"],
+		["Up", "↑"], ["Down", "↓"], ["Left", "←"], ["Right", "->"], ["R", "E"],
 	]
 	var key_map: Array = []
 	for row in rows:
@@ -567,20 +580,28 @@ func _flatten_engineer_config(config: Dictionary) -> Dictionary:
 	return _merge_defaults(flat, "engineer")
 
 
-## 工程 IO 引脚 -> 初始化区节点路径（与 ui.gd ENG_IO_PATHS 对应）
+## 工程 IO 引脚 -> 初始化区节点路径（与 ui.gd ENG_IO_PATHS/ENG_IO_MID_PATHS 对应）
 func _engineer_io_path(pin: String) -> String:
 	var eng: String = "SecondRow/TabContainer/Engineer"
 	var map: Dictionary = {
-		"P60": eng + "/P60P62/OptionButton",
-		"P62": eng + "/P60P62/OptionButton2",
-		"P64": eng + "/P64P66/OptionButton",
-		"P66": eng + "/P64P66/OptionButton2",
-		"P74": eng + "/P74P75/OptionButton",
-		"P75": eng + "/P74P75/OptionButton2",
-		"P76": eng + "/P76P77/OptionButton2",
-		"P77": eng + "/P76P77/OptionButton",
+		"P60": eng + "/IOs/Row1/P60/OptionButton",
+		"P62": eng + "/IOs/Row1/P62/OptionButton",
+		"P64": eng + "/IOs/Row1/P64/OptionButton",
+		"P66": eng + "/IOs/Row1/P66/OptionButton",
+		"P74": eng + "/IOs/Row1/P74/OptionButton",
+		"P75": eng + "/IOs/Row2/P75/OptionButton",
+		"P76": eng + "/IOs/Row2/P76/OptionButton",
+		"P77": eng + "/IOs/Row2/P77/OptionButton",
+		"MP03": eng + "/IOs/Row2/MP03/OptionButton",
+		"MP74": eng + "/IOs/Row2/MP74/OptionButton",
 	}
 	return map.get(pin, "")
+
+
+## 工程 IO 引脚 -> 初始角输入框节点路径（MidDegree2）
+func _engineer_io_mid_path(pin: String) -> String:
+	var path: String = _engineer_io_path(pin)
+	return path.replace("/OptionButton", "/MidDegree2") if not path.is_empty() else ""
 
 
 ## 调试：还原 _collect_debug_config() 的行数组
@@ -792,12 +813,30 @@ func _engineer_base_schema() -> Dictionary:
 			"properties": {
 				"P60": {"type": "string", "enum": ["舵机", "电机"], "default": "舵机"},
 				"P62": {"type": "string", "enum": ["舵机", "电机"], "default": "舵机"},
-				"P64": {"type": "string", "enum": ["舵机", "电机"], "default": "电机"},
-				"P66": {"type": "string", "enum": ["舵机", "电机"], "default": "电机"},
-				"P74": {"type": "string", "enum": ["舵机", "电机"], "default": "电机"},
-				"P75": {"type": "string", "enum": ["舵机", "电机"], "default": "电机"},
-				"P76": {"type": "string", "enum": ["舵机", "电机"], "default": "电机"},
-				"P77": {"type": "string", "enum": ["舵机", "电机"], "default": "电机"},
+				"P64": {"type": "string", "enum": ["舵机", "电机"], "default": "舵机"},
+				"P66": {"type": "string", "enum": ["舵机", "电机"], "default": "舵机"},
+				"P74": {"type": "string", "enum": ["舵机", "电机"], "default": "舵机"},
+				"P75": {"type": "string", "enum": ["舵机", "电机"], "default": "舵机"},
+				"P76": {"type": "string", "enum": ["舵机", "电机"], "default": "舵机"},
+				"P77": {"type": "string", "enum": ["舵机", "电机"], "default": "舵机"},
+				"MP03": {"type": "string", "enum": ["舵机", "电机"], "default": "舵机"},
+				"MP74": {"type": "string", "enum": ["舵机", "电机"], "default": "舵机"},
+			},
+		},
+		"io_mid": {
+			"type": "object",
+			"description": "各引脚舵机初始角（相对中位偏移角，-90~90，仅舵机有效）",
+			"properties": {
+				"P60": {"type": "string", "default": ""},
+				"P62": {"type": "string", "default": ""},
+				"P64": {"type": "string", "default": ""},
+				"P66": {"type": "string", "default": ""},
+				"P74": {"type": "string", "default": ""},
+				"P75": {"type": "string", "default": ""},
+				"P76": {"type": "string", "default": ""},
+				"P77": {"type": "string", "default": ""},
+				"MP03": {"type": "string", "default": ""},
+				"MP74": {"type": "string", "default": ""},
 			},
 		},
 		"key_map": {
@@ -819,8 +858,9 @@ func _engineer_base_schema() -> Dictionary:
 
 func _ik_schema() -> Dictionary:
 	return {
+		"enabled": {"type": "boolean", "description": "是否启用机械臂逆解算（未启用时生成纯正解固件）", "default": false},
 		"joint_count": {"type": "integer", "minimum": 2, "maximum": 6, "default": 3},
-		"mode_switch_key": {"type": "string", "default": "R"},
+		"mode_switch_key": {"type": "string", "default": "E"},
 		"joints": {
 			"type": "array",
 			"minItems": 2,

@@ -164,7 +164,7 @@ var _pitch_is_servo: bool = true
 ## 只用于算展示用的占空比，不影响车体实际运动（见 _integrate_chassis）。
 ## 云台的 yaw_dir / pitch_dir 同理，因完全不影响仿真行为而不再读取
 var _wheel_dirs: Array = [1, 1, 1, 1]
-var _trigger_key_id: String = "R"
+var _trigger_key_id: String = "E"
 var _booster_key_id: String = "A"
 var _trigger_time_ms: int = 250
 ## 拨弹模式：true=目视闭环（按住持续拨弹，松开即停，不阻塞），false=阻塞开环（单发）
@@ -374,7 +374,7 @@ func _apply_config() -> void:
 		_dir_to_int(str(_cfg.get("r1_dir", "正向"))),
 		_dir_to_int(str(_cfg.get("r2_dir", "正向"))),
 	]
-	_trigger_key_id = REMOTE_INPUT.CONFIG_KEY_TO_ID.get(str(_cfg.get("trigger_key", "R")), "R")
+	_trigger_key_id = REMOTE_INPUT.CONFIG_KEY_TO_ID.get(str(_cfg.get("trigger_key", "E")), "E")
 	_booster_key_id = REMOTE_INPUT.CONFIG_KEY_TO_ID.get(str(_cfg.get("booster_key", "A")), "A")
 	# 云台数值语义（归中占空比 / 限幅边界 / 变化率）全部来自生成器
 	_gp = _cg.gimbal_params(_cfg)
@@ -1550,7 +1550,7 @@ func _keymap_text() -> String:
 		"A/B/C/D：手柄 A/B/X/Y / 键盘 1/2/3/4",
 		"方向键：手柄十字键 / 键盘方向键（当前作用：%s）" % _arrow_key,
 		"扳机 %s：手柄 RT / 鼠标左键（拨弹：%s）" % [
-			str(_cfg.get("trigger_key", "R")),
+			str(_cfg.get("trigger_key", "E")),
 			"按住持续拨弹，松开即停" if _visual_feed else "按一下拨弹固定时长"],
 		"按下左摇杆（冲刺）：手柄按下左摇杆 / 键盘 Shift%s"
 			% ("" if _sprint_enabled else "（配置未勾选冲刺，无效）"),

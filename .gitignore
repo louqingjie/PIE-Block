@@ -148,3 +148,11 @@ android_app/captures/
 android_app/.externalNativeBuild/
 android_app/.cxx/
 android_app/*.iml
+
+# Godot Android 构建模板（由导出流程生成/安装）与烧录插件构建产物
+android/build/
+android/plugins/pieblock_usb/.gradle/
+android/plugins/pieblock_usb/plugin/build/
+android/plugins/pieblock_usb/build/
+android/plugins/pieblock_usb/local.properties
+addons/pieblock_usb/bin/

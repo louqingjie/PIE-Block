@@ -1,0 +1,121 @@
+[gd_scene format=3 uid="uid://eef3fn71heeg"]
+
+[ext_resource type="PackedScene" uid="uid://d1xdnguh0vhvh" path="res://scenes/key_and_joystick.tscn" id="1_jebyq"]
+[ext_resource type="PackedScene" uid="uid://y1tx6j08s3qo" path="res://scenes/io.tscn" id="2_6owqm"]
+[ext_resource type="Texture2D" uid="uid://csx1mojvwdhi3" path="res://assets/images/del.svg" id="3_6owqm"]
+
+[node name="M1" type="VBoxContainer" unique_id=1049315007]
+offset_right = 408.0
+offset_bottom = 380.0
+metadata/_tab_index = 0
+
+[node name="HSeparator3" type="HSeparator" parent="." unique_id=226161368]
+layout_mode = 2
+
+[node name="HBoxContainer" type="HBoxContainer" parent="." unique_id=2018312487]
+layout_mode = 2
+
+[node name="Label2" type="Label" parent="HBoxContainer" unique_id=1870051337]
+layout_mode = 2
+size_flags_horizontal = 6
+text = "按键映射"
+
+[node name="HSeparator2" type="HSeparator" parent="." unique_id=348669198]
+layout_mode = 2
+
+[node name="Note" type="HBoxContainer" parent="." unique_id=106065661]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Note" unique_id=1024509124]
+custom_minimum_size = Vector2(61, 0)
+layout_mode = 2
+size_flags_horizontal = 2
+text = "键位"
+
+[node name="Label2" type="Label" parent="Note" unique_id=779605285]
+custom_minimum_size = Vector2(56, 0)
+layout_mode = 2
+size_flags_horizontal = 10
+text = "方向"
+
+[node name="Label3" type="Label" parent="Note" unique_id=823637633]
+custom_minimum_size = Vector2(72, 0)
+layout_mode = 2
+size_flags_horizontal = 8
+text = "控制方式"
+
+[node name="Label4" type="Label" parent="Note" unique_id=1187157066]
+custom_minimum_size = Vector2(120, 0)
+layout_mode = 2
+text = "参数"
+
+[node name="Label5" type="Label" parent="Note" unique_id=1464081508]
+custom_minimum_size = Vector2(83, 0)
+layout_mode = 2
+text = "IO"
+
+[node name="Control" type="Control" parent="Note" unique_id=1384824644]
+custom_minimum_size = Vector2(30, 0)
+layout_mode = 2
+
+[node name="ScrollContainer" type="ScrollContainer" parent="." unique_id=1728900237]
+custom_minimum_size = Vector2(0, 100)
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="VBoxContainer" type="VBoxContainer" parent="ScrollContainer" unique_id=1492592802]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Example" type="HBoxContainer" parent="ScrollContainer/VBoxContainer" unique_id=823324789]
+layout_mode = 2
+
+[node name="Key" parent="ScrollContainer/VBoxContainer/Example" unique_id=2077236722 instance=ExtResource("1_jebyq")]
+layout_mode = 2
+
+[node name="Dir" type="OptionButton" parent="ScrollContainer/VBoxContainer/Example" unique_id=571206277]
+layout_mode = 2
+size_flags_horizontal = 10
+selected = 0
+item_count = 2
+popup/item_0/text = "正"
+popup/item_0/id = 0
+popup/item_1/text = "反"
+popup/item_1/id = 1
+
+[node name="Option" type="OptionButton" parent="ScrollContainer/VBoxContainer/Example" unique_id=2013971475]
+layout_mode = 2
+size_flags_horizontal = 8
+selected = 0
+item_count = 4
+popup/item_0/text = "增量"
+popup/item_0/id = 0
+popup/item_1/text = "直接"
+popup/item_1/id = 1
+popup/item_2/text = "速度"
+popup/item_2/id = 2
+popup/item_3/text = "增速"
+popup/item_3/id = 3
+
+[node name="Para" type="LineEdit" parent="ScrollContainer/VBoxContainer/Example" unique_id=634191007]
+custom_minimum_size = Vector2(120, 0)
+layout_mode = 2
+
+[node name="IO" parent="ScrollContainer/VBoxContainer/Example" unique_id=2047712765 instance=ExtResource("2_6owqm")]
+layout_mode = 2
+size_flags_horizontal = 8
+
+[node name="Remove" type="Button" parent="ScrollContainer/VBoxContainer/Example" unique_id=340867214]
+custom_minimum_size = Vector2(30, 0)
+layout_mode = 2
+icon = ExtResource("3_6owqm")
+flat = true
+icon_alignment = 1
+expand_icon = true
+
+[node name="Add" type="Button" parent="ScrollContainer/VBoxContainer" unique_id=939269809]
+custom_minimum_size = Vector2(50, 0)
+layout_mode = 2
+size_flags_horizontal = 4
+text = "+"

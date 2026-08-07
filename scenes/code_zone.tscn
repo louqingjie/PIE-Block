@@ -1,0 +1,46 @@
+[gd_scene format=3 uid="uid://djv5brwkjr7x3"]
+
+[ext_resource type="Script" uid="uid://dp6x4avofe57m" path="res://scripts/output.gd" id="1_lbcn7"]
+
+[node name="CodeZone" type="VBoxContainer" unique_id=223163255]
+size_flags_horizontal = 3
+
+[node name="VSplitContainer" type="VSplitContainer" parent="." unique_id=1628323311]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Code" type="VBoxContainer" parent="VSplitContainer" unique_id=882350627]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Label" type="Label" parent="VSplitContainer/Code" unique_id=1215113272]
+layout_mode = 2
+size_flags_horizontal = 4
+text = "C 代码预览"
+
+[node name="CodeEdit" type="CodeEdit" parent="VSplitContainer/Code" unique_id=1851231020]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_colors/font_readonly_color = Color(0.8745098, 0.8745098, 0.8745098, 1)
+editable = false
+gutters_draw_line_numbers = true
+delimiter_strings = Array[String](["\" \"", "' '"])
+
+[node name="Output" type="VBoxContainer" parent="VSplitContainer" unique_id=1434895432]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Label2" type="Label" parent="VSplitContainer/Output" unique_id=1515390885]
+layout_mode = 2
+size_flags_horizontal = 4
+text = "问题 & 输出"
+
+[node name="Output" type="CodeEdit" parent="VSplitContainer/Output" unique_id=737206045]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_colors/font_readonly_color = Color(0.875, 0.875, 0.875, 1)
+editable = false
+delimiter_strings = Array[String](["\" \"", "' '"])
+script = ExtResource("1_lbcn7")

@@ -23,7 +23,7 @@ CLI = ROOT / "scripts" / "cli_codegen.gd"
 
 
 def _eng(joints, presets=None, key_map=None, gripper=None, engineer_extra=None,
-         mode_switch="R"):
+         mode_switch="E"):
     engineer = {
         "channel": "36", "deadzone": "10", "normal_speed": "4000",
         "sprint_speed": "8000", "sprint_enabled": False,
@@ -140,7 +140,7 @@ inf_full = {
     "yaw_drive": "舵机", "yaw_io": "MP74", "yaw_dir": "正向",
     "pitch_drive": "舵机", "pitch_io": "MP03", "pitch_dir": "正向",
     "yaw_mid_offset": "0", "pitch_mid_offset": "0",
-    "arrow_key": "移动", "trigger_key": "R", "trigger_speed": "6000",
+    "arrow_key": "移动", "trigger_key": "E", "trigger_speed": "6000",
     "trigger_time": "100", "booster_key": "A", "zero_enabled": False,
 }
 CASES.append(("inf_empty", "infantry", {}))

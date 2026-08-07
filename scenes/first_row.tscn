@@ -1,0 +1,264 @@
+[gd_scene format=3 uid="uid://cs1oabdalkjc1"]
+
+[ext_resource type="Texture2D" uid="uid://chtiuyk4ow15a" path="res://assets/images/image-1784962225614_transparent.png" id="1_dcgb4"]
+
+[node name="FirstRow" type="VBoxContainer" unique_id=1872626788]
+size_flags_horizontal = 3
+
+[node name="RemoteSetting" type="VBoxContainer" parent="." unique_id=561961570]
+layout_mode = 2
+
+[node name="HSeparator3" type="HSeparator" parent="RemoteSetting" unique_id=321623860]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="RemoteSetting" unique_id=1188119741]
+layout_mode = 2
+size_flags_horizontal = 4
+text = "遥控器设置"
+
+[node name="HSeparator2" type="HSeparator" parent="RemoteSetting" unique_id=2124327997]
+layout_mode = 2
+
+[node name="Channel" type="HBoxContainer" parent="RemoteSetting" unique_id=650410371]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="RemoteSetting/Channel" unique_id=2069797414]
+layout_mode = 2
+size_flags_horizontal = 2
+text = "通道号"
+
+[node name="LineEdit" type="LineEdit" parent="RemoteSetting/Channel" unique_id=330058379]
+layout_mode = 2
+size_flags_horizontal = 8
+placeholder_text = "0-125"
+
+[node name="DeadZone" type="HBoxContainer" parent="RemoteSetting" unique_id=188013975]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="RemoteSetting/DeadZone" unique_id=1106670867]
+layout_mode = 2
+size_flags_horizontal = 2
+text = "死区"
+
+[node name="LineEdit" type="LineEdit" parent="RemoteSetting/DeadZone" unique_id=1058601357]
+layout_mode = 2
+size_flags_horizontal = 8
+text = "10"
+
+[node name="HSeparator" type="HSeparator" parent="RemoteSetting" unique_id=617073358]
+layout_mode = 2
+
+[node name="Chassis" type="VBoxContainer" parent="." unique_id=1989381370]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Chassis" unique_id=444278247]
+layout_mode = 2
+size_flags_horizontal = 4
+text = "底盘"
+
+[node name="HSeparator2" type="HSeparator" parent="Chassis" unique_id=1667257145]
+layout_mode = 2
+
+[node name="L1" type="HBoxContainer" parent="Chassis" unique_id=2144548519]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Chassis/L1" unique_id=1664967235]
+layout_mode = 2
+size_flags_horizontal = 2
+text = "左前轮 IO"
+
+[node name="OptionButton" type="OptionButton" parent="Chassis/L1" unique_id=1488945105]
+layout_mode = 2
+size_flags_horizontal = 8
+selected = 3
+item_count = 6
+popup/item_0/text = "P77 P27"
+popup/item_0/id = 0
+popup/item_1/text = "P76 P26"
+popup/item_1/id = 1
+popup/item_2/text = "P75 P25"
+popup/item_2/id = 2
+popup/item_3/text = "P74 P24"
+popup/item_3/id = 3
+popup/item_4/text = "P60 P61"
+popup/item_4/id = 4
+popup/item_5/text = "P62 P63"
+popup/item_5/id = 5
+
+[node name="OptionButton2" type="OptionButton" parent="Chassis/L1" unique_id=907958937]
+layout_mode = 2
+size_flags_horizontal = 8
+selected = 0
+item_count = 2
+popup/item_0/text = "正向"
+popup/item_0/id = 0
+popup/item_1/text = "反向"
+popup/item_1/id = 1
+
+[node name="L2" type="HBoxContainer" parent="Chassis" unique_id=395689277]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Chassis/L2" unique_id=347191441]
+layout_mode = 2
+size_flags_horizontal = 2
+text = "左后轮 IO"
+
+[node name="OptionButton" type="OptionButton" parent="Chassis/L2" unique_id=1739183859]
+layout_mode = 2
+size_flags_horizontal = 8
+selected = 2
+item_count = 6
+popup/item_0/text = "P77 P27"
+popup/item_0/id = 0
+popup/item_1/text = "P76 P26"
+popup/item_1/id = 1
+popup/item_2/text = "P75 P25"
+popup/item_2/id = 2
+popup/item_3/text = "P74 P24"
+popup/item_3/id = 3
+popup/item_4/text = "P60 P61"
+popup/item_4/id = 4
+popup/item_5/text = "P62 P63"
+popup/item_5/id = 5
+
+[node name="OptionButton2" type="OptionButton" parent="Chassis/L2" unique_id=10960150]
+layout_mode = 2
+size_flags_horizontal = 8
+selected = 0
+item_count = 2
+popup/item_0/text = "正向"
+popup/item_0/id = 0
+popup/item_1/text = "反向"
+popup/item_1/id = 1
+
+[node name="R1" type="HBoxContainer" parent="Chassis" unique_id=1071286518]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Chassis/R1" unique_id=1116740731]
+layout_mode = 2
+size_flags_horizontal = 2
+text = "右前轮 IO"
+
+[node name="OptionButton" type="OptionButton" parent="Chassis/R1" unique_id=873172207]
+layout_mode = 2
+size_flags_horizontal = 8
+selected = 1
+item_count = 6
+popup/item_0/text = "P77 P27"
+popup/item_0/id = 0
+popup/item_1/text = "P76 P26"
+popup/item_1/id = 1
+popup/item_2/text = "P75 P25"
+popup/item_2/id = 2
+popup/item_3/text = "P74 P24"
+popup/item_3/id = 3
+popup/item_4/text = "P60 P61"
+popup/item_4/id = 4
+popup/item_5/text = "P62 P63"
+popup/item_5/id = 5
+
+[node name="OptionButton2" type="OptionButton" parent="Chassis/R1" unique_id=638870536]
+layout_mode = 2
+size_flags_horizontal = 8
+selected = 0
+item_count = 2
+popup/item_0/text = "正向"
+popup/item_0/id = 0
+popup/item_1/text = "反向"
+popup/item_1/id = 1
+
+[node name="R2" type="HBoxContainer" parent="Chassis" unique_id=906887034]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Chassis/R2" unique_id=141145249]
+layout_mode = 2
+size_flags_horizontal = 2
+text = "右后轮 IO"
+
+[node name="OptionButton" type="OptionButton" parent="Chassis/R2" unique_id=160108720]
+layout_mode = 2
+size_flags_horizontal = 8
+selected = 0
+item_count = 6
+popup/item_0/text = "P77 P27"
+popup/item_0/id = 0
+popup/item_1/text = "P76 P26"
+popup/item_1/id = 1
+popup/item_2/text = "P75 P25"
+popup/item_2/id = 2
+popup/item_3/text = "P74 P24"
+popup/item_3/id = 3
+popup/item_4/text = "P60 P61"
+popup/item_4/id = 4
+popup/item_5/text = "P62 P63"
+popup/item_5/id = 5
+
+[node name="OptionButton2" type="OptionButton" parent="Chassis/R2" unique_id=1034063638]
+layout_mode = 2
+size_flags_horizontal = 8
+selected = 0
+item_count = 2
+popup/item_0/text = "正向"
+popup/item_0/id = 0
+popup/item_1/text = "反向"
+popup/item_1/id = 1
+
+[node name="Speed" type="HBoxContainer" parent="Chassis" unique_id=564456754]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Chassis/Speed" unique_id=615423306]
+layout_mode = 2
+size_flags_horizontal = 2
+text = "普通速度"
+
+[node name="LineEdit" type="LineEdit" parent="Chassis/Speed" unique_id=1344726249]
+layout_mode = 2
+size_flags_horizontal = 8
+text = "8000"
+placeholder_text = "0~1e4"
+
+[node name="SprintSpeed" type="HBoxContainer" parent="Chassis" unique_id=1137576093]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Chassis/SprintSpeed" unique_id=531741635]
+layout_mode = 2
+size_flags_horizontal = 2
+text = "冲刺速度"
+
+[node name="LineEdit" type="LineEdit" parent="Chassis/SprintSpeed" unique_id=423699246]
+layout_mode = 2
+size_flags_horizontal = 8
+text = "10000"
+placeholder_text = "0~1e4"
+
+[node name="Sprint" type="HBoxContainer" parent="Chassis" unique_id=702133648]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Chassis/Sprint" unique_id=1108661839]
+layout_mode = 2
+size_flags_horizontal = 2
+text = "按下左摇杆冲刺"
+
+[node name="CheckBox" type="CheckBox" parent="Chassis/Sprint" unique_id=403477678]
+layout_mode = 2
+size_flags_horizontal = 10
+button_pressed = true
+
+[node name="HSeparator3" type="HSeparator" parent="Chassis" unique_id=1069067682]
+layout_mode = 2
+
+[node name="Control" type="Control" parent="." unique_id=1821170730]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="TextureRect" type="TextureRect" parent="Control" unique_id=426020533]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_vertical = 3
+texture = ExtResource("1_dcgb4")
+expand_mode = 1
+stretch_mode = 5

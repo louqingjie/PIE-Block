@@ -1,0 +1,83 @@
+[gd_scene format=3 uid="uid://cixhirpix64rt"]
+
+[node name="TopPanel" type="HBoxContainer" unique_id=683907026]
+
+[node name="Create" type="Button" parent="." unique_id=38610963]
+layout_mode = 2
+text = "新建"
+
+[node name="Open" type="Button" parent="." unique_id=1959674250]
+layout_mode = 2
+text = "打开"
+
+[node name="Save" type="Button" parent="." unique_id=335796965]
+layout_mode = 2
+text = "保存"
+
+[node name="Settings" type="Button" parent="." unique_id=801049158]
+layout_mode = 2
+text = "设置"
+
+[node name="Label" type="Label" parent="." unique_id=543534178]
+layout_mode = 2
+size_flags_horizontal = 6
+text = "项目名称"
+
+[node name="Export" type="Button" parent="." unique_id=1792247057]
+visible = false
+layout_mode = 2
+size_flags_horizontal = 8
+text = "导出 C 代码"
+
+[node name="Button" type="Button" parent="." unique_id=443634879]
+visible = false
+layout_mode = 2
+text = "进入 C 代码后处理"
+
+[node name="EnableAI" type="Button" parent="." unique_id=1699049185]
+layout_mode = 2
+toggle_mode = true
+text = "启用 AI 功能"
+
+[node name="AIEdit" type="Button" parent="." unique_id=998092869]
+visible = false
+layout_mode = 2
+size_flags_horizontal = 8
+text = "AI 编辑"
+
+[node name="ArmSim" type="Button" parent="." unique_id=818349062]
+visible = false
+layout_mode = 2
+size_flags_horizontal = 8
+text = "3D 仿真"
+
+[node name="Build" type="Button" parent="." unique_id=191544490]
+visible = false
+layout_mode = 2
+size_flags_horizontal = 8
+text = "编译"
+
+[node name="BuildMode" type="OptionButton" parent="." unique_id=1075719196]
+layout_mode = 2
+size_flags_horizontal = 8
+selected = 1
+item_count = 2
+popup/item_0/text = "本地编译"
+popup/item_0/id = 0
+popup/item_1/text = "云端编译"
+popup/item_1/id = 1
+
+[node name="Download" type="Button" parent="." unique_id=641915480]
+visible = false
+layout_mode = 2
+size_flags_horizontal = 8
+text = "烧录主控板"
+
+[node name="HEXExport" type="Button" parent="." unique_id=1243493293]
+layout_mode = 2
+text = "导出 HEX"
+
+[node name="Upgrade" type="Button" parent="." unique_id=1286203177]
+layout_mode = 2
+size_flags_horizontal = 8
+text = "升级主控板"

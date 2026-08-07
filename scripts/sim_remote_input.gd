@@ -14,7 +14,8 @@ const KEY_ROWS: Array = [
 ]
 
 const CONFIG_KEY_TO_ID: Dictionary = {
-	"R": "R", "↑": "UP", "↓": "DOWN", "←": "LEFT", "→": "RIGHT", "->": "RIGHT",
+	"E": "E", "R": "E", # R 是旧名别名
+	"↑": "UP", "↓": "DOWN", "←": "LEFT", "→": "RIGHT", "->": "RIGHT",
 	"A": "A", "B": "B", "C": "C", "D": "D",
 }
 
@@ -51,7 +52,7 @@ static func sample(left_deadzone: int, right_deadzone: int,
 			if Input.is_joy_button_pressed(pad_id, button):
 				pressed[PAD_BUTTONS[button]] = true
 		if trigger_pressed(Input.get_joy_axis(pad_id, JOY_AXIS_TRIGGER_RIGHT)):
-			pressed["R"] = true
+			pressed["E"] = true
 	if keyboard_enabled:
 		axes["lx"] += _axis_pair(KEY_D, KEY_A)
 		axes["ly"] += _axis_pair(KEY_W, KEY_S)
@@ -61,7 +62,7 @@ static func sample(left_deadzone: int, right_deadzone: int,
 			if Input.is_key_pressed(code):
 				pressed[KEYBOARD_BUTTONS[code]] = true
 		if pointer_r_enabled and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
-			pressed["R"] = true
+			pressed["E"] = true
 	return compose(axes, pressed, left_deadzone, right_deadzone, pad_id, pad_name)
 
 

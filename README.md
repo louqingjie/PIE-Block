@@ -157,6 +157,7 @@ headless 脚本，跑法 `godot --headless --path . --script scripts/test_xxx.gd
 | `test_arm_sim.gd` / `test_infantry_sim.gd` | 仿真几何与控制方向一致性 |
 | `test_ui_ik_e2e.gd` | 配置界面到生成器的端到端 |
 | `test_upgrade_ui.gd` | 升级进度面板状态与重试 |
+| `test_flasher_hid.gd` | USB-HID 烧录核心（与 pie_block_hid.py 逐字节等价，向量由 Python 生成） |
 
 真机性能已实测（STC32G，COM3 串口读数）：6 关节含 φ 的雅可比 IK 单次 431 μs，
 占 4ms 预算 10.8%。

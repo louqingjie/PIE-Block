@@ -73,36 +73,52 @@ const DEBUG_ROWS: Array = [
 ]
 # 工程师界面
 const ENGINEER: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer"
-# IO 初始化区（OptionButton 选 电机/舵机，P60/P62 固定舵机只有1项）
-const P_ENG_P60: NodePath = ENGINEER + "/P60P62/OptionButton"
-const P_ENG_P62: NodePath = ENGINEER + "/P60P62/OptionButton2"
-const P_ENG_P64: NodePath = ENGINEER + "/P64P66/OptionButton"
-const P_ENG_P66: NodePath = ENGINEER + "/P64P66/OptionButton2"
-const P_ENG_P74: NodePath = ENGINEER + "/P74P75/OptionButton"
-const P_ENG_P75: NodePath = ENGINEER + "/P74P75/OptionButton2"
-const P_ENG_P76: NodePath = ENGINEER + "/P76P77/OptionButton2"
-const P_ENG_P77: NodePath = ENGINEER + "/P76P77/OptionButton"
-# 主控板舵机端口（固定舵机，只有一项，与扩展板 P74 不是同一个 IO）
-const P_ENG_MP03: NodePath = ENGINEER + "/MP03MP74/OptionButton2"
-const P_ENG_MP74: NodePath = ENGINEER + "/MP03MP74/OptionButton"
-# 扩展板引脚名 -> IO 初始化区节点路径（供占位提示与配置收集共用）
+# IO 初始化区（新布局：IOs/Row1={P60,P62,P64,P66,P74}，IOs/Row2={P75,P76,P77,MP03,MP74}，
+# 每个引脚一个 OptionButton(电机/舵机) + MidDegree2(初始角)）
+const P_ENG_P60: NodePath = ENGINEER + "/IOs/Row1/P60/OptionButton"
+const P_ENG_P62: NodePath = ENGINEER + "/IOs/Row1/P62/OptionButton"
+const P_ENG_P64: NodePath = ENGINEER + "/IOs/Row1/P64/OptionButton"
+const P_ENG_P66: NodePath = ENGINEER + "/IOs/Row1/P66/OptionButton"
+const P_ENG_P74: NodePath = ENGINEER + "/IOs/Row1/P74/OptionButton"
+const P_ENG_P75: NodePath = ENGINEER + "/IOs/Row2/P75/OptionButton"
+const P_ENG_P76: NodePath = ENGINEER + "/IOs/Row2/P76/OptionButton"
+const P_ENG_P77: NodePath = ENGINEER + "/IOs/Row2/P77/OptionButton"
+# 主控板舵机端口（与扩展板 P74 不是同一个 IO）
+const P_ENG_MP03: NodePath = ENGINEER + "/IOs/Row2/MP03/OptionButton"
+const P_ENG_MP74: NodePath = ENGINEER + "/IOs/Row2/MP74/OptionButton"
+# 扩展板引脚名 -> IO 初始化区类型选择器路径（供占位提示与配置收集共用）
 const ENG_IO_PATHS: Dictionary = {
-	"P60": ENGINEER + "/P60P62/OptionButton",
-	"P62": ENGINEER + "/P60P62/OptionButton2",
-	"P64": ENGINEER + "/P64P66/OptionButton",
-	"P66": ENGINEER + "/P64P66/OptionButton2",
-	"P74": ENGINEER + "/P74P75/OptionButton",
-	"P75": ENGINEER + "/P74P75/OptionButton2",
-	"P76": ENGINEER + "/P76P77/OptionButton2",
-	"P77": ENGINEER + "/P76P77/OptionButton",
+	"P60": ENGINEER + "/IOs/Row1/P60/OptionButton",
+	"P62": ENGINEER + "/IOs/Row1/P62/OptionButton",
+	"P64": ENGINEER + "/IOs/Row1/P64/OptionButton",
+	"P66": ENGINEER + "/IOs/Row1/P66/OptionButton",
+	"P74": ENGINEER + "/IOs/Row1/P74/OptionButton",
+	"P75": ENGINEER + "/IOs/Row2/P75/OptionButton",
+	"P76": ENGINEER + "/IOs/Row2/P76/OptionButton",
+	"P77": ENGINEER + "/IOs/Row2/P77/OptionButton",
 }
+# 引脚名 -> 初始角输入框路径（MidDegree2）
+const ENG_IO_MID_PATHS: Dictionary = {
+	"P60": ENGINEER + "/IOs/Row1/P60/MidDegree2",
+	"P62": ENGINEER + "/IOs/Row1/P62/MidDegree2",
+	"P64": ENGINEER + "/IOs/Row1/P64/MidDegree2",
+	"P66": ENGINEER + "/IOs/Row1/P66/MidDegree2",
+	"P74": ENGINEER + "/IOs/Row1/P74/MidDegree2",
+	"P75": ENGINEER + "/IOs/Row2/P75/MidDegree2",
+	"P76": ENGINEER + "/IOs/Row2/P76/MidDegree2",
+	"P77": ENGINEER + "/IOs/Row2/P77/MidDegree2",
+	"MP03": ENGINEER + "/IOs/Row2/MP03/MidDegree2",
+	"MP74": ENGINEER + "/IOs/Row2/MP74/MidDegree2",
+}
+# IO 初始化区全部引脚（扩展板 + 主控板舵机口）
+const ENG_ALL_PINS: Array = ["P60", "P62", "P64", "P66", "P74", "P75", "P76", "P77", "MP03", "MP74"]
 # 按键映射区各行容器名
 const ENG_KEY_ROWS: Array = [
 	"RightJoystickX", "RightJoystickY", "A", "B", "C", "D", "Up", "Down", "Left", "Right", "R",
 ]
 # 按键映射区各行的显示名（与 ENG_KEY_ROWS 一一对应）
 const ENG_KEY_LABELS: Array = [
-	"右摇杆X", "右摇杆Y", "A", "B", "C", "D", "↑", "↓", "←", "->", "R",
+	"右摇杆X", "右摇杆Y", "A", "B", "C", "D", "↑", "↓", "←", "->", "E",
 ]
 # 工程逆解算界面（Tab 2）
 const IK: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced"
@@ -247,6 +263,8 @@ const GUIDE_HINTS: Array[String] = [
 
 
 func _ready() -> void:
+	# 移动端圆角屏/刘海：整屏内缩到安全区（桌面端恒为 0）
+	SafeArea.apply_to_root(self)
 	# 为 C 代码预览框挂载语法高亮器（状态机正则）
 	var code_edit: Node = get_node_or_null(P_CODE_EDIT)
 	if code_edit is CodeEdit:
@@ -267,6 +285,12 @@ func _ready() -> void:
 	_restore_project_context()
 	# 顶栏「3D 仿真」按钮可见性跟随当前 Tab
 	_update_sim_btn_visibility()
+
+
+## 窗口尺寸/方向变化后重算安全区内缩（旋转屏幕、折叠屏展开等场景）。
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_SIZE_CHANGED:
+		SafeArea.apply_to_root(self)
 
 func _setup_build_controller() -> void:
 	_build_controller = BC.new()
@@ -377,6 +401,11 @@ func _connect_signals() -> void:
 		if eng_btn is OptionButton:
 			eng_btn.item_selected.connect(_update_engineer_placeholders)
 			eng_btn.item_selected.connect(_run_check)
+	# 工程师界面：IO 初始角输入框变化触发检查
+	for pin in ENG_ALL_PINS:
+		var mid_le: Node = get_node_or_null(NodePath(ENG_IO_MID_PATHS[pin]))
+		if mid_le is LineEdit:
+			mid_le.text_changed.connect(_run_check)
 	# 工程师界面：按键映射区变化触发检查
 	for row_name in ENG_KEY_ROWS:
 		var row_path: String = ENGINEER + "/" + row_name
@@ -903,6 +932,7 @@ func _apply_ai_gate(enabled: bool) -> void:
 
 func _apply_ik_gate(confirmed: bool) -> void:
 	_ik_confirmed = confirmed
+	_ik_config["enabled"] = confirmed
 	var root: Node = get_node_or_null(P_IK)
 	if root != null:
 		_set_node_tree_enabled(root, confirmed)
@@ -1007,6 +1037,8 @@ func _on_ik_gate_canceled() -> void:
 func _adopt_project(data: Dictionary, path: String) -> void:
 	_project = data
 	_ik_config = IK_CONFIG.normalize(data.get("ik_config", {}))
+	# workflow.ik_confirmed 是旧存档门控状态的唯一可信源：缺字段一律视为未启用
+	_ik_config["enabled"] = bool(_workflow().get("ik_confirmed", false))
 	_ai_enabled = bool(_workflow().get("ai_enabled", false))
 	_ik_confirmed = bool(_workflow().get("ik_confirmed", false))
 	_apply_ai_gate(_ai_enabled)
@@ -1246,6 +1278,9 @@ func _get_current_codegen() -> CodeGenBase:
 		0:
 			return CodeGenInfantry.new()
 		1, 2:
+			# 未启用逆解算时生成纯正解（按键映射）固件，不含任何逆解内容
+			if not bool(_ik_config.get("enabled", false)):
+				return CodeGenEngineer.new()
 			return CodeGenEngineerIK.new()
 		3:
 			return CodeGenDebug.new()
@@ -1373,7 +1408,8 @@ func _run_check(_a = null, _b = null) -> void:
 			# 步兵模式检查
 			issues = SC.check_infantry(_collect_config())
 		1, 2:
-			# 工程双模式：两页共同配置同一份固件
+			# 工程双模式：两页共同配置同一份固件。
+			# 未启用逆解算时只检查正解（按键映射）部分，逆解校验由检查器按 enabled 跳过。
 			issues = SC.check_engineer(_collect_engineer_config(), _collect_ik_config())
 		3:
 			# 调试模式检查（tab 顺序：0=步兵, 1=工程, 2=工程逆解算, 3=调试）
@@ -1391,7 +1427,11 @@ func _run_check(_a = null, _b = null) -> void:
 		3:
 			cfg = {"debug_rows": _collect_debug_config()}
 		1, 2:
-			cfg = _collect_engineer_dual_config()
+			# 未启用逆解算时走纯正解生成器，需要扁平工程配置
+			if bool(_ik_config.get("enabled", false)):
+				cfg = _collect_engineer_dual_config()
+			else:
+				cfg = _collect_engineer_config()
 		_:
 			cfg = _collect_config()
 	var code: String = _codegen.generate(cfg)
@@ -1399,10 +1439,13 @@ func _run_check(_a = null, _b = null) -> void:
 	if code_edit is CodeEdit:
 		code_edit.text = code
 
-
 func _update_ik_summary() -> void:
 	var label: Node = get_node_or_null(P_IK_SUMMARY)
 	if not label is Label:
+		return
+	if not bool(_ik_config.get("enabled", false)):
+		# 未启用逆解算：不校验配置，摘要只说明当前状态（门控关闭时该标签本就隐藏）
+		label.text = "机械臂逆解算未启用"
 		return
 	var result: Dictionary = IK_CONFIG.validate(_ik_config, _collect_engineer_config())
 	var errors: int = 0
@@ -1522,7 +1565,14 @@ func _collect_engineer_config() -> Dictionary:
 	var io_init: Dictionary = {}
 	for pin in EXPANSION_PINS:
 		io_init[pin] = _get_option_text(NodePath(ENG_IO_PATHS[pin]))
+	io_init["MP03"] = _get_option_text(P_ENG_MP03)
+	io_init["MP74"] = _get_option_text(P_ENG_MP74)
 	cfg["io_init"] = io_init
+	# --- IO 初始化区：各引脚舵机初始角（相对中位偏移，仅舵机有效）---
+	var io_mid: Dictionary = {}
+	for pin in ENG_ALL_PINS:
+		io_mid[pin] = _get_line_text(NodePath(ENG_IO_MID_PATHS[pin])).strip_edges()
+	cfg["io_mid"] = io_mid
 	# --- 按键映射区 ---
 	var key_map: Array = []
 	for i in range(ENG_KEY_ROWS.size()):
@@ -2019,7 +2069,9 @@ func _on_arm_sim_config_changed(payload: Dictionary) -> void:
 	if _stage2_preview:
 		return
 	var next_ik: Variant = payload.get("ik", payload)
+	var prev_enabled: bool = bool(_ik_config.get("enabled", false))
 	_ik_config = IK_CONFIG.normalize(next_ik)
+	_ik_config["enabled"] = prev_enabled
 	var io_patch: Dictionary = payload.get("io_init", {})
 	_loading = true
 	for pin in io_patch.keys():

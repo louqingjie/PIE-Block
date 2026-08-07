@@ -112,7 +112,7 @@ func _make_cfg(jc: int, presets: Array) -> Dictionary:
 			{"plus": "←", "minus": "->"},
 			{"plus": "B", "minus": "C"},
 			{"plus": "不使用", "minus": "不使用"},
-			{"plus": "D", "minus": "R"},
+			{"plus": "D", "minus": "E"},
 			{"plus": "不使用", "minus": "不使用"},
 		],
 	}
@@ -120,7 +120,7 @@ func _make_cfg(jc: int, presets: Array) -> Dictionary:
 
 func _make_dual_cfg() -> Dictionary:
 	var ik: Dictionary = _make_cfg(3, [])
-	ik["mode_switch_key"] = "R"
+	ik["mode_switch_key"] = "E"
 	return {
 		"engineer": {
 			"channel": "42", "deadzone": "12", "normal_speed": "4000",
@@ -143,7 +143,7 @@ func _test_dual_mode(cg) -> void:
 	print("\n--- 正解/逆解双模式 ---")
 	var code: String = cg.generate(_make_dual_cfg())
 	_check("上电默认逆解", code.contains("uint8_t   inverseMode = 1"))
-	_check("R 键边沿锁存", code.contains("pressed = RcKeyValueRead(KEY_OFFSET_1)")
+	_check("E 键边沿锁存", code.contains("pressed = RcKeyValueRead(KEY_OFFSET_1)")
 		and code.contains("pressed && !modeKeyHeld")
 		and code.contains("else if (!pressed)"))
 	_check("正逆解分支", code.contains("if (inverseMode)")

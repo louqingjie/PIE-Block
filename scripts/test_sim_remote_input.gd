@@ -16,12 +16,12 @@ func _check(label: String, condition: bool, detail: String = "") -> void:
 func _initialize() -> void:
 	var state: Dictionary = REMOTE.compose(
 		{"lx": 0.25, "ly": -0.5, "rx": 2.0, "ry": -2.0},
-		{"UP": true, "A": true, "ROCKER1": true, "R": true}, 10, 10, 7, "Test Pad")
+		{"UP": true, "A": true, "ROCKER1": true, "E": true}, 10, 10, 7, "Test Pad")
 	_check("axes quantize and clamp", state["valueOfRoker"] == [
 		[512, -1024], [2047, -2047]], str(state["valueOfRoker"]))
 	_check("logical buttons fill valueOfKey", state["valueOfKey"][0][0] == 1
 		and state["valueOfKey"][1][0] == 1 and state["valueOfKey"][2][0] == 1)
-	_check("R remains available outside valueOfKey", REMOTE.is_pressed(state, "R"))
+	_check("E remains available outside valueOfKey", REMOTE.is_pressed(state, "E"))
 	_check("pad metadata survives", state["pad_id"] == 7 and state["pad_name"] == "Test Pad")
 
 	var dead: Dictionary = REMOTE.compose({"lx": 10.0 / 2047.0, "rx": 11.0 / 2047.0}, {}, 10, 10)

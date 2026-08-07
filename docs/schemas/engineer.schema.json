@@ -82,6 +82,68 @@
                 "电机"
               ],
               "type": "string"
+            },
+            "MP03": {
+              "default": "舵机",
+              "enum": [
+                "舵机",
+                "电机"
+              ],
+              "type": "string"
+            },
+            "MP74": {
+              "default": "舵机",
+              "enum": [
+                "舵机",
+                "电机"
+              ],
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "io_mid": {
+          "description": "各引脚舵机初始角（相对中位偏移角，-90~90，仅舵机有效）",
+          "properties": {
+            "P60": {
+              "default": "",
+              "type": "string"
+            },
+            "P62": {
+              "default": "",
+              "type": "string"
+            },
+            "P64": {
+              "default": "",
+              "type": "string"
+            },
+            "P66": {
+              "default": "",
+              "type": "string"
+            },
+            "P74": {
+              "default": "",
+              "type": "string"
+            },
+            "P75": {
+              "default": "",
+              "type": "string"
+            },
+            "P76": {
+              "default": "",
+              "type": "string"
+            },
+            "P77": {
+              "default": "",
+              "type": "string"
+            },
+            "MP03": {
+              "default": "",
+              "type": "string"
+            },
+            "MP74": {
+              "default": "",
+              "type": "string"
             }
           },
           "type": "object"
@@ -193,6 +255,11 @@
     "ik": {
       "description": "工程逆解算机械臂配置",
       "properties": {
+        "enabled": {
+          "default": false,
+          "description": "是否启用机械臂逆解算（未启用时生成纯正解固件）",
+          "type": "boolean"
+        },
         "gripper": {
           "properties": {
             "closed_angle": {
@@ -336,7 +403,7 @@
           "type": "string"
         },
         "mode_switch_key": {
-          "default": "R",
+          "default": "E",
           "type": "string"
         },
         "orientation_key_speed": {

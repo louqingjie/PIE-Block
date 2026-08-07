@@ -27,11 +27,19 @@ var _pending_kind: String = ""
 
 
 func _ready() -> void:
+	# 移动端圆角屏/刘海：整屏内缩到安全区（桌面端恒为 0）
+	SafeArea.apply_to_root(self)
 	# 从主界面返回启动页时，上一个项目的上下文必须清干净，
 	# 否则 ui.tscn 下次进来会以为项目还开着
 	AppState.reset()
 	_connect_signals()
 	_rebuild_recent_list()
+
+
+## 旋转/尺寸变化后重算安全区内缩。
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_SIZE_CHANGED:
+		SafeArea.apply_to_root(self)
 
 
 func _connect_signals() -> void:

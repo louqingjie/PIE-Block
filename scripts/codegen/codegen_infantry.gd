@@ -87,7 +87,7 @@ func generate(cfg: Dictionary) -> String:
 	var trig_time: String = _int_or_default(cfg.get("trigger_time", ""), 250, 0, 65535)
 
 	# --- 按键映射 ---
-	var trigger_key_offset: String = _key_name_to_offset(cfg.get("trigger_key", "R"))
+	var trigger_key_offset: String = _key_name_to_offset(cfg.get("trigger_key", "E"))
 	var booster_key_offset: String = _key_name_to_offset(cfg.get("booster_key", "A"))
 	# --- 拨弹模式 ---
 	# 目视闭环：按住扳机持续拨弹、松开即停（不阻塞主循环）

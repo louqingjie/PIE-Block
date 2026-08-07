@@ -1547,7 +1547,7 @@ func _build_structure_editor(parent: Node) -> void:
 	var counts: Array = ["2", "3", "4", "5", "6"]
 	_add_option_row(parent, "关节数", counts, str(_jc), _on_joint_count_config_changed)
 	_add_option_row(parent, "正解/逆解切换键", IK_CONFIG.KEYS,
-		str(_cfg.get("mode_switch_key", "R")), func(value: String) -> void:
+		str(_cfg.get("mode_switch_key", "E")), func(value: String) -> void:
 			_cfg["mode_switch_key"] = value
 			_emit_config_changed())
 	var blocked: Array[String] = IK_CONFIG.blocked_chassis_ios(_engineer)
@@ -2595,7 +2595,7 @@ func _build_controller_params(parent: Node) -> void:
 	var hint: Label = Label.new()
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	hint.text = "上电模式：逆解 ｜ 切换键：%s ｜ 周期：%dms" % [
-		_cfg.get("mode_switch_key", "R"), int(SIM_STEP_MS)]
+		_cfg.get("mode_switch_key", "E"), int(SIM_STEP_MS)]
 	hint.text += "\nWASD / IJKL = 左 / 右摇杆 ｜ 1/2/3/4 = A/B/C/D"
 	hint.text += "\n方向键 = 十字键 ｜ Shift / Z = 左 / 右摇杆按下 ｜ 鼠标左键 = R"
 	parent.add_child(hint)
@@ -2699,7 +2699,7 @@ func _update_remote_gripper() -> void:
 
 
 func _update_remote_mode() -> void:
-	var pressed: bool = _remote_key(str(_cfg.get("mode_switch_key", "R")))
+	var pressed: bool = _remote_key(str(_cfg.get("mode_switch_key", "E")))
 	if pressed and not _mode_key_held:
 		_inverse_mode = not _inverse_mode
 		_mode_key_held = true

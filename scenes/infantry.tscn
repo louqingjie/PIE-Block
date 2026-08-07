@@ -1,0 +1,356 @@
+[gd_scene format=3 uid="uid://cqjw5gums3ld7"]
+
+[ext_resource type="PackedScene" uid="uid://dpq854m2cihg8" path="res://scenes/advanced_and_engineer.tscn" id="1_mmosd"]
+
+[node name="Infantry" type="VBoxContainer" unique_id=2096911062]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+metadata/_tab_index = 0
+metadata/_tab_name = "步兵"
+
+[node name="Label" type="Label" parent="." unique_id=2147449042]
+layout_mode = 2
+size_flags_horizontal = 4
+text = "云台设置"
+
+[node name="HSeparator" type="HSeparator" parent="." unique_id=1584597609]
+layout_mode = 2
+
+[node name="GimbalSetting" type="VBoxContainer" parent="." unique_id=230919307]
+layout_mode = 2
+
+[node name="P64" type="HBoxContainer" parent="GimbalSetting" unique_id=1954507377]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="GimbalSetting/P64" unique_id=6271396]
+layout_mode = 2
+size_flags_horizontal = 2
+text = "摩擦轮 P64"
+
+[node name="OptionButton" type="OptionButton" parent="GimbalSetting/P64" unique_id=1006653102]
+layout_mode = 2
+size_flags_horizontal = 8
+selected = 0
+item_count = 2
+popup/item_0/text = "正向"
+popup/item_0/id = 0
+popup/item_1/text = "反向"
+popup/item_1/id = 1
+
+[node name="P66" type="HBoxContainer" parent="GimbalSetting" unique_id=1182067176]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="GimbalSetting/P66" unique_id=1495023328]
+layout_mode = 2
+size_flags_horizontal = 2
+text = "摩擦轮 P66"
+
+[node name="OptionButton" type="OptionButton" parent="GimbalSetting/P66" unique_id=1714150482]
+layout_mode = 2
+size_flags_horizontal = 8
+selected = 0
+item_count = 2
+popup/item_0/text = "正向"
+popup/item_0/id = 0
+popup/item_1/text = "反向"
+popup/item_1/id = 1
+
+[node name="Booster" type="HBoxContainer" parent="GimbalSetting" unique_id=1672469214]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="GimbalSetting/Booster" unique_id=532397754]
+layout_mode = 2
+size_flags_horizontal = 2
+text = "拨弹电机"
+
+[node name="OptionButton" type="OptionButton" parent="GimbalSetting/Booster" unique_id=1144641891]
+layout_mode = 2
+size_flags_horizontal = 8
+selected = 4
+item_count = 6
+popup/item_0/text = "P77 P27"
+popup/item_0/id = 0
+popup/item_1/text = "P76 P26"
+popup/item_1/id = 1
+popup/item_2/text = "P75 P25"
+popup/item_2/id = 2
+popup/item_3/text = "P74 P24"
+popup/item_3/id = 3
+popup/item_4/text = "P60 P61"
+popup/item_4/id = 4
+popup/item_5/text = "P62 P63"
+popup/item_5/id = 5
+
+[node name="OptionButton2" type="OptionButton" parent="GimbalSetting/Booster" unique_id=2003298706]
+layout_mode = 2
+size_flags_horizontal = 8
+selected = 0
+item_count = 2
+popup/item_0/text = "正向"
+popup/item_0/id = 0
+popup/item_1/text = "反向"
+popup/item_1/id = 1
+
+[node name="Yaw" type="HBoxContainer" parent="GimbalSetting" unique_id=1287537645]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="GimbalSetting/Yaw" unique_id=985686969]
+layout_mode = 2
+size_flags_horizontal = 2
+text = "Yaw 轴"
+
+[node name="OptionButton" type="OptionButton" parent="GimbalSetting/Yaw" unique_id=1603016442]
+layout_mode = 2
+size_flags_horizontal = 8
+selected = 1
+item_count = 2
+popup/item_0/text = "电机"
+popup/item_0/id = 0
+popup/item_1/text = "舵机"
+popup/item_1/id = 1
+
+[node name="OptionButton2" type="OptionButton" parent="GimbalSetting/Yaw" unique_id=1979271521]
+layout_mode = 2
+size_flags_horizontal = 8
+selected = 6
+item_count = 8
+popup/item_0/text = "P60"
+popup/item_0/id = 0
+popup/item_1/text = "P62"
+popup/item_1/id = 1
+popup/item_2/text = "P77"
+popup/item_2/id = 2
+popup/item_3/text = "P76"
+popup/item_3/id = 3
+popup/item_4/text = "P75"
+popup/item_4/id = 4
+popup/item_5/text = "P74"
+popup/item_5/id = 5
+popup/item_6/text = "MP74"
+popup/item_6/id = 6
+popup/item_7/text = "MP03"
+popup/item_7/id = 7
+
+[node name="OptionButton3" type="OptionButton" parent="GimbalSetting/Yaw" unique_id=2062091791]
+layout_mode = 2
+size_flags_horizontal = 8
+selected = 0
+item_count = 2
+popup/item_0/text = "正向"
+popup/item_0/id = 0
+popup/item_1/text = "反向"
+popup/item_1/id = 1
+
+[node name="LineEdit" type="LineEdit" parent="GimbalSetting/Yaw" unique_id=2091828625]
+layout_mode = 2
+placeholder_text = "归中角 -90~90"
+
+[node name="Pitch" type="HBoxContainer" parent="GimbalSetting" unique_id=702839610]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="GimbalSetting/Pitch" unique_id=1210063913]
+layout_mode = 2
+size_flags_horizontal = 2
+text = "Pitch 轴"
+
+[node name="OptionButton" type="OptionButton" parent="GimbalSetting/Pitch" unique_id=1694577130]
+layout_mode = 2
+size_flags_horizontal = 8
+selected = 1
+item_count = 2
+popup/item_0/text = "电机"
+popup/item_0/id = 0
+popup/item_1/text = "舵机"
+popup/item_1/id = 1
+
+[node name="OptionButton2" type="OptionButton" parent="GimbalSetting/Pitch" unique_id=842458311]
+layout_mode = 2
+size_flags_horizontal = 8
+selected = 7
+item_count = 8
+popup/item_0/text = "P60"
+popup/item_0/id = 0
+popup/item_1/text = "P62"
+popup/item_1/id = 1
+popup/item_2/text = "P77"
+popup/item_2/id = 2
+popup/item_3/text = "P76"
+popup/item_3/id = 3
+popup/item_4/text = "P75"
+popup/item_4/id = 4
+popup/item_5/text = "P74"
+popup/item_5/id = 5
+popup/item_6/text = "MP74"
+popup/item_6/id = 6
+popup/item_7/text = "MP03"
+popup/item_7/id = 7
+
+[node name="OptionButton3" type="OptionButton" parent="GimbalSetting/Pitch" unique_id=554558383]
+layout_mode = 2
+size_flags_horizontal = 8
+selected = 0
+item_count = 2
+popup/item_0/text = "正向"
+popup/item_0/id = 0
+popup/item_1/text = "反向"
+popup/item_1/id = 1
+
+[node name="LineEdit" type="LineEdit" parent="GimbalSetting/Pitch" unique_id=856817259]
+layout_mode = 2
+placeholder_text = "归中角 -90~90"
+
+[node name="HSeparator" type="HSeparator" parent="GimbalSetting" unique_id=1494854123]
+layout_mode = 2
+
+[node name="KeySetting" type="VBoxContainer" parent="." unique_id=704920973]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="KeySetting" unique_id=1581764733]
+layout_mode = 2
+size_flags_horizontal = 4
+text = "按键映射"
+
+[node name="HSeparator" type="HSeparator" parent="KeySetting" unique_id=2113474870]
+layout_mode = 2
+
+[node name="Zero" type="HBoxContainer" parent="KeySetting" unique_id=669295155]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="KeySetting/Zero" unique_id=271996441]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "按下右摇杆云台归中"
+
+[node name="CheckBox" type="CheckBox" parent="KeySetting/Zero" unique_id=1120810870]
+layout_mode = 2
+size_flags_horizontal = 10
+button_pressed = true
+
+[node name="ArrowKey" type="HBoxContainer" parent="KeySetting" unique_id=530317833]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="KeySetting/ArrowKey" unique_id=1952129893]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "方向键"
+
+[node name="OptionButton" type="OptionButton" parent="KeySetting/ArrowKey" unique_id=1927789895]
+layout_mode = 2
+size_flags_horizontal = 10
+selected = 1
+item_count = 3
+popup/item_0/text = "移动"
+popup/item_0/id = 0
+popup/item_1/text = "冲刺"
+popup/item_1/id = 1
+popup/item_2/text = "其他"
+popup/item_2/id = 2
+
+[node name="FeedMode" type="HBoxContainer" parent="KeySetting" unique_id=941195359]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="KeySetting/FeedMode" unique_id=502995559]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "拨弹模式"
+
+[node name="OptionButton" type="OptionButton" parent="KeySetting/FeedMode" unique_id=74623499]
+layout_mode = 2
+size_flags_horizontal = 10
+selected = 0
+item_count = 2
+popup/item_0/text = "阻塞开环"
+popup/item_0/id = 0
+popup/item_1/text = "目视闭环"
+popup/item_1/id = 1
+
+[node name="Trigger" type="HBoxContainer" parent="KeySetting" unique_id=297138032]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="KeySetting/Trigger" unique_id=185149849]
+layout_mode = 2
+text = "扳机键"
+
+[node name="OptionButton" type="OptionButton" parent="KeySetting/Trigger" unique_id=862703361]
+layout_mode = 2
+size_flags_horizontal = 10
+selected = 0
+item_count = 9
+popup/item_0/text = "E"
+popup/item_0/id = 0
+popup/item_1/text = "↑"
+popup/item_1/id = 1
+popup/item_2/text = "↓"
+popup/item_2/id = 2
+popup/item_3/text = "←"
+popup/item_3/id = 3
+popup/item_4/text = "→"
+popup/item_4/id = 4
+popup/item_5/text = "A"
+popup/item_5/id = 5
+popup/item_6/text = "B"
+popup/item_6/id = 6
+popup/item_7/text = "C"
+popup/item_7/id = 7
+popup/item_8/text = "D"
+popup/item_8/id = 8
+
+[node name="Speed" type="LineEdit" parent="KeySetting/Trigger" unique_id=733773050]
+custom_minimum_size = Vector2(80, 0)
+layout_mode = 2
+placeholder_text = "拨弹速度"
+
+[node name="Time" type="LineEdit" parent="KeySetting/Trigger" unique_id=1927235155]
+custom_minimum_size = Vector2(80, 0)
+layout_mode = 2
+placeholder_text = "时间(ms)"
+
+[node name="Booster" type="HBoxContainer" parent="KeySetting" unique_id=1521185530]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="KeySetting/Booster" unique_id=1051477207]
+layout_mode = 2
+text = "摩擦轮开关"
+
+[node name="OptionButton" type="OptionButton" parent="KeySetting/Booster" unique_id=509746721]
+layout_mode = 2
+size_flags_horizontal = 10
+selected = 5
+item_count = 9
+popup/item_0/text = "E"
+popup/item_0/id = 0
+popup/item_1/text = "↑"
+popup/item_1/id = 1
+popup/item_2/text = "↓"
+popup/item_2/id = 2
+popup/item_3/text = "←"
+popup/item_3/id = 3
+popup/item_4/text = "→"
+popup/item_4/id = 4
+popup/item_5/text = "A"
+popup/item_5/id = 5
+popup/item_6/text = "B"
+popup/item_6/id = 6
+popup/item_7/text = "C"
+popup/item_7/id = 7
+popup/item_8/text = "D"
+popup/item_8/id = 8
+
+[node name="Advanced" type="FoldableContainer" parent="." unique_id=144618528]
+layout_mode = 2
+size_flags_vertical = 3
+folded = true
+title = "高级设置"
+title_alignment = 1
+
+[node name="ScrollContainer" type="ScrollContainer" parent="Advanced" unique_id=1449661723]
+visible = false
+layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="AdvancedAndEngineer" parent="Advanced/ScrollContainer" unique_id=727657335 instance=ExtResource("1_mmosd")]
+layout_mode = 2
+size_flags_vertical = 3

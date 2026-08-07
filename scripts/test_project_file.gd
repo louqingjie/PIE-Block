@@ -321,7 +321,7 @@ func _test_config_roundtrip() -> void:
 	var base: Dictionary = ui._snapshot_config()
 	_check("快照非空", base.size() > 50, "实际 %d 项" % base.size())
 	_check("快照不再包含工程逆解控件", not "EngineerAdvanced/ConfigType" in " ".join(base.keys()))
-	_check("结构化 IK 默认切换键为 R", str(ui._ik_config.get("mode_switch_key", "")) == "R")
+	_check("结构化 IK 默认切换键为 E", str(ui._ik_config.get("mode_switch_key", "")) == "E")
 
 	# 改一批控件：LineEdit / OptionButton / CheckBox 三类都覆盖
 	var touched: int = 0

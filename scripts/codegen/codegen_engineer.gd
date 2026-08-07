@@ -224,13 +224,15 @@ func generate(cfg: Dictionary) -> String:
 	# MP03 = PWMB_CH4_P03，MP74 = PWMB_CH1_P74（与扩展板 P74 是不同的 IO）
 	var main_servo_chn: Array = ["PWMB_CH4_P03", "PWMB_CH1_P74"]
 	var main_servo_name: Array = ["MP03", "MP74"]
+	# 各引脚舵机初始角（IO 初始化区填写，相对中位偏移角）
+	var io_mid: Dictionary = cfg.get("io_mid", {})
 	var pwm_init_lines: String = ""
 	var pwm_set_lines: String = ""
 	for si in range(2):
 		if not use_main_servo[si]:
 			continue
-		pwm_init_lines += "    PWM_Init(%s, 50, %d); // %s 舵机归中\n" \
-			% [main_servo_chn[si], SERVO_DUTY_MID, main_servo_name[si]]
+		pwm_init_lines += "    PWM_Init(%s, 50, %d); // %s 舵机初始角\n" \
+			% [main_servo_chn[si], _io_mid_duty(io_mid, main_servo_name[si]), main_servo_name[si]]
 		pwm_set_lines += "    PWM_SET_Frequency(%s, 50, dutyOfMainServo%d);\n" \
 			% [main_servo_chn[si], si]
 
@@ -256,17 +258,19 @@ func generate(cfg: Dictionary) -> String:
 		if use_main_servo[si]:
 			servo_copy_code += "        dutyOfMainServo%d = (uint16_t)floatDutyOfMainServo%d;\n" % [si, si]
 
-	# --- 舵机初始化代码 ---
+	# --- 舵机初始化代码（按 IO 初始化区填写的初始角，生成期换算成占空比）---
 	var servo_init_code: String = ""
 	if servo_count > 0:
-		servo_init_code += "    for (i = 0; i < %d; i++)\n" % servo_count \
-			+"    {\n" \
-			+"        dutyOfServo[i] = %d;\n" % SERVO_DUTY_MID \
-			+"        floatDutyOfServo[i] = %d.0f;\n" % SERVO_DUTY_MID \
-			+"    }\n"
+		for i in range(8):
+			if not slot_servo_idx.has(i):
+				continue
+			var duty_init: int = _io_mid_duty(io_mid, EXP_PINS[i])
+			servo_init_code += "    dutyOfServo[%d] = %d;\n" % [slot_servo_idx[i], duty_init]
+			servo_init_code += "    floatDutyOfServo[%d] = %d.0f;\n" % [slot_servo_idx[i], duty_init]
 	for si in range(2):
 		if use_main_servo[si]:
-			servo_init_code += "    floatDutyOfMainServo%d = %d.0f;\n" % [si, SERVO_DUTY_MID]
+			servo_init_code += "    floatDutyOfMainServo%d = %d.0f;\n" \
+				% [si, _io_mid_duty(io_mid, main_servo_name[si])]
 
 	# --- 主控板舵机变量声明 ---
 	var main_servo_decl: String = ""
@@ -282,6 +286,8 @@ func generate(cfg: Dictionary) -> String:
 	code += "// 工程机器人操作代码（由 Pie-Block 配置生成器自动生成）\n"
 	code += "#include \"main.h\"\n"
 	code += "#include \"MATH.H\"\n"
+	# isr.c 的 UART1 中断通过该钩子把非 IAP 字节交给应用；无逆解仿真时是空操作
+	code += "void IKSimRxByte(uint8_t dat) { if (dat == 0u) return; }\n"
 	code += "// ========================= 参数区 =========================\n"
 	code += "uint8_t Channal = %s;                          // NRF24L01 通信通道（0-125），与遥控器一致\n" % ch
 	code += "uint16_t maxSpeed = %s;                         // 底盘普通速度\n" % normal_spd
@@ -314,7 +320,7 @@ func generate(cfg: Dictionary) -> String:
 	code += "int dutyOfMotor[%d];          // 电机控制值（底盘+其他）\n" % motor_array_size
 	code += main_servo_decl
 	code += "uint8_t valueOfKey[3][4];\n"
-	code += "uint8_t valueOfRKey;\n"
+	code += "uint8_t valueOfEKey;\n"
 	code += "uint8_t i, j;\n"
 	code += "int valueOfRoker[2][2] // 左摇杆水平、竖直；右摇杆水平、竖直\n"
 	code += "    ,\n"
@@ -435,7 +441,7 @@ func generate(cfg: Dictionary) -> String:
 	code += "            valueOfKey[i][j] = RcKeyValueRead(keyOffsets[i][j]);\n"
 	code += "        }\n"
 	code += "    }\n"
-	code += "    valueOfRKey = RcKeyValueRead(KEY_OFFSET_1);\n"
+	code += "    valueOfEKey = RcKeyValueRead(KEY_OFFSET_1);\n"
 	code += "}\n\n"
 
 	# --- Calculate_Motor_Controls ---
@@ -613,7 +619,9 @@ func _input_to_c_expr(input_name: String) -> Dictionary:
 			return {"is_joystick": false, "key_row": 0, "key_col": 2}
 		"->":
 			return {"is_joystick": false, "key_row": 0, "key_col": 3}
-		"R":
+		"E":
+			return {"is_joystick": false, "is_r_key": true}
+		"R": # 旧名别名：老配置里的 "R" 仍按扳机键处理
 			return {"is_joystick": false, "is_r_key": true}
 		_:
 			return {"is_joystick": false, "key_row": 0, "key_col": 0}
@@ -622,7 +630,7 @@ func _input_to_c_expr(input_name: String) -> Dictionary:
 ## 从输入信息生成按键条件表达式
 func _key_expr(input_info: Dictionary) -> String:
 	if input_info.get("is_r_key", false):
-		return "valueOfRKey"
+		return "valueOfEKey"
 	var kr: int = input_info.get("key_row", 0)
 	var kc: int = input_info.get("key_col", 0)
 	return "valueOfKey[%d][%d]" % [kr, kc]

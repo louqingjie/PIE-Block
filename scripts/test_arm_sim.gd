@@ -608,7 +608,7 @@ func _test_remote_control() -> void:
 		and sim._angles != home_angles)
 
 	# 模式键按下边沿只翻转一次，释放后才允许下一次翻转。
-	sim._remote_snapshot = _remote([[0, 0], [0, 0]], {"R": true})
+	sim._remote_snapshot = _remote([[0, 0], [0, 0]], {"E": true})
 	sim._update_remote_mode()
 	_check("mode key first edge enters forward mode", not sim._inverse_mode)
 	sim._update_remote_mode()
@@ -616,7 +616,7 @@ func _test_remote_control() -> void:
 	sim._remote_snapshot = _remote()
 	sim._update_remote_mode()
 	sim._angles = [12.0, -8.0]
-	sim._remote_snapshot = _remote([[0, 0], [0, 0]], {"R": true})
+	sim._remote_snapshot = _remote([[0, 0], [0, 0]], {"E": true})
 	sim._update_remote_mode()
 	_check("second mode-key edge returns to inverse mode", sim._inverse_mode)
 	_check("returning to inverse does not synthesize MCU pose", not sim._mcu_ready)

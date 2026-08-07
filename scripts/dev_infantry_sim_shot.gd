@@ -17,7 +17,7 @@ func _cfg(yaw_drive: String, pitch_drive: String) -> Dictionary:
 		"yaw_drive": yaw_drive, "yaw_io": "MP74", "yaw_dir": "正向",
 		"pitch_drive": pitch_drive, "pitch_io": "MP03", "pitch_dir": "正向",
 		"yaw_mid_offset": "0", "pitch_mid_offset": "0",
-		"arrow_key": "移动", "trigger_key": "R",
+		"arrow_key": "移动", "trigger_key": "E",
 		"trigger_speed": "10000", "trigger_time": "250",
 		"booster_key": "A", "zero_enabled": true,
 	}

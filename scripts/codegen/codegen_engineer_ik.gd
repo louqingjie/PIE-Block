@@ -30,6 +30,8 @@ const IK_EPS: float = 0.001
 #   3. C251 单函数局部变量段上限 128 字节：FK 中间结果必须声明成
 #      static xdata，否则 4 关节就报 "segment too big (act=287, max=128)"
 const MAX_JOINTS: int = 6
+# 扩展板引脚名（按槽位顺序）
+const EXP_PINS: Array = ["P60", "P62", "P64", "P66", "P74", "P75", "P76", "P77"]
 # 主循环周期(ms)：ExpansionBoradControl 之后的延时也计入其中
 const LOOP_PERIOD_MS: int = 10
 # 发送板间指令后必须留给硬件的响应延时(ms)
@@ -166,7 +168,7 @@ func generate(cfg: Dictionary) -> String:
 	var has_orientation: bool = bool(orientation_mask.get("roll", false)) \
 		or bool(orientation_mask.get("pitch", false)) or bool(orientation_mask.get("yaw", false))
 	var tvars: Array = _target_vars_for(orientation_mask)
-	var switch_key: String = str(cfg.get("mode_switch_key", "R"))
+	var switch_key: String = str(cfg.get("mode_switch_key", "E"))
 	var switch_offset: String = _key_name_to_offset(switch_key)
 	var channel: String = _int_or_default(engineer_cfg.get("channel", "36"), 36, 0, 125)
 	var deadzone: String = _int_or_default(engineer_cfg.get("deadzone", "10"), 10, 0, 2047)
@@ -1524,7 +1526,7 @@ func _engineer_input_expr(input_name: String) -> String:
 		"↓": return "RcKeyValueRead(KEY_OFFSET_DOWN)"
 		"←": return "RcKeyValueRead(KEY_OFFSET_LEFT)"
 		"->", "→": return "RcKeyValueRead(KEY_OFFSET_RIGHT)"
-		"R": return "RcKeyValueRead(KEY_OFFSET_1)"
+		"E", "R": return "RcKeyValueRead(KEY_OFFSET_1)" # R 是旧名别名
 		_: return "0"
 
 
@@ -1912,6 +1914,8 @@ func _gen_all_init(joints: Array, jc: int, engineer_cfg: Dictionary = {},
 	var gripper_slot: int = _io_to_exp_slot(gripper_pin)
 	var aux_servo_slots: Array = _aux_servo_slots(engineer_cfg, joints, jc, gripper_pin)
 	var aux_main_servos: Array = _aux_main_servo_list(engineer_cfg, joints, jc, gripper_pin)
+	# 工程正解模式辅助舵机的初始角（IO 初始化区填写，相对中位偏移角）
+	var io_mid: Dictionary = engineer_cfg.get("io_mid", {})
 	if exp_slots.size() > 0 or not chassis_slots.is_empty() or gripper_slot >= 0:
 		# 构建 Init_Order：舵机槽位频率 50，其余 0（维持原状）
 		var init_vals: Array = ["0", "0", "0", "0", "0", "0", "0", "0"]
@@ -1939,7 +1943,7 @@ func _gen_all_init(joints: Array, jc: int, engineer_cfg: Dictionary = {},
 			var idx: int = exp_slots[slot]
 			home_vals[slot] = "angle_to_duty(%d, jointHome[%d])" % [idx, idx]
 		for slot in aux_servo_slots:
-			home_vals[slot] = "SERVO_MID_DUTY"
+			home_vals[slot] = str(_io_mid_duty(io_mid, EXP_PINS[slot]))
 		if gripper_slot >= 0:
 			home_vals[gripper_slot] = "dutyOfGripper"
 		s += "    // 上电先把关节与夹爪推到初始状态\n"
@@ -1956,12 +1960,16 @@ func _gen_all_init(joints: Array, jc: int, engineer_cfg: Dictionary = {},
 			var ji: int = entry["joint"]
 			s += "    PWM_Init(%s, 50, angle_to_duty(%d, jointHome[%d]));\n" % [pwm_ch, ji, ji]
 	for entry in aux_main_servos:
-		s += "    PWM_Init(%s, 50, SERVO_MID_DUTY);\n" % entry["ch"]
+		var aux_pin: String = "MP03" if entry["idx"] == 0 else "MP74"
+		s += "    PWM_Init(%s, 50, %d);\n" % [entry["ch"], _io_mid_duty(io_mid, aux_pin)]
 	if gripper_enabled and gripper_slot < 0:
 		s += "    PWM_Init(%s, 50, dutyOfGripper);\n" % _pin_to_pwm_channel(gripper_pin)
 	if not engineer_cfg.is_empty():
 		s += "    for (i = 0; i < 8; i++) dutyOfAuxServo[i] = SERVO_MID_DUTY;\n"
-		s += "    for (i = 0; i < 2; i++) dutyOfAuxMainServo[i] = SERVO_MID_DUTY;\n"
+		for slot in aux_servo_slots:
+			s += "    dutyOfAuxServo[%d] = %d;\n" % [slot, _io_mid_duty(io_mid, EXP_PINS[slot])]
+		s += "    dutyOfAuxMainServo[0] = %d; // MP03\n" % _io_mid_duty(io_mid, "MP03")
+		s += "    dutyOfAuxMainServo[1] = %d; // MP74\n" % _io_mid_duty(io_mid, "MP74")
 	s += "    StepDone(5);\n"
 	s += _gen_init_done("Beep")
 	s += "}\n\n"

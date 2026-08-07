@@ -46,6 +46,8 @@ static func check_infantry(cfg: Dictionary) -> Array:
 
 
 ## 工程双模式检查（两页共同配置同一份固件）
+## ik_cfg.enabled == false（或缺省视为 true）时跳过逆解算校验：
+## 未启用逆解的用户不应看到任何逆解相关的报错/警告。
 static func check_engineer(eng_cfg: Dictionary, ik_cfg: Dictionary) -> Array:
 	var issues: Array = []
 	_check_channel(issues, eng_cfg)
@@ -53,7 +55,9 @@ static func check_engineer(eng_cfg: Dictionary, ik_cfg: Dictionary) -> Array:
 	_check_speeds(issues, eng_cfg)
 	_check_engineer_chassis_io(issues, eng_cfg)
 	_check_engineer_keymap(issues, eng_cfg)
-	_check_ik_params(issues, ik_cfg, eng_cfg)
+	_check_engineer_io_mid(issues, eng_cfg)
+	if bool(ik_cfg.get("enabled", true)):
+		_check_ik_params(issues, ik_cfg, eng_cfg)
 	return issues
 
 
@@ -537,6 +541,39 @@ static func _check_debug_params(issues: Array, debug_rows: Array) -> void:
 				if val < 0 or val > 1100:
 					issues.append({"type": "Error",
 						"msg": "调试 %s 摩擦轮速度 %d 超出范围（有效范围 0-1100）" % [pin_name, val]})
+
+
+# ------------------------------------------------------------------ 规则：工程 IO 初始角
+# 新 IO 初始化区每个引脚可选 电机/舵机 并填「初始角」（相对舵机中位的偏移角，±90°）。
+# 主控板 MP03/MP74 是 PWM 舵机口，不能当电机用。
+static func _check_engineer_io_mid(issues: Array, cfg: Dictionary) -> void:
+	var io_init: Dictionary = cfg.get("io_init", {})
+	var io_mid: Dictionary = cfg.get("io_mid", {})
+	# 主控板舵机口只能驱动舵机（硬件限制）
+	for mp in ["MP03", "MP74"]:
+		if str(io_init.get(mp, "舵机")) == "电机":
+			issues.append({"type": "Error",
+				"msg": "工程 %s 是主控板舵机口，只能驱动舵机，不能设为电机" % mp})
+	# 初始角校验
+	for pin in io_mid.keys():
+		var text: String = str(io_mid[pin]).strip_edges()
+		if text.is_empty():
+			continue
+		if not text.is_valid_float():
+			issues.append({"type": "Error",
+				"msg": "工程 %s 初始角「%s」不是合法数值（有效范围 -%d~%d，相对中位）"
+					% [pin, text, SERVO_MAX_ANGLE, SERVO_MAX_ANGLE]})
+			continue
+		var angle: float = text.to_float()
+		if angle < -SERVO_MAX_ANGLE or angle > SERVO_MAX_ANGLE:
+			issues.append({"type": "Error",
+				"msg": "工程 %s 初始角 %d° 超出范围（有效范围 -%d~%d，相对中位）"
+					% [pin, int(angle), SERVO_MAX_ANGLE, SERVO_MAX_ANGLE]})
+		# 电机上没有「初始角」的概念
+		var pin_type: String = str(io_init.get(pin, "舵机"))
+		if pin_type == "电机":
+			issues.append({"type": "Warn",
+				"msg": "工程 %s 已设为电机，初始角不会生效" % pin})
 
 
 # ------------------------------------------------------------------ 工程逆解算：静态检查

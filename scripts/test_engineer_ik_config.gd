@@ -29,9 +29,14 @@ func _initialize() -> void:
 		and not config_source.contains("solve_ik_pose"))
 	var defaults: Dictionary = IK_CONFIG.default_config()
 	_check("default has canonical fields", defaults.has_all([
-		"joint_count", "mode_switch_key", "joints", "presets", "joy_x", "joy_y",
+		"enabled", "joint_count", "mode_switch_key", "joints", "presets", "joy_x", "joy_y",
 		"joy_z", "joy_scale", "keymove_speed", "orientation_key_speed",
 		"rocker2_home_enabled", "keymove", "gripper"]))
+	_check("fresh projects default to IK disabled", not defaults["enabled"])
+	_check("absent enabled field normalizes to enabled (backward compat)",
+		IK_CONFIG.normalize({}).get("enabled", false) == true)
+	_check("explicit enabled=false survives normalize",
+		not IK_CONFIG.normalize({"enabled": false}).get("enabled", true))
 	_check("six endpoint key channels default unused", defaults["keymove"].size() == 6
 		and defaults["keymove"][3]["plus"] == "不使用"
 		and defaults["keymove"][5]["minus"] == "不使用")
@@ -100,13 +105,13 @@ func _initialize() -> void:
 	grip_conflict["joints"][1]["io"] = "P75"
 	grip_conflict["gripper"] = {
 		"enabled": true, "io": "P74", "dir": "正向", "open_angle": "20",
-		"closed_angle": "20", "initial_open": true, "key": "R"}
+		"closed_angle": "20", "initial_open": true, "key": "E"}
 	var grip_validation: Dictionary = IK_CONFIG.validate(grip_conflict, {
 		"io_init": {"P74": "舵机", "P75": "舵机"},
-		"key_map": [{"input": "R", "target": "MP74"}]})
+		"key_map": [{"input": "E", "target": "MP74"}]})
 	_check("gripper conflicts with joint IO", _has_issue(grip_validation, "夹爪 IO P74 与关节1"))
 	_check("gripper open and closed angles differ", _has_issue(grip_validation, "张开角和闭合角不能相同"))
-	_check("gripper key conflicts are validated", _has_issue(grip_validation, "夹爪 按键R"))
+	_check("gripper key conflicts are validated", _has_issue(grip_validation, "夹爪 按键E"))
 
 	var control_bad: Dictionary = conflict.duplicate(true)
 	control_bad["joints"][1]["io"] = "P75"

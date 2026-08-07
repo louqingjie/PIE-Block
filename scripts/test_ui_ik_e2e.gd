@@ -17,6 +17,7 @@ func _check(label: String, ok: bool, detail: String = "") -> void:
 
 func _valid_ik(jc: int = 4) -> Dictionary:
 	var cfg: Dictionary = IK_CONFIG.default_config()
+	cfg["enabled"] = true
 	var ios: Array = ["P74", "P75", "P76", "P77", "MP03", "MP74"]
 	var axes: Array = ["Yaw", "Pitch", "Pitch", "Pitch", "Roll", "Yaw"]
 	var lens: Array = [0, 120, 90, 40, 20, 15]
@@ -99,6 +100,22 @@ func _initialize() -> void:
 		ui.get_node_or_null(ik_root + "/OpenSim") is Button
 		and ui.get_node(ik_root + "/OpenSim").disabled)
 	_check("未确认时 IK 摘要不可见", not ui.get_node(ik_root + "/Summary").visible)
+	# 未启用逆解算：生成纯正解固件，不含逆解内容，也不产生逆解相关检查项
+	tabs.current_tab = 1
+	ui._run_check()
+	var no_ik_code: String = code_edit.text
+	_check("未启用时生成纯正解代码", not no_ik_code.contains("JOINT_COUNT")
+		and not no_ik_code.contains("ik_solve")
+		and not no_ik_code.contains("inverseMode"), no_ik_code.substr(0, 120))
+	var no_ik_has_ik_issue: bool = false
+	for issue in ui._last_issues:
+		if str(issue.get("msg", "")).contains("逆解"):
+			no_ik_has_ik_issue = true
+			break
+	_check("未启用时不产生逆解检查项", not no_ik_has_ik_issue)
+	tabs.current_tab = 2
+	ui._run_check()
+	_check("未启用时两张工程页仍生成相同代码", code_edit.text == no_ik_code)
 	ui._on_ik_gate_confirmed()
 	ui._on_arm_sim_pressed()
 	await process_frame

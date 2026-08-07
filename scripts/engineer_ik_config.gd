@@ -9,8 +9,8 @@ const IOS: Array[String] = [
 	"P60", "P62", "P64", "P66", "P74", "P75", "P76", "P77", "MP03", "MP74",
 ]
 const EXPANSION_IOS: Array[String] = ["P60", "P62", "P64", "P66", "P74", "P75", "P76", "P77"]
-const KEYS: Array[String] = ["R", "↑", "↓", "←", "→", "A", "B", "C", "D"]
-const MOVE_KEYS: Array[String] = ["不使用", "R", "↑", "↓", "←", "→", "A", "B", "C", "D"]
+const KEYS: Array[String] = ["E", "↑", "↓", "←", "→", "A", "B", "C", "D"]
+const MOVE_KEYS: Array[String] = ["不使用", "E", "↑", "↓", "←", "→", "A", "B", "C", "D"]
 const JOY_X_OPTIONS: Array[String] = ["不使用", "右X->末端X", "右Y->末端X", "右X反向->末端X", "右Y反向->末端X"]
 const JOY_Y_OPTIONS: Array[String] = ["不使用", "右X->末端Y", "右Y->末端Y", "右X反向->末端Y", "右Y反向->末端Y"]
 const JOY_Z_OPTIONS: Array[String] = ["不使用", "右X->末端Z", "右Y->末端Z", "右X反向->末端Z", "右Y反向->末端Z"]
@@ -60,8 +60,9 @@ static func default_config() -> Dictionary:
 	for _i in range(6):
 		keymove.append({"plus": "不使用", "minus": "不使用"})
 	return {
+		"enabled": false,
 		"joint_count": 3,
-		"mode_switch_key": "R",
+		"mode_switch_key": "E",
 		"joints": joints,
 		"gripper": default_gripper(),
 		"presets": presets,
@@ -79,9 +80,11 @@ static func default_config() -> Dictionary:
 static func normalize(raw: Variant) -> Dictionary:
 	var src: Dictionary = raw if raw is Dictionary else {}
 	var out: Dictionary = default_config()
+	# 缺省视为启用：旧存档与不带该字段的裸配置（MCP/测试）保持原有行为
+	out["enabled"] = bool(src.get("enabled", true))
 	var jc: int = clampi(int(src.get("joint_count", out["joint_count"])), MIN_JOINTS, MAX_JOINTS)
 	out["joint_count"] = jc
-	out["mode_switch_key"] = _choice(src.get("mode_switch_key", "R"), KEYS, "R")
+	out["mode_switch_key"] = _choice(src.get("mode_switch_key", "E"), KEYS, "E")
 	out["joy_x"] = _choice(src.get("joy_x", out["joy_x"]),
 		JOY_X_OPTIONS, out["joy_x"])
 	out["joy_y"] = _choice(src.get("joy_y", out["joy_y"]),
@@ -153,6 +156,9 @@ static func _choice(value: Variant, choices: Array, fallback: String) -> String:
 
 
 static func _normalize_key(value: String) -> String:
+	# 旧存档的扳机键名 "R" 已改名为 "E"，此处迁移
+	if value == "R":
+		return "E"
 	return "→" if value == "->" else value
 
 

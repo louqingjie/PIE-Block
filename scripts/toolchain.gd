@@ -663,12 +663,17 @@ func hex_exists(project_dst: String) -> bool:
 ## 通过标准 USB-HID 与 STC32G ROM bootloader 通信（VID 0x34BF / PID 0x1001），
 ## 调用 pie_block_hid.py。板子需处于 ISP 模式（上电冷启动进 ISP）。
 ##
+## Android 分支：不走 Python / cmd.exe，改用 PieBlockUsb 插件 + HidFlasher
+## （GDScript 协议移植，见 scripts/hid_flasher.gd）。
+##
 ## 返回 {ok: bool, exit: int, log: String, stage: String}
 ##   stage 用于失败时定位，取值：env/connect/erase/program/verify/hex/canceled/timeout/done
 func flash_hid(hex_path: String,
 		on_log_line: Callable = Callable(),
 		token = null,
 		timeout_sec: float = 0.0) -> Dictionary:
+	if OS.has_feature("android"):
+		return flash_hid_usb(hex_path, on_log_line, token, timeout_sec)
 	var py: String = find_python()
 	if py.is_empty():
 		return {"ok": false, "exit": - 1, "log": "未找到 Python", "stage": "env"}
@@ -698,6 +703,66 @@ func flash_hid(hex_path: String,
 	}
 
 
+## Android 分支：PieBlockUsb 插件 + GDScript 协议（scripts/hid_flasher.gd）。
+## 与 Python 分支返回相同结构 {ok, exit, log, stage, streamed, canceled}，
+## download_controller 的进度/提示/取消逻辑完全复用。
+func flash_hid_usb(hex_path: String,
+		on_log_line: Callable = Callable(),
+		token = null,
+		timeout_sec: float = 0.0) -> Dictionary:
+	var port = _make_usb_port()
+	if port == null:
+		_emit_usb_line(on_log_line, "[Error] 烧录插件不可用（PieBlockUsb 未加载）")
+		return {"ok": false, "exit": - 1, "log": "", "stage": "env", "streamed": true,
+			"canceled": false}
+	if not port.has_usb_host():
+		_emit_usb_line(on_log_line, "[Error] 本机不支持 USB Host（OTG）")
+		return {"ok": false, "exit": - 1, "log": "", "stage": "connect", "streamed": true,
+			"canceled": false}
+	if not port.find_device():
+		_emit_usb_line(on_log_line,
+			"错误：未找到 STC USB-HID 设备 (VID=34BF PID=1001)。请确认板子处于 ISP 模式（上电冷启动）。")
+		return {"ok": false, "exit": - 1, "log": "", "stage": "connect", "streamed": true,
+			"canceled": false}
+	if not port.ensure_permission():
+		_emit_usb_line(on_log_line, "[Error] USB 授权被拒绝或超时，无法访问板子")
+		return {"ok": false, "exit": - 1, "log": "", "stage": "connect", "streamed": true,
+			"canceled": false}
+	# 硬超时：与 Python 分支的 DOWNLOAD_HARD_TIMEOUT 语义一致，超时即请求取消
+	var deadline_ms: int = 0
+	if timeout_sec > 0.0:
+		deadline_ms = Time.get_ticks_msec() + int(timeout_sec * 1000.0)
+	var on_progress: Callable = Callable()
+	if token != null and deadline_ms > 0:
+		on_progress = func(_stage: String, _total: int, _done: int, _bytes: int) -> void:
+			if Time.get_ticks_msec() > deadline_ms:
+				token.request_cancel()
+	var flasher = HidFlasher.new(
+		func(line: String) -> void: _emit_usb_line(on_log_line, line))
+	var result: Dictionary = flasher.flash(hex_path, port, token, true, on_progress)
+	return {
+		"ok": bool(result.ok),
+		"exit": 0 if bool(result.ok) else - 1,
+		"log": "",
+		"stage": str(result.stage),
+		"streamed": true,
+		"canceled": bool(result.canceled),
+	}
+
+
+func _make_usb_port():
+	if not OS.has_feature("android"):
+		return null
+	if not Engine.has_singleton("PieBlockUsb"):
+		return null
+	return preload("res://scripts/usb_port_android.gd").new()
+
+
+func _emit_usb_line(on_log_line: Callable, line_text: String) -> void:
+	if on_log_line.is_valid():
+		on_log_line.call(line_text)
+
+
 ## 从 HID 烧录日志判断失败阶段，用于给出针对性提示。
 func _classify_hid_failure(log_text: String) -> String:
 	if log_text.contains("info OK") and log_text.contains("unlock OK") \
@@ -715,6 +780,9 @@ func _classify_hid_failure(log_text: String) -> String:
 ## 探测 USB-HID 烧录设备（STC32G bootloader，VID 0x34BF / PID 0x1001）是否在线。
 ## 板子需处于 ISP 模式（上电冷启动进入）才会枚举为该 HID 设备。
 func detect_hid_device() -> bool:
+	if OS.has_feature("android"):
+		var port = _make_usb_port()
+		return port != null and port.find_device()
 	var py: String = find_python()
 	if py.is_empty():
 		return false

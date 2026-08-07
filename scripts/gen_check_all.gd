@@ -65,7 +65,7 @@ func _make_ik_cfg() -> Dictionary:
 			{"plus": "←", "minus": "->"},
 			{"plus": "B", "minus": "C"},
 			{"plus": "不使用", "minus": "不使用"},
-			{"plus": "D", "minus": "R"},
+			{"plus": "D", "minus": "E"},
 			{"plus": "不使用", "minus": "不使用"},
 		],
 	}

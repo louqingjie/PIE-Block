@@ -1,0 +1,25 @@
+[gd_scene format=3 uid="uid://y1tx6j08s3qo"]
+
+[node name="IO" type="OptionButton" unique_id=2047712765]
+selected = 0
+item_count = 10
+popup/item_0/text = "P60"
+popup/item_0/id = 1
+popup/item_1/text = "P62"
+popup/item_1/id = 2
+popup/item_2/text = "P64"
+popup/item_2/id = 3
+popup/item_3/text = "P66"
+popup/item_3/id = 4
+popup/item_4/text = "P74"
+popup/item_4/id = 5
+popup/item_5/text = "P75"
+popup/item_5/id = 6
+popup/item_6/text = "P76"
+popup/item_6/id = 7
+popup/item_7/text = "P77"
+popup/item_7/id = 8
+popup/item_8/text = "MP03"
+popup/item_8/id = 9
+popup/item_9/text = "MP74"
+popup/item_9/id = 10

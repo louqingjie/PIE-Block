@@ -87,6 +87,8 @@ var _wv_zoom: float = 0.0
 
 
 func _ready() -> void:
+	# 移动端圆角屏/刘海：整屏内缩到安全区（桌面端恒为 0）
+	SafeArea.apply_to_root(self)
 	_project_dst = AppState.project_dst
 	if _project_dst.is_empty():
 		# 直接运行本场景（未经 ui.tscn）时兜底到步兵工程
@@ -121,6 +123,8 @@ func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
 		_shutdown()
 		get_tree().quit()
+	if what == NOTIFICATION_WM_SIZE_CHANGED:
+		SafeArea.apply_to_root(self)
 
 
 ## 清理子进程与编译线程。可能被调用多次，需幂等

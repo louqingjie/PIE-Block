@@ -34,7 +34,7 @@ func _initialize() -> void:
 			],
 		},
 		"ik": {
-			"joint_count": 4, "mode_switch_key": "R",
+			"joint_count": 4, "mode_switch_key": "E",
 			"joints": [
 				{"io": "P74", "dir": "正向", "axis": "Yaw", "len": "0", "offset": "0", "zero": "0", "min": "-90", "max": "90"},
 				{"io": "P75", "dir": "正向", "axis": "Pitch", "len": "120", "offset": "0", "zero": "20", "min": "-90", "max": "90"},

@@ -189,8 +189,10 @@ func _io_to_exp_slot(pin: String) -> int:
 
 ## 按键名称映射到 C 代码中的 KEY_OFFSET 宏名
 ## 注意：右方向键在不同界面里分别写作 "→"(U+2192) 和 "->"，两种写法都要覆盖
+## "R" 是旧名（已改名为 "E"），保留别名让旧存档继续映射到同一物理键
 func _key_name_to_offset(name: String) -> String:
 	var mapping: Dictionary = {
+		"E": "KEY_OFFSET_1",
 		"R": "KEY_OFFSET_1",
 		"↑": "KEY_OFFSET_UP",
 		"↓": "KEY_OFFSET_DOWN",
@@ -203,7 +205,7 @@ func _key_name_to_offset(name: String) -> String:
 		"D": "KEY_OFFSET_D",
 	}
 	if not mapping.has(name):
-		push_warning("_key_name_to_offset: 未知按键名 %s，已回退到 R 键" % name)
+		push_warning("_key_name_to_offset: 未知按键名 %s，已回退到 E 键" % name)
 	return mapping.get(name, "KEY_OFFSET_1")
 
 
@@ -237,6 +239,16 @@ func _servo_angle_to_duty(angle: int) -> int:
 	var duty: int = SERVO_DUTY_MID + int(round(
 		float(angle) * float(span) / float(SERVO_MAX_OFFSET_DEG * 2)))
 	return clampi(duty, SERVO_DUTY_MIN, SERVO_DUTY_MAX)
+
+
+## 从工程 IO 初始化区的 io_mid（引脚 -> 初始角文本）取某引脚舵机的初始占空比。
+## 空/非法值按 0°（SERVO_DUTY_MID）处理；角度在生成期钳到 ±90°。
+func _io_mid_duty(io_mid: Dictionary, pin: String) -> int:
+	var text: String = str(io_mid.get(pin, "")).strip_edges()
+	if not text.is_valid_float():
+		return SERVO_DUTY_MID
+	var angle: float = clampf(text.to_float(), -90.0, 90.0)
+	return _servo_angle_to_duty(int(round(angle)))
 
 
 ## 角度差（度）换算成占空比差，不做中位偏移。用于限幅幅度、按键步长等
