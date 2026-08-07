@@ -19,44 +19,108 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, UploadFile
+from fastapi import Body, Depends, FastAPI, File, Header, HTTPException, Query, Security, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from keil_server import config, keil_detect
+from keil_server import config, keil_detect, keys as keys_store
 from keil_server.task_manager import TaskManager
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # 启动时把 KEIL_API_KEYS 种子固化到 data/api_keys.json，
+    # 保证 -ApiKeys 给的初始用户立即可用（而不是等第一次查询才写入）。
+    try:
+        keys_store.load_keys()
+    except Exception:
+        pass
+    yield
+
 
 app = FastAPI(
     title="Keil C251 Cloud Compiler",
     description="上传 Keil 工程 zip，服务端用安装的 Keil C251 编译并返回 HEX 固件。",
-    version="0.2.0",
+    version="0.3.0",
+    lifespan=lifespan,
 )
 
 task_manager = TaskManager()
 
+# Bearer 安全方案：让 /docs 显示 Authorize 按钮（实际校验见 require_api_key）
+bearer = HTTPBearer(auto_error=False)
+
 
 # ------------------------------------------------------------------ 鉴权
-# 设了 config.API_KEY（环境变量 KEIL_API_KEY）后，除 /health 外的接口都要校验。
+# 多用户 API Key：
+#   - 管理员主 key：环境变量 KEIL_API_KEY（永远有效，管理接口用它）
+#   - 普通用户 key：data/api_keys.json（或 KEIL_API_KEYS 初始注入），每个用户一把
 # 支持 Authorization: Bearer <key> 或 X-API-Key: <key> 两种请求头。
-# 未设置 API_KEY 时保持开放模式（本机/内网用）。
+# 未配置任何 key 时保持开放模式（本机/内网用）。
 def require_api_key(
-    authorization: str | None = Header(default=None),
+    creds: HTTPAuthorizationCredentials | None = Security(bearer),
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> str:
+    """鉴权并返回用户标识：admin / 用户名 / open（开放模式）。
+
+    用 Security(bearer) 让 /docs 显示 Authorize 按钮；实际校验在本函数完成。
+    """
+    if not config.API_KEY and not keys_store.load_keys():
+        return "open"
+    token = (creds.credentials if creds else "").strip()
+    if not token and x_api_key:
+        token = x_api_key.strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="缺失 API Key")
+    if config.API_KEY and token == config.API_KEY:
+        return "admin"
+    user = keys_store.resolve(token)
+    if user is None:
+        raise HTTPException(status_code=401, detail="无效或已吊销的 API Key")
+    return user
+
+
+def require_admin(
+    creds: HTTPAuthorizationCredentials | None = Security(bearer),
     x_api_key: str | None = Header(default=None, alias="X-API-Key"),
 ) -> None:
+    """管理接口专用：只认管理员主 key（KEIL_API_KEY）。"""
     if not config.API_KEY:
-        return
-    token = ""
-    if authorization and authorization.lower().startswith("bearer "):
-        token = authorization[7:].strip()
-    elif x_api_key:
+        raise HTTPException(status_code=503, detail="未配置管理员 key（KEIL_API_KEY）")
+    token = (creds.credentials if creds else "").strip()
+    if not token and x_api_key:
         token = x_api_key.strip()
-    if token and token == config.API_KEY:
-        return
-    raise HTTPException(status_code=401, detail="无效或缺失 API Key")
+    if token != config.API_KEY:
+        raise HTTPException(status_code=401, detail="需要管理员 API Key")
+
+
+# ------------------------------------------------------------------ 用户 key 管理（仅管理员）
+@app.get("/keys")
+def list_api_keys(_: None = Depends(require_admin)):
+    return {"users": keys_store.list_users()}
+
+
+@app.post("/keys")
+def add_api_key(payload: dict = Body(...), _: None = Depends(require_admin)):
+    user = str(payload.get("user", "")).strip()
+    if not user:
+        raise HTTPException(status_code=400, detail="缺少 user 字段")
+    key = keys_store.add_user(user, payload.get("key") or None)
+    return {"user": user, "key": key, "note": "把 key 分发给该用户；吊销用 DELETE /keys/{user}"}
+
+
+@app.delete("/keys/{user}")
+def revoke_api_key(user: str, _: None = Depends(require_admin)):
+    n = keys_store.revoke_user(user)
+    if n == 0:
+        raise HTTPException(status_code=404, detail=f"用户 {user} 没有可用 key")
+    return {"revoked": user, "count": n}
 
 
 @app.get("/health")
@@ -80,7 +144,7 @@ async def compile_zip(
     timeout: int | None = Query(
         default=None, ge=5, le=600, description="覆盖默认编译超时（秒）"
     ),
-    _key: None = Depends(require_api_key),
+    user: str = Depends(require_api_key),
 ):
     if file.filename is None or not file.filename.lower().endswith(".zip"):
         raise HTTPException(status_code=400, detail="只接受 .zip 文件")
@@ -102,7 +166,7 @@ async def compile_zip(
                 out.write(chunk)
         if total == 0:
             raise HTTPException(status_code=400, detail="上传内容为空")
-        task_id = await task_manager.submit(Path(tmp), timeout)
+        task_id = await task_manager.submit(Path(tmp), timeout, user=user)
     finally:
         tmp_path = Path(tmp)
         if tmp_path.exists():
@@ -114,12 +178,12 @@ async def compile_zip(
 
 
 @app.get("/tasks")
-def list_tasks(limit: int = Query(default=50, ge=1, le=200), _key: None = Depends(require_api_key)):
+def list_tasks(limit: int = Query(default=50, ge=1, le=200), _user: str = Depends(require_api_key)):
     return {"tasks": [t.to_public() for t in task_manager.list(limit)]}
 
 
 @app.get("/tasks/{task_id}")
-def get_task(task_id: str, _key: None = Depends(require_api_key)):
+def get_task(task_id: str, _user: str = Depends(require_api_key)):
     task = task_manager.get(task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="任务不存在")
@@ -127,7 +191,7 @@ def get_task(task_id: str, _key: None = Depends(require_api_key)):
 
 
 @app.get("/tasks/{task_id}/log")
-def get_task_log(task_id: str, _key: None = Depends(require_api_key)):
+def get_task_log(task_id: str, _user: str = Depends(require_api_key)):
     task = task_manager.get(task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="任务不存在")
@@ -135,7 +199,7 @@ def get_task_log(task_id: str, _key: None = Depends(require_api_key)):
 
 
 @app.get("/tasks/{task_id}/hex")
-def get_task_hex(task_id: str, _key: None = Depends(require_api_key)):
+def get_task_hex(task_id: str, _user: str = Depends(require_api_key)):
     task = task_manager.get(task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="任务不存在")
@@ -155,7 +219,7 @@ def get_task_hex(task_id: str, _key: None = Depends(require_api_key)):
 
 
 @app.delete("/tasks/{task_id}")
-def delete_task(task_id: str, _key: None = Depends(require_api_key)):
+def delete_task(task_id: str, _user: str = Depends(require_api_key)):
     if not task_manager.delete(task_id):
         raise HTTPException(status_code=404, detail="任务不存在")
     return {"deleted": task_id}

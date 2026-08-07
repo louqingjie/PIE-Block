@@ -19,11 +19,18 @@ PROJECT_ROOT = SERVICE_ROOT.parent
 DATA_DIR = Path(os.environ.get("KEIL_SERVER_DATA_DIR", str(SERVICE_ROOT / "data")))
 
 # ------------------------------------------------------------------ 鉴权
-# API Key。设置了之后，除 /health 外的所有接口要求请求头
-#   Authorization: Bearer <key>    或    X-API-Key: <key>
-# 未设置（空）时保持开放模式（本机/内网使用，不强制鉴权）。
-# 公网部署时**必须**设置。
+# 管理员主 key（环境变量 KEIL_API_KEY）。永远有效，管理接口（增删用户 key）用它。
+# 未设置时，开放模式判断会退化为"也没有任何用户 key"才开放。
 API_KEY = os.environ.get("KEIL_API_KEY", "").strip()
+
+# 普通用户 key 表：JSON 文件（默认 data/api_keys.json，可动态增删/吊销）
+KEYS_FILE = Path(os.environ.get(
+    "KEIL_API_KEYS_FILE", str(DATA_DIR / "api_keys.json"),
+))
+
+# 初始用户 key（环境变量 KEIL_API_KEYS，格式 user:key,user:key），
+# 服务启动/读取时并入 key 表（文件里已有的不覆盖）。便于脚本/一键部署注入。
+API_KEYS_CSV = os.environ.get("KEIL_API_KEYS", "").strip()
 
 
 # ------------------------------------------------------------------ Keil 安装

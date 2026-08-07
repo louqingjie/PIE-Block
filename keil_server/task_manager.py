@@ -32,6 +32,7 @@ class Task:
     created_at: float = field(default_factory=time.time)
     started_at: float | None = None
     finished_at: float | None = None
+    user: str = ""
     error: str = ""
     hex_path: str = ""
     hex_size: int = 0
@@ -46,6 +47,7 @@ class Task:
             "created_at": self.created_at,
             "started_at": self.started_at,
             "finished_at": self.finished_at,
+            "user": self.user,
             "error": self.error,
             "hex_size": self.hex_size,
             "summary": self.summary,
@@ -73,7 +75,9 @@ class TaskManager:
         return self._tasks_dir / task_id
 
     # -- 提交 --------------------------------------------------------------
-    async def submit(self, zip_path: Path, timeout: int | None = None) -> str:
+    async def submit(
+        self, zip_path: Path, timeout: int | None = None, user: str = "",
+    ) -> str:
         """登记任务并把 zip 移入任务目录，后台异步编译。返回 task_id。"""
         self._purge_expired()
         task_id = uuid.uuid4().hex[:12]
@@ -81,7 +85,7 @@ class TaskManager:
         tdir.mkdir(parents=True, exist_ok=True)
         dst = tdir / "upload.zip"
         shutil.move(str(zip_path), str(dst))
-        task = Task(task_id=task_id)
+        task = Task(task_id=task_id, user=user)
         self._tasks[task_id] = task
         self._persist(task)
         asyncio.get_running_loop().create_task(

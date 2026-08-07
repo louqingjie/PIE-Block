@@ -1,4 +1,4 @@
-# 一键启动公网编译服务：keil_server（带 API Key 鉴权）+ cloudflared 隧道
+﻿# 一键启动公网编译服务：keil_server（带 API Key 鉴权）+ cloudflared 隧道
 #
 # 前提：已按 docs/公网部署CloudflareTunnel指南.md 完成一次性的
 #   cloudflared 安装、login、tunnel create，并把
@@ -13,7 +13,8 @@
 
 param(
     [Parameter(Mandatory = $true)]
-    [string]$ApiKey,                 # 公网鉴权密钥（必填，不能空）
+    [string]$ApiKey,                 # 管理员 key（必填，鉴权与用户管理用）
+    [string]$ApiKeys = "",          # 可选：初始用户 key，格式 user:key,user:key（队员每人一把）
     [string]$TunnelName = "pieblock",
     [string]$CloudflaredExe = "C:\cloudflared\cloudflared.exe",
     [int]$Port = 8000
@@ -52,9 +53,25 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-# ---- 3. 启动 keil_server（后台） ----
+# ---- 3. 端口预检：端口被本服务旧实例占用时自动重启 ----
+$existing = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
+if ($existing) {
+    $oldPid = $existing.OwningProcess
+    $oldProc = Get-Process -Id $oldPid -ErrorAction SilentlyContinue
+    if ($oldProc -and $oldProc.ProcessName -like "python*") {
+        Write-Host "[提示] 检测到旧服务实例（PID $oldPid），自动停止后重启..." -ForegroundColor Yellow
+        taskkill /F /T /PID $oldPid 2>&1 | Out-Null
+        Start-Sleep -Milliseconds 800
+    } else {
+        Write-Host "[错误] 端口 $Port 已被其他程序占用（PID $oldPid）。请先处理。" -ForegroundColor Red
+        exit 1
+    }
+}
+
+# ---- 4. 启动 keil_server（后台） ----
 $env:KEIL_API_KEY = $ApiKey
-Write-Host "[1/2] 启动 keil_server (127.0.0.1:$Port, API Key 鉴权已开)..." -ForegroundColor Cyan
+if ($ApiKeys) { $env:KEIL_API_KEYS = $ApiKeys }
+Write-Host "[1/2] 启动 keil_server (127.0.0.1:$Port, 多用户 API Key 鉴权已开)..." -ForegroundColor Cyan
 $server = Start-Process -FilePath $py -ArgumentList @(
     "-m", "uvicorn", "keil_server.server:app",
     "--host", "127.0.0.1", "--port", "$Port"
@@ -63,10 +80,11 @@ Write-Host "      编译服务 PID: $($server.Id)"
 
 Start-Sleep -Seconds 3
 
-# ---- 4. 启动 cloudflared 隧道（后台） ----
+# ---- 5. 启动 cloudflared 隧道（后台） ----
+# 注意：--config / --protocol 必须放在 run 之前；用 --protocol http2（本机网络常拦 QUIC/7844，HTTP2 更稳）
 Write-Host "[2/2] 启动 cloudflared 隧道 '$TunnelName' ..." -ForegroundColor Cyan
 $tunnel = Start-Process -FilePath $CloudflaredExe -ArgumentList @(
-    "tunnel", "run", $TunnelName, "--config", $cfg
+    "tunnel", "--config", $cfg, "--protocol", "http2", "run", $TunnelName
 ) -WorkingDirectory (Split-Path $CloudflaredExe) -WindowStyle Hidden -PassThru
 Write-Host "      cloudflared PID: $($tunnel.Id)"
 

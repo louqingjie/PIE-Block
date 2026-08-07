@@ -95,6 +95,26 @@ $env:PIEBLOCK_KEIL_API_KEY="你的密钥"
 python -m keil_server.client build --kind infantry --config x.json --out-hex f.hex
 ```
 
+## 给队员分配 key（每用户一把）
+
+鉴权是**每个用户一把 key**（管理员 key 负责管理）。启动时用 `-ApiKeys` 播种，
+之后用管理接口或 CLI 增删：
+
+```powershell
+# 列出 / 新增 / 吊销（读写同一 key 表）
+python -m keil_server.keys list
+python -m keil_server.keys add 张三
+python -m keil_server.keys remove 张三
+
+# 或者用 HTTP 管理接口（需要管理员 key）
+#   GET    /keys              列用户
+#   POST   /keys  {"user":"张三"}   新增（自动生成 key）
+#   DELETE /keys/张三          吊销
+```
+
+每个队员拿自己的 key，编译记录能看出是谁；有人不配合就单独吊销他的 key，
+不影响其他人。详见 `keil_server/README.md` 的「用户管理」。
+
 ---
 
 ## 五、安全提醒（重要）

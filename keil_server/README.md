@@ -182,6 +182,33 @@ godot --headless --no-header --path . --script scripts/cli_codegen.gd -- build ^
 > 远程模式下**生成 main.c 仍在本机**（用 Godot CLI），只有**编译在服务器**执行；
 > 打包上传/轮询/下载 hex 由 `keil_server/client.py` 完成。
 
+## 用户管理（多用户 API Key）
+
+鉴权为**每用户一把 key**：管理员主 key（`KEIL_API_KEY`）负责管理，普通用户 key
+存在 `data/api_keys.json`。每个用户 key 独立有效，编译任务会记录归属用户；
+吊销某个用户不影响其他人。
+
+### 管理接口（需管理员 key，`Authorization: Bearer <KEIL_API_KEY>`）
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/keys` | 列出所有用户与 key |
+| POST | `/keys` | 新增用户，body `{"user": "alice"}`（key 自动生成）或 `{"user": "alice", "key": "..."}` |
+| DELETE | `/keys/{user}` | 吊销某用户全部 key |
+
+### 命令行工具（读写同一 key 表）
+
+```powershell
+python -m keil_server.keys list
+python -m keil_server.keys add alice          # 自动生成 key
+python -m keil_server.keys add bob mykey123   # 指定 key
+python -m keil_server.keys remove alice       # 吊销
+```
+
+> 首次启动可用 `KEIL_API_KEYS`（`user:key,user:key`）批量播种初始用户；
+> 之后增删以 `data/api_keys.json` 为准（保证吊销真正生效）。`data/` 已 gitignore。
+> 一键启动脚本支持 `-ApiKey`（管理员）与 `-ApiKeys`（种子用户）。
+
 ## 云端部署
 
 服务本身与平台无关（Windows / Linux 均可，Keil 是 Windows 程序，云服务器
@@ -189,12 +216,13 @@ godot --headless --no-header --path . --script scripts/cli_codegen.gd -- build ^
 
 - Windows 云服务器上同样**原生全新安装正版 Keil C251 + 申请许可证**，
   设环境变量 `KEIL_PATH` 指向安装目录
-- **必须设 `KEIL_API_KEY`**，否则公网上任何人都能白嫖编译、看到源码路径
+- **必须设 `KEIL_API_KEY`（管理员 key）**，否则公网上任何人都能白嫖编译、看到源码路径
+- 给每个用户分配独立 key（见「用户管理」），任务会记录归属用户，可单独吊销
 - `pip install -r keil_server/requirements.txt`，用 uvicorn 常驻
   （systemd/NSSM 托管），前端加 Nginx 反向代理 + HTTPS（配 `pieblock.asia` 域名证书）
 - 安全加固（按需）：
   - 上传/解压限制默认已开（`UPLOAD_MAX_SIZE` / `EXTRACT_MAX_SIZE` / `EXTRACT_MAX_FILES`）
-  - API Key 鉴权通过 `KEIL_API_KEY` 开启（推荐放在 HTTPS 之后，Key 不落明文）
+  - 多用户 API Key 鉴权（管理员 `KEIL_API_KEY` + 用户表；推荐放在 HTTPS 之后，Key 不落明文）
   - `GET /tasks/{id}/log` 可能含源码路径，注意访问控制
 
 > **零成本公网方案（本机 + Cloudflare Tunnel）**：不买云服务器，本机 24h 开着，
@@ -207,7 +235,9 @@ godot --headless --no-header --path . --script scripts/cli_codegen.gd -- build ^
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | `KEIL_PATH` | （空） | Keil 根目录，最高优先级 |
-| `KEIL_API_KEY` | （空=开放） | API Key。设置后除 `/health` 外所有接口要求 `Authorization: Bearer <key>` 或 `X-API-Key: <key>`。**公网部署必须设置** |
+| `KEIL_API_KEY` | （空=开放） | **管理员主 key**。管理接口（`/keys`）用它；普通用户 key 见下。**公网部署必须设置** |
+| `KEIL_API_KEYS` | （空） | 首次种子用户，格式 `user:key,user:key`；写入 `data/api_keys.json` 固化后以文件为准 |
+| `KEIL_API_KEYS_FILE` | `data/api_keys.json` | 用户 key 表文件路径（可自定义） |
 | `KEIL_SERVER_DATA_DIR` | `keil_server/data` | 任务与工具链副本存储 |
 | `KEIL_MAX_CONCURRENT` | `1` | 最大并发编译数（Keil 共享 TOOLS.INI，默认 1 最稳） |
 | `KEIL_BUILD_TIMEOUT` | `120` | 单次编译超时（秒） |
