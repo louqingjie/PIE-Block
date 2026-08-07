@@ -80,8 +80,6 @@ func _initialize() -> void:
 		push_error("未找到 Keil 编译器")
 		quit(2)
 		return
-	if not tc.generate_tools_ini():
-		push_error("TOOLS.INI 生成失败，编译可能报错")
 	var build: Dictionary = tc.build_sync(uv4, TC.PROJECT_ENGINEER_DST)
 	print("BUILD ok=%s" % str(build.get("ok", false)))
 	if not bool(build.get("ok", false)):

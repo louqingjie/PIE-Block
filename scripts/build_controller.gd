@@ -49,9 +49,6 @@ func start(project_dst: String, code: String, mode: String = "local") -> bool:
 		_append("[Error] 未找到 uVision.com / UV4.exe")
 		_append("       请先配置 Keil 目录（编译时会弹出引导，或直接写 user://keil_settings.json）")
 		return false
-	if not _toolchain.generate_tools_ini():
-		_append("[Warn] TOOLS.INI 生成失败，编译可能报错")
-
 	_set_busy(true)
 	_append("正在编译…（已写入 main.c，调用 Keil 编译器）")
 	_thread = Thread.new()

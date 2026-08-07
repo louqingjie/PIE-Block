@@ -45,9 +45,7 @@ func _initialize() -> void:
 		push_error("未找到 Keil")
 		quit(2)
 		return
-	tc.generate_tools_ini()
-	# 关键：必须用 -r（rebuild）强制重编译。build_sync 的 -b 会跳过 main.c
-	# 变更（memory 踩过：-b 下不同变体报一模一样 Program Size）。
+	# 关键：必须用 -r（rebuild）强制重编译，避免复用旧的编译结果。
 	var mdk_abs: String = ProjectSettings.globalize_path(
 		"user://stc32g/Projects/ROBOMASTER_ENGINEER_SIM").path_join("MDK").replace("/", "\\")
 	var uvproj_abs: String = mdk_abs + "\\Project_Template.uvproj"

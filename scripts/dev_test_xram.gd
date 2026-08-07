@@ -66,7 +66,6 @@ func _initialize() -> void:
 		push_error("未找到 Keil")
 		quit(2)
 		return
-	tc.generate_tools_ini()
 	var mdk_abs: String = ProjectSettings.globalize_path(
 		"user://stc32g/Projects/ROBOMASTER_ENGINEER_SIM").path_join("MDK").replace("/", "\\")
 	var uvproj_abs: String = mdk_abs + "\\Project_Template.uvproj"

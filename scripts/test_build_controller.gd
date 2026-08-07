@@ -11,7 +11,6 @@ class FakeToolchain extends RefCounted:
 	var deployed: bool = true
 	var wrote: bool = true
 	var uv4: String = "C:/fake/uVision.com"
-	var tools_ini: bool = true
 
 	func ensure_deployed() -> bool:
 		return deployed
@@ -21,9 +20,6 @@ class FakeToolchain extends RefCounted:
 
 	func find_uv4() -> String:
 		return uv4
-
-	func generate_tools_ini() -> bool:
-		return tools_ini
 
 	func build_sync(_uv4_abs: String, _project_dst: String) -> Dictionary:
 		return {"ok": true, "exit": 0, "log": "0 Error(s), 2 Warning(s)"}
@@ -66,16 +62,13 @@ func _initialize() -> void:
 	_check("缺编译器不启动", not controller.start("project", "code"))
 	_check("缺编译器给出提示", _contains("未找到 uVision.com"))
 	toolchain.uv4 = "C:/fake/uVision.com"
-	toolchain.tools_ini = false
 	_lines.clear()
 	var succeeded_count: Array[int] = [0]
 	controller.succeeded.connect(func() -> void: succeeded_count[0] += 1)
 	_check("假后台编译成功启动", controller.start("project", "code"))
 	await controller.finished
-	_check("TOOLS.INI 失败显示警告", _contains("TOOLS.INI 生成失败"))
 	_check("成功结果发出 succeeded", succeeded_count[0] == 1)
 	_check("成功日志完整展示", _contains("编译成功") and _contains("0 Error(s)"))
-	toolchain.tools_ini = true
 
 	_lines.clear()
 	controller._on_worker_finished({"ok": false, "exit": 1, "log": "error C123"})

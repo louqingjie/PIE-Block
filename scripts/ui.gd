@@ -1582,7 +1582,7 @@ func _exit_tree() -> void:
 
 
 ## 工具链管理器（惰性创建，日志接到 Output 框）
-## 部署/探测/TOOLS.INI/编译等实现见 scripts/toolchain.gd，与 AI 编辑器共用
+## 项目部署、外置 Keil 探测和编译等实现见 scripts/toolchain.gd，与 AI 编辑器共用
 func _toolchain():
 	if _tc == null:
 		_tc = TC.new(_append_output)

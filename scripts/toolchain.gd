@@ -10,8 +10,8 @@ extends RefCounted
 ##   - 探测外部 Keil 的 uVision.com / UV4.exe
 ##   - 同步执行编译并返回日志
 ##
-## 内置精简工具链（Keil_noarm）已完全废弃，编译只使用用户指定的外部 Keil 安装，
-## 无任何内置回退。外部目录来源：环境变量 PIEBLOCK_KEIL > user://keil_settings.json。
+## 编译只使用用户指定的外部 Keil 安装。
+## 外部目录来源：环境变量 PIEBLOCK_KEIL > user://keil_settings.json。
 ##
 ## 日志通过构造时传入的 Callable 输出（一般接到 output.gd 的 append_line），
 ## 这样非 UI 调用方（如 MCP 工具）也能复用同一套逻辑。
@@ -114,8 +114,7 @@ static func to_abs(virt_path: String) -> String:
 
 # ------------------------------------------------------------------ 部署
 ## 确保项目模板与库文件已从 res://（PCK 只读）部署到 user://（可写）。
-## 内置 Keil 工具链已废弃，编译只使用用户指定的外部 Keil（见 resolve_keil_root），
-## 此处只部署项目模板与库文件。
+## 此处只部署项目模板与库文件；编译器由 resolve_keil_root 提供。
 ## 首次运行或版本变更时执行全量复制；通过版本标记文件判断是否需要重新部署。
 ## 返回 true 表示就绪，false 表示失败（错误信息已通过日志回调输出）。
 func ensure_deployed() -> bool:
@@ -355,7 +354,6 @@ func _find_named_abs(dir_abs: String, name: String, depth: int = 0) -> String:
 ## 当前生效的 Keil 根目录。
 ## 优先级：环境变量 PIEBLOCK_KEIL > user://keil_settings.json；
 ## 返回第一个通过 validate_keil_dir 校验的绝对路径，否则返回空串。
-## 内置精简工具链已废弃，无任何内置回退。
 func resolve_keil_root() -> String:
 	var candidates: Array[String] = []
 	var env_path: String = OS.get_environment(KEIL_ENV_VAR).strip_edges()
@@ -482,41 +480,11 @@ func _find_uv4_recursive(dir_abs: String) -> String:
 	return found
 
 
-# ------------------------------------------------------------------ TOOLS.INI
-## 生成 TOOLS.INI 的兼容性入口（保留签名，旧调用点仍能编译）。
-## 内置工具链已废弃：现在只用用户指定的外部 Keil，其 TOOLS.INI 由安装程序
-## 配置好（[C251] PATH 指向安装的 C251 目录），这里不越权改写，恒返回 true。
-func generate_tools_ini() -> bool:
-	return true
-
-
 # ------------------------------------------------------------------ C251 许可证
 ## Keil C251 的许可证序列号放在外部 Keil 安装的 TOOLS.INI [C251] 段 LIC0= 行。
 ## 这台机器上装了对应许可证就能全量编译；没有时 Keil 退回 2KB 评估限制
 ## （RESTRICTED VERSION / ERROR L250）。以下函数用于应用内读取/写入该序列号。
 ## 注意：许可证按机器发放，学生机需各自有效的免费密钥（keil.com 可领）。
-
-## 当前生效 Keil 根的 TOOLS.INI [C251] 段是否已写入非空许可证序列号。
-func has_license_key() -> bool:
-	var root: String = resolve_keil_root().replace("/", "\\")
-	if root.is_empty():
-		return false
-	var ini_abs: String = root + "\\TOOLS.INI"
-	if not FileAccess.file_exists(ini_abs):
-		return false
-	var lines: PackedStringArray = FileAccess.get_file_as_string(ini_abs).split("\n", false)
-	var in_c251: bool = false
-	for line in lines:
-		var stripped: String = line.strip_edges(true, true)
-		if stripped.to_upper() == "[C251]":
-			in_c251 = true
-		elif in_c251 and stripped.begins_with("[") and stripped.ends_with("]"):
-			in_c251 = false
-		if in_c251 and stripped.to_upper().begins_with("LIC0="):
-			var key: String = stripped.get_slice("=", 1).strip_edges()
-			return not key.is_empty()
-	return false
-
 
 ## 把许可证序列号写入当前生效 Keil 根的 TOOLS.INI [C251] 段 LIC0=（没有则插入该行）。
 ## 写完后直接生效，无需重启。返回是否成功。

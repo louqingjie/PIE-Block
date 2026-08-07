@@ -52,7 +52,6 @@ func _initialize() -> void:
 		push_error("未找到 Keil")
 		quit(2)
 		return
-	tc.generate_tools_ini()
 	var build: Dictionary = tc.build_sync(uv4, TC.PROJECT_ENGINEER_SIM_DST)
 	print("BUILD ok=%s" % str(build.get("ok", false)))
 	if not bool(build.get("ok", false)):

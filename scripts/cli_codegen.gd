@@ -263,7 +263,7 @@ func _cmd_profiles(_args: PackedStringArray) -> void:
 # build -- 用 Keil C251 编译为 hex 固件
 # ====================================================================
 ## 复用 Toolchain.build_project()（作者已预留为 MCP 等非 UI 调用方设计）。
-## 先部署工具链（首次约 360ms）-> 写 main.c -> 生成 TOOLS.INI -> 同步编译。
+## 先部署项目模板与库 -> 写 main.c -> 调用外置 Keil 同步编译。
 ## 成功判据：Keil 日志含 "0 Error(s)"。编译通常耗时 10~60 秒（首次更久）。
 func _cmd_build(args: PackedStringArray) -> void:
 	var parsed: Dictionary = _parse_args(args, ["--kind", "--config", "--code", "--project", "--remote"])

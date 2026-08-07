@@ -172,18 +172,18 @@ Ms_Delay(1500);
 
 ## 如何编译（改完代码务必自己验证）
 
-编译器**已经随本程序附带**，不需要用户安装 Keil，也不要去
-`C:\Keil_v5` 之类的标准安装路径找——那里没有。
-工具链就在工作区的**同级目录** `../keil/` 下。
+编译器不随本程序附带，需要用户安装外置 Keil C251。
+图形化程序通过 `PIEBLOCK_KEIL` 环境变量或 `user://keil_settings.json` 获取安装目录。
 
 从工作区根目录执行：
 
 ```powershell
-# 步兵构型
-../keil/UV4/uVision.com -b Projects/ROBOMASTER_INFANTRY/MDK/Project_Template.uvproj -o build.log
+# 步兵构型（PIEBLOCK_KEIL 指向外置 Keil 根目录）
+$keil = $env:PIEBLOCK_KEIL
+& "$keil/UV4/uVision.com" -r stc32g/Projects/ROBOMASTER_INFANTRY/MDK/Project_Template.uvproj -o build.log
 
 # 工程构型
-../keil/UV4/uVision.com -b Projects/ROBOMASTER_ENGINEER/MDK/Project_Template.uvproj -o build.log
+& "$keil/UV4/uVision.com" -r stc32g/Projects/ROBOMASTER_ENGINEER/MDK/Project_Template.uvproj -o build.log
 ```
 
 改哪个 main.c 就编哪个工程。
@@ -193,7 +193,7 @@ Ms_Delay(1500);
 读的时候要带完整相对路径：
 
 ```powershell
-Get-Content Projects/ROBOMASTER_INFANTRY/MDK/build.log -Tail 10
+Get-Content stc32g/Projects/ROBOMASTER_INFANTRY/MDK/build.log -Tail 10
 ```
 
 几个必须知道的点：
@@ -204,11 +204,11 @@ Get-Content Projects/ROBOMASTER_INFANTRY/MDK/build.log -Tail 10
   **唯一**的成功判据是日志里出现 `0 Error(s)`。
 - 日志开头那几条 `Registered ARM Compiler Version not found` 警告是**正常的**，
   本工具链已剔除 ARM 部分，STC32G 用不到，不必理会也不要试图修。
-- 如果报找不到 `C251.EXE`，说明 `../keil/TOOLS.INI` 里的 PATH 不对，
-  这是本程序生成的，不要手改，直接告诉用户。
+- 如果报找不到 `C251.EXE`，检查外置 Keil 的 `TOOLS.INI` 中 `[C251]` 段的 PATH；
+  该文件由 Keil 安装程序维护。
 - 编译产物（`Objects/` `Listings/` `*.lst`）已在 `.gitignore` 里，不用管。
 
-如果上述路径确实不存在（比如工具链还没部署完），
+如果上述外置 Keil 路径确实不存在，
 再告诉用户去点界面上的「编译」按钮，而不是让他们自己开 Keil。
 本程序的用户是没有编程基础的学生，界面上只有一个「编译」按钮，
 **不要**指导他们「打开 µVision 按 F7」。
