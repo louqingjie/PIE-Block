@@ -85,10 +85,22 @@ Remove-Item Env:KEIL_API_KEYS -ErrorAction SilentlyContinue
 if ($NoAuth) {
     Write-Host "[警告] 以开放模式启动（无鉴权）——仅限本机/可信局域网使用！" -ForegroundColor Yellow
 } else {
-    if (-not $ApiKey) {
-        # 未指定管理员 key -> 自动生成一个随机的并打印
+    # 管理员 key 解析顺序：-ApiKey 参数 > 本地文件(keil_server/data/admin_key.txt) > 自动生成并保存
+    $adminKeyFile = Join-Path $root "keil_server\data\admin_key.txt"
+    if (-not $ApiKey -and (Test-Path $adminKeyFile)) {
+        $ApiKey = (Get-Content $adminKeyFile -Raw).Trim()
+        Write-Host "[OK] 已从本地文件加载管理员 key（$adminKeyFile）" -ForegroundColor Green
+    } elseif (-not $ApiKey) {
         $ApiKey = (& $py -c "import secrets; print(secrets.token_urlsafe(12))").Trim()
-        Write-Host "[OK] 已自动生成管理员 key：$ApiKey" -ForegroundColor Green
+        try {
+            $dir = Split-Path $adminKeyFile
+            if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
+            [IO.File]::WriteAllText($adminKeyFile, $ApiKey, (New-Object System.Text.UTF8Encoding $false))
+            Write-Host "[OK] 已生成并保存管理员 key：$ApiKey" -ForegroundColor Green
+            Write-Host "     已写入 $adminKeyFile（data/ 已 gitignore，不进仓库）" -ForegroundColor Cyan
+        } catch {
+            Write-Host "[OK] 已生成管理员 key（未保存文件）：$ApiKey" -ForegroundColor Green
+        }
         Write-Host "     请保存好；队员各自用分配的用户 key。" -ForegroundColor Cyan
     } else {
         Write-Host "[OK] 已启用 API Key 鉴权（管理员 key = 你指定的）" -ForegroundColor Green

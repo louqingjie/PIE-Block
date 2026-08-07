@@ -121,6 +121,8 @@ const P_FIRST_ROW: NodePath = "VBoxContainer/HBoxContainer/HSplitContainer/First
 const P_BUILD_BTN: NodePath = "VBoxContainer/TopPanel/Build"
 const P_DOWNLOAD_BTN: NodePath = "VBoxContainer/TopPanel/Download"
 const P_HEX_EXPORT_BTN: NodePath = "VBoxContainer/TopPanel/HEXExport"
+const P_BUILD_MODE: NodePath = "VBoxContainer/TopPanel/BuildMode"
+const P_CLOUD_SETTINGS: NodePath = "VBoxContainer/TopPanel/Settings"
 const P_UPGRADE_BTN: NodePath = "VBoxContainer/TopPanel/Upgrade"
 const P_BT_PAIR_BTN: NodePath = "VBoxContainer/TopPanel/BTPair"
 const P_UPGRADE_PROGRESS: NodePath = "UpgradeProgress"
@@ -176,6 +178,9 @@ const BC = preload("res://scripts/build_controller.gd")
 const DC = preload("res://scripts/download_controller.gd")
 const UPGRADE_PROGRESS = preload("res://scripts/upgrade_progress.gd")
 const KG = preload("res://scripts/keil_guide.gd")
+## 云端编译核心与配置引导（preload 避免全局类名缓存未建立）
+const CLOUD_COMPILER = preload("res://scripts/cloud_compiler.gd")
+const CLOUD_GUIDE = preload("res://scripts/cloud_guide.gd")
 ## 构形诊断（判定末端可控自由度与俯仰角是否解耦）
 # 项目文件（.pieproj）读写与「项目类型 <-> Tab」映射表
 const PF = preload("res://scripts/project_file.gd")
@@ -186,6 +191,8 @@ const SC = preload("res://scripts/static_checker.gd")
 # ------------------------------------------------------------------ 生命周期
 var _build_controller = null
 var _download_controller = null
+## 编译方式下拉（本地/云端）；null 表示场景里没有（不应发生）
+var _build_mode: OptionButton = null
 var _upgrade_active: bool = false
 var _solver_upgrade_active: bool = false
 var _project_dst_override: String = ""
@@ -268,6 +275,9 @@ func _setup_build_controller() -> void:
 	_build_controller = BC.new()
 	add_child(_build_controller)
 	_build_controller.configure(_toolchain(), _clear_output, _append_output)
+	# 云端编译：注入 CloudCompiler（日志走同一输出），并创建「本地/云端」下拉与设置入口
+	_build_controller.configure_cloud(CLOUD_COMPILER.new(_toolchain(), _append_output))
+	_setup_build_mode_selector()
 	_build_controller.busy_changed.connect(_on_build_busy_changed)
 	_build_controller.succeeded.connect(_on_build_succeeded)
 	_build_controller.finished.connect(func(result: Dictionary) -> void:
@@ -276,6 +286,36 @@ func _setup_build_controller() -> void:
 		if _hex_export_pending:
 			_hex_export_pending = false
 			_append_output("[Error] 编译失败，未导出 HEX"))
+
+
+## 编译方式下拉与云端设置按钮：已固化在 ui.tscn，只读节点、禁止动态创建。
+func _setup_build_mode_selector() -> void:
+	var opt: OptionButton = get_node_or_null(P_BUILD_MODE)
+	var set_btn: Button = get_node_or_null(P_CLOUD_SETTINGS)
+	if opt == null:
+		push_error("场景缺少 BuildMode 节点（%s）" % P_BUILD_MODE)
+		return
+	_build_mode = opt
+	if set_btn == null:
+		push_error("场景缺少 Settings 节点（%s）" % P_CLOUD_SETTINGS)
+		return
+	if not set_btn.pressed.is_connected(_on_cloud_settings_pressed):
+		set_btn.pressed.connect(_on_cloud_settings_pressed)
+
+
+## 当前是否云端编译模式
+func _is_cloud_mode() -> bool:
+	return _build_mode != null and _build_mode.selected == 1
+
+
+## 「云端设置」按钮：随时打开云端配置对话框
+func _on_cloud_settings_pressed() -> void:
+	CLOUD_GUIDE.open_settings(self, _toolchain())
+
+
+## 云端配置引导取消
+func _on_cloud_guide_cancel() -> void:
+	_append_output("[Error] 未配置云端编译服务器，编译已中止（可在顶栏「云端设置」填写）")
 
 
 func _setup_download_controller() -> void:
@@ -1569,8 +1609,12 @@ func _on_build_pressed() -> void:
 	if _build_controller == null or _build_controller.is_busy() \
 			or (_download_controller != null and _download_controller.is_busy()):
 		return # 防重入
-	# 未配置/失效的外部 Keil 会先弹引导，引导成功后才真正编译
-	KG.ensure_keil(self, _toolchain(), _do_build, _on_keil_guide_cancel)
+	if _is_cloud_mode():
+		# 云端编译：先确保云端配置（Base URL + API Key）有效，再真正编译
+		CLOUD_GUIDE.ensure_cloud(self, _toolchain(), _do_build, _on_cloud_guide_cancel)
+	else:
+		# 本地编译：未配置/失效的外部 Keil 会先弹引导，引导成功后才真正编译
+		KG.ensure_keil(self, _toolchain(), _do_build, _on_keil_guide_cancel)
 
 
 func _do_build() -> void:
@@ -1585,7 +1629,8 @@ func _do_build() -> void:
 		if code.strip_edges().is_empty():
 			_append_output("[Error] 没有可编译的代码，请先完成配置")
 			return
-	_build_controller.start(_get_current_project_dst(), code)
+	_build_controller.start(_get_current_project_dst(), code,
+		"cloud" if _is_cloud_mode() else "local")
 
 
 ## 用户在 Keil 目录引导对话框里点「取消」时中止编译并提示。
@@ -1600,7 +1645,10 @@ func _on_hex_export_pressed() -> void:
 			or (_download_controller != null and _download_controller.is_busy()):
 		return # 防重入
 	# 引导成功后在 _do_hex_export 内重跑原流程，_hex_export_pending 状态不丢
-	KG.ensure_keil(self, _toolchain(), _do_hex_export, _on_keil_guide_cancel)
+	if _is_cloud_mode():
+		CLOUD_GUIDE.ensure_cloud(self, _toolchain(), _do_hex_export, _on_cloud_guide_cancel)
+	else:
+		KG.ensure_keil(self, _toolchain(), _do_hex_export, _on_keil_guide_cancel)
 
 
 func _do_hex_export() -> void:
@@ -1616,7 +1664,8 @@ func _do_hex_export() -> void:
 			_append_output("[Error] 没有可导出的代码，请先完成配置")
 			return
 	_hex_export_pending = true
-	if not _build_controller.start(_get_current_project_dst(), code):
+	if not _build_controller.start(_get_current_project_dst(), code,
+			"cloud" if _is_cloud_mode() else "local"):
 		_hex_export_pending = false
 
 

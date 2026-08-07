@@ -51,6 +51,14 @@ text = "打开"
 layout_mode = 2
 text = "保存"
 
+[node name="Settings" type="Button" parent="VBoxContainer/TopPanel" unique_id=1581104314]
+layout_mode = 2
+text = "设置"
+
+[node name="BTPair" type="Button" parent="VBoxContainer/TopPanel" unique_id=984432995]
+layout_mode = 2
+text = "蓝牙"
+
 [node name="Label" type="Label" parent="VBoxContainer/TopPanel" unique_id=1662551234]
 layout_mode = 2
 size_flags_horizontal = 6
@@ -90,6 +98,16 @@ layout_mode = 2
 size_flags_horizontal = 8
 text = "编译"
 
+[node name="BuildMode" type="OptionButton" parent="VBoxContainer/TopPanel" unique_id=1581104313]
+layout_mode = 2
+size_flags_horizontal = 8
+selected = 1
+item_count = 2
+popup/item_0/text = "本地编译"
+popup/item_0/id = 0
+popup/item_1/text = "云端编译"
+popup/item_1/id = 1
+
 [node name="Download" type="Button" parent="VBoxContainer/TopPanel" unique_id=1581104312]
 visible = false
 layout_mode = 2
@@ -104,10 +122,6 @@ text = "升级主控板"
 [node name="HEXExport" type="Button" parent="VBoxContainer/TopPanel" unique_id=1256119099]
 layout_mode = 2
 text = "导出 HEX"
-
-[node name="BTPair" type="Button" parent="VBoxContainer/TopPanel"]
-layout_mode = 2
-text = "蓝牙"
 
 [node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer" unique_id=1859188522]
 layout_mode = 2

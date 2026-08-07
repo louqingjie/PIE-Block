@@ -16,6 +16,7 @@
 """
 from __future__ import annotations
 
+import base64
 import os
 import sys
 import tempfile
@@ -166,6 +167,52 @@ async def compile_zip(
                 out.write(chunk)
         if total == 0:
             raise HTTPException(status_code=400, detail="上传内容为空")
+        task_id = await task_manager.submit(Path(tmp), timeout, user=user)
+    finally:
+        tmp_path = Path(tmp)
+        if tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
+    return {"task_id": task_id, "status": "queued"}
+
+
+@app.post("/compile_base64")
+async def compile_zip_base64(
+    payload: dict = Body(...),
+    user: str = Depends(require_api_key),
+):
+    """接收 base64 编码的 zip（Godot 端 HTTPClient 的 request body 是 String，
+    无法直接发二进制，故用 base64）。与 /compile 等效。
+    body: {"zip_base64": "...", "timeout": 120?}
+    """
+    zip_b64 = str(payload.get("zip_base64", ""))
+    if not zip_b64:
+        raise HTTPException(status_code=400, detail="缺少 zip_base64 字段")
+    try:
+        data = base64.b64decode(zip_b64)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"zip_base64 不是合法 base64: {e}")
+    if not data:
+        raise HTTPException(status_code=400, detail="zip_base64 解码为空")
+    if len(data) > config.UPLOAD_MAX_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"数据超过大小上限 {config.UPLOAD_MAX_SIZE} 字节",
+        )
+    timeout = payload.get("timeout")
+    if timeout is not None:
+        try:
+            timeout = int(timeout)
+            if not (5 <= timeout <= 600):
+                raise ValueError
+        except (TypeError, ValueError):
+            timeout = None
+    fd, tmp = tempfile.mkstemp(suffix=".zip", prefix="keil_upload_b64_")
+    try:
+        with os.fdopen(fd, "wb") as out:
+            out.write(data)
         task_id = await task_manager.submit(Path(tmp), timeout, user=user)
     finally:
         tmp_path = Path(tmp)

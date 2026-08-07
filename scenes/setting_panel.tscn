@@ -1,0 +1,159 @@
+[gd_scene format=3 uid="uid://dsapewj4k3rqw"]
+
+[ext_resource type="FontFile" uid="uid://bs174vxb8p5iv" path="res://assets/fonts/NotoSansCJK-Regular.ttc" id="1_xtyyo"]
+[ext_resource type="Script" uid="uid://c3r1ylh1o0xtr" path="res://scripts/setting_panel.gd" id="2_setting"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_8dubc"]
+bg_color = Color(0.17350528, 0.17350528, 0.17901403, 1)
+
+[sub_resource type="LabelSettings" id="LabelSettings_ynwaf"]
+font = ExtResource("1_xtyyo")
+font_size = 40
+
+[sub_resource type="LabelSettings" id="LabelSettings_g8bx5"]
+font = ExtResource("1_xtyyo")
+font_size = 30
+
+[node name="SettingPanel" type="Control" unique_id=1826284871]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("2_setting")
+
+[node name="Panel" type="Panel" parent="." unique_id=1759025726]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -288.0
+offset_top = -386.0
+offset_right = 288.0
+offset_bottom = 386.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_8dubc")
+
+[node name="VBoxContainer" type="VBoxContainer" parent="Panel" unique_id=1225754060]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 26.0
+offset_top = 26.0
+offset_right = -26.0
+offset_bottom = -26.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 10
+
+[node name="Label" type="Label" parent="Panel/VBoxContainer" unique_id=700348770]
+layout_mode = 2
+text = "设置面板"
+label_settings = SubResource("LabelSettings_ynwaf")
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="HSeparator" type="HSeparator" parent="Panel/VBoxContainer" unique_id=1186022072]
+layout_mode = 2
+
+[node name="HBoxContainer" type="HBoxContainer" parent="Panel/VBoxContainer" unique_id=37341511]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="VBoxContainer" type="VBoxContainer" parent="Panel/VBoxContainer/HBoxContainer" unique_id=573887834]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Label" type="Label" parent="Panel/VBoxContainer/HBoxContainer/VBoxContainer" unique_id=1033605023]
+layout_mode = 2
+size_flags_horizontal = 4
+text = "云端编译"
+label_settings = SubResource("LabelSettings_g8bx5")
+
+[node name="BaseURL" type="HBoxContainer" parent="Panel/VBoxContainer/HBoxContainer/VBoxContainer" unique_id=1593772930]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Panel/VBoxContainer/HBoxContainer/VBoxContainer/BaseURL" unique_id=573271798]
+custom_minimum_size = Vector2(100, 0)
+layout_mode = 2
+text = "服务器链接"
+
+[node name="LineEdit" type="LineEdit" parent="Panel/VBoxContainer/HBoxContainer/VBoxContainer/BaseURL" unique_id=719361210]
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "https://build.pieblock.asia"
+
+[node name="API" type="HBoxContainer" parent="Panel/VBoxContainer/HBoxContainer/VBoxContainer" unique_id=2080700413]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Panel/VBoxContainer/HBoxContainer/VBoxContainer/API" unique_id=449188445]
+custom_minimum_size = Vector2(100, 0)
+layout_mode = 2
+text = "API密钥"
+
+[node name="LineEdit" type="LineEdit" parent="Panel/VBoxContainer/HBoxContainer/VBoxContainer/API" unique_id=623122117]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="HSeparator" type="HSeparator" parent="Panel/VBoxContainer/HBoxContainer/VBoxContainer" unique_id=1197671479]
+layout_mode = 2
+
+[node name="Label2" type="Label" parent="Panel/VBoxContainer/HBoxContainer/VBoxContainer" unique_id=1668596865]
+layout_mode = 2
+size_flags_horizontal = 4
+text = "本地编译"
+label_settings = SubResource("LabelSettings_g8bx5")
+
+[node name="Keil" type="HBoxContainer" parent="Panel/VBoxContainer/HBoxContainer/VBoxContainer" unique_id=1219573871]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Panel/VBoxContainer/HBoxContainer/VBoxContainer/Keil" unique_id=1642561162]
+custom_minimum_size = Vector2(100, 0)
+layout_mode = 2
+text = "Keil路径"
+
+[node name="LineEdit" type="LineEdit" parent="Panel/VBoxContainer/HBoxContainer/VBoxContainer/Keil" unique_id=1117776033]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Button" type="Button" parent="Panel/VBoxContainer/HBoxContainer/VBoxContainer/Keil" unique_id=946256582]
+layout_mode = 2
+text = " ... "
+
+[node name="HSeparator2" type="HSeparator" parent="Panel/VBoxContainer/HBoxContainer/VBoxContainer" unique_id=1097825075]
+visible = false
+layout_mode = 2
+
+[node name="Label3" type="Label" parent="Panel/VBoxContainer/HBoxContainer/VBoxContainer" unique_id=1480850077]
+visible = false
+layout_mode = 2
+size_flags_horizontal = 4
+text = "烧录串口"
+label_settings = SubResource("LabelSettings_g8bx5")
+
+[node name="CloseButton" type="Button" parent="Panel" unique_id=1621142713]
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -64.0
+offset_top = 32.0
+offset_right = -32.0
+offset_bottom = 64.0
+grow_horizontal = 0
+text = "X"
+
+[node name="KeilDirDialog" type="FileDialog" parent="Panel" unique_id=1658531834]
+title = "Open a Directory"
+file_mode = 2
+access = 2
+use_native_dialog = true
+
+[node name="InvalidDialog" type="AcceptDialog" parent="Panel" unique_id=1690386197]
+title = "目录无效"
+ok_button_text = "重新选择"

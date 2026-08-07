@@ -14,7 +14,7 @@ from keil_server import keil_detect
 
 
 @pytest.fixture(scope="module")
-def client():
+def client(tmp_path_factory):
     if not keil_detect.detect().available:
         pytest.skip("无可用 Keil C251，跳过 API 端到端测试")
     try:
@@ -22,6 +22,12 @@ def client():
         find_godot()
     except FileNotFoundError as e:
         pytest.skip(str(e))
+    # 隔离鉴权配置，保证测试默认「开放模式」（不受真实 data/api_keys.json 影响）；
+    # 鉴权相关用例各自用 monkeypatch 覆盖。
+    from keil_server import config
+    config.API_KEY = ""
+    config.API_KEYS_CSV = ""
+    config.KEYS_FILE = tmp_path_factory.mktemp("keys") / "keys.json"
     from keil_server.server import app
 
     with TestClient(app) as c:
@@ -98,6 +104,24 @@ def test_compile_rejects_non_zip(client, tmp_path):
 
 def test_task_not_found(client):
     assert client.get("/tasks/does-not-exist").status_code == 404
+
+
+def test_compile_base64_creates_task(client, fixture_zip):
+    """/compile_base64 应能接收 base64 zip 并创建任务（Godot 端上传链路）。"""
+    import base64
+
+    data = fixture_zip.read_bytes()
+    r = client.post(
+        "/compile_base64",
+        json={"zip_base64": base64.b64encode(data).decode()},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["task_id"]
+    # 缺字段 -> 400
+    assert client.post("/compile_base64", json={}).status_code == 400
+    # 非法 base64 -> 400
+    assert client.post("/compile_base64", json={"zip_base64": "!!!not-b64!!!"}).status_code == 400
 
 
 def test_auth_enforced_when_key_set(client, monkeypatch, tmp_path):

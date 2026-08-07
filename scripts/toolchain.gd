@@ -23,6 +23,10 @@ extends RefCounted
 const KEIL_SETTINGS_PATH: String = "user://keil_settings.json"
 ## 指定外部 Keil 目录的环境变量（headless/CLI/CI 用，优先级高于配置文件）
 const KEIL_ENV_VAR: String = "PIEBLOCK_KEIL"
+## 云端编译服务器配置（user://，记录 Base URL 与 API Key）。
+## JSON 格式 {"base_url": "https://build.pieblock.asia", "api_key": "..."}
+## 用于"云端编译"：本机不装 Keil，把工程打包上传到编译服务器编译并取回 hex。
+const CLOUD_SETTINGS_PATH: String = "user://cloud_settings.json"
 ## 步兵项目模板
 const PROJECT_SRC: String = "res://stc32g/Projects/ROBOMASTER_INFANTRY"
 const PROJECT_DST: String = "user://stc32g/Projects/ROBOMASTER_INFANTRY"
@@ -382,6 +386,61 @@ func ensure_external_keil_ready() -> Dictionary:
 	if check_cfg.ok:
 		return {"ok": true, "reason": ""}
 	return {"ok": false, "reason": "已配置的 Keil 目录失效（%s）：%s" % [cfg_path, check_cfg.reason]}
+
+
+# ------------------------------------------------------------------ 云端编译服务器
+## 读取云端编译配置，返回 {ok, base_url, api_key, reason}。
+func get_cloud_config() -> Dictionary:
+	var empty := {"ok": false, "base_url": "", "api_key": "", "reason": ""}
+	if not FileAccess.file_exists(CLOUD_SETTINGS_PATH):
+		empty["reason"] = "未配置云端编译服务器"
+		return empty
+	var text: String = FileAccess.get_file_as_string(CLOUD_SETTINGS_PATH)
+	var parsed: Variant = JSON.parse_string(text)
+	if not parsed is Dictionary:
+		empty["reason"] = "云端配置格式非法"
+		return empty
+	return {
+		"ok": true,
+		"base_url": str(parsed.get("base_url", "")).strip_edges(),
+		"api_key": str(parsed.get("api_key", "")).strip_edges(),
+		"reason": "",
+	}
+
+
+## 写入云端编译配置。base_url / api_key 传空表示清除。返回是否写入成功。
+func set_cloud_config(base_url: String, api_key: String) -> bool:
+	var f: FileAccess = FileAccess.open(CLOUD_SETTINGS_PATH, FileAccess.WRITE)
+	if f == null:
+		push_error("无法写入云端配置: %s（%s）" % [CLOUD_SETTINGS_PATH, FileAccess.get_open_error()])
+		return false
+	f.store_string(JSON.stringify({
+		"base_url": base_url.strip_edges(),
+		"api_key": api_key.strip_edges(),
+	}))
+	f.close()
+	return true
+
+
+## 校验云端配置是否可用于编译。
+## 返回 {ok: bool, reason: String}；ok=false 时 reason 区分「未配置」与「已配置但无效」。
+func ensure_cloud_ready() -> Dictionary:
+	var cfg: Dictionary = get_cloud_config()
+	if not cfg.ok:
+		return {"ok": false, "reason": cfg.reason}
+	if str(cfg.base_url).is_empty():
+		return {"ok": false, "reason": "云端 Base URL 未填写"}
+	if str(cfg.api_key).is_empty():
+		return {"ok": false, "reason": "云端 API Key 未填写"}
+	if not _is_valid_http_url(str(cfg.base_url)):
+		return {"ok": false, "reason": "Base URL 不是合法的 http(s) 地址: %s" % str(cfg.base_url)}
+	return {"ok": true, "reason": ""}
+
+
+## Base URL 是否形如 http:// 或 https://（不校验可达性，编译时再报错）。
+func _is_valid_http_url(url: String) -> bool:
+	var u: String = url.strip_edges().to_lower()
+	return u.begins_with("http://") or u.begins_with("https://")
 
 
 # ------------------------------------------------------------------ 编译器探测

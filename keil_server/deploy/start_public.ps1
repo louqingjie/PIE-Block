@@ -12,8 +12,7 @@
 #   -Port 8000                   编译服务端口
 
 param(
-    [Parameter(Mandatory = $true)]
-    [string]$ApiKey,                 # 管理员 key（必填，鉴权与用户管理用）
+    [string]$ApiKey = "",          # 管理员 key（不填则从本地 data/admin_key.txt 读，没有再自动生成保存）
     [string]$ApiKeys = "",          # 可选：初始用户 key，格式 user:key,user:key（队员每人一把）
     [string]$TunnelName = "pieblock",
     [string]$CloudflaredExe = "C:\cloudflared\cloudflared.exe",
@@ -27,10 +26,6 @@ $py = Join-Path $root ".venv\Scripts\python.exe"
 $cfg = Join-Path $PSScriptRoot "cloudflared-config.yml"
 
 # ---- 1. 校验 ----
-if (-not $ApiKey -or $ApiKey -match "^\s*$") {
-    Write-Host "[错误] 公网部署必须设置 -ApiKey（KEIL_API_KEY 鉴权）" -ForegroundColor Red
-    exit 1
-}
 if (-not (Test-Path $py)) {
     Write-Host "[错误] 找不到 $py，请先创建 .venv 并装依赖" -ForegroundColor Red
     exit 1
@@ -68,7 +63,27 @@ if ($existing) {
     }
 }
 
-# ---- 4. 启动 keil_server（后台） ----
+# ---- 4. 管理员 key 解析（-ApiKey 参数 > 本地文件 > 自动生成并保存） ----
+$adminKeyFile = Join-Path $root "keil_server\data\admin_key.txt"
+if (-not $ApiKey -and (Test-Path $adminKeyFile)) {
+    $ApiKey = (Get-Content $adminKeyFile -Raw).Trim()
+    Write-Host "[OK] 已从本地文件加载管理员 key（$adminKeyFile）" -ForegroundColor Green
+} elseif (-not $ApiKey) {
+    $ApiKey = (& $py -c "import secrets; print(secrets.token_urlsafe(12))").Trim()
+    try {
+        $dir = Split-Path $adminKeyFile
+        if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
+        [IO.File]::WriteAllText($adminKeyFile, $ApiKey, (New-Object System.Text.UTF8Encoding $false))
+        Write-Host "[OK] 已生成并保存管理员 key：$ApiKey" -ForegroundColor Green
+        Write-Host "     已写入 $adminKeyFile（data/ 已 gitignore，不进仓库）" -ForegroundColor Cyan
+    } catch {
+        Write-Host "[OK] 已生成管理员 key（未保存文件）：$ApiKey" -ForegroundColor Green
+    }
+} else {
+    Write-Host "[OK] 已启用 API Key 鉴权（管理员 key = 你指定的）" -ForegroundColor Green
+}
+
+# ---- 5. 启动 keil_server（后台） ----
 $env:KEIL_API_KEY = $ApiKey
 if ($ApiKeys) { $env:KEIL_API_KEYS = $ApiKeys }
 Write-Host "[1/2] 启动 keil_server (127.0.0.1:$Port, 多用户 API Key 鉴权已开)..." -ForegroundColor Cyan
@@ -80,7 +95,7 @@ Write-Host "      编译服务 PID: $($server.Id)"
 
 Start-Sleep -Seconds 3
 
-# ---- 5. 启动 cloudflared 隧道（后台） ----
+# ---- 6. 启动 cloudflared 隧道（后台） ----
 # 注意：--config / --protocol 必须放在 run 之前；用 --protocol http2（本机网络常拦 QUIC/7844，HTTP2 更稳）
 Write-Host "[2/2] 启动 cloudflared 隧道 '$TunnelName' ..." -ForegroundColor Cyan
 $tunnel = Start-Process -FilePath $CloudflaredExe -ArgumentList @(

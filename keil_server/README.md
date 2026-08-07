@@ -13,6 +13,7 @@ HTTP 编译服务。先在本机搭建验证，之后可原样部署到云服务
 |---|---|---|
 | GET | `/health` | 服务健康 + Keil 安装探测（路径、许可证状态） |
 | POST | `/compile` | multipart 上传 `file`=zip，可选 `timeout`（5~600 秒）。返回 `task_id` |
+| POST | `/compile_base64` | JSON body `{"zip_base64": "...", "timeout": 120?}`。Godot 端 HTTPClient 无法发二进制，用 base64 传 zip；等效 `/compile` |
 | GET | `/tasks` | 任务列表（`limit` 参数） |
 | GET | `/tasks/{id}` | 任务状态：`queued → building → success \| failed` |
 | GET | `/tasks/{id}/log` | 完整编译日志（text/plain） |

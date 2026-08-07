@@ -22,6 +22,8 @@ const P_RESTART: NodePath = "VBoxContainer/Workspace/HSplitContainer/AIPanel/Hea
 const P_BUILD: NodePath = "VBoxContainer/TopPanel/Build"
 const P_DOWNLOAD: NodePath = "VBoxContainer/TopPanel/Download"
 const P_HEX_EXPORT: NodePath = "VBoxContainer/TopPanel/HEXExport"
+const P_BUILD_MODE: NodePath = "VBoxContainer/TopPanel/BuildMode"
+const P_CLOUD_SETTINGS: NodePath = "VBoxContainer/TopPanel/Settings"
 const P_UPGRADE: NodePath = "VBoxContainer/TopPanel/Upgrade"
 const P_UPGRADE_PROGRESS: NodePath = "UpgradeProgress"
 const P_BACK: NodePath = "VBoxContainer/TopPanel/Button"
@@ -42,6 +44,8 @@ const AT = preload("res://scripts/agent_terminal.gd")
 const PF = preload("res://scripts/project_file.gd")
 const UPGRADE_PROGRESS = preload("res://scripts/upgrade_progress.gd")
 const KG = preload("res://scripts/keil_guide.gd")
+const CLOUD_COMPILER = preload("res://scripts/cloud_compiler.gd")
+const CLOUD_GUIDE = preload("res://scripts/cloud_guide.gd")
 
 ## AI 随时会在终端里改盘上的 main.c，靠轮询 mtime 发现
 const RELOAD_POLL_SEC: float = 1.5
@@ -68,6 +72,8 @@ var _dirty: bool = false
 var _last_mtime: int = 0
 var _build_controller = null
 var _download_controller = null
+## 编译方式下拉（本地/云端）
+var _build_mode: OptionButton = null
 var _upgrade_active: bool = false
 ## 正在走「导出 HEX」流程：编译成功回调改弹保存对话框而不是烧录
 var _hex_export_pending: bool = false
@@ -136,6 +142,9 @@ func _setup_build_controller() -> void:
 	_build_controller = BC.new()
 	add_child(_build_controller)
 	_build_controller.configure(_tc, _clear_output, _append_output)
+	# 云端编译：注入 CloudCompiler 并创建「本地/云端」下拉与设置入口
+	_build_controller.configure_cloud(CLOUD_COMPILER.new(_tc, _append_output))
+	_setup_build_mode_selector()
 	_build_controller.busy_changed.connect(_on_build_busy_changed)
 	_build_controller.succeeded.connect(_on_build_succeeded)
 	_build_controller.finished.connect(func(result: Dictionary) -> void:
@@ -147,6 +156,33 @@ func _setup_build_controller() -> void:
 		if not bool(result.get("ok", false)) and _tc != null \
 				and _tc.detect_license_failure(str(result.get("log", ""))):
 			_show_license_dialog())
+
+
+## 编译方式下拉与云端设置按钮：已固化在 code_edit.tscn，只读节点、禁止动态创建。
+func _setup_build_mode_selector() -> void:
+	var opt: OptionButton = get_node_or_null(P_BUILD_MODE)
+	var set_btn: Button = get_node_or_null(P_CLOUD_SETTINGS)
+	if opt == null:
+		push_error("场景缺少 BuildMode 节点（%s）" % P_BUILD_MODE)
+		return
+	_build_mode = opt
+	if set_btn == null:
+		push_error("场景缺少 Settings 节点（%s）" % P_CLOUD_SETTINGS)
+		return
+	if not set_btn.pressed.is_connected(_on_cloud_settings_pressed):
+		set_btn.pressed.connect(_on_cloud_settings_pressed)
+
+
+func _is_cloud_mode() -> bool:
+	return _build_mode != null and _build_mode.selected == 1
+
+
+func _on_cloud_settings_pressed() -> void:
+	CLOUD_GUIDE.open_settings(self, _tc)
+
+
+func _on_cloud_guide_cancel() -> void:
+	_append_output("[Error] 未配置云端编译服务器，编译已中止（可在顶栏「云端设置」填写）")
 
 
 func _setup_download_controller() -> void:
@@ -586,8 +622,11 @@ func _on_build_pressed() -> void:
 	if _build_controller == null or _build_controller.is_busy() \
 			or (_download_controller != null and _download_controller.is_busy()):
 		return
-	# 编译前先确认外部 Keil 目录：未配置/失效时弹引导，成功后再真正编译
-	KG.ensure_keil(self, _tc, _do_build, _on_keil_guide_cancel)
+	# 云端：先确认云端配置；本地：确认外部 Keil 目录，未配置时弹引导
+	if _is_cloud_mode():
+		CLOUD_GUIDE.ensure_cloud(self, _tc, _do_build, _on_cloud_guide_cancel)
+	else:
+		KG.ensure_keil(self, _tc, _do_build, _on_keil_guide_cancel)
 
 
 func _do_build() -> void:
@@ -595,7 +634,7 @@ func _do_build() -> void:
 		return
 	var code_edit: Node = get_node_or_null(P_CODE_EDIT)
 	var code: String = code_edit.text if code_edit is CodeEdit else ""
-	_build_controller.start(_project_dst, code)
+	_build_controller.start(_project_dst, code, "cloud" if _is_cloud_mode() else "local")
 
 
 ## 用户在 Keil 目录引导对话框里点「取消」时中止编译并提示。
@@ -610,7 +649,10 @@ func _on_hex_export_pressed() -> void:
 			or (_download_controller != null and _download_controller.is_busy()):
 		return
 	# 引导成功后重跑原流程，_hex_export_pending 在 _do_hex_export 内设置，状态不丢
-	KG.ensure_keil(self, _tc, _do_hex_export, _on_keil_guide_cancel)
+	if _is_cloud_mode():
+		CLOUD_GUIDE.ensure_cloud(self, _tc, _do_hex_export, _on_cloud_guide_cancel)
+	else:
+		KG.ensure_keil(self, _tc, _do_hex_export, _on_keil_guide_cancel)
 
 
 func _do_hex_export() -> void:
@@ -619,7 +661,8 @@ func _do_hex_export() -> void:
 	var ce: Node = get_node_or_null(P_CODE_EDIT)
 	var code2: String = ce.text if ce is CodeEdit else ""
 	_hex_export_pending = true
-	if not _build_controller.start(_project_dst, code2):
+	if not _build_controller.start(_project_dst, code2,
+			"cloud" if _is_cloud_mode() else "local"):
 		_hex_export_pending = false
 
 

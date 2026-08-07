@@ -6,6 +6,7 @@ signal succeeded
 signal finished(result: Dictionary)
 
 var _toolchain = null
+var _cloud = null          # CloudCompiler（云端编译模式，可为 null）
 var _clear_output: Callable
 var _append_output: Callable
 var _thread: Thread = null
@@ -18,13 +19,21 @@ func configure(toolchain, clear_output: Callable, append_output: Callable) -> vo
 	_append_output = append_output
 
 
+## 注入云端编译器（CloudCompiler 实例）。日志走同一 append_output。
+func configure_cloud(cloud) -> void:
+	_cloud = cloud
+
+
 func is_busy() -> bool:
 	return _busy
 
 
-func start(project_dst: String, code: String) -> bool:
+## 启动编译。mode："local"（本机 Keil）或 "cloud"（云端编译服务器）。
+func start(project_dst: String, code: String, mode: String = "local") -> bool:
 	if _busy or _toolchain == null:
 		return false
+	if mode == "cloud":
+		return _start_cloud(project_dst, code)
 	_clear()
 	if code.strip_edges().is_empty():
 		_append("[Error] 没有可编译的代码，请先完成配置")
@@ -59,8 +68,46 @@ func shutdown() -> void:
 	if _thread:
 		_thread.wait_to_finish()
 	_thread = null
+	if _cloud:
+		_cloud.shutdown()
 	if _busy:
 		_set_busy(false)
+
+
+# ------------------------------------------------------------------ 云端编译
+## 云端编译启动：校验配置 -> 交给 CloudCompiler（其内部线程上传/轮询/下载 hex）。
+func _start_cloud(project_dst: String, code: String) -> bool:
+	if _cloud == null:
+		_append("[Error] 云端编译未初始化（CloudCompiler 缺失）")
+		return false
+	_clear()
+	if code.strip_edges().is_empty():
+		_append("[Error] 没有可编译的代码，请先完成配置")
+		return false
+	var cfg: Dictionary = _toolchain.get_cloud_config()
+	if not cfg.ok or str(cfg.get("base_url", "")).is_empty() \
+			or str(cfg.get("api_key", "")).is_empty():
+		_append("[Error] 云端编译配置不完整（Base URL / API Key）")
+		return false
+	if not _cloud.finished.is_connected(_on_cloud_finished):
+		_cloud.finished.connect(_on_cloud_finished)
+	_set_busy(true)
+	_append("正在云端编译…（上传工程到 %s）" % str(cfg.base_url))
+	if not _cloud.compile(project_dst, code, str(cfg.base_url), str(cfg.api_key)):
+		_set_busy(false)
+		_append("[Error] 无法启动云端编译（可能正忙）")
+		return false
+	return true
+
+
+## 云端编译完成（CloudCompiler 已把日志写入输出，hex 已下载到本地同路径）。
+func _on_cloud_finished(result: Dictionary) -> void:
+	_set_busy(false)
+	var ok: bool = bool(result.get("ok", false))
+	if ok:
+		# 复用本地成功后的下载/OTA/hex导出流程
+		succeeded.emit()
+	finished.emit(result)
 
 
 func _exit_tree() -> void:
