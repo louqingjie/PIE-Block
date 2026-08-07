@@ -18,6 +18,14 @@ PROJECT_ROOT = SERVICE_ROOT.parent
 # 任务存储根（上传 zip、解压目录、日志、元数据、部署的工具链副本都放这里）
 DATA_DIR = Path(os.environ.get("KEIL_SERVER_DATA_DIR", str(SERVICE_ROOT / "data")))
 
+# ------------------------------------------------------------------ 鉴权
+# API Key。设置了之后，除 /health 外的所有接口要求请求头
+#   Authorization: Bearer <key>    或    X-API-Key: <key>
+# 未设置（空）时保持开放模式（本机/内网使用，不强制鉴权）。
+# 公网部署时**必须**设置。
+API_KEY = os.environ.get("KEIL_API_KEY", "").strip()
+
+
 # ------------------------------------------------------------------ Keil 安装
 # 手动指定 Keil 根目录（完整正版安装位置），优先级最高。
 # 未设置时按 KEIL_CANDIDATE_PATHS 自动探测。

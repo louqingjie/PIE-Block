@@ -51,6 +51,12 @@ KINDS = ["infantry", "engineer", "debug"]
 # 设置了之后，generate/build/check 时若 config 里 channel 为空/缺失会自动填入。
 DEFAULT_CHANNEL: str = os.environ.get("PIEBLOCK_CHANNEL", "").strip()
 
+# 云端编译服务地址（可选）。在 MCP 客户端配置的 env 里设 PIEBLOCK_KEIL_SERVER_URL
+# （如 http://127.0.0.1:8000 或 http://<服务器IP>:8000）。
+# 设置了之后 build_code / build_project 改为「云端编译」（本机无需安装 Keil）；
+# 留空则用本地 Keil 编译（原行为）。
+REMOTE_URL: str = os.environ.get("PIEBLOCK_KEIL_SERVER_URL", "").strip()
+
 
 def find_godot() -> str | None:
     """定位 godot 可执行文件。优先环境变量，其次 PATH。"""
@@ -147,6 +153,30 @@ def _apply_channel(cfg: dict[str, Any], channel: str | None = None) -> dict[str,
     if isinstance(eng, dict):
         _fill(eng)
     return out
+
+
+def _remote_build(kind: str, config_path: str | None = None,
+                  project_path: str | None = None) -> dict[str, Any]:
+    """调用 keil_server.client 走云端编译，返回与本地 build 对齐的结果字典。
+
+    注意: 生成 main.c 仍在本机用 Godot CLI 完成（不编译），编译在服务器端。
+    """
+    if str(ROOT) not in sys.path:
+        sys.path.insert(0, str(ROOT))
+    from keil_server.client import build_remote
+    try:
+        return build_remote(
+            kind=kind,
+            server=REMOTE_URL,
+            config_path=config_path,
+            project_path=project_path,
+            timeout=180,
+            # MCP 客户端环境变量里可配 PIEBLOCK_KEIL_API_KEY（公网服务器需要）
+            api_key_override=os.environ.get("PIEBLOCK_KEIL_API_KEY", ""),
+        )
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "exit": 1, "kind": kind, "log": "", "hex": "",
+                "hex_exists": False, "error": f"远程编译异常: {e}"}
 
 
 def _result_text(result: dict[str, Any]) -> str:
@@ -349,7 +379,10 @@ def build_code(kind: str, config: str, channel: str | None = None) -> str:
     cfg = _apply_channel(cfg, channel)
     cfg_path = _write_temp_config(cfg)
     try:
-        result = _run_cli(["build", "--kind", kind, "--config", cfg_path], timeout=300)
+        if REMOTE_URL:
+            result = _remote_build(kind, config_path=cfg_path)
+        else:
+            result = _run_cli(["build", "--kind", kind, "--config", cfg_path], timeout=300)
     except RuntimeError as e:
         return f"错误: {e}"
     finally:
@@ -378,7 +411,15 @@ def build_project(project_path: str) -> str:
     if not os.path.isfile(project_path):
         return f"错误: 项目文件不存在: {project_path}"
     try:
-        result = _run_cli(["build", "--project", project_path], timeout=300)
+        if REMOTE_URL:
+            with open(project_path, encoding="utf-8") as f:
+                proj = json.load(f)
+            kind = str(proj.get("kind", "infantry"))
+            if kind not in KINDS:
+                kind = "infantry"
+            result = _remote_build(kind, project_path=project_path)
+        else:
+            result = _run_cli(["build", "--project", project_path], timeout=300)
     except RuntimeError as e:
         return f"错误: {e}"
     return json.dumps(result, ensure_ascii=False, indent=2)

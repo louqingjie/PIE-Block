@@ -24,7 +24,7 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from fastapi import FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse
 
 from keil_server import config, keil_detect
@@ -33,10 +33,30 @@ from keil_server.task_manager import TaskManager
 app = FastAPI(
     title="Keil C251 Cloud Compiler",
     description="上传 Keil 工程 zip，服务端用安装的 Keil C251 编译并返回 HEX 固件。",
-    version="0.1.0",
+    version="0.2.0",
 )
 
 task_manager = TaskManager()
+
+
+# ------------------------------------------------------------------ 鉴权
+# 设了 config.API_KEY（环境变量 KEIL_API_KEY）后，除 /health 外的接口都要校验。
+# 支持 Authorization: Bearer <key> 或 X-API-Key: <key> 两种请求头。
+# 未设置 API_KEY 时保持开放模式（本机/内网用）。
+def require_api_key(
+    authorization: str | None = Header(default=None),
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> None:
+    if not config.API_KEY:
+        return
+    token = ""
+    if authorization and authorization.lower().startswith("bearer "):
+        token = authorization[7:].strip()
+    elif x_api_key:
+        token = x_api_key.strip()
+    if token and token == config.API_KEY:
+        return
+    raise HTTPException(status_code=401, detail="无效或缺失 API Key")
 
 
 @app.get("/health")
@@ -60,6 +80,7 @@ async def compile_zip(
     timeout: int | None = Query(
         default=None, ge=5, le=600, description="覆盖默认编译超时（秒）"
     ),
+    _key: None = Depends(require_api_key),
 ):
     if file.filename is None or not file.filename.lower().endswith(".zip"):
         raise HTTPException(status_code=400, detail="只接受 .zip 文件")
@@ -93,12 +114,12 @@ async def compile_zip(
 
 
 @app.get("/tasks")
-def list_tasks(limit: int = Query(default=50, ge=1, le=200)):
+def list_tasks(limit: int = Query(default=50, ge=1, le=200), _key: None = Depends(require_api_key)):
     return {"tasks": [t.to_public() for t in task_manager.list(limit)]}
 
 
 @app.get("/tasks/{task_id}")
-def get_task(task_id: str):
+def get_task(task_id: str, _key: None = Depends(require_api_key)):
     task = task_manager.get(task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="任务不存在")
@@ -106,7 +127,7 @@ def get_task(task_id: str):
 
 
 @app.get("/tasks/{task_id}/log")
-def get_task_log(task_id: str):
+def get_task_log(task_id: str, _key: None = Depends(require_api_key)):
     task = task_manager.get(task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="任务不存在")
@@ -114,7 +135,7 @@ def get_task_log(task_id: str):
 
 
 @app.get("/tasks/{task_id}/hex")
-def get_task_hex(task_id: str):
+def get_task_hex(task_id: str, _key: None = Depends(require_api_key)):
     task = task_manager.get(task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="任务不存在")
@@ -134,7 +155,7 @@ def get_task_hex(task_id: str):
 
 
 @app.delete("/tasks/{task_id}")
-def delete_task(task_id: str):
+def delete_task(task_id: str, _key: None = Depends(require_api_key)):
     if not task_manager.delete(task_id):
         raise HTTPException(status_code=404, detail="任务不存在")
     return {"deleted": task_id}

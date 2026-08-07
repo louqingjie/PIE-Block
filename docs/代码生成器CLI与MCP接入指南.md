@@ -80,6 +80,12 @@ godot --headless --no-header --path . --script scripts/cli_codegen.gd -- help
 
 - 编译通常 10~60 秒
 - 产物 hex 路径见返回 JSON 的 `hex` 字段
+- **云端编译（可选）**：`build` 增加 `--remote <编译服务地址>`（如
+  `http://127.0.0.1:8000`），则本机**不装 Keil**，改为把工程打包上传到
+  `keil_server` 编译服务，服务器端 Keil C251 编译后返回 hex。可用
+  `PIEBLOCK_PYTHON` 指定 python 解释器（建议指向项目 `.venv`）。
+  不带 `--remote` 时仍是本地编译，行为不变。服务搭建见
+  `keil_server/README.md`。
 - 已修复的编译漏洞：
   - `build` 曾用 Keil `-b`（跳过重编译，连续编译不同配置会返回陈旧 hex），
     已改用 `-r`（rebuild）强制重编译
@@ -210,6 +216,13 @@ godot --headless --no-header --path . --script scripts/cli_codegen.gd -- help
 | `PIEBLOCK_GODOT` | PATH 里的 `godot` | Godot 可执行文件 |
 | `PIEBLOCK_ROOT` | server 文件上级×2 | 项目根目录 |
 | `PIEBLOCK_CHANNEL` | 空（不填） | 默认遥控器通道号 0-125；config 里 channel 为空/缺失时自动填入 |
+| `PIEBLOCK_KEIL_SERVER_URL` | 空（本地编译） | 设置后 `build_code` / `build_project` 改为**云端编译**（如 `http://127.0.0.1:8000`），本机无需装 Keil |
+| `PIEBLOCK_KEIL_API_KEY` | 空 | 云端编译服务器的 API Key（服务器启用 `KEIL_API_KEY` 鉴权时必填） |
+
+> 云端编译：设了 `PIEBLOCK_KEIL_SERVER_URL` 后，`build_code` / `build_project`
+> 会把工程打包上传到该地址的 `keil_server` 编译服务，服务器端用 Keil C251 编译
+> 并返回 hex（生成 main.c 仍在本机）。服务搭建见 `keil_server/README.md`。
+> 不设置则保持本地编译，行为不变。
 
 ---
 

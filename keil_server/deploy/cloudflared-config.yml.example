@@ -1,0 +1,17 @@
+# cloudflared 隧道配置（复制为 cloudflared-config.yml 后填写）
+# 生成方法见 docs/公网部署CloudflareTunnel指南.md
+
+# 隧道 UUID：`cloudflared tunnel create pieblock` 的输出
+tunnel: <TUNNEL-UUID>
+
+# 凭证文件：`cloudflared tunnel login` 后生成在
+#   C:\Users\<你的用户名>\.cloudflared\<TUNNEL-UUID>.json
+credentials-file: C:\Users\<你的用户名>\.cloudflared\<TUNNEL-UUID>.json
+
+ingress:
+  # 公网域名 build.pieblock.asia -> 本机编译服务（keil_server）
+  - hostname: build.pieblock.asia
+    service: http://127.0.0.1:8000
+
+  # 其余请求一律 404，关闭外网对内网其它端口的访问（安全）
+  - service: http_status:404

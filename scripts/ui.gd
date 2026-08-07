@@ -122,6 +122,7 @@ const P_BUILD_BTN: NodePath = "VBoxContainer/TopPanel/Build"
 const P_DOWNLOAD_BTN: NodePath = "VBoxContainer/TopPanel/Download"
 const P_HEX_EXPORT_BTN: NodePath = "VBoxContainer/TopPanel/HEXExport"
 const P_UPGRADE_BTN: NodePath = "VBoxContainer/TopPanel/Upgrade"
+const P_BT_PAIR_BTN: NodePath = "VBoxContainer/TopPanel/BTPair"
 const P_UPGRADE_PROGRESS: NodePath = "UpgradeProgress"
 # 项目引导
 const P_MAIN_UI: NodePath = "VBoxContainer"
@@ -148,6 +149,7 @@ const PROJECT_GATED_BTNS: Array = [
 	"VBoxContainer/TopPanel/Download",
 	"VBoxContainer/TopPanel/HEXExport",
 	"VBoxContainer/TopPanel/Upgrade",
+	"VBoxContainer/TopPanel/BTPair",
 ]
 # AI 编辑入口（跳转到 code_edit.tscn）
 const P_AI_EDIT_BTN: NodePath = "VBoxContainer/TopPanel/AIEdit"
@@ -159,6 +161,8 @@ const ERROR_SCENE: String = "res://scenes/error.tscn"
 const FATAL_ERROR_SCENE: String = "res://scenes/fatal_error.tscn"
 # 启动页（新建 / 打开项目都在那里做）
 const LAUNCHER_SCENE: String = "res://scenes/launcher.tscn"
+# 蓝牙配对引导面板（扫描→配对→等待虚拟串口→重试烧录）
+const BT_PAIR_SCENE: String = "res://scenes/bt_pair.tscn"
 # 3D 仿真入口
 const P_ARM_SIM_BTN: NodePath = "VBoxContainer/TopPanel/ArmSim"
 # 3D 仿真场景（作为子节点覆盖显示，避免切场景丢失整页配置状态）
@@ -191,6 +195,10 @@ var _hex_export_pending: bool = false
 var _codegen: CodeGenBase = null
 # 工具链管理器（惰性创建，见 _toolchain()）
 var _tc = null
+# 蓝牙配对引导面板实例（null 表示未打开）
+var _bt_pair_panel: Node = null
+## 面板点「重试烧录」时执行的 Callable（缺省重跑当前项目烧录）
+var _bt_pair_retry: Callable = Callable()
 # 当前打开的 3D 仿真视图实例（null 表示未打开）
 var _arm_sim: Control = null
 
@@ -253,6 +261,8 @@ func _ready() -> void:
 	_connect_signals()
 	# 恢复 / 初始化项目上下文（会自行触发 _run_check）
 	_restore_project_context()
+	# 顶栏「3D 仿真」按钮可见性跟随当前 Tab
+	_update_sim_btn_visibility()
 
 func _setup_build_controller() -> void:
 	_build_controller = BC.new()
@@ -357,6 +367,10 @@ func _connect_signals() -> void:
 	var upgrade_btn: Node = get_node_or_null(P_UPGRADE_BTN)
 	if upgrade_btn is BaseButton:
 		upgrade_btn.pressed.connect(_on_upgrade_pressed)
+	# 蓝牙配对按钮
+	var bt_pair_btn: Node = get_node_or_null(P_BT_PAIR_BTN)
+	if bt_pair_btn is BaseButton:
+		bt_pair_btn.pressed.connect(_on_bt_pair_pressed)
 	# AI 编辑入口
 	var ai_btn: Node = get_node_or_null(P_AI_EDIT_BTN)
 	if ai_btn is BaseButton:
@@ -1169,7 +1183,21 @@ func _downgrade_to_stage1() -> void:
 # ------------------------------------------------------------------ Tab 切换
 ## Tab 切换时更新代码生成器并重新生成预览
 func _on_tab_changed(_tab: int) -> void:
+	_update_sim_btn_visibility()
 	_run_check()
+
+
+## 顶栏「3D 仿真」按钮按当前 Tab 显示：
+##   0=步兵 -> 步兵整车仿真（基础功能，无需机械臂逆解门控）
+##   2=工程逆解算 -> 机械臂仿真（点击时经 IK 门控确认）
+##   其余 Tab 没有仿真，隐藏按钮以免点到「当前构型没有 3D 仿真」警告。
+func _update_sim_btn_visibility() -> void:
+	var sim_btn: Node = get_node_or_null(P_ARM_SIM_BTN)
+	if not sim_btn is CanvasItem:
+		return
+	var tab_container: Node = get_node_or_null(P_TAB_CONTAINER)
+	var tab: int = tab_container.current_tab if tab_container is TabContainer else 0
+	sim_btn.visible = (tab == 0 or tab == 2)
 
 
 ## 根据当前 Tab 选项获取对应的代码生成器
@@ -1615,6 +1643,9 @@ func _on_build_succeeded() -> void:
 		_set_upgrade_progress("求解器编译完成", 28.0, "正在连接主控板…")
 		if not _download_controller.start(TC.PROJECT_ENGINEER_SIM_DST):
 			_fail_upgrade("无法开始烧录", "请查看下方输出中的串口提示。")
+			_open_bt_pair_guide(
+				"没有检测到可用串口，无法开始烧录。\n如果板子没接 USB，可以在这里配对蓝牙模块后重试。",
+				func() -> void: _download_controller.start(TC.PROJECT_ENGINEER_SIM_DST))
 		return
 	if not _project.is_empty():
 		var workflow: Dictionary = _workflow()
@@ -1626,6 +1657,9 @@ func _on_build_succeeded() -> void:
 		_set_upgrade_progress("编译完成", 28.0, "正在连接主控板…")
 		if not _download_controller.start(_get_current_project_dst()):
 			_fail_upgrade("无法开始烧录", "请查看下方输出中的串口或固件提示。")
+			_open_bt_pair_guide(
+				"没有检测到可用串口，无法开始烧录。\n如果板子没接 USB，可以在这里配对蓝牙模块后重试。",
+				Callable())
 
 
 ## 编译成功后弹出保存对话框，让用户选择 hex 导出位置
@@ -1978,6 +2012,57 @@ func _on_download_pressed() -> void:
 	_download_controller.start(_get_current_project_dst())
 
 
+# ------------------------------------------------------------------ 蓝牙配对引导
+func _on_bt_pair_pressed() -> void:
+	_open_bt_pair_guide(
+		"在这里扫描并配对蓝牙串口模块（HC-05/06）。\n配对成功后会出现虚拟串口，即可无线烧录。",
+		Callable())
+
+
+## 打开蓝牙配对引导面板。hint 为首屏提示；retry 为「重试烧录」回调（缺省重跑当前项目烧录）。
+func _open_bt_pair_guide(hint: String, retry: Callable = Callable()) -> void:
+	if _bt_pair_panel != null:
+		_bt_pair_panel.move_to_front()
+		return
+	var packed: PackedScene = load(BT_PAIR_SCENE)
+	if packed == null:
+		_append_output("[Error] 缺少蓝牙配对面板场景：%s" % BT_PAIR_SCENE)
+		return
+	var panel: Control = packed.instantiate()
+	add_child(panel)
+	_bt_pair_panel = panel
+	_bt_pair_retry = retry if retry.is_valid() else _default_bt_retry
+	panel.configure(_toolchain())
+	panel.closed.connect(_on_bt_pair_closed)
+	panel.retry_flash_requested.connect(_on_bt_pair_retry)
+	panel.open_guide(hint)
+
+
+## 面板点「重试烧录」的缺省行为：重跑当前项目烧录（会重新枚举串口，含刚配好的蓝牙口）。
+func _default_bt_retry() -> void:
+	if _download_controller != null and not _download_controller.is_busy():
+		_download_controller.start(_get_current_project_dst())
+
+
+func _on_bt_pair_closed() -> void:
+	if _bt_pair_panel != null:
+		_bt_pair_panel.queue_free()
+		_bt_pair_panel = null
+
+
+func _on_bt_pair_retry() -> void:
+	_on_bt_pair_closed()
+	if _bt_pair_retry.is_valid():
+		_bt_pair_retry.call()
+
+
+## 烧录失败是否属于「连不上板子」类（此时蓝牙引导有意义）。
+## port/connect/env/空 = 没连上板子；erase/program/verify/hex = 板子已连上、中途失败。
+func _is_bt_connection_failure(result: Dictionary) -> bool:
+	var stage := str(result.get("stage", ""))
+	return stage in ["", "port", "connect", "env"]
+
+
 func _on_download_busy_changed(is_busy: bool) -> void:
 	var button: Node = get_node_or_null(P_DOWNLOAD_BTN)
 	if button is BaseButton:
@@ -2090,8 +2175,13 @@ func _on_upgrade_download_finished(result: Dictionary) -> void:
 				panel.canceled()
 		_set_upgrade_button_busy(false)
 		return
-	if _upgrade_active and not bool(result.get("ok", false)):
-		_fail_upgrade("烧录失败", "连接或写入未完成，请查看下方输出。")
+	if not bool(result.get("ok", false)):
+		if _upgrade_active:
+			_fail_upgrade("烧录失败", "连接或写入未完成，请查看下方输出。")
+		if _is_bt_connection_failure(result):
+			_open_bt_pair_guide(
+				"烧录没能连上主控板。\n如果板子没接 USB，可以在这里配对蓝牙模块；配对成功后点「重试烧录」。",
+				Callable())
 
 
 func _on_upgrade_cancel_pressed() -> void:

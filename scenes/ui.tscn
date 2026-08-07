@@ -105,6 +105,10 @@ text = "升级主控板"
 layout_mode = 2
 text = "导出 HEX"
 
+[node name="BTPair" type="Button" parent="VBoxContainer/TopPanel"]
+layout_mode = 2
+text = "蓝牙"
+
 [node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer" unique_id=1859188522]
 layout_mode = 2
 size_flags_vertical = 3

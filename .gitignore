@@ -61,6 +61,11 @@ release/
 vendor/keil-toolchain/
 toolchain/
 
+# btctl (.NET 构建产物；源码 tools/btctl/*.cs / *.csproj 提交，产物不提交)
+tools/btctl/bin/
+tools/btctl/obj/
+tools/btctl/out/
+
 # Re-include STC serial flash helpers under stc32g/toolchain (Keil tree still ignored)
 !stc32g/toolchain/
 stc32g/toolchain/**

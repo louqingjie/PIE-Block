@@ -69,9 +69,30 @@ keil_server/
 
 ### 3. 启动
 
+**一键脚本**（推荐，自动检查 .venv 与 Keil 后启动）：
+
+```powershell
+# 只监听本机（127.0.0.1:8000）
+.\keil_server\start_server.ps1
+
+# 监听 0.0.0.0（局域网内其他电脑可访问，需放行防火墙）
+.\keil_server\start_server.ps1 -HostAll
+```
+
+或手动启动：
+
 ```powershell
 # 从项目根
 <项目根>\.venv\Scripts\python.exe -m uvicorn keil_server.server:app --host 0.0.0.0 --port 8000
+```
+
+**开机自启（可选）**：把 `start_server.ps1`（或一个调用它的 .bat）放进
+`Win+R → shell:startup` 打开的启动文件夹即可。
+
+**局域网访问（可选）**：`-HostAll` 监听 0.0.0.0 后，需以管理员身份放行端口：
+
+```powershell
+New-NetFirewallRule -DisplayName "PieBlock Keil Server" -Direction Inbound -LocalPort 8000 -Protocol TCP -Action Allow
 ```
 
 Keil 路径解析优先级：
@@ -106,6 +127,61 @@ $env:PIEBLOCK_GODOT="C:\...\godot.exe"   # 生成夹具需要
 
 无 Keil / 无 Godot 的环境会**跳过**集成与 API 端到端测试（单元测试始终跑）。
 
+## 客户端接入（CLI / MCP 云端编译）
+
+服务端就绪后，本机/其他机器**不需要装 Keil**，通过客户端把工程打包上传、
+服务器编译、下载 hex。三种接入方式（任选）：
+
+### A. 命令行客户端 `keil_server/client.py`
+
+```powershell
+# 健康检查
+<项目根>\.venv\Scripts\python.exe -m keil_server.client health
+
+# 云端编译（配置 JSON -> 生成 main.c -> 打包上传 -> 服务器 Keil 编译 -> 下载 hex）
+$env:PIEBLOCK_GODOT="C:\...\godot.exe"          # 生成 main.c 需要
+<项目根>\.venv\Scripts\python.exe -m keil_server.client build ^
+    --kind infantry --config my_config.json --out-hex firmware.hex
+
+# 从 .pieproj 项目文件编译
+<项目根>\.venv\Scripts\python.exe -m keil_server.client build --project x.pieproj
+
+# 直接编译已有 main.c
+<项目根>\.venv\Scripts\python.exe -m keil_server.client build --code main.c --kind infantry
+```
+
+默认连 `http://127.0.0.1:8000`，用 `--server <url>` 或环境变量
+`PIEBLOCK_KEIL_SERVER_URL` 指定其它地址。服务器启用了鉴权时，用
+`--api-key <key>` 或环境变量 `PIEBLOCK_KEIL_API_KEY` 带上密钥。
+输出 JSON 与本地 `build` 对齐：`{ok, exit, kind, log, hex, hex_exists}`。
+
+### B. Godot CLI `build --remote`
+
+`scripts/cli_codegen.gd` 的 `build` 新增 `--remote <url>`，走云端编译：
+
+```powershell
+godot --headless --no-header --path . --script scripts/cli_codegen.gd -- build ^
+    --kind infantry --config my_config.json --remote http://127.0.0.1:8000
+```
+
+可用 `PIEBLOCK_PYTHON` 指定 python 解释器（默认 `python`，建议指向项目 `.venv`）。
+不带 `--remote` 时仍是本地 Keil 编译，行为不变。
+
+### C. MCP Server（AI Agent 云端编译）
+
+`tools/pieblock_mcp_server.py` 的 `build_code` / `build_project` 增加远程开关：
+在 MCP 客户端配置里给该 server 的 `env` 设置
+
+```json
+{ "PIEBLOCK_KEIL_SERVER_URL": "https://build.pieblock.asia", "PIEBLOCK_KEIL_API_KEY": "你的密钥" }
+```
+
+后，Agent 调 `build_code` / `build_project` 即走云端编译（本机无需装 Keil）。
+不设置该变量则保持本地编译，行为不变。
+
+> 远程模式下**生成 main.c 仍在本机**（用 Godot CLI），只有**编译在服务器**执行；
+> 打包上传/轮询/下载 hex 由 `keil_server/client.py` 完成。
+
 ## 云端部署
 
 服务本身与平台无关（Windows / Linux 均可，Keil 是 Windows 程序，云服务器
@@ -113,18 +189,25 @@ $env:PIEBLOCK_GODOT="C:\...\godot.exe"   # 生成夹具需要
 
 - Windows 云服务器上同样**原生全新安装正版 Keil C251 + 申请许可证**，
   设环境变量 `KEIL_PATH` 指向安装目录
+- **必须设 `KEIL_API_KEY`**，否则公网上任何人都能白嫖编译、看到源码路径
 - `pip install -r keil_server/requirements.txt`，用 uvicorn 常驻
-  （systemd/NSSM 托管），前端加 Nginx 反向代理 + HTTPS
+  （systemd/NSSM 托管），前端加 Nginx 反向代理 + HTTPS（配 `pieblock.asia` 域名证书）
 - 安全加固（按需）：
   - 上传/解压限制默认已开（`UPLOAD_MAX_SIZE` / `EXTRACT_MAX_SIZE` / `EXTRACT_MAX_FILES`）
-  - 生产环境建议加 API Key 鉴权或部署在内网/VPN
+  - API Key 鉴权通过 `KEIL_API_KEY` 开启（推荐放在 HTTPS 之后，Key 不落明文）
   - `GET /tasks/{id}/log` 可能含源码路径，注意访问控制
+
+> **零成本公网方案（本机 + Cloudflare Tunnel）**：不买云服务器，本机 24h 开着，
+> 用 Cloudflare Tunnel 绑 `build.pieblock.asia`（免费、自动 HTTPS、无需开放端口）。
+> 完整步骤见 `docs/公网部署CloudflareTunnel指南.md`，配套文件在
+> `keil_server/deploy/`（cloudflared 配置模板 + `start_public.ps1` 一键启动）。
 
 ## 配置（环境变量，全部可覆盖）
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | `KEIL_PATH` | （空） | Keil 根目录，最高优先级 |
+| `KEIL_API_KEY` | （空=开放） | API Key。设置后除 `/health` 外所有接口要求 `Authorization: Bearer <key>` 或 `X-API-Key: <key>`。**公网部署必须设置** |
 | `KEIL_SERVER_DATA_DIR` | `keil_server/data` | 任务与工具链副本存储 |
 | `KEIL_MAX_CONCURRENT` | `1` | 最大并发编译数（Keil 共享 TOOLS.INI，默认 1 最稳） |
 | `KEIL_BUILD_TIMEOUT` | `120` | 单次编译超时（秒） |

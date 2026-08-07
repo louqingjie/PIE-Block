@@ -143,6 +143,7 @@ headless 脚本，跑法 `godot --headless --path . --script scripts/test_xxx.gd
 | [test_arm_diagnosis.gd](scripts/test_arm_diagnosis.gd) | 构形诊断判据 |
 | [test_arm_sim.gd](scripts/test_arm_sim.gd) / [test_infantry_sim.gd](scripts/test_infantry_sim.gd) | 仿真几何与控制方向一致性 |
 | [test_ui_ik_e2e.gd](scripts/test_ui_ik_e2e.gd) | 配置界面到生成器的端到端 |
+| [test_ui_sim_entry.gd](scripts/test_ui_sim_entry.gd) | 顶栏「3D 仿真」入口按 Tab 可见性（步兵不被 IK 门控连坐隐藏） |
 
 真机性能已实测（STC32G，COM3 串口读数）：6 关节含 φ 的雅可比 IK 单次 431 μs，
 占 4ms 预算 10.8%。

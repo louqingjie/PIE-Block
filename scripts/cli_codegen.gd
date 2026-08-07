@@ -266,7 +266,7 @@ func _cmd_profiles(_args: PackedStringArray) -> void:
 ## 先部署工具链（首次约 360ms）-> 写 main.c -> 生成 TOOLS.INI -> 同步编译。
 ## 成功判据：Keil 日志含 "0 Error(s)"。编译通常耗时 10~60 秒（首次更久）。
 func _cmd_build(args: PackedStringArray) -> void:
-	var parsed: Dictionary = _parse_args(args, ["--kind", "--config", "--code", "--project"])
+	var parsed: Dictionary = _parse_args(args, ["--kind", "--config", "--code", "--project", "--remote"])
 	if parsed.has("error"):
 		_print_error(parsed["error"])
 		quit(EXIT_ARG)
@@ -320,20 +320,63 @@ func _cmd_build(args: PackedStringArray) -> void:
 		quit(EXIT_RUN)
 		return
 
-	# 编译（同步阻塞，Toolchain.build_project 专为 MCP 等非 UI 调用方设计）
-	var tc = TC.new()
-	var dst: String = _project_dst_for_kind(kind)
-	var result: Dictionary = tc.build_project(dst, code)
-	var out: Dictionary = {
-		"ok": bool(result.get("ok", false)),
-		"exit": result.get("exit", -1),
-		"kind": kind,
-		"log": str(result.get("log", "")),
-		"hex": tc.get_hex_path(dst),
-		"hex_exists": tc.hex_exists(dst),
-	}
+	# 编译（同步阻塞）。本地用 Toolchain.build_project；--remote 走云端编译服务。
+	var out: Dictionary = {}
+	if parsed.has("--remote"):
+		out = _remote_build(kind, code, str(parsed["--remote"]))
+	else:
+		var tc = TC.new()
+		var dst: String = _project_dst_for_kind(kind)
+		var result: Dictionary = tc.build_project(dst, code)
+		out = {
+			"ok": bool(result.get("ok", false)),
+			"exit": result.get("exit", -1),
+			"kind": kind,
+			"log": str(result.get("log", "")),
+			"hex": tc.get_hex_path(dst),
+			"hex_exists": tc.hex_exists(dst),
+		}
 	print(JSON.stringify(out, "\t"))
 	quit(EXIT_OK)
+
+
+## 云端编译：把 main.c 写到临时文件，调 `python <root>/keil_server/client.py build` 上传到
+## 编译服务（服务器端 Keil C251 编译），本机不需要装 Keil。
+## 直接以脚本方式运行 client.py（而非 -m），不依赖当前工作目录。
+## 需要：项目根有 .venv（或用 PIEBLOCK_PYTHON 指定解释器），服务器在监听 --server 地址。
+func _remote_build(kind: String, code: String, server: String) -> Dictionary:
+	var tmp_c: String = "user://.remote_main_tmp.c"
+	var f := FileAccess.open(tmp_c, FileAccess.WRITE)
+	if f == null:
+		return {"ok": false, "exit": 1, "kind": kind, "log": "",
+				"hex": "", "hex_exists": false, "error": "无法写临时 main.c"}
+	f.store_string(code)
+	f.close()
+	var abs_tmp: String = ProjectSettings.globalize_path(tmp_c)
+	var py: String = OS.get_environment("PIEBLOCK_PYTHON")
+	if py.is_empty():
+		py = "python"
+	var root_abs: String = ProjectSettings.globalize_path("res://")
+	var client_script: String = root_abs.path_join("keil_server").path_join("client.py")
+	var args := PackedStringArray([
+		client_script, "build",
+		"--kind", kind, "--code", abs_tmp, "--server", server, "--quiet",
+	])
+	var output: Array = []
+	var exit_code: int = OS.execute(py, args, output, true, false)
+	var text: String = "\n".join(output)
+	# 解析 stdout 里第一个 { 起的 JSON（--quiet 输出单行 JSON）
+	var result: Dictionary = {}
+	var idx: int = text.find("{")
+	if idx >= 0:
+		var parsed: Variant = JSON.parse_string(text.substr(idx))
+		if parsed is Dictionary:
+			result = parsed
+	if result.is_empty():
+		result = {"ok": false, "exit": 1, "kind": kind, "log": text,
+				"hex": "", "hex_exists": false,
+				"error": "云端编译客户端未返回 JSON（python 退出码 %d）" % exit_code}
+	return result
 
 
 ## 项目类型 -> Toolchain 项目模板路径（与 app_state.gd 的 project_dst_for_kind 一致）
@@ -925,6 +968,9 @@ build 参数:
   --config <json文件>                配置 JSON 文件路径（先生成再编译）
   --code <c文件>                     直接编译已有的 C 代码文件
   --project <.pieproj文件>           从项目文件编译（优先用已保存的代码）
+  --remote <编译服务地址>            走云端编译（服务器端 Keil 编译，本机无需装 Keil）
+                                     例如 --remote http://127.0.0.1:8000
+                                     可用 PIEBLOCK_PYTHON 指定 python 解释器
 
 schema 参数:
   --kind <infantry|engineer|debug>   项目类型

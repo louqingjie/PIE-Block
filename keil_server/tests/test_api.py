@@ -98,3 +98,23 @@ def test_compile_rejects_non_zip(client, tmp_path):
 
 def test_task_not_found(client):
     assert client.get("/tasks/does-not-exist").status_code == 404
+
+
+def test_auth_enforced_when_key_set(client, monkeypatch):
+    """设置 KEIL_API_KEY 后，除 /health 外必须带正确 key；否则 401。"""
+    from keil_server import config
+
+    monkeypatch.setattr(config, "API_KEY", "secret123")
+    # 无 key -> 401
+    assert client.get("/tasks").status_code == 401
+    # 错误 key -> 401
+    assert client.get("/tasks", headers={"Authorization": "Bearer wrong"}).status_code == 401
+    # 正确 Bearer key -> 200
+    assert client.get("/tasks", headers={"Authorization": "Bearer secret123"}).status_code == 200
+    # X-API-Key 头同样生效
+    assert client.get("/tasks", headers={"X-API-Key": "secret123"}).status_code == 200
+    # /health 保持开放（存活探测）
+    assert client.get("/health").status_code == 200
+    # 未设置 key 时开放模式
+    monkeypatch.setattr(config, "API_KEY", "")
+    assert client.get("/tasks").status_code == 200
