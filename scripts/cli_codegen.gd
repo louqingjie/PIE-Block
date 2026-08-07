@@ -507,6 +507,7 @@ func _flatten_infantry_config(config: Dictionary) -> Dictionary:
 	# 按键映射
 	var keyset: String = "SecondRow/TabContainer/Infantry/KeySetting"
 	flat["arrow_key"] = str(_config_val(config, keyset + "/ArrowKey/OptionButton"))
+	flat["feed_mode"] = str(_config_val(config, keyset + "/FeedMode/OptionButton"))
 	flat["trigger_key"] = str(_config_val(config, keyset + "/Trigger/OptionButton"))
 	flat["trigger_speed"] = str(_config_val(config, keyset + "/Trigger/Speed"))
 	flat["trigger_time"] = str(_config_val(config, keyset + "/Trigger/Time"))
@@ -745,7 +746,9 @@ func _infantry_schema() -> Dictionary:
 		"yaw_mid_offset": {"type": "string", "description": "Yaw 归中角偏移 (-90~90)", "default": "0"},
 		"pitch_mid_offset": {"type": "string", "description": "Pitch 归中角偏移 (-90~90)", "default": "0"},
 		"arrow_key": {"type": "string", "enum": ["移动", "冲刺", "其他"], "default": "移动"},
-		"trigger_key": {"type": "string", "description": "扳机键（单发拨弹触发键）"},
+		"feed_mode": {"type": "string", "enum": ["目视闭环", "阻塞开环"], "default": "阻塞开环",
+			"description": "拨弹模式：目视闭环=按住持续拨弹松开即停（不阻塞）；阻塞开环=按一下拨弹固定时长（阻塞主循环）"},
+		"trigger_key": {"type": "string", "description": "扳机键（拨弹触发键）"},
 		"trigger_speed": {"type": "string", "description": "拨弹速度 (0-10000)"},
 		"trigger_time": {"type": "string", "description": "拨弹时间 ms (0-65535)"},
 		"booster_key": {"type": "string", "description": "摩擦轮开关键"},

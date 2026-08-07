@@ -1446,6 +1446,24 @@ popup/item_1/id = 1
 popup/item_2/text = "其他"
 popup/item_2/id = 2
 
+[node name="FeedMode" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/KeySetting" unique_id=1743914928]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/KeySetting/FeedMode" unique_id=1548212911]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "拨弹模式"
+
+[node name="OptionButton" type="OptionButton" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/KeySetting/FeedMode" unique_id=1199125369]
+layout_mode = 2
+size_flags_horizontal = 10
+selected = 0
+item_count = 2
+popup/item_0/text = "阻塞开环"
+popup/item_0/id = 0
+popup/item_1/text = "目视闭环"
+popup/item_1/id = 1
+
 [node name="Trigger" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/KeySetting" unique_id=571482090]
 layout_mode = 2
 

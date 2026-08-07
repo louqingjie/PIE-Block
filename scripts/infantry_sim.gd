@@ -116,6 +116,10 @@ const BOOSTER_DUTY_MAX: int = 1100
 const BOOSTER_STEP: int = 100
 ## 一帧最多补的步数，掉帧时不至于一次跳很远
 const MAX_STEPS_PER_FRAME: int = 20
+## 目视闭环模式下按住扳机时的出弹间隔（ms）。
+## 真机上拨弹电机持续转动会连续推弹，仿真按固定节奏出弹，
+## 好让操作手练习「目视到一发弹出膛就松手」的手感。非实测标定，仅仿真观感。
+const FEED_INTERVAL_MS: float = 100.0
 
 # ------------------------------------------------------------------ 音效
 ## 摩擦轮音调直接等于占空比数值（500 duty -> 500Hz，1100 duty -> 1100Hz），
@@ -163,6 +167,10 @@ var _wheel_dirs: Array = [1, 1, 1, 1]
 var _trigger_key_id: String = "R"
 var _booster_key_id: String = "A"
 var _trigger_time_ms: int = 250
+## 拨弹模式：true=目视闭环（按住持续拨弹，松开即停，不阻塞），false=阻塞开环（单发）
+var _visual_feed: bool = false
+## 目视闭环模式下的出弹节流累加器（ms），按住扳机期间累积
+var _feed_tick_ms: float = 0.0
 
 # ------------------------------------------------------------------ 运行状态（对应 C 侧同名变量）
 var _mode: int = Mode.OPERATE
@@ -354,6 +362,7 @@ func _apply_config() -> void:
 	_ultra_speed = clampi(_cfg_int("sprint_speed", 8000), 0, 10000)
 	_deadzone = clampi(_cfg_int("deadzone", 10), 0, 2047)
 	_trigger_time_ms = clampi(_cfg_int("trigger_time", 250), 0, 65535)
+	_visual_feed = str(_cfg.get("feed_mode", "阻塞开环")) == "目视闭环"
 	_sprint_enabled = bool(_cfg.get("sprint_enabled", false))
 	_zero_enabled = bool(_cfg.get("zero_enabled", false))
 	_arrow_key = str(_cfg.get("arrow_key", "移动"))
@@ -395,6 +404,7 @@ func _reset_control_state() -> void:
 	_base_speed = 0
 	_turn_speed = 0
 	_block_ms = 0.0
+	_feed_tick_ms = 0.0
 	_sim_accum = 0.0
 	_last_trigger_key = 0
 	_last_booster_key = 0
@@ -419,11 +429,12 @@ func _dir_to_int(text: String) -> int:
 func _update_config_label() -> void:
 	var label: Node = get_node_or_null(P_CONFIG_LABEL)
 	if label is Label:
-		label.text = "Yaw %s ｜ Pitch %s ｜ 速度 %d / 冲刺 %d ｜ 扳机 %s ｜ 摩擦轮 %s" % [
+		label.text = "Yaw %s ｜ Pitch %s ｜ 速度 %d / 冲刺 %d ｜ 拨弹 %s ｜ 摩擦轮 %s" % [
 			"舵机" if _yaw_is_servo else "电机",
 			"舵机" if _pitch_is_servo else "电机",
 			_max_speed, _ultra_speed,
-			str(_cfg.get("trigger_key", "R")), str(_cfg.get("booster_key", "A"))]
+			"目视闭环" if _visual_feed else "阻塞开环",
+			str(_cfg.get("booster_key", "A"))]
 
 
 # ------------------------------------------------------------------ 材质
@@ -717,14 +728,26 @@ func _step_once() -> void:
 	_duty_motor[4] = clampi(_duty_motor[4], 0, 10000)
 	if _mode == Mode.OPERATE:
 		_limit_servo()
-	# 扳机键单发拨弹：上升沿触发，转动 trigger_time 后停转，期间阻塞主循环
-	if _trigger_key == 1 and _last_trigger_key == 0:
-		_duty_motor[4] = clampi(_cfg_int("trigger_speed", 10000), 0, 10000)
-		_fire()
-		_block_ms = float(_trigger_time_ms)
+	# 拨弹（两种模式与生成的 C 一一对应）：
+	# 目视闭环：按住持续拨弹、松开即停，不阻塞主循环；按住期间按 FEED_INTERVAL_MS 连续出弹
+	# 阻塞开环：扳机上升沿触发一发，转动 trigger_time 后停转，期间阻塞主循环
+	if _visual_feed:
+		_duty_motor[4] = clampi(_cfg_int("trigger_speed", 10000), 0, 10000) \
+			if _trigger_key == 1 else 0
 		_last_trigger_key = _trigger_key
-		return
-	_last_trigger_key = _trigger_key
+		if _trigger_key == 1:
+			_feed_tick_ms += SIM_STEP_MS
+			while _feed_tick_ms >= FEED_INTERVAL_MS:
+				_feed_tick_ms -= FEED_INTERVAL_MS
+				_fire()
+	else:
+		if _trigger_key == 1 and _last_trigger_key == 0:
+			_duty_motor[4] = clampi(_cfg_int("trigger_speed", 10000), 0, 10000)
+			_fire()
+			_block_ms = float(_trigger_time_ms)
+			_last_trigger_key = _trigger_key
+			return
+		_last_trigger_key = _trigger_key
 	_ramp_booster()
 	_integrate_chassis()
 	_sync_gimbal_from_duty()
@@ -1502,10 +1525,22 @@ func _build_operate_params(parent: Node) -> void:
 	_add_note(parent, _keymap_text())
 	_add_section(parent, "与真机的对应关系")
 	_add_note(parent, "本模式每 10ms 走一趟，逐字对应生成的 C 主循环："
-		+"读输入 → 底盘差速 → 云台积分 → 摩擦轮开关 → 限幅 → 单发拨弹 → 摩擦轮渐变。"
-		+"\n单发拨弹期间 C 端在 Ms_Delay 里阻塞主循环 %d ms，仿真里同样会整车停摆，"
-			% _trigger_time_ms
-		+"这就是真机连发时手感发顿的原因。")
+		+"读输入 → 底盘差速 → 云台积分 → 摩擦轮开关 → 限幅 → 拨弹 → 摩擦轮渐变。"
+		+ _feed_mode_note())
+	_add_note(parent, "拨弹模式：%s。"
+		% str(_cfg.get("feed_mode", "阻塞开环"))
+		+ "目视闭环按住扳机持续拨弹、松开即停，出弹间隔 %.0f ms（仅仿真观感，非实测）；"
+			% FEED_INTERVAL_MS
+		+ "阻塞开环按一下拨弹固定时长。真机手感请以实际机构为准。")
+
+
+## 拨弹模式对应的「与真机对应关系」补充说明
+func _feed_mode_note() -> String:
+	if _visual_feed:
+		return "目视闭环不阻塞主循环，按住期间整车照常响应。"
+	return ("单发拨弹期间 C 端在 Ms_Delay 里阻塞主循环 %d ms，仿真里同样会整车停摆，"
+		% _trigger_time_ms
+		+ "这就是真机连发时手感发顿的原因。")
 
 
 func _keymap_text() -> String:
@@ -1514,7 +1549,9 @@ func _keymap_text() -> String:
 		"右摇杆（云台）：手柄右摇杆 / 键盘 IJKL",
 		"A/B/C/D：手柄 A/B/X/Y / 键盘 1/2/3/4",
 		"方向键：手柄十字键 / 键盘方向键（当前作用：%s）" % _arrow_key,
-		"扳机 %s：手柄 RT / 鼠标左键" % str(_cfg.get("trigger_key", "R")),
+		"扳机 %s：手柄 RT / 鼠标左键（拨弹：%s）" % [
+			str(_cfg.get("trigger_key", "R")),
+			"按住持续拨弹，松开即停" if _visual_feed else "按一下拨弹固定时长"],
 		"按下左摇杆（冲刺）：手柄按下左摇杆 / 键盘 Shift%s"
 			% ("" if _sprint_enabled else "（配置未勾选冲刺，无效）"),
 		"按下右摇杆（云台归中）：手柄按下右摇杆 / 键盘 Z%s"
@@ -1577,6 +1614,9 @@ func _update_status() -> void:
 	if _block_ms > 0.0:
 		lines.append("⚠ 单发拨弹中：主循环被 Ms_Delay 阻塞，剩余 %.0f ms（真机同样停摆）"
 			% _block_ms)
+	elif _visual_feed and _trigger_key == 1:
+		lines.append("目视拨弹中：按住扳机持续拨弹，出弹间隔 %.0f ms，松开即停"
+			% FEED_INTERVAL_MS)
 	label.text = "\n".join(lines)
 
 

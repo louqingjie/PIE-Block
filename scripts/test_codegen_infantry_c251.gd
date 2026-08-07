@@ -52,5 +52,30 @@ func _initialize() -> void:
 		printerr(str(result.get("log", "步兵 C251 编译失败")))
 		quit(1)
 		return
-	print("=== C251 步兵 IAP 编译: 通过 ===")
+	print("=== C251 步兵 阻塞开环拨弹 编译: 通过 ===")
+	# —— 目视闭环拨弹模式（按住持续拨弹、松开即停，不阻塞）——
+	var vcfg: Dictionary = {"feed_mode": "目视闭环"}
+	var vcode: String = CG.new().generate(vcfg)
+	if not vcode.contains("dutyOfMotor[4] = triggerKeyValue ? boosterDutyOfFeed : 0;"):
+		printerr("目视闭环模式缺少「按住持续拨弹」代码")
+		quit(1)
+		return
+	if vcode.contains("boosterFeedDelayMs"):
+		printerr("目视闭环模式不应生成拨弹时间常量 boosterFeedDelayMs")
+		quit(1)
+		return
+	if vcode.contains("Ms_Delay(boosterFeedDelayMs)"):
+		printerr("目视闭环模式不应有阻塞延时")
+		quit(1)
+		return
+	if not code.contains("Ms_Delay(boosterFeedDelayMs)"):
+		printerr("阻塞开环模式（默认）必须保留单发阻塞延时")
+		quit(1)
+		return
+	var vresult: Dictionary = tc.build_project(TC.PROJECT_DST, vcode)
+	if not bool(vresult.get("ok", false)):
+		printerr(str(vresult.get("log", "目视闭环 C251 编译失败")))
+		quit(1)
+		return
+	print("=== C251 步兵 目视闭环拨弹 编译: 通过 ===")
 	quit(0)

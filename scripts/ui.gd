@@ -17,7 +17,7 @@ extends Control
 ##   - 冲刺速度 < 普通速度                          -> Warn
 ##   - 同侧两轮共用 IO 但方向不同                   -> Warn
 ##   - 扳机键/开关键占用 B/C（摩擦轮档位微调）      -> Warn
-##   - 拨弹时间 > 1000ms（阻塞主循环）              -> Warn
+##   - 拨弹时间 > 1000ms（阻塞主循环）              -> Warn（仅「阻塞开环」模式）
 
 
 # ------------------------------------------------------------------ 节点路径
@@ -58,6 +58,8 @@ const KEYSET: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/Sec
 const P_ZERO_CB: NodePath = KEYSET + "/Zero/CheckBox"
 # 方向键用途选择（移动 / 冲刺 / 其他），是 OptionButton 而非 CheckBox
 const P_ARROW_KEY: NodePath = KEYSET + "/ArrowKey/OptionButton"
+# 拨弹模式选择（阻塞开环 / 目视闭环），目视闭环时隐藏拨弹时间输入框
+const P_FEED_MODE: NodePath = KEYSET + "/FeedMode/OptionButton"
 const P_TRIGGER: NodePath = KEYSET + "/Trigger/OptionButton"
 const P_TRIGGER_SPEED: NodePath = KEYSET + "/Trigger/Speed"
 const P_TRIGGER_TIME: NodePath = KEYSET + "/Trigger/Time"
@@ -356,7 +358,7 @@ func _connect_signals() -> void:
 			P_FRICTION_L_DIR, P_FRICTION_R_DIR,
 			P_YAW_DRIVE, P_YAW_IO, P_YAW_DIR,
 			P_PITCH_DRIVE, P_PITCH_IO, P_PITCH_DIR,
-			P_TRIGGER, P_BOOSTER_KEY]:
+			P_TRIGGER, P_BOOSTER_KEY, P_FEED_MODE]:
 		var node2: Node = get_node_or_null(p)
 		if node2 is OptionButton:
 			node2.item_selected.connect(_run_check)
@@ -1367,6 +1369,8 @@ func _run_check(_a = null, _b = null) -> void:
 	# 批量回填配置期间不检查：上百个控件的信号会触发上百次全量检查 + 代码生成
 	if _loading:
 		return
+	# 拨弹模式切换：目视闭环不需要拨弹时间，隐藏输入框（只影响可见性，不影响门控）
+	_update_feed_mode_ui()
 	# 根据当前 Tab 决定执行哪些检查
 	var tab_container: Node = get_node_or_null(P_TAB_CONTAINER)
 	var current_tab: int = tab_container.current_tab if tab_container is TabContainer else 0
@@ -1433,6 +1437,16 @@ func _update_ik_summary() -> void:
 		label.text += "\n主控板当前记录为仿真固件，不能直接驱动机器人"
 
 
+## 拨弹模式联动：目视闭环按住持续拨弹，不需要「时间(ms)」参数，隐藏输入框。
+## 只改可见性，不改 editable，避免与 _set_node_tree_enabled 的门控逻辑相互干扰。
+func _update_feed_mode_ui() -> void:
+	var time_edit: Node = get_node_or_null(P_TRIGGER_TIME)
+	if not time_edit is CanvasItem:
+		return
+	var mode: String = _get_option_text(P_FEED_MODE)
+	time_edit.visible = mode != "目视闭环"
+
+
 # ------------------------------------------------------------------ 工具
 func _get_line_text(path: NodePath) -> String:
 	var node: Node = get_node_or_null(path)
@@ -1483,6 +1497,7 @@ func _collect_config() -> Dictionary:
 	# --- 按键映射 ---
 	var arrow: Node = get_node_or_null(P_ARROW_KEY)
 	cfg["arrow_key"] = _option_text(arrow) if arrow is OptionButton else "移动"
+	cfg["feed_mode"] = _get_option_text(P_FEED_MODE)
 	cfg["trigger_key"] = _get_option_text(P_TRIGGER)
 	cfg["trigger_speed"] = _get_line_text(P_TRIGGER_SPEED).strip_edges()
 	cfg["trigger_time"] = _get_line_text(P_TRIGGER_TIME).strip_edges()

@@ -241,6 +241,7 @@ godot --headless --no-header --path . --script scripts/cli_codegen.gd -- help
 | `friction_l_dir` / `friction_r_dir` | 摩擦轮方向（**P64/P66 固定用于摩擦轮**） | 正向 |
 | `yaw_drive` / `pitch_drive` | 云台驱动类型（舵机/电机） | 舵机 |
 | `yaw_io` / `pitch_io` | 云台 IO（扩展板 P60-P77 或主控板 MP74/MP03） | |
+| `feed_mode` | 拨弹模式：`目视闭环`=按住持续拨弹松开即停（不阻塞）；`阻塞开环`=按一下拨弹固定时长（阻塞主循环） | 阻塞开环 |
 | `trigger_key` / `booster_key` | 扳机键 / 摩擦轮开关键 | |
 
 ### engineer（工程）

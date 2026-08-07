@@ -79,7 +79,10 @@ cloudflared 配置好后，用下面命令自动把 `build.pieblock.asia` 的 CN
 3. 等 2 秒后启动 `cloudflared tunnel run`
 4. 打印访问地址 `https://build.pieblock.asia/health`
 
-> 想开机自启：把 `start_public.ps1` 的快捷方式放进 `Win+R → shell:startup`。
+> 想开机自启 + 崩溃自动重启 + 日志监控：用 `keil_server/deploy/` 下的 NSSM 托管脚本
+> （`install_nssm.ps1` + `install_scheduled_tasks.ps1`），
+> 比 `shell:startup` 可靠得多，见 `keil_server/deploy/README.md`。
+> 下面的前台一键启动仅用于临时验证。
 
 ---
 

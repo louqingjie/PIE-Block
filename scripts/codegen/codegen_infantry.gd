@@ -89,6 +89,10 @@ func generate(cfg: Dictionary) -> String:
 	# --- 按键映射 ---
 	var trigger_key_offset: String = _key_name_to_offset(cfg.get("trigger_key", "R"))
 	var booster_key_offset: String = _key_name_to_offset(cfg.get("booster_key", "A"))
+	# --- 拨弹模式 ---
+	# 目视闭环：按住扳机持续拨弹、松开即停（不阻塞主循环）
+	# 阻塞开环：按一下扳机，拨弹电机转动 trigger_time ms 后停（阻塞主循环）
+	var visual_feed: bool = str(cfg.get("feed_mode", "阻塞开环")) == "目视闭环"
 
 	# --- IO 槽位映射 ---
 	# 将功能角色映射到拓展板槽位（0-7 对应 p60,p62,p64,p66,p74,p75,p76,p77）
@@ -280,7 +284,8 @@ func generate(cfg: Dictionary) -> String:
 	code += "uint16_t maxDutyOfBooster = 1100;               // 摩擦轮最大占空比（指南上限，不得提高）\n"
 	code += "uint16_t minDutyOfBooster = 500;                // 摩擦轮最低有效占空比\n"
 	code += "uint16_t boosterDutyOfFeed = %s;             // 拨弹电机单发转动占空比\n" % trig_spd
-	code += "uint16_t boosterFeedDelayMs = %s;              // 拨弹电机单发转动时长(ms)\n" % trig_time
+	if not visual_feed:
+		code += "uint16_t boosterFeedDelayMs = %s;              // 拨弹电机单发转动时长(ms)\n" % trig_time
 	# 摇杆读数（±2047）乘以该系数得到每周期的占空比增量。
 	# 摇杆推到底时每个主循环周期转过 SERVO_RATE_DEG_PER_LOOP 度。
 	var servo_rate: float = gp["rate"]
@@ -398,19 +403,26 @@ func generate(cfg: Dictionary) -> String:
 		code += "        // Pitch 限幅 %d~%d（归中 %+d° ±%d°，已收敛到舵机行程内）\n" \
 			% [pitch_lo, pitch_hi, pitch_mid_deg, servo_swing_deg]
 		code += "        LIMIT_VALUE(floatDutyOfServo[1], %d, %d);\n" % [pitch_lo, pitch_hi]
-	# 单发拨弹：使用 triggerKeyValue 替代 valueOfRKey
-	code += "        // 扳机键单发拨弹：上升沿触发，拨弹电机转动 boosterFeedDelayMs 后停转，期间阻塞主线程\n"
-	code += "        if (triggerKeyValue && !lastTriggerKeyValue)\n"
-	code += "        {\n"
-	code += "            dutyOfMotor[4] = boosterDutyOfFeed;\n"
-	code += "            // 注意：此处保持 dutyOfBooster 不变，不能跳变到目标值，\n"
-	code += "            // 否则会违反摩擦轮占空比渐变要求\n"
-	code += "            Main_Countrol(dutyOfMotor, dutyOfServo, dutyOfBooster);\n"
-	code += "            Ms_Delay(boosterFeedDelayMs);\n"
-	code += "            dutyOfMotor[4] = 0;\n"
-	code += "            Main_Countrol(dutyOfMotor, dutyOfServo, dutyOfBooster);\n"
-	code += "        }\n"
-	code += "        lastTriggerKeyValue = triggerKeyValue;\n\n"
+	# 拨弹：两种模式二选一
+	# 目视闭环：按住扳机持续拨弹，松开即停；不阻塞主循环，操作手目视到出弹后松手
+	# 阻塞开环：按一下扳机，拨弹电机转动 boosterFeedDelayMs 后停，期间阻塞主线程
+	if visual_feed:
+		code += "        // 目视闭环拨弹：按住扳机键持续拨弹，松开即停（不阻塞主循环）\n"
+		code += "        dutyOfMotor[4] = triggerKeyValue ? boosterDutyOfFeed : 0;\n"
+		code += "        lastTriggerKeyValue = triggerKeyValue;\n\n"
+	else:
+		code += "        // 扳机键单发拨弹：上升沿触发，拨弹电机转动 boosterFeedDelayMs 后停转，期间阻塞主线程\n"
+		code += "        if (triggerKeyValue && !lastTriggerKeyValue)\n"
+		code += "        {\n"
+		code += "            dutyOfMotor[4] = boosterDutyOfFeed;\n"
+		code += "            // 注意：此处保持 dutyOfBooster 不变，不能跳变到目标值，\n"
+		code += "            // 否则会违反摩擦轮占空比渐变要求\n"
+		code += "            Main_Countrol(dutyOfMotor, dutyOfServo, dutyOfBooster);\n"
+		code += "            Ms_Delay(boosterFeedDelayMs);\n"
+		code += "            dutyOfMotor[4] = 0;\n"
+		code += "            Main_Countrol(dutyOfMotor, dutyOfServo, dutyOfBooster);\n"
+		code += "        }\n"
+		code += "        lastTriggerKeyValue = triggerKeyValue;\n\n"
 	code += "        // 摩擦轮占空比平滑变化\n"
 	code += "        // 主循环周期 10ms，每周期变化 1 => 每秒 100 占空比，\n"
 	code += "        // 符合《RM电控指南》「每秒增加/减少 100 占空比」的硬性要求，不得提高步长\n"

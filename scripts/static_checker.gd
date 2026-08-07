@@ -133,9 +133,13 @@ static func _check_speeds(issues: Array, cfg: Dictionary) -> void:
 				"msg": "冲刺速度(%d)小于普通速度(%d)，冲刺将无法生效" % [int(s_val), int(n_val)]})
 
 
-# ------------------------------------------------------------------ 规则：扳机（单发拨弹）参数
+# ------------------------------------------------------------------ 规则：扳机（拨弹）参数
 static func _check_trigger_params(issues: Array, cfg: Dictionary) -> void:
 	_check_int_field(issues, str(cfg.get("trigger_speed", "")), "拨弹速度", 0, 10000)
+	# 目视闭环（按住持续拨弹）不生成时间参数，拨弹时间只对阻塞开环（单发）有效
+	var visual_feed: bool = str(cfg.get("feed_mode", "阻塞开环")) == "目视闭环"
+	if visual_feed:
+		return
 	# 生成的代码用 Ms_Delay(boosterFeedDelayMs)，参数是 uint16_t
 	_check_int_field(issues, str(cfg.get("trigger_time", "")), "拨弹时间(ms)", 0, 65535)
 	# 单发期间会阻塞主循环，时间过长会让整车失控

@@ -221,6 +221,10 @@ python -m keil_server.keys remove alice       # 吊销
 - 给每个用户分配独立 key（见「用户管理」），任务会记录归属用户，可单独吊销
 - `pip install -r keil_server/requirements.txt`，用 uvicorn 常驻
   （systemd/NSSM 托管），前端加 Nginx 反向代理 + HTTPS（配 `pieblock.asia` 域名证书）
+- **Windows 生产部署：用 `deploy/` 下的运维脚本**（`install_nssm.ps1` 把
+  keil_server 与 cloudflared 托管为 NSSM 服务：崩溃自动重启 + 开机自启 + 日志轮转；
+  `install_scheduled_tasks.ps1` 注册 30 秒健康监控与每日备份）。
+  详见 `keil_server/deploy/README.md`
 - 安全加固（按需）：
   - 上传/解压限制默认已开（`UPLOAD_MAX_SIZE` / `EXTRACT_MAX_SIZE` / `EXTRACT_MAX_FILES`）
   - 多用户 API Key 鉴权（管理员 `KEIL_API_KEY` + 用户表；推荐放在 HTTPS 之后，Key 不落明文）

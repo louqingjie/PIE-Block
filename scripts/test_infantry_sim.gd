@@ -53,6 +53,7 @@ func _initialize() -> void:
 	await _test_friction_color(packed)
 	await _test_audio(packed)
 	await _test_fire(packed)
+	await _test_visual_feed(packed)
 	await _test_bullet_visual(packed)
 	await _test_chassis(packed)
 	await _test_turn_direction(packed)
@@ -418,6 +419,50 @@ func _test_fire(packed: PackedScene) -> void:
 	sim._duty_booster = 0
 	_check("摩擦轮未启动时只掉弹", absf(sim._muzzle_speed() - 2.0) < 0.01,
 		"实际 %.2f" % sim._muzzle_speed())
+	# 默认（无 feed_mode 字段）必须是阻塞开环，旧存档行为不变
+	_check("默认拨弹模式为阻塞开环", not sim._visual_feed)
+	_despawn(sim)
+
+
+## 目视闭环模式：按住持续拨弹、松开即停，不阻塞主循环，按住期间按固定间隔连续出弹
+func _test_visual_feed(packed: PackedScene) -> void:
+	var cfg: Dictionary = _cfg("舵机", "舵机")
+	cfg["feed_mode"] = "目视闭环"
+	var sim: Node = await _spawn(packed, cfg)
+	_check("目视闭环模式被解析", sim._visual_feed)
+	# 按住：拨弹电机占空比 = 拨弹速度，且不阻塞主循环
+	var before: int = sim._bullets.size()
+	sim._trigger_key = 1
+	sim._last_trigger_key = 0
+	sim._feed_tick_ms = 0.0
+	sim._step_once()
+	_check("目视闭环按住时拨弹电机占空比 = 拨弹速度",
+		sim._duty_motor[4] == 10000, "duty=%d" % sim._duty_motor[4])
+	_check("目视闭环不阻塞主循环", sim._block_ms == 0.0, "block=%.1f" % sim._block_ms)
+	# 按住期间主循环照常推进：云台跟随摇杆
+	var servo_before: int = sim._duty_servo[0]
+	sim._roker[1][0] = 2047
+	sim._step_once()
+	sim._roker[1][0] = 0
+	_check("按住期间云台照常响应摇杆", sim._duty_servo[0] != servo_before,
+		"%d -> %d" % [servo_before, sim._duty_servo[0]])
+	# 按住 200ms（20 步）：应累计出弹（间隔 100ms，含最后一发不足整间隔的不出）
+	for _i in range(19):
+		sim._step_once()
+	var fired: int = sim._bullets.size() - before
+	_check("按住 200ms 出弹约 2 发（间隔 %.0f ms）" % sim.FEED_INTERVAL_MS,
+		fired == 2, "实际 %d 发" % fired)
+	_check("拨弹电机持续转动中", sim._duty_motor[4] == 10000,
+		"duty=%d" % sim._duty_motor[4])
+	# 松开：立即停转，不再出弹
+	var before_release: int = sim._bullets.size()
+	sim._trigger_key = 0
+	sim._step_once()
+	_check("目视闭环松开后拨弹电机停转", sim._duty_motor[4] == 0,
+		"duty=%d" % sim._duty_motor[4])
+	_check("目视闭环松开后不再出弹", sim._bullets.size() == before_release,
+		"%d -> %d" % [before_release, sim._bullets.size()])
+	_check("目视闭环松开后不阻塞", sim._block_ms == 0.0, "block=%.1f" % sim._block_ms)
 	_despawn(sim)
 
 

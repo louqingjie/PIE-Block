@@ -39,6 +39,15 @@
       "description": "摇杆死区 (0-2047)",
       "type": "string"
     },
+    "feed_mode": {
+      "default": "阻塞开环",
+      "description": "拨弹模式：目视闭环=按住持续拨弹松开即停（不阻塞）；阻塞开环=按一下拨弹固定时长（阻塞主循环）",
+      "enum": [
+        "目视闭环",
+        "阻塞开环"
+      ],
+      "type": "string"
+    },
     "friction_l_dir": {
       "default": "正向",
       "description": "左摩擦轮方向（P64 固定）",
@@ -150,7 +159,7 @@
       "type": "string"
     },
     "trigger_key": {
-      "description": "扳机键（单发拨弹触发键）",
+      "description": "扳机键（拨弹触发键）",
       "type": "string"
     },
     "trigger_speed": {
