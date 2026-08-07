@@ -335,31 +335,6 @@ func generate(cfg: Dictionary) -> String:
 	code += "                           uint16_t data_p66, uint16_t data_p74, uint16_t data_p75, uint16_t data_p76,\n"
 	code += "                           uint16_t data_p77);\n\n"
 
-	# ISP 自烧录监听代码
-	code += _gen_isp_monitor()
-	# 烧录模式（P06+P07 进入蓝牙 OTA）：共享代码 + 构型停机/重初始化函数
-	code += _gen_burn_mode_shared()
-	code += "void burnSafeStop(void)\n{\n"
-	code += "    uint8_t k;\n"
-	code += "    for (k = 0; k < %d; k++)\n" % motor_array_size
-	code += "        dutyOfMotor[k] = 0;\n"
-	if servo_count > 0:
-		code += "    for (k = 0; k < %d; k++)\n" % servo_count
-		code += "    {\n"
-		code += "        floatDutyOfServo[k] = %d.0f;\n" % SERVO_DUTY_MID
-		code += "        dutyOfServo[k] = %d;\n" % SERVO_DUTY_MID
-		code += "    }\n"
-	for si in range(2):
-		if use_main_servo[si]:
-			code += "    floatDutyOfMainServo%d = %d.0f;\n" % [si, SERVO_DUTY_MID]
-			code += "    dutyOfMainServo%d = %d;\n" % [si, SERVO_DUTY_MID]
-	code += "    Main_Countrol(dutyOfMotor, dutyOfServo);\n"
-	code += "}\n\n"
-	code += "void burnExtReinit(void)\n{\n"
-	code += "    ExpansionBoradControl(Init_Order,\n"
-	code += "                          %s); // p60,p62,p64,p66,p74,p75,p76,p77\n" % init_str
-	code += "    Ms_Delay(20);\n"
-	code += "}\n\n"
 	code += CodeGenBase.REMOTE_CONTROL_INIT_CODE
 	# 初始化诊断工具（LED + 蜂鸣器）与 UART1 查询发送（修复 UART 死锁）
 	code += _gen_led_diag_tools()
@@ -372,9 +347,7 @@ func generate(cfg: Dictionary) -> String:
 	code += servo_init_code
 	code += "    while (1)\n"
 	code += "    {\n"
-	code += _gen_isp_check_call()
 	code += _gen_nrf_poll()
-	code += _gen_burn_mode_loop()
 	code += "        // 测试手柄连接状态\n"
 	code += "        if (RcKeyValueRead(KEY_OFFSET_UP))\n"
 	code += "            GPIO_Write_Bit(GPIO_P3, GPIO_Pin_7, 0);\n"
@@ -432,9 +405,8 @@ func generate(cfg: Dictionary) -> String:
 	code += "    StepDone(4);\n"
 	code += "    StepBegin(5);\n"
 	code += pwm_init_lines
-	code += _gen_burn_mode_init()
 	code += "    StepDone(5);\n"
-	code += _gen_init_done("burnBeep")
+	code += _gen_init_done("Beep")
 	code += "}\n\n"
 
 	# --- Read_Controller_Inputs ---

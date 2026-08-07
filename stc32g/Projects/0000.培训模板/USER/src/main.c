@@ -49,6 +49,9 @@ int pie_abs(int x)
 int _base_spd, _turn_spd, _wheel[4];
 uint8_t _rm_shoot_last_key = 0;
 
+/* 遥控器通道号，0~125（nrf24l01.c 通过 extern 引用） */
+uint8_t Channal = 36;
+
 /* ===== 主函数 ===== */
 void main(void)
 {

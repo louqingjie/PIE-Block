@@ -466,11 +466,6 @@ void bench_fmul(void)
     put_str("\r\n");
 }
 
-// ========================= ISP 自烧录监听 =========================
-// 按照 STC32G 技术手册官方示例：在 UART1 ISR 中直接匹配 @STCISP#
-char code STCISPCMD[] = "@STCISP#"; // 自定义下载命令
-uint8_t isp_cmd_index = 0;           // 命令匹配索引
-
 void main(void)
 {
     uint8_t nj;

@@ -61,7 +61,9 @@ const DOWNLOAD_LOG_NAME: String = "pie_block_download.log"
 ##     ?CO?MAIN（命令字常量）填进 0xFF1003，而那里是 interrupt 0
 ##     的中断入口（bootloader 蹦床 MAPISR 0003H 的转发目标）。
 ##     必须跳过整个中断向量表区（67 个入口 x 8 字节 = 536）。
-const PROJECT_VERSION: String = "proj_v6_mcu_ik_sim"
+## v7: 删除蓝牙烧录与自建 bootloader（UART 触发字 / IAP / DFU 全移除），
+##     固件走芯片 ROM bootloader 的 USB-HID 烧录（pie_block_hid.py）。
+const PROJECT_VERSION: String = "proj_v7_no_iap_hid"
 
 ## STC 烧录脚本路径（Python）
 const STCFLASH_SRC: String = "res://stc32g/toolchain/stcflash"
@@ -863,8 +865,8 @@ func list_serial_ports() -> PackedStringArray:
 ##   kind        我们归类出的类型：见下面 _classify_port
 ##   label       给用户看的一行说明
 ##
-## 为什么要带识别信息：蓝牙场景下电脑上往往同时存在多个虚拟串口
-## （蓝牙服务自带的、其他设备的），"取最后一个"这种猜法会连错。
+## 为什么要带识别信息：电脑上往往同时存在多个串口/虚拟串口
+## （其他设备、扩展坞等），"取最后一个"这种猜法会连错。
 func list_serial_ports_detailed() -> Array:
 	var py: String = find_python()
 	if py.is_empty():

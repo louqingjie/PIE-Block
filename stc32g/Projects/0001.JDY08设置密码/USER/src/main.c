@@ -48,29 +48,6 @@ static char code CMD_SET_PASS6[] = "AT+PASS000000"; /* 6 位密码回退（V3.x 
 static char code CMD_RST[] = "AT+RST";              /* JDY-08 原生复位指令 */
 static char code CMD_RESET[] = "AT+RESET";          /* HM-10 clone 固件的复位指令 */
 
-/* ==================== IAP 自升级下载触发（保留，勿删）====================
- * 收到 "@PIEIAP#" 命令字后置 DFU 标志并软复位到 bootloader，
- * 这样以后仍可通过 USB/蓝牙串口无线升级固件。 */
-char code STCISPCMD[] = "@PIEIAP#";  /* 下载触发命令字 */
-uint8_t isp_cmd_index = 0;           /* 命令匹配索引（ISR 更新） */
-volatile uint8_t iapDownloadReq = 0; /* 1 = 请求进入下载模式 */
-
-/* DFU 标志：放 XRAM 最后 4 字节，软复位不清零，bootloader 复位后据此
- * 停在下载模式而不跳 App。不动 flash，无擦写磨损。 */
-#define DFU_TAG 0x12abcd34
-long xdata DfuFlag _at_ 0x1ffc;
-
-/* isr.c 通过 extern 引用本函数（收到 "@PIEIAP#" 命令字时由 ISR 直接调用），
- * 所以这里不能是 static。 */
-void iapEnterDownload(void)
-{
-    EA = 0;            /* 关中断，避免复位序列被打断 */
-    DfuFlag = DFU_TAG; /* 告诉 bootloader 停在下载模式 */
-    IAP_CONTR = 0x20;  /* SWRST=1, SWBS=0 -> 复位到 bootloader */
-    while (1)
-        ; /* 等复位生效 */
-}
-
 /* ==================== UART1 收发工具 ==================== */
 
 /* 发送一串 code 段字符串 */
@@ -195,9 +172,6 @@ void main(void)
 
     while (1)
     {
-        if (iapDownloadReq)
-            iapEnterDownload();
-
         LedSet(LED_LIT); /* 亮 = 工作中 */
         found = 0;
 

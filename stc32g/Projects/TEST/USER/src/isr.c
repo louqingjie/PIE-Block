@@ -25,10 +25,6 @@
 
 #include "CNU_PIE_UART.h"
 #include "CNU_PIE_EXTI.h"
-extern char code STCISPCMD[];
-extern uint8_t isp_cmd_index;
-extern volatile uint8_t iapDownloadReq;
-extern void iapEnterDownload(void);
 void UART1_Isr() interrupt 4
 {
 	char dat;
@@ -41,26 +37,7 @@ void UART1_Isr() interrupt 4
 	{
 		UART1_CLEAR_RX_FLAG;
 		uart_receive[0]++;
-		// 下载触发字匹配（@PIEIAP#）。
-		// 匹配后立即置 DFU 标志并软复位；外设初始化可能阻塞，
-		// 不能依赖主循环处理下载请求。
 		dat = SBUF;
-		if (dat == STCISPCMD[isp_cmd_index])
-		{
-			isp_cmd_index++;
-			if (STCISPCMD[isp_cmd_index] == '\0')
-			{
-				isp_cmd_index = 0;
-				iapDownloadReq = 1;
-				iapEnterDownload(); // 初始化可能阻塞，必须在 ISR 内立即进入 bootloader
-			}
-		}
-		else
-		{
-			isp_cmd_index = 0;
-			if (dat == STCISPCMD[isp_cmd_index])
-				isp_cmd_index++;
-		}
 		// 接收数据寄存器为：SBUF
 	}
 }

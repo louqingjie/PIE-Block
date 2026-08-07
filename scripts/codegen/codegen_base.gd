@@ -5,79 +5,14 @@ extends RefCounted
 ## 定义所有代码生成器共享的接口与工具函数。
 ## 子类必须重写 generate()，根据配置字典生成完整的 main.c 代码字符串。
 
-## App 的 UART1 波特率。**三处必须一致**：
-##   本常量（写进生成的 C 代码）
-##   scripts/toolchain.gd 的 DEFAULT_APP_BAUD（GDScript 侧下载逻辑）
-##   stc32g/toolchain/stcflash/pie_block_iap.py 的 DEFAULT_APP_BAUD（Python 侧）
-## 不一致时触发字发不进 App，现象是"bootloader 没有响应"，离真因很远。
-## scripts/test_download_conn.gd 有断言守着这个约束。
+## App 的 UART1 波特率（拓展板通信，230400）。
+## 写入生成的 C 代码，与各构型 UART_Init 的配置一致。
 const APP_BAUD: int = 230400
-
-## App 烧录模式（下载模式）的 UART1 波特率：进入烧录模式后把 UART1 切到
-## 蓝牙口 P43/P44 并用这个波特率等上位机触发字。115200 是蓝牙 SPP 稳定上限。
-## 必须与 toolchain.gd 的 DEFAULT_APP_BAUD / DEFAULT_BOOT_BAUD 和
-## PIE_BOOTLOADER/USER/inc/config.h 的 BAUD 一致（下载链路三段统一）。
-const BURN_MODE_BAUD: int = 115200
 
 ## 生成 main.c 代码。子类必须重写此方法。
 func generate(cfg: Dictionary) -> String:
 	push_error("CodeGenBase.generate() 必须由子类重写")
 	return ""
-
-
-# ============================================================ IAP 自升级触发
-## 生成 IAP 下载触发代码（照 STC 官方用户自建 ISP 例程的 DFU 标志方案）。
-##
-## 与旧的 @STCISP# 方案的区别：
-##   旧方案写 IAP_CONTR=0x60（SWBS=1）复位进 ROM ISP，受 IRC trim 与
-##   2400 波特率握手的约束，实测很不稳定。
-##   现方案写 IAP_CONTR=0x20（只置 SWRST）复位到【用户程序】，
-##   也就是常驻在 0xFF0000 的自己的 bootloader，完全绕开 ROM ISP。
-##
-## 标志放在 XRAM 末尾 0x1FFC 而不是 flash：
-##   软复位不会清零 XRAM，所以 bootloader 复位后还能读到这个值。
-##   完全不动 flash，因此无擦写磨损、无掉电写坏风险，也省掉元数据扇区。
-##   地址与取值必须与 bootloader 的 dfu.c / dfu.h 完全一致。
-##
-## 收齐触发字后，UART ISR 直接调用 iapEnterDownload()。
-## 不能只置请求标志等主循环处理：remote_control_init() 等外设初始化可能
-## 永久等待未连接的硬件，主循环可能根本不会开始。主循环检查保留为兜底。
-##
-## 返回的字符串包含全局变量与函数定义，应放在 main() 之前。
-func _gen_isp_monitor() -> String:
-	var code: String = ""
-	code += "// ==================== IAP 自升级下载触发 ====================\n"
-	code += "// 收到命令字后置 DFU 标志，再软复位到 bootloader。\n"
-	code += "// DfuFlag 的地址与取值必须与 bootloader 的 dfu.c / dfu.h 一致。\n"
-	# 用 code 数组而非指针：避免部分 C251 链接/寻址把命令串放到错误空间
-	code += "char code STCISPCMD[] = \"@PIEIAP#\"; // 下载触发命令字\n"
-	code += "uint8_t isp_cmd_index = 0;           // 命令匹配索引（ISR 更新）\n"
-	code += "volatile uint8_t iapDownloadReq = 0; // 主循环兜底请求标志\n\n"
-
-	code += "// DFU 标志：放 XRAM 最后 4 字节，软复位不清零，bootloader 复位后据此\n"
-	code += "// 停在下载模式而不跳 App。不动 flash，无擦写磨损。\n"
-	code += "#define DFU_TAG 0x12abcd34\n"
-	code += "long xdata DfuFlag _at_ 0x1ffc;\n\n"
-
-	code += "// 置 DFU 标志并软复位到 bootloader。此函数不返回。\n"
-	code += "void iapEnterDownload(void)\n"
-	code += "{\n"
-	code += "    EA = 0;               // 关中断，避免复位序列被打断\n"
-	code += "    DfuFlag = DFU_TAG;    // 告诉 bootloader 停在下载模式\n"
-	code += "    IAP_CONTR = 0x20;     // SWRST=1, SWBS=0 -> 复位到用户程序(bootloader)\n"
-	code += "    while (1)\n"
-	code += "        ; // 等复位生效\n"
-	code += "}\n\n"
-	return code
-
-
-## 生成主循环开头的下载请求检查。
-## 必须放在主循环内，且要在任何阻塞操作之前，这样点下载后响应及时。
-func _gen_isp_check_call() -> String:
-	var code: String = ""
-	code += "        if (iapDownloadReq)\n"
-	code += "            iapEnterDownload(); // 不返回\n"
-	return code
 
 
 ## 不会永久阻塞启动流程的 NRF24L01 初始化函数。
@@ -138,7 +73,7 @@ func _gen_nrf_init_safe() -> String:
 
 
 ## 主循环开头的 NRF 轮询接收（P2.6 中断已关，靠这里读遥控器数据）。
-## 必须放在 _gen_isp_check_call() 之后、任何控制逻辑之前。
+## 必须放在主循环最开头、任何控制逻辑之前。
 func _gen_nrf_poll() -> String:
 	return ("        nrf_handler(); // 轮询 NRF 接收（P2.6 中断已关）\n")
 
@@ -195,145 +130,26 @@ func _gen_led_diag_init() -> String:
 
 ## 生成串口初始化，**必须放在所有外设初始化之前**。
 ##
-## 原因：UART1 中断是 OTA 的唯一入口。若串口在外设之后才初始化，
+## 原因：UART1 是扩展板控制的唯一通道。若串口在外设之后才初始化，
 ## 任何一个外设初始化卡住（裸板没接遥控器时 remote_control_init 就会卡、
-## 扩展板没接时 ExpansionBoradControl 也会等），芯片就彻底失联 ——
-## 既跑不到主循环的 iapDownloadReq 检查，也收不到触发字，
-## 只能靠 P32 拉低上电或重新用 STC-ISP 烧录来救。
+## 扩展板没接时 ExpansionBoradControl 也会等），扩展板控制就彻底失效。
 ##
-## 把串口提前不解决外设本身的问题，但保证了"永远能重新下载程序"这条底线。
+## 把串口提前不解决外设本身的问题，但保证了扩展板通信这条底线。
 ## 这对目标用户尤其重要：他们的接线错误是常态，不该因此就要拆机器。
 ##
-## 波特率必须与 toolchain.gd 的 DEFAULT_APP_BAUD、
-## pie_block_iap.py 的 DEFAULT_APP_BAUD 三处一致。
+## 波特率必须与扩展板固件约定一致（230400）。
 func _gen_uart_init_first() -> String:
 	var code: String = ""
-	code += "    // 串口必须最先初始化：它是 OTA 下载的唯一入口。\n"
+	code += "    // 串口必须最先初始化：UART1 是扩展板控制的唯一通道。\n"
 	code += "    // 放在外设之后的话，一旦某个外设没接好卡住初始化，\n"
-	code += "    // 就再也无法通过串口重新下载程序了。\n"
+	code += "    // 扩展板控制就彻底失效了。\n"
 	code += "    UART_Init(UART_1, UART1_RX_P30, UART1_TX_P31, %d, TIM1);\n" % APP_BAUD
-	return code
-
-
-# ============================================================ 烧录模式（蓝牙 OTA）
-## 生成"烧录模式"共享代码块（P06/P07/P42 任一进入、P33 蜂鸣器、UART1 切蓝牙口等 OTA）。
-##
-## 机制：正常运行时 UART1 在 P30/P31（拓展板 230400）；P06 或 P07 或 P42
-## 任一被按下后进入烧录模式，先把电机/摩擦轮安全停机，再把 UART1 切到
-## P43/P44（蓝牙）用 BURN_MODE_BAUD 等待上位机触发字 @PIEIAP#。触发字由
-## UART1 中断（isr.c）匹配后软复位进 bootloader 完成 OTA（bootloader 也在
-## P43/P44 用同一波特率）。烧录模式中先松开再按任一键退出，切回拓展板口
-## 并重新初始化拓展板。
-##
-## 按键极性自适应：三个按键用高阻输入（不配内部上下拉），上电时采样空闲
-## 电平，按下 = 电平与空闲不同（低/高有效均可，不依赖接线）；加连续 3 周期
-## 防抖，避免悬空引脚噪声误触发。
-##
-## 依赖各构型实现两个函数（本方法只声明）：
-##   void burnSafeStop(void)  —— 进入前安全停机（电机归零、摩擦轮逐步降）
-##   void burnExtReinit(void) —— 退出后重新初始化拓展板
-## 必须在 main() 之前、两个构型函数定义之前调用本方法（含前向声明）。
-func _gen_burn_mode_shared() -> String:
-	var code: String = ""
-	code += "// ==================== 烧录模式（P06/P07/P42 进入，蓝牙 OTA）====================\n"
-	code += "// 进入：P06 或 P07 或 P42 任一按下 -> 安全停机 -> UART1 切到 P43/P44(蓝牙) 等触发字。\n"
-	code += "// 上位机发 @PIEIAP# 后由 UART1 中断(见 isr.c)匹配并软复位进 bootloader 完成 OTA。\n"
-	code += "// 退出：烧录模式中先松开再按任一键 -> 切回拓展板口并重新初始化。\n"
-	code += "// 按键极性自适应：上电采样空闲电平，按下 = 电平与空闲不同（低/高有效均可）。\n"
-	code += "#define BURN_MODE_BAUD %d\n" % BURN_MODE_BAUD
-	code += "#define BURN_KEY_PORT_A GPIO_P0\n"
-	code += "#define BURN_KEY_PIN_6  GPIO_Pin_6 // P06\n"
-	code += "#define BURN_KEY_PIN_7  GPIO_Pin_7 // P07\n"
-	code += "#define BURN_KEY_PORT_B GPIO_P4\n"
-	code += "#define BURN_KEY_PIN_2  GPIO_Pin_2 // P42\n"
-	code += "uint8_t burnIdle06 = 1, burnIdle07 = 1, burnIdle42 = 1; // 上电采样空闲电平\n"
-	code += "#define BURN_KEY_DOWN() (GPIO_Read_Bit(BURN_KEY_PORT_A, BURN_KEY_PIN_6) != burnIdle06 \\\n"
-	code += "    || GPIO_Read_Bit(BURN_KEY_PORT_A, BURN_KEY_PIN_7) != burnIdle07 \\\n"
-	code += "    || GPIO_Read_Bit(BURN_KEY_PORT_B, BURN_KEY_PIN_2) != burnIdle42)\n"
-	code += "uint8_t burnMode = 0;    // 1 = 正在烧录模式\n"
-	code += "uint8_t burnKeyCnt = 0;  // 防抖计数（连续 3 周期才算按下）\n"
-	code += "uint8_t burnKeyPrev = 0; // 上一次稳定按下状态（边沿触发）\n\n"
-	code += "// 蜂鸣器（P33，PWM 驱动）播放一个音符\n"
-	code += "void burnBeep(uint16_t freq, uint16_t ms)\n{\n"
-	code += "    PWM_SET_Frequency(PWMB_CH3_P33, freq, 500);\n"
-	code += "    Ms_Delay(ms);\n"
-	code += "    PWM_SET_Frequency(PWMB_CH3_P33, freq, 0);\n}\n\n"
-	code += "// 构型相关：进入前安全停机 / 退出后重初始化拓展板\n"
-	code += "void burnSafeStop(void);\n"
-	code += "void burnExtReinit(void);\n\n"
-	code += "void burnEnter(void)\n{\n"
-	code += "    GPIO_Write_Bit(GPIO_P3, GPIO_Pin_4, 0); // 立即点亮 LED：检测到按下的即时反馈\n"
-	code += "    burnSafeStop();   // 电机/摩擦轮安全停机\n"
-	code += "    UART_Init(UART_1, UART1_RX_P43, UART1_TX_P44, BURN_MODE_BAUD, TIM1); // 切蓝牙口\n"
-	code += "    burnBeep(700, 120);\n"
-	code += "    burnBeep(1000, 120);\n"
-	code += "    burnBeep(1400, 240); // 进入提示音\n"
-	code += "    burnMode = 1;\n}\n\n"
-	code += "void burnExit(void)\n{\n"
-	code += "    UART_Init(UART_1, UART1_RX_P30, UART1_TX_P31, %d, TIM1); // 切回拓展板口\n" % APP_BAUD
-	code += "    burnExtReinit();   // 重新初始化拓展板\n"
-	code += "    GPIO_Write_Bit(GPIO_P3, GPIO_Pin_4, 1); // 板上 LED 熄灭\n"
-	code += "    burnBeep(600, 200); // 退出提示音\n"
-	code += "    burnMode = 0;\n}\n\n"
-	return code
-
-
-## 生成主循环里的烧录模式状态机（放在 _gen_isp_check_call() 之后、正常控制之前）。
-## 每周期调用一次；正常模式检测进入，烧录模式检测退出并跳过正常控制。
-func _gen_burn_mode_loop() -> String:
-	var code: String = ""
-	code += "        // ---- 烧录模式：P06/P07/P42 任一进入 / 再按退出（极性自适应+防抖）----\n"
-	code += "        if (BURN_KEY_DOWN())\n"
-	code += "        {\n"
-	code += "            if (burnKeyCnt < 3)\n"
-	code += "                burnKeyCnt++;\n"
-	code += "        }\n"
-	code += "        else\n"
-	code += "            burnKeyCnt = 0;\n"
-	code += "        if (!burnMode)\n"
-	code += "        {\n"
-	code += "            if (burnKeyCnt >= 3 && !burnKeyPrev) // 稳定按下边沿\n"
-	code += "            {\n"
-	code += "                burnKeyPrev = 1;\n"
-	code += "                burnEnter(); // 安全停机 + 切蓝牙口 + 奏乐（阻塞）\n"
-	code += "                continue; // 本周期不执行正常控制\n"
-	code += "            }\n"
-	code += "            burnKeyPrev = (burnKeyCnt >= 3) ? 1 : 0;\n"
-	code += "        }\n"
-	code += "        else\n"
-	code += "        {\n"
-	code += "            // 烧录模式：等 UART1 触发字（isr.c 处理）或松开后再按任一键退出\n"
-	code += "            if (burnKeyCnt >= 3 && !burnKeyPrev)\n"
-	code += "            {\n"
-	code += "                burnKeyPrev = 1;\n"
-	code += "                burnExit(); // 切回拓展板口 + 重初始化\n"
-	code += "                continue;\n"
-	code += "            }\n"
-	code += "            burnKeyPrev = (burnKeyCnt >= 3) ? 1 : 0;\n"
-	code += "            Ms_Delay(10);\n"
-	code += "            continue; // 烧录模式不执行正常控制\n"
-	code += "        }\n\n"
-	return code
-
-
-## 生成 All_Init() 中的烧录模式初始化：P06/P07/P42 按键（高阻输入+空闲采样）+ P33 蜂鸣器 PWM。
-func _gen_burn_mode_init() -> String:
-	var code: String = ""
-	code += "    // 烧录模式按键：P06/P07/P42 高阻输入（不配内部上下拉，由外部电路决定电平）\n"
-	code += "    GPIO_Init(GPIO_P0, (GPIO_Pin_enum)(GPIO_Pin_6 | GPIO_Pin_7), GPIO_HighZ);\n"
-	code += "    GPIO_Init(GPIO_P4, GPIO_Pin_2, GPIO_HighZ);\n"
-	code += "    // 上电采样空闲电平（假设上电时未按键），按下 = 电平与此不同\n"
-	code += "    burnIdle06 = GPIO_Read_Bit(GPIO_P0, GPIO_Pin_6);\n"
-	code += "    burnIdle07 = GPIO_Read_Bit(GPIO_P0, GPIO_Pin_7);\n"
-	code += "    burnIdle42 = GPIO_Read_Bit(GPIO_P4, GPIO_Pin_2);\n"
-	code += "    // 蜂鸣器 P33（PWM 驱动，占空比 0 不响）\n"
-	code += "    PWM_Init(PWMB_CH3_P33, 1000, 0);\n"
 	return code
 
 
 # ============================================================ 初始化完成提示音
 ## 生成初始化完成提示音（P33 蜂鸣器，上行琶音）。
-## buzzer 形参为构型自己的蜂鸣器函数名：burnBeep（步兵/工程/工程IK）或 Buzzer_Play（调试）。
+## buzzer 形参为构型自己的蜂鸣器函数名：Buzzer_Play（调试）。
 func _gen_init_done(buzzer: String) -> String:
 	return ("    // 初始化完成提示音：P33 蜂鸣器演奏上行琶音\n"
 		+ "    %s(523, 120);\n" % buzzer

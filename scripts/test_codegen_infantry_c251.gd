@@ -12,11 +12,7 @@ func _initialize() -> void:
 		printerr("生成代码必须使用有限重试的遥控器初始化")
 		quit(1)
 		return
-	if not code.contains("void iapEnterDownload(void)"):
-		printerr("生成代码没有可供 UART ISR 调用的 iapEnterDownload")
-		quit(1)
-		return
-	if not code.contains("burnBeep(1047, 240);"):
+	if not code.contains("Beep(1047, 240);"):
 		printerr("生成代码缺少初始化完成提示音")
 		quit(1)
 		return

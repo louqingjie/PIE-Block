@@ -94,7 +94,6 @@ func generate_simulator(cfg: Dictionary) -> String:
 	code += _build_joint_config_arrays(joints, jc)
 	code += _build_kinematics_arrays(joints, jc)
 	code += generate_kinematics_core(jc, joints, lens)
-	code += _gen_isp_monitor()
 	code += _gen_sim_protocol(fingerprint, jc)
 	code += "void main(void)\n{\n"
 	code += "    Board_Init();\n"
@@ -103,7 +102,6 @@ func generate_simulator(cfg: Dictionary) -> String:
 	code += "    IkSimSyncTarget();\n"
 	code += "    while (1)\n    {\n"
 	code += "        if (ikSimFrameReady) IkSimProcessFrame();\n"
-	code += "        if (iapDownloadReq) iapEnterDownload();\n"
 	code += "    }\n}\n"
 	return code
 
@@ -293,26 +291,6 @@ func generate(cfg: Dictionary) -> String:
 	code += "                           uint16_t data_p66, uint16_t data_p74, uint16_t data_p75, uint16_t data_p76,\n"
 	code += "                           uint16_t data_p77);\n\n"
 
-	# ISP 自烧录监听代码
-	code += _gen_isp_monitor()
-	# 烧录模式（P06+P07 进入蓝牙 OTA）：共享代码 + 构型停机/重初始化函数
-	code += _gen_burn_mode_shared()
-	code += "void burnSafeStop(void)\n{\n"
-	if dual_mode:
-		code += "    uint8_t k;\n"
-	code += "    // 舵机无需归中：保持当前关节角（ApplyServoControl 按当前角重算并发送）\n"
-	if dual_mode:
-		code += "    // 电机直接下电：底盘与扩展板电机归零\n"
-		code += "    for (k = 0; k < 4; k++)\n"
-		code += "        dutyOfChassis[k] = 0;\n"
-		code += "    for (k = 0; k < 8; k++)\n"
-		code += "        dutyOfAuxMotor[k] = 0;\n"
-	code += "    ApplyServoControl();\n"
-	code += "}\n\n"
-	code += "void burnExtReinit(void)\n{\n"
-	code += "    // 拓展板频率配置（Init_Order）是持久的，恢复占空比发送即可\n"
-	code += "    Ms_Delay(20);\n"
-	code += "}\n\n"
 	code += CodeGenBase.REMOTE_CONTROL_INIT_CODE
 	# 初始化诊断工具（LED + 蜂鸣器）与 UART1 查询发送（修复 UART 死锁）
 	code += _gen_led_diag_tools()
@@ -338,9 +316,7 @@ func generate(cfg: Dictionary) -> String:
 	code += "    ik_reachable = 1;\n"
 	code += "    while (1)\n"
 	code += "    {\n"
-	code += _gen_isp_check_call()
 	code += _gen_nrf_poll()
-	code += _gen_burn_mode_loop()
 	code += "        // 测试手柄连接状态\n"
 	code += "        if (RcKeyValueRead(KEY_OFFSET_UP))\n"
 	code += "            GPIO_Write_Bit(GPIO_P3, GPIO_Pin_7, 0);\n"
@@ -1987,8 +1963,7 @@ func _gen_all_init(joints: Array, jc: int, engineer_cfg: Dictionary = {},
 		s += "    for (i = 0; i < 8; i++) dutyOfAuxServo[i] = SERVO_MID_DUTY;\n"
 		s += "    for (i = 0; i < 2; i++) dutyOfAuxMainServo[i] = SERVO_MID_DUTY;\n"
 	s += "    StepDone(5);\n"
-	s += _gen_burn_mode_init()
-	s += _gen_init_done("burnBeep")
+	s += _gen_init_done("Beep")
 	s += "}\n\n"
 	return s
 

@@ -63,30 +63,6 @@ int pie_abs(int x)
 int _base_spd, _turn_spd, _wheel[4];
 uint8_t _rm_shoot_last_key = 0;
 
-/* ==================== IAP 自升级下载触发 ====================
- * 收到命令字后置 DFU 标志，再软复位到 bootloader。
- * DfuFlag 的地址与取值必须与 bootloader 的 dfu.c / dfu.h 一致。
- * 用 code 数组而非指针：避免部分 C251 链接/寻址把命令串放到错误空间 */
-char code STCISPCMD[] = "@PIEIAP#";  /* 下载触发命令字 */
-uint8_t isp_cmd_index = 0;           /* 命令匹配索引（ISR 更新） */
-volatile uint8_t iapDownloadReq = 0; /* 主循环兜底请求标志 */
-
-/* DFU 标志：放 XRAM 最后 4 字节，软复位不清零，bootloader 复位后据此
- * 停在下载模式而不跳 App。不动 flash，无擦写磨损。 */
-#define DFU_TAG 0x12abcd34
-long xdata DfuFlag _at_ 0x1ffc;
-
-/* 置 DFU 标志并软复位到 bootloader。此函数不返回。isr.c 通过 extern
- * 引用本函数，所以不能是 static。 */
-void iapEnterDownload(void)
-{
-    EA = 0;            /* 关中断，避免复位序列被打断 */
-    DfuFlag = DFU_TAG; /* 告诉 bootloader 停在下载模式 */
-    IAP_CONTR = 0x20;  /* SWRST=1, SWBS=0 -> 复位到用户程序(bootloader) */
-    while (1)
-        ; /* 等复位生效 */
-}
-
 /* 不会永久阻塞启动流程的 NRF24L01 初始化函数。
  * 库里的 remote_control_init() 使用无限循环，模块未接或故障时整个 App
  * 永远无法进入主循环。这里有限重试，失败后让其余功能继续启动。
@@ -206,9 +182,6 @@ void main(void)
     /* ===== 主循环：底盘四轮差速控制 ===== */
     while (1)
     {
-        if (iapDownloadReq)
-            iapEnterDownload(); /* 不返回 */
-
         nrf_handler(); /* 轮询 NRF 接收（P2.6 中断已关，改主循环轮询） */
 
         _base_spd = (int)((float)RcRockerValueRead(ROCKER_LEFT_VERTICAL) * (4000) / 2047);

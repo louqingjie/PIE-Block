@@ -232,7 +232,7 @@ func _test_gripper(cg) -> void:
 		or code.find("        UpdateGripper();") < inverse_at)
 	_check("扩展板夹爪合并统一输出", code.contains("dutyOfGripper")
 		and code.contains("ExpansionBoradControl(Duty_Change_Order")
-		and not code.contains("PWM_"))
+		and not code.contains("50, dutyOfGripper"))
 	var main_cfg: Dictionary = _make_cfg(2, [])
 	main_cfg["gripper"] = cfg["gripper"].duplicate(true)
 	main_cfg["gripper"]["io"] = "MP74"
@@ -274,7 +274,7 @@ func _test_config(cg, jc: int, label: String) -> void:
 	_check("%s 有 ApplyServoControl" % label, code.find("void ApplyServoControl()") >= 0)
 	_check("%s 有 ReadControllerInputs" % label, code.find("void ReadControllerInputs()") >= 0)
 	_check("%s 有 All_Init" % label, code.find("void All_Init()") >= 0)
-	_check("%s 有初始化完成提示音" % label, code.contains("burnBeep(1047, 240);"))
+	_check("%s 有初始化完成提示音" % label, code.contains("Beep(1047, 240);"))
 	_check("%s 有 main" % label, code.find("void main()") >= 0)
 	_check("%s 有 ExpansionBoradControl" % label, code.find("void ExpansionBoradControl(") >= 0)
 	_check("%s 定义 Channal" % label, code.find("uint8_t Channal =") >= 0)
