@@ -31,6 +31,7 @@ from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from keil_server import config, keil_detect, keys as keys_store
+from keil_server.rate_limit import RateLimiter
 from keil_server.task_manager import TaskManager
 
 
@@ -53,6 +54,11 @@ app = FastAPI(
 )
 
 task_manager = TaskManager()
+rate_limiter = RateLimiter(
+    per_minute=config.RATE_LIMIT_PER_MINUTE,
+    per_day=config.RATE_LIMIT_PER_DAY,
+    file_path=config.USAGE_FILE,
+)
 
 # Bearer 安全方案：让 /docs 显示 Authorize 按钮（实际校验见 require_api_key）
 bearer = HTTPBearer(auto_error=False)
@@ -102,6 +108,13 @@ def require_admin(
 
 
 # ------------------------------------------------------------------ 用户 key 管理（仅管理员）
+def _enforce_rate_limit(user: str) -> None:
+    """编译提交限速：超限抛 429（不限 /health 等只读接口）。"""
+    allowed, reason = rate_limiter.check(user)
+    if not allowed:
+        raise HTTPException(status_code=429, detail=reason)
+
+
 @app.get("/keys")
 def list_api_keys(_: None = Depends(require_admin)):
     return {"users": keys_store.list_users()}
@@ -124,6 +137,12 @@ def revoke_api_key(user: str, _: None = Depends(require_admin)):
     return {"revoked": user, "count": n}
 
 
+@app.get("/usage")
+def get_usage(_: None = Depends(require_admin)):
+    """用户编译用量统计（今日 / 累计 / 近 7 天每日明细）。"""
+    return rate_limiter.usage()
+
+
 @app.get("/health")
 def health():
     info = keil_detect.detect()
@@ -135,6 +154,8 @@ def health():
             "build_timeout": config.BUILD_TIMEOUT,
             "upload_max_size": config.UPLOAD_MAX_SIZE,
             "task_ttl": config.TASK_TTL,
+            "rate_limit_per_minute": config.RATE_LIMIT_PER_MINUTE,
+            "rate_limit_per_day": config.RATE_LIMIT_PER_DAY,
         },
     }
 
@@ -147,6 +168,7 @@ async def compile_zip(
     ),
     user: str = Depends(require_api_key),
 ):
+    _enforce_rate_limit(user)
     if file.filename is None or not file.filename.lower().endswith(".zip"):
         raise HTTPException(status_code=400, detail="只接受 .zip 文件")
     # 流式落盘，避免整个上传占内存；同时做大小校验
@@ -187,6 +209,7 @@ async def compile_zip_base64(
     无法直接发二进制，故用 base64）。与 /compile 等效。
     body: {"zip_base64": "...", "timeout": 120?}
     """
+    _enforce_rate_limit(user)
     zip_b64 = str(payload.get("zip_base64", ""))
     if not zip_b64:
         raise HTTPException(status_code=400, detail="缺少 zip_base64 字段")
