@@ -11,6 +11,15 @@ const TC = preload("res://scripts/toolchain.gd")
 
 ## 项目部署路径（Toolchain.PROJECT_DST 或 PROJECT_ENGINEER_DST）
 var project_dst: String = ""
+
+
+func _ready() -> void:
+	# Web 导出版没有系统字体，中文必须用打包字体，否则界面全变方块。
+	# 桌面版保持系统字体不变（Windows 下中文由系统 fallback 提供）。
+	if DisplayServer.get_name() == "web":
+		var font: Font = load("res://assets/fonts/NotoSansSC-Regular-subset.ttf")
+		if font is Font:
+			ThemeDB.fallback_font = font
 ## 构型标识，用于界面显示与日志（infantry / engineer / debug）
 var project_kind: String = "infantry"
 ## 来源 Tab 索引，返回图形化界面时恢复
