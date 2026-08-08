@@ -495,14 +495,15 @@ static func _check_eng_row(issues: Array, row: Dictionary, mode_no: int, row_idx
 
 # ------------------------------------------------------------------ 规则：步兵高级设置（共享多模式按键映射）
 # 步兵固定子系统占用：摩擦轮 P64/P66、拨弹电机、云台 Yaw/Pitch、底盘。
-# 共享按键映射的行不能指向这些引脚；摩擦轮引脚在 IO 初始化区必须为电机。
+# 共享按键映射的行不能指向这些引脚；摩擦轮引脚在 IO 初始化区必须为舵机
+# （摩擦轮与舵机同为 50Hz 初始化，10000 才是电机）。
 static func _check_infantry_shared(issues: Array, cfg: Dictionary) -> void:
 	var io_init: Dictionary = cfg.get("io_init", {})
 	# 摩擦轮固定占用 P64/P66（硬件保护规则）
 	for pin in FRICTION_PINS:
-		if str(io_init.get(pin, "电机")) != "电机":
+		if str(io_init.get(pin, "舵机")) != "舵机":
 			issues.append({"type": "Error",
-				"msg": "步兵 %s 已被摩擦轮固定占用，IO 初始化区必须设为电机" % pin})
+				"msg": "步兵 %s 已被摩擦轮固定占用，IO 初始化区必须设为舵机" % pin})
 	# 预留引脚：底盘 + 摩擦轮 + 拨弹 + 云台
 	var reserved: Array = _chassis_pins(cfg)
 	reserved.append_array(FRICTION_PINS)

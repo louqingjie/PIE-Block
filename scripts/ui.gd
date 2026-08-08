@@ -1488,17 +1488,38 @@ func _eng_row_count(vb: Node) -> int:
 	return n
 
 
-## 模式个数变化：隐藏/显示 模式2~4 页；模式1 时隐藏切换方式区
-func _update_mode_page_visibility() -> void:
+## 模式个数变化：隐藏/显示 模式2~4 页；模式1 时隐藏切换方式区；
+## 一一对应模式下 Label 与模式键下拉个数跟随模式数
+## 带可选参数以兼容 item_selected 信号（信号会传入被选中的索引）
+func _update_mode_page_visibility(_idx: int = -1) -> void:
 	for root in [ENGINEER, ADV_ENGINEER]:
 		var count_btn: Node = get_node_or_null(NodePath(root + "/Mode/OptionButton"))
 		if not count_btn is OptionButton:
 			continue
 		var count: int = _option_text(count_btn).to_int()
+		# 模式1 时没有切换需求，隐藏整个切换方式区（单击切换/一一对应两个 tab）
+		var mode_tabs: Node = get_node_or_null(NodePath(root + "/Mode/TabContainer"))
+		if mode_tabs is CanvasItem:
+			mode_tabs.visible = (count >= 2)
+		# 一一对应：Label 与模式键下拉个数跟随模式数（模式1-2 / 模式1-3 / 模式1-4）
+		var select_label: Node = get_node_or_null(NodePath(root + "/Mode/TabContainer/Select/Label"))
+		if select_label is Label:
+			select_label.text = "模式1-%d" % count
+		for i in range(4):
+			var kbtn: Node = get_node_or_null(NodePath(
+				root + "/Mode/TabContainer/Select/" + ENG_MODE_KEYS[i]))
+			if kbtn is CanvasItem:
+				kbtn.visible = (i < count)
+		var tabs: Node = get_node_or_null(NodePath(root + "/TabContainer"))
+		var prev_tab: int = tabs.current_tab if tabs is TabContainer else 0
 		for i in range(4):
 			var page: Node = get_node_or_null(NodePath(root + "/" + ENG_MODE_PAGES[i]))
 			if page is CanvasItem:
 				page.visible = (i < count)
+		# 子页可见性变化会让 TabContainer 跳到被改动的页（Godot 行为），
+		# 恢复原来的页；模式数减少时钳到最后一个可见页
+		if tabs is TabContainer:
+			tabs.current_tab = mini(prev_tab, maxi(count - 1, 0))
 
 
 ## 底盘电机引脚锁定：底盘四轮选中的引脚在 IO 初始化区强制为电机，

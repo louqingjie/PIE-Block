@@ -4,6 +4,9 @@
 [ext_resource type="PackedScene" uid="uid://eef3fn71heeg" path="res://scenes/io_and_key.tscn" id="2_uf4nc"]
 
 [node name="AdvancedAndEngineer" type="VBoxContainer" unique_id=727657335]
+offset_right = 699.0
+offset_bottom = 528.0
+size_flags_horizontal = 3
 metadata/_tab_index = 1
 metadata/_tab_name = "工程"
 
@@ -259,6 +262,7 @@ text = "模式个数"
 
 [node name="OptionButton" type="OptionButton" parent="Mode" unique_id=2042109924]
 layout_mode = 2
+size_flags_horizontal = 10
 size_flags_vertical = 4
 selected = 0
 item_count = 4
@@ -272,13 +276,15 @@ popup/item_3/text = "4"
 popup/item_3/id = 3
 
 [node name="TabContainer" type="TabContainer" parent="Mode" unique_id=388100708]
+custom_minimum_size = Vector2(316, 0)
 layout_mode = 2
-size_flags_horizontal = 3
-current_tab = 0
+size_flags_horizontal = 8
+current_tab = 1
 tab_0/title = "单击切换"
 tab_1/title = "一一对应"
 
 [node name="Change" type="HBoxContainer" parent="Mode/TabContainer" unique_id=1411690366]
+visible = false
 layout_mode = 2
 metadata/_tab_index = 0
 metadata/_tab_name = "单击切换"
@@ -312,7 +318,6 @@ popup/item_8/text = "D"
 popup/item_8/id = 8
 
 [node name="Select" type="HBoxContainer" parent="Mode/TabContainer" unique_id=124001427]
-visible = false
 layout_mode = 2
 metadata/_tab_index = 1
 metadata/_tab_name = "一一对应"
