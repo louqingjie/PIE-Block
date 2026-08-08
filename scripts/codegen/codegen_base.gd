@@ -409,8 +409,10 @@ func _gen_mode_rows(rows: Array, io_init: Dictionary, mode_label: String) -> Str
 
 
 ## 生成模式切换函数
+## aux_motor_slots 非空时生成「切换模式 -> 辅助电机下电」逻辑：
+## 新模式未映射的电机清零（摩擦轮与舵机保持原状）
 func _gen_update_mode(mode_count: int, strategy: String, switch_key: String,
-		mode_keys: Array) -> String:
+		mode_keys: Array, aux_motor_slots: Array = []) -> String:
 	var s: String = ""
 	s += "void UpdateMode()\n{\n"
 	if mode_count <= 1:
@@ -433,6 +435,14 @@ func _gen_update_mode(mode_count: int, strategy: String, switch_key: String,
 		s += "    if (pressed && !modeKeyHeld)\n"
 		s += "        currentMode = (currentMode %% %d) + 1;\n" % mode_count
 		s += "    modeKeyHeld = pressed;\n"
+	# 切换模式：新模式未映射的辅助电机下电（摩擦轮与舵机保持原状）
+	if mode_count > 1 and not aux_motor_slots.is_empty():
+		s += "    if (currentMode != prevMode)\n"
+		s += "    {\n"
+		for slot in aux_motor_slots:
+			s += "        dutyOfAuxMotor[%d] = 0;\n" % slot
+		s += "        prevMode = currentMode;\n"
+		s += "    }\n"
 	s += "}\n\n"
 	return s
 

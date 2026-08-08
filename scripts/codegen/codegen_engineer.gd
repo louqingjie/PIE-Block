@@ -180,6 +180,8 @@ func generate(cfg: Dictionary) -> String:
 	code += "float dutyOfAuxMainServo[2];    // 正解模式下的 MP03/MP74 舵机\n"
 	code += "uint8_t currentMode = 1;        // 当前模式（1~%d），开机固定模式1\n" % mode_count
 	code += "uint8_t modeKeyHeld = 0;        // 单击切换键锁存\n"
+	if mode_count > 1 and not aux_motor_slots.is_empty():
+		code += "uint8_t prevMode = 1;        // 上一次模式，切换后未映射的辅助电机下电\n"
 	if switch_strategy == "一一对应" and mode_count > 1:
 		code += "uint8_t modeKeyLast[4] = {0};  // 一一对应各模式键锁存\n"
 	code += "uint8_t valueOfKey[3][4];\n"
@@ -325,7 +327,7 @@ func generate(cfg: Dictionary) -> String:
 	code += "}\n\n"
 
 	# --- UpdateMode ---
-	code += _gen_update_mode(mode_count, switch_strategy, switch_key, mode_keys)
+	code += _gen_update_mode(mode_count, switch_strategy, switch_key, mode_keys, aux_motor_slots)
 
 	# --- Calculate_Chassis_Control ---
 	code += "void Calculate_Chassis_Control()\n"

@@ -278,10 +278,12 @@ func _ready() -> void:
 	if code_edit is CodeEdit:
 		var hl: SyntaxHighlighter = preload("res://scripts/c_highlighter.gd").new()
 		code_edit.syntax_highlighter = hl
-	# 场景模板行改名（Example -> Row01），保证配置快照里的行路径是稳定的 RowNN
+	# 场景模板行保持隐藏（Example 仅作「+」新建行的原型），真实行命名为 RowNN
 	_normalize_eng_row_names()
 	# 底盘电机引脚在 IO 初始化区强制为电机（须在默认快照之前，让默认配置自洽）
 	_sync_chassis_io_locks()
+	# 左摇杆保留开关：模式1 强制开启（须在默认快照之前，让默认配置自洽）
+	_sync_chassis_switch()
 	# 场景刚实例化，此刻的控件值就是「默认配置」，新建项目时用它复位
 	_default_config = _snapshot_config()
 	_ik_config = IK_CONFIG.default_config()
@@ -298,6 +300,9 @@ func _ready() -> void:
 	_restore_project_context()
 	# 顶栏「3D 仿真」按钮可见性跟随当前 Tab
 	_update_sim_btn_visibility()
+	# 无项目路径会整体重开配置区控件（_set_config_enabled），
+	# 左摇杆保留开关的模式1强制状态必须最后再兜一次
+	_sync_chassis_switch()
 
 
 ## 窗口尺寸/方向变化后重算安全区内缩（旋转屏幕、折叠屏展开等场景）。
@@ -536,6 +541,9 @@ func _snapshot_node(node: Node, zone: Node, out: Dictionary) -> void:
 	for child in node.get_children():
 		if child == get_node_or_null(P_IK_ENABLE_CB):
 			continue
+		# 隐藏模板行 Example 不算配置，不进快照
+		if child.name == "Example":
+			continue
 		var value: Variant = _control_value(child)
 		if value != null:
 			out[str(zone.get_path_to(child))] = value
@@ -579,6 +587,8 @@ func _apply_config(cfg: Dictionary) -> void:
 	if zone == null or first_row == null:
 		return
 	_loading = true
+	# 旧存档的行以 RowNN 路径存快照，场景默认 0 行：按配置补齐行再回填值
+	_ensure_eng_rows_from_config(cfg)
 	for key in cfg.keys():
 		var path: String = str(key)
 		if path == String(P_IK_ENABLE_CB):
@@ -594,6 +604,8 @@ func _apply_config(cfg: Dictionary) -> void:
 	_update_mode_page_visibility()
 	# 底盘电机引脚锁定：旧存档把底盘引脚存成舵机时，这里自动纠正为电机
 	_sync_chassis_io_locks()
+	# 左摇杆保留开关：模式1 强制开启，各模式 LX/LY 键位随开关禁用
+	_sync_chassis_switch()
 	_run_check()
 
 
@@ -1041,10 +1053,9 @@ func _on_ik_gate_toggled(pressed: bool) -> void:
 				_project["workflow"] = workflow
 				_save_project(false)
 			return
+		# warn_ik 页面自带文案（启用机械臂逆解），这里不改动它的文本，只接回调
 		_show_countdown_scene(WARN_IK_SCENE,
-			"确认机械臂逆解",
-			"机械臂逆解和 3D 仿真属于实验性功能。\n请确认你理解其风险后再继续。",
-			"确认，继续使用机械臂逆解", "取消，不使用机械臂逆解功能", "",
+			"", "", "", "", "",
 			Callable(self, "_on_ik_gate_confirmed"), Callable(self, "_on_ik_gate_canceled"))
 		return
 	_apply_ik_gate(false)
@@ -1402,7 +1413,8 @@ func _update_engineer_placeholders(_idx: int = -1) -> void:
 
 
 # ------------------------------------------------------------------ 动态按键映射行
-## 把场景里的模板行（Example）按顺序改名为 Row01..RowNN，使配置快照路径稳定
+## 场景里的模板行保持名为 Example（隐藏），只作为「+」新建行的原型；
+## 真实行从 Row01 开始命名，使配置快照路径稳定。
 func _normalize_eng_row_names() -> void:
 	for root in [ENGINEER, ADV_ENGINEER]:
 		for page in ENG_MODE_PAGES:
@@ -1411,7 +1423,7 @@ func _normalize_eng_row_names() -> void:
 				continue
 			var idx: int = 1
 			for child in vb.get_children():
-				if child is HBoxContainer:
+				if child is HBoxContainer and child.name != "Example":
 					child.name = "Row%02d" % idx
 					idx += 1
 
@@ -1424,8 +1436,12 @@ func _wire_eng_mode_page(root: String, page: String) -> void:
 	var add_btn: Node = vb.get_node_or_null("Add")
 	if add_btn is BaseButton:
 		add_btn.pressed.connect(_on_eng_row_add_pressed.bind(add_btn))
+	var ck: Node = get_node_or_null(NodePath(root + "/" + page + "/Chassis/CheckButton"))
+	if ck is CheckButton:
+		ck.toggled.connect(_sync_chassis_switch)
+		ck.toggled.connect(_run_check)
 	for child in vb.get_children():
-		if child is HBoxContainer:
+		if child is HBoxContainer and child.name != "Example":
 			_wire_eng_row(child)
 
 
@@ -1443,20 +1459,30 @@ func _wire_eng_row(row: Node) -> void:
 		rem.pressed.connect(_on_eng_row_remove_pressed.bind(row))
 
 
-## 按「+」新增一行（复制模板行并重置为默认值）
+## 按「+」新增一行（复制隐藏模板行 Example 并重置为默认值）
 func _on_eng_row_add_pressed(add_btn: Node) -> void:
 	var vb: Node = add_btn.get_parent() if add_btn != null else null
 	if vb == null:
 		return
-	var proto: Node = null
-	for child in vb.get_children():
-		if child is HBoxContainer:
-			proto = child
-			break
+	if _add_eng_row(vb) != null:
+		_run_check()
+
+
+## 在 vb 里新建一行，返回新行（失败返回 null）。
+## 原型是场景里始终存在的隐藏模板行 Example，删除全部行后仍能新建。
+func _add_eng_row(vb: Node) -> Node:
+	var proto: Node = vb.get_node_or_null("Example")
 	if proto == null:
-		return
+		for child in vb.get_children():
+			if child is HBoxContainer and child.name != "Example":
+				proto = child
+				break
+	if proto == null:
+		return null
 	var row: Node = proto.duplicate(true)
 	row.name = "Row%02d" % (_eng_row_count(vb) + 1)
+	if row is CanvasItem:
+		row.visible = true
 	# 重置为默认值：E / 正 / 增量 / 空参数 / P60
 	for child_name in ["Key", "Dir", "Option", "IO"]:
 		var ctrl: Node = row.get_node_or_null(child_name)
@@ -1469,7 +1495,9 @@ func _on_eng_row_add_pressed(add_btn: Node) -> void:
 	# Add 按钮保持在最后
 	vb.move_child(row, vb.get_child_count() - 2)
 	_wire_eng_row(row)
-	_run_check()
+	# 新建行同样受左摇杆保留开关约束（模式1 恒开，LX/LY 不可选）
+	_sync_chassis_switch()
+	return row
 
 
 ## 删除一行（允许删到 0 行）
@@ -1483,7 +1511,7 @@ func _on_eng_row_remove_pressed(row: Node) -> void:
 func _eng_row_count(vb: Node) -> int:
 	var n: int = 0
 	for child in vb.get_children():
-		if child is HBoxContainer:
+		if child is HBoxContainer and child.name != "Example":
 			n += 1
 	return n
 
@@ -1512,6 +1540,9 @@ func _update_mode_page_visibility(_idx: int = -1) -> void:
 				kbtn.visible = (i < count)
 		var tabs: Node = get_node_or_null(NodePath(root + "/TabContainer"))
 		var prev_tab: int = tabs.current_tab if tabs is TabContainer else 0
+		if tabs is TabContainer:
+			for i in range(tabs.get_tab_count()):
+				tabs.set_tab_hidden(i, i >= count)
 		for i in range(4):
 			var page: Node = get_node_or_null(NodePath(root + "/" + ENG_MODE_PAGES[i]))
 			if page is CanvasItem:
@@ -1525,7 +1556,8 @@ func _update_mode_page_visibility(_idx: int = -1) -> void:
 ## 底盘电机引脚锁定：底盘四轮选中的引脚在 IO 初始化区强制为电机，
 ## 并禁用该引脚的「舵机」选项（物理上扩展板口在开机时按电机初始化）。
 ## 底盘选择变化、项目载入后都要调用。
-func _sync_chassis_io_locks() -> void:
+## 带可选参数以兼容 item_selected 信号（信号会传入被选中的索引）
+func _sync_chassis_io_locks(_idx: int = -1) -> void:
 	var chassis_pins: Array = []
 	for p in [P_L1_IO, P_L2_IO, P_R1_IO, P_R2_IO]:
 		var pin: String = _get_option_text(p).split(" ")[0].strip_edges()
@@ -1559,6 +1591,53 @@ func _sync_chassis_io_locks() -> void:
 						if not btn.is_item_disabled(i):
 							btn.selected = i
 							break
+
+
+## 同步各模式页「此模式下保留左摇杆作为底盘控制」开关：
+## 模式1 强制开启且不可关；开启的模式页禁用该页所有行的 LX/LY 键位（左摇杆已归底盘）。
+## 带可选参数以兼容 toggled 信号（信号会传入开关状态）
+func _sync_chassis_switch(_pressed: bool = false) -> void:
+	for root in [ENGINEER, ADV_ENGINEER]:
+		for mi in range(4):
+			var ck: Node = get_node_or_null(NodePath(
+				root + "/" + ENG_MODE_PAGES[mi] + "/Chassis/CheckButton"))
+			if not ck is CheckButton:
+				continue
+			if mi == 0:
+				ck.button_pressed = true
+				ck.disabled = true
+			else:
+				ck.disabled = false
+			_sync_row_axis_locks(root, ENG_MODE_PAGES[mi], ck.button_pressed)
+
+
+## 模式页开关开启时，该页所有行的 LX/LY 键位禁用
+func _sync_row_axis_locks(root: String, page: String, locked: bool) -> void:
+	var vb: Node = get_node_or_null(NodePath(
+		root + "/" + page + "/ScrollContainer/VBoxContainer"))
+	if vb == null:
+		return
+	for child in vb.get_children():
+		if not child is HBoxContainer or child.name == "Example":
+			continue
+		_lock_row_key_axes(child, locked)
+
+
+## 单行 Key 下拉的 LX/LY 禁用；锁定且当前选中被禁用时回到第一个可用项
+func _lock_row_key_axes(row: Node, locked: bool) -> void:
+	var key: Node = row.get_node_or_null("Key")
+	if not key is OptionButton:
+		return
+	for i in range(key.item_count):
+		if key.get_item_text(i) == "LX" or key.get_item_text(i) == "LY":
+			key.set_item_disabled(i, locked)
+	if locked:
+		var sel: int = key.selected
+		if sel >= 0 and sel < key.item_count and key.is_item_disabled(sel):
+			for i in range(key.item_count):
+				if not key.is_item_disabled(i):
+					key.selected = i
+					break
 
 
 ## 收集调试界面各行配置，返回 Array[Dictionary]
@@ -1813,7 +1892,7 @@ func _collect_eng_rows(root: String, page: String) -> Array:
 	if vb == null:
 		return rows
 	for child in vb.get_children():
-		if not child is HBoxContainer:
+		if not child is HBoxContainer or child.name == "Example":
 			continue
 		var para: Node = child.get_node_or_null("Para")
 		rows.append({
@@ -1824,6 +1903,35 @@ func _collect_eng_rows(root: String, page: String) -> Array:
 			"io": _option_text(child.get_node_or_null("IO")),
 		})
 	return rows
+
+
+## 旧存档的按键映射行以 RowNN 路径存快照；场景默认只有隐藏模板行 Example。
+## 打开旧项目时按配置里出现的最大行号把行补齐，避免行数据丢失。
+func _ensure_eng_rows_from_config(cfg: Dictionary) -> void:
+	var zone: Node = get_node_or_null(P_EDIT_ZONE)
+	if zone == null:
+		return
+	for root in [ENGINEER, ADV_ENGINEER]:
+		for page in ENG_MODE_PAGES:
+			var vb: Node = get_node_or_null(NodePath(
+				root + "/" + page + "/ScrollContainer/VBoxContainer"))
+			if vb == null:
+				continue
+			var prefix: String = str(zone.get_path_to(vb)) + "/"
+			var needed: int = 0
+			for key in cfg.keys():
+				var s: String = str(key)
+				if not s.begins_with(prefix):
+					continue
+				var rel: String = s.substr(prefix.length())
+				if not rel.begins_with("Row"):
+					continue
+				var n: int = rel.split("/")[0].trim_prefix("Row").to_int()
+				if n > needed:
+					needed = n
+			while _eng_row_count(vb) < needed:
+				if _add_eng_row(vb) == null:
+					break
 
 
 ## 读取 OptionButton 当前项文本。
@@ -2130,9 +2238,9 @@ func _on_arm_sim_pressed() -> void:
 		return
 	var tab: int = _current_tab()
 	if tab == 2 and not _ik_confirmed:
+		# warn_ik 页面自带文案（启用机械臂逆解），这里不改动它的文本，只接回调
 		_show_countdown_scene(WARN_IK_SCENE,
-			"确认机械臂逆解", "机械臂逆解和 3D 仿真属于实验性功能。\n请确认你理解其风险后再继续。",
-			"确认，继续使用机械臂逆解", "取消，不使用机械臂逆解功能", "",
+			"", "", "", "", "",
 			Callable(self, "_on_ik_gate_confirmed_and_open_sim"), Callable(self, "_on_ik_gate_canceled"))
 		return
 	var scene_path: String = ""
@@ -2400,7 +2508,11 @@ func _on_upgrade_pressed() -> void:
 			or _download_controller == null or _download_controller.is_busy():
 		return
 	# 引导成功后才进入升级流程（_upgrade_active 在 _do_upgrade 内置位，取消不残留）
-	KG.ensure_keil(self, _toolchain(), _do_upgrade, _on_keil_guide_cancel)
+	# 云端编译模式下不需要本机 Keil，只需确认云端配置
+	if _is_cloud_mode():
+		CLOUD_GUIDE.ensure_cloud(self, _toolchain(), _do_upgrade, _on_cloud_guide_cancel)
+	else:
+		KG.ensure_keil(self, _toolchain(), _do_upgrade, _on_keil_guide_cancel)
 
 
 func _do_upgrade() -> void:
@@ -2418,7 +2530,8 @@ func _do_upgrade() -> void:
 		panel.begin()
 	_set_upgrade_progress("正在编译程序", 8.0, "编译成功后会自动烧录到主控板。")
 	_set_upgrade_button_busy(true)
-	if not _build_controller.start(_get_current_project_dst(), code):
+	if not _build_controller.start(_get_current_project_dst(), code,
+			"cloud" if _is_cloud_mode() else "local"):
 		_fail_upgrade("无法开始编译", "请查看下方输出中的详细提示。")
 
 

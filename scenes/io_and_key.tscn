@@ -10,6 +10,17 @@ offset_bottom = 380.0
 size_flags_horizontal = 3
 metadata/_tab_index = 0
 
+[node name="Chassis" type="HBoxContainer" parent="." unique_id=313092688]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Chassis" unique_id=938145911]
+layout_mode = 2
+text = "此模式下保留左摇杆作为底盘控制"
+
+[node name="CheckButton" type="CheckButton" parent="Chassis" unique_id=1758342968]
+layout_mode = 2
+size_flags_horizontal = 10
+
 [node name="HSeparator3" type="HSeparator" parent="." unique_id=226161368]
 layout_mode = 2
 
@@ -70,6 +81,7 @@ layout_mode = 2
 size_flags_horizontal = 3
 
 [node name="Example" type="HBoxContainer" parent="ScrollContainer/VBoxContainer" unique_id=823324789]
+visible = false
 layout_mode = 2
 
 [node name="Key" parent="ScrollContainer/VBoxContainer/Example" unique_id=2077236722 instance=ExtResource("1_jebyq")]

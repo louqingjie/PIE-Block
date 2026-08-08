@@ -847,7 +847,11 @@ func _on_upgrade_pressed() -> void:
 			or _download_controller == null or _download_controller.is_busy():
 		return
 	# 引导成功后才进入升级流程（_upgrade_active 在 _do_upgrade 内置位，取消不残留状态）
-	KG.ensure_keil(self, _tc, _do_upgrade, _on_keil_guide_cancel)
+	# 云端编译模式下不需要本机 Keil，只需确认云端配置
+	if _is_cloud_mode():
+		CLOUD_GUIDE.ensure_cloud(self, _tc, _do_upgrade, _on_cloud_guide_cancel)
+	else:
+		KG.ensure_keil(self, _tc, _do_upgrade, _on_keil_guide_cancel)
 
 
 func _do_upgrade() -> void:
@@ -866,7 +870,8 @@ func _do_upgrade() -> void:
 		_wv.hide()
 	_set_upgrade_progress("正在编译程序", 8.0, "编译成功后会自动烧录到主控板。")
 	_set_upgrade_button_busy(true)
-	if not _build_controller.start(_project_dst, code):
+	if not _build_controller.start(_project_dst, code,
+			"cloud" if _is_cloud_mode() else "local"):
 		_fail_upgrade("无法开始编译", "请查看下方输出中的详细提示。")
 
 

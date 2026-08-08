@@ -376,6 +376,8 @@ func generate(cfg: Dictionary) -> String:
 		code += "float dutyOfAuxMainServo[2];    // 高级设置 MP03/MP74 舵机\n"
 		code += "uint8_t currentMode = 1;        // 当前模式（1~%d），开机固定模式1\n" % mode_count
 		code += "uint8_t modeKeyHeld = 0;        // 单击切换键锁存\n"
+		if mode_count > 1 and not aux_motor_slots.is_empty():
+			code += "uint8_t prevMode = 1;        // 上一次模式，切换后未映射的辅助电机下电\n"
 		if switch_strategy == "一一对应" and mode_count > 1:
 			code += "uint8_t modeKeyLast[4] = {0};  // 一一对应各模式键锁存\n"
 	code += "uint8_t i, j;\n"
@@ -663,7 +665,7 @@ func generate(cfg: Dictionary) -> String:
 
 	# --- 高级设置：模式切换与每模式按键映射 ---
 	if not aux_servo_slots.is_empty() or not aux_motor_slots.is_empty() or use_aux_main[0] or use_aux_main[1]:
-		code += _gen_update_mode(mode_count, switch_strategy, switch_key, mode_keys)
+		code += _gen_update_mode(mode_count, switch_strategy, switch_key, mode_keys, aux_motor_slots)
 		for mi in range(mode_count):
 			var rows: Array = modes[mi].get("rows", []) if mi < modes.size() else []
 			code += _gen_mode_rows(rows, io_init_shared, "Mode%d" % (mi + 1))
