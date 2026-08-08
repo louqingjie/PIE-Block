@@ -123,6 +123,17 @@ func ensure_deployed() -> bool:
 		_emit("项目模板有更新，正在重新部署（%s → %s）…"
 			% [proj_ver, PROJECT_VERSION])
 
+	# 复制前先探测 user:// 可写性（用与复制相同的绝对路径写一个小文件）。
+	# 不探测的话，失败只会笼统提示“请检查磁盘空间”，
+	# 权限类问题（Android 应用数据目录异常、磁盘满）完全看不出来。
+	if need_redeploy or not _all_projects_deployed():
+		var probe: Dictionary = _probe_user_writable()
+		if not probe.ok:
+			_emit("[Error] user:// 目录不可写：%s" % probe.reason)
+			_emit("       请检查设备存储空间是否已满；若空间充足，")
+			_emit("       在系统设置里清除本应用的存储/缓存后重试（会删除已生成的工程文件）。")
+			return false
+
 	for pair in [
 		[PROJECT_SRC, PROJECT_DST, "项目模板"],
 		[PROJECT_ENGINEER_SRC, PROJECT_ENGINEER_DST, "工程项目模板"],
@@ -130,14 +141,16 @@ func ensure_deployed() -> bool:
 	]:
 		if need_redeploy or not _project_deployed(str(pair[1])):
 			if not _copy_dir_recursive(str(pair[0]), str(pair[1])):
-				_emit("[Error] 无法复制%s到 user://，请检查磁盘空间" % str(pair[2]))
+				_emit("[Error] 无法复制%s到 user://，请检查磁盘空间%s"
+					% [str(pair[2]), _space_hint()])
 				return false
 
 	# 库文件（uvproj 用相对路径引用 Libraries）
 	if need_redeploy or not FileAccess.file_exists(
 			to_abs(LIBRARIES_DST).path_join("startup/inc/STC32Gxx.h")):
 		if not _copy_dir_recursive(LIBRARIES_SRC, LIBRARIES_DST):
-			_emit("[Error] 无法复制库文件到 user://，请检查磁盘空间")
+			_emit("[Error] 无法复制库文件到 user://，请检查磁盘空间%s"
+				% _space_hint())
 			return false
 
 	if need_redeploy:
@@ -160,18 +173,65 @@ func _project_deployed(project_dst: String) -> bool:
 	return true
 
 
+## 三个项目模板是否全部部署过（任一缺失都返回 false）
+func _all_projects_deployed() -> bool:
+	for pair in [
+		[PROJECT_DST],
+		[PROJECT_ENGINEER_DST],
+		[PROJECT_ENGINEER_SIM_DST],
+	]:
+		if not _project_deployed(str(pair[0])):
+			return false
+	return true
+
+
+## 探测 user:// 是否可写（与复制用同样的绝对路径方式写文件），并报告剩余空间。
+## 返回 {ok: bool, space: int, reason: String}；space 为字节数，未知为 -1。
+## Android 上 user:// 是应用私有数据目录，写不进去只有两种可能：
+## 磁盘满、或系统存储层出问题（Godot 按 StorageScope 判定可写范围，
+## 该路径不在应用数据目录内时一律拒绝）。
+func _probe_user_writable() -> Dictionary:
+	var probe_abs: String = to_abs("user://.pie_block_write_probe")
+	var f: FileAccess = FileAccess.open(probe_abs, FileAccess.WRITE)
+	if f == null:
+		return {"ok": false, "space": -1,
+			"reason": "无法写入 %s（错误码 %d）" % [probe_abs, FileAccess.get_open_error()]}
+	f.store_string("probe")
+	f.close()
+	if FileAccess.file_exists(probe_abs):
+		DirAccess.remove_absolute(probe_abs)
+	var space: int = -1
+	var da: DirAccess = DirAccess.open(to_abs("user://"))
+	if da != null:
+		space = da.get_space_left()
+	return {"ok": true, "space": space, "reason": ""}
+
+
+## user:// 剩余空间的提示后缀；未知时返回空串。
+func _space_hint() -> String:
+	var probe: Dictionary = _probe_user_writable()
+	var space: int = int(probe.get("space", -1))
+	if space < 0:
+		return ""
+	return "（user:// 剩余空间约 %d MB）" % int(space / (1024 * 1024))
+
+
 ## 递归复制目录（res:// -> user:// 或任意路径组合）
 func _copy_dir_recursive(src_path: String, dst_path: String) -> bool:
 	var dst_abs: String = to_abs(dst_path)
 	if not DirAccess.dir_exists_absolute(dst_abs):
 		var err: int = DirAccess.make_dir_recursive_absolute(dst_abs)
 		if err != OK:
-			push_error("无法创建目录 %s（错误码 %d）" % [dst_abs, err])
+			err = _make_dir_fallback(dst_abs)
+		if err != OK:
+			_emit("[Error] 无法创建目录 %s（错误码 %d，剩余空间%s）"
+				% [dst_abs, err, _space_hint()])
 			return false
 	# 源用 res:// 虚拟路径打开（导出后是 PCK，globalize 成 OS 路径会失败）
 	var da: DirAccess = DirAccess.open(src_path)
 	if da == null:
-		push_error("无法打开源目录: %s" % src_path)
+		_emit("[Error] 无法打开源目录: %s（请检查应用包是否完整，或重新安装）"
+			% src_path)
 		return false
 	da.list_dir_begin()
 	var entry_name: String = da.get_next()
@@ -192,6 +252,37 @@ func _copy_dir_recursive(src_path: String, dst_path: String) -> bool:
 		entry_name = da.get_next()
 	da.list_dir_end()
 	return true
+
+
+## 逐级建目录（回退方案）。
+## Windows 上 make_dir_recursive_absolute 基本不会失败，此回退是保险。
+## Android 上不做逐级回退：其文件系统访问被 StorageScope 限定在应用数据
+## 目录内，逐级建目录会先命中不可访问的上级路径（如 /data）而误报，
+## 递归 mkdirs 失败就是真实存储问题，直接按失败上报。
+## 返回 OK 或 FAILED。
+func _make_dir_fallback(dst_abs: String) -> int:
+	if OS.has_feature("android"):
+		return FAILED
+	var parts: PackedStringArray = dst_abs.split("/", false)
+	if parts.is_empty():
+		return FAILED
+	var acc: String = ""
+	if parts[0].ends_with(":"):
+		# Windows 盘符：C: 开头，先固定根再逐级拼
+		acc = parts[0] + "/"
+		parts.remove_at(0)
+	elif dst_abs.begins_with("/"):
+		acc = "/"
+	for part in parts:
+		acc = acc.path_join(part)
+		if DirAccess.dir_exists_absolute(acc):
+			continue
+		var parent_da: DirAccess = DirAccess.open(acc.get_base_dir())
+		if parent_da == null:
+			return FAILED
+		if parent_da.make_dir(acc.get_file()) != OK:
+			return FAILED
+	return OK
 
 
 ## 递归删除目录（user:// 路径）
@@ -230,11 +321,13 @@ func _copy_file(src_path: String, dst_path: String) -> bool:
 	# 源用 res:// 虚拟路径读（导出后是 PCK）
 	var src_f: FileAccess = FileAccess.open(src_path, FileAccess.READ)
 	if src_f == null:
-		push_error("无法读取: %s" % src_path)
+		_emit("[Error] 无法读取源文件: %s（错误码 %d）"
+			% [src_path, FileAccess.get_open_error()])
 		return false
 	var dst_f: FileAccess = FileAccess.open(dst_abs, FileAccess.WRITE)
 	if dst_f == null:
-		push_error("无法写入: %s" % dst_abs)
+		_emit("[Error] 无法写入: %s（错误码 %d，剩余空间%s）"
+			% [dst_abs, FileAccess.get_open_error(), _space_hint()])
 		src_f.close()
 		return false
 	var buf_size: int = 65536

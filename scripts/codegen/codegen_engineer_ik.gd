@@ -234,8 +234,9 @@ func generate(cfg: Dictionary) -> String:
 	code += "uint8_t  ikDiagnosing = 0;\n"
 	code += "uint8_t  presetHit;             // 本周期是否命中预设点位\n"
 	code += "int16_t  valueOfRoker[2][2];    // 左摇杆水平、竖直；右摇杆水平、竖直\n"
+	# 工程页多模式按键映射的键位（方向键、ABCD、左右摇杆按键）
+	code += "uint8_t  valueOfKey[3][4];      // 方向键、ABCD、左右摇杆按键\n"
 	if rocker2_home_enabled:
-		code += "uint8_t  valueOfKey[3][4];      // 方向键、ABCD、左右摇杆按键\n"
 		code += "uint8_t  armHomeHit = 0;        // 本周期是否执行机械臂回初始角\n"
 		code += "uint8_t  armHomeKeyHeld = 0;    // ROCKER2 锁存，长按只触发一次\n"
 	code += "uint16_t deadBandOfLeft = %s;\n" % deadzone
@@ -254,6 +255,12 @@ func generate(cfg: Dictionary) -> String:
 		code += "uint8_t   inverseMode = 1;       // 上电默认逆解模式\n"
 		code += "uint8_t   modeKeyHeld = 0;       // 切换键锁存，长按只触发一次\n"
 	code += "uint8_t  i;\n"
+	code += "uint8_t  j;\n"
+	code += "static const uint8_t keyOffsets[3][4] = {\n"
+	code += "    {KEY_OFFSET_UP, KEY_OFFSET_DOWN, KEY_OFFSET_LEFT, KEY_OFFSET_RIGHT},\n"
+	code += "    {KEY_OFFSET_A, KEY_OFFSET_B, KEY_OFFSET_C, KEY_OFFSET_D},\n"
+	code += "    {KEY_OFFSET_Rocker11, KEY_OFFSET_Rocker21, 0, 0} // 实际只有2个\n"
+	code += "};\n"
 	# 关节配置常量数组（初始角/限位/IO 槽位）
 	code += _build_joint_config_arrays(joints, jc)
 	# 运动学常量表：逆解算完全由转轴与连杆长度两张表驱动
@@ -1343,6 +1350,14 @@ func _gen_read_inputs(read_rocker2: bool = false) -> String:
 	s += "        valueOfRoker[1][0] = 0;\n"
 	s += "    if (abs(valueOfRoker[1][1]) <= deadBandOfRight)\n"
 	s += "        valueOfRoker[1][1] = 0;\n"
+	# 工程页多模式按键映射的键位矩阵（方向键、ABCD、LC/RC）
+	s += "    for (i = 0; i < 3; i++)\n"
+	s += "        for (j = 0; j < 4; j++)\n"
+	s += "        {\n"
+	s += "            if (i == 2 && j >= 2)\n"
+	s += "                break;\n"
+	s += "            valueOfKey[i][j] = RcKeyValueRead(keyOffsets[i][j]);\n"
+	s += "        }\n"
 	if read_rocker2:
 		s += "    valueOfKey[2][1] = RcKeyValueRead(KEY_OFFSET_Rocker21);\n"
 	s += "}\n\n"
@@ -1444,41 +1459,49 @@ func _gen_forward_control(engineer_cfg: Dictionary, joints: Array, jc: int) -> S
 	for i in range(jc):
 		joint_by_io[str(joints[i].get("io", ""))] = i
 	var body: String = ""
-	for row in engineer_cfg.get("key_map", []):
-		var target: String = str(row.get("target", ""))
-		var expr: String = _engineer_input_expr(str(row.get("input", "")))
+	for row in _all_engineer_rows(engineer_cfg):
+		var io: String = str(row.get("io", ""))
+		var key: String = str(row.get("key", ""))
+		var expr: String = _row_key_expr(key)
+		if expr == "0":
+			continue
+		var axis: Dictionary = _row_axis(key)
+		var is_joystick: bool = not axis.is_empty()
+		var joystick_expr: String = ""
+		if is_joystick:
+			joystick_expr = "(float)valueOfRoker[%d][%d]" % [axis["row"], axis["col"]]
 		var direction: float = 1.0 if str(row.get("dir", "正")) == "正" else -1.0
 		var mode: String = str(row.get("mode", "增量"))
 		var param: float = _to_float(row.get("param", "0"), 0.0)
-		if joint_by_io.has(target) and mode == "增量":
-			var joint: int = joint_by_io[target]
-			if str(row.get("input", "")) in ["右摇杆X", "右摇杆Y"]:
+		if joint_by_io.has(io) and mode == "增量":
+			# 指向 IK 关节的增量行：正解模式下直接推关节角
+			var joint: int = joint_by_io[io]
+			if is_joystick:
 				body += "    jointAngle[%d] += %s * %.2ff / 2047.0f;\n" \
-					% [joint, expr, direction * absf(param)]
+					% [joint, joystick_expr, direction * absf(param)]
 			else:
 				body += "    if (%s)\n" % expr
 				body += "        jointAngle[%d] += %.2ff;\n" % [joint, direction * absf(param)]
-		elif joint_by_io.has(target) and mode == "直接" \
-				and not str(row.get("input", "")) in ["右摇杆X", "右摇杆Y"]:
-			var joint: int = joint_by_io[target]
+		elif joint_by_io.has(io) and mode == "直接" and not is_joystick:
+			var joint: int = joint_by_io[io]
 			body += "    if (%s)\n" % expr
 			body += "        jointAngle[%d] = %.2ff;\n" % [joint, param]
 		else:
-			var slot: int = _io_to_exp_slot(target)
-			var io_type: String = str((engineer_cfg.get("io_init", {}) as Dictionary).get(target, "舵机"))
-			var main_idx: int = 0 if target == "MP03" else (1 if target == "MP74" else -1)
+			var slot: int = _io_to_exp_slot(io)
+			var io_type: String = str((engineer_cfg.get("io_init", {}) as Dictionary).get(io, "舵机"))
+			var main_idx: int = 0 if io == "MP03" else (1 if io == "MP74" else -1)
 			if io_type == "舵机" and (slot >= 0 or main_idx >= 0):
 				var servo_var: String = "dutyOfAuxServo[%d]" % slot if slot >= 0 \
 					else "dutyOfAuxMainServo[%d]" % main_idx
 				if mode == "增量":
 					var duty_step: int = _servo_deg_to_duty_delta(absf(param))
-					if str(row.get("input", "")) in ["右摇杆X", "右摇杆Y"]:
+					if is_joystick:
 						body += "    %s += %s * %.2ff / 2047.0f;\n" \
-							% [servo_var, expr, direction * duty_step]
+							% [servo_var, joystick_expr, direction * duty_step]
 					else:
 						body += "    if (%s)\n" % expr
 						body += "        %s += %.2ff;\n" % [servo_var, direction * duty_step]
-				elif mode == "直接" and not str(row.get("input", "")) in ["右摇杆X", "右摇杆Y"]:
+				elif mode == "直接" and not is_joystick:
 					body += "    if (%s)\n" % expr
 					body += "        %s = %d.0f;\n" % [servo_var, _servo_angle_to_duty(int(param))]
 				continue
@@ -1486,11 +1509,11 @@ func _gen_forward_control(engineer_cfg: Dictionary, joints: Array, jc: int) -> S
 				continue
 			if mode == "速度":
 				body += "    dutyOfAuxMotor[%d] = (int)(%s * %.2ff / 2047.0f);\n" \
-					% [slot, expr, direction * absf(param)]
+					% [slot, joystick_expr, direction * absf(param)]
 			elif mode == "增速":
 				body += "    dutyOfAuxMotor[%d] += (int)(%s * %.2ff / 2047.0f);\n" \
-					% [slot, expr, direction * absf(param)]
-			elif mode == "直接":
+					% [slot, joystick_expr, direction * absf(param)]
+			elif mode == "直接" and not is_joystick:
 				body += "    if (%s)\n" % expr
 				body += "        dutyOfAuxMotor[%d] = %d;\n" % [slot, int(direction * absf(param))]
 				body += "    else\n"
@@ -1514,20 +1537,16 @@ func _gen_forward_control(engineer_cfg: Dictionary, joints: Array, jc: int) -> S
 	return "void CalculateForwardControl()\n{\n%s}\n\n" % body
 
 
-func _engineer_input_expr(input_name: String) -> String:
-	match input_name:
-		"右摇杆X": return "(float)valueOfRoker[1][0]"
-		"右摇杆Y": return "(float)valueOfRoker[1][1]"
-		"A": return "RcKeyValueRead(KEY_OFFSET_A)"
-		"B": return "RcKeyValueRead(KEY_OFFSET_B)"
-		"C": return "RcKeyValueRead(KEY_OFFSET_C)"
-		"D": return "RcKeyValueRead(KEY_OFFSET_D)"
-		"↑": return "RcKeyValueRead(KEY_OFFSET_UP)"
-		"↓": return "RcKeyValueRead(KEY_OFFSET_DOWN)"
-		"←": return "RcKeyValueRead(KEY_OFFSET_LEFT)"
-		"->", "→": return "RcKeyValueRead(KEY_OFFSET_RIGHT)"
-		"E", "R": return "RcKeyValueRead(KEY_OFFSET_1)" # R 是旧名别名
-		_: return "0"
+## 工程多模式按键映射行展平（逆解固件的正解部分暂不区分模式，全部行生效）。
+## 注：模式切换与逆解的正解/逆解切换的合并语义待定，当前按全部行处理。
+func _all_engineer_rows(engineer_cfg: Dictionary) -> Array:
+	var out: Array = []
+	var modes: Array = engineer_cfg.get("modes", []) if engineer_cfg.get("modes", []) is Array else []
+	for mi in range(modes.size()):
+		var rows: Array = modes[mi].get("rows", []) if modes[mi] is Dictionary else []
+		for row in rows:
+			out.append(row)
+	return out
 
 
 ## 左摇杆底盘控制在正解和逆解模式下都持续运行。
@@ -1990,8 +2009,8 @@ func _chassis_slots(cfg: Dictionary) -> Array:
 func _aux_motor_slots(cfg: Dictionary) -> Array:
 	var slots: Array = []
 	var io_init: Dictionary = cfg.get("io_init", {})
-	for row in cfg.get("key_map", []):
-		var pin: String = str(row.get("target", ""))
+	for row in _all_engineer_rows(cfg):
+		var pin: String = str(row.get("io", ""))
 		var slot: int = _io_to_exp_slot(pin)
 		if slot >= 0 and str(io_init.get(pin, "舵机")) == "电机" and not slot in slots:
 			slots.append(slot)
@@ -2005,8 +2024,8 @@ func _aux_servo_slots(cfg: Dictionary, joints: Array, jc: int,
 		joint_ios.append(str(joints[i].get("io", "")))
 	var slots: Array = []
 	var io_init: Dictionary = cfg.get("io_init", {})
-	for row in cfg.get("key_map", []):
-		var pin: String = str(row.get("target", ""))
+	for row in _all_engineer_rows(cfg):
+		var pin: String = str(row.get("io", ""))
 		var slot: int = _io_to_exp_slot(pin)
 		if slot >= 0 and pin != excluded_pin and not pin in joint_ios \
 				and str(io_init.get(pin, "舵机")) == "舵机" \
@@ -2024,8 +2043,8 @@ func _aux_main_servo_list(cfg: Dictionary, joints: Array, jc: int,
 	for pin in ["MP03", "MP74"]:
 		if pin in joint_ios or pin == excluded_pin:
 			continue
-		for row in cfg.get("key_map", []):
-			if str(row.get("target", "")) == pin:
+		for row in _all_engineer_rows(cfg):
+			if str(row.get("io", "")) == pin:
 				out.append({"idx": 0 if pin == "MP03" else 1,
 					"ch": _pin_to_pwm_channel(pin)})
 				break

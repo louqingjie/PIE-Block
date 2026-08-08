@@ -40,7 +40,7 @@ const P_L2_DIR: NodePath = CHASSIS + "/L2/OptionButton2"
 const P_R1_DIR: NodePath = CHASSIS + "/R1/OptionButton2"
 const P_R2_DIR: NodePath = CHASSIS + "/R2/OptionButton2"
 # 云台（步兵）
-const GIMBAL: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/GimbalSetting"
+const GIMBAL: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/Infantry/GimbalSetting"
 const P_BOOSTER_IO: NodePath = GIMBAL + "/Booster/OptionButton"
 const P_BOOSTER_DIR: NodePath = GIMBAL + "/Booster/OptionButton2"
 const P_FRICTION_L_DIR: NodePath = GIMBAL + "/P64/OptionButton"
@@ -54,7 +54,7 @@ const P_PITCH_DIR: NodePath = GIMBAL + "/Pitch/OptionButton3"
 const P_YAW_MID_OFFSET: NodePath = GIMBAL + "/Yaw/LineEdit"
 const P_PITCH_MID_OFFSET: NodePath = GIMBAL + "/Pitch/LineEdit"
 # 按键映射
-const KEYSET: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Infantry/KeySetting"
+const KEYSET: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/Infantry/KeySetting"
 const P_ZERO_CB: NodePath = KEYSET + "/Zero/CheckBox"
 # 方向键用途选择（移动 / 冲刺 / 其他），是 OptionButton 而非 CheckBox
 const P_ARROW_KEY: NodePath = KEYSET + "/ArrowKey/OptionButton"
@@ -65,70 +65,78 @@ const P_TRIGGER_SPEED: NodePath = KEYSET + "/Trigger/Speed"
 const P_TRIGGER_TIME: NodePath = KEYSET + "/Trigger/Time"
 const P_BOOSTER_KEY: NodePath = KEYSET + "/Booster/OptionButton"
 # 调试界面
-const DEBUG: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Debug"
+const DEBUG: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/Debug"
 # 调试界面各行容器名（P60, P62, P64, P66, P74, P75, P76, P77, MP03, MP74）
 const DEBUG_ROWS: Array = [
 	"HBoxContainer", "HBoxContainer2", "HBoxContainer3", "HBoxContainer4", "HBoxContainer5",
 	"HBoxContainer6", "HBoxContainer7", "HBoxContainer8", "HBoxContainer9", "HBoxContainer10",
 ]
-# 工程师界面
-const ENGINEER: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/Engineer"
-# IO 初始化区（新布局：IOs/Row1={P60,P62,P64,P66,P74}，IOs/Row2={P75,P76,P77,MP03,MP74}，
-# 每个引脚一个 OptionButton(电机/舵机) + MidDegree2(初始角)）
-const P_ENG_P60: NodePath = ENGINEER + "/IOs/Row1/P60/OptionButton"
-const P_ENG_P62: NodePath = ENGINEER + "/IOs/Row1/P62/OptionButton"
-const P_ENG_P64: NodePath = ENGINEER + "/IOs/Row1/P64/OptionButton"
-const P_ENG_P66: NodePath = ENGINEER + "/IOs/Row1/P66/OptionButton"
-const P_ENG_P74: NodePath = ENGINEER + "/IOs/Row1/P74/OptionButton"
-const P_ENG_P75: NodePath = ENGINEER + "/IOs/Row2/P75/OptionButton"
-const P_ENG_P76: NodePath = ENGINEER + "/IOs/Row2/P76/OptionButton"
-const P_ENG_P77: NodePath = ENGINEER + "/IOs/Row2/P77/OptionButton"
-# 主控板舵机端口（与扩展板 P74 不是同一个 IO）
-const P_ENG_MP03: NodePath = ENGINEER + "/IOs/Row2/MP03/OptionButton"
-const P_ENG_MP74: NodePath = ENGINEER + "/IOs/Row2/MP74/OptionButton"
-# 扩展板引脚名 -> IO 初始化区类型选择器路径（供占位提示与配置收集共用）
-const ENG_IO_PATHS: Dictionary = {
-	"P60": ENGINEER + "/IOs/Row1/P60/OptionButton",
-	"P62": ENGINEER + "/IOs/Row1/P62/OptionButton",
-	"P64": ENGINEER + "/IOs/Row1/P64/OptionButton",
-	"P66": ENGINEER + "/IOs/Row1/P66/OptionButton",
-	"P74": ENGINEER + "/IOs/Row1/P74/OptionButton",
-	"P75": ENGINEER + "/IOs/Row2/P75/OptionButton",
-	"P76": ENGINEER + "/IOs/Row2/P76/OptionButton",
-	"P77": ENGINEER + "/IOs/Row2/P77/OptionButton",
+# 构型页：EditZone 下平铺三个 Control（按项目类型切换可见性，无外层 TabContainer）
+const INFANTRY_PAGE: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/Infantry"
+const ENGINEER_TABS: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/Engineer"
+const DEBUG_PAGE: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/Debug"
+# 工程师界面（工程页：Engineer TabContainer 的第 0 个 tab）
+const ENGINEER: String = ENGINEER_TABS + "/Engineer"
+# 步兵页「高级设置」折叠区内的同一套 IO+模式+按键映射（与工程页共用同一份配置）
+const ADV_ENGINEER: String = INFANTRY_PAGE + "/Advanced/ScrollContainer/AdvancedAndEngineer"
+# 共享配置根：按当前构型返回 工程页 / 步兵高级设置
+func _shared_cfg_root() -> String:
+	return ADV_ENGINEER if _current_tab() == 0 else ENGINEER
+# 共享 IO 初始化区相对路径（工程页与步兵高级设置结构一致）。
+# 每个引脚一个 OptionButton(电机/舵机) + MidDegree2(初始角)。
+const ENG_IO_REL: Dictionary = {
+	"P60": "IOs/Row1/P60/OptionButton",
+	"P62": "IOs/Row1/P62/OptionButton",
+	"P64": "IOs/Row1/P64/OptionButton",
+	"P66": "IOs/Row1/P66/OptionButton",
+	"P74": "IOs/Row1/P74/OptionButton",
+	"P75": "IOs/Row2/P75/OptionButton",
+	"P76": "IOs/Row2/P76/OptionButton",
+	"P77": "IOs/Row2/P77/OptionButton",
+	"MP03": "IOs/Row2/MP03/OptionButton",
+	"MP74": "IOs/Row2/MP74/OptionButton",
 }
-# 引脚名 -> 初始角输入框路径（MidDegree2）
-const ENG_IO_MID_PATHS: Dictionary = {
-	"P60": ENGINEER + "/IOs/Row1/P60/MidDegree2",
-	"P62": ENGINEER + "/IOs/Row1/P62/MidDegree2",
-	"P64": ENGINEER + "/IOs/Row1/P64/MidDegree2",
-	"P66": ENGINEER + "/IOs/Row1/P66/MidDegree2",
-	"P74": ENGINEER + "/IOs/Row1/P74/MidDegree2",
-	"P75": ENGINEER + "/IOs/Row2/P75/MidDegree2",
-	"P76": ENGINEER + "/IOs/Row2/P76/MidDegree2",
-	"P77": ENGINEER + "/IOs/Row2/P77/MidDegree2",
-	"MP03": ENGINEER + "/IOs/Row2/MP03/MidDegree2",
-	"MP74": ENGINEER + "/IOs/Row2/MP74/MidDegree2",
+const ENG_IO_MID_REL: Dictionary = {
+	"P60": "IOs/Row1/P60/MidDegree2",
+	"P62": "IOs/Row1/P62/MidDegree2",
+	"P64": "IOs/Row1/P64/MidDegree2",
+	"P66": "IOs/Row1/P66/MidDegree2",
+	"P74": "IOs/Row1/P74/MidDegree2",
+	"P75": "IOs/Row2/P75/MidDegree2",
+	"P76": "IOs/Row2/P76/MidDegree2",
+	"P77": "IOs/Row2/P77/MidDegree2",
+	"MP03": "IOs/Row2/MP03/MidDegree2",
+	"MP74": "IOs/Row2/MP74/MidDegree2",
 }
 # IO 初始化区全部引脚（扩展板 + 主控板舵机口）
 const ENG_ALL_PINS: Array = ["P60", "P62", "P64", "P66", "P74", "P75", "P76", "P77", "MP03", "MP74"]
-# 按键映射区各行容器名
-const ENG_KEY_ROWS: Array = [
-	"RightJoystickX", "RightJoystickY", "A", "B", "C", "D", "Up", "Down", "Left", "Right", "R",
-]
-# 按键映射区各行的显示名（与 ENG_KEY_ROWS 一一对应）
-const ENG_KEY_LABELS: Array = [
-	"右摇杆X", "右摇杆Y", "A", "B", "C", "D", "↑", "↓", "←", "->", "E",
-]
-# 工程逆解算界面（Tab 2）
-const IK: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced"
+# 动态按键映射行控件名（io_and_key.tscn 每行结构）
+const ENG_ROW_CONTROLS: Array = ["Key", "Dir", "Option", "Para", "IO", "Remove"]
+# 模式配置相对路径
+const ENG_MODE_COUNT: String = "Mode/OptionButton"
+const ENG_MODE_SWITCH_KEY: String = "Mode/TabContainer/Change/OptionButton2"
+const ENG_MODE_KEYS: Array = ["Key", "Key2", "Key3", "Key4"]
+# 每模式按键映射页容器
+const ENG_MODE_PAGES: Array = ["TabContainer/M1", "TabContainer/M2", "TabContainer/M3", "TabContainer/M4"]
+
+
+func _eng_io_path(pin: String) -> String:
+	return _shared_cfg_root() + "/" + str(ENG_IO_REL.get(pin, ""))
+
+
+func _eng_io_mid_path(pin: String) -> String:
+	return _shared_cfg_root() + "/" + str(ENG_IO_MID_REL.get(pin, ""))
+
+
+# 工程逆解算界面（Engineer TabContainer 的第 1 个 tab）
+const IK: String = ENGINEER_TABS + "/EngineerAdvanced"
 const P_IK: NodePath = IK
 const P_IK_SUMMARY: NodePath = IK + "/Summary"
 const P_IK_OPEN_SIM: NodePath = IK + "/OpenSim"
 const P_IK_ENABLE_CB: NodePath = IK + "/HBoxContainer/CheckButton"
 const P_IK_PANEL_LABEL: NodePath = IK + "/Label"
-# TabContainer（用于切换代码生成器）
-const P_TAB_CONTAINER: NodePath = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer"
+# 工程内部 TabContainer（0=工程, 1=工程逆解算）；步兵/调试是平铺 Control
+const P_TAB_CONTAINER: NodePath = ENGINEER_TABS
 # 输出
 const P_OUTPUT: NodePath = "VBoxContainer/HBoxContainer/HSplitContainer/CodeZone/VSplitContainer/Output/Output"
 const P_CODE_EDIT: NodePath = "VBoxContainer/HBoxContainer/HSplitContainer/CodeZone/VSplitContainer/Code/CodeEdit"
@@ -270,6 +278,10 @@ func _ready() -> void:
 	if code_edit is CodeEdit:
 		var hl: SyntaxHighlighter = preload("res://scripts/c_highlighter.gd").new()
 		code_edit.syntax_highlighter = hl
+	# 场景模板行改名（Example -> Row01），保证配置快照里的行路径是稳定的 RowNN
+	_normalize_eng_row_names()
+	# 底盘电机引脚在 IO 初始化区强制为电机（须在默认快照之前，让默认配置自洽）
+	_sync_chassis_io_locks()
 	# 场景刚实例化，此刻的控件值就是「默认配置」，新建项目时用它复位
 	_default_config = _snapshot_config()
 	_ik_config = IK_CONFIG.default_config()
@@ -277,6 +289,7 @@ func _ready() -> void:
 	_update_debug_placeholders()
 	# 初始化工程界面参数框占位提示
 	_update_engineer_placeholders()
+	_update_mode_page_visibility()
 	_setup_guide()
 	_setup_build_controller()
 	_setup_download_controller()
@@ -381,6 +394,11 @@ func _connect_signals() -> void:
 		var node2: Node = get_node_or_null(p)
 		if node2 is OptionButton:
 			node2.item_selected.connect(_run_check)
+	# 底盘电机选择变化时，IO 初始化区自动锁定为电机
+	for p in [P_L1_IO, P_L2_IO, P_R1_IO, P_R2_IO]:
+		var ch_btn: Node = get_node_or_null(p)
+		if ch_btn is OptionButton:
+			ch_btn.item_selected.connect(_sync_chassis_io_locks)
 	# ArrowKey 是 OptionButton（移动/冲刺/其他）
 	var arrow: Node = get_node_or_null(P_ARROW_KEY)
 	if arrow is OptionButton:
@@ -393,31 +411,35 @@ func _connect_signals() -> void:
 	var zero_cb: Node = get_node_or_null(P_ZERO_CB)
 	if zero_cb is BaseButton:
 		zero_cb.toggled.connect(_run_check)
-	# 工程师界面：IO 初始化区变化触发检查（也会改变参数框的含义）
-	for p in [P_ENG_P60, P_ENG_P62, P_ENG_P64, P_ENG_P66,
-			P_ENG_P74, P_ENG_P75, P_ENG_P76, P_ENG_P77,
-			P_ENG_MP03, P_ENG_MP74]:
-		var eng_btn: Node = get_node_or_null(p)
-		if eng_btn is OptionButton:
-			eng_btn.item_selected.connect(_update_engineer_placeholders)
-			eng_btn.item_selected.connect(_run_check)
-	# 工程师界面：IO 初始角输入框变化触发检查
-	for pin in ENG_ALL_PINS:
-		var mid_le: Node = get_node_or_null(NodePath(ENG_IO_MID_PATHS[pin]))
-		if mid_le is LineEdit:
-			mid_le.text_changed.connect(_run_check)
-	# 工程师界面：按键映射区变化触发检查
-	for row_name in ENG_KEY_ROWS:
-		var row_path: String = ENGINEER + "/" + row_name
-		for child_name in ["OptionButton2", "OptionButton", "OptionButton3"]:
-			var eng_child: Node = get_node_or_null(NodePath(row_path +"/"+ child_name))
-			if eng_child is OptionButton:
-				# 模式/目标 IO 变了，参数的量纲和范围也跟着变
-				eng_child.item_selected.connect(_update_engineer_placeholders)
-				eng_child.item_selected.connect(_run_check)
-		var eng_le: Node = get_node_or_null(NodePath(row_path +"/LineEdit"))
-		if eng_le is LineEdit:
-			eng_le.text_changed.connect(_run_check)
+	# 工程师界面：共享 IO 初始化区（工程页 + 步兵高级设置，两份实例都接线）
+	for root in [ENGINEER, ADV_ENGINEER]:
+		for pin in ENG_ALL_PINS:
+			var eng_btn: Node = get_node_or_null(NodePath(root + "/" + str(ENG_IO_REL.get(pin, ""))))
+			if eng_btn is OptionButton:
+				eng_btn.item_selected.connect(_update_engineer_placeholders)
+				eng_btn.item_selected.connect(_run_check)
+			var mid_le: Node = get_node_or_null(NodePath(root + "/" + str(ENG_IO_MID_REL.get(pin, ""))))
+			if mid_le is LineEdit:
+				mid_le.text_changed.connect(_run_check)
+		# 模式配置：模式个数 / 切换按键 / 一一对应模式键 / 切换方式 tab
+		var mode_count_btn: Node = get_node_or_null(NodePath(root + "/Mode/OptionButton"))
+		if mode_count_btn is OptionButton:
+			mode_count_btn.item_selected.connect(_update_mode_page_visibility)
+			mode_count_btn.item_selected.connect(_run_check)
+		var switch_key_btn: Node = get_node_or_null(NodePath(root + "/Mode/TabContainer/Change/OptionButton2"))
+		if switch_key_btn is OptionButton:
+			switch_key_btn.item_selected.connect(_run_check)
+		for kname in ENG_MODE_KEYS:
+			var kbtn: Node = get_node_or_null(NodePath(root + "/Mode/TabContainer/Select/" + kname))
+			if kbtn is OptionButton:
+				kbtn.item_selected.connect(_run_check)
+		var mode_tabs: Node = get_node_or_null(NodePath(root + "/Mode/TabContainer"))
+		if mode_tabs is TabContainer:
+			mode_tabs.tab_changed.connect(_run_check)
+		# 每模式动态按键映射行
+		for page in ENG_MODE_PAGES:
+			_wire_eng_mode_page(root, page)
+	_update_mode_page_visibility()
 	# 编译按钮
 	var build_btn: Node = get_node_or_null(P_BUILD_BTN)
 	if build_btn is BaseButton:
@@ -525,6 +547,9 @@ func _snapshot_node(node: Node, zone: Node, out: Dictionary) -> void:
 func _control_value(node: Node) -> Variant:
 	if node == get_node_or_null(P_IK_ENABLE_CB):
 		return null
+	if node is TabContainer:
+		# 工程「切换方式」等 TabContainer 需要持久化当前 tab
+		return {"i": node.current_tab}
 	if node is OptionButton:
 		return {"i": _option_index(node), "s": _option_text(node)}
 	if node is LineEdit:
@@ -566,6 +591,9 @@ func _apply_config(cfg: Dictionary) -> void:
 	_loading = false
 	_update_debug_placeholders()
 	_update_engineer_placeholders()
+	_update_mode_page_visibility()
+	# 底盘电机引脚锁定：旧存档把底盘引脚存成舵机时，这里自动纠正为电机
+	_sync_chassis_io_locks()
 	_run_check()
 
 
@@ -573,7 +601,13 @@ func _apply_control_value(node: Node, value: Variant) -> void:
 	if not value is Dictionary:
 		return
 	var v: Dictionary = value
-	if node is OptionButton:
+	if node is TabContainer:
+		# 恢复当前 tab（钳到合法范围）
+		if v.has("i"):
+			var idx: int = int(v["i"])
+			if idx >= 0 and idx < node.get_tab_count():
+				node.current_tab = idx
+	elif node is OptionButton:
 		# 先按文本匹配，失败再回退索引（并钳到合法范围，避免 selected=-1 的坑）
 		var text: String = str(v.get("s", ""))
 		var matched: bool = false
@@ -746,9 +780,22 @@ func _on_guide_step_pressed(step: int) -> void:
 			_confirm_hardware_test()
 
 
+## 当前编辑页的逻辑索引（0=步兵, 1=工程, 2=工程逆解算, 3=调试）。
+## 步兵/调试是平铺 Control（按项目类型切换可见性），工程是内部 TabContainer。
 func _current_tab() -> int:
+	var edit_zone: Node = get_node_or_null(P_EDIT_ZONE)
+	if not is_instance_valid(edit_zone):
+		return 0
+	var infra: Node = edit_zone.get_node_or_null("Infantry")
+	var dbg: Node = edit_zone.get_node_or_null("Debug")
+	if infra is CanvasItem and infra.visible:
+		return 0
+	if dbg is CanvasItem and dbg.visible:
+		return 3
 	var tabs: Node = get_node_or_null(P_TAB_CONTAINER)
-	return tabs.current_tab if tabs is TabContainer else 0
+	if tabs is TabContainer:
+		return 1 if tabs.current_tab == 0 else 2
+	return 0
 
 
 func _focus_control(path: NodePath) -> void:
@@ -882,10 +929,8 @@ func _apply_no_project_state() -> void:
 	_apply_ik_gate(false)
 	_stage2_preview = false
 	_dirty = false
-	var tab_container: Node = get_node_or_null(P_TAB_CONTAINER)
-	if tab_container is TabContainer:
-		for i in range(tab_container.get_tab_count()):
-			tab_container.set_tab_hidden(i, false)
+	# 无项目（自由编辑）：默认显示步兵页
+	_apply_kind_visibility(PF.KIND_INFANTRY, 0)
 	_set_gated_buttons_disabled(false)
 	_set_config_enabled(true)
 	_update_title()
@@ -1065,18 +1110,27 @@ func _adopt_project(data: Dictionary, path: String) -> void:
 	_update_title()
 
 
-## 按项目类型隐藏无关的 Tab（类型不可转换的第二道保证）
+## 按项目类型显示对应页面（类型不可转换的第二道保证）。
+## 步兵/调试是 EditZone 下平铺的 Control（可见性切换）；工程是内部 TabContainer。
 func _apply_kind_visibility(kind: String, want_tab: int) -> void:
-	var tab_container: Node = get_node_or_null(P_TAB_CONTAINER)
-	if not tab_container is TabContainer:
+	var edit_zone: Node = get_node_or_null(P_EDIT_ZONE)
+	if not is_instance_valid(edit_zone):
 		return
+	var infra: Node = edit_zone.get_node_or_null("Infantry")
+	var eng_tabs: Node = edit_zone.get_node_or_null("Engineer")
+	var dbg: Node = edit_zone.get_node_or_null("Debug")
+	if infra is CanvasItem:
+		infra.visible = (kind == PF.KIND_INFANTRY)
+	if eng_tabs is CanvasItem:
+		eng_tabs.visible = (kind == PF.KIND_ENGINEER)
+	if dbg is CanvasItem:
+		dbg.visible = (kind == PF.KIND_DEBUG)
+	# 工程内部 tab：0=工程, 1=工程逆解算（want_tab 是逻辑索引 1/2）
 	var allowed: Array = PF.kind_tabs(kind)
-	for i in range(tab_container.get_tab_count()):
-		tab_container.set_tab_hidden(i, not i in allowed)
-	# current_tab 指向隐藏页会显示空白，必须落在可见页上
 	var target: int = want_tab if want_tab in allowed else PF.kind_default_tab(kind)
-	if target < tab_container.get_tab_count():
-		tab_container.current_tab = target
+	if eng_tabs is TabContainer and kind == PF.KIND_ENGINEER:
+		eng_tabs.current_tab = target - 1
+	_update_mode_page_visibility()
 
 
 ## 顶栏标题：* 项目名 · 构型 · 阶段
@@ -1152,9 +1206,7 @@ func _save_project(verbose: bool) -> void:
 		_project["config"] = _snapshot_config()
 		_project["ik_config"] = _ik_config.duplicate(true)
 		_project["main_c_stage1"] = _current_preview_code()
-		var tab_container: Node = get_node_or_null(P_TAB_CONTAINER)
-		if tab_container is TabContainer:
-			_project["active_tab"] = tab_container.current_tab
+		_project["active_tab"] = _current_tab()
 	var res: Dictionary = PF.save_to(AppState.project_path, _project)
 	if not res["ok"]:
 		_append_output("[Error] 保存失败：%s" % res["err"])
@@ -1262,19 +1314,14 @@ func _update_sim_btn_visibility() -> void:
 	var sim_btn: Node = get_node_or_null(P_ARM_SIM_BTN)
 	if not sim_btn is CanvasItem:
 		return
-	var tab_container: Node = get_node_or_null(P_TAB_CONTAINER)
-	var tab: int = tab_container.current_tab if tab_container is TabContainer else 0
+	var tab: int = _current_tab()
 	sim_btn.visible = (tab == 0 or tab == 2)
 
 
 ## 根据当前 Tab 选项获取对应的代码生成器
 func _get_current_codegen() -> CodeGenBase:
-	var tab_container: Node = get_node_or_null(P_TAB_CONTAINER)
-	if not tab_container is TabContainer:
-		return CodeGenInfantry.new()
-	var current: int = tab_container.current_tab
 	# Tab 顺序：0=步兵, 1=工程, 2=工程逆解算, 3=调试
-	match current:
+	match _current_tab():
 		0:
 			return CodeGenInfantry.new()
 		1, 2:
@@ -1318,37 +1365,179 @@ const EXPANSION_PINS: Array = ["P60", "P62", "P64", "P66", "P74", "P75", "P76", 
 ## 根据每行的控制模式和目标 IO 类型，更新参数框的占位文本。
 ## 舵机角度一律是「相对中位的偏移角」，行程 ±90°，不是 0~180°。
 func _update_engineer_placeholders(_idx: int = -1) -> void:
+	var root: String = _shared_cfg_root()
 	var io_init: Dictionary = {}
-	for pin in EXPANSION_PINS:
-		io_init[pin] = _get_option_text(NodePath(ENG_IO_PATHS[pin]))
-	for row_name in ENG_KEY_ROWS:
-		var row_path: String = ENGINEER + "/" + row_name
-		var mode_btn: Node = get_node_or_null(NodePath(row_path +"/OptionButton"))
-		var target_btn: Node = get_node_or_null(NodePath(row_path +"/OptionButton3"))
-		var line_edit: Node = get_node_or_null(NodePath(row_path +"/LineEdit"))
-		if not mode_btn is OptionButton or not target_btn is OptionButton \
-				or not line_edit is LineEdit:
+	for pin in ENG_ALL_PINS:
+		io_init[pin] = _get_option_text(NodePath(root + "/" + str(ENG_IO_REL.get(pin, ""))))
+	for page in ENG_MODE_PAGES:
+		var vb: Node = get_node_or_null(NodePath(root + "/" + page + "/ScrollContainer/VBoxContainer"))
+		if vb == null:
 			continue
-		var mode: String = _option_text(mode_btn)
-		var target: String = _option_text(target_btn)
-		if target.is_empty() or target == "不使用":
-			line_edit.placeholder_text = ""
+		for row in vb.get_children():
+			if not row is HBoxContainer:
+				continue
+			var mode_btn: Node = row.get_node_or_null("Option")
+			var io_btn: Node = row.get_node_or_null("IO")
+			var para_le: Node = row.get_node_or_null("Para")
+			if not mode_btn is OptionButton or not io_btn is OptionButton \
+					or not para_le is LineEdit:
+				continue
+			var mode: String = _option_text(mode_btn)
+			var target: String = _option_text(io_btn)
+			# MP03/MP74 固定舵机；扩展板引脚看 IO 初始化区
+			var is_servo: bool = target.begins_with("MP") or io_init.get(target, "舵机") == "舵机"
+			var placeholder: String = ""
+			match mode:
+				"增量":
+					# 单次/满偏步长，取正值，方向由左侧「正/反」决定
+					placeholder = "步长 0~%d°" % SERVO_MAX_ANGLE
+				"直接":
+					if is_servo:
+						placeholder = "偏移角 -%d~%d°" % [SERVO_MAX_ANGLE, SERVO_MAX_ANGLE]
+					else:
+						placeholder = "速度 0~%d" % MOTOR_SPEED_MAX
+				"速度", "增速":
+					placeholder = "满偏速度 0~%d" % MOTOR_SPEED_MAX
+			para_le.placeholder_text = placeholder
+
+
+# ------------------------------------------------------------------ 动态按键映射行
+## 把场景里的模板行（Example）按顺序改名为 Row01..RowNN，使配置快照路径稳定
+func _normalize_eng_row_names() -> void:
+	for root in [ENGINEER, ADV_ENGINEER]:
+		for page in ENG_MODE_PAGES:
+			var vb: Node = get_node_or_null(NodePath(root + "/" + page + "/ScrollContainer/VBoxContainer"))
+			if vb == null:
+				continue
+			var idx: int = 1
+			for child in vb.get_children():
+				if child is HBoxContainer:
+					child.name = "Row%02d" % idx
+					idx += 1
+
+
+## 给某个模式页的「+」按钮与已有行接线
+func _wire_eng_mode_page(root: String, page: String) -> void:
+	var vb: Node = get_node_or_null(NodePath(root + "/" + page + "/ScrollContainer/VBoxContainer"))
+	if vb == null:
+		return
+	var add_btn: Node = vb.get_node_or_null("Add")
+	if add_btn is BaseButton:
+		add_btn.pressed.connect(_on_eng_row_add_pressed.bind(add_btn))
+	for child in vb.get_children():
+		if child is HBoxContainer:
+			_wire_eng_row(child)
+
+
+func _wire_eng_row(row: Node) -> void:
+	for child_name in ["Key", "Dir", "Option", "IO"]:
+		var ctrl: Node = row.get_node_or_null(child_name)
+		if ctrl is OptionButton:
+			ctrl.item_selected.connect(_update_engineer_placeholders)
+			ctrl.item_selected.connect(_run_check)
+	var para: Node = row.get_node_or_null("Para")
+	if para is LineEdit:
+		para.text_changed.connect(_run_check)
+	var rem: Node = row.get_node_or_null("Remove")
+	if rem is BaseButton:
+		rem.pressed.connect(_on_eng_row_remove_pressed.bind(row))
+
+
+## 按「+」新增一行（复制模板行并重置为默认值）
+func _on_eng_row_add_pressed(add_btn: Node) -> void:
+	var vb: Node = add_btn.get_parent() if add_btn != null else null
+	if vb == null:
+		return
+	var proto: Node = null
+	for child in vb.get_children():
+		if child is HBoxContainer:
+			proto = child
+			break
+	if proto == null:
+		return
+	var row: Node = proto.duplicate(true)
+	row.name = "Row%02d" % (_eng_row_count(vb) + 1)
+	# 重置为默认值：E / 正 / 增量 / 空参数 / P60
+	for child_name in ["Key", "Dir", "Option", "IO"]:
+		var ctrl: Node = row.get_node_or_null(child_name)
+		if ctrl is OptionButton and ctrl.item_count > 0:
+			ctrl.selected = 0
+	var para: Node = row.get_node_or_null("Para")
+	if para is LineEdit:
+		para.text = ""
+	vb.add_child(row)
+	# Add 按钮保持在最后
+	vb.move_child(row, vb.get_child_count() - 2)
+	_wire_eng_row(row)
+	_run_check()
+
+
+## 删除一行（允许删到 0 行）
+func _on_eng_row_remove_pressed(row: Node) -> void:
+	if row == null or not is_instance_valid(row):
+		return
+	row.queue_free()
+	_run_check()
+
+
+func _eng_row_count(vb: Node) -> int:
+	var n: int = 0
+	for child in vb.get_children():
+		if child is HBoxContainer:
+			n += 1
+	return n
+
+
+## 模式个数变化：隐藏/显示 模式2~4 页；模式1 时隐藏切换方式区
+func _update_mode_page_visibility() -> void:
+	for root in [ENGINEER, ADV_ENGINEER]:
+		var count_btn: Node = get_node_or_null(NodePath(root + "/Mode/OptionButton"))
+		if not count_btn is OptionButton:
 			continue
-		# MP03/MP74 固定舵机；扩展板引脚看 IO 初始化区
-		var is_servo: bool = target.begins_with("MP") or io_init.get(target, "舵机") == "舵机"
-		var placeholder: String = ""
-		match mode:
-			"增量":
-				# 单次/满偏步长，取正值，方向由左侧「正/反」决定
-				placeholder = "步长 0~%d°" % SERVO_MAX_ANGLE
-			"直接":
-				if is_servo:
-					placeholder = "偏移角 -%d~%d°" % [SERVO_MAX_ANGLE, SERVO_MAX_ANGLE]
-				else:
-					placeholder = "速度 0~%d" % MOTOR_SPEED_MAX
-			"速度", "增速":
-				placeholder = "满偏速度 0~%d" % MOTOR_SPEED_MAX
-		line_edit.placeholder_text = placeholder
+		var count: int = _option_text(count_btn).to_int()
+		for i in range(4):
+			var page: Node = get_node_or_null(NodePath(root + "/" + ENG_MODE_PAGES[i]))
+			if page is CanvasItem:
+				page.visible = (i < count)
+
+
+## 底盘电机引脚锁定：底盘四轮选中的引脚在 IO 初始化区强制为电机，
+## 并禁用该引脚的「舵机」选项（物理上扩展板口在开机时按电机初始化）。
+## 底盘选择变化、项目载入后都要调用。
+func _sync_chassis_io_locks() -> void:
+	var chassis_pins: Array = []
+	for p in [P_L1_IO, P_L2_IO, P_R1_IO, P_R2_IO]:
+		var pin: String = _get_option_text(p).split(" ")[0].strip_edges()
+		if not pin.is_empty() and not pin in chassis_pins:
+			chassis_pins.append(pin)
+	for root in [ENGINEER, ADV_ENGINEER]:
+		for pin in ENG_IO_REL.keys():
+			var btn: Node = get_node_or_null(NodePath(root + "/" + str(ENG_IO_REL.get(pin, ""))))
+			if not btn is OptionButton:
+				continue
+			var locked: bool = pin in chassis_pins
+			var motor_idx: int = -1
+			var servo_idx: int = -1
+			for i in range(btn.item_count):
+				match btn.get_item_text(i):
+					"电机":
+						motor_idx = i
+					"舵机":
+						servo_idx = i
+			if locked:
+				if motor_idx >= 0:
+					btn.selected = motor_idx
+				if servo_idx >= 0:
+					btn.set_item_disabled(servo_idx, true)
+			else:
+				if servo_idx >= 0:
+					btn.set_item_disabled(servo_idx, false)
+				if btn.selected < 0 or btn.is_item_disabled(btn.selected):
+					# 兜底：当前项被禁用时回到第一个可用项
+					for i in range(btn.item_count):
+						if not btn.is_item_disabled(i):
+							btn.selected = i
+							break
 
 
 ## 收集调试界面各行配置，返回 Array[Dictionary]
@@ -1400,15 +1589,16 @@ func _run_check(_a = null, _b = null) -> void:
 	# 拨弹模式切换：目视闭环不需要拨弹时间，隐藏输入框（只影响可见性，不影响门控）
 	_update_feed_mode_ui()
 	# 根据当前 Tab 决定执行哪些检查
-	var tab_container: Node = get_node_or_null(P_TAB_CONTAINER)
-	var current_tab: int = tab_container.current_tab if tab_container is TabContainer else 0
+	var current_tab: int = _current_tab()
 	var issues: Array = []
 	match current_tab:
 		0:
-			# 步兵模式检查
-			issues = SC.check_infantry(_collect_config())
+			# 步兵模式检查（含高级设置里的共享多模式按键映射）
+			var inf_cfg: Dictionary = _collect_config()
+			inf_cfg.merge(_collect_engineer_config(), true)
+			issues = SC.check_infantry(inf_cfg)
 		1, 2:
-			# 工程双模式：两页共同配置同一份固件。
+			# 工程多模式：工程页与逆解算页共同配置同一份固件。
 			# 未启用逆解算时只检查正解（按键映射）部分，逆解校验由检查器按 enabled 跳过。
 			issues = SC.check_engineer(_collect_engineer_config(), _collect_ik_config())
 		3:
@@ -1433,7 +1623,10 @@ func _run_check(_a = null, _b = null) -> void:
 			else:
 				cfg = _collect_engineer_config()
 		_:
-			cfg = _collect_config()
+			# 步兵：固定云台/发射配置 + 高级设置的共享多模式按键映射
+			var inf_gen_cfg: Dictionary = _collect_config()
+			inf_gen_cfg.merge(_collect_engineer_config(), true)
+			cfg = inf_gen_cfg
 	var code: String = _codegen.generate(cfg)
 	var code_edit: Node = get_node_or_null(P_CODE_EDIT)
 	if code_edit is CodeEdit:
@@ -1561,43 +1754,55 @@ func _collect_engineer_config() -> Dictionary:
 	cfg["sprint_speed"] = _get_line_text(P_SPRINT_SPEED).strip_edges()
 	var sprint_cb: Node = get_node_or_null(P_SPRINT_CB)
 	cfg["sprint_enabled"] = (sprint_cb is BaseButton) and sprint_cb.button_pressed
-	# --- IO 初始化区 ---
+	# --- IO 初始化区（共享区：工程页 / 步兵高级设置，含主控板口）---
+	var root: String = _shared_cfg_root()
 	var io_init: Dictionary = {}
-	for pin in EXPANSION_PINS:
-		io_init[pin] = _get_option_text(NodePath(ENG_IO_PATHS[pin]))
-	io_init["MP03"] = _get_option_text(P_ENG_MP03)
-	io_init["MP74"] = _get_option_text(P_ENG_MP74)
+	for pin in ENG_ALL_PINS:
+		io_init[pin] = _get_option_text(NodePath(root + "/" + str(ENG_IO_REL.get(pin, ""))))
 	cfg["io_init"] = io_init
-	# --- IO 初始化区：各引脚舵机初始角（相对中位偏移，仅舵机有效）---
+	# --- 各引脚舵机初始角（相对中位偏移，仅舵机有效）---
 	var io_mid: Dictionary = {}
 	for pin in ENG_ALL_PINS:
-		io_mid[pin] = _get_line_text(NodePath(ENG_IO_MID_PATHS[pin])).strip_edges()
+		io_mid[pin] = _get_line_text(NodePath(root + "/" + str(ENG_IO_MID_REL.get(pin, "")))).strip_edges()
 	cfg["io_mid"] = io_mid
-	# --- 按键映射区 ---
-	var key_map: Array = []
-	for i in range(ENG_KEY_ROWS.size()):
-		var row_name: String = ENG_KEY_ROWS[i]
-		var row_path: String = ENGINEER + "/" + row_name
-		var dir_btn: Node = get_node_or_null(NodePath(row_path +"/OptionButton2"))
-		var mode_btn: Node = get_node_or_null(NodePath(row_path +"/OptionButton"))
-		var param_edit: Node = get_node_or_null(NodePath(row_path +"/LineEdit"))
-		var target_btn: Node = get_node_or_null(NodePath(row_path +"/OptionButton3"))
-		if not dir_btn is OptionButton or not mode_btn is OptionButton or not target_btn is OptionButton:
-			continue
-		var param_text: String = param_edit.text.strip_edges() if param_edit is LineEdit else ""
-		# 目标为「不使用」时归一成空串，下游据此跳过该行
-		var target_text: String = _option_text(target_btn)
-		if target_text == "不使用":
-			target_text = ""
-		key_map.append({
-			"input": ENG_KEY_LABELS[i],
-			"dir": _option_text(dir_btn),
-			"mode": _option_text(mode_btn),
-			"param": param_text,
-			"target": target_text,
-		})
-	cfg["key_map"] = key_map
+	# --- 模式配置 ---
+	var mode_count_btn: Node = get_node_or_null(NodePath(root + "/Mode/OptionButton"))
+	cfg["mode_count"] = _option_text(mode_count_btn).to_int() if mode_count_btn is OptionButton else 1
+	var mode_tabs: Node = get_node_or_null(NodePath(root + "/Mode/TabContainer"))
+	# 切换方式：0=单击切换, 1=一一对应
+	cfg["switch_strategy"] = "一一对应" \
+		if (mode_tabs is TabContainer and mode_tabs.current_tab == 1) else "单击切换"
+	cfg["mode_switch_key"] = _get_option_text(NodePath(root + "/" + ENG_MODE_SWITCH_KEY))
+	var mode_keys: Array = []
+	for kname in ENG_MODE_KEYS:
+		mode_keys.append(_get_option_text(NodePath(root + "/Mode/TabContainer/Select/" + kname)))
+	cfg["mode_keys"] = mode_keys
+	# --- 每模式动态按键映射行 ---
+	var modes: Array = []
+	for page in ENG_MODE_PAGES:
+		modes.append({"rows": _collect_eng_rows(root, page)})
+	cfg["modes"] = modes
 	return cfg
+
+
+## 收集某个模式页的动态按键映射行
+func _collect_eng_rows(root: String, page: String) -> Array:
+	var rows: Array = []
+	var vb: Node = get_node_or_null(NodePath(root + "/" + page + "/ScrollContainer/VBoxContainer"))
+	if vb == null:
+		return rows
+	for child in vb.get_children():
+		if not child is HBoxContainer:
+			continue
+		var para: Node = child.get_node_or_null("Para")
+		rows.append({
+			"key": _option_text(child.get_node_or_null("Key")),
+			"dir": _option_text(child.get_node_or_null("Dir")),
+			"mode": _option_text(child.get_node_or_null("Option")),
+			"param": (para.text.strip_edges() if para is LineEdit else ""),
+			"io": _option_text(child.get_node_or_null("IO")),
+		})
+	return rows
 
 
 ## 读取 OptionButton 当前项文本。
@@ -1657,9 +1862,7 @@ func _get_current_project_dst() -> String:
 	if not _project.is_empty():
 		return AppState.project_dst_for_kind(str(_project["kind"]))
 	# 没有项目时（直接运行本场景）退化成按 Tab 猜
-	var tab_container: Node = get_node_or_null(P_TAB_CONTAINER)
-	var current_tab: int = tab_container.current_tab if tab_container is TabContainer else 0
-	return AppState.project_dst_for_kind(PF.tab_to_kind(current_tab))
+	return AppState.project_dst_for_kind(PF.tab_to_kind(_current_tab()))
 
 
 ## 编译按钮回调：确认外部 Keil 目录 -> 写盘 -> 异步编译
@@ -1875,8 +2078,7 @@ func _enter_ai_edit() -> void:
 	if not _toolchain().write_main_c(project_dst, code):
 		_append_output("[Error] 写入 main.c 失败，请检查 user:// 目录权限")
 		return
-	var tab_container: Node = get_node_or_null(P_TAB_CONTAINER)
-	var tab: int = tab_container.current_tab if tab_container is TabContainer else 0
+	var tab: int = _current_tab()
 	if _project.is_empty():
 		# 无项目（直跑本场景）：只切场景，没有阶段概念
 		AppState.set_context(project_dst, PF.tab_to_kind(tab), tab)
@@ -1905,8 +2107,7 @@ func _enter_ai_edit() -> void:
 func _on_arm_sim_pressed() -> void:
 	if _arm_sim != null:
 		return
-	var tab_container: Node = get_node_or_null(P_TAB_CONTAINER)
-	var tab: int = tab_container.current_tab if tab_container is TabContainer else 0
+	var tab: int = _current_tab()
 	if tab == 2 and not _ik_confirmed:
 		_show_countdown_scene(WARN_IK_SCENE,
 			"确认机械臂逆解", "机械臂逆解和 3D 仿真属于实验性功能。\n请确认你理解其风险后再继续。",
@@ -2075,8 +2276,8 @@ func _on_arm_sim_config_changed(payload: Dictionary) -> void:
 	var io_patch: Dictionary = payload.get("io_init", {})
 	_loading = true
 	for pin in io_patch.keys():
-		if ENG_IO_PATHS.has(pin):
-			var node: Node = get_node_or_null(NodePath(ENG_IO_PATHS[pin]))
+		if ENG_IO_REL.has(pin):
+			var node: Node = get_node_or_null(NodePath(_shared_cfg_root() + "/" + str(ENG_IO_REL.get(pin, ""))))
 			if node is OptionButton:
 				_select_option_by_text(node, str(io_patch[pin]))
 	_loading = false

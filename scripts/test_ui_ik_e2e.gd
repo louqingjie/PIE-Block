@@ -40,7 +40,9 @@ func _initialize() -> void:
 	root.add_child(ui)
 	await process_frame
 
-	var ik_root: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/SecondRow/TabContainer/EngineerAdvanced"
+	# 切到工程构型页（工程 TabContainer + 内部「工程逆解算」tab）
+	ui._apply_kind_visibility("engineer", 2)
+	var ik_root: String = str(ui.IK)
 	_check("旧关节数控件已移除", ui.get_node_or_null(ik_root + "/ConfigType") == null)
 	_check("入口摘要存在", ui.get_node_or_null(ik_root + "/Summary") is Label)
 	_check("3D 配置入口存在", ui.get_node_or_null(ik_root + "/OpenSim") is Button)
@@ -52,7 +54,7 @@ func _initialize() -> void:
 	_check("收集结果是副本", str(ui._ik_config["joints"][0]["len"]) == "0")
 
 	for pin in ["P74", "P75", "P76", "P77"]:
-		var node: Node = ui.get_node_or_null(NodePath(ui.ENG_IO_PATHS[pin]))
+		var node: Node = ui.get_node_or_null(NodePath(ui._eng_io_path(pin)))
 		if node is OptionButton:
 			ui._select_option_by_text(node, "舵机")
 	var dual: Dictionary = ui._collect_engineer_dual_config()
@@ -67,7 +69,7 @@ func _initialize() -> void:
 	ui._on_arm_sim_config_changed({"ik": changed, "io_init": {"P76": "舵机"}})
 	_check("仿真修改实时更新内存", str(ui._ik_config["joints"][1]["len"]) == "175")
 	_check("仿真修改标记未保存", ui._dirty)
-	var p76: Node = ui.get_node_or_null(NodePath(ui.ENG_IO_PATHS["P76"]))
+	var p76: Node = ui.get_node_or_null(NodePath(ui._eng_io_path("P76")))
 	_check("扩展口自动初始化为舵机", p76 is OptionButton and ui._option_text(p76) == "舵机")
 	var summary: Label = ui.get_node(ik_root + "/Summary")
 	_check("入口摘要显示夹爪 IO", summary.text.contains("夹爪 MP03"))
@@ -75,11 +77,11 @@ func _initialize() -> void:
 	_check("仿真配置改变生成代码", code_before != code_after and code_after.contains("175.00f"))
 
 	var tabs: TabContainer = ui.get_node(ui.P_TAB_CONTAINER)
-	tabs.current_tab = 1
+	tabs.current_tab = 0
 	ui._run_check()
 	var code_edit: CodeEdit = ui.get_node(ui.P_CODE_EDIT)
 	var engineer_code: String = code_edit.text
-	tabs.current_tab = 2
+	tabs.current_tab = 1
 	ui._run_check()
 	_check("两张工程页生成相同代码", code_edit.text == engineer_code)
 
@@ -101,7 +103,7 @@ func _initialize() -> void:
 		and ui.get_node(ik_root + "/OpenSim").disabled)
 	_check("未确认时 IK 摘要不可见", not ui.get_node(ik_root + "/Summary").visible)
 	# 未启用逆解算：生成纯正解固件，不含逆解内容，也不产生逆解相关检查项
-	tabs.current_tab = 1
+	tabs.current_tab = 0
 	ui._run_check()
 	var no_ik_code: String = code_edit.text
 	_check("未启用时生成纯正解代码", not no_ik_code.contains("JOINT_COUNT")
@@ -113,7 +115,7 @@ func _initialize() -> void:
 			no_ik_has_ik_issue = true
 			break
 	_check("未启用时不产生逆解检查项", not no_ik_has_ik_issue)
-	tabs.current_tab = 2
+	tabs.current_tab = 1
 	ui._run_check()
 	_check("未启用时两张工程页仍生成相同代码", code_edit.text == no_ik_code)
 	ui._on_ik_gate_confirmed()

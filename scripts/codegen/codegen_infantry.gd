@@ -251,6 +251,60 @@ func generate(cfg: Dictionary) -> String:
 		pwm_init_lines += "    PWM_Init(%s, 50, midDutyOfServo[1]); // 云台垂直舵机\n" % _pin_to_pwm_channel(pitch_pin)
 		pwm_set_lines += "    PWM_SET_Frequency(%s, 50, dutyOfServo[1]);\n" % _pin_to_pwm_channel(pitch_pin)
 
+	# --- 高级设置：共享多模式按键映射（步兵/工程共用同一份配置）---
+	# 行不能指向固定子系统占用的引脚（静态检查已拦，这里防御性跳过）
+	var io_init_shared: Dictionary = cfg.get("io_init", {})
+	var io_mid: Dictionary = cfg.get("io_mid", {})
+	var mode_count: int = clampi(int(float(str(cfg.get("mode_count", 1)))), 1, 4)
+	var switch_strategy: String = str(cfg.get("switch_strategy", "单击切换"))
+	var switch_key: String = str(cfg.get("mode_switch_key", "E"))
+	var mode_keys: Array = cfg.get("mode_keys", [])
+	var modes: Array = cfg.get("modes", []) if cfg.get("modes", []) is Array else []
+	# 固定子系统占用的扩展板槽位（摩擦轮 / 拨弹 / 底盘 / 云台）
+	var owned_slots: Array = []
+	for s in [friction_l_slot, friction_r_slot, feeder_slot, yaw_slot, pitch_slot]:
+		if s >= 0 and not s in owned_slots:
+			owned_slots.append(s)
+	for pair in motor_slots:
+		if pair[0] >= 0 and not pair[0] in owned_slots:
+			owned_slots.append(pair[0])
+	# 辅助槽位（行指向的扩展板引脚，未被固定子系统占用）
+	var aux_servo_slots: Array = []
+	var aux_motor_slots: Array = []
+	var use_aux_main: Array = [false, false]
+	for mi in range(mini(mode_count, modes.size())):
+		for row in (modes[mi].get("rows", []) as Array):
+			var io: String = str(row.get("io", ""))
+			var slot: int = _io_to_exp_slot(io)
+			if slot >= 0:
+				if slot in owned_slots:
+					continue
+				if str(io_init_shared.get(io, "舵机")) == "电机":
+					if not slot in aux_motor_slots:
+						aux_motor_slots.append(slot)
+				elif not slot in aux_servo_slots:
+					aux_servo_slots.append(slot)
+			elif io == "MP03":
+				use_aux_main[0] = true
+			elif io == "MP74":
+				use_aux_main[1] = true
+	# 辅助槽位填充到 Init/Dir/Duty
+	for slot in aux_servo_slots:
+		init_vals[slot] = 50
+		duty_vals[slot] = "(uint16_t)dutyOfAuxServo[%d]" % slot
+	for slot in aux_motor_slots:
+		init_vals[slot] = 10000
+		dir_exprs[slot] = "(dutyOfAuxMotor[%d] >= 0 ? 1 : 0)" % slot
+		duty_vals[slot] = "(uint16_t)abs(dutyOfAuxMotor[%d])" % slot
+	# 主控板辅助舵机 PWM（初始角按 IO 初始化区）
+	for si in range(2):
+		if use_aux_main[si]:
+			var aux_pin: String = "MP03" if si == 0 else "MP74"
+			pwm_init_lines += "    PWM_Init(%s, 50, %d); // %s 舵机初始角\n" \
+				% [_pin_to_pwm_channel(aux_pin), _io_mid_duty(io_mid, aux_pin), aux_pin]
+			pwm_set_lines += "    PWM_SET_Frequency(%s, 50, (uint16_t)dutyOfAuxMainServo[%d]);\n" \
+				% [_pin_to_pwm_channel(aux_pin), si]
+
 	# --- 生成 init_vals 字符串 ---
 	var init_str: String = "%d, %d,\n                          %d, %d,\n                          %d, %d,\n                          %d, %d" % [init_vals[0], init_vals[1], init_vals[2], init_vals[3], init_vals[4], init_vals[5], init_vals[6], init_vals[7]]
 	var dir_str: String = "%s, %s,\n                          %s, %s,\n                          %s, %s,\n                          %s, %s" % [dir_exprs[0], dir_exprs[1], dir_exprs[2], dir_exprs[3], dir_exprs[4], dir_exprs[5], dir_exprs[6], dir_exprs[7]]
@@ -311,9 +365,19 @@ func generate(cfg: Dictionary) -> String:
 	code += "uint16_t dutyOfBooster = 0, expectDutyOfBooster = 0;\n"
 	code += "uint16_t levelDutyOfBooster = 1100; // 摩擦轮目标转速档位（B/C 键微调）\n"
 	code += "uint8_t valueOfKey[3][4];\n"
+	code += "uint8_t valueOfEKey;\n"
 	code += "uint8_t triggerKeyValue, lastTriggerKeyValue, boosterKeyValue, lastBoosterKeyValue;\n"
 	code += "uint8_t lastBoosterUpKeyValue = 0, lastBoosterDownKeyValue = 0;\n"
 	code += "uint8_t statusOfBooster = 0;\n"
+	# 高级设置：共享多模式按键映射的辅助执行器
+	if not aux_servo_slots.is_empty() or not aux_motor_slots.is_empty() or use_aux_main[0] or use_aux_main[1]:
+		code += "int dutyOfAuxMotor[8];          // 高级设置辅助电机（按槽位）\n"
+		code += "float dutyOfAuxServo[8];        // 高级设置辅助舵机（按槽位）\n"
+		code += "float dutyOfAuxMainServo[2];    // 高级设置 MP03/MP74 舵机\n"
+		code += "uint8_t currentMode = 1;        // 当前模式（1~%d），开机固定模式1\n" % mode_count
+		code += "uint8_t modeKeyHeld = 0;        // 单击切换键锁存\n"
+		if switch_strategy == "一一对应" and mode_count > 1:
+			code += "uint8_t modeKeyLast[4] = {0};  // 一一对应各模式键锁存\n"
 	code += "uint8_t i, j;\n"
 	code += "int valueOfRoker[2][2] // 左摇杆水平、竖直；右摇杆水平、竖直\n    ,\n    baseSpeed, turnSpeed;\n"
 	code += "static const uint8_t keyOffsets[3][4] = {\n"
@@ -325,6 +389,10 @@ func generate(cfg: Dictionary) -> String:
 	code += "void CalculateMotorControls();\n"
 	code += "void CalculateGimbalControls();\n"
 	code += "void CalculateBoosterControl();\n"
+	if not aux_servo_slots.is_empty() or not aux_motor_slots.is_empty() or use_aux_main[0] or use_aux_main[1]:
+		code += "void UpdateMode();\n"
+		for mi in range(mode_count):
+			code += "void Calculate_Mode%d_Controls();\n" % (mi + 1)
 	code += "uint8_t Get_Dir(int rawdata);\n"
 	code += "void Main_Countrol(int *dutyOfMotor, uint16_t *dutyOfServo, uint16_t dutyOfBooster);\n"
 	code += "void ExpansionBoradControl(uint8_t control_cmd, uint16_t data_p60, uint16_t data_p62, uint16_t data_p64,\n"
@@ -343,6 +411,13 @@ func generate(cfg: Dictionary) -> String:
 		code += "    floatDutyOfServo[0] = midDutyOfServo[0];\n"
 	if pitch_is_servo:
 		code += "    floatDutyOfServo[1] = midDutyOfServo[1];\n"
+	if not aux_servo_slots.is_empty() or use_aux_main[0] or use_aux_main[1]:
+		for slot in aux_servo_slots:
+			code += "    dutyOfAuxServo[%d] = %d.0f; // 高级设置初始角\n" % [slot, _io_mid_duty(io_mid, _exp_pin(slot))]
+		for si in range(2):
+			if use_aux_main[si]:
+				var apin: String = "MP03" if si == 0 else "MP74"
+				code += "    dutyOfAuxMainServo[%d] = %d.0f; // %s 初始角\n" % [si, _io_mid_duty(io_mid, apin), apin]
 	code += "    while (1)\n"
 	code += "    {\n"
 	code += _gen_nrf_poll()
@@ -355,6 +430,25 @@ func generate(cfg: Dictionary) -> String:
 	code += "        CalculateMotorControls();  // 计算电机控制\n"
 	code += "        CalculateGimbalControls(); // 计算云台控制\n"
 	code += "        CalculateBoosterControl(); // 计算摩擦轮控制\n"
+	if not aux_servo_slots.is_empty() or not aux_motor_slots.is_empty() or use_aux_main[0] or use_aux_main[1]:
+		code += "        UpdateMode();\n"
+		code += "        // 高级设置：按当前模式执行按键映射\n"
+		code += "        switch (currentMode)\n"
+		code += "        {\n"
+		for mi in range(mode_count):
+			code += "            case %d:\n" % (mi + 1)
+			code += "                Calculate_Mode%d_Controls();\n" % (mi + 1)
+			code += "                break;\n"
+		code += "            default:\n"
+		code += "                break;\n"
+		code += "        }\n"
+		for slot in aux_motor_slots:
+			code += "        LIMIT_VALUE(dutyOfAuxMotor[%d], -10000, 10000);\n" % slot
+		for slot in aux_servo_slots:
+			code += "        LIMIT_VALUE(dutyOfAuxServo[%d], %d, %d);\n" % [slot, SERVO_DUTY_MIN, SERVO_DUTY_MAX]
+		for si in range(2):
+			if use_aux_main[si]:
+				code += "        LIMIT_VALUE(dutyOfAuxMainServo[%d], %d, %d);\n" % [si, SERVO_DUTY_MIN, SERVO_DUTY_MAX]
 	code += "        LIMIT_VALUE(dutyOfMotor[0], -10000, 10000);\n"
 	code += "        LIMIT_VALUE(dutyOfMotor[1], -10000, 10000);\n"
 	code += "        LIMIT_VALUE(dutyOfMotor[2], -10000, 10000);\n"
@@ -480,6 +574,8 @@ func generate(cfg: Dictionary) -> String:
 	code += "    // 读取扳机键和摩擦轮开关键\n"
 	code += "    triggerKeyValue = RcKeyValueRead(%s);\n" % trigger_key_offset
 	code += "    boosterKeyValue = RcKeyValueRead(%s);\n" % booster_key_offset
+	if not aux_servo_slots.is_empty() or not aux_motor_slots.is_empty() or use_aux_main[0] or use_aux_main[1]:
+		code += "    valueOfEKey = RcKeyValueRead(KEY_OFFSET_1); // 高级设置模式切换键\n"
 	code += "}\n\n"
 
 	# --- CalculateMotorControls ---
@@ -564,6 +660,13 @@ func generate(cfg: Dictionary) -> String:
 		code += "    // 云台 Pitch 电机控制值计算\n"
 		code += "    dutyOfMotor[%d] = %s;\n" % [pitch_motor_idx, pitch_expr]
 	code += "}\n\n"
+
+	# --- 高级设置：模式切换与每模式按键映射 ---
+	if not aux_servo_slots.is_empty() or not aux_motor_slots.is_empty() or use_aux_main[0] or use_aux_main[1]:
+		code += _gen_update_mode(mode_count, switch_strategy, switch_key, mode_keys)
+		for mi in range(mode_count):
+			var rows: Array = modes[mi].get("rows", []) if mi < modes.size() else []
+			code += _gen_mode_rows(rows, io_init_shared, "Mode%d" % (mi + 1))
 
 	# --- Main_Countrol ---
 	code += "void Main_Countrol(int *dutyOfMotor, uint16_t *dutyOfServo, uint16_t dutyOfBooster)\n{\n"

@@ -108,7 +108,8 @@ func _initialize() -> void:
 		"closed_angle": "20", "initial_open": true, "key": "E"}
 	var grip_validation: Dictionary = IK_CONFIG.validate(grip_conflict, {
 		"io_init": {"P74": "舵机", "P75": "舵机"},
-		"key_map": [{"input": "E", "target": "MP74"}]})
+		"modes": [{"rows": [{"key": "E", "io": "MP74"}]},
+			{"rows": []}, {"rows": []}, {"rows": []}]})
 	_check("gripper conflicts with joint IO", _has_issue(grip_validation, "夹爪 IO P74 与关节1"))
 	_check("gripper open and closed angles differ", _has_issue(grip_validation, "张开角和闭合角不能相同"))
 	_check("gripper key conflicts are validated", _has_issue(grip_validation, "夹爪 按键E"))
@@ -119,7 +120,8 @@ func _initialize() -> void:
 	control_bad["keymove"][0] = {"plus": "A", "minus": "不使用"}
 	var control_validation: Dictionary = IK_CONFIG.validate(control_bad, {
 		"io_init": {"P74": "舵机", "P75": "舵机"},
-		"key_map": [{"input": "A", "target": "MP03"}]})
+		"modes": [{"rows": [{"key": "A", "io": "MP03"}]},
+			{"rows": []}, {"rows": []}, {"rows": []}]})
 	_check("orientation speed must be positive",
 		_has_issue(control_validation, "姿态按键步长必须是正数"))
 	_check("inverse keys conflict with forward mappings",

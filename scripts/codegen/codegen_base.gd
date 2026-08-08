@@ -289,3 +289,164 @@ func _pin_to_pwm_channel(pin: String) -> String:
 		push_warning("_pin_to_pwm_channel: 未知引脚 %s，请确认是主控板舵机端口 MP74 或 MP03" % pin)
 		return "PWMB_CH1_P74" # 兜底，实际应被静态检查拦截
 	return ch
+
+
+const MOTOR_SPEED_MAX: int = 10000
+
+
+# ============================================================ 共享按键映射助手
+# 工程/步兵多模式按键映射共用（key 行模型 -> C 语句）。
+# 行模型 {key, dir, mode, param, io}：key ∈ E/↑/↓/←/→/A/B/C/D/LC/RC（按键）
+# 或 LX/LY/RX/RY（摇杆轴）；mode ∈ 增量/直接/速度/增速。
+func _exp_args(vals: Array) -> String:
+	return "%s, %s,\n                          %s, %s,\n                          %s, %s,\n                          %s, %s" % [
+		vals[0], vals[1], vals[2], vals[3], vals[4], vals[5], vals[6], vals[7]]
+
+
+## 键名 -> 按键条件表达式（key.tscn / key_and_joystick.tscn 的选项文本）
+func _row_key_expr(key_name: String) -> String:
+	match key_name:
+		"E":
+			return "valueOfEKey"
+		"↑":
+			return "valueOfKey[0][0]"
+		"↓":
+			return "valueOfKey[0][1]"
+		"←":
+			return "valueOfKey[0][2]"
+		"→", "->":
+			return "valueOfKey[0][3]"
+		"A":
+			return "valueOfKey[1][0]"
+		"B":
+			return "valueOfKey[1][1]"
+		"C":
+			return "valueOfKey[1][2]"
+		"D":
+			return "valueOfKey[1][3]"
+		"LC":
+			return "valueOfKey[2][0]"
+		"RC":
+			return "valueOfKey[2][1]"
+		_:
+			return "0"
+
+
+## 键名 -> 摇杆轴（LX/LY/RX/RY -> {row, col}）；非摇杆返回空 Dictionary
+func _row_axis(key_name: String) -> Dictionary:
+	match key_name:
+		"LX":
+			return {"row": 0, "col": 0}
+		"LY":
+			return {"row": 0, "col": 1}
+		"RX":
+			return {"row": 1, "col": 0}
+		"RY":
+			return {"row": 1, "col": 1}
+		_:
+			return {}
+
+
+## 生成一个模式的控制函数
+func _gen_mode_rows(rows: Array, io_init: Dictionary, mode_label: String) -> String:
+	var s: String = ""
+	s += "void Calculate_%s_Controls()\n{\n" % mode_label
+	for row in rows:
+		var key: String = str(row.get("key", ""))
+		var dir_sign: String = "-" if str(row.get("dir", "正")) == "反" else ""
+		var mode: String = str(row.get("mode", "增量"))
+		var param: String = str(row.get("param", ""))
+		var io: String = str(row.get("io", ""))
+		if key.is_empty() or io.is_empty():
+			continue
+		var axis: Dictionary = _row_axis(key)
+		var is_joystick: bool = not axis.is_empty()
+		var slot: int = _io_to_exp_slot(io)
+		var is_main: bool = io == "MP03" or io == "MP74"
+		var is_motor: bool = (not is_main and str(io_init.get(io, "舵机")) == "电机")
+		# 目标变量
+		var tgt: String = ""
+		if is_main:
+			tgt = "dutyOfAuxMainServo[%d]" % (0 if io == "MP03" else 1)
+		elif is_motor:
+			tgt = "dutyOfAuxMotor[%d]" % slot
+		else:
+			tgt = "dutyOfAuxServo[%d]" % slot
+		match mode:
+			"增量":
+				# 仅舵机（电机增量无意义，静态检查已拦）
+				var step_deg: int = _parse_param(param, 0, SERVO_MAX_OFFSET_DEG)
+				var duty_inc: int = _servo_deg_to_duty_delta(float(step_deg))
+				if is_joystick:
+					# 摇杆满偏时每周期累加一步
+					s += "    %s += %s(float)valueOfRoker[%d][%d] * %d / 2047.0f;\n" \
+						% [tgt, dir_sign, axis["row"], axis["col"], duty_inc]
+				else:
+					s += "    if (%s)\n" % _row_key_expr(key)
+					s += "        %s += %s%d;\n" % [tgt, dir_sign, duty_inc]
+			"直接":
+				if is_joystick:
+					continue # 摇杆行不能用直接模式（静态检查已拦）
+				if is_motor:
+					var spd: int = _parse_param(param, 0, MOTOR_SPEED_MAX)
+					s += "    if (%s)\n" % _row_key_expr(key)
+					s += "        %s = %s%d;\n" % [tgt, dir_sign, spd]
+				else:
+					# 目标角度带符号，方向选项对舵机直接模式无意义
+					var angle: int = _parse_param(param,
+						- SERVO_MAX_OFFSET_DEG, SERVO_MAX_OFFSET_DEG)
+					var target_duty: int = _servo_angle_to_duty(angle)
+					s += "    if (%s)\n" % _row_key_expr(key)
+					s += "        %s = %d.0f; // %+d°\n" % [tgt, target_duty, angle]
+			"速度", "增速":
+				# 仅电机摇杆行（按键行静态检查已拦）
+				var spd2: int = _parse_param(param, 0, MOTOR_SPEED_MAX)
+				var op: String = "=" if mode == "速度" else "+="
+				s += "    %s %s %s(int)((float)valueOfRoker[%d][%d] * %d / 2047);\n" \
+					% [tgt, op, dir_sign, axis["row"], axis["col"], spd2]
+	s += "}\n\n"
+	return s
+
+
+## 生成模式切换函数
+func _gen_update_mode(mode_count: int, strategy: String, switch_key: String,
+		mode_keys: Array) -> String:
+	var s: String = ""
+	s += "void UpdateMode()\n{\n"
+	if mode_count <= 1:
+		s += "    // 单模式，无需切换\n"
+	elif strategy == "一一对应":
+		for i in range(mode_count):
+			var key: String = str(mode_keys[i]) if i < mode_keys.size() else ""
+			if key.is_empty():
+				continue
+			s += "    if (%s && !modeKeyLast[%d])\n" % [_row_key_expr(key), i]
+			s += "        currentMode = %d;\n" % (i + 1)
+		for i in range(mode_count):
+			var key2: String = str(mode_keys[i]) if i < mode_keys.size() else ""
+			if key2.is_empty():
+				continue
+			s += "    modeKeyLast[%d] = %s;\n" % [i, _row_key_expr(key2)]
+	else:
+		# 单击切换：一个键轮换模式
+		s += "    uint8_t pressed = %s;\n" % _row_key_expr(switch_key)
+		s += "    if (pressed && !modeKeyHeld)\n"
+		s += "        currentMode = (currentMode %% %d) + 1;\n" % mode_count
+		s += "    modeKeyHeld = pressed;\n"
+	s += "}\n\n"
+	return s
+
+## 扩展板槽位 -> 引脚名（越界返回空串）
+func _exp_pin(slot: int) -> String:
+	var pins: Array = ["P60", "P62", "P64", "P66", "P74", "P75", "P76", "P77"]
+	return pins[slot] if slot >= 0 and slot < pins.size() else ""
+
+
+## 解析参数字符串为整数，并限制到 [lo, hi]。
+## 限幅必需：C251 的 int 是 16 位，未限幅的大参数会在 C 侧溢出。
+func _parse_param(param_str: String, lo: int, hi: int) -> int:
+	var s: String = param_str.strip_edges()
+	if not s.is_valid_int():
+		return 0
+	return clampi(s.to_int(), lo, hi)
+

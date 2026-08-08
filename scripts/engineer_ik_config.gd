@@ -155,6 +155,16 @@ static func _choice(value: Variant, choices: Array, fallback: String) -> String:
 	return text if text in choices else fallback
 
 
+static func _engineer_rows(engineer: Dictionary) -> Array:
+	var out: Array = []
+	var modes: Array = engineer.get("modes", []) if engineer.get("modes", []) is Array else []
+	for mi in range(modes.size()):
+		var rows: Array = modes[mi].get("rows", []) if modes[mi] is Dictionary else []
+		for row in rows:
+			out.append(row)
+	return out
+
+
 static func _normalize_key(value: String) -> String:
 	# 旧存档的扳机键名 "R" 已改名为 "E"，此处迁移
 	if value == "R":
@@ -241,8 +251,8 @@ static func _validate_gripper(issues: Array, ik: Dictionary, engineer: Dictionar
 		issues.append({"type": "Error", "msg": "工程夹爪 IO %s 与底盘电机冲突" % pin})
 	if pin in EXPANSION_IOS and str((engineer.get("io_init", {}) as Dictionary).get(pin, "")) != "舵机":
 		issues.append({"type": "Error", "msg": "工程夹爪 IO %s 必须初始化为舵机" % pin})
-	for row in engineer.get("key_map", []):
-		if str(row.get("target", "")) == pin:
+	for row in _engineer_rows(engineer):
+		if str(row.get("io", "")) == pin:
 			issues.append({"type": "Error", "msg": "工程夹爪 IO %s 与工程正解映射重复使用" % pin})
 			break
 	var values: Dictionary = {}
@@ -342,9 +352,9 @@ static func _validate_controls(issues: Array, ik: Dictionary, engineer: Dictiona
 	var gripper_key: String = _normalize_key(str(gripper["key"]))
 	if bool(gripper["enabled"]) and (gripper_key == switch_key or used.has(gripper_key)):
 		issues.append({"type": "Error", "msg": "工程夹爪 按键%s与其他逆解功能冲突" % gripper_key})
-	for row in engineer.get("key_map", []):
-		var input_key: String = _normalize_key(str(row.get("input", "")))
-		if str(row.get("target", "")).is_empty():
+	for row in _engineer_rows(engineer):
+		var input_key: String = _normalize_key(str(row.get("key", "")))
+		if str(row.get("io", "")).is_empty():
 			continue
 		if input_key == switch_key:
 			issues.append({"type": "Error", "msg": "工程逆解算 切换键%s与工程正解映射冲突" % switch_key})
