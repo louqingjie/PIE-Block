@@ -27,7 +27,7 @@ New-Item -ItemType Directory -Force -Path $backupDir | Out-Null
 Write-Host "[OK] 备份目录：$backupDir" -ForegroundColor Green
 
 # ---- 1. 用户 key 表 + 管理员 key（丢了要重发全队 key） ----
-foreach ($f in @("api_keys.json", "admin_key.txt")) {
+foreach ($f in @("api_keys.json", "admin_key.txt", "usage.json", "admin_panel_basic_auth.txt")) {
     $src = Join-Path $dataDir $f
     if (Test-Path $src) {
         Copy-Item $src (Join-Path $backupDir $f)

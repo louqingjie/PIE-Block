@@ -66,6 +66,16 @@ MAX_CONCURRENT_BUILDS = int(os.environ.get("KEIL_MAX_CONCURRENT", "1"))
 # 单次编译超时（秒）
 BUILD_TIMEOUT = int(os.environ.get("KEIL_BUILD_TIMEOUT", "120"))
 
+# ------------------------------------------------------------------ 编译提交限速
+# 每用户每分钟最多提交的编译次数（KEIL_RATE_PER_MINUTE）
+RATE_LIMIT_PER_MINUTE = int(os.environ.get("KEIL_RATE_PER_MINUTE", "10"))
+# 每用户单日最多提交的编译次数（KEIL_RATE_PER_DAY）
+RATE_LIMIT_PER_DAY = int(os.environ.get("KEIL_RATE_PER_DAY", "100"))
+# 用量统计持久化文件（每日计数，重启不丢；随每日备份一起保存）
+USAGE_FILE = Path(os.environ.get(
+    "KEIL_USAGE_FILE", str(DATA_DIR / "usage.json"),
+))
+
 # ------------------------------------------------------------------ 上传与解压限制
 # 上传 zip 大小上限（默认 50MB）
 UPLOAD_MAX_SIZE = int(os.environ.get("KEIL_UPLOAD_MAX_SIZE", str(50 * 1024 * 1024)))
