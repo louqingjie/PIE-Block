@@ -332,7 +332,11 @@ func _test_config_roundtrip() -> void:
 			node.text = "777"
 			touched += 1
 		elif node is OptionButton and node.item_count > 1:
-			node.selected = (node.selected + 1) % node.item_count
+			# 跳过被底盘锁定禁用的项（底盘引脚的「舵机」选项被禁用，不能翻到它）
+			var next_idx: int = (node.selected + 1) % node.item_count
+			if node.is_item_disabled(next_idx):
+				continue
+			node.selected = next_idx
 			touched += 1
 		elif node is BaseButton and node.toggle_mode:
 			node.button_pressed = not node.button_pressed
@@ -384,18 +388,16 @@ func _test_config_roundtrip() -> void:
 			break
 	_check("部分回填时其余项保持原值", ok_partial)
 
-	# Tab 可见性：三种类型各自只显示自己的页
-	var tabs: Node = ui.get_node(ui.P_TAB_CONTAINER)
+	# 构型页可见性：三种类型各自只显示自己的页（步兵/调试是平铺 Control）
+	var edit_zone: Node = ui.get_node(ui.P_EDIT_ZONE)
 	for kind in PF.KINDS:
 		ui._apply_kind_visibility(kind, PF.kind_default_tab(kind))
-		var visible_tabs: Array = []
-		for i in range(tabs.get_tab_count()):
-			if not tabs.is_tab_hidden(i):
-				visible_tabs.append(i)
-		_check("%s 只显示 %s" % [PF.kind_label(kind), str(PF.kind_tabs(kind))],
-			visible_tabs == PF.kind_tabs(kind), "实际 %s" % str(visible_tabs))
-		_check("%s 的 current_tab 落在可见页" % PF.kind_label(kind),
-			tabs.current_tab in PF.kind_tabs(kind))
+		_check("%s 只显示自己的页" % PF.kind_label(kind),
+			edit_zone.get_node("Infantry").visible == (kind == PF.KIND_INFANTRY)
+			and edit_zone.get_node("Engineer").visible == (kind == PF.KIND_ENGINEER)
+			and edit_zone.get_node("Debug").visible == (kind == PF.KIND_DEBUG))
+		_check("%s 的逻辑 Tab 落在可见页" % PF.kind_label(kind),
+			ui._current_tab() in PF.kind_tabs(kind))
 
 	root.remove_child(ui)
 	ui.free()
@@ -414,13 +416,10 @@ func _test_lifecycle() -> void:
 	await process_frame
 	await process_frame
 
-	# 无项目上下文（直跑本场景）：保持老的自由编辑模式，不锁任何东西
-	var tabs: Node = ui.get_node(ui.P_TAB_CONTAINER)
-	var any_hidden: bool = false
-	for i in range(tabs.get_tab_count()):
-		if tabs.is_tab_hidden(i):
-			any_hidden = true
-	_check("无项目时 Tab 全可见（自由编辑）", not any_hidden)
+	# 无项目上下文（直跑本场景）：自由编辑默认显示步兵页，不锁任何控件
+	var edit_zone: Node = ui.get_node(ui.P_EDIT_ZONE)
+	_check("无项目时显示步兵页（自由编辑默认）", ui._current_tab() == 0
+		and edit_zone.get_node("Infantry").visible)
 	var channel: Node = ui.get_node(ui.P_CHANNEL)
 	_check("无项目时配置区可编辑", channel.editable)
 	var save_btn: Node = ui.get_node(ui.P_SAVE_BTN)
@@ -433,8 +432,9 @@ func _test_lifecycle() -> void:
 	_check("新建工程项目成功", ui._create_project_at(PF.KIND_ENGINEER, path))
 	_check("新建后配置区可编辑", channel.editable)
 	_check("新建后保存按钮可用", not save_btn.disabled)
-	_check("新建后只显示工程相关 Tab", not tabs.is_tab_hidden(1)
-		and not tabs.is_tab_hidden(2) and tabs.is_tab_hidden(0) and tabs.is_tab_hidden(3))
+	_check("新建后只显示工程页", edit_zone.get_node("Engineer").visible
+		and not edit_zone.get_node("Infantry").visible
+		and not edit_zone.get_node("Debug").visible)
 	var created: Dictionary = PF.load_from(path)
 	_check("新建即落盘", created["ok"])
 	_check("新建后是阶段一", int(created["data"]["stage"]) == 1)
@@ -650,9 +650,9 @@ func _test_lifecycle() -> void:
 	_check("降级后配置可编辑", str(ch3.text) == "5")
 
 	# 类型不可转换：工程项目里永远看不到步兵 / 调试页
-	var tabs3: Node = ui3.get_node(ui3.P_TAB_CONTAINER)
-	_check("工程项目看不到步兵页", tabs3.is_tab_hidden(0))
-	_check("工程项目看不到调试页", tabs3.is_tab_hidden(3))
+	var edit_zone3: Node = ui3.get_node(ui3.P_EDIT_ZONE)
+	_check("工程项目看不到步兵页", not edit_zone3.get_node("Infantry").visible)
+	_check("工程项目看不到调试页", not edit_zone3.get_node("Debug").visible)
 	_check("项目类型未被改动", str(ui3._project["kind"]) == PF.KIND_ENGINEER)
 
 	root.remove_child(ui3)

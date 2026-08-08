@@ -32,7 +32,7 @@ const MOTOR_SPEED_MAX: int = 10000
 
 
 # ------------------------------------------------------------------ 公开入口
-## 步兵模式检查
+## 步兵模式检查（含「高级设置」里的共享多模式按键映射）
 static func check_infantry(cfg: Dictionary) -> Array:
 	var issues: Array = []
 	_check_channel(issues, cfg)
@@ -42,10 +42,11 @@ static func check_infantry(cfg: Dictionary) -> Array:
 	_check_arrow_trigger_conflict(issues, cfg)
 	_check_io_duplicate(issues, cfg)
 	_check_gimbal_pin_conflict(issues, cfg)
+	_check_infantry_shared(issues, cfg)
 	return issues
 
 
-## 工程双模式检查（两页共同配置同一份固件）
+## 工程多模式检查（工程页 + 逆解算页共同配置同一份固件）
 ## ik_cfg.enabled == false（或缺省视为 true）时跳过逆解算校验：
 ## 未启用逆解的用户不应看到任何逆解相关的报错/警告。
 static func check_engineer(eng_cfg: Dictionary, ik_cfg: Dictionary) -> Array:
@@ -53,9 +54,8 @@ static func check_engineer(eng_cfg: Dictionary, ik_cfg: Dictionary) -> Array:
 	_check_channel(issues, eng_cfg)
 	_check_deadzone(issues, eng_cfg)
 	_check_speeds(issues, eng_cfg)
-	_check_engineer_chassis_io(issues, eng_cfg)
-	_check_engineer_keymap(issues, eng_cfg)
-	_check_engineer_io_mid(issues, eng_cfg)
+	_check_engineer_io(issues, eng_cfg)
+	_check_engineer_modes(issues, eng_cfg)
 	if bool(ik_cfg.get("enabled", true)):
 		_check_ik_params(issues, ik_cfg, eng_cfg)
 	return issues
@@ -292,222 +292,273 @@ static func _check_gimbal_pin_conflict(issues: Array, cfg: Dictionary) -> void:
 			- SERVO_MAX_ANGLE, SERVO_MAX_ANGLE)
 
 
-# ------------------------------------------------------------------ 规则：工程师底盘 IO 检查
-# 底盘 L1-L4 之间：同侧（左前/左后 或 右前/右后）允许共用 IO，异侧不可
-# 底盘 IO 与 IO 初始化区一致性：底盘选的槽位在 IO 初始化区必须为「电机」
-static func _check_engineer_chassis_io(issues: Array, cfg: Dictionary) -> void:
-	# --- 底盘 IO 重复检查 ---
-	var io_entries: Array = [
-		{"io": str(cfg.get("l1_io", "")), "label": "底盘-左前轮 IO", "group": "left"},
-		{"io": str(cfg.get("l2_io", "")), "label": "底盘-左后轮 IO", "group": "left"},
-		{"io": str(cfg.get("r1_io", "")), "label": "底盘-右前轮 IO", "group": "right"},
-		{"io": str(cfg.get("r2_io", "")), "label": "底盘-右后轮 IO", "group": "right"},
-	]
-	var io_map: Dictionary = {}
-	for entry in io_entries:
-		var io_text: String = entry["io"]
-		var pin: String = io_text.split(" ")[0] if io_text.contains(" ") else io_text
-		if not io_map.has(pin):
-			io_map[pin] = []
-		io_map[pin].append({"label": entry["label"], "group": entry["group"]})
-	for pin in io_map.keys():
-		var refs: Array = io_map[pin]
-		if refs.size() < 2:
-			continue
-		var groups: Dictionary = {}
-		for r in refs:
-			groups[r["group"]] = true
-		# 同侧（left 或 right）允许共用
-		if groups.size() == 1:
-			var only_group: String = groups.keys()[0]
-			if only_group == "left" or only_group == "right":
-				continue
-		var locs: Array = []
-		for r in refs:
-			locs.append(r["label"])
-		issues.append({"type": "Error",
-			"msg": "工程底盘 IO %s 被多次引用：%s" % [pin, ", ".join(locs)]})
-	# --- 底盘 IO 与 IO 初始化区一致性 ---
+# ------------------------------------------------------------------ 规则：工程 IO 初始化区
+# IO 初始化区：10 个引脚各选 电机/舵机 + 初始角（相对舵机中位偏移 ±90°）。
+# 底盘引脚必须为电机；主控板 MP03/MP74 只能驱动舵机。
+static func _check_engineer_io(issues: Array, cfg: Dictionary) -> void:
 	var io_init: Dictionary = cfg.get("io_init", {})
-	for entry in io_entries:
-		var io_text2: String = entry["io"]
-		var pin2: String = io_text2.split(" ")[0] if io_text2.contains(" ") else io_text2
-		# MP03/MP74 不是底盘电机 IO，跳过
-		if pin2.begins_with("MP"):
+	var io_mid: Dictionary = cfg.get("io_mid", {})
+	# 底盘引脚必须为电机（代码生成器强制以底盘为准，这里给出明确提示）
+	var chassis: Array = _chassis_pins(cfg)
+	for pin in chassis:
+		if pin.begins_with("MP"):
 			continue
-		if not io_init.has(pin2):
+		var t: String = str(io_init.get(pin, ""))
+		if t.is_empty():
 			issues.append({"type": "Error",
-				"msg": "工程 %s 选了 %s，但该引脚不在 IO 初始化区（可选 P60-P77）"
-					% [entry["label"], pin2]})
-			continue
-		var init_type: String = io_init.get(pin2, "")
-		if init_type != "电机":
+				"msg": "工程 底盘使用了 %s，但该引脚不在 IO 初始化区（可选 P60-P77）" % pin})
+		elif t != "电机":
 			issues.append({"type": "Error",
-				"msg": "工程 %s 选了 %s，但 IO 初始化区将其设为「%s」（底盘电机必须为电机模式）"
-					% [entry["label"], pin2, init_type]})
-
-
-# ------------------------------------------------------------------ 规则：工程师按键映射检查
-static func _check_engineer_keymap(issues: Array, cfg: Dictionary) -> void:
-	var io_init: Dictionary = cfg.get("io_init", {})
-	var key_map: Array = cfg.get("key_map", [])
-	# IO 类型映射（MP03/MP74 -> 舵机，P60-P77 -> io_init 中的类型）
-	var slot_type: Dictionary = {}
-	for pin in ["P60", "P62", "P64", "P66", "P74", "P75", "P76", "P77"]:
-		slot_type[pin] = io_init.get(pin, "舵机")
-	slot_type["MP03"] = "舵机"
-	slot_type["MP74"] = "舵机"
-	# 底盘占用的引脚（按键映射不可重复使用）
-	var chassis_pins: Array = []
-	for key in ["l1_io", "l2_io", "r1_io", "r2_io"]:
-		var io_text: String = str(cfg.get(key, ""))
-		if io_text.is_empty():
-			continue
-		chassis_pins.append(io_text.split(" ")[0] if io_text.contains(" ") else io_text)
-	# 按目标 IO 分组，用于跨行写冲突判定
-	var groups: Dictionary = {}
-	# 至少要有一行配了目标，否则生成的代码只有底盘能动
-	var configured_rows: int = 0
-	for row0 in key_map:
-		if not String(row0.get("target", "")).is_empty():
-			configured_rows += 1
-	if configured_rows == 0:
-		issues.append({"type": "Warn",
-			"msg": "工程 按键映射区没有任何一行配置目标 IO，生成的代码只有底盘可动"})
-	# --- 逐行检查 ---
-	for row in key_map:
-		var target: String = str(row.get("target", ""))
-		if target.is_empty():
-			continue
-		# 标签取自行自身的 input，避免 key_map 有行被跳过时索引错位
-		var label: String = str(row.get("input", "?"))
-		var mode: String = str(row.get("mode", "增量"))
-		var t_type: String = slot_type.get(target, "舵机")
-		if t_type.is_empty():
-			t_type = "舵机"
-		if not groups.has(target):
-			groups[target] = []
-		groups[target].append({"label": label, "mode": mode, "dir": str(row.get("dir", "正")),
-			"type": t_type})
-		# 目标 IO 与底盘电机冲突
-		if not target.begins_with("MP") and target in chassis_pins:
+				"msg": "工程 底盘使用了 %s，但 IO 初始化区将其设为「%s」（底盘电机必须为电机模式）"
+					% [pin, t]})
+	# 主控板舵机口只能驱动舵机（硬件限制）
+	for mp in ["MP03", "MP74"]:
+		if str(io_init.get(mp, "舵机")) == "电机":
 			issues.append({"type": "Error",
-				"msg": "工程 %s 目标 IO %s 与底盘电机 IO 冲突" % [label, target]})
-		# IO 初始化区未包含该 IO
-		if not target.begins_with("MP") and not io_init.has(target):
+				"msg": "工程 %s 是主控板舵机口，只能驱动舵机，不能设为电机" % mp})
+	# 初始角校验（相对中位，仅舵机有效）
+	for pin in io_mid.keys():
+		var text: String = str(io_mid[pin]).strip_edges()
+		if text.is_empty():
+			continue
+		if not text.is_valid_float():
+			issues.append({"type": "Error",
+				"msg": "工程 %s 初始角「%s」不是合法数值（有效范围 -%d~%d，相对中位）"
+					% [pin, text, SERVO_MAX_ANGLE, SERVO_MAX_ANGLE]})
+			continue
+		var angle: float = text.to_float()
+		if angle < -SERVO_MAX_ANGLE or angle > SERVO_MAX_ANGLE:
+			issues.append({"type": "Error",
+				"msg": "工程 %s 初始角 %d° 超出范围（有效范围 -%d~%d，相对中位）"
+					% [pin, int(angle), SERVO_MAX_ANGLE, SERVO_MAX_ANGLE]})
+		if str(io_init.get(pin, "舵机")) == "电机":
 			issues.append({"type": "Warn",
-				"msg": "工程 %s 目标 IO %s 未在 IO 初始化区配置" % [label, target]})
-		# 控制模式与 IO 类型匹配
-		match mode:
-			"增量":
-				if t_type != "舵机":
-					issues.append({"type": "Error",
-						"msg": "工程 %s 增量模式只能用于舵机，但 %s 是%s" % [label, target, t_type]})
-			"速度", "增速":
-				if t_type != "电机":
-					issues.append({"type": "Error",
-						"msg": "工程 %s %s模式只能用于电机，但 %s 是%s" % [label, mode, target, t_type]})
-			"直接":
-				# 舵机「直接」模式的参数已经是带符号的目标角，方向选项不参与生成
-				if t_type == "舵机" and str(row.get("dir", "正")) == "反":
-					issues.append({"type": "Warn",
-						"msg": "工程 %s 舵机直接模式的方向选「反」不会生效，请直接填负角度" % label})
-		# 摇杆行不能用「直接」模式
-		var is_joystick: bool = label in ["右摇杆X", "右摇杆Y"]
-		if is_joystick and mode == "直接":
+				"msg": "工程 %s 已设为电机，初始角不会生效" % pin})
+
+
+# ------------------------------------------------------------------ 规则：工程多模式配置
+# 模式数 1~4；切换方式「单击切换」（一个键轮换）或「一一对应」（每模式一个键）。
+# 切换键/模式键不能与任何模式内的按键重复。
+static func _check_engineer_modes(issues: Array, cfg: Dictionary) -> void:
+	var mc_text: String = str(cfg.get("mode_count", "1")).strip_edges()
+	var mode_count: int = 1
+	if mc_text.is_empty():
+		issues.append({"type": "Error", "msg": "工程 模式个数未设置（1~4）"})
+	elif not mc_text.is_valid_float():
+		issues.append({"type": "Error",
+			"msg": "工程 模式个数「%s」不是合法整数（应为 1~4）" % mc_text})
+	else:
+		# JSON 数字在 Godot 里是 float（"2.0"），按数值取整
+		var mc: int = int(mc_text.to_float())
+		if mc < 1 or mc > 4:
 			issues.append({"type": "Error",
-				"msg": "工程 %s 摇杆行不能用直接模式" % label})
-		# 按键行不能用「速度/增速」模式
-		if not is_joystick and mode in ["速度", "增速"]:
+				"msg": "工程 模式个数 %d 超出范围（支持 1~4）" % mc})
+		else:
+			mode_count = mc
+	var strategy: String = str(cfg.get("switch_strategy", "单击切换"))
+	var switch_key: String = str(cfg.get("mode_switch_key", "E"))
+	var mode_keys: Array = cfg.get("mode_keys", [])
+	# 一一对应：模式键互不重复
+	if strategy == "一一对应":
+		var used: Dictionary = {}
+		for i in range(mode_count):
+			var k: String = str(mode_keys[i]) if i < mode_keys.size() else ""
+			if k.is_empty():
+				continue
+			if used.has(k):
+				issues.append({"type": "Error",
+					"msg": "工程 模式%d与模式%d使用了同一个模式键「%s」" % [used[k], i + 1, k]})
+			else:
+				used[k] = i + 1
+	# 各模式行检查（含切换键冲突登记）
+	var used_keys: Dictionary = {}
+	var row_idx: int = 0
+	var modes: Array = cfg.get("modes", []) if cfg.get("modes", []) is Array else []
+	for mi in range(mode_count):
+		var rows: Array = modes[mi].get("rows", []) if mi < modes.size() 			and modes[mi] is Dictionary else []
+		for row in rows:
+			row_idx += 1
+			_check_eng_row(issues, row, mi + 1, row_idx, cfg, strategy,
+				switch_key, mode_keys, used_keys)
+	# 切换键与行按键冲突（单击切换：1 个切换键；一一对应：各模式键）
+	var conflict_keys: Array = []
+	if strategy == "一一对应":
+		for i in range(mode_count):
+			var k2: String = str(mode_keys[i]) if i < mode_keys.size() else ""
+			if not k2.is_empty():
+				conflict_keys.append(k2)
+	else:
+		conflict_keys.append(switch_key)
+	for ck in conflict_keys:
+		if used_keys.has(ck):
 			issues.append({"type": "Error",
-				"msg": "工程 %s 按键行不能用%s模式（需要摇杆值）" % [label, mode]})
-		# --- 参数检查 ---
-		var param: String = str(row.get("param", ""))
-		if param.is_empty():
-			# 配置了目标却没填参数 -> 生成出的语句是 += 0 / = 0，等于没配
-			issues.append({"type": "Error",
-				"msg": "工程 %s 已选目标 IO %s，但参数未填写" % [label, target]})
-			continue
-		if not param.is_valid_int():
-			issues.append({"type": "Error",
-				"msg": "工程 %s 参数「%s」不是合法整数" % [label, param]})
-			continue
-		var val: int = param.to_int()
-		match mode:
-			"增量":
-				if val < 0 or val > SERVO_MAX_ANGLE:
+				"msg": "工程 切换键「%s」与模式%d第%d行的按键重复，会同时触发切换与动作"
+					% [ck, used_keys[ck]["mode"], used_keys[ck]["row"]]})
+
+
+# ------------------------------------------------------------------ 规则：工程单行按键映射
+# 行模型 {key, dir, mode, param, io}
+#   key ∈ E/↑/↓/←/→/A/B/C/D/LC/RC（按键）或 LX/LY/RX/RY（摇杆轴）
+#   mode ∈ 增量/直接（舵机），直接/速度/增速（电机）；摇杆行只能用 增量/速度/增速
+static func _check_eng_row(issues: Array, row: Dictionary, mode_no: int, row_idx: int,
+		cfg: Dictionary, strategy: String, switch_key: String, mode_keys: Array,
+		used_keys: Dictionary) -> void:
+	var key: String = str(row.get("key", ""))
+	var io: String = str(row.get("io", ""))
+	var mode: String = str(row.get("mode", ""))
+	var param: String = str(row.get("param", "")).strip_edges()
+	var label: String = "工程 模式%d第%d行" % [mode_no, row_idx]
+	if key.is_empty() or io.is_empty():
+		issues.append({"type": "Error", "msg": "%s 未选择键位或 IO" % label})
+		return
+	var all_keys: Array = ["E", "↑", "↓", "←", "→", "A", "B", "C", "D", "LC", "RC",
+		"LX", "LY", "RX", "RY"]
+	if not key in all_keys:
+		issues.append({"type": "Error", "msg": "%s 键位「%s」未知" % [label, key]})
+		return
+	var all_pins: Array = ["P60", "P62", "P64", "P66", "P74", "P75", "P76", "P77",
+		"MP03", "MP74"]
+	if not io in all_pins:
+		issues.append({"type": "Error", "msg": "%s IO「%s」未知" % [label, io]})
+		return
+	var is_axis: bool = key in ["LX", "LY", "RX", "RY"]
+	var io_init: Dictionary = cfg.get("io_init", {})
+	# 目标 IO 类型：MP 固定舵机；扩展板看 IO 初始化区
+	var pin_type: String = "舵机" if io.begins_with("MP") else str(io_init.get(io, "舵机"))
+	if pin_type.is_empty():
+		pin_type = "舵机"
+	# 与底盘冲突
+	for cpin in _chassis_pins(cfg):
+		if cpin == io:
+			issues.append({"type": "Error", "msg": "%s IO %s 与底盘电机冲突" % [label, io]})
+			return
+	# 控制方式与 IO 类型匹配
+	match mode:
+		"增量":
+			if pin_type != "舵机":
+				issues.append({"type": "Error",
+					"msg": "%s 增量模式只能用于舵机，但 %s 是%s" % [label, io, pin_type]})
+		"直接":
+			if is_axis:
+				issues.append({"type": "Error",
+					"msg": "%s 摇杆行不能用直接模式" % label})
+		"速度", "增速":
+			if pin_type != "电机":
+				issues.append({"type": "Error",
+					"msg": "%s %s模式只能用于电机，但 %s 是%s" % [label, mode, io, pin_type]})
+			if not is_axis:
+				issues.append({"type": "Error",
+					"msg": "%s 按键行不能用%s模式（需要摇杆值）" % [label, mode]})
+		_:
+			issues.append({"type": "Error", "msg": "%s 控制方式「%s」未知" % [label, mode]})
+	# 参数
+	if param.is_empty():
+		issues.append({"type": "Error", "msg": "%s 已选 IO %s，但参数未填写" % [label, io]})
+		return
+	if not param.is_valid_int():
+		issues.append({"type": "Error", "msg": "%s 参数「%s」不是合法整数" % [label, param]})
+		return
+	var val: int = param.to_int()
+	match mode:
+		"增量":
+			if val < 0 or val > SERVO_MAX_ANGLE:
+				issues.append({"type": "Error",
+					"msg": "%s 增量参数 %d 超出范围（0-%d）" % [label, val, SERVO_MAX_ANGLE]})
+			elif val == 0:
+				issues.append({"type": "Error",
+					"msg": "%s 增量步长为 0，该行不会产生任何动作" % label})
+			elif val > SERVO_STEP_WARN_DEG:
+				issues.append({"type": "Warn",
+					"msg": "%s 单次增量 %d° 偏大，舵机会几乎瞬间到位，建议 1-%d°"
+						% [label, val, SERVO_STEP_WARN_DEG]})
+		"直接":
+			if pin_type == "舵机":
+				if val < -SERVO_MAX_ANGLE or val > SERVO_MAX_ANGLE:
 					issues.append({"type": "Error",
-						"msg": "工程 %s 增量参数 %d 超出范围（0-%d）" % [label, val, SERVO_MAX_ANGLE]})
-				elif val == 0:
-					issues.append({"type": "Error",
-						"msg": "工程 %s 增量步长为 0，该行不会产生任何动作" % label})
-				elif val > SERVO_STEP_WARN_DEG:
-					# 单次增量按角度折算成占空比，主循环 10ms 一轮，过大会瞬间打到行程端点
-					issues.append({"type": "Warn",
-						"msg": "工程 %s 单次增量 %d° 偏大，舵机会几乎瞬间到位，建议 1-%d°"
-							% [label, val, SERVO_STEP_WARN_DEG]})
-			"直接":
-				if t_type == "舵机":
-					if val < -SERVO_MAX_ANGLE or val > SERVO_MAX_ANGLE:
-						issues.append({"type": "Error",
-							"msg": "工程 %s 舵机角度 %d 超出范围（-%d~%d）"
-								% [label, val, SERVO_MAX_ANGLE, SERVO_MAX_ANGLE]})
-				else:
-					if val < 0 or val > 10000:
-						issues.append({"type": "Error",
-							"msg": "工程 %s 电机速度 %d 超出范围（0-10000）" % [label, val]})
-			"速度", "增速":
+						"msg": "%s 舵机角度 %d 超出范围（-%d~%d，相对中位）"
+							% [label, val, SERVO_MAX_ANGLE, SERVO_MAX_ANGLE]})
+			else:
 				if val < 0 or val > 10000:
 					issues.append({"type": "Error",
-						"msg": "工程 %s %s参数 %d 超出范围（0-10000）" % [label, mode, val]})
-	# --- 跨行写冲突检查（同一目标 IO 被多行驱动）---
-	# 允许：同一舵机多行「增量」（双向控制的常见用法）、同一电机多行「直接」（if/else if 链）、
-	#       同一电机「摇杆速度/增速」+「按键直接」（按键覆盖摇杆）
-	# 禁止：同一舵机混用「增量」和「直接」、同一电机多行「速度」（后者覆盖前者）
-	for target in groups.keys():
-		var rows: Array = groups[target]
-		if rows.size() < 2:
-			continue
-		var t_type: String = rows[0]["type"]
-		var mode_labels: Dictionary = {}
-		for r in rows:
-			if not mode_labels.has(r["mode"]):
-				mode_labels[r["mode"]] = []
-			mode_labels[r["mode"]].append(r["label"])
-		if t_type == "舵机":
-			if mode_labels.has("增量") and mode_labels.has("直接"):
+						"msg": "%s 电机速度 %d 超出范围（0-10000）" % [label, val]})
+		"速度", "增速":
+			if val < 0 or val > 10000:
 				issues.append({"type": "Error",
-					"msg": "工程 IO %s 同时被增量（%s）和直接（%s）驱动，两种语义会互相覆盖"
-						% [target, ", ".join(mode_labels["增量"]), ", ".join(mode_labels["直接"])]})
-			# 多行「直接」写同一舵机时生成的是并列 if，同时按下时后一行赢
-			if mode_labels.has("直接") and mode_labels["直接"].size() > 1:
-				issues.append({"type": "Warn",
-					"msg": "工程 IO %s 被多行直接模式驱动（%s），同时按下时以靠后的一行为准"
-						% [target, ", ".join(mode_labels["直接"])]})
-		else:
-			if mode_labels.has("速度") and mode_labels["速度"].size() > 1:
+					"msg": "%s %s参数 %d 超出范围（0-10000）" % [label, mode, val]})
+	# 同模式内按键重复（+/- 双行常见，提示不拦截）
+	if used_keys.has(key) and used_keys[key]["mode"] == mode_no:
+		issues.append({"type": "Warn",
+			"msg": "%s 按键「%s」在本模式已被第%d行使用，两行会同时生效"
+				% [label, key, used_keys[key]["row"]]})
+	used_keys[key] = {"mode": mode_no, "row": row_idx}
+
+
+# ------------------------------------------------------------------ 规则：步兵高级设置（共享多模式按键映射）
+# 步兵固定子系统占用：摩擦轮 P64/P66、拨弹电机、云台 Yaw/Pitch、底盘。
+# 共享按键映射的行不能指向这些引脚；摩擦轮引脚在 IO 初始化区必须为电机。
+static func _check_infantry_shared(issues: Array, cfg: Dictionary) -> void:
+	var io_init: Dictionary = cfg.get("io_init", {})
+	# 摩擦轮固定占用 P64/P66（硬件保护规则）
+	for pin in FRICTION_PINS:
+		if str(io_init.get(pin, "电机")) != "电机":
+			issues.append({"type": "Error",
+				"msg": "步兵 %s 已被摩擦轮固定占用，IO 初始化区必须设为电机" % pin})
+	# 预留引脚：底盘 + 摩擦轮 + 拨弹 + 云台
+	var reserved: Array = _chassis_pins(cfg)
+	reserved.append_array(FRICTION_PINS)
+	for key in ["booster_io", "yaw_io", "pitch_io"]:
+		var pin: String = str(cfg.get(key, "")).split(" ")[0]
+		if not pin.is_empty():
+			reserved.append(pin)
+	# 行检查（复用工程行检查 + 预留引脚拦截）
+	var used_keys: Dictionary = {}
+	var row_idx: int = 0
+	var mode_count: int = 1
+	var mc_text: String = str(cfg.get("mode_count", "1")).strip_edges()
+	if mc_text.is_valid_int():
+		mode_count = clampi(mc_text.to_int(), 1, 4)
+	var modes: Array = cfg.get("modes", []) if cfg.get("modes", []) is Array else []
+	for mi in range(mode_count):
+		var rows: Array = modes[mi].get("rows", []) if mi < modes.size() 			and modes[mi] is Dictionary else []
+		for row in rows:
+			row_idx += 1
+			var io: String = str(row.get("io", ""))
+			if io in reserved:
+				var who: String = "摩擦轮" if io in FRICTION_PINS else "底盘/云台/拨弹"
 				issues.append({"type": "Error",
-					"msg": "工程 IO %s 被多行速度模式驱动（%s），后一行会覆盖前一行"
-						% [target, ", ".join(mode_labels["速度"])]})
-			# 电机无摇杆行时才会在 if/else if 链尾补 else 归零；
-			# "增速 + 直接"组合没有归零，松开按键后值会被增速持续累加
-			if mode_labels.has("增速") and mode_labels.has("直接"):
-				issues.append({"type": "Warn",
-					"msg": "工程 IO %s 同时被增速（%s）和直接（%s）驱动，按键松开后不会归零"
-						% [target, ", ".join(mode_labels["增速"]), ", ".join(mode_labels["直接"])]})
-
-	# --- IO 初始化区配了但无任何输入驱动的槽位 ---
-	# 生成器会把这些槽位按「未使用」处理（Init 发 0），在界面上提醒以免误以为已生效
-	var unused_pins: Array = []
-	for pin2 in EXPANSION_PINS:
-		if pin2 in chassis_pins or groups.has(pin2):
+					"msg": "步兵 模式%d第%d行 IO %s 与%s冲突，高级设置不能控制该引脚"
+						% [mi + 1, row_idx, io, who]})
+				continue
+			_check_eng_row(issues, row, mi + 1, row_idx, cfg, "单击切换",
+				str(cfg.get("mode_switch_key", "E")), cfg.get("mode_keys", []), used_keys)
+	# 步兵云台/拨弹用到的引脚在 IO 初始化区必须与子系统类型一致（摩擦轮已查）
+	for key in ["booster_io", "yaw_io", "pitch_io"]:
+		var pin: String = str(cfg.get(key, "")).split(" ")[0]
+		if pin.is_empty() or pin.begins_with("MP"):
 			continue
-		unused_pins.append(pin2)
-	if not unused_pins.is_empty():
-		issues.append({"type": "Info",
-			"msg": "工程 以下引脚未被底盘或按键映射使用，不会被初始化：%s"
-				% ", ".join(unused_pins)})
+		var t2: String = str(io_init.get(pin, ""))
+		if t2.is_empty():
+			continue
+		var want: String = "电机"
+		if key == "yaw_io" and str(cfg.get("yaw_drive", "舵机")) == "舵机":
+			want = "舵机"
+		if key == "pitch_io" and str(cfg.get("pitch_drive", "舵机")) == "舵机":
+			want = "舵机"
+		if t2 != want:
+			var label: String = "拨弹电机" if key == "booster_io" 				else ("Yaw 轴" if key == "yaw_io" else "Pitch 轴")
+			issues.append({"type": "Error",
+				"msg": "步兵 %s 使用 %s，但 IO 初始化区将其设为「%s」（应为「%s」）"
+					% [label, pin, t2, want]})
 
+
+## 底盘四轮引脚（去重）
+static func _chassis_pins(cfg: Dictionary) -> Array:
+	var pins: Array = []
+	for key in ["l1_io", "l2_io", "r1_io", "r2_io"]:
+		var pin: String = str(cfg.get(key, "")).split(" ")[0]
+		if not pin.is_empty() and not pin in pins:
+			pins.append(pin)
+	return pins
 
 # ------------------------------------------------------------------ 规则：调试界面参数范围
 # 舵机偏移角 ∈ [-90, 90]（相对中位），电机速度 ∈ [0, 10000]，摩擦轮速度 ∈ [0, 1100]
@@ -541,39 +592,6 @@ static func _check_debug_params(issues: Array, debug_rows: Array) -> void:
 				if val < 0 or val > 1100:
 					issues.append({"type": "Error",
 						"msg": "调试 %s 摩擦轮速度 %d 超出范围（有效范围 0-1100）" % [pin_name, val]})
-
-
-# ------------------------------------------------------------------ 规则：工程 IO 初始角
-# 新 IO 初始化区每个引脚可选 电机/舵机 并填「初始角」（相对舵机中位的偏移角，±90°）。
-# 主控板 MP03/MP74 是 PWM 舵机口，不能当电机用。
-static func _check_engineer_io_mid(issues: Array, cfg: Dictionary) -> void:
-	var io_init: Dictionary = cfg.get("io_init", {})
-	var io_mid: Dictionary = cfg.get("io_mid", {})
-	# 主控板舵机口只能驱动舵机（硬件限制）
-	for mp in ["MP03", "MP74"]:
-		if str(io_init.get(mp, "舵机")) == "电机":
-			issues.append({"type": "Error",
-				"msg": "工程 %s 是主控板舵机口，只能驱动舵机，不能设为电机" % mp})
-	# 初始角校验
-	for pin in io_mid.keys():
-		var text: String = str(io_mid[pin]).strip_edges()
-		if text.is_empty():
-			continue
-		if not text.is_valid_float():
-			issues.append({"type": "Error",
-				"msg": "工程 %s 初始角「%s」不是合法数值（有效范围 -%d~%d，相对中位）"
-					% [pin, text, SERVO_MAX_ANGLE, SERVO_MAX_ANGLE]})
-			continue
-		var angle: float = text.to_float()
-		if angle < -SERVO_MAX_ANGLE or angle > SERVO_MAX_ANGLE:
-			issues.append({"type": "Error",
-				"msg": "工程 %s 初始角 %d° 超出范围（有效范围 -%d~%d，相对中位）"
-					% [pin, int(angle), SERVO_MAX_ANGLE, SERVO_MAX_ANGLE]})
-		# 电机上没有「初始角」的概念
-		var pin_type: String = str(io_init.get(pin, "舵机"))
-		if pin_type == "电机":
-			issues.append({"type": "Warn",
-				"msg": "工程 %s 已设为电机，初始角不会生效" % pin})
 
 
 # ------------------------------------------------------------------ 工程逆解算：静态检查

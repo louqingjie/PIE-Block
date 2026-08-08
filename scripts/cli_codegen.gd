@@ -439,7 +439,7 @@ func _run_check(kind: String, cfg: Dictionary) -> Array:
 ##
 ## 前缀约定（来自 ui.gd）：
 ##   FirstRow 下节点  key = "FirstRow/..."（相对 HSplitContainer）
-##   EditZone  下节点  key = "SecondRow/TabContainer/..."（相对 EditZone）
+##   EditZone  下节点  key = "Infantry/..."、"Engineer/..."、"Debug/..."（相对 EditZone）
 ## 与 ui.gd 完整路径常量的关系：
 ##   ui 路径 = "VBoxContainer/HBoxContainer/HSplitContainer/" + FirstRow key
 ##   ui 路径 = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/" + EditZone key
@@ -477,6 +477,8 @@ func _config_val(config: Dictionary, key: String) -> Variant:
 		return str(dd["s"])
 	if dd.has("b"):
 		return bool(dd["b"])
+	if dd.has("i"):
+		return int(dd["i"])
 	return ""
 
 
@@ -498,7 +500,7 @@ func _flatten_infantry_config(config: Dictionary) -> Dictionary:
 	flat["r2_io"] = str(_config_val(config, "FirstRow/Chassis/R2/OptionButton"))
 	flat["r2_dir"] = str(_config_val(config, "FirstRow/Chassis/R2/OptionButton2"))
 	# 云台（EditZone 下）
-	var gimbal: String = "SecondRow/TabContainer/Infantry/GimbalSetting"
+	var gimbal: String = "Infantry/GimbalSetting"
 	flat["booster_io"] = str(_config_val(config, gimbal + "/Booster/OptionButton"))
 	flat["booster_dir"] = str(_config_val(config, gimbal + "/Booster/OptionButton2"))
 	flat["friction_l_dir"] = str(_config_val(config, gimbal + "/P64/OptionButton"))
@@ -512,7 +514,7 @@ func _flatten_infantry_config(config: Dictionary) -> Dictionary:
 	flat["pitch_dir"] = str(_config_val(config, gimbal + "/Pitch/OptionButton3"))
 	flat["pitch_mid_offset"] = str(_config_val(config, gimbal + "/Pitch/LineEdit"))
 	# 按键映射
-	var keyset: String = "SecondRow/TabContainer/Infantry/KeySetting"
+	var keyset: String = "Infantry/KeySetting"
 	flat["arrow_key"] = str(_config_val(config, keyset + "/ArrowKey/OptionButton"))
 	flat["feed_mode"] = str(_config_val(config, keyset + "/FeedMode/OptionButton"))
 	flat["trigger_key"] = str(_config_val(config, keyset + "/Trigger/OptionButton"))
@@ -520,6 +522,8 @@ func _flatten_infantry_config(config: Dictionary) -> Dictionary:
 	flat["trigger_time"] = str(_config_val(config, keyset + "/Trigger/Time"))
 	flat["booster_key"] = str(_config_val(config, keyset + "/Booster/OptionButton"))
 	flat["zero_enabled"] = bool(_config_val(config, keyset + "/Zero/CheckBox"))
+	# 共享多模式配置（步兵页「高级设置」内，与工程页共用同一份结构）
+	flat.merge(_flatten_shared_eng_config(config, "Infantry/Advanced/ScrollContainer/AdvancedAndEngineer"))
 	return _merge_defaults(flat, "infantry")
 
 
@@ -540,74 +544,91 @@ func _flatten_engineer_config(config: Dictionary) -> Dictionary:
 	flat["r1_dir"] = str(_config_val(config, "FirstRow/Chassis/R1/OptionButton2"))
 	flat["r2_io"] = str(_config_val(config, "FirstRow/Chassis/R2/OptionButton"))
 	flat["r2_dir"] = str(_config_val(config, "FirstRow/Chassis/R2/OptionButton2"))
-	# IO 初始化区（Engineer 下）
-	var eng: String = "SecondRow/TabContainer/Engineer"
-	var io_init: Dictionary = {}
-	var eng_pins: Array = ["P60", "P62", "P64", "P66", "P74", "P75", "P76", "P77", "MP03", "MP74"]
-	for pin in eng_pins:
-		var pin_path: String = _engineer_io_path(pin)
-		io_init[pin] = str(_config_val(config, pin_path))
-	flat["io_init"] = io_init
-	# IO 初始化区：各引脚舵机初始角（相对中位偏移）
-	var io_mid: Dictionary = {}
-	for pin in eng_pins:
-		var mid_path: String = _engineer_io_mid_path(pin)
-		io_mid[pin] = str(_config_val(config, mid_path))
-	flat["io_mid"] = io_mid
-	# 按键映射区（ENG_KEY_ROWS 与 ENG_KEY_LABELS 一一对应）
-	var rows: Array = [
-		["RightJoystickX", "右摇杆X"], ["RightJoystickY", "右摇杆Y"],
-		["A", "A"], ["B", "B"], ["C", "C"], ["D", "D"],
-		["Up", "↑"], ["Down", "↓"], ["Left", "←"], ["Right", "->"], ["R", "E"],
-	]
-	var key_map: Array = []
-	for row in rows:
-		var row_path: String = eng + "/" + str(row[0])
-		var dir_text: String = str(_config_val(config, row_path + "/OptionButton2"))
-		var mode_text: String = str(_config_val(config, row_path + "/OptionButton"))
-		var param_text: String = str(_config_val(config, row_path + "/LineEdit"))
-		var target_text: String = str(_config_val(config, row_path + "/OptionButton3"))
-		if target_text == "不使用":
-			target_text = ""
-		key_map.append({
-			"input": str(row[1]),
-			"dir": dir_text,
-			"mode": mode_text,
-			"param": param_text,
-			"target": target_text,
-		})
-	flat["key_map"] = key_map
+	# 共享 IO/模式/按键映射（工程页：Engineer TabContainer 的第 0 个 tab）
+	flat.merge(_flatten_shared_eng_config(config, "Engineer/Engineer"))
 	return _merge_defaults(flat, "engineer")
 
 
-## 工程 IO 引脚 -> 初始化区节点路径（与 ui.gd ENG_IO_PATHS/ENG_IO_MID_PATHS 对应）
-func _engineer_io_path(pin: String) -> String:
-	var eng: String = "SecondRow/TabContainer/Engineer"
+## 工程/步兵共用的 IO 初始化区 + 模式配置 + 每模式动态按键映射行
+func _flatten_shared_eng_config(config: Dictionary, root: String) -> Dictionary:
+	var flat: Dictionary = {}
+	# IO 初始化区（10 引脚：类型 + 初始角）
+	var io_init: Dictionary = {}
+	var io_mid: Dictionary = {}
+	var eng_pins: Array = ["P60", "P62", "P64", "P66", "P74", "P75", "P76", "P77", "MP03", "MP74"]
+	for pin in eng_pins:
+		io_init[pin] = str(_config_val(config, root + "/" + _eng_io_rel(pin)))
+		io_mid[pin] = str(_config_val(config, root + "/" + _eng_io_rel(pin).replace("/OptionButton", "/MidDegree2")))
+	flat["io_init"] = io_init
+	flat["io_mid"] = io_mid
+	# 模式配置
+	flat["mode_count"] = str(_config_val(config, root + "/Mode/OptionButton"))
+	var mode_tab: String = root + "/Mode/TabContainer"
+	flat["switch_strategy"] = "一一对应" if int(_config_val(config, mode_tab)) == 1 else "单击切换"
+	flat["mode_switch_key"] = str(_config_val(config, root + "/Mode/TabContainer/Change/OptionButton2"))
+	var mode_keys: Array = []
+	for kname in ["Key", "Key2", "Key3", "Key4"]:
+		mode_keys.append(str(_config_val(config, root + "/Mode/TabContainer/Select/" + kname)))
+	flat["mode_keys"] = mode_keys
+	# 每模式动态按键映射行（行名 RowNN，按键路径按数字排序）
+	var modes: Array = []
+	for mi in range(4):
+		var rows: Array = []
+		var row_keys: Dictionary = {}
+		for key in config.keys():
+			# Engineer/Engineer/TabContainer/M2/ScrollContainer/VBoxContainer/Row03/Key
+			var prefix: String = root + "/TabContainer/M%d/ScrollContainer/VBoxContainer/" % (mi + 1)
+			if not str(key).begins_with(prefix):
+				continue
+			var rest: String = str(key).substr(prefix.length())
+			var parts: PackedStringArray = rest.split("/")
+			if parts.size() != 2:
+				continue
+			var row_name: String = parts[0]
+			var ctrl: String = parts[1]
+			if not row_name.begins_with("Row"):
+				continue
+			if not row_keys.has(row_name):
+				row_keys[row_name] = {}
+			row_keys[row_name][ctrl] = _config_val(config, key)
+		var order: Array = row_keys.keys()
+		order.sort_custom(func(a: String, b: String) -> bool:
+			return a.substr(3).to_int() < b.substr(3).to_int())
+		for rn in order:
+			var rv: Dictionary = row_keys[rn]
+			rows.append({
+				"key": str(rv.get("Key", "")),
+				"dir": str(rv.get("Dir", "")),
+				"mode": str(rv.get("Option", "")),
+				"param": str(rv.get("Para", "")),
+				"io": str(rv.get("IO", "")),
+			})
+		modes.append({"rows": rows})
+	flat["modes"] = modes
+	return flat
+
+
+## 工程 IO 引脚 -> 初始化区相对路径（与 ui.gd ENG_IO_REL 对应）
+func _eng_io_rel(pin: String) -> String:
 	var map: Dictionary = {
-		"P60": eng + "/IOs/Row1/P60/OptionButton",
-		"P62": eng + "/IOs/Row1/P62/OptionButton",
-		"P64": eng + "/IOs/Row1/P64/OptionButton",
-		"P66": eng + "/IOs/Row1/P66/OptionButton",
-		"P74": eng + "/IOs/Row1/P74/OptionButton",
-		"P75": eng + "/IOs/Row2/P75/OptionButton",
-		"P76": eng + "/IOs/Row2/P76/OptionButton",
-		"P77": eng + "/IOs/Row2/P77/OptionButton",
-		"MP03": eng + "/IOs/Row2/MP03/OptionButton",
-		"MP74": eng + "/IOs/Row2/MP74/OptionButton",
+		"P60": "IOs/Row1/P60/OptionButton",
+		"P62": "IOs/Row1/P62/OptionButton",
+		"P64": "IOs/Row1/P64/OptionButton",
+		"P66": "IOs/Row1/P66/OptionButton",
+		"P74": "IOs/Row1/P74/OptionButton",
+		"P75": "IOs/Row2/P75/OptionButton",
+		"P76": "IOs/Row2/P76/OptionButton",
+		"P77": "IOs/Row2/P77/OptionButton",
+		"MP03": "IOs/Row2/MP03/OptionButton",
+		"MP74": "IOs/Row2/MP74/OptionButton",
 	}
-	return map.get(pin, "")
-
-
-## 工程 IO 引脚 -> 初始角输入框节点路径（MidDegree2）
-func _engineer_io_mid_path(pin: String) -> String:
-	var path: String = _engineer_io_path(pin)
-	return path.replace("/OptionButton", "/MidDegree2") if not path.is_empty() else ""
+	return str(map.get(pin, ""))
 
 
 ## 调试：还原 _collect_debug_config() 的行数组
 func _flatten_debug_config(config: Dictionary) -> Array:
 	var rows: Array = []
-	var debug: String = "SecondRow/TabContainer/Debug"
+	var debug: String = "Debug"
 	# DEBUG_ROWS: HBoxContainer..HBoxContainer10，对应 P60/P62/P64/P66/P74/P75/P76/P77/MP03/MP74
 	var pin_names: Array = ["P60", "P62", "P64", "P66", "P74", "P75", "P76", "P77", "MP03", "MP74"]
 	for i in range(pin_names.size()):
@@ -837,6 +858,44 @@ func _engineer_base_schema() -> Dictionary:
 				"P77": {"type": "string", "default": ""},
 				"MP03": {"type": "string", "default": ""},
 				"MP74": {"type": "string", "default": ""},
+			},
+		},
+		"mode_count": {"type": "integer", "minimum": 1, "maximum": 4, "default": 1,
+			"description": "操作模式个数（1~4）"},
+		"switch_strategy": {"type": "string", "enum": ["单击切换", "一一对应"], "default": "单击切换",
+			"description": "模式切换方式：单击切换=一个键轮换；一一对应=每模式一个键"},
+		"mode_switch_key": {"type": "string", "default": "E",
+			"description": "单击切换时的模式切换键"},
+		"mode_keys": {
+			"type": "array",
+			"description": "一一对应时各模式的切换键（模式1~4）",
+			"items": {"type": "string"},
+			"maxItems": 4,
+		},
+		"modes": {
+			"type": "array",
+			"description": "每模式一组动态按键映射行（最多 4 个模式）",
+			"maxItems": 4,
+			"items": {
+				"type": "object",
+				"properties": {
+					"rows": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"properties": {
+								"key": {"type": "string",
+									"description": "E/↑/↓/←/→/A/B/C/D/LC/RC（按键）或 LX/LY/RX/RY（摇杆轴）"},
+								"dir": {"type": "string", "enum": ["正", "反"], "default": "正"},
+								"mode": {"type": "string", "enum": ["增量", "直接", "速度", "增速"],
+									"description": "增量/直接（舵机），直接/速度/增速（电机）；摇杆行只能用 增量/速度/增速"},
+								"param": {"type": "string", "description": "步长(°) / 角度(°) / 速度(0-10000)"},
+								"io": {"type": "string",
+									"description": "目标 IO（P60~P77/MP03/MP74）"},
+							},
+						},
+					},
+				},
 			},
 		},
 		"key_map": {

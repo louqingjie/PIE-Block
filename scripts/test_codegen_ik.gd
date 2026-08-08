@@ -129,10 +129,18 @@ func _make_dual_cfg() -> Dictionary:
 			"r1_io": "P64 P65", "r2_io": "P66 P67",
 			"l1_dir": "正向", "l2_dir": "正向",
 			"r1_dir": "正向", "r2_dir": "正向",
-			"key_map": [
-				{"input": "A", "dir": "正", "mode": "增量", "param": "2", "target": "P74"},
-				{"input": "B", "dir": "反", "mode": "增量", "param": "2", "target": "P74"},
-				{"input": "C", "dir": "正", "mode": "直接", "param": "30", "target": "MP74"},
+			"io_init": {
+				"P60": "电机", "P62": "电机", "P64": "电机", "P66": "电机",
+				"P74": "舵机", "P75": "电机", "P76": "电机", "P77": "电机",
+				"MP03": "舵机", "MP74": "舵机",
+			},
+			"modes": [
+				{"rows": [
+					{"key": "A", "dir": "正", "mode": "增量", "param": "2", "io": "P74"},
+					{"key": "B", "dir": "反", "mode": "增量", "param": "2", "io": "P74"},
+					{"key": "C", "dir": "正", "mode": "直接", "param": "30", "io": "MP74"},
+				]},
+				{"rows": []}, {"rows": []}, {"rows": []},
 			],
 		},
 		"ik": ik,
@@ -210,8 +218,9 @@ func _test_arm_home(cg) -> void:
 	_check("home hit skips inverse and forward arm control",
 		code.contains("if (!armHomeHit)") and code.contains("else if (!armHomeHit)"))
 	var disabled: String = cg.generate(_make_dual_cfg())
-	_check("disabled home emits no valueOfKey or home function",
-		not disabled.contains("valueOfKey") and not disabled.contains("ReturnArmHome"))
+	_check("disabled home emits no home function or ROCKER2 read",
+		not disabled.contains("ReturnArmHome")
+		and not disabled.contains("valueOfKey[2][1] = RcKeyValueRead(KEY_OFFSET_Rocker21)"))
 
 
 func _test_gripper(cg) -> void:
@@ -289,8 +298,10 @@ func _test_config(cg, jc: int, label: String) -> void:
 		code.find("servo = angle - jointOffset[joint];") >= 0
 		and code.find("SERVO_MID_DUTY + servo * SERVO_DUTY_PER_DEG") >= 0
 		and code.find("angle - 90.0f") < 0)
-	# 不应残留未被读取的 valueOfKey
-	_check("%s 无死变量 valueOfKey" % label, code.find("valueOfKey") < 0)
+	# 工程页多模式按键映射的键位矩阵：声明并实际读取
+	_check("%s 键位矩阵被读取" % label,
+		code.contains("uint8_t  valueOfKey[3][4]")
+		and code.contains("valueOfKey[i][j] = RcKeyValueRead(keyOffsets[i][j])"))
 	# 逆解已换成雅可比转置数值解，取代 2/3/4 轴各一套的解析公式。
 	# 转轴与连杆长度两张表是它的全部输入。
 	_check("%s 有 jointAxis 表" % label, code.find("const float jointAxis[") >= 0)

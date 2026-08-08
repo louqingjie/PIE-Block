@@ -248,6 +248,78 @@
           "default": "8000",
           "description": "冲刺速度 (0-10000)",
           "type": "string"
+        },
+        "mode_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4,
+          "default": 1,
+          "description": "操作模式个数（1~4）"
+        },
+        "switch_strategy": {
+          "type": "string",
+          "enum": [
+            "单击切换",
+            "一一对应"
+          ],
+          "default": "单击切换",
+          "description": "模式切换方式"
+        },
+        "mode_switch_key": {
+          "type": "string",
+          "default": "E",
+          "description": "单击切换时的模式切换键"
+        },
+        "mode_keys": {
+          "type": "array",
+          "description": "一一对应时各模式的切换键",
+          "maxItems": 4,
+          "items": {
+            "type": "string"
+          }
+        },
+        "modes": {
+          "type": "array",
+          "description": "每模式一组动态按键映射行",
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "properties": {
+              "rows": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string"
+                    },
+                    "dir": {
+                      "type": "string",
+                      "enum": [
+                        "正",
+                        "反"
+                      ]
+                    },
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "增量",
+                        "直接",
+                        "速度",
+                        "增速"
+                      ]
+                    },
+                    "param": {
+                      "type": "string"
+                    },
+                    "io": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
         }
       },
       "type": "object"
