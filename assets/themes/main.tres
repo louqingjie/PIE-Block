@@ -1,6 +1,6 @@
 [gd_resource type="Theme" format=3 uid="uid://cryqvh2g7gqj"]
 
-[ext_resource type="FontFile" uid="uid://bs174vxb8p5iv" path="res://assets/fonts/NotoSansCJK-Regular.ttc" id="1_aiue4"]
+[ext_resource type="FontFile" uid="uid://bx1dnf5xwkj8h" path="res://assets/fonts/NotoSansSC-Regular-subset.ttf" id="1_aiue4"]
 
 [resource]
 Button/fonts/font = ExtResource("1_aiue4")

@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://bsby1x4s7pk6"]
 
-[ext_resource type="FontFile" uid="uid://bs174vxb8p5iv" path="res://assets/fonts/NotoSansCJK-Regular.ttc" id="1_nt7q6"]
+[ext_resource type="FontFile" uid="uid://bx1dnf5xwkj8h" path="res://assets/fonts/NotoSansSC-Regular-subset.ttf" id="1_nt7q6"]
 [ext_resource type="Script" uid="uid://d4e4choqekw3p" path="res://scripts/ui.gd" id="2_yev5y"]
 [ext_resource type="PackedScene" uid="uid://cixhirpix64rt" path="res://scenes/top_panel.tscn" id="3_ktti3"]
 [ext_resource type="PackedScene" path="res://scenes/project_guide.tscn" id="4_guide"]

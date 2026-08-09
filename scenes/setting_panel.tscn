@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://dsapewj4k3rqw"]
 
-[ext_resource type="FontFile" uid="uid://bs174vxb8p5iv" path="res://assets/fonts/NotoSansCJK-Regular.ttc" id="1_xtyyo"]
+[ext_resource type="FontFile" uid="uid://bx1dnf5xwkj8h" path="res://assets/fonts/NotoSansSC-Regular-subset.ttf" id="1_xtyyo"]
 [ext_resource type="Script" uid="uid://c3r1ylh1o0xtr" path="res://scripts/setting_panel.gd" id="2_setting"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_8dubc"]

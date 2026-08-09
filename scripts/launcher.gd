@@ -8,6 +8,8 @@ extends Control
 ## 所以主界面直接单跑时行为不变（没有项目上下文 = 老的自由编辑模式）。
 
 const PF = preload("res://scripts/project_file.gd")
+# Web 平台工具（浏览器版：新建免对话框 / 拖放打开工程）
+const WEB = preload("res://scripts/web_support.gd")
 
 const P_CREATE: NodePath = "Center/Panel/Actions/Create"
 const P_OPEN: NodePath = "Center/Panel/Actions/Open"
@@ -34,6 +36,9 @@ func _ready() -> void:
 	AppState.reset()
 	_connect_signals()
 	_rebuild_recent_list()
+	if WEB.is_web():
+		# 浏览器版：把 .pieproj 文件拖进窗口即可打开（虚拟 FS 无文件对话框）
+		get_window().files_dropped.connect(_on_files_dropped)
 
 
 ## 旋转/尺寸变化后重算安全区内缩。
@@ -80,10 +85,56 @@ func _on_kind_chosen(kind: String) -> void:
 	var kind_dlg: Node = get_node_or_null(P_KIND_DIALOG)
 	if kind_dlg is AcceptDialog:
 		kind_dlg.hide()
+	if WEB.is_web():
+		# 浏览器版：没有真实文件系统，直接在虚拟 FS 新建并进入
+		_web_create_in_vfs(kind)
+		return
 	var dlg: Node = get_node_or_null(P_SAVE_DIALOG)
 	if dlg is FileDialog:
 		dlg.current_file = "%s项目.%s" % [PF.kind_label(kind), PF.EXT]
 		dlg.popup_centered()
+
+
+## Web 版新建：写进 user://projects/（虚拟文件系统），
+## 需要带出电脑时用顶栏「保存」旁的导出（浏览器下载 .pieproj）
+func _web_create_in_vfs(kind: String) -> void:
+	var dir: String = "user://projects"
+	DirAccess.make_dir_recursive_absolute(dir)
+	var stamp: String = Time.get_datetime_string_from_system().replace(":", "").replace(" ", "_")
+	var path: String = "%s/%s项目_%s.%s" % [dir, PF.kind_label(kind), stamp, PF.EXT]
+	var res: Dictionary = PF.create_new(path, kind)
+	if not res["ok"]:
+		_set_status("新建失败：%s" % res["err"])
+		_pending_kind = ""
+		return
+	_pending_kind = ""
+	_enter_project(path, res["data"], "已新建%s项目（浏览器虚拟磁盘，可随时导出）" % PF.kind_label(kind))
+
+
+## Web 版打开：拖入的 .pieproj 文件先进虚拟 FS 再打开
+func _on_files_dropped(files: PackedStringArray) -> void:
+	for f in files:
+		var ext: String = f.get_extension().to_lower()
+		if ext != PF.EXT:
+			_set_status("仅支持 %s 工程文件" % PF.EXT)
+			continue
+		var src_f: FileAccess = FileAccess.open(f, FileAccess.READ)
+		if src_f == null:
+			_set_status("无法读取拖入的文件：%s" % f)
+			continue
+		var data: PackedByteArray = src_f.get_buffer(src_f.get_length())
+		src_f.close()
+		var dir: String = "user://projects"
+		DirAccess.make_dir_recursive_absolute(dir)
+		var dst: String = "%s/%s" % [dir, f.get_file()]
+		var dst_f: FileAccess = FileAccess.open(dst, FileAccess.WRITE)
+		if dst_f == null:
+			_set_status("无法写入虚拟磁盘")
+			continue
+		dst_f.store_buffer(data)
+		dst_f.close()
+		_open_project(dst)
+		return
 
 
 func _on_save_path_chosen(raw_path: String) -> void:
@@ -103,6 +154,10 @@ func _on_save_path_chosen(raw_path: String) -> void:
 # ------------------------------------------------------------------ 打开
 func _on_open_pressed() -> void:
 	_set_status("")
+	if WEB.is_web():
+		# 浏览器版没有文件对话框：拖入 .pieproj 文件即可
+		_set_status("浏览器版：把 .pieproj 工程文件拖进窗口即可打开")
+		return
 	var dlg: Node = get_node_or_null(P_OPEN_DIALOG)
 	if dlg is FileDialog:
 		dlg.popup_centered()

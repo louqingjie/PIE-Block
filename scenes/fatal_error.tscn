@@ -3,7 +3,7 @@
 [ext_resource type="Theme" uid="uid://cryqvh2g7gqj" path="res://assets/themes/main.tres" id="1_o0aib"]
 [ext_resource type="StyleBox" uid="uid://bmthpuwsefkyj" path="res://assets/themes/warn_panel.tres" id="2_6qq2t"]
 [ext_resource type="Texture2D" uid="uid://u1r0v3mfgat3" path="res://assets/images/error.svg" id="2_o0aib"]
-[ext_resource type="FontFile" uid="uid://bs174vxb8p5iv" path="res://assets/fonts/NotoSansCJK-Regular.ttc" id="3_cor4c"]
+[ext_resource type="FontFile" uid="uid://bx1dnf5xwkj8h" path="res://assets/fonts/NotoSansSC-Regular-subset.ttf" id="3_cor4c"]
 [ext_resource type="Script" uid="uid://dw4ksx6m0pywd" path="res://scripts/countdown_gate.gd" id="4_7w9aa"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_ynwaf"]

@@ -203,6 +203,8 @@ const KG = preload("res://scripts/keil_guide.gd")
 ## 云端编译核心与配置引导（preload 避免全局类名缓存未建立）
 const CLOUD_COMPILER = preload("res://scripts/cloud_compiler.gd")
 const CLOUD_GUIDE = preload("res://scripts/cloud_guide.gd")
+# Web 平台工具（浏览器版功能禁用 / 文件下载）
+const WEB = preload("res://scripts/web_support.gd")
 ## 构形诊断（判定末端可控自由度与俯仰角是否解耦）
 # 项目文件（.pieproj）读写与「项目类型 <-> Tab」映射表
 const PF = preload("res://scripts/project_file.gd")
@@ -335,6 +337,10 @@ func _setup_build_mode_selector() -> void:
 		return
 	if not set_btn.pressed.is_connected(_on_cloud_settings_pressed):
 		set_btn.pressed.connect(_on_cloud_settings_pressed)
+	# Web 版无本地 Keil：编译模式锁死在云端
+	if WEB.is_web():
+		_build_mode.select(1)
+		_build_mode.disabled = true
 
 
 ## 当前是否云端编译模式
@@ -364,6 +370,8 @@ func _setup_download_controller() -> void:
 
 # ------------------------------------------------------------------ 信号连接
 func _connect_signals() -> void:
+	# Web 版禁用：AI 编辑（WebView）、烧录/升级、下载固件、3D 仿真（串口桥）
+	WEB.disable_buttons(self, [P_AI_EDIT_BTN, P_UPGRADE_BTN, P_DOWNLOAD_BTN, P_ARM_SIM_BTN])
 	var gate_confirm: Node = get_node_or_null(P_GATE_CONFIRM)
 	if gate_confirm is BaseButton:
 		gate_confirm.pressed.connect(_on_hardware_gate_confirmed)
@@ -1214,7 +1222,10 @@ func _save_project(verbose: bool) -> void:
 	_dirty = false
 	_update_title()
 	if verbose:
-		_append_output("已保存项目：%s" % AppState.project_path)
+		if WEB.is_web():
+			_append_output("已保存项目（浏览器虚拟磁盘，需要带出电脑请用「导出 HEX」或复制代码）")
+		else:
+			_append_output("已保存项目：%s" % AppState.project_path)
 
 
 ## 取 CodeEdit 里当前的 C 代码预览；为空时先跑一次生成
@@ -2012,29 +2023,36 @@ func _open_hex_save_dialog() -> void:
 
 ## 把编译产物复制到用户选择的位置（自动补 .hex 扩展名）
 func _save_hex_to(dst_path: String) -> void:
-	var dst: String = dst_path
-	if not dst.to_lower().ends_with(".hex"):
-		dst += ".hex"
 	var src: String = _toolchain().get_hex_path(_get_current_project_dst())
 	var src_f: FileAccess = FileAccess.open(src, FileAccess.READ)
 	if src_f == null:
 		_append_output("[Error] 读取编译产物失败：%s" % src)
 		return
+	var data: PackedByteArray = src_f.get_buffer(src_f.get_length())
+	src_f.close()
+	if WEB.is_web():
+		# 浏览器版：直接触发下载，没有真实保存路径
+		WEB.download_bytes(data, dst_path.get_file())
+		_append_output("[✓] 已导出 HEX（浏览器下载）：%s" % dst_path.get_file())
+		return
+	var dst: String = dst_path
+	if not dst.to_lower().ends_with(".hex"):
+		dst += ".hex"
 	var dst_f: FileAccess = FileAccess.open(dst, FileAccess.WRITE)
 	if dst_f == null:
-		src_f.close()
 		_append_output("[Error] 无法写入：%s" % dst)
 		return
-	var buf_size: int = 65536
-	while src_f.get_position() < src_f.get_length():
-		dst_f.store_buffer(src_f.get_buffer(buf_size))
-	src_f.close()
+	dst_f.store_buffer(data)
 	dst_f.close()
 	_append_output("[✓] 已导出 HEX：%s" % dst)
 
 
 ## AI 编辑入口（阶段一 -> 阶段二）。仅在 AI 功能已启用后可见。
 func _on_ai_edit_pressed() -> void:
+	# Web / 移动端：AI 编辑依赖桌面 WebView，提示后直接返回
+	if not WEB.is_desktop():
+		WEB.popup_desktop_only(self, "AI 编辑")
+		return
 	if not _ai_enabled and not _project.is_empty():
 		return
 	if _project.is_empty():
@@ -2048,6 +2066,13 @@ func _on_ai_edit_pressed() -> void:
 
 
 func _on_ai_enable_toggled(pressed: bool) -> void:
+	# Web / 移动端：AI 编辑依赖桌面 WebView，开关不生效并提示
+	if pressed and not WEB.is_desktop():
+		var toggle: BaseButton = get_node_or_null(P_ENABLE_AI_BTN)
+		if toggle is BaseButton:
+			toggle.set_pressed_no_signal(false)
+		WEB.popup_desktop_only(self, "AI 编辑")
+		return
 	if _loading:
 		return
 	if pressed:
