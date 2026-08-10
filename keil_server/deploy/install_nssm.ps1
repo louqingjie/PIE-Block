@@ -117,16 +117,14 @@ if (-not $ApiKey -and (Test-Path $adminKeyFile)) {
     Say-Ok "[OK] 已启用 API Key 鉴权（管理员 key = 你指定的）"
 }
 
-# ---- 4. 编译降权用户：-BuildUser 参数 > data\build_user.txt > 不降权 ----
-$buildUserFile = Join-Path $dataDir "build_user.txt"
-if (-not $BuildUser -and (Test-Path $buildUserFile)) {
-    $BuildUser = "PieBuild"
-    $BuildPassword = (Get-Content $buildUserFile -Raw).Trim()
-    Say-Ok "[OK] 已启用编译降权用户：$BuildUser（密码来自 $buildUserFile）"
+# ---- 4. 编译降权用户：仅 -BuildUser 显式启用（默认不降权，编译以服务账户运行）。
+#       内部工具场景直接 SYSTEM 跑即可；要隔离恶意工程时传 -BuildUser/-BuildPassword。
+if ($BuildUser -and $BuildPassword) {
+    Say-Ok "[OK] 已启用编译降权用户：$BuildUser"
 } elseif ($BuildUser) {
-    Say-Ok "[OK] 已启用编译降权用户：$BuildUser（-BuildUser 参数指定）"
+    Say-Warn "[警告] 指定了 -BuildUser 但未提供 -BuildPassword，降权不生效"
 } else {
-    Say-Warn "[警告] 未配置编译降权用户，编译将以服务账户（SYSTEM）身份运行"
+    Say-Info "[信息] 未启用编译降权（编译以服务账户 SYSTEM 运行）"
 }
 
 # ---- 5. 日志目录 ----

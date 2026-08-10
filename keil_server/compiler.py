@@ -197,7 +197,7 @@ def _communicate_timeout(
     """并行读取 stdout/stderr，超时则整树终止。返回 (stdout, stderr, timed_out)。"""
     import threading
 
-    chunks: dict[str, list[bytes]] = {"out": [], "err": []}
+    chunks: dict[str, list] = {"out": [], "err": []}
 
     def pump(handle, key: str) -> None:
         while True:
@@ -207,6 +207,9 @@ def _communicate_timeout(
                 break
             if not data:
                 break
+            # 降权路径是二进制流（rb），fallback 是文本流，统一成 str
+            if isinstance(data, bytes):
+                data = data.decode("utf-8", "replace")
             chunks[key].append(data)
 
     threads = [
@@ -227,8 +230,8 @@ def _communicate_timeout(
             f.close()
         except Exception:
             pass
-    stdout = b"".join(chunks["out"]).decode("utf-8", "replace")
-    stderr = b"".join(chunks["err"]).decode("utf-8", "replace")
+    stdout = "".join(chunks["out"])
+    stderr = "".join(chunks["err"])
     return stdout, stderr, timed_out
 
 
