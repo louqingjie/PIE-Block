@@ -37,9 +37,7 @@ layout_mode = 2
 theme_override_font_sizes/font_size = 18
 text = "1. 程序只烧录到主控板。
 
-2. 绝不向机械扩展板烧录任何程序。
-
-3. 新主控板需要先由维护者安装引导程序。"
+2. 绝不向机械扩展板烧录任何程序。"
 autowrap_mode = 3
 
 [node name="Actions" type="HBoxContainer" parent="Center/Content" unique_id=1873600389]

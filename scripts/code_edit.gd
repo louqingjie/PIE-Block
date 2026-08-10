@@ -329,7 +329,7 @@ func _on_guide_step_pressed(step: int) -> void:
 func _show_hardware_confirmation() -> void:
 	var dialog := AcceptDialog.new()
 	dialog.title = "查看第一步确认"
-	dialog.dialog_text = "1. 程序只烧录到主控板。\n\n2. 绝不向机械扩展板烧录程序。\n\n3. 新主控板已经由维护者安装引导程序。"
+	dialog.dialog_text = "1. 程序只烧录到主控板。\n\n2. 绝不向机械扩展板烧录程序。"
 	dialog.ok_button_text = "已了解"
 	add_child(dialog)
 	dialog.popup_centered(Vector2i(520, 280))

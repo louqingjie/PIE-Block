@@ -37,9 +37,10 @@ const TTYD_DST: String = "user://tools/ttyd.exe"
 ## 就绪探测轮询间隔与上限（ttyd 本身启动很快，Agent 冷启动才是瓶颈）
 const READY_POLL_INTERVAL: float = 0.4
 const READY_POLL_MAX: int = 40
-## 首次进入 AI 编辑时自动安装 opencode：轮询间隔与上限
+## 首次进入 AI 编辑时自动安装 opencode：轮询间隔与上限。
+## 上限要覆盖「先静默安装包管理器再装 opencode」的两段式流程
 const INSTALL_POLL_INTERVAL: float = 2.0
-const INSTALL_POLL_MAX: int = 180 # 约 6 分钟
+const INSTALL_POLL_MAX: int = 300 # 约 10 分钟
 ## npm 安装输出重定向到该日志（user://），供轮询取进度/排错
 const INSTALL_LOG_NAME: String = "opencode_install.log"
 ## 传给 xterm.js 前端的选项
@@ -61,6 +62,9 @@ var _install_pid: int = -1
 var _install_tries: int = 0
 var _install_log_path: String = ""
 var _install_timer: Timer = null
+## 安装方式队列（依次尝试，失败自动回退到下一种）
+var _install_methods: Array = []
+var _install_idx: int = -1
 
 
 func _ready() -> void:
@@ -118,16 +122,30 @@ static func webview2_version() -> String:
 
 # ------------------------------------------------------------------ 探测
 ## 定位 AI Agent 可执行文件。
-## Windows 上 npm 全局安装会生成三个入口：无扩展名的 shell shim、`.cmd`、`.ps1`。
-## 前两者 CreateProcess 起不来或需 cmd 解释，真正的原生 exe 藏在 node_modules 里。
+## 各安装方式产生的路径各不相同，按固定位置逐一检查：
+##   npm 全局  -> %APPDATA%\npm\node_modules\opencode-ai\bin\opencode.exe
+##   Scoop     -> %USERPROFILE%\scoop\apps\opencode\current\opencode.exe
+##   Mise      -> %USERPROFILE%\.local\bin\opencode.exe
+##   Chocolatey-> C:\ProgramData\chocolatey\bin\opencode.exe
+## 找不到再退回 where.exe 扫 PATH（shim 可能在进程启动后才加入 PATH，
+## 而本进程的 PATH 是启动时的快照，因此固定路径检查必须优先）。
 ## 找不到返回空串。
 func detect_agent() -> String:
 	var appdata: String = OS.get_environment("APPDATA")
+	var userprofile: String = OS.get_environment("USERPROFILE")
+	var candidates: PackedStringArray = PackedStringArray()
 	if not appdata.is_empty():
-		var npm_exe: String = appdata.replace("\\", "/").path_join(
-			"npm/node_modules/opencode-ai/bin/opencode.exe")
-		if FileAccess.file_exists(npm_exe):
-			_agent_path = npm_exe
+		candidates.append(appdata.replace("\\", "/").path_join(
+			"npm/node_modules/opencode-ai/bin/opencode.exe"))
+	if not userprofile.is_empty():
+		candidates.append(userprofile.replace("\\", "/").path_join(
+			"scoop/apps/opencode/current/opencode.exe"))
+		candidates.append(userprofile.replace("\\", "/").path_join(
+			".local/bin/opencode.exe"))
+	candidates.append("C:/ProgramData/chocolatey/bin/opencode.exe")
+	for c in candidates:
+		if FileAccess.file_exists(c):
+			_agent_path = c
 			return _agent_path
 	# 回退：where.exe 查 PATH，优先 .exe
 	var out: Array = []
@@ -327,36 +345,145 @@ func _continue_start() -> bool:
 
 
 # ------------------------------------------------------------------ opencode 自动安装
-## 未检测到 opencode 时异步执行 `npm i -g opencode-ai`，装好后自动继续启动终端。
-## 返回 false 表示连安装都无法开始（如缺 npm/Node.js）。
+## 未检测到 opencode 时按顺序尝试多种安装方式，装好后自动继续启动终端。
+## 依次尝试：Chocolatey -> Scoop -> Mise -> npm。
+## 前置不满足（如 choco 需要管理员）或安装失败（进程退出但 opencode 未出现）
+## 时自动回退到下一种，全部失败才报错。
+## 返回 false 表示连安装都无法开始（队列为空）。
 func _begin_opencode_install() -> bool:
 	if _installing:
 		return true # 已在装
-	var npm_path: String = _find_npm()
-	if npm_path.is_empty():
-		_set_status("缺少 Node.js")
-		_emit_log("[Error] 未找到 npm/Node.js，无法自动安装 opencode")
-		_emit_log("       请先安装 Node.js（https://nodejs.org）后重启本程序")
-		_emit_log("       或在命令行手动执行：npm i -g opencode-ai")
+	_install_methods = _build_install_methods()
+	if _install_methods.is_empty():
+		_set_status("缺少可用的安装方式")
+		_emit_log("[Error] 未找到任何可用的 opencode 安装方式")
+		_emit_log("       请检查网络后重启本程序，或参考 https://opencode.ai/docs/")
 		return false
 	_installing = true
+	_install_idx = -1
 	_install_tries = 0
-	_set_status("首次使用：正在安装 opencode（需联网，约 1~3 分钟）…")
+	_set_status("首次使用：正在安装 opencode（需联网，约 1~5 分钟）…")
 	_emit_log("[Info] 首次使用 AI 编辑，未检测到 opencode，开始自动安装…")
+	return _next_install_method()
+
+
+## 构建安装方式队列（按优先级排序）。
+## 静态前置在这里检查：不满足的直接不进队列（跳过而非失败）。
+## 注意：powershell 的安装命令一律写成临时 .ps1 用 -File 执行。
+## 不能拼在 -Command 里 —— Windows 命令行解析会剥掉内层双引号
+## （实测 `& "$env:USERPROFILE\..."` 会变成无引号版本导致命令找不到）。
+func _build_install_methods() -> Array:
+	var methods: Array = []
+	var out: Array = []
+	# 1. Chocolatey：需要已安装且当前进程有管理员权限（choco 必须装到 ProgramData）
+	var is_admin: bool = OS.execute("net.exe", ["session"], out, false) == 0
+	if is_admin and _command_exists("choco"):
+		methods.append(_make_install_method("Chocolatey", "cmd.exe",
+			['/c', '"choco" install opencode -y']))
+	# 2. Scoop：未装则先静默安装本体（免管理员），同一脚本里再装 opencode。
+	#    scoop 安装脚本会检测已装则跳过，因此该脚本幂等。
+	if _command_exists("scoop"):
+		methods.append(_make_install_method("Scoop", "cmd.exe",
+			['/c', '"scoop" install opencode']))
+	else:
+		var scoop_ps1: String = _write_install_script("scoop", [
+			"$ProgressPreference = 'SilentlyContinue'",
+			"Start-Transcript -Path '%s' -Force" % _install_log_win(),
+			"Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force",
+			"irm get.scoop.sh -TimeoutSec 60 | iex",
+			'& "$env:USERPROFILE\\scoop\\shims\\scoop.cmd" install opencode',
+			"Stop-Transcript",
+		])
+		if not scoop_ps1.is_empty():
+			methods.append(_make_install_method("Scoop(自动安装)", "powershell.exe",
+				["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scoop_ps1]))
+	# 3. Mise：同上，未装则先静默安装本体（免管理员）
+	if _command_exists("mise"):
+		methods.append(_make_install_method("Mise", "cmd.exe",
+			['/c', '"mise" use -g github:anomalyco/opencode']))
+	else:
+		var mise_ps1: String = _write_install_script("mise", [
+			"$ProgressPreference = 'SilentlyContinue'",
+			"Start-Transcript -Path '%s' -Force" % _install_log_win(),
+			"iwr https://mise.run -TimeoutSec 60 | iex",
+			'& "$env:USERPROFILE\\.local\\bin\\mise.exe" use -g github:anomalyco/opencode',
+			"Stop-Transcript",
+		])
+		if not mise_ps1.is_empty():
+			methods.append(_make_install_method("Mise(自动安装)", "powershell.exe",
+				["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", mise_ps1]))
+	# 4. npm：机器已装 Node.js 时的最后兜底。
+	#    用 npmmirror 镜像（国内直连官方源经常超时）
+	var npm_path: String = _find_npm()
+	if not npm_path.is_empty():
+		methods.append(_make_install_method("npm", "cmd.exe",
+			['/c', '"%s" i -g opencode-ai --registry=https://registry.npmmirror.com' % npm_path.replace("/", "\\")]))
+	return methods
+
+
+## 把安装脚本写成 user://install_<name>.ps1（UTF-8 带 BOM，兼容中文路径）。
+## 脚本内部用 Start-Transcript 把全部输出（含错误）写进安装日志。
+## 返回绝对路径；失败返回空串。
+func _write_install_script(name: String, lines: Array) -> String:
+	var dst_abs: String = ProjectSettings.globalize_path("user://install_" + name + ".ps1")
+	var f: FileAccess = FileAccess.open(dst_abs, FileAccess.WRITE)
+	if f == null:
+		_emit_log("[Error] 无法写入安装脚本: %s" % dst_abs)
+		return ""
+	f.store_8(0xEF); f.store_8(0xBB); f.store_8(0xBF) # UTF-8 BOM，PS 5.1 必须
+	f.store_string("\n".join(PackedStringArray(lines)) + "\n")
+	f.close()
+	return dst_abs.replace("/", "\\")
+
+
+## 安装日志的 Windows 绝对路径（脚本内容里用）
+func _install_log_win() -> String:
+	return ProjectSettings.globalize_path("user://" + INSTALL_LOG_NAME).replace("/", "\\")
+
+
+## 组装单个安装方法：{name, exec, args}。
+## cmd.exe 方法的输出重定向在 _next_install_method 里追加；
+## powershell.exe 方法走 -File 脚本，日志由脚本内 Start-Transcript 负责。
+func _make_install_method(name: String, exec: String, args: Array) -> Dictionary:
+	return {"name": name, "exec": exec, "args": PackedStringArray(args)}
+
+
+## 启动下一种安装方式；队列用尽返回 false。
+func _next_install_method() -> bool:
+	_install_tries = 0
+	_install_idx += 1
+	if _install_idx >= _install_methods.size():
+		return false
+	var m: Dictionary = _install_methods[_install_idx]
 	var log_abs: String = ProjectSettings.globalize_path("user://" + INSTALL_LOG_NAME)
 	_install_log_path = log_abs
-	var npm_win: String = npm_path.replace("/", "\\")
 	var log_win: String = log_abs.replace("/", "\\")
-	# cmd 包一层：npm 是 .cmd，CreateProcess 直接起不了；输出重定向到日志文件
-	var inner: String = '"%s" i -g opencode-ai > "%s" 2>&1' % [npm_win, log_win]
-	_install_pid = OS.create_process("cmd.exe", ["/c", inner], false)
+	var args: PackedStringArray = PackedStringArray(m["args"])
+	# cmd 包装的安装命令追加进程级输出重定向；
+	# powershell -File 的安装脚本已在内部 Start-Transcript，不需要这里重定向
+	if str(m["exec"]) == "cmd.exe":
+		args[args.size() - 1] = args[args.size() - 1] + ' > "%s" 2>&1' % log_win
+	_emit_log("[Info] 正在尝试安装方式：%s…" % str(m["name"]))
+	_install_pid = OS.create_process(str(m["exec"]), args, false)
 	if _install_pid == -1:
-		_installing = false
-		_set_status("安装启动失败")
-		_emit_log("[Error] 无法启动 opencode 安装进程")
-		return false
+		_emit_log("[Warn] %s 启动失败，改用下一种方式…" % str(m["name"]))
+		_install_pid = -1
+		return _next_install_method()
 	_start_install_poll()
 	return true
+
+
+## 当前安装方式的名称（日志用）
+func _current_install_method_name() -> String:
+	if _install_idx < 0 or _install_idx >= _install_methods.size():
+		return "未知"
+	return str(_install_methods[_install_idx]["name"])
+
+
+## 检查 PATH 中是否存在指定命令
+func _command_exists(cmd: String) -> bool:
+	var out: Array = []
+	return OS.execute("where.exe", [cmd], out, false) == 0
 
 
 func _start_install_poll() -> void:
@@ -375,7 +502,8 @@ func _poll_install() -> void:
 	if not _agent_path.is_empty() or not detect_agent().is_empty():
 		_installing = false
 		_install_pid = -1
-		_emit_log("[✓] opencode 安装完成")
+		_install_methods = []
+		_emit_log("[✓] opencode 安装完成（%s）" % _current_install_method_name())
 		_continue_start()
 		return
 	# 每 5 次轮询吐一条安装日志，让用户看到进度
@@ -383,15 +511,20 @@ func _poll_install() -> void:
 		var tail: PackedStringArray = _read_install_log_tail(1)
 		if tail.size() > 0:
 			_emit_log("    " + tail[0])
-	# 进程已退出但 opencode 还没出现 = 安装失败
+	# 进程已退出但 opencode 还没出现 = 本方法失败，回退到下一种
 	if not OS.is_process_running(_install_pid):
-		_installing = false
 		_install_pid = -1
-		_set_status("opencode 安装失败")
-		_emit_log("[Error] opencode 安装失败，安装日志尾部：")
+		_emit_log("[Warn] %s 安装失败，日志尾部：" % _current_install_method_name())
 		for line: String in _read_install_log_tail(10):
 			_emit_log("    " + line)
-		_emit_log("       可检查网络后点「重启」重试，或手动执行：npm i -g opencode-ai")
+		if _next_install_method():
+			_emit_log("[Info] 自动改用下一种方式…")
+			return
+		_installing = false
+		_install_methods = []
+		_set_status("opencode 安装失败")
+		_emit_log("[Error] 所有安装方式均已尝试，仍未成功")
+		_emit_log("       可检查网络后点「重启」重试，或手动参考 https://opencode.ai/docs/")
 		return
 	if _install_tries > INSTALL_POLL_MAX:
 		_installing = false
@@ -453,11 +586,13 @@ func _poll_ready() -> void:
 ## 终止终端服务。ttyd 会带着子进程（Agent）一起退出，
 ## 但用 taskkill /T 树杀更保险，避免留下孤儿 Agent 进程。
 func stop() -> void:
-	# 清理进行中的 opencode 安装（npm/cmd 进程）
+	# 清理进行中的 opencode 安装（包管理器/cmd/powershell 进程）
 	if _install_pid != -1:
 		OS.execute("taskkill.exe", ["/T", "/F", "/PID", str(_install_pid)], [], false)
 		_install_pid = -1
 	_installing = false
+	_install_methods = []
+	_install_idx = -1
 	if _install_timer and _install_timer.is_inside_tree():
 		_install_timer.stop()
 	if _pid == -1:

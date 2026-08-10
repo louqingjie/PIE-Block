@@ -753,11 +753,10 @@ func hex_exists(project_dst: String) -> bool:
 
 ## 走 USB-HID 烧录 hex（当前板子只支持 USB-HID，无串口/蓝牙路径）
 ##
-## 通过标准 USB-HID 与 STC32G ROM bootloader 通信（VID 0x34BF / PID 0x1001），
-## 调用 pie_block_hid.py。板子需处于 ISP 模式（上电冷启动进 ISP）。
-##
-## Android 分支：不走 Python / cmd.exe，改用 PieBlockUsb 插件 + HidFlasher
-## （GDScript 协议移植，见 scripts/hid_flasher.gd）。
+## 通过标准 USB-HID 与 STC32G ROM bootloader 通信（VID 0x34BF / PID 0x1001）。
+## 优先走 GDExtension 插件裸 HID（Android: PieBlockUsb；Windows: PieBlockHidWindows，
+## 协议层都是 scripts/hid_flasher.gd），插件不可用时降级 Python 兜底
+## （pie_block_hid.py，仅限开发机）。
 ##
 ## 返回 {ok: bool, exit: int, log: String, stage: String}
 ##   stage 用于失败时定位，取值：env/connect/erase/program/verify/hex/canceled/timeout/done
@@ -765,7 +764,8 @@ func flash_hid(hex_path: String,
 		on_log_line: Callable = Callable(),
 		token = null,
 		timeout_sec: float = 0.0) -> Dictionary:
-	if OS.has_feature("android"):
+	var port = _make_usb_port()
+	if port != null:
 		return flash_hid_usb(hex_path, on_log_line, token, timeout_sec)
 	var py: String = find_python()
 	if py.is_empty():
@@ -796,7 +796,9 @@ func flash_hid(hex_path: String,
 	}
 
 
-## Android 分支：PieBlockUsb 插件 + GDScript 协议（scripts/hid_flasher.gd）。
+## 插件分支（Android: PieBlockUsb；Windows: PieBlockHidWindows）：
+## 不走 Python / cmd.exe，改用 HID 插件 + HidFlasher（GDScript 协议移植，
+## 见 scripts/hid_flasher.gd）。
 ## 与 Python 分支返回相同结构 {ok, exit, log, stage, streamed, canceled}，
 ## download_controller 的进度/提示/取消逻辑完全复用。
 func flash_hid_usb(hex_path: String,
@@ -844,11 +846,69 @@ func flash_hid_usb(hex_path: String,
 
 
 func _make_usb_port():
-	if not OS.has_feature("android"):
-		return null
-	if not Engine.has_singleton("PieBlockUsb"):
-		return null
-	return preload("res://scripts/usb_port_android.gd").new()
+	if OS.has_feature("android"):
+		if not Engine.has_singleton("PieBlockUsb"):
+			return null
+		return preload("res://scripts/usb_port_android.gd").new()
+	if OS.get_name() == "Windows" and ensure_hid_plugin_loaded():
+		return preload("res://scripts/usb_port_windows.gd").new()
+	return null
+
+
+## 确保 Windows HID 插件（PieBlockHidWindows）已加载。幂等。
+##
+## 为什么需要运行时部署：Windows 导出的单文件 exe（embed_pck）里，
+## 引擎不会自动从 pck 解包/加载 GDExtension 的 dll（只认真实文件或 exe 同目录）。
+## 所以这里把 dll 从 res://（pck 内可读）拷到 user://，再生成 .gdextension
+## 用 GDExtensionManager.load_extension 显式加载——不依赖引擎导出内部行为，跨版本稳定。
+##
+## 非 Windows / dll 缺失 / 加载失败时返回 false，调用方降级到 Python 兜底。
+func ensure_hid_plugin_loaded() -> bool:
+	if Engine.has_singleton("PieBlockHidWindows"):
+		return true
+	if OS.get_name() != "Windows":
+		return false
+
+	var dll_src: String = to_abs("res://addons/pieblock_usb/win/pieblock_hid.dll")
+	if not FileAccess.file_exists(dll_src):
+		_emit("[Warn] HID 插件 dll 缺失（%s），使用 Python 兜底路径" % dll_src)
+		return false
+
+	var dst_dir: String = to_abs("user://pieblock_hid")
+	if not DirAccess.dir_exists_absolute(dst_dir):
+		var mk_err: int = DirAccess.make_dir_recursive_absolute(dst_dir)
+		if mk_err != OK:
+			_emit("[Error] 无法创建 HID 插件目录（错误码 %d）" % mk_err)
+			return false
+	# 每次都覆盖拷贝：dll 随版本更新，避免旧文件残留导致加载的是过期版本。
+	var dll_dst: String = dst_dir.path_join("pieblock_hid.dll")
+	var copy_err: int = DirAccess.copy_absolute(dll_src, dll_dst)
+	if copy_err != OK:
+		_emit("[Error] HID 插件 dll 部署失败（错误码 %d）" % copy_err)
+		return false
+
+	var gd_path: String = dst_dir.path_join("pieblock_hid.gdextension")
+	if not FileAccess.file_exists(gd_path):
+		var f: FileAccess = FileAccess.open(gd_path, FileAccess.WRITE)
+		if f == null:
+			_emit("[Error] 无法写入 HID 插件配置")
+			return false
+		f.store_string(
+			"[configuration]\n"
+			+ "entry_symbol = \"pieblock_hid_library_init\"\n"
+			+ "compatibility_minimum = \"4.1\"\n"
+			+ "reloadable = false\n\n"
+			+ "[libraries]\n"
+			+ "windows.debug.x86_64   = \"pieblock_hid.dll\"\n"
+			+ "windows.release.x86_64 = \"pieblock_hid.dll\"\n")
+		f.close()
+
+	var load_status: int = GDExtensionManager.load_extension(gd_path)
+	# LOAD_STATUS_OK=0 / LOAD_STATUS_ALREADY_LOADED=2 都算成功
+	if load_status != 0 and load_status != 2:
+		_emit("[Error] HID 插件加载失败（状态码 %d），使用 Python 兜底路径" % load_status)
+		return false
+	return true
 
 
 func _emit_usb_line(on_log_line: Callable, line_text: String) -> void:
@@ -872,10 +932,11 @@ func _classify_hid_failure(log_text: String) -> String:
 
 ## 探测 USB-HID 烧录设备（STC32G bootloader，VID 0x34BF / PID 0x1001）是否在线。
 ## 板子需处于 ISP 模式（上电冷启动进入）才会枚举为该 HID 设备。
+## 优先 GDExtension 插件；插件不可用时降级 Python（enumerate_hid.py，开发机兜底）。
 func detect_hid_device() -> bool:
-	if OS.has_feature("android"):
-		var port = _make_usb_port()
-		return port != null and port.find_device()
+	var port = _make_usb_port()
+	if port != null:
+		return port.find_device()
 	var py: String = find_python()
 	if py.is_empty():
 		return false

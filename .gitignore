@@ -156,3 +156,8 @@ android/plugins/pieblock_usb/plugin/build/
 android/plugins/pieblock_usb/build/
 android/plugins/pieblock_usb/local.properties
 addons/pieblock_usb/bin/
+
+# Windows 裸 HID GDExtension：godot-cpp 克隆与构建产物不入库（构建脚本会自动克隆）
+tools/gdext_pieblock_hid/godot-cpp/
+tools/gdext_pieblock_hid/bin/
+tools/gdext_pieblock_hid/.sconsign.dblite

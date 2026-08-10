@@ -851,7 +851,7 @@ func _run_guide_build() -> void:
 func _confirm_hardware() -> void:
 	var dialog := ConfirmationDialog.new()
 	dialog.title = "查看第一步确认"
-	dialog.dialog_text = "请确认：\n\n1. 程序只烧录到主控板。\n2. 绝不向机械扩展板烧录程序。\n3. 新主控板已经由维护者安装引导程序。"
+	dialog.dialog_text = "请确认：\n\n1. 程序只烧录到主控板。\n2. 绝不向机械扩展板烧录程序。"
 	dialog.get_ok_button().text = "已确认"
 	dialog.get_cancel_button().text = "返回检查"
 	dialog.confirmed.connect(func() -> void:
@@ -1384,10 +1384,20 @@ const SERVO_MAX_ANGLE: int = 90
 const MOTOR_SPEED_MAX: int = 10000
 # 扩展板引脚（通过 ExpansionBoradControl 控制）
 const EXPANSION_PINS: Array = ["P60", "P62", "P64", "P66", "P74", "P75", "P76", "P77"]
-## 根据每行的控制模式和目标 IO 类型，更新参数框的占位文本。
+## 根据每行的控制模式和目标 IO 类型，更新参数框的占位文本，并按
+## 「控制方式 × IO 类型 × 键位类型」过滤下拉选项：
+##   舵机（MP 恒舵机或拓展板选舵机）+ 按键 -> 增量/直接；+ 摇杆轴 -> 增量
+##   电机 + 按键 -> 直接；+ 摇杆轴 -> 速度/增速
+## 与静态检查器的合法性矩阵一致，从源头杜绝非法组合。程序化重建不触发 item_selected。
 ## 舵机角度一律是「相对中位的偏移角」，行程 ±90°，不是 0~180°。
 func _update_engineer_placeholders(_idx: int = -1) -> void:
-	var root: String = _shared_cfg_root()
+	# 工程页与步兵高级设置是两份实例，都要过滤，否则切页后残留旧选项
+	for root in [ENGINEER, ADV_ENGINEER]:
+		_update_engineer_root_placeholders(root)
+
+
+## 单个共享配置根（工程页 / 步兵高级设置）的过滤与占位提示
+func _update_engineer_root_placeholders(root: String) -> void:
 	var io_init: Dictionary = {}
 	for pin in ENG_ALL_PINS:
 		io_init[pin] = _get_option_text(NodePath(root + "/" + str(ENG_IO_REL.get(pin, ""))))
@@ -1398,16 +1408,39 @@ func _update_engineer_placeholders(_idx: int = -1) -> void:
 		for row in vb.get_children():
 			if not row is HBoxContainer:
 				continue
+			var key_btn: Node = row.get_node_or_null("Key")
 			var mode_btn: Node = row.get_node_or_null("Option")
 			var io_btn: Node = row.get_node_or_null("IO")
 			var para_le: Node = row.get_node_or_null("Para")
-			if not mode_btn is OptionButton or not io_btn is OptionButton \
-					or not para_le is LineEdit:
+			if not key_btn is OptionButton or not mode_btn is OptionButton \
+					or not io_btn is OptionButton or not para_le is LineEdit:
 				continue
 			var mode: String = _option_text(mode_btn)
 			var target: String = _option_text(io_btn)
 			# MP03/MP74 固定舵机；扩展板引脚看 IO 初始化区
 			var is_servo: bool = target.begins_with("MP") or io_init.get(target, "舵机") == "舵机"
+			# 摇杆轴行（LX/LY/RX/RY）不能用「直接」，按键行不能用「速度/增速」
+			var is_axis: bool = _option_text(key_btn) in ["LX", "LY", "RX", "RY"]
+			var allowed_modes: Array
+			if is_servo:
+				allowed_modes = ["增量"] if is_axis else ["增量", "直接"]
+			else:
+				allowed_modes = ["速度", "增速"] if is_axis else ["直接"]
+			var cur_mode: String = _option_text(mode_btn)
+			var changed: bool = false
+			if mode_btn.item_count != allowed_modes.size():
+				changed = true
+			else:
+				for i in range(allowed_modes.size()):
+					if mode_btn.get_item_text(i) != allowed_modes[i]:
+						changed = true
+						break
+			if changed:
+				mode_btn.clear()
+				for m in allowed_modes:
+					mode_btn.add_item(m)
+				mode_btn.select(allowed_modes.find(cur_mode) if cur_mode in allowed_modes else 0)
+				mode = _option_text(mode_btn)
 			var placeholder: String = ""
 			match mode:
 				"增量":
@@ -1506,6 +1539,8 @@ func _add_eng_row(vb: Node) -> Node:
 	# Add 按钮保持在最后
 	vb.move_child(row, vb.get_child_count() - 2)
 	_wire_eng_row(row)
+	# 新建行按目标 IO 类型过滤「控制方式」下拉并更新占位提示
+	_update_engineer_placeholders()
 	# 新建行同样受左摇杆保留开关约束（模式1 恒开，LX/LY 不可选）
 	_sync_chassis_switch()
 	return row
@@ -1602,6 +1637,8 @@ func _sync_chassis_io_locks(_idx: int = -1) -> void:
 						if not btn.is_item_disabled(i):
 							btn.selected = i
 							break
+	# 底盘引脚被强制为电机后，相关按键映射行的「控制方式」下拉同步刷新
+	_update_engineer_placeholders()
 
 
 ## 同步各模式页「此模式下保留左摇杆作为底盘控制」开关：
@@ -1620,6 +1657,8 @@ func _sync_chassis_switch(_pressed: bool = false) -> void:
 			else:
 				ck.disabled = false
 			_sync_row_axis_locks(root, ENG_MODE_PAGES[mi], ck.button_pressed)
+	# LX/LY 键位锁定后键位类型可能从摇杆轴回退成按键，控制方式下拉同步刷新
+	_update_engineer_placeholders()
 
 
 ## 模式页开关开启时，该页所有行的 LX/LY 键位禁用
