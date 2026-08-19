@@ -181,6 +181,9 @@ const PROJECT_GATED_BTNS: Array = [
 const P_AI_EDIT_BTN: NodePath = "VBoxContainer/TopPanel/AIEdit"
 # AI 代码编辑器场景
 const AI_EDIT_SCENE: String = "res://scenes/code_edit.tscn"
+## AI 编辑功能总开关：false 时隐藏一切入口（EnableAI 开关与 AIEdit 按钮），
+## 程序化触发也一律无效。置回 true 即可恢复原有入口与门禁流程。
+const AI_EDIT_ENABLED: bool = false
 const WARN_AI_SCENE: String = "res://scenes/warn_ai.tscn"
 const WARN_IK_SCENE: String = "res://scenes/warn_ik.tscn"
 const ERROR_SCENE: String = "res://scenes/error.tscn"
@@ -990,12 +993,21 @@ func _set_node_tree_enabled(node: Node, enabled: bool) -> void:
 func _apply_ai_gate(enabled: bool) -> void:
 	_ai_enabled = enabled
 	var enable_btn: Node = get_node_or_null(P_ENABLE_AI_BTN)
+	var ai_btn: Node = get_node_or_null(P_AI_EDIT_BTN)
+	# 功能下线：无论开关状态如何，两个入口一律隐藏
+	if not AI_EDIT_ENABLED:
+		if enable_btn is CanvasItem:
+			enable_btn.visible = false
+		if ai_btn is CanvasItem:
+			ai_btn.visible = false
+		if ai_btn is BaseButton:
+			ai_btn.disabled = true
+		return
 	if enable_btn is BaseButton:
 		enable_btn.button_pressed = enabled
 	# 启用后隐藏「启用 AI 功能」按钮（已通过 10s 门禁确认，无需再显示）
 	if enable_btn is CanvasItem:
 		enable_btn.visible = not enabled
-	var ai_btn: Node = get_node_or_null(P_AI_EDIT_BTN)
 	if ai_btn is CanvasItem:
 		ai_btn.visible = enabled
 	if ai_btn is BaseButton:
@@ -2258,6 +2270,9 @@ func _save_hex_to(dst_path: String) -> void:
 
 ## AI 编辑入口（阶段一 -> 阶段二）。仅在 AI 功能已启用后可见。
 func _on_ai_edit_pressed() -> void:
+	# 功能下线：入口已隐藏，程序化触发也一律无效
+	if not AI_EDIT_ENABLED:
+		return
 	# Web / 移动端：AI 编辑依赖桌面 WebView，提示后直接返回
 	if not WEB.is_desktop():
 		WEB.popup_desktop_only(self, "AI 编辑")
@@ -2275,6 +2290,12 @@ func _on_ai_edit_pressed() -> void:
 
 
 func _on_ai_enable_toggled(pressed: bool) -> void:
+	# 功能下线：开关已隐藏，程序化触发一律无效并复位开关状态
+	if not AI_EDIT_ENABLED:
+		var off_toggle: BaseButton = get_node_or_null(P_ENABLE_AI_BTN)
+		if off_toggle is BaseButton:
+			off_toggle.set_pressed_no_signal(false)
+		return
 	# Web / 移动端：AI 编辑依赖桌面 WebView，开关不生效并提示
 	if pressed and not WEB.is_desktop():
 		var toggle: BaseButton = get_node_or_null(P_ENABLE_AI_BTN)
