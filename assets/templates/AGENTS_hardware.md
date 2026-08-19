@@ -1,11 +1,12 @@
 # STC32G 机器人固件开发约束
 
 本工作区是 RoboMaster 机器人的单片机固件工程，用 **Keil C251** 编译。
-唯一需要修改的文件是 `Projects/ROBOMASTER_INFANTRY/USER/src/main.c`
-或 `Projects/ROBOMASTER_ENGINEER/USER/src/main.c`（取决于当前构型）。
+**当前构型：{{KIND_LABEL}}。**
+唯一需要修改的文件是 `{{MAIN_C_PATH}}`。
 
 `Libraries/` 下是只读的板级支持库，**不要修改**，但可以读取头文件确认 API 签名。
 
+{{FORBIDDEN_PROJECTS}}
 ---
 
 ## 1. 硬件拓扑

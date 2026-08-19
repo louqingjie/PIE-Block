@@ -62,22 +62,30 @@ public partial class TerminalControl : Control
     {
         if (_session != null)
             return;
-        var options = new PtyOptions
+        try
         {
-            App = Command,
-            CommandLine = Arguments,
-            Cwd = string.IsNullOrEmpty(WorkingDirectory) ? System.Environment.CurrentDirectory : WorkingDirectory,
-            Cols = Columns,
-            Rows = Rows,
-            Environment = new System.Collections.Generic.Dictionary<string, string>
+            var options = new PtyOptions
             {
-                { "TERM", "xterm-256color" }
-            }
-        };
-        _session = new TerminalSession(options, () => _dirty = true);
-        _lastCols = -1;
-        _lastRows = -1;
-        QueueRedraw();
+                App = Command,
+                CommandLine = Arguments,
+                Cwd = string.IsNullOrEmpty(WorkingDirectory) ? System.Environment.CurrentDirectory : WorkingDirectory,
+                Cols = Columns,
+                Rows = Rows,
+                Environment = new System.Collections.Generic.Dictionary<string, string>
+                {
+                    { "TERM", "xterm-256color" }
+                }
+            };
+            _session = new TerminalSession(options, () => _dirty = true);
+            _lastCols = -1;
+            _lastRows = -1;
+            QueueRedraw();
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr("[TerminalControl] 启动失败: " + ex.Message);
+            _session = null;
+        }
     }
 
     public void Stop()

@@ -14,10 +14,8 @@ const P_CODE_EDIT: NodePath = "VBoxContainer/Workspace/HSplitContainer/CodeZone/
 const P_CODE_PANEL: NodePath = "VBoxContainer/Workspace/HSplitContainer/CodeZone/VSplitContainer/Code"
 const P_OUTPUT: NodePath = "VBoxContainer/Workspace/HSplitContainer/CodeZone/VSplitContainer/Output/Output"
 const P_STATUS: NodePath = "VBoxContainer/Workspace/HSplitContainer/AIPanel/Header/Status"
-## WebView 必须挂在根节点下、脱离容器管辖，理由见 _sync_webview_rect()
-const P_WEBVIEW: NodePath = "WebView"
-## 容器里的占位节点，WebView 的目标矩形以它为准
-const P_WEB_SLOT: NodePath = "VBoxContainer/Workspace/HSplitContainer/AIPanel/WebSlot"
+## 原生终端节点（TerminalControl），在 AI 面板容器内
+const P_TERM: NodePath = "VBoxContainer/Workspace/HSplitContainer/AIPanel/Term"
 const P_RESTART: NodePath = "VBoxContainer/Workspace/HSplitContainer/AIPanel/Header/Restart"
 const P_BUILD: NodePath = "VBoxContainer/TopPanel/Build"
 const P_DOWNLOAD: NodePath = "VBoxContainer/TopPanel/Download"
@@ -79,11 +77,8 @@ var _upgrade_active: bool = false
 var _retry_download_dst: String = ""
 ## 正在走「导出 HEX」流程：编译成功回调改弹保存对话框而不是烧录
 var _hex_export_pending: bool = false
-var _wv: Control = null
-## 置 true 可打印 WebView 的 DPI 修正过程，排查偏移时用
-var _wv_debug: bool = false
-## 上次设过的 zoom，避免每帧重复调用
-var _wv_zoom: float = 0.0
+## 原生终端节点（TerminalControl 实例）
+var _term: Control = null
 
 
 func _ready() -> void:
@@ -103,7 +98,7 @@ func _ready() -> void:
 			AppState.project_name(), AppState.kind_label(), PF.stage_label(AppState.stage)]
 
 	# 接管窗口关闭：默认行为是引擎直接退出，_exit_tree 不保证跑完，
-	# 会把 ttyd 和 Agent 留成孤儿进程（实测确认）。
+	# 会把 Agent 留成孤儿进程（实测确认）。
 	# 关掉自动退出后由 _notification 里显式清理再 quit。
 	get_tree().auto_accept_quit = false
 
@@ -118,7 +113,7 @@ func _exit_tree() -> void:
 	_shutdown()
 
 
-## 窗口关闭请求：先停子进程再退出，否则 ttyd/Agent 会变孤儿
+## 窗口关闭请求：先停子进程再退出，否则 Agent 会变孤儿
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
 		_shutdown()
@@ -336,160 +331,20 @@ func _show_hardware_confirmation() -> void:
 	dialog.close_requested.connect(dialog.queue_free)
 
 
-## 高 DPI 下修正 WebView 的位置与尺寸。
-##
-## WebView2 是挂在 Godot 窗口上的原生子 HWND，由系统合成器绘制，
-## 像素不进 Godot 渲染管线（所以也无法渲染到 TextureRect）。
-## 它的矩形只能用**物理**像素表达。
-##
-## WRY 的 resize() 这样算：
-##     scale = window.get_size() / viewport.get_visible_rect().size
-##     rect  = 节点 global_position * scale, 节点 size * scale
-## 但 Godot 在 Windows 上这两个尺寸都是**逻辑**像素，比值恒为 1，
-## 等于完全没做 DPI 换算，直接把逻辑坐标当物理像素交给了 WebView2。
-## 实测（系统 150% 缩放）：Godot 报窗口 1600x900，
-## Win32 GetClientRect 报 1066x600 —— 这就是终端偏移的确切来源。
-##
-## 修正办法：既然 WRY 只认节点自身的 global_position/size，
-## 就把目标矩形预先乘上 96/dpi 再写进节点，抵消它缺失的那一步换算。
-## 注意 Control.scale 无效 —— WRY 读的是未经自身 scale 变换的原始值。
-## 因此 WebView 必须挂在根节点下：容器每帧会覆写子节点的 rect，
-## 真实布局由容器里的 WebSlot 占位节点提供。
-func _sync_webview_rect() -> void:
-	if _wv == null:
-		return
-	var slot: Node = get_node_or_null(P_WEB_SLOT)
-	if not slot is Control:
-		return
-	var f: float = _compensation_factor()
-	var pos: Vector2 = ((slot as Control).global_position * f).round()
-	var siz: Vector2 = ((slot as Control).size * f).round()
-	if _wv.global_position == pos and _wv.size == siz:
-		return
-	_wv.global_position = pos
-	_wv.size = siz
-	_wv.resize()
-	_apply_zoom()
-	if _wv_debug:
-		# 按实测关系（真实 rect = 节点值 / DPI倍率）推出预期值，
-		# 可直接与 Win32 量到的 WRY_WEBVIEW 子窗口矩形逐项对账
-		var vp: Vector2 = get_viewport().get_visible_rect().size
-		var dpi: int = DisplayServer.screen_get_dpi(
-			DisplayServer.window_get_current_screen())
-		var ds: float = 1.0 if dpi <= 0 else float(dpi) / 96.0
-		print("[wv] slot=%s %s | f=%.4f -> node=%s %s | expect_real=%s %s | zoom=%.4f | ds_win=%s vp=%s" % [
-			(slot as Control).global_position, (slot as Control).size,
-			f, pos, siz, (pos / ds).round(), (siz / ds).round(),
-			_wv_zoom, DisplayServer.window_get_size(0), vp])
-
-
-## 写进 WebView 节点前要乘的补偿系数。
-##
-## 目标：  节点值 × WRY_scale == slot 画布坐标 × (客户区物理尺寸 / 视口尺寸)
-## WRY 内部 scale = window_get_size / 视口尺寸，这一项已经把 Godot 的
-## stretch 缩放算进去了（最大化时 2560/1600 = 1.6），它唯独漏掉 DPI 换算。
-## 而 客户区物理尺寸 = window_get_size / DPI倍率，代入化简后
-##     f = 1 / DPI倍率
-## 是个**常数**，与窗口是否最大化无关。实测（150% 缩放）：
-##     非最大化 WRY_scale 1.0 × 0.667 = 0.667，正确值 1066/1600 = 0.666 ✔
-##     最大化   WRY_scale 1.6 × 0.667 = 1.067，正确值 1706/1600 = 1.066 ✔
-## 写进 WebView 节点前要乘的补偿系数。
-##
-## 用 Win32 EnumChildWindows 量过 WRY_WEBVIEW 子窗口的真实矩形，实测关系是
-##     真实物理 rect == 写进节点的值 / DPI倍率
-## 也就是说 WRY resize() 里那个 scale 并未生效（WebView2 的 Bounds 收的是
-## DIP 而非物理像素），节点值被当逻辑坐标又除了一次 DPI。
-##
-## 目标物理 rect = slot 画布坐标 × (客户区物理尺寸 / 视口尺寸)
-## 令 节点值 / DPI倍率 == 目标，得
-##     f = 客户区/视口 × DPI倍率 = window_get_size / 视口
-## 注意 window_get_size 在最大化时返回物理尺寸(2560)，非最大化时返回
-## 逻辑尺寸(1600)，两种情况下这个式子都成立。
-func _compensation_factor() -> float:
-	var vp: Vector2 = get_viewport().get_visible_rect().size
-	if vp.x <= 0.0:
-		return 1.0
-	return float(DisplayServer.window_get_size(0).x) / vp.x
-
-
-## 让 webview 里的内容与 Godot UI 视觉密度一致。
-##
-## 矩形对齐之后还有一层独立的缩放问题：
-##   - Godot 把 1600x900 逻辑画布压进物理窗口，UI 实际被缩到 stretch 倍率
-##   - WebView2 拿到的是物理像素框，再按 DPI 倍率换算成 CSS 像素
-## 两者不一致时 webview 里的字会明显偏大，且可用 CSS 宽度偏窄
-## （实测 459 物理 px ÷ 1.5 只剩 306 CSS px，TUI 列数不足，logo 被截断）。
-##
-## webview 的可用 CSS 宽度 = 节点值 / DPI倍率（见 _compensation_factor 实测），
-## 而它要承载的是 slot 在画布空间里的宽度。两者之比就是需要的 zoom：
-##     zoom = (节点值 / DPI倍率) / slot画布宽 = f / DPI倍率
-## 这样 webview 里 1 CSS 像素对应的视觉大小与 Godot UI 一致。
-func _apply_zoom() -> void:
-	var dpi: int = DisplayServer.screen_get_dpi(
-		DisplayServer.window_get_current_screen())
-	if dpi <= 0:
-		return
-	var z: float = _compensation_factor() * 96.0 / float(dpi)
-	if z <= 0.0 or is_equal_approx(z, _wv_zoom):
-		return
-	_wv_zoom = z
-	_wv.zoom(z)
-
-
-## WRY 自己的 update_webview() 每帧比对节点 rect 并调 resize()，
-## 只在信号里写一次会被它覆盖回去，必须每帧维持预缩放后的值。
-## _sync_webview_rect() 内部有等值短路，实际不会每帧真的调 resize()。
-func _process(_delta: float) -> void:
-	_sync_webview_rect()
-
-
-## WebView2 与 Godot 使用两套原生焦点系统，不能只依赖 Control.grab_focus()。
-## 终端转发的鼠标事件也会进入这里，因此可用真实面板矩形统一判定点击目标。
-func _input(event: InputEvent) -> void:
-	if not event is InputEventMouseButton or not event.pressed \
-			or event.button_index != MOUSE_BUTTON_LEFT:
-		return
-	var mouse_pos: Vector2 = event.position
-	var code_panel: Node = get_node_or_null(P_CODE_PANEL)
-	if code_panel is Control and code_panel.get_global_rect().has_point(mouse_pos):
-		_focus_code_input()
-		return
-	var web_slot: Node = get_node_or_null(P_WEB_SLOT)
-	if web_slot is Control and web_slot.get_global_rect().has_point(mouse_pos):
-		_focus_terminal_input()
-
-
-func _focus_code_input() -> void:
-	if _wv != null:
-		_wv.focus_parent()
-	var ce: Node = get_node_or_null(P_CODE_EDIT)
-	if ce is CodeEdit:
-		# focus_parent() 先把原生 HWND 焦点还给 Godot；延迟执行避免同一次
-		# 鼠标事件结束时 WebView2 又把焦点夺回去。
-		ce.call_deferred("grab_focus")
-
-
-func _focus_terminal_input() -> void:
-	var ce: Node = get_node_or_null(P_CODE_EDIT)
-	if ce is CodeEdit:
-		ce.release_focus()
-	if _wv != null:
-		_wv.focus()
-
-
 func _start_ai() -> void:
-	_wv = get_node_or_null(P_WEBVIEW)
-	if _wv == null:
-		_append_output("[Error] 缺少 WebView 节点，AI 面板不可用")
+	_term = get_node_or_null(P_TERM)
+	if _term == null:
+		_append_output("[Error] 缺少 TerminalControl 节点，AI 面板不可用")
 		return
 	_client = AT.new()
 	add_child(_client)
+	_client.terminal_control = _term
 	_client.status_changed.connect(_set_status)
 	_client.log_line.connect(_append_output)
 	_client.ready_changed.connect(_on_ai_ready_changed)
 	# AI 工作区是整个 stc32g/，这样它能读到 Libraries 下的头文件
 	# （依赖检查在 AgentTerminal.start() 内部做，失败会发 log）
-	if not _client.start(TC.WORKSPACE_DST):
+	if not _client.start(TC.WORKSPACE_DST, AppState.project_kind):
 		_set_status("AI 不可用")
 
 
@@ -542,24 +397,21 @@ func _reload_if_changed() -> bool:
 
 
 # ------------------------------------------------------------------ AI 面板
-## 终端就绪：把 WebView 指向 ttyd，Agent 的 TUI 就渲染在里面
-func _on_ai_ready_changed(is_ready: bool, url: String) -> void:
+## 终端就绪：只需更新重启按钮状态（渲染由 TerminalControl 自己完成）
+func _on_ai_ready_changed(is_ready: bool) -> void:
 	var rb: Node = get_node_or_null(P_RESTART)
 	if rb is BaseButton:
 		rb.disabled = not is_ready
-	if is_ready and _wv != null and not url.is_empty():
-		_wv.load_url(url)
 
 
-## 重启终端：ttyd 带 -q，客户端断开后自身会退出，
-## 所以「重启」= 停掉旧进程再起一个新的
+## 重启终端：停掉旧 ConPTY 会话再起一个新的
 func _on_restart_pressed() -> void:
 	if _client == null:
 		return
 	_flush_to_disk()
 	_set_status("正在重启终端…")
 	_client.stop()
-	_client.start(TC.WORKSPACE_DST)
+	_client.start(TC.WORKSPACE_DST, AppState.project_kind)
 
 
 ## 定时回读：AI 在终端里改盘上的 main.c 后刷新编辑器。
@@ -866,8 +718,8 @@ func _do_upgrade() -> void:
 	var panel: Node = get_node_or_null(P_UPGRADE_PROGRESS)
 	if panel != null and panel.has_method("begin"):
 		panel.begin()
-	if _wv != null:
-		_wv.hide()
+	if _term != null:
+		_term.visible = false
 	_set_upgrade_progress("正在编译程序", 8.0, "编译成功后会自动烧录到主控板。")
 	_set_upgrade_button_busy(true)
 	if not _build_controller.start(_project_dst, code,
@@ -968,8 +820,8 @@ func _set_upgrade_button_busy(is_busy: bool) -> void:
 
 
 func _on_upgrade_panel_closed() -> void:
-	if _wv != null:
-		_wv.show()
+	if _term != null:
+		_term.visible = true
 
 
 func _update_flashed_hash() -> void:
@@ -998,10 +850,8 @@ func _leave_to_scene(scene_path: String) -> void:
 	# AI 成果不能只留在磁盘 main.c 里，项目文件才是真相源
 	if AppState.has_project():
 		_save_project(false)
-	# webview 是嵌在 OS 窗口里的原生控件，不参与 Godot 渲染顺序。
-	# 切场景前必须先隐藏，否则会在新场景上留残影。
-	if _wv:
-		_wv.set_visible(false)
+	if _term != null:
+		_term.visible = false
 	if _client:
 		_client.stop()
 	# auto_accept_quit 是 SceneTree 级别的全局设置。切回别的场景后
@@ -1028,4 +878,4 @@ func _set_status(text: String) -> void:
 	if st is Label:
 		st.text = text
 
-# 注：原先的 Ctrl+Enter 发送快捷键已移除 —— 提示词输入交由内嵌的 Web UI 处理
+# 注：原先的 Ctrl+Enter 发送快捷键已移除 —— 提示词直接在终端里输入

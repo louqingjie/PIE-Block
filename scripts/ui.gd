@@ -992,6 +992,9 @@ func _apply_ai_gate(enabled: bool) -> void:
 	var enable_btn: Node = get_node_or_null(P_ENABLE_AI_BTN)
 	if enable_btn is BaseButton:
 		enable_btn.button_pressed = enabled
+	# 启用后隐藏「启用 AI 功能」按钮（已通过 10s 门禁确认，无需再显示）
+	if enable_btn is CanvasItem:
+		enable_btn.visible = not enabled
 	var ai_btn: Node = get_node_or_null(P_AI_EDIT_BTN)
 	if ai_btn is CanvasItem:
 		ai_btn.visible = enabled

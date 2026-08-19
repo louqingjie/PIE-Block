@@ -73,7 +73,7 @@ func _test_code_edit_focus_setup() -> void:
 	if packed == null:
 		return
 	var editor: Node = packed.instantiate()
-	var webview: Node = editor.get_node_or_null("WebView")
+	var term: Node = editor.get_node_or_null(editor.P_TERM)
 	var guide: Node = editor.get_node_or_null(editor.P_PROJECT_GUIDE)
 	_check("AI 编辑页实例化独立项目引导", guide != null
 		and guide.scene_file_path == "res://scenes/project_guide.tscn")
@@ -82,7 +82,7 @@ func _test_code_edit_focus_setup() -> void:
 		guide.setup(editor.GUIDE_TITLES, editor.GUIDE_HINTS, completed)
 	_check("AI 编辑页引导提供七个步骤", guide != null and guide.get_step_count() == 7)
 	_check("AI 编辑页代码框路径有效", editor.get_node_or_null(editor.P_CODE_EDIT) is CodeEdit)
-	_check("AI 编辑页终端槽路径有效", editor.get_node_or_null(editor.P_WEB_SLOT) is Control)
+	_check("AI 编辑页终端槽路径有效", editor.get_node_or_null(editor.P_TERM) is Control)
 	var download: Node = editor.get_node_or_null(editor.P_DOWNLOAD)
 	_check("AI 编辑页提供烧录主控板按钮", download is Button
 		and download.text == "烧录主控板")
@@ -97,10 +97,9 @@ func _test_code_edit_focus_setup() -> void:
 	# 编辑器实例未加入场景树（_ready 不执行，避免启动 AI 子进程），
 	# 信号连接无法验证，故只断言入口方法存在（与烧录入口检查一致）
 	_check("AI 编辑脚本提供导出入口", editor.has_method("_on_hex_export_pressed"))
-	_check("WebView 不在创建时抢焦点", webview != null
-		and not bool(webview.get("focused_when_created")))
-	_check("脚本提供代码面板聚焦入口", editor.has_method("_focus_code_input"))
-	_check("脚本提供终端面板聚焦入口", editor.has_method("_focus_terminal_input"))
+	_check("终端槽挂载 TerminalControl 脚本", term != null
+		and term.get("script") != null
+		and str(term.get("script").resource_path).ends_with("TerminalControl.cs"))
 	editor.free()
 	print("")
 
@@ -565,6 +564,7 @@ func _test_lifecycle() -> void:
 		await process_frame
 		_check("取消后 AI 仍未启用", not bool(ui2._ai_enabled))
 		_check("取消后 AI 编辑仍隐藏", not bool(ui2.get_node(ui2.P_AI_EDIT_BTN).visible))
+		_check("取消后启用 AI 按钮仍可见", bool(ui2.get_node(ui2.P_ENABLE_AI_BTN).visible))
 		var still1: Dictionary = PF.load_from(path)
 		_check("取消后磁盘上仍未启用 AI", not bool((still1["data"]["workflow"] as Dictionary).get("ai_enabled", false)))
 	# 倒计时门控页应该先禁用主按钮
@@ -579,6 +579,7 @@ func _test_lifecycle() -> void:
 		await process_frame
 		_check("确认后 AI 已启用", bool(ui2._ai_enabled))
 		_check("确认后 AI 编辑已显示", bool(ui2.get_node(ui2.P_AI_EDIT_BTN).visible))
+		_check("确认后启用 AI 按钮已隐藏", not bool(ui2.get_node(ui2.P_ENABLE_AI_BTN).visible))
 		var still2: Dictionary = PF.load_from(path)
 		_check("确认后磁盘上记录 AI 已启用", bool((still2["data"]["workflow"] as Dictionary).get("ai_enabled", false)))
 
