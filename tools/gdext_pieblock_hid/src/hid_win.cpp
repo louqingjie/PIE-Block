@@ -195,6 +195,13 @@ bool PieBlockHidWindows::write_report(const PackedByteArray &p_data) {
 
 	// 与 hidapi 对齐：Windows 要求 WriteFile 长度 == OutputReportByteLength。
 	// 短报告补零到该长度；等长/超长原样发送（协议层不会发超长）。
+	// 长度超过 OutputReportByteLength 时 WriteFile 会直接报 0x57（参数错误），
+	// 协议层不应发出超长报告，这里显式拒绝并给出可读错误。
+	if (static_cast<DWORD>(p_data.size()) > _report_out_size) {
+		_set_last_error("报告超长 (" + String::num_int64(p_data.size()) + " > " + String::num_int64(_report_out_size) + ")");
+		return false;
+	}
+
 	const BYTE *buf = p_data.ptr();
 	DWORD len = static_cast<DWORD>(p_data.size());
 	std::vector<BYTE> padded;
@@ -205,8 +212,37 @@ bool PieBlockHidWindows::write_report(const PackedByteArray &p_data) {
 		len = _report_out_size;
 	}
 
+	// 句柄以 FILE_FLAG_OVERLAPPED 打开，WriteFile 必须提供 OVERLAPPED
+	// （传 nullptr 对 HID 设备会直接失败，GetLastError()=0x57 参数错误）。
+	// 与 read_report 相同模式：挂起则等待事件，2 秒视为超时。
+	OVERLAPPED ov;
+	memset(&ov, 0, sizeof(ov));
+	ov.hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+	if (ov.hEvent == nullptr) {
+		_set_last_error(_winapi_error_text("CreateEventW"));
+		return false;
+	}
+
 	DWORD written = 0;
-	if (!WriteFile(_handle, buf, len, &written, nullptr)) {
+	bool ok = false;
+	if (WriteFile(_handle, buf, len, &written, &ov)) {
+		ok = true;
+	} else if (GetLastError() == ERROR_IO_PENDING) {
+		DWORD wait = WaitForSingleObject(ov.hEvent, 2000);
+		if (wait == WAIT_TIMEOUT) {
+			CancelIoEx(_handle, &ov);
+			WaitForSingleObject(ov.hEvent, 1000);
+			CloseHandle(ov.hEvent);
+			_set_last_error("WriteFile 超时");
+			return false;
+		}
+		if (GetOverlappedResult(_handle, &ov, &written, FALSE)) {
+			ok = true;
+		}
+	}
+	CloseHandle(ov.hEvent);
+
+	if (!ok) {
 		_set_last_error(_winapi_error_text("WriteFile"));
 		return false;
 	}
