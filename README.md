@@ -195,4 +195,4 @@ godot --headless --import
 `user://` 位置：编辑器模式 `%APPDATA%\Godot\app_userdata\新建游戏项目\`，
 导出后 `%APPDATA%\新建游戏项目\`。
 
-硬件约束与踩坑记录见 [AGENTS.md](AGENTS.md)，文档索引见 [docs/](docs/)。
+硬件约束与踩坑记录见 [docs/STC32G固件约束.md](docs/STC32G固件约束.md)，文档索引见 [docs/](docs/)。
