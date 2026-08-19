@@ -176,8 +176,9 @@ func _initialize() -> void:
 	var adv_vb: Node = ui.get_node(NodePath(adv_page + "/ScrollContainer/VBoxContainer"))
 	var adv_row: Node = ui._add_eng_row(adv_vb)
 	var adv_opt: OptionButton = adv_row.get_node("Option")
-	_check("步兵高级设置默认行(P60舵机)选项为 增量/直接",
-		_mode_items(adv_opt) == ["增量", "直接"], str(_mode_items(adv_opt)))
+	# 步兵高级设置默认行指向 P60，而 P60 是拨弹电机默认 IO，已被自动同步为电机
+	_check("步兵高级设置默认行(P60拨弹电机)选项为 直接",
+		_mode_items(adv_opt) == ["直接"], str(_mode_items(adv_opt)))
 	# 步兵页高级设置的 IO 初始化区独立实例
 	_pick(ui, adv_row.get_node("IO"), "P64")
 	_set_io_init(ui, "P64", "电机")
@@ -198,7 +199,7 @@ func _initialize() -> void:
 	_pick(ui, row1.get_node("IO"), "P60")
 	_pick(ui, opt4, "增量")
 	_pick(ui, l1, "P60 P61")
-	ui._sync_chassis_io_locks()
+	ui._sync_io_locks()
 	_check("底盘锁定 P60 后行选项刷新为 直接（电机）",
 		_mode_items(opt4) == ["直接"], str(_mode_items(opt4)))
 	_check("底盘锁定后 P60 在 IO 初始化区被强制为电机",
@@ -207,6 +208,55 @@ func _initialize() -> void:
 	ui._apply_kind_visibility("infantry", 0)
 	_check("步兵高级设置 P60 同样被底盘锁定为电机",
 		ui._option_text(ui.get_node(NodePath(ui._eng_io_path("P60")))) == "电机")
+
+	# ---- 步兵固定子系统：拨弹电机 / 摩擦轮 / Yaw/Pitch 自动同步 IO 初始化区 ----
+	# 当前在步兵视图（上面已 _apply_kind_visibility("infantry", 0)）
+	# 底盘 L1 已锁定 P60（电机），拨弹测试用 P62/P77 避开底盘引脚
+	var booster_btn: OptionButton = ui.get_node(ui.P_BOOSTER_IO)
+	_pick(ui, booster_btn, "P62 P63")
+	ui._sync_io_locks()
+	var adv_p62: OptionButton = ui.get_node(NodePath(ui._eng_io_path("P62")))
+	_check("拨弹电机选 P62 后 IO 初始化区强制为电机",
+		ui._option_text(adv_p62) == "电机", ui._option_text(adv_p62))
+	_check("拨弹电机选 P62 后舵机选项被禁用",
+		adv_p62.is_item_disabled(1), str(adv_p62.is_item_disabled(1)))
+	# 拨弹电机换到 P77：P62 解锁、P77 锁定
+	_pick(ui, booster_btn, "P77 P27")
+	ui._sync_io_locks()
+	_check("拨弹电机改 P77 后 P62 解锁（舵机恢复可选）",
+		not adv_p62.is_item_disabled(1), str(adv_p62.is_item_disabled(1)))
+	var adv_p77: OptionButton = ui.get_node(NodePath(ui._eng_io_path("P77")))
+	_check("拨弹电机改 P77 后 P77 强制为电机",
+		ui._option_text(adv_p77) == "电机", ui._option_text(adv_p77))
+	# 摩擦轮 P64/P66 恒舵机、电机禁用
+	var adv_p64: OptionButton = ui.get_node(NodePath(ui._eng_io_path("P64")))
+	var adv_p66: OptionButton = ui.get_node(NodePath(ui._eng_io_path("P66")))
+	_check("摩擦轮 P64 恒舵机", ui._option_text(adv_p64) == "舵机", ui._option_text(adv_p64))
+	_check("摩擦轮 P64 电机选项被禁用", adv_p64.is_item_disabled(0), str(adv_p64.is_item_disabled(0)))
+	_check("摩擦轮 P66 恒舵机", ui._option_text(adv_p66) == "舵机", ui._option_text(adv_p66))
+	_check("摩擦轮 P66 电机选项被禁用", adv_p66.is_item_disabled(0), str(adv_p66.is_item_disabled(0)))
+	# Yaw/Pitch 跟随驱动类型
+	var yaw_drive_btn: OptionButton = ui.get_node(ui.P_YAW_DRIVE)
+	var yaw_io_btn: OptionButton = ui.get_node(ui.P_YAW_IO)
+	_pick(ui, yaw_io_btn, "P74")
+	_pick(ui, yaw_drive_btn, "电机")
+	ui._sync_io_locks()
+	var adv_p74: OptionButton = ui.get_node(NodePath(ui._eng_io_path("P74")))
+	_check("Yaw 驱动=电机+P74 后 IO 初始化区强制为电机",
+		ui._option_text(adv_p74) == "电机", ui._option_text(adv_p74))
+	_pick(ui, yaw_drive_btn, "舵机")
+	ui._sync_io_locks()
+	_check("Yaw 驱动=舵机+P74 后 IO 初始化区强制为舵机",
+		ui._option_text(adv_p74) == "舵机", ui._option_text(adv_p74))
+	# 工程页根不受步兵子系统锁定影响（显式设 P62 舵机后验证不被拨弹锁定）
+	ui._apply_kind_visibility("engineer", 1)
+	_set_io_init(ui, "P62", "舵机")
+	ui._sync_io_locks()
+	var eng_p62: OptionButton = ui.get_node(NodePath(ui._eng_io_path("P62")))
+	_check("工程页 IO 初始化区 P62 不受步兵拨弹锁定影响（仍舵机）",
+		ui._option_text(eng_p62) == "舵机", ui._option_text(eng_p62))
+	_check("工程页 IO 初始化区 P62 舵机选项未被禁用",
+		not eng_p62.is_item_disabled(1), str(eng_p62.is_item_disabled(1)))
 
 	if _fail > 0:
 		print("失败 %d 项" % _fail)

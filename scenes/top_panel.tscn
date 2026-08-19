@@ -58,9 +58,11 @@ size_flags_horizontal = 8
 text = "编译"
 
 [node name="BuildMode" type="OptionButton" parent="." unique_id=1075719196]
+visible = false
+disabled = true
 layout_mode = 2
 size_flags_horizontal = 8
-selected = 1
+selected = 0
 item_count = 2
 popup/item_0/text = "本地编译"
 popup/item_0/id = 0

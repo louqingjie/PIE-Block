@@ -282,8 +282,8 @@ func _ready() -> void:
 		code_edit.syntax_highlighter = hl
 	# 场景模板行保持隐藏（Example 仅作「+」新建行的原型），真实行命名为 RowNN
 	_normalize_eng_row_names()
-	# 底盘电机引脚在 IO 初始化区强制为电机（须在默认快照之前，让默认配置自洽）
-	_sync_chassis_io_locks()
+	# 固定子系统引脚在 IO 初始化区自动同步（须在默认快照之前，让默认配置自洽）
+	_sync_io_locks()
 	# 左摇杆保留开关：模式1 强制开启（须在默认快照之前，让默认配置自洽）
 	_sync_chassis_switch()
 	# 场景刚实例化，此刻的控件值就是「默认配置」，新建项目时用它复位
@@ -396,6 +396,18 @@ func _connect_signals() -> void:
 		var node: Node = get_node_or_null(p)
 		if node is LineEdit:
 			node.text_changed.connect(_run_check)
+	# 底盘电机选择变化时，IO 初始化区自动锁定为电机。
+	# 同步须在 _run_check 之前连接：先纠正 IO 初始化区，检查才能看到一致状态，
+	# 避免用户改子系统配置时出现瞬时误报。
+	for p in [P_L1_IO, P_L2_IO, P_R1_IO, P_R2_IO]:
+		var ch_btn: Node = get_node_or_null(p)
+		if ch_btn is OptionButton:
+			ch_btn.item_selected.connect(_sync_io_locks)
+	# 步兵固定子系统（拨弹电机 / Yaw / Pitch）配置变化时，IO 初始化区自动同步
+	for p in [P_BOOSTER_IO, P_YAW_DRIVE, P_YAW_IO, P_PITCH_DRIVE, P_PITCH_IO]:
+		var sub_btn: Node = get_node_or_null(p)
+		if sub_btn is OptionButton:
+			sub_btn.item_selected.connect(_sync_io_locks)
 	# OptionButton 选项变化
 	for p in [P_L1_IO, P_L2_IO, P_R1_IO, P_R2_IO,
 			P_L1_DIR, P_L2_DIR, P_R1_DIR, P_R2_DIR,
@@ -407,11 +419,6 @@ func _connect_signals() -> void:
 		var node2: Node = get_node_or_null(p)
 		if node2 is OptionButton:
 			node2.item_selected.connect(_run_check)
-	# 底盘电机选择变化时，IO 初始化区自动锁定为电机
-	for p in [P_L1_IO, P_L2_IO, P_R1_IO, P_R2_IO]:
-		var ch_btn: Node = get_node_or_null(p)
-		if ch_btn is OptionButton:
-			ch_btn.item_selected.connect(_sync_chassis_io_locks)
 	# ArrowKey 是 OptionButton（移动/冲刺/其他）
 	var arrow: Node = get_node_or_null(P_ARROW_KEY)
 	if arrow is OptionButton:
@@ -610,8 +617,8 @@ func _apply_config(cfg: Dictionary) -> void:
 	_update_debug_placeholders()
 	_update_engineer_placeholders()
 	_update_mode_page_visibility()
-	# 底盘电机引脚锁定：旧存档把底盘引脚存成舵机时，这里自动纠正为电机
-	_sync_chassis_io_locks()
+	# 固定子系统引脚锁定：旧存档把引脚存成错误类型时，这里自动纠正
+	_sync_io_locks()
 	# 左摇杆保留开关：模式1 强制开启，各模式 LX/LY 键位随开关禁用
 	_sync_chassis_switch()
 	_run_check()
@@ -1599,45 +1606,84 @@ func _update_mode_page_visibility(_idx: int = -1) -> void:
 			tabs.current_tab = mini(prev_tab, maxi(count - 1, 0))
 
 
-## 底盘电机引脚锁定：底盘四轮选中的引脚在 IO 初始化区强制为电机，
-## 并禁用该引脚的「舵机」选项（物理上扩展板口在开机时按电机初始化）。
-## 底盘选择变化、项目载入后都要调用。
-## 带可选参数以兼容 item_selected 信号（信号会传入被选中的索引）
-func _sync_chassis_io_locks(_idx: int = -1) -> void:
+## 计算某个 IO 初始化区根下每个引脚的期望类型（空字符串 = 不锁定）。
+## 底盘四轮对两个根（工程页 / 步兵高级设置）都生效；
+## 步兵固定子系统（拨弹电机 / 摩擦轮 / Yaw / Pitch）只对步兵高级设置生效。
+## 期望类型与 static_checker._check_infantry_shared 保持一致。
+func _compute_io_desired(root: String) -> Dictionary:
+	var desired: Dictionary = {}
+	# 底盘四轮：恒为电机（两个根都适用）
 	var chassis_pins: Array = []
 	for p in [P_L1_IO, P_L2_IO, P_R1_IO, P_R2_IO]:
 		var pin: String = _get_option_text(p).split(" ")[0].strip_edges()
 		if not pin.is_empty() and not pin in chassis_pins:
 			chassis_pins.append(pin)
+	# 步兵固定子系统：仅步兵高级设置（ADV_ENGINEER）
+	if root == ADV_ENGINEER:
+		# Yaw / Pitch：跟随驱动类型（舵机 -> 舵机，电机 -> 电机），优先级最低
+		var yaw_drive: String = _get_option_text(P_YAW_DRIVE)
+		var yaw_pin: String = _get_option_text(P_YAW_IO).split(" ")[0].strip_edges()
+		if not yaw_pin.is_empty() and not yaw_pin.begins_with("MP") \
+				and (yaw_drive == "电机" or yaw_drive == "舵机"):
+			desired[yaw_pin] = yaw_drive
+		var pitch_drive: String = _get_option_text(P_PITCH_DRIVE)
+		var pitch_pin: String = _get_option_text(P_PITCH_IO).split(" ")[0].strip_edges()
+		if not pitch_pin.is_empty() and not pitch_pin.begins_with("MP") \
+				and (pitch_drive == "电机" or pitch_drive == "舵机"):
+			desired[pitch_pin] = pitch_drive
+		# 拨弹电机：恒为电机（10000Hz 初始化），优先级高于 Yaw/Pitch
+		var booster_pin: String = _get_option_text(P_BOOSTER_IO).split(" ")[0].strip_edges()
+		if not booster_pin.is_empty() and not booster_pin.begins_with("MP"):
+			desired[booster_pin] = "电机"
+	# 底盘四轮：恒为电机，优先级高于步兵子系统
+	for pin in chassis_pins:
+		desired[pin] = "电机"
+	# 摩擦轮固定占用 P64/P66，恒为舵机（50Hz 初始化，与舵机同频），优先级最高
+	if root == ADV_ENGINEER:
+		for pin in ["P64", "P66"]:
+			desired[pin] = "舵机"
+	return desired
+
+
+## 步兵 IO 初始化区自动同步：固定子系统（底盘 / 拨弹电机 / 摩擦轮 / Yaw / Pitch）
+## 选中的引脚在 IO 初始化区强制为对应类型并禁用另一项，
+## 防止用户未展开高级设置时因类型不匹配而报错。
+## 子系统配置变化、项目载入后都要调用。
+## 带可选参数以兼容 item_selected 信号（信号会传入被选中的索引）
+func _sync_io_locks(_idx: int = -1) -> void:
 	for root in [ENGINEER, ADV_ENGINEER]:
+		var desired: Dictionary = _compute_io_desired(root)
 		for pin in ENG_IO_REL.keys():
 			var btn: Node = get_node_or_null(NodePath(root + "/" + str(ENG_IO_REL.get(pin, ""))))
 			if not btn is OptionButton:
 				continue
-			var locked: bool = pin in chassis_pins
-			var motor_idx: int = -1
-			var servo_idx: int = -1
-			for i in range(btn.item_count):
-				match btn.get_item_text(i):
-					"电机":
-						motor_idx = i
-					"舵机":
-						servo_idx = i
-			if locked:
-				if motor_idx >= 0:
-					btn.selected = motor_idx
-				if servo_idx >= 0:
-					btn.set_item_disabled(servo_idx, true)
-			else:
-				if servo_idx >= 0:
-					btn.set_item_disabled(servo_idx, false)
+			var want: String = str(desired.get(pin, ""))
+			if want.is_empty():
+				# 未占用：解锁，恢复两个选项
+				for i in range(btn.item_count):
+					btn.set_item_disabled(i, false)
 				if btn.selected < 0 or btn.is_item_disabled(btn.selected):
 					# 兜底：当前项被禁用时回到第一个可用项
 					for i in range(btn.item_count):
 						if not btn.is_item_disabled(i):
 							btn.selected = i
 							break
-	# 底盘引脚被强制为电机后，相关按键映射行的「控制方式」下拉同步刷新
+				continue
+			# 占用：选中期望类型并禁用另一项（IO 初始化区只有 电机/舵机 两项）
+			var other: String = "舵机" if want == "电机" else "电机"
+			var want_idx: int = -1
+			var other_idx: int = -1
+			for i in range(btn.item_count):
+				match btn.get_item_text(i):
+					want:
+						want_idx = i
+					other:
+						other_idx = i
+			if want_idx >= 0:
+				btn.selected = want_idx
+			if other_idx >= 0:
+				btn.set_item_disabled(other_idx, true)
+	# IO 类型变化后，相关按键映射行的「控制方式」下拉同步刷新
 	_update_engineer_placeholders()
 
 

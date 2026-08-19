@@ -61,6 +61,8 @@ size_flags_horizontal = 8
 text = "编译"
 
 [node name="BuildMode" type="OptionButton" parent="VBoxContainer/TopPanel" unique_id=1551741020]
+visible = false
+disabled = true
 layout_mode = 2
 size_flags_horizontal = 8
 item_count = 2

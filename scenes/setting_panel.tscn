@@ -70,12 +70,14 @@ layout_mode = 2
 size_flags_horizontal = 3
 
 [node name="Label" type="Label" parent="Panel/VBoxContainer/HBoxContainer/VBoxContainer" unique_id=1033605023]
+visible = false
 layout_mode = 2
 size_flags_horizontal = 4
 text = "云端编译"
 label_settings = SubResource("LabelSettings_g8bx5")
 
 [node name="BaseURL" type="HBoxContainer" parent="Panel/VBoxContainer/HBoxContainer/VBoxContainer" unique_id=1593772930]
+visible = false
 layout_mode = 2
 
 [node name="Label" type="Label" parent="Panel/VBoxContainer/HBoxContainer/VBoxContainer/BaseURL" unique_id=573271798]
@@ -89,6 +91,7 @@ size_flags_horizontal = 3
 placeholder_text = "https://build.pieblock.asia"
 
 [node name="API" type="HBoxContainer" parent="Panel/VBoxContainer/HBoxContainer/VBoxContainer" unique_id=2080700413]
+visible = false
 layout_mode = 2
 
 [node name="Label" type="Label" parent="Panel/VBoxContainer/HBoxContainer/VBoxContainer/API" unique_id=449188445]
@@ -101,6 +104,7 @@ layout_mode = 2
 size_flags_horizontal = 3
 
 [node name="HSeparator" type="HSeparator" parent="Panel/VBoxContainer/HBoxContainer/VBoxContainer" unique_id=1197671479]
+visible = false
 layout_mode = 2
 
 [node name="Label2" type="Label" parent="Panel/VBoxContainer/HBoxContainer/VBoxContainer" unique_id=1668596865]

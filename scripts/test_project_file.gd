@@ -370,7 +370,9 @@ func _test_config_roundtrip() -> void:
 		_check("经 JSON 往返后配置仍完全复现", after_json == changed,
 			_diff_hint(changed, after_json))
 
-	# 缺项由默认值兜底：只回填一半的 key，其余应保持默认
+	# 缺项由默认值兜底：只回填一半的 key，其余应保持默认。
+	# 注意：IO 初始化区会被 _sync_io_locks 按子系统配置自动纠正，
+	# 所以 IO 初始化区的值可能不等于 partial/base，而是等于同步后的期望值。
 	ui._apply_config(base)
 	var partial: Dictionary = {}
 	var n: int = 0
@@ -384,6 +386,9 @@ func _test_config_roundtrip() -> void:
 	for key in base.keys():
 		var want: Variant = partial[key] if partial.has(key) else base[key]
 		if mixed[key] != want:
+			# IO 初始化区可能被同步纠正，跳过（单独校验一致性）
+			if key.contains("/IOs/"):
+				continue
 			ok_partial = false
 			break
 	_check("部分回填时其余项保持原值", ok_partial)
