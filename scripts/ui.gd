@@ -1217,6 +1217,15 @@ func _create_project_at(kind: String, path: String) -> bool:
 
 
 # ------------------------------------------------------------------ 保存
+## Ctrl+S 触发保存（与顶栏「保存」按钮等效）。
+## 走 _unhandled_key_input：控件未消费的按键才会到达这里，不影响输入框打字。
+func _unhandled_key_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo \
+			and event.keycode == KEY_S and event.ctrl_pressed:
+		_on_save_pressed()
+		get_viewport().set_input_as_handled()
+
+
 func _on_save_pressed() -> void:
 	if _project.is_empty():
 		_clear_output()

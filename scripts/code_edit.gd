@@ -469,6 +469,15 @@ func _leave_for_project_action(action: String, text: String) -> void:
 
 
 # ------------------------------------------------------------------ 编译
+## Ctrl+S 触发保存（与顶栏「保存」按钮等效）。
+## 走 _unhandled_key_input：焦点在 CodeEdit 里时按键未被消费才会到达这里。
+func _unhandled_key_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo \
+			and event.keycode == KEY_S and event.ctrl_pressed:
+		_on_save_pressed()
+		get_viewport().set_input_as_handled()
+
+
 func _on_save_pressed() -> void:
 	if not _flush_to_disk():
 		return
