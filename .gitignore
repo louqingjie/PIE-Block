@@ -161,3 +161,8 @@ addons/pieblock_usb/bin/
 tools/gdext_pieblock_hid/godot-cpp/
 tools/gdext_pieblock_hid/bin/
 tools/gdext_pieblock_hid/.sconsign.dblite
+
+# .NET / Godot Mono 构建产物（终端 POC 与 C# 工程）
+# 注意：addons/godot_wry/bin 的预编译二进制是已跟踪的，不能整目录忽略 bin/
+**/obj/
+tools/terminal_poc/bin/
