@@ -424,9 +424,17 @@ func generate(cfg: Dictionary) -> String:
 	code += "                           uint16_t data_p77);\n\n"
 
 	code += CodeGenBase.REMOTE_CONTROL_INIT_CODE
-	# 初始化诊断工具（LED + 蜂鸣器）与 UART1 查询发送（修复 UART 死锁）
-	code += _gen_led_diag_tools()
+	# 初始化诊断工具（LED + 蜂鸣器）与 UART1 查询发送（修复 UART 死锁）。
+	# P33 改用 PWMA_CH4N，避免斜坡音调连续变频扰动主控舵机所在的 PWMB 时基。
+	code += _gen_led_diag_tools("GPIO_P3", "GPIO_Pin_5", "GPIO_Pin_6", "GPIO_Pin_7", "PWMA_CH4N_P33")
 	code += CodeGenBase.UART_TX_QUERY_CODE
+	code += "// 摩擦轮斜坡蜂鸣器跟踪：音调 Hz 等于当前 duty；只在增减速期间发声。\n"
+	code += "static void FrictionBuzzerTrace(uint16_t duty)\n{\n"
+	code += "    PWM_SET_Frequency(BUZZER_CH, duty, 5000);\n"
+	code += "}\n\n"
+	code += "static void FrictionBuzzerOff(void)\n{\n"
+	code += "    PWM_SET_Frequency(BUZZER_CH, 500, 0);\n"
+	code += "}\n\n"
 
 	# --- main() ---
 	code += "void main()\n{\n"
@@ -611,26 +619,32 @@ func generate(cfg: Dictionary) -> String:
 	code += "        {\n"
 	code += "            dutyOfBooster = FRICTION_START_DUTY;\n"
 	code += "            ExpansionBoradControl(Duty_Change_Order, 0, 0, dutyOfBooster, dutyOfBooster, 0, 0, 0, 0);\n"
+	code += "            FrictionBuzzerTrace(dutyOfBooster);\n"
 	code += "            while (dutyOfBooster < FRICTION_MAX_DUTY)\n"
 	code += "            {\n"
 	code += "                Ms_Delay(FRICTION_STEP_MS);\n"
 	code += "                dutyOfBooster += FRICTION_STEP_DUTY;\n"
 	code += "                ExpansionBoradControl(Duty_Change_Order, 0, 0, dutyOfBooster, dutyOfBooster, 0, 0, 0, 0);\n"
+	code += "                FrictionBuzzerTrace(dutyOfBooster);\n"
 	code += "            }\n"
+	code += "            FrictionBuzzerOff(); // 完成增速后立即静音\n"
 	code += "            Ms_Delay(FRICTION_STEP_MS); // 目标转速至少保持一个安全间隔\n"
 	code += "        }\n"
 	code += "        else\n"
 	code += "        {\n"
 	code += "            ExpansionBoradControl(Duty_Change_Order, 0, 0, dutyOfBooster, dutyOfBooster, 0, 0, 0, 0);\n"
+	code += "            FrictionBuzzerTrace(dutyOfBooster);\n"
 	code += "            while (dutyOfBooster > FRICTION_START_DUTY)\n"
 	code += "            {\n"
 	code += "                Ms_Delay(FRICTION_STEP_MS);\n"
 	code += "                dutyOfBooster -= FRICTION_STEP_DUTY;\n"
 	code += "                ExpansionBoradControl(Duty_Change_Order, 0, 0, dutyOfBooster, dutyOfBooster, 0, 0, 0, 0);\n"
+	code += "                FrictionBuzzerTrace(dutyOfBooster);\n"
 	code += "            }\n"
 	code += "            Ms_Delay(FRICTION_STEP_MS);\n"
 	code += "            dutyOfBooster = 0;\n"
 	code += "            ExpansionBoradControl(Duty_Change_Order, 0, 0, dutyOfBooster, dutyOfBooster, 0, 0, 0, 0);\n"
+	code += "            FrictionBuzzerOff(); // 完成减速并归零后立即静音\n"
 	code += "            Ms_Delay(FRICTION_STEP_MS); // 0 duty 后仍保留硬件反应时间\n"
 	code += "        }\n"
 	code += "    }\n"

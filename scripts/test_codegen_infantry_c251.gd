@@ -130,6 +130,18 @@ func _initialize() -> void:
 		printerr("摩擦轮阻塞启停仍错误地发送 Dir 帧")
 		quit(1)
 		return
+	if not code.contains("#define BUZZER_CH PWMA_CH4N_P33") \
+			or not code.contains("PWM_SET_Frequency(BUZZER_CH, duty, 5000);") \
+			or not booster_func.contains("FrictionBuzzerTrace(dutyOfBooster);") \
+			or not booster_func.contains("FrictionBuzzerOff(); // 完成增速后立即静音") \
+			or not booster_func.contains("FrictionBuzzerOff(); // 完成减速并归零后立即静音"):
+		printerr("摩擦轮平滑斜坡缺少 duty 同频蜂鸣跟踪或完成后的静音逻辑")
+		quit(1)
+		return
+	if booster_func.contains("Beep("):
+		printerr("摩擦轮蜂鸣跟踪错误地调用了会额外阻塞时序的 Beep")
+		quit(1)
+		return
 	if not booster_func.contains("Duty_Change_Order, 0, 0, dutyOfBooster, dutyOfBooster, 0, 0, 0, 0"):
 		printerr("摩擦轮阻塞启停的 P64/P66 直发参数不符合官方示例")
 		quit(1)
