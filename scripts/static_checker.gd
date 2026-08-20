@@ -154,12 +154,12 @@ static func _check_trigger_params(issues: Array, cfg: Dictionary) -> void:
 # ------------------------------------------------------------------ 规则：摩擦轮最大占空比
 static func _check_friction_params(issues: Array, cfg: Dictionary) -> void:
 	var text: String = str(cfg.get("friction_max_duty", "")).strip_edges()
-	_check_int_field(issues, text, "摩擦轮最大占空比", 500, 1100, true)
+	_check_int_field(issues, text, "摩擦轮最大占空比", 500, 800, true)
 	if text.is_valid_int():
 		var value: int = text.to_int()
-		if value >= 500 and value <= 1100 and value % 100 != 0:
+		if value >= 500 and value <= 800 and value % 100 != 0:
 			issues.append({"type": "Error",
-				"msg": "摩擦轮最大占空比必须是 500~1100 内的整百值；启停过程会以 1 duty/20ms 平滑变化"})
+				"msg": "摩擦轮最大占空比必须是 500~800 内的整百值；启停过程会以 1 duty/20ms 平滑变化"})
 
 
 # ------------------------------------------------------------------ 规则：按键冲突
@@ -565,7 +565,7 @@ static func _chassis_pins(cfg: Dictionary) -> Array:
 	return pins
 
 # ------------------------------------------------------------------ 规则：调试界面参数范围
-# 舵机偏移角 ∈ [-90, 90]（相对中位），电机速度 ∈ [0, 10000]，摩擦轮速度 ∈ [0, 1100]
+# 舵机偏移角 ∈ [-90, 90]（相对中位），电机速度 ∈ [0, 10000]，摩擦轮速度 ∈ [0, 800]
 static func _check_debug_params(issues: Array, debug_rows: Array) -> void:
 	for row in debug_rows:
 		# 先 is bool 判类型（enabled 可能是字符串/数字），非 bool 当 false，不崩
@@ -593,9 +593,9 @@ static func _check_debug_params(issues: Array, debug_rows: Array) -> void:
 						"msg": "调试 %s 舵机角度 %d 超出范围（有效范围 -%d~%d，相对中位）"
 							% [pin_name, val, SERVO_MAX_ANGLE, SERVO_MAX_ANGLE]})
 			"摩擦轮":
-				if val < 0 or val > 1100:
+				if val < 0 or val > 800:
 					issues.append({"type": "Error",
-						"msg": "调试 %s 摩擦轮速度 %d 超出范围（有效范围 0-1100）" % [pin_name, val]})
+						"msg": "调试 %s 摩擦轮速度 %d 超出范围（校内赛安全范围 0-800）" % [pin_name, val]})
 
 
 # ------------------------------------------------------------------ 工程逆解算：静态检查

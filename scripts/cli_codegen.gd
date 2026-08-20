@@ -792,8 +792,8 @@ func _infantry_schema() -> Dictionary:
 		"trigger_speed": {"type": "string", "description": "拨弹速度 (0-10000)"},
 		"trigger_time": {"type": "string", "description": "拨弹时间 ms (0-65535)"},
 		"booster_key": {"type": "string", "description": "摩擦轮开关键"},
-		"friction_max_duty": {"type": "string", "enum": ["500", "600", "700", "800", "900", "1000", "1100"],
-			"description": "摩擦轮开启后的最大占空比（官方上限 1100）", "default": "1100"},
+		"friction_max_duty": {"type": "string", "enum": ["500", "600", "700", "800"],
+			"description": "摩擦轮开启后的最大占空比（校内赛安全硬上限 800）", "default": "800"},
 		"zero_enabled": {"type": "boolean", "description": "松手归中", "default": false},
 	}
 

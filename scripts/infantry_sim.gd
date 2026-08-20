@@ -59,7 +59,7 @@ const FRICTION_RADIUS: float = 0.028
 ## 摩擦轮厚度（沿转轴方向，即竖直方向）
 const FRICTION_WIDTH: float = 0.014
 ## 摩擦轮颜色：未启动时的冷色，以及转速下限/上限对应的橙色 -> 橙红色。
-## 占空比 500~1100 之间线性插值，转速高低一眼可辨
+## 占空比 500~800 之间线性插值，转速高低一眼可辨
 const FRICTION_COLD: Color = Color(0.35, 0.38, 0.42)
 const FRICTION_HOT_LO: Color = Color(1.0, 0.55, 0.1)
 const FRICTION_HOT_HI: Color = Color(1.0, 0.22, 0.05)
@@ -96,9 +96,9 @@ const TURN_RATE_DEFAULT: float = 360.0
 const GIMBAL_MOTOR_RATE: float = 180.0
 ## 电机驱动云台没有位置反馈，仿真给一个机械限位以免转到离谱角度
 const GIMBAL_MOTOR_PITCH_LIMIT: float = 60.0
-## 摩擦轮占空比 -> 弹丸初速（m/s）。1100 对应官方守则上限
+## 摩擦轮占空比 -> 弹丸初速（m/s）。800 对应校内赛安全硬上限
 const MUZZLE_DUTY_LO: float = 500.0
-const MUZZLE_DUTY_HI: float = 1100.0
+const MUZZLE_DUTY_HI: float = 800.0
 const MUZZLE_V_LO_DEFAULT: float = 8.0
 const MUZZLE_V_HI_DEFAULT: float = 30.0
 ## 摩擦轮没转起来时的「掉弹」速度
@@ -109,10 +109,10 @@ const MUZZLE_V_DEAD: float = 2.0
 const SIM_STEP_MS: float = 10.0
 ## 摇杆满偏读数
 const ROKER_FULL: float = 2047.0
-## 摩擦轮占空比区间（《RM电控指南》硬性规定，不得提高上限）
+## 摩擦轮占空比区间（校内赛实机验证安全上限，不得提高）
 const BOOSTER_DUTY_MIN: int = 500
-const BOOSTER_DUTY_MAX: int = 1100
-## 平滑阻塞启停序列：每个 50Hz PWM 周期增减 1 duty
+const BOOSTER_DUTY_MAX: int = 800
+## 平滑非阻塞启停序列：每个 50Hz PWM 周期增减 1 duty
 const BOOSTER_STEP: int = 1
 const BOOSTER_STEP_MS: float = 20.0
 ## 一帧最多补的步数，掉帧时不至于一次跳很远
@@ -123,7 +123,7 @@ const MAX_STEPS_PER_FRAME: int = 20
 const FEED_INTERVAL_MS: float = 100.0
 
 # ------------------------------------------------------------------ 音效
-## 摩擦轮音调直接等于占空比数值（500 duty -> 500Hz，1100 duty -> 1100Hz）
+## 摩擦轮音调直接等于占空比数值（500 duty -> 500Hz，800 duty -> 800Hz）
 const AUDIO_SAMPLE_RATE: float = 44100.0
 ## 摩擦轮音量（线性，0~1）。常驻音不宜太响
 const FRICTION_VOLUME: float = 0.16
@@ -196,9 +196,9 @@ var _duty_servo: Array = [0, 0]
 var _servo_clamped: Array = [false, false]
 var _duty_booster: int = 0
 var _status_booster: int = 0
-## 摩擦轮启动阻塞序列距离下一级占空比的剩余时间
+## 摩擦轮非阻塞斜坡距离下一级占空比的剩余时间
 var _friction_ramp_ms: float = 0.0
-## 1=阻塞增速，-1=阻塞减速，0=非摩擦轮阻塞状态
+## 1=非阻塞增速，-1=非阻塞减速，0=稳态
 var _friction_ramp_direction: int = 0
 ## Ms_Delay 阻塞剩余时间（ms）。复现单发拨弹期间主循环停摆的副作用
 var _block_ms: float = 0.0
@@ -706,27 +706,30 @@ func _process(delta: float) -> void:
 
 
 ## 一个完整的 10ms 周期：采输入 + 走一趟主循环。
-## 拨弹或摩擦轮增速期间 C 端卡在 Ms_Delay 里，主循环整体停摆。
+## 摩擦轮斜坡非阻塞；只有阻塞开环拨弹会暂时停住主循环。
 func _tick() -> void:
+	if _block_ms > 0.0:
+		_block_ms -= SIM_STEP_MS
+		return
 	if _friction_ramp_ms > 0.0:
 		_friction_ramp_ms -= SIM_STEP_MS
 		if _friction_ramp_ms <= 0.0:
 			if _friction_ramp_direction > 0 and _duty_booster < _friction_max_duty:
 				_duty_booster = mini(_duty_booster + BOOSTER_STEP, _friction_max_duty)
-				# 到达最大值后仍保持一个 20ms 完整 PWM 周期，随后才恢复主循环。
-				_friction_ramp_ms = BOOSTER_STEP_MS
+				if _duty_booster >= _friction_max_duty:
+					_friction_ramp_direction = 0
+					_friction_ramp_ms = 0.0
+				else:
+					_friction_ramp_ms = BOOSTER_STEP_MS
 			elif _friction_ramp_direction < 0 and _duty_booster > BOOSTER_DUTY_MIN:
 				_duty_booster -= BOOSTER_STEP
 				_friction_ramp_ms = BOOSTER_STEP_MS
 			elif _friction_ramp_direction < 0 and _duty_booster == BOOSTER_DUTY_MIN:
 				_duty_booster = 0
-				_friction_ramp_ms = BOOSTER_STEP_MS
+				_friction_ramp_direction = 0
+				_friction_ramp_ms = 0.0
 			else:
 				_friction_ramp_direction = 0
-		return
-	if _block_ms > 0.0:
-		_block_ms -= SIM_STEP_MS
-		return
 	_read_controller_inputs()
 	_step_once()
 
@@ -859,7 +862,7 @@ func _limit_servo() -> void:
 		_duty_servo[1] = int(_float_duty_servo[1])
 
 
-## 对应 CalculateBoosterControl：只有开/关；开启后按官方规则阻塞增速
+## 对应 CalculateBoosterControl：只有开/关；使用非阻塞状态机平滑启停
 func _calculate_booster_control() -> void:
 	if _booster_key == 1 and _last_booster_key == 0:
 		_status_booster = 0 if _status_booster == 1 else 1
@@ -869,7 +872,7 @@ func _calculate_booster_control() -> void:
 			_friction_ramp_ms = BOOSTER_STEP_MS
 		else:
 			# 禁止高速直接断电：保持当前 duty，随后每 20ms 减少 1，
-			# 经 500 后才降到 0，并在 0 duty 再等待一个安全间隔。
+			# 经 500 后才降到 0；斜坡期间主循环继续响应。
 			_friction_ramp_direction = -1
 			_friction_ramp_ms = BOOSTER_STEP_MS
 	_last_booster_key = _booster_key
@@ -943,7 +946,7 @@ func _render_robot() -> void:
 
 
 ## 摩擦轮颜色随占空比连续渐变：
-## 未启动（< 500）冷灰，500 橙色，1100 橙红，中间线性插值。
+## 未启动（< 500）冷灰，500 橙色，800 橙红，中间线性插值。
 func _update_friction_color() -> void:
 	var t: float = -1.0
 	if _duty_booster >= BOOSTER_DUTY_MIN:
@@ -1496,7 +1499,7 @@ func _on_mid_offset_changed(key: String, value: float) -> void:
 func _build_operate_params(parent: Node) -> void:
 	_add_section(parent, "摩擦轮")
 	_add_note(parent, ("只有开/关两种稳态。开关键 %s 上升沿翻转；开启时从 500 duty 起步，"
-		+ "每 20ms 阻塞增加 1，直到用户设定的 %d；关闭时按相同间隔平滑降至 0。")
+		+ "每 20ms 非阻塞增加 1，直到用户设定的 %d；关闭时按相同间隔平滑降至 0。")
 			% [str(_cfg.get("booster_key", "A")), _friction_max_duty])
 	_add_section(parent, "音效")
 	var audio_cb: CheckButton = CheckButton.new()
@@ -1504,11 +1507,11 @@ func _build_operate_params(parent: Node) -> void:
 	audio_cb.button_pressed = _audio_enabled
 	audio_cb.toggled.connect(_on_audio_toggled)
 	parent.add_child(audio_cb)
-	_add_note(parent, "摩擦轮音高等于当前占空比，阻塞爬升的每一级都能听出来。"
+	_add_note(parent, "摩擦轮音高等于当前占空比，非阻塞爬升的每一级都能听出来。"
 		+"\n开火是一段从高扫到低的短音。")
 	_add_section(parent, "弹丸初速映射")
 	_add_slider_row(parent, "vlo", "duty 500 时 (m/s)", 1.0, 30.0, _muzzle_v_lo, 0.5)
-	_add_slider_row(parent, "vhi", "duty 1100 时 (m/s)", 1.0, 40.0, _muzzle_v_hi, 0.5)
+	_add_slider_row(parent, "vhi", "duty 800 时 (m/s)", 1.0, 40.0, _muzzle_v_hi, 0.5)
 	_add_note(parent, "17mm 弹丸，直径 %.0fmm、质量 %.1fg。初速按摩擦轮占空比线性插值，"
 		% [BULLET_RADIUS * 2000.0, BULLET_MASS * 1000.0]
 		+"占空比不到 500 时只会「掉弹」。这两个端点是估值，不是实测标定。")

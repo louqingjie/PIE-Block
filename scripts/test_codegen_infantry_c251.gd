@@ -14,13 +14,13 @@ func _initialize() -> void:
 		quit(1)
 		return
 	infantry_ui.free()
-	var friction_issues: Array = SC.check_infantry({"friction_max_duty": "1200"})
+	var friction_issues: Array = SC.check_infantry({"friction_max_duty": "900"})
 	var found_friction_limit: bool = false
 	for issue in friction_issues:
 		if str(issue.get("msg", "")).contains("摩擦轮最大占空比"):
 			found_friction_limit = true
 	if not found_friction_limit:
-		printerr("静态检查未阻止超过官方上限的摩擦轮占空比")
+		printerr("静态检查未阻止超过校内赛安全上限的摩擦轮占空比")
 		quit(1)
 		return
 	var code: String = CG.new().generate({})
@@ -81,14 +81,14 @@ func _initialize() -> void:
 		printerr("摩擦轮渐变注释仍错误地忽略了通信帧间隔")
 		quit(1)
 		return
-	# 摩擦轮必须采用平滑阻塞式开关控制：500 起步，每 20ms 增加 1，
-	# 稳态只有 0 或用户设定的最大值，不再保留 B/C 档位和非阻塞目标跟踪。
-	if not code.contains("#define FRICTION_MAX_DUTY   1100") \
-			or not code.contains("while (dutyOfBooster < FRICTION_MAX_DUTY)") \
+	# 摩擦轮必须采用 Timer2 驱动的平滑非阻塞状态机：500 起步，每 20ms 增加 1，
+	# 稳态只有 0 或用户设定的最大值，不再保留 B/C 调档。
+	if not code.contains("#define FRICTION_MAX_DUTY   800") \
 			or not code.contains("#define FRICTION_STEP_DUTY  1") \
 			or not code.contains("#define FRICTION_STEP_MS    20") \
+			or not code.contains("targetDutyOfBooster = statusOfBooster ? FRICTION_MAX_DUTY : 0;") \
 			or not code.contains("dutyOfBooster += FRICTION_STEP_DUTY;"):
-		printerr("生成代码缺少官方阻塞式摩擦轮增速序列")
+		printerr("生成代码缺少校内赛安全的非阻塞摩擦轮增速状态机")
 		quit(1)
 		return
 	for forbidden in ["expectDutyOfBooster", "levelDutyOfBooster",
@@ -98,43 +98,41 @@ func _initialize() -> void:
 			printerr("生成代码仍残留可停留中间占空比的逻辑：%s" % forbidden)
 			quit(1)
 			return
-	var limited_code: String = CG.new().generate({"friction_max_duty": "800"})
-	if not limited_code.contains("#define FRICTION_MAX_DUTY   800"):
+	var limited_code: String = CG.new().generate({"friction_max_duty": "700"})
+	if not limited_code.contains("#define FRICTION_MAX_DUTY   700"):
 		printerr("用户指定的摩擦轮最大占空比未进入生成代码")
 		quit(1)
 		return
-	var over_limit_code: String = CG.new().generate({"friction_max_duty": "1200"})
-	if not over_limit_code.contains("#define FRICTION_MAX_DUTY   1100"):
-		printerr("超过官方上限的摩擦轮占空比未安全回退到 1100")
+	var over_limit_code: String = CG.new().generate({"friction_max_duty": "900"})
+	if not over_limit_code.contains("#define FRICTION_MAX_DUTY   800"):
+		printerr("超过校内赛安全上限的摩擦轮占空比未安全回退到 800")
 		quit(1)
 		return
-	if not code.contains("while (dutyOfBooster > FRICTION_START_DUTY)") \
+	if not code.contains("else if (dutyOfBooster > FRICTION_START_DUTY)") \
 			or not code.contains("dutyOfBooster -= FRICTION_STEP_DUTY;") \
 			or not code.contains("dutyOfBooster = 0;"):
-		printerr("生成代码缺少摩擦轮阻塞式逐级关闭逻辑")
+		printerr("生成代码缺少摩擦轮非阻塞逐级关闭逻辑")
 		quit(1)
 		return
 	var booster_func_start: int = code.find("void CalculateBoosterControl()\n{")
 	var booster_func_end: int = code.find("void CalculateGimbalControls()\n{", booster_func_start)
 	var booster_func: String = code.substr(booster_func_start, booster_func_end - booster_func_start)
-	var booster_duty_frame: int = booster_func.find("ExpansionBoradControl(Duty_Change_Order")
 	if booster_func.contains("Main_Countrol("):
-		printerr("摩擦轮阻塞启停仍错误地经过 Main_Countrol")
+		printerr("摩擦轮状态机不应主动调用 Main_Countrol")
 		quit(1)
 		return
-	if booster_duty_frame < 0:
-		printerr("摩擦轮阻塞启停缺少直发 Duty 帧")
+	if booster_func.contains("ExpansionBoradControl(") or booster_func.contains("Dir_Change_Order"):
+		printerr("摩擦轮状态机只能更新当前 duty，不得自行发送扩展板控制帧")
 		quit(1)
 		return
-	if booster_func.contains("Dir_Change_Order"):
-		printerr("摩擦轮阻塞启停仍错误地发送 Dir 帧")
+	if booster_func.contains("Ms_Delay(") or booster_func.contains("while ("):
+		printerr("摩擦轮状态机仍残留阻塞等待或追赶循环")
 		quit(1)
 		return
 	if not code.contains("#define BUZZER_CH PWMA_CH4N_P33") \
 			or not code.contains("PWM_SET_Frequency(BUZZER_CH, duty, 5000);") \
 			or not booster_func.contains("FrictionBuzzerTrace(dutyOfBooster);") \
-			or not booster_func.contains("FrictionBuzzerOff(); // 完成增速后立即静音") \
-			or not booster_func.contains("FrictionBuzzerOff(); // 完成减速并归零后立即静音"):
+			or not booster_func.contains("FrictionBuzzerOff();"):
 		printerr("摩擦轮平滑斜坡缺少 duty 同频蜂鸣跟踪或完成后的静音逻辑")
 		quit(1)
 		return
@@ -142,8 +140,11 @@ func _initialize() -> void:
 		printerr("摩擦轮蜂鸣跟踪错误地调用了会额外阻塞时序的 Beep")
 		quit(1)
 		return
-	if not booster_func.contains("Duty_Change_Order, 0, 0, dutyOfBooster, dutyOfBooster, 0, 0, 0, 0"):
-		printerr("摩擦轮阻塞启停的 P64/P66 直发参数不符合官方示例")
+	if not code.contains("PIT_Timer_Ms(TIM2, 1);") \
+			or not code.contains("void TM2_Isr(void) interrupt 12") \
+			or not code.contains("frictionTickMs++;") \
+			or not booster_func.contains("(uint16_t)(now - frictionLastStepMs) >= FRICTION_STEP_MS"):
+		printerr("摩擦轮非阻塞状态机缺少 Timer2 毫秒节拍或安全的溢出差值判断")
 		quit(1)
 		return
 	if not code.contains("Ms_Delay(1000);"):

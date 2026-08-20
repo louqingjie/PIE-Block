@@ -85,13 +85,13 @@ func generate(cfg: Dictionary) -> String:
 	var trig_spd: String = _int_or_default(cfg.get("trigger_speed", ""), 10000, 0, 10000)
 	# Ms_Delay 参数是 uint16_t，超过 65535 会被静默截断
 	var trig_time: String = _int_or_default(cfg.get("trigger_time", ""), 250, 0, 65535)
-	# 平滑摩擦轮守则：500 duty 起步，每个 50Hz PWM 周期增减 1，最高 1100。
-	# 最大档位仍只接受 500~1100 内的整百值；非法输入回退 1100。
-	var friction_max_text: String = str(cfg.get("friction_max_duty", "1100")).strip_edges()
-	var friction_max_duty: int = 1100
+	# 校内赛安全策略：500 duty 起步，每个 50Hz PWM 周期增减 1，硬上限 800。
+	# 最大档位只接受 500~800 内的整百值；非法输入回退 800。
+	var friction_max_text: String = str(cfg.get("friction_max_duty", "800")).strip_edges()
+	var friction_max_duty: int = 800
 	if friction_max_text.is_valid_int():
 		var requested_friction_max: int = friction_max_text.to_int()
-		if requested_friction_max >= 500 and requested_friction_max <= 1100 \
+		if requested_friction_max >= 500 and requested_friction_max <= 800 \
 				and requested_friction_max % 100 == 0:
 			friction_max_duty = requested_friction_max
 
@@ -358,7 +358,7 @@ func generate(cfg: Dictionary) -> String:
 	code += "#define FRICTION_START_DUTY 500  // 官方守则：摩擦轮启动占空比\n"
 	code += "#define FRICTION_STEP_DUTY  1    // 平滑启停：每次只变化 1 duty\n"
 	code += "#define FRICTION_STEP_MS    20   // 50Hz 的一个完整 PWM 周期（每秒变化 50 duty）\n"
-	code += "#define FRICTION_MAX_DUTY   %d   // 用户设定，官方上限 1100\n" % friction_max_duty
+	code += "#define FRICTION_MAX_DUTY   %d   // 用户设定，校内赛安全硬上限 800\n" % friction_max_duty
 	code += "uint16_t boosterDutyOfFeed = %s;             // 拨弹电机单发转动占空比\n" % trig_spd
 	if not visual_feed:
 		code += "uint16_t boosterFeedDelayMs = %s;              // 拨弹电机单发转动时长(ms)\n" % trig_time
@@ -386,7 +386,11 @@ func generate(cfg: Dictionary) -> String:
 	code += "float floatDutyOfServo[2]; // 云台舵机\n"
 	code += "uint16_t dutyOfServo[2];\n"
 	code += "int dutyOfMotor[%d]; // 底盘电机、供弹电机、云台电机（如有）\n" % motor_array_size
-	code += "uint16_t dutyOfBooster = 0; // 稳态只允许 0 或 FRICTION_MAX_DUTY\n"
+	code += "uint16_t dutyOfBooster = 0;       // 当前摩擦轮占空比\n"
+	code += "uint16_t targetDutyOfBooster = 0; // 目标只允许 0 或 FRICTION_MAX_DUTY\n"
+	code += "volatile uint16_t frictionTickMs = 0;\n"
+	code += "uint16_t frictionLastStepMs = 0;\n"
+	code += "uint8_t frictionRampActive = 0;\n"
 	code += "uint8_t valueOfKey[3][4];\n"
 	code += "uint8_t valueOfEKey;\n"
 	code += "uint8_t triggerKeyValue, lastTriggerKeyValue, boosterKeyValue, lastBoosterKeyValue;\n"
@@ -434,6 +438,18 @@ func generate(cfg: Dictionary) -> String:
 	code += "}\n\n"
 	code += "static void FrictionBuzzerOff(void)\n{\n"
 	code += "    PWM_SET_Frequency(BUZZER_CH, 500, 0);\n"
+	code += "}\n\n"
+	code += "static uint16_t FrictionTickNow(void)\n{\n"
+	code += "    uint8_t interruptEnabled = EA;\n"
+	code += "    uint16_t now;\n"
+	code += "    EA = 0;\n"
+	code += "    now = frictionTickMs;\n"
+	code += "    EA = interruptEnabled;\n"
+	code += "    return now;\n"
+	code += "}\n\n"
+	code += "void TM2_Isr(void) interrupt 12\n{\n"
+	code += "    PIT_Timer_Clear(TIM2);\n"
+	code += "    frictionTickMs++;\n"
 	code += "}\n\n"
 
 	# --- main() ---
@@ -556,6 +572,7 @@ func generate(cfg: Dictionary) -> String:
 	code += "    StepDone(4);\n"
 	code += "    StepBegin(5);\n"
 	code += pwm_init_lines
+	code += "    PIT_Timer_Ms(TIM2, 1); // 摩擦轮非阻塞斜坡 1ms 硬件节拍\n"
 	code += "    StepDone(5);\n"
 	code += _gen_init_done("Beep")
 	code += "}\n\n"
@@ -607,46 +624,43 @@ func generate(cfg: Dictionary) -> String:
 
 	# --- CalculateBoosterControl ---
 	code += "void CalculateBoosterControl()\n{\n"
-	code += "    // 摩擦轮只有开/关两种稳态；启动过程完全阻塞，严格复现官方守则。\n"
-	code += "    // 开：500 起步，每阻塞 20ms 增加 1，直到用户设定的最大值。\n"
-	code += "    // 关：从当前最大值每阻塞 20ms 减少 1，经 500 后才能降到 0。\n"
-	code += "    // 每一级绕过 Main_Countrol，只发送 Duty 帧；摩擦轮启停不得发送 Dir 帧。\n"
+	code += "    uint16_t now = FrictionTickNow();\n"
+	code += "    // 非阻塞开关状态机：稳态只有 0/最大值，中间 duty 仅用于平滑斜坡。\n"
+	code += "    // Timer2 每 1ms 计时；每满 20ms 最多变化 1，错过节拍绝不追赶跳级。\n"
 	code += "    // 摩擦轮开关由 %s 上升沿触发\n" % cfg.get("booster_key", "A")
 	code += "    if (boosterKeyValue && !lastBoosterKeyValue)\n"
 	code += "    {\n"
 	code += "        statusOfBooster = !statusOfBooster;\n"
-	code += "        if (statusOfBooster)\n"
+	code += "        targetDutyOfBooster = statusOfBooster ? FRICTION_MAX_DUTY : 0;\n"
+	code += "        if (statusOfBooster && dutyOfBooster == 0)\n"
 	code += "        {\n"
 	code += "            dutyOfBooster = FRICTION_START_DUTY;\n"
-	code += "            ExpansionBoradControl(Duty_Change_Order, 0, 0, dutyOfBooster, dutyOfBooster, 0, 0, 0, 0);\n"
+	code += "        }\n"
+	code += "        frictionRampActive = (dutyOfBooster != targetDutyOfBooster);\n"
+	code += "        frictionLastStepMs = now;\n"
+	code += "        if (frictionRampActive)\n"
 	code += "            FrictionBuzzerTrace(dutyOfBooster);\n"
-	code += "            while (dutyOfBooster < FRICTION_MAX_DUTY)\n"
-	code += "            {\n"
-	code += "                Ms_Delay(FRICTION_STEP_MS);\n"
-	code += "                dutyOfBooster += FRICTION_STEP_DUTY;\n"
-	code += "                ExpansionBoradControl(Duty_Change_Order, 0, 0, dutyOfBooster, dutyOfBooster, 0, 0, 0, 0);\n"
-	code += "                FrictionBuzzerTrace(dutyOfBooster);\n"
-	code += "            }\n"
-	code += "            FrictionBuzzerOff(); // 完成增速后立即静音\n"
-	code += "            Ms_Delay(FRICTION_STEP_MS); // 目标转速至少保持一个安全间隔\n"
+	code += "        else\n"
+	code += "            FrictionBuzzerOff();\n"
+	code += "    }\n"
+	code += "\n"
+	code += "    if (frictionRampActive && (uint16_t)(now - frictionLastStepMs) >= FRICTION_STEP_MS)\n"
+	code += "    {\n"
+	code += "        frictionLastStepMs = now;\n"
+	code += "        if (targetDutyOfBooster > dutyOfBooster)\n"
+	code += "            dutyOfBooster += FRICTION_STEP_DUTY;\n"
+	code += "        else if (dutyOfBooster > FRICTION_START_DUTY)\n"
+	code += "            dutyOfBooster -= FRICTION_STEP_DUTY;\n"
+	code += "        else\n"
+	code += "            dutyOfBooster = 0; // 跳过无有效转动的 0~5% 区间\n"
+	code += "\n"
+	code += "        if (dutyOfBooster == targetDutyOfBooster)\n"
+	code += "        {\n"
+	code += "            frictionRampActive = 0;\n"
+	code += "            FrictionBuzzerOff();\n"
 	code += "        }\n"
 	code += "        else\n"
-	code += "        {\n"
-	code += "            ExpansionBoradControl(Duty_Change_Order, 0, 0, dutyOfBooster, dutyOfBooster, 0, 0, 0, 0);\n"
 	code += "            FrictionBuzzerTrace(dutyOfBooster);\n"
-	code += "            while (dutyOfBooster > FRICTION_START_DUTY)\n"
-	code += "            {\n"
-	code += "                Ms_Delay(FRICTION_STEP_MS);\n"
-	code += "                dutyOfBooster -= FRICTION_STEP_DUTY;\n"
-	code += "                ExpansionBoradControl(Duty_Change_Order, 0, 0, dutyOfBooster, dutyOfBooster, 0, 0, 0, 0);\n"
-	code += "                FrictionBuzzerTrace(dutyOfBooster);\n"
-	code += "            }\n"
-	code += "            Ms_Delay(FRICTION_STEP_MS);\n"
-	code += "            dutyOfBooster = 0;\n"
-	code += "            ExpansionBoradControl(Duty_Change_Order, 0, 0, dutyOfBooster, dutyOfBooster, 0, 0, 0, 0);\n"
-	code += "            FrictionBuzzerOff(); // 完成减速并归零后立即静音\n"
-	code += "            Ms_Delay(FRICTION_STEP_MS); // 0 duty 后仍保留硬件反应时间\n"
-	code += "        }\n"
 	code += "    }\n"
 	code += "    lastBoosterKeyValue = boosterKeyValue;\n"
 	code += "}\n\n"

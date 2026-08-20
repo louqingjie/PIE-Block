@@ -32,7 +32,7 @@ func _cfg(yaw_drive: String, pitch_drive: String, yaw_mid: String = "0",
 		"yaw_mid_offset": yaw_mid, "pitch_mid_offset": pitch_mid,
 		"arrow_key": "移动", "trigger_key": "E",
 		"trigger_speed": "10000", "trigger_time": "250",
-		"booster_key": "A", "friction_max_duty": "1100", "zero_enabled": true,
+		"booster_key": "A", "friction_max_duty": "800", "zero_enabled": true,
 	}
 
 
@@ -157,7 +157,7 @@ func _test_drive_combo(packed: PackedScene, yaw: String, pitch: String) -> void:
 	_despawn(sim)
 
 
-## 摩擦轮稳态只能是 0/最大值，启停期间每 20ms 阻塞增减 1；B/C 不再调档
+## 摩擦轮稳态只能是 0/最大值，启停期间每 20ms 非阻塞增减 1；B/C 不再调档
 func _test_friction_switch(packed: PackedScene) -> void:
 	var cfg: Dictionary = _cfg("舵机", "舵机")
 	cfg["friction_max_duty"] = "800"
@@ -166,13 +166,16 @@ func _test_friction_switch(packed: PackedScene) -> void:
 	sim._last_booster_key = 0
 	sim._calculate_booster_control()
 	_check("摩擦轮开启先输出 500", sim._duty_booster == 500)
-	_check("摩擦轮开启进入 20ms 平滑阻塞序列", absf(sim._friction_ramp_ms - 20.0) < 1e-6)
-	# 500→800 共 300 个 20ms 步进，再在 800 保持一个完整周期，共 6020ms。
-	for i in range(602):
+	_check("摩擦轮开启进入 20ms 平滑非阻塞序列", absf(sim._friction_ramp_ms - 20.0) < 1e-6)
+	# 斜坡期间 _tick 仍应采集输入并执行主循环；输入采样会把未按下的 A 写回 0。
+	sim._tick()
+	_check("摩擦轮斜坡期间主循环仍响应", sim._last_booster_key == 0)
+	# 已经过 10ms；500→800 还需共计 599 个 10ms tick。
+	for i in range(599):
 		sim._tick()
-	_check("摩擦轮按 1 duty/20ms 平滑阻塞增速至 800", sim._duty_booster == 800,
+	_check("摩擦轮按 1 duty/20ms 平滑非阻塞增速至 800", sim._duty_booster == 800,
 		"实际 %d" % sim._duty_booster)
-	_check("到达用户最大值后退出阻塞", sim._friction_ramp_ms <= 0.0)
+	_check("到达用户最大值后结束斜坡", sim._friction_ramp_ms <= 0.0)
 	# 松开开关键后按 B/C，稳态不得改变。
 	sim._booster_key = 0
 	sim._calculate_booster_control()
@@ -188,8 +191,8 @@ func _test_friction_switch(packed: PackedScene) -> void:
 	for i in range(2):
 		sim._tick()
 	_check("关闭 20ms 后从 800 平滑降到 799", sim._duty_booster == 799)
-	# 继续逐 duty 降至 500，再跳过 0~5% 区间归零，并在 0 保持一个周期。
-	for i in range(602):
+	# 继续逐 duty 降至 500，再跳过 0~5% 区间归零。
+	for i in range(600):
 		sim._tick()
 	_check("摩擦轮逐级关闭后归零", sim._duty_booster == 0 and sim._friction_ramp_direction == 0)
 	_despawn(sim)
@@ -319,7 +322,7 @@ func _test_audio(packed: PackedScene) -> void:
 	sim._duty_booster = 0
 	_check("未启动时目标频率为 0（静音）", sim._friction_target_freq() == 0.0,
 		"实际 %.1f" % sim._friction_target_freq())
-	for duty in [500, 700, 900, 1100]:
+	for duty in [500, 600, 700, 800]:
 		sim._duty_booster = duty
 		_check("占空比 %d 对应 %dHz" % [duty, duty],
 			absf(sim._friction_target_freq() - float(duty)) < 0.01,
@@ -329,7 +332,7 @@ func _test_audio(packed: PackedScene) -> void:
 	_check("占空比 499 仍静音", sim._friction_target_freq() == 0.0)
 	# 关掉音效后不应起播
 	sim._audio_enabled = false
-	sim._duty_booster = 1100
+	sim._duty_booster = 800
 	sim._update_friction_audio(0.016)
 	_check("关掉音效后摩擦轮不发声", not fp.playing)
 	sim._play_shot_sound()
@@ -356,7 +359,7 @@ func _test_audio(packed: PackedScene) -> void:
 	_despawn(sim)
 
 
-## 摩擦轮颜色随占空比连续渐变：未启动冷色，500 橙色，1100 橙红色
+## 摩擦轮颜色随占空比连续渐变：未启动冷色，500 橙色，800 橙红色
 func _test_friction_color(packed: PackedScene) -> void:
 	var sim: Node = await _spawn(packed, _cfg("舵机", "舵机"))
 	var mat: StandardMaterial3D = sim._mat_friction_wheels[0]
@@ -373,36 +376,36 @@ func _test_friction_color(packed: PackedScene) -> void:
 	_check("占空比 500 时为橙色", c500.is_equal_approx(sim.FRICTION_HOT_LO),
 		"色 %s" % str(c500))
 	_check("占空比 500 时开始发光", mat.emission_enabled)
-	# 1100：橙红色
-	sim._duty_booster = 1100
+	# 800：橙红色
+	sim._duty_booster = 800
 	sim._update_friction_color()
-	var c1100: Color = mat.albedo_color
-	_check("占空比 1100 时为橙红色", c1100.is_equal_approx(sim.FRICTION_HOT_HI),
-		"色 %s" % str(c1100))
+	var c800: Color = mat.albedo_color
+	_check("占空比 800 时为橙红色", c800.is_equal_approx(sim.FRICTION_HOT_HI),
+		"色 %s" % str(c800))
 	# 橙红比橙色更红：绿通道更低
-	_check("1100 比 500 更偏红", c1100.g < c500.g,
-		"g: %.2f -> %.2f" % [c500.g, c1100.g])
+	_check("800 比 500 更偏红", c800.g < c500.g,
+		"g: %.2f -> %.2f" % [c500.g, c800.g])
 	# 中间值应落在两端之间，且单调
 	var last_g: float = c500.g
 	var monotonic: bool = true
-	for duty in [600, 700, 800, 900, 1000, 1100]:
+	for duty in [600, 700, 800]:
 		sim._duty_booster = duty
 		sim._update_friction_color()
 		var g: float = mat.albedo_color.g
 		if g > last_g + 1e-6:
 			monotonic = false
 		last_g = g
-	_check("500->1100 颜色单调渐变（不跳变）", monotonic)
-	sim._duty_booster = 800
+	_check("500->800 颜色单调渐变（不跳变）", monotonic)
+	sim._duty_booster = 650
 	sim._update_friction_color()
-	var c800: Color = mat.albedo_color
-	_check("占空比 800 的颜色落在橙与橙红之间",
-		c800.g < c500.g and c800.g > c1100.g, "g=%.3f" % c800.g)
+	var c650: Color = mat.albedo_color
+	_check("占空比 650 的颜色落在橙与橙红之间",
+		c650.g < c500.g and c650.g > c800.g, "g=%.3f" % c650.g)
 	# 发光强度也应随占空比递增
 	sim._duty_booster = 500
 	sim._update_friction_color()
 	var e_lo: float = mat.emission_energy_multiplier
-	sim._duty_booster = 1100
+	sim._duty_booster = 800
 	sim._update_friction_color()
 	_check("发光强度随占空比递增", mat.emission_energy_multiplier > e_lo,
 		"%.2f -> %.2f" % [e_lo, mat.emission_energy_multiplier])
@@ -449,7 +452,7 @@ func _test_fire(packed: PackedScene) -> void:
 	sim._tick()
 	_check("阻塞期间云台停摆", sim._duty_servo[0] == duty_before,
 		"%d -> %d" % [duty_before, sim._duty_servo[0]])
-	_check("阻塞期间摩擦轮不渐变", sim._duty_booster == booster_before,
+	_check("拨弹阻塞期间摩擦轮不渐变", sim._duty_booster == booster_before,
 		"%d -> %d" % [booster_before, sim._duty_booster])
 	_check("阻塞计时递减", absf(sim._block_ms - 240.0) < 1e-6, "block=%.1f" % sim._block_ms)
 	# 摩擦轮未启动时应只掉弹
@@ -518,7 +521,7 @@ func _test_bullet_visual(packed: PackedScene) -> void:
 		"强度 %.2f" % mat.emission_energy_multiplier)
 	# 连打 12 发并全部回收，弹道折线不得超过 5 条
 	sim._status_booster = 1
-	sim._duty_booster = 1100
+	sim._duty_booster = 800
 	for i in range(12):
 		sim._fire()
 		# 造两个采样点，否则 trail 太短会被 _retire_bullet 丢弃
