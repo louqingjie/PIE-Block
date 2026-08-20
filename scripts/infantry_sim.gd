@@ -112,9 +112,8 @@ const ROKER_FULL: float = 2047.0
 ## 摩擦轮占空比区间（校内赛实机验证安全上限，不得提高）
 const BOOSTER_DUTY_MIN: int = 500
 const BOOSTER_DUTY_MAX: int = 800
-## 平滑非阻塞启停序列：每个 50Hz PWM 周期增减 1 duty
+## 平滑非阻塞启停序列：每个主循环增减 1 duty
 const BOOSTER_STEP: int = 1
-const BOOSTER_STEP_MS: float = 20.0
 ## 一帧最多补的步数，掉帧时不至于一次跳很远
 const MAX_STEPS_PER_FRAME: int = 20
 ## 目视闭环模式下按住扳机时的出弹间隔（ms）。
@@ -196,8 +195,6 @@ var _duty_servo: Array = [0, 0]
 var _servo_clamped: Array = [false, false]
 var _duty_booster: int = 0
 var _status_booster: int = 0
-## 摩擦轮非阻塞斜坡距离下一级占空比的剩余时间
-var _friction_ramp_ms: float = 0.0
 ## 1=非阻塞增速，-1=非阻塞减速，0=稳态
 var _friction_ramp_direction: int = 0
 ## Ms_Delay 阻塞剩余时间（ms）。复现单发拨弹期间主循环停摆的副作用
@@ -404,7 +401,6 @@ func _reset_control_state() -> void:
 	_duty_gimbal = [0, 0]
 	_duty_booster = 0
 	_status_booster = 0
-	_friction_ramp_ms = 0.0
 	_friction_ramp_direction = 0
 	_base_speed = 0
 	_turn_speed = 0
@@ -711,25 +707,6 @@ func _tick() -> void:
 	if _block_ms > 0.0:
 		_block_ms -= SIM_STEP_MS
 		return
-	if _friction_ramp_ms > 0.0:
-		_friction_ramp_ms -= SIM_STEP_MS
-		if _friction_ramp_ms <= 0.0:
-			if _friction_ramp_direction > 0 and _duty_booster < _friction_max_duty:
-				_duty_booster = mini(_duty_booster + BOOSTER_STEP, _friction_max_duty)
-				if _duty_booster >= _friction_max_duty:
-					_friction_ramp_direction = 0
-					_friction_ramp_ms = 0.0
-				else:
-					_friction_ramp_ms = BOOSTER_STEP_MS
-			elif _friction_ramp_direction < 0 and _duty_booster > BOOSTER_DUTY_MIN:
-				_duty_booster -= BOOSTER_STEP
-				_friction_ramp_ms = BOOSTER_STEP_MS
-			elif _friction_ramp_direction < 0 and _duty_booster == BOOSTER_DUTY_MIN:
-				_duty_booster = 0
-				_friction_ramp_direction = 0
-				_friction_ramp_ms = 0.0
-			else:
-				_friction_ramp_direction = 0
 	_read_controller_inputs()
 	_step_once()
 
@@ -869,12 +846,19 @@ func _calculate_booster_control() -> void:
 		if _status_booster == 1:
 			_duty_booster = BOOSTER_DUTY_MIN
 			_friction_ramp_direction = 1
-			_friction_ramp_ms = BOOSTER_STEP_MS
 		else:
-			# 禁止高速直接断电：保持当前 duty，随后每 20ms 减少 1，
+			# 禁止高速直接断电：保持当前 duty，随后每个主循环减少 1，
 			# 经 500 后才降到 0；斜坡期间主循环继续响应。
 			_friction_ramp_direction = -1
-			_friction_ramp_ms = BOOSTER_STEP_MS
+	elif _friction_ramp_direction > 0 and _duty_booster < _friction_max_duty:
+		_duty_booster = mini(_duty_booster + BOOSTER_STEP, _friction_max_duty)
+		if _duty_booster >= _friction_max_duty:
+			_friction_ramp_direction = 0
+	elif _friction_ramp_direction < 0 and _duty_booster > BOOSTER_DUTY_MIN:
+		_duty_booster -= BOOSTER_STEP
+	elif _friction_ramp_direction < 0 and _duty_booster == BOOSTER_DUTY_MIN:
+		_duty_booster = 0
+		_friction_ramp_direction = 0
 	_last_booster_key = _booster_key
 
 
@@ -1499,7 +1483,7 @@ func _on_mid_offset_changed(key: String, value: float) -> void:
 func _build_operate_params(parent: Node) -> void:
 	_add_section(parent, "摩擦轮")
 	_add_note(parent, ("只有开/关两种稳态。开关键 %s 上升沿翻转；开启时从 500 duty 起步，"
-		+ "每 20ms 非阻塞增加 1，直到用户设定的 %d；关闭时按相同间隔平滑降至 0。")
+		+ "每个主循环非阻塞增加 1，直到用户设定的 %d；关闭时按相同步长平滑降至 0。")
 			% [str(_cfg.get("booster_key", "A")), _friction_max_duty])
 	_add_section(parent, "音效")
 	var audio_cb: CheckButton = CheckButton.new()

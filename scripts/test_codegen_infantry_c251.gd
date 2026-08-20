@@ -81,11 +81,10 @@ func _initialize() -> void:
 		printerr("摩擦轮渐变注释仍错误地忽略了通信帧间隔")
 		quit(1)
 		return
-	# 摩擦轮必须采用 Timer2 驱动的平滑非阻塞状态机：500 起步，每 20ms 增加 1，
+	# 摩擦轮采用主循环驱动的平滑非阻塞状态机：500 起步，每轮增加 1，
 	# 稳态只有 0 或用户设定的最大值，不再保留 B/C 调档。
 	if not code.contains("#define FRICTION_MAX_DUTY   800") \
 			or not code.contains("#define FRICTION_STEP_DUTY  1") \
-			or not code.contains("#define FRICTION_STEP_MS    20") \
 			or not code.contains("targetDutyOfBooster = statusOfBooster ? FRICTION_MAX_DUTY : 0;") \
 			or not code.contains("dutyOfBooster += FRICTION_STEP_DUTY;"):
 		printerr("生成代码缺少校内赛安全的非阻塞摩擦轮增速状态机")
@@ -140,11 +139,13 @@ func _initialize() -> void:
 		printerr("摩擦轮蜂鸣跟踪错误地调用了会额外阻塞时序的 Beep")
 		quit(1)
 		return
-	if not code.contains("PIT_Timer_Ms(TIM2, 1);") \
-			or not code.contains("void TM2_Isr(void) interrupt 12") \
-			or not code.contains("frictionTickMs++;") \
-			or not booster_func.contains("(uint16_t)(now - frictionLastStepMs) >= FRICTION_STEP_MS"):
-		printerr("摩擦轮非阻塞状态机缺少 Timer2 毫秒节拍或安全的溢出差值判断")
+	for forbidden_timer in ["PIT_Timer_Ms(TIM2", "TM2_Isr", "frictionTickMs", "frictionLastStepMs", "FrictionTickNow"]:
+		if code.contains(forbidden_timer):
+			printerr("摩擦轮主循环状态机仍残留定时器逻辑：%s" % forbidden_timer)
+			quit(1)
+			return
+	if not booster_func.contains("else if (frictionRampActive)"):
+		printerr("摩擦轮非阻塞状态机没有按主循环逐次推进")
 		quit(1)
 		return
 	if not code.contains("Ms_Delay(1000);"):

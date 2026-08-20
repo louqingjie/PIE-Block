@@ -157,7 +157,7 @@ func _test_drive_combo(packed: PackedScene, yaw: String, pitch: String) -> void:
 	_despawn(sim)
 
 
-## 摩擦轮稳态只能是 0/最大值，启停期间每 20ms 非阻塞增减 1；B/C 不再调档
+## 摩擦轮稳态只能是 0/最大值，启停期间每个主循环非阻塞增减 1；B/C 不再调档
 func _test_friction_switch(packed: PackedScene) -> void:
 	var cfg: Dictionary = _cfg("舵机", "舵机")
 	cfg["friction_max_duty"] = "800"
@@ -166,16 +166,16 @@ func _test_friction_switch(packed: PackedScene) -> void:
 	sim._last_booster_key = 0
 	sim._calculate_booster_control()
 	_check("摩擦轮开启先输出 500", sim._duty_booster == 500)
-	_check("摩擦轮开启进入 20ms 平滑非阻塞序列", absf(sim._friction_ramp_ms - 20.0) < 1e-6)
+	_check("摩擦轮开启进入逐主循环平滑非阻塞序列", sim._friction_ramp_direction == 1)
 	# 斜坡期间 _tick 仍应采集输入并执行主循环；输入采样会把未按下的 A 写回 0。
 	sim._tick()
 	_check("摩擦轮斜坡期间主循环仍响应", sim._last_booster_key == 0)
-	# 已经过 10ms；500→800 还需共计 599 个 10ms tick。
-	for i in range(599):
+	# 已推进 1 个主循环；500→800 还需 299 轮。
+	for i in range(299):
 		sim._tick()
-	_check("摩擦轮按 1 duty/20ms 平滑非阻塞增速至 800", sim._duty_booster == 800,
+	_check("摩擦轮按每轮 1 duty 平滑非阻塞增速至 800", sim._duty_booster == 800,
 		"实际 %d" % sim._duty_booster)
-	_check("到达用户最大值后结束斜坡", sim._friction_ramp_ms <= 0.0)
+	_check("到达用户最大值后结束斜坡", sim._friction_ramp_direction == 0)
 	# 松开开关键后按 B/C，稳态不得改变。
 	sim._booster_key = 0
 	sim._calculate_booster_control()
@@ -188,11 +188,10 @@ func _test_friction_switch(packed: PackedScene) -> void:
 	sim._last_booster_key = 0
 	sim._calculate_booster_control()
 	_check("摩擦轮关闭时先保持当前高速", sim._duty_booster == 800 and sim._status_booster == 0)
-	for i in range(2):
-		sim._tick()
-	_check("关闭 20ms 后从 800 平滑降到 799", sim._duty_booster == 799)
+	sim._tick()
+	_check("关闭后下一主循环从 800 平滑降到 799", sim._duty_booster == 799)
 	# 继续逐 duty 降至 500，再跳过 0~5% 区间归零。
-	for i in range(600):
+	for i in range(300):
 		sim._tick()
 	_check("摩擦轮逐级关闭后归零", sim._duty_booster == 0 and sim._friction_ramp_direction == 0)
 	_despawn(sim)

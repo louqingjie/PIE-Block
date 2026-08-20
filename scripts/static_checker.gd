@@ -159,7 +159,7 @@ static func _check_friction_params(issues: Array, cfg: Dictionary) -> void:
 		var value: int = text.to_int()
 		if value >= 500 and value <= 800 and value % 100 != 0:
 			issues.append({"type": "Error",
-				"msg": "摩擦轮最大占空比必须是 500~800 内的整百值；启停过程会以 1 duty/20ms 平滑变化"})
+				"msg": "摩擦轮最大占空比必须是 500~800 内的整百值；启停过程每个主循环平滑变化 1 duty"})
 
 
 # ------------------------------------------------------------------ 规则：按键冲突

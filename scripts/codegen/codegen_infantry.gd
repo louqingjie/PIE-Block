@@ -356,8 +356,7 @@ func generate(cfg: Dictionary) -> String:
 	code += "// 摇杆可摆动幅度 ±%d°（相对归中位置）\n" % servo_swing_deg
 	code += "uint16_t maxChangeDutyOfServo[2] = {%d, %d};\n" % [servo_swing, servo_swing]
 	code += "#define FRICTION_START_DUTY 500  // 官方守则：摩擦轮启动占空比\n"
-	code += "#define FRICTION_STEP_DUTY  1    // 平滑启停：每次只变化 1 duty\n"
-	code += "#define FRICTION_STEP_MS    20   // 50Hz 的一个完整 PWM 周期（每秒变化 50 duty）\n"
+	code += "#define FRICTION_STEP_DUTY  1    // 平滑启停：每个主循环只变化 1 duty\n"
 	code += "#define FRICTION_MAX_DUTY   %d   // 用户设定，校内赛安全硬上限 800\n" % friction_max_duty
 	code += "uint16_t boosterDutyOfFeed = %s;             // 拨弹电机单发转动占空比\n" % trig_spd
 	if not visual_feed:
@@ -388,8 +387,6 @@ func generate(cfg: Dictionary) -> String:
 	code += "int dutyOfMotor[%d]; // 底盘电机、供弹电机、云台电机（如有）\n" % motor_array_size
 	code += "uint16_t dutyOfBooster = 0;       // 当前摩擦轮占空比\n"
 	code += "uint16_t targetDutyOfBooster = 0; // 目标只允许 0 或 FRICTION_MAX_DUTY\n"
-	code += "volatile uint16_t frictionTickMs = 0;\n"
-	code += "uint16_t frictionLastStepMs = 0;\n"
 	code += "uint8_t frictionRampActive = 0;\n"
 	code += "uint8_t valueOfKey[3][4];\n"
 	code += "uint8_t valueOfEKey;\n"
@@ -438,18 +435,6 @@ func generate(cfg: Dictionary) -> String:
 	code += "}\n\n"
 	code += "static void FrictionBuzzerOff(void)\n{\n"
 	code += "    PWM_SET_Frequency(BUZZER_CH, 500, 0);\n"
-	code += "}\n\n"
-	code += "static uint16_t FrictionTickNow(void)\n{\n"
-	code += "    uint8_t interruptEnabled = EA;\n"
-	code += "    uint16_t now;\n"
-	code += "    EA = 0;\n"
-	code += "    now = frictionTickMs;\n"
-	code += "    EA = interruptEnabled;\n"
-	code += "    return now;\n"
-	code += "}\n\n"
-	code += "void TM2_Isr(void) interrupt 12\n{\n"
-	code += "    PIT_Timer_Clear(TIM2);\n"
-	code += "    frictionTickMs++;\n"
 	code += "}\n\n"
 
 	# --- main() ---
@@ -572,7 +557,6 @@ func generate(cfg: Dictionary) -> String:
 	code += "    StepDone(4);\n"
 	code += "    StepBegin(5);\n"
 	code += pwm_init_lines
-	code += "    PIT_Timer_Ms(TIM2, 1); // 摩擦轮非阻塞斜坡 1ms 硬件节拍\n"
 	code += "    StepDone(5);\n"
 	code += _gen_init_done("Beep")
 	code += "}\n\n"
@@ -624,9 +608,8 @@ func generate(cfg: Dictionary) -> String:
 
 	# --- CalculateBoosterControl ---
 	code += "void CalculateBoosterControl()\n{\n"
-	code += "    uint16_t now = FrictionTickNow();\n"
 	code += "    // 非阻塞开关状态机：稳态只有 0/最大值，中间 duty 仅用于平滑斜坡。\n"
-	code += "    // Timer2 每 1ms 计时；每满 20ms 最多变化 1，错过节拍绝不追赶跳级。\n"
+	code += "    // 将一次完整主循环视作原 Delay 间隔；每轮最多变化 1，不使用定时器中断。\n"
 	code += "    // 摩擦轮开关由 %s 上升沿触发\n" % cfg.get("booster_key", "A")
 	code += "    if (boosterKeyValue && !lastBoosterKeyValue)\n"
 	code += "    {\n"
@@ -637,16 +620,13 @@ func generate(cfg: Dictionary) -> String:
 	code += "            dutyOfBooster = FRICTION_START_DUTY;\n"
 	code += "        }\n"
 	code += "        frictionRampActive = (dutyOfBooster != targetDutyOfBooster);\n"
-	code += "        frictionLastStepMs = now;\n"
 	code += "        if (frictionRampActive)\n"
 	code += "            FrictionBuzzerTrace(dutyOfBooster);\n"
 	code += "        else\n"
 	code += "            FrictionBuzzerOff();\n"
 	code += "    }\n"
-	code += "\n"
-	code += "    if (frictionRampActive && (uint16_t)(now - frictionLastStepMs) >= FRICTION_STEP_MS)\n"
+	code += "    else if (frictionRampActive)\n"
 	code += "    {\n"
-	code += "        frictionLastStepMs = now;\n"
 	code += "        if (targetDutyOfBooster > dutyOfBooster)\n"
 	code += "            dutyOfBooster += FRICTION_STEP_DUTY;\n"
 	code += "        else if (dutyOfBooster > FRICTION_START_DUTY)\n"
