@@ -13,6 +13,11 @@ func _initialize() -> void:
 		infantry_ui.free()
 		quit(1)
 		return
+	if not infantry_ui.has_node("KeySetting/FrictionType/OptionButton"):
+		printerr("步兵界面缺少摩擦轮类型设置")
+		infantry_ui.free()
+		quit(1)
+		return
 	infantry_ui.free()
 	var friction_issues: Array = SC.check_infantry({"friction_max_duty": "900"})
 	var found_friction_limit: bool = false
@@ -23,7 +28,30 @@ func _initialize() -> void:
 		printerr("静态检查未阻止超过校内赛安全上限的摩擦轮占空比")
 		quit(1)
 		return
+	var disabled_issues: Array = SC.check_infantry({
+		"friction_type": "不使用", "friction_max_duty": "900",
+		"l1_io": "P64 P65", "booster_io": "P66 P67",
+	})
+	for issue in disabled_issues:
+		var disabled_msg: String = str(issue.get("msg", ""))
+		if disabled_msg.contains("摩擦轮最大占空比") or disabled_msg.contains("摩擦轮固定占用"):
+			printerr("禁用摩擦轮后仍参与 duty 或 P64/P66 占用检查：%s" % disabled_msg)
+			quit(1)
+			return
+	var invalid_type_issues: Array = SC.check_infantry({"friction_type": "有刷电机"})
+	var found_invalid_type: bool = false
+	for issue in invalid_type_issues:
+		if str(issue.get("msg", "")).contains("摩擦轮类型"):
+			found_invalid_type = true
+	if not found_invalid_type:
+		printerr("静态检查未报告非法摩擦轮类型")
+		quit(1)
+		return
 	var code: String = CG.new().generate({})
+	if code != CG.new().generate({"friction_type": "无刷电调"}):
+		printerr("旧项目缺少 friction_type 时未保持原有无刷生成结果")
+		quit(1)
+		return
 	# P60/P62/P64/P66 不再统一覆盖为 50Hz，四路均服从 IO 设置区。
 	# 把拨弹/底盘角色移到后四路，隔离验证前四路的纯 IO 配置结果。
 	var front_role_cfg: Dictionary = {
@@ -219,4 +247,53 @@ func _initialize() -> void:
 		quit(1)
 		return
 	print("=== C251 步兵 目视闭环拨弹 编译: 通过 ===")
+	# —— 不使用摩擦轮：彻底移除控制逻辑并释放 P64/P66 ——
+	var dcfg: Dictionary = {
+		"friction_type": "不使用",
+		"l1_io": "P64 P65",
+		"booster_io": "P66 P67",
+		"io_init": {"P64": "电机", "P66": "电机"},
+	}
+	var dcode: String = CG.new().generate(dcfg)
+	for forbidden_friction in ["FRICTION_MAX_DUTY", "dutyOfBooster", "boosterKeyValue",
+			"CalculateBoosterControl", "FrictionBuzzerTrace", "FrictionBuzzerOff",
+			"Ms_Delay(1000);"]:
+		if dcode.contains(forbidden_friction):
+			printerr("不使用摩擦轮的代码仍残留：%s" % forbidden_friction)
+			quit(1)
+			return
+	if not dcode.contains("void Main_Countrol(int *dutyOfMotor, uint16_t *dutyOfServo)") \
+			or not dcode.contains("(uint16_t)abs(dutyOfMotor[0]), dutyOfMotor[4]"):
+		printerr("禁用摩擦轮后 P64/P66 未按底盘/拨弹普通端口生成")
+		quit(1)
+		return
+	var yaw_p64_code: String = CG.new().generate({
+		"friction_type": "不使用", "yaw_drive": "电机", "yaw_io": "P64",
+		"pitch_drive": "舵机", "pitch_io": "P66",
+	})
+	if not yaw_p64_code.contains("(uint16_t)abs(dutyOfMotor[5]), dutyOfServo[1]"):
+		printerr("禁用摩擦轮后 P64/P66 未按云台电机/舵机生成")
+		quit(1)
+		return
+	var aux_p64_code: String = CG.new().generate({
+		"friction_type": "不使用", "io_init": {"P64": "电机"},
+		"mode_count": "1", "modes": [{"rows": [{
+			"key": "A", "dir": "正向", "mode": "直接", "param": "1234", "io": "P64",
+		}]}],
+	})
+	if not aux_p64_code.contains("dutyOfAuxMotor[2]"):
+		printerr("禁用摩擦轮后高级映射不能使用 P64")
+		quit(1)
+		return
+	var invalid_code: String = CG.new().generate({"friction_type": "非法值"})
+	if not invalid_code.contains("FRICTION_MAX_DUTY") or not invalid_code.contains("Ms_Delay(1000);"):
+		printerr("非法摩擦轮类型未安全回退到无刷电调")
+		quit(1)
+		return
+	var dresult: Dictionary = tc.build_project(TC.PROJECT_DST, dcode)
+	if not bool(dresult.get("ok", false)):
+		printerr(str(dresult.get("log", "禁用摩擦轮 C251 编译失败")))
+		quit(1)
+		return
+	print("=== C251 步兵 不使用摩擦轮 编译: 通过 ===")
 	quit(0)

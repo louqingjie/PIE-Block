@@ -71,7 +71,7 @@ text = "左前轮 IO"
 layout_mode = 2
 size_flags_horizontal = 8
 selected = 3
-item_count = 6
+item_count = 8
 popup/item_0/text = "P77 P27"
 popup/item_0/id = 0
 popup/item_1/text = "P76 P26"
@@ -84,6 +84,10 @@ popup/item_4/text = "P60 P61"
 popup/item_4/id = 4
 popup/item_5/text = "P62 P63"
 popup/item_5/id = 5
+popup/item_6/text = "P64 P65"
+popup/item_6/id = 6
+popup/item_7/text = "P66 P67"
+popup/item_7/id = 7
 
 [node name="OptionButton2" type="OptionButton" parent="Chassis/L1" unique_id=907958937]
 layout_mode = 2
@@ -107,7 +111,7 @@ text = "左后轮 IO"
 layout_mode = 2
 size_flags_horizontal = 8
 selected = 2
-item_count = 6
+item_count = 8
 popup/item_0/text = "P77 P27"
 popup/item_0/id = 0
 popup/item_1/text = "P76 P26"
@@ -120,6 +124,10 @@ popup/item_4/text = "P60 P61"
 popup/item_4/id = 4
 popup/item_5/text = "P62 P63"
 popup/item_5/id = 5
+popup/item_6/text = "P64 P65"
+popup/item_6/id = 6
+popup/item_7/text = "P66 P67"
+popup/item_7/id = 7
 
 [node name="OptionButton2" type="OptionButton" parent="Chassis/L2" unique_id=10960150]
 layout_mode = 2
@@ -143,7 +151,7 @@ text = "右前轮 IO"
 layout_mode = 2
 size_flags_horizontal = 8
 selected = 1
-item_count = 6
+item_count = 8
 popup/item_0/text = "P77 P27"
 popup/item_0/id = 0
 popup/item_1/text = "P76 P26"
@@ -156,6 +164,10 @@ popup/item_4/text = "P60 P61"
 popup/item_4/id = 4
 popup/item_5/text = "P62 P63"
 popup/item_5/id = 5
+popup/item_6/text = "P64 P65"
+popup/item_6/id = 6
+popup/item_7/text = "P66 P67"
+popup/item_7/id = 7
 
 [node name="OptionButton2" type="OptionButton" parent="Chassis/R1" unique_id=638870536]
 layout_mode = 2
@@ -179,7 +191,7 @@ text = "右后轮 IO"
 layout_mode = 2
 size_flags_horizontal = 8
 selected = 0
-item_count = 6
+item_count = 8
 popup/item_0/text = "P77 P27"
 popup/item_0/id = 0
 popup/item_1/text = "P76 P26"
@@ -192,6 +204,10 @@ popup/item_4/text = "P60 P61"
 popup/item_4/id = 4
 popup/item_5/text = "P62 P63"
 popup/item_5/id = 5
+popup/item_6/text = "P64 P65"
+popup/item_6/id = 6
+popup/item_7/text = "P66 P67"
+popup/item_7/id = 7
 
 [node name="OptionButton2" type="OptionButton" parent="Chassis/R2" unique_id=1034063638]
 layout_mode = 2

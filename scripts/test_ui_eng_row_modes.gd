@@ -12,6 +12,7 @@ extends SceneTree
 
 const UI_SCENE_PATH: String = "res://scenes/ui.tscn"
 const CHASSIS_L1: NodePath = "VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/Chassis/L1/OptionButton"
+const SC = preload("res://scripts/static_checker.gd")
 
 var _fail: int = 0
 
@@ -78,6 +79,13 @@ func _mode_items(btn: Node) -> Array:
 	return out
 
 
+func _pin_item_disabled(btn: OptionButton, pin: String) -> bool:
+	for i in range(btn.item_count):
+		if btn.get_item_text(i).split(" ")[0] == pin:
+			return btn.is_item_disabled(i)
+	return true
+
+
 func _initialize() -> void:
 	print("=== 按键映射行控制方式过滤验证 ===")
 	# In --script mode autoload names are registered after this script's constants.
@@ -89,6 +97,9 @@ func _initialize() -> void:
 	await process_frame
 
 	ui._apply_kind_visibility("engineer", 1)
+	var engineer_l1: OptionButton = ui.get_node(CHASSIS_L1)
+	_check("工程构型底盘可使用 P64/P66",
+		not _pin_item_disabled(engineer_l1, "P64") and not _pin_item_disabled(engineer_l1, "P66"))
 	var eng_page: String = ui.ENGINEER + "/TabContainer/M1"
 	var vb: Node = ui.get_node(NodePath(eng_page + "/ScrollContainer/VBoxContainer"))
 	# 默认场景 0 真实行，先加两行
@@ -172,6 +183,41 @@ func _initialize() -> void:
 
 	# ---- 步兵高级设置（ADV_ENGINEER）同样过滤 ----
 	ui._apply_kind_visibility("infantry", 0)
+	# ---- 摩擦轮类型：无刷保留 P64/P66；禁用后释放并关闭参数控件 ----
+	var friction_type: OptionButton = ui.get_node(ui.P_FRICTION_TYPE)
+	var friction_key: OptionButton = ui.get_node(ui.P_BOOSTER_KEY)
+	var friction_duty: LineEdit = ui.get_node(ui.P_FRICTION_MAX_DUTY)
+	var infantry_port_selectors: Array = [
+		ui.get_node(ui.P_L1_IO), ui.get_node(ui.P_L2_IO),
+		ui.get_node(ui.P_R1_IO), ui.get_node(ui.P_R2_IO),
+		ui.get_node(ui.P_BOOSTER_IO), ui.get_node(ui.P_YAW_IO), ui.get_node(ui.P_PITCH_IO),
+	]
+	var brushless_reserved: bool = true
+	for port_btn in infantry_port_selectors:
+		brushless_reserved = brushless_reserved \
+			and _pin_item_disabled(port_btn, "P64") and _pin_item_disabled(port_btn, "P66")
+	_check("默认无刷模式在普通角色下拉中保留 P64/P66", brushless_reserved)
+	_pick(ui, friction_type, "不使用")
+	ui._sync_friction_type_ui()
+	var disabled_released: bool = true
+	for port_btn in infantry_port_selectors:
+		disabled_released = disabled_released \
+			and not _pin_item_disabled(port_btn, "P64") and not _pin_item_disabled(port_btn, "P66")
+	_check("不使用摩擦轮时释放 P64/P66 给底盘/拨弹/云台", disabled_released)
+	_check("不使用摩擦轮时禁用开关键和最大 duty", friction_key.disabled and not friction_duty.editable)
+	var friction_l1: OptionButton = ui.get_node(ui.P_L1_IO)
+	_pick(ui, friction_l1, "P64 P65")
+	_pick(ui, friction_type, "无刷电调")
+	ui._sync_friction_type_ui()
+	_check("切回无刷时保留已选 P64 配置", ui._option_text(friction_l1) == "P64 P65")
+	var has_friction_conflict: bool = false
+	for issue in SC.check_infantry(ui._collect_config()):
+		if str(issue.get("msg", "")).contains("P64 已被摩擦轮固定占用"):
+			has_friction_conflict = true
+	_check("切回无刷后的 P64 冲突阻止生成", has_friction_conflict)
+	# 恢复默认底盘端口，避免影响后续 IO 锁定测试。
+	_pick(ui, friction_l1, "P74 P24")
+	ui._sync_io_locks()
 	var adv_page: String = ui.ADV_ENGINEER + "/TabContainer/M1"
 	var adv_vb: Node = ui.get_node(NodePath(adv_page + "/ScrollContainer/VBoxContainer"))
 	var adv_row: Node = ui._add_eng_row(adv_vb)

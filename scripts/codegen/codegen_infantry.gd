@@ -78,6 +78,9 @@ func gimbal_params(cfg: Dictionary) -> Dictionary:
 ## 基于配置字典生成完整的 main.c 代码字符串
 func generate(cfg: Dictionary) -> String:
 	# --- 解析参数（非法输入回退默认值并限幅，保证产物可编译）---
+	# 缺失字段兼容旧项目；非法值由静态检查报错，生成器仍按无刷安全回退。
+	var friction_type: String = str(cfg.get("friction_type", "无刷电调"))
+	var friction_enabled: bool = friction_type != "不使用"
 	var ch: String = _int_or_default(cfg.get("channel", ""), 36, 0, 125)
 	var dz: String = _int_or_default(cfg.get("deadzone", ""), 10, 0, 2047)
 	var normal_spd: String = _int_or_default(cfg.get("normal_speed", ""), 4000, 0, 10000)
@@ -175,12 +178,12 @@ func generate(cfg: Dictionary) -> String:
 	var dir_exprs: Array = ["1", "1", "1", "1", "1", "1", "1", "1"]
 	var duty_vals: Array = ["0", "0", "0", "0", "0", "0", "0", "0"]
 
-	# 摩擦轮固定占用 P64 / P66；初始化频率服从 IO 设置区，便于实测 50/10000Hz。
-	# Dir 仍固定 0（见上方实测说明），占空比仍由摩擦轮状态机独占控制。
-	dir_exprs[friction_l_slot] = "0"
-	dir_exprs[friction_r_slot] = "0"
-	duty_vals[friction_l_slot] = "dutyOfBooster"
-	duty_vals[friction_r_slot] = "dutyOfBooster"
+	# 启用无刷电调时固定占用 P64/P66；禁用时不写方向、占空比或所有权。
+	if friction_enabled:
+		dir_exprs[friction_l_slot] = "0"
+		dir_exprs[friction_r_slot] = "0"
+		duty_vals[friction_l_slot] = "dutyOfBooster"
+		duty_vals[friction_r_slot] = "dutyOfBooster"
 
 	# 拨弹电机 -> dutyOfMotor[4]
 	if feeder_slot >= 0:
@@ -198,7 +201,7 @@ func generate(cfg: Dictionary) -> String:
 	if not pitch_is_servo:
 		motor_slots.append([pitch_slot, pitch_motor_idx])
 	# 摩擦轮槽位受硬件保护规则约束，绝不允许被其他角色改写（见《RM电控指南》）
-	var friction_slots: Array = [friction_l_slot, friction_r_slot]
+	var friction_slots: Array = [friction_l_slot, friction_r_slot] if friction_enabled else []
 	for pair in motor_slots:
 		var s: int = pair[0]
 		if s < 0:
@@ -274,9 +277,12 @@ func generate(cfg: Dictionary) -> String:
 	var switch_key: String = str(cfg.get("mode_switch_key", "E"))
 	var mode_keys: Array = cfg.get("mode_keys", [])
 	var modes: Array = cfg.get("modes", []) if cfg.get("modes", []) is Array else []
-	# 固定子系统占用的扩展板槽位（摩擦轮 / 拨弹 / 底盘 / 云台）
+	# 固定子系统占用的扩展板槽位（启用时的摩擦轮 / 拨弹 / 底盘 / 云台）
 	var owned_slots: Array = []
-	for s in [friction_l_slot, friction_r_slot, feeder_slot, yaw_slot, pitch_slot]:
+	var fixed_slots: Array = [feeder_slot, yaw_slot, pitch_slot]
+	if friction_enabled:
+		fixed_slots.append_array([friction_l_slot, friction_r_slot])
+	for s in fixed_slots:
 		if s >= 0 and not s in owned_slots:
 			owned_slots.append(s)
 	for pair in motor_slots:
@@ -325,6 +331,11 @@ func generate(cfg: Dictionary) -> String:
 	var init_str: String = "%d, %d,\n                          %d, %d,\n                          %d, %d,\n                          %d, %d" % [init_vals[0], init_vals[1], init_vals[2], init_vals[3], init_vals[4], init_vals[5], init_vals[6], init_vals[7]]
 	var dir_str: String = "%s, %s,\n                          %s, %s,\n                          %s, %s,\n                          %s, %s" % [dir_exprs[0], dir_exprs[1], dir_exprs[2], dir_exprs[3], dir_exprs[4], dir_exprs[5], dir_exprs[6], dir_exprs[7]]
 	var duty_str: String = "%s, %s,\n                          %s, %s,\n                          %s, %s,\n                          %s, %s" % [duty_vals[0], duty_vals[1], duty_vals[2], duty_vals[3], duty_vals[4], duty_vals[5], duty_vals[6], duty_vals[7]]
+	var main_control_params: String = "int *dutyOfMotor, uint16_t *dutyOfServo"
+	var main_control_args: String = "dutyOfMotor, dutyOfServo"
+	if friction_enabled:
+		main_control_params += ", uint16_t dutyOfBooster"
+		main_control_args += ", dutyOfBooster"
 
 	# --- 组装完整 main.c ---
 	var code: String = "// 步兵机器人操作代码（由 Pie-Block 配置生成器自动生成）\n"
@@ -350,9 +361,10 @@ func generate(cfg: Dictionary) -> String:
 		% [yaw_mid_val, pitch_mid_val, yaw_mid_deg, pitch_mid_deg]
 	code += "// 摇杆可摆动幅度 ±%d°（相对归中位置）\n" % servo_swing_deg
 	code += "uint16_t maxChangeDutyOfServo[2] = {%d, %d};\n" % [servo_swing, servo_swing]
-	code += "#define FRICTION_START_DUTY 500  // 官方守则：摩擦轮启动占空比\n"
-	code += "#define FRICTION_STEP_DUTY  1    // 平滑启停：每个主循环只变化 1 duty\n"
-	code += "#define FRICTION_MAX_DUTY   %d   // 用户设定，校内赛安全硬上限 800\n" % friction_max_duty
+	if friction_enabled:
+		code += "#define FRICTION_START_DUTY 500  // 官方守则：摩擦轮启动占空比\n"
+		code += "#define FRICTION_STEP_DUTY  1    // 平滑启停：每个主循环只变化 1 duty\n"
+		code += "#define FRICTION_MAX_DUTY   %d   // 用户设定，校内赛安全硬上限 800\n" % friction_max_duty
 	code += "uint16_t boosterDutyOfFeed = %s;             // 拨弹电机单发转动占空比\n" % trig_spd
 	if not visual_feed:
 		code += "uint16_t boosterFeedDelayMs = %s;              // 拨弹电机单发转动时长(ms)\n" % trig_time
@@ -380,13 +392,16 @@ func generate(cfg: Dictionary) -> String:
 	code += "float floatDutyOfServo[2]; // 云台舵机\n"
 	code += "uint16_t dutyOfServo[2];\n"
 	code += "int dutyOfMotor[%d]; // 底盘电机、供弹电机、云台电机（如有）\n" % motor_array_size
-	code += "uint16_t dutyOfBooster = 0;       // 当前摩擦轮占空比\n"
-	code += "uint16_t targetDutyOfBooster = 0; // 目标只允许 0 或 FRICTION_MAX_DUTY\n"
-	code += "uint8_t frictionRampActive = 0;\n"
+	if friction_enabled:
+		code += "uint16_t dutyOfBooster = 0;       // 当前摩擦轮占空比\n"
+		code += "uint16_t targetDutyOfBooster = 0; // 目标只允许 0 或 FRICTION_MAX_DUTY\n"
+		code += "uint8_t frictionRampActive = 0;\n"
 	code += "uint8_t valueOfKey[3][4];\n"
 	code += "uint8_t valueOfEKey;\n"
-	code += "uint8_t triggerKeyValue, lastTriggerKeyValue, boosterKeyValue, lastBoosterKeyValue;\n"
-	code += "uint8_t statusOfBooster = 0;\n"
+	code += "uint8_t triggerKeyValue, lastTriggerKeyValue;\n"
+	if friction_enabled:
+		code += "uint8_t boosterKeyValue, lastBoosterKeyValue;\n"
+		code += "uint8_t statusOfBooster = 0;\n"
 	# 高级设置：共享多模式按键映射的辅助执行器
 	if not aux_servo_slots.is_empty() or not aux_motor_slots.is_empty() or use_aux_main[0] or use_aux_main[1]:
 		code += "int dutyOfAuxMotor[8];          // 高级设置辅助电机（按槽位）\n"
@@ -408,13 +423,14 @@ func generate(cfg: Dictionary) -> String:
 	code += "void ReadControllerInputs();\n"
 	code += "void CalculateMotorControls();\n"
 	code += "void CalculateGimbalControls();\n"
-	code += "void CalculateBoosterControl();\n"
+	if friction_enabled:
+		code += "void CalculateBoosterControl();\n"
 	if not aux_servo_slots.is_empty() or not aux_motor_slots.is_empty() or use_aux_main[0] or use_aux_main[1]:
 		code += "void UpdateMode();\n"
 		for mi in range(mode_count):
 			code += "void Calculate_Mode%d_Controls();\n" % (mi + 1)
 	code += "uint8_t Get_Dir(int rawdata);\n"
-	code += "void Main_Countrol(int *dutyOfMotor, uint16_t *dutyOfServo, uint16_t dutyOfBooster);\n"
+	code += "void Main_Countrol(%s);\n" % main_control_params
 	code += "void ExpansionBoradControl(uint8_t control_cmd, uint16_t data_p60, uint16_t data_p62, uint16_t data_p64,\n"
 	code += "                           uint16_t data_p66, uint16_t data_p74, uint16_t data_p75, uint16_t data_p76,\n"
 	code += "                           uint16_t data_p77);\n\n"
@@ -424,13 +440,14 @@ func generate(cfg: Dictionary) -> String:
 	# P33 改用 PWMA_CH4N，避免斜坡音调连续变频扰动主控舵机所在的 PWMB 时基。
 	code += _gen_led_diag_tools("GPIO_P3", "GPIO_Pin_5", "GPIO_Pin_6", "GPIO_Pin_7", "PWMA_CH4N_P33")
 	code += CodeGenBase.UART_TX_QUERY_CODE
-	code += "// 摩擦轮斜坡蜂鸣器跟踪：音调 Hz 等于当前 duty；只在增减速期间发声。\n"
-	code += "static void FrictionBuzzerTrace(uint16_t duty)\n{\n"
-	code += "    PWM_SET_Frequency(BUZZER_CH, duty, 5000);\n"
-	code += "}\n\n"
-	code += "static void FrictionBuzzerOff(void)\n{\n"
-	code += "    PWM_SET_Frequency(BUZZER_CH, 500, 0);\n"
-	code += "}\n\n"
+	if friction_enabled:
+		code += "// 摩擦轮斜坡蜂鸣器跟踪：音调 Hz 等于当前 duty；只在增减速期间发声。\n"
+		code += "static void FrictionBuzzerTrace(uint16_t duty)\n{\n"
+		code += "    PWM_SET_Frequency(BUZZER_CH, duty, 5000);\n"
+		code += "}\n\n"
+		code += "static void FrictionBuzzerOff(void)\n{\n"
+		code += "    PWM_SET_Frequency(BUZZER_CH, 500, 0);\n"
+		code += "}\n\n"
 
 	# --- main() ---
 	code += "void main()\n{\n"
@@ -457,7 +474,8 @@ func generate(cfg: Dictionary) -> String:
 	code += "        ReadControllerInputs();    // 统一读取输入\n"
 	code += "        CalculateMotorControls();  // 计算电机控制\n"
 	code += "        CalculateGimbalControls(); // 计算云台控制\n"
-	code += "        CalculateBoosterControl(); // 计算摩擦轮控制\n"
+	if friction_enabled:
+		code += "        CalculateBoosterControl(); // 计算摩擦轮控制\n"
 	if not aux_servo_slots.is_empty() or not aux_motor_slots.is_empty() or use_aux_main[0] or use_aux_main[1]:
 		code += "        UpdateMode();\n"
 		code += "        // 高级设置：按当前模式执行按键映射\n"
@@ -509,14 +527,14 @@ func generate(cfg: Dictionary) -> String:
 		code += "        if (triggerKeyValue && !lastTriggerKeyValue)\n"
 		code += "        {\n"
 		code += "            dutyOfMotor[4] = boosterDutyOfFeed;\n"
-		code += "            Main_Countrol(dutyOfMotor, dutyOfServo, dutyOfBooster);\n"
+		code += "            Main_Countrol(%s);\n" % main_control_args
 		code += "            Ms_Delay(boosterFeedDelayMs);\n"
 		code += "            dutyOfMotor[4] = 0;\n"
-		code += "            Main_Countrol(dutyOfMotor, dutyOfServo, dutyOfBooster);\n"
+		code += "            Main_Countrol(%s);\n" % main_control_args
 		code += "        }\n"
 		code += "        lastTriggerKeyValue = triggerKeyValue;\n\n"
 	code += "        // 发送控制函数\n"
-	code += "        Main_Countrol(dutyOfMotor, dutyOfServo, dutyOfBooster);\n"
+	code += "        Main_Countrol(%s);\n" % main_control_args
 	code += "        Ms_Delay(10);\n"
 	code += "    }\n}\n\n"
 
@@ -547,8 +565,9 @@ func generate(cfg: Dictionary) -> String:
 	code += "    StepBegin(4);\n"
 	code += "    ExpansionBoradControl(Init_Order,\n"
 	code += "                          %s); // p60,p62,p64,p66,p74,p75,p76,p77\n" % init_str
-	code += "    // 摩擦轮初始化后必须留 >=1000ms 硬件反应时间（见《RM电控指南》），不得缩短\n"
-	code += "    Ms_Delay(1000);\n"
+	if friction_enabled:
+		code += "    // 摩擦轮初始化后必须留 >=1000ms 硬件反应时间（见《RM电控指南》），不得缩短\n"
+		code += "    Ms_Delay(1000);\n"
 	code += "    StepDone(4);\n"
 	code += "    StepBegin(5);\n"
 	code += pwm_init_lines
@@ -581,9 +600,11 @@ func generate(cfg: Dictionary) -> String:
 	code += "            valueOfKey[i][j] = RcKeyValueRead(keyOffsets[i][j]);\n"
 	code += "        }\n"
 	code += "    }\n"
-	code += "    // 读取扳机键和摩擦轮开关键\n"
+	code += "    // 读取扳机键\n"
 	code += "    triggerKeyValue = RcKeyValueRead(%s);\n" % trigger_key_offset
-	code += "    boosterKeyValue = RcKeyValueRead(%s);\n" % booster_key_offset
+	if friction_enabled:
+		code += "    // 读取摩擦轮开关键\n"
+		code += "    boosterKeyValue = RcKeyValueRead(%s);\n" % booster_key_offset
 	if not aux_servo_slots.is_empty() or not aux_motor_slots.is_empty() or use_aux_main[0] or use_aux_main[1]:
 		code += "    valueOfEKey = RcKeyValueRead(KEY_OFFSET_1); // 高级设置模式切换键\n"
 	code += "}\n\n"
@@ -602,43 +623,44 @@ func generate(cfg: Dictionary) -> String:
 	code += "}\n\n"
 
 	# --- CalculateBoosterControl ---
-	code += "void CalculateBoosterControl()\n{\n"
-	code += "    // 非阻塞开关状态机：稳态只有 0/最大值，中间 duty 仅用于平滑斜坡。\n"
-	code += "    // 将一次完整主循环视作原 Delay 间隔；每轮最多变化 1，不使用定时器中断。\n"
-	code += "    // 摩擦轮开关由 %s 上升沿触发\n" % cfg.get("booster_key", "A")
-	code += "    if (boosterKeyValue && !lastBoosterKeyValue)\n"
-	code += "    {\n"
-	code += "        statusOfBooster = !statusOfBooster;\n"
-	code += "        targetDutyOfBooster = statusOfBooster ? FRICTION_MAX_DUTY : 0;\n"
-	code += "        if (statusOfBooster && dutyOfBooster == 0)\n"
-	code += "        {\n"
-	code += "            dutyOfBooster = FRICTION_START_DUTY;\n"
-	code += "        }\n"
-	code += "        frictionRampActive = (dutyOfBooster != targetDutyOfBooster);\n"
-	code += "        if (frictionRampActive)\n"
-	code += "            FrictionBuzzerTrace(dutyOfBooster);\n"
-	code += "        else\n"
-	code += "            FrictionBuzzerOff();\n"
-	code += "    }\n"
-	code += "    else if (frictionRampActive)\n"
-	code += "    {\n"
-	code += "        if (targetDutyOfBooster > dutyOfBooster)\n"
-	code += "            dutyOfBooster += FRICTION_STEP_DUTY;\n"
-	code += "        else if (dutyOfBooster > FRICTION_START_DUTY)\n"
-	code += "            dutyOfBooster -= FRICTION_STEP_DUTY;\n"
-	code += "        else\n"
-	code += "            dutyOfBooster = 0; // 跳过无有效转动的 0~5% 区间\n"
-	code += "\n"
-	code += "        if (dutyOfBooster == targetDutyOfBooster)\n"
-	code += "        {\n"
-	code += "            frictionRampActive = 0;\n"
-	code += "            FrictionBuzzerOff();\n"
-	code += "        }\n"
-	code += "        else\n"
-	code += "            FrictionBuzzerTrace(dutyOfBooster);\n"
-	code += "    }\n"
-	code += "    lastBoosterKeyValue = boosterKeyValue;\n"
-	code += "}\n\n"
+	if friction_enabled:
+		code += "void CalculateBoosterControl()\n{\n"
+		code += "    // 非阻塞开关状态机：稳态只有 0/最大值，中间 duty 仅用于平滑斜坡。\n"
+		code += "    // 将一次完整主循环视作原 Delay 间隔；每轮最多变化 1，不使用定时器中断。\n"
+		code += "    // 摩擦轮开关由 %s 上升沿触发\n" % cfg.get("booster_key", "A")
+		code += "    if (boosterKeyValue && !lastBoosterKeyValue)\n"
+		code += "    {\n"
+		code += "        statusOfBooster = !statusOfBooster;\n"
+		code += "        targetDutyOfBooster = statusOfBooster ? FRICTION_MAX_DUTY : 0;\n"
+		code += "        if (statusOfBooster && dutyOfBooster == 0)\n"
+		code += "        {\n"
+		code += "            dutyOfBooster = FRICTION_START_DUTY;\n"
+		code += "        }\n"
+		code += "        frictionRampActive = (dutyOfBooster != targetDutyOfBooster);\n"
+		code += "        if (frictionRampActive)\n"
+		code += "            FrictionBuzzerTrace(dutyOfBooster);\n"
+		code += "        else\n"
+		code += "            FrictionBuzzerOff();\n"
+		code += "    }\n"
+		code += "    else if (frictionRampActive)\n"
+		code += "    {\n"
+		code += "        if (targetDutyOfBooster > dutyOfBooster)\n"
+		code += "            dutyOfBooster += FRICTION_STEP_DUTY;\n"
+		code += "        else if (dutyOfBooster > FRICTION_START_DUTY)\n"
+		code += "            dutyOfBooster -= FRICTION_STEP_DUTY;\n"
+		code += "        else\n"
+		code += "            dutyOfBooster = 0; // 跳过无有效转动的 0~5% 区间\n"
+		code += "\n"
+		code += "        if (dutyOfBooster == targetDutyOfBooster)\n"
+		code += "        {\n"
+		code += "            frictionRampActive = 0;\n"
+		code += "            FrictionBuzzerOff();\n"
+		code += "        }\n"
+		code += "        else\n"
+		code += "            FrictionBuzzerTrace(dutyOfBooster);\n"
+		code += "    }\n"
+		code += "    lastBoosterKeyValue = boosterKeyValue;\n"
+		code += "}\n\n"
 
 	# --- CalculateGimbalControls ---
 	code += "void CalculateGimbalControls()\n{\n"
@@ -686,7 +708,7 @@ func generate(cfg: Dictionary) -> String:
 			code += _gen_mode_rows(rows, io_init_shared, "Mode%d" % (mi + 1))
 
 	# --- Main_Countrol ---
-	code += "void Main_Countrol(int *dutyOfMotor, uint16_t *dutyOfServo, uint16_t dutyOfBooster)\n{\n"
+	code += "void Main_Countrol(%s)\n{\n" % main_control_params
 	code += "    // 底盘方向会随摇杆实时变化，必须先发方向帧；拓展板处理完成后再发占空比帧\n"
 	code += "    ExpansionBoradControl(Dir_Change_Order,\n"
 	code += "                          %s);\n" % dir_str
@@ -701,8 +723,8 @@ func generate(cfg: Dictionary) -> String:
 	code += "/// @param control_cmd\n"
 	code += "/// @param data_p60 供弹电机\n"
 	code += "/// @param data_p62 空\n"
-	code += "/// @param data_p64 右摩擦轮\n"
-	code += "/// @param data_p66 左摩擦轮\n"
+	code += "/// @param data_p64 %s\n" % ("右摩擦轮" if friction_enabled else "普通扩展板输出")
+	code += "/// @param data_p66 %s\n" % ("左摩擦轮" if friction_enabled else "普通扩展板输出")
 	code += "/// @param data_p74 左前电机\n"
 	code += "/// @param data_p75 左后电机\n"
 	code += "/// @param data_p76 右前电机\n"

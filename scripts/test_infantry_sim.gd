@@ -52,6 +52,7 @@ func _initialize() -> void:
 	await _test_friction_color(packed)
 	await _test_audio(packed)
 	await _test_friction_switch(packed)
+	await _test_friction_disabled(packed)
 	await _test_fire(packed)
 	await _test_visual_feed(packed)
 	await _test_bullet_visual(packed)
@@ -194,6 +195,29 @@ func _test_friction_switch(packed: PackedScene) -> void:
 	for i in range(300):
 		sim._tick()
 	_check("摩擦轮逐级关闭后归零", sim._duty_booster == 0 and sim._friction_ramp_direction == 0)
+	_despawn(sim)
+
+
+func _test_friction_disabled(packed: PackedScene) -> void:
+	var cfg: Dictionary = _cfg("舵机", "舵机")
+	cfg["friction_type"] = "不使用"
+	var sim: Node = await _spawn(packed, cfg)
+	_check("禁用摩擦轮后两个轮子隐藏",
+		sim._friction_nodes.size() == 2
+			and not sim._friction_nodes[0].visible and not sim._friction_nodes[1].visible)
+	sim._booster_key = 1
+	sim._last_booster_key = 0
+	sim._step_once()
+	_check("禁用摩擦轮后忽略开关键且无斜坡",
+		sim._duty_booster == 0 and sim._status_booster == 0
+			and sim._friction_ramp_direction == 0)
+	_check("禁用摩擦轮后音效目标为 0", sim._friction_target_freq() == 0.0)
+	_check("禁用摩擦轮后弹丸按低速掉落", absf(sim._muzzle_speed() - 2.0) < 0.01)
+	var before: int = sim._bullets.size()
+	sim._trigger_key = 1
+	sim._last_trigger_key = 0
+	sim._step_once()
+	_check("禁用摩擦轮后拨弹仍能产出弹丸", sim._bullets.size() == before + 1)
 	_despawn(sim)
 
 

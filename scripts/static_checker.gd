@@ -36,12 +36,26 @@ static func check_infantry(cfg: Dictionary) -> Array:
 	_check_deadzone(issues, cfg)
 	_check_speeds(issues, cfg)
 	_check_trigger_params(issues, cfg)
-	_check_friction_params(issues, cfg)
+	_check_friction_type(issues, cfg)
+	if _friction_enabled(cfg):
+		_check_friction_params(issues, cfg)
 	_check_arrow_trigger_conflict(issues, cfg)
 	_check_io_duplicate(issues, cfg)
 	_check_gimbal_pin_conflict(issues, cfg)
 	_check_infantry_shared(issues, cfg)
 	return issues
+
+
+static func _friction_enabled(cfg: Dictionary) -> bool:
+	# 缺失字段兼容旧项目；非法值也按无刷处理，确保生成器安全回退且不会释放保护端口。
+	return str(cfg.get("friction_type", "无刷电调")) != "不使用"
+
+
+static func _check_friction_type(issues: Array, cfg: Dictionary) -> void:
+	var value: String = str(cfg.get("friction_type", "无刷电调"))
+	if not value in ["无刷电调", "不使用"]:
+		issues.append({"type": "Error",
+			"msg": "摩擦轮类型「%s」无效（只支持「无刷电调」或「不使用」）；已按无刷电调安全处理" % value})
 
 
 ## 工程多模式检查（工程页 + 逆解算页共同配置同一份固件）
@@ -166,15 +180,19 @@ static func _check_friction_params(issues: Array, cfg: Dictionary) -> void:
 static func _check_arrow_trigger_conflict(issues: Array, cfg: Dictionary) -> void:
 	var trig_key: String = str(cfg.get("trigger_key", ""))
 	var boost_key: String = str(cfg.get("booster_key", ""))
+	var friction_enabled: bool = _friction_enabled(cfg)
 	var arrow_key: String = str(cfg.get("arrow_key", "移动"))
 	# 扳机键与摩擦轮开关键不能相同
-	if trig_key == boost_key:
+	if friction_enabled and trig_key == boost_key:
 		issues.append({"type": "Error",
 			"msg": "扳机键与摩擦轮开关键都设为「%s」，会同时触发单发拨弹和摩擦轮开关" % trig_key})
 	# 方向键被设为「移动」或「冲刺」时，扳机键/开关键不能占用方向键
 	var arrow_active: bool = arrow_key in ["移动", "冲刺"]
 	if arrow_active:
-		for pair in [[trig_key, "扳机键"], [boost_key, "摩擦轮开关键"]]:
+		var key_roles: Array = [[trig_key, "扳机键"]]
+		if friction_enabled:
+			key_roles.append([boost_key, "摩擦轮开关键"])
+		for pair in key_roles:
 			if pair[0] in ARROW_KEY_TEXTS:
 				issues.append({"type": "Error",
 					"msg": "方向键已被设为「%s」，但%s也使用了方向键「%s」，二者不能相同"
@@ -205,13 +223,14 @@ static func _check_io_duplicate(issues: Array, cfg: Dictionary) -> void:
 			io_map[pin] = []
 		io_map[pin].append({"label": entry["label"], "group": entry["group"]})
 	# 摩擦轮固定占用 P64/P66，任何其他角色选到这两个引脚都是冲突
-	for pin2 in FRICTION_PINS:
-		if io_map.has(pin2):
-			var occupants: Array = []
-			for r2 in io_map[pin2]:
-				occupants.append(r2["label"])
-			issues.append({"type": "Error",
-				"msg": "%s 已被摩擦轮固定占用，不能再分配给：%s" % [pin2, ", ".join(occupants)]})
+	if _friction_enabled(cfg):
+		for pin2 in FRICTION_PINS:
+			if io_map.has(pin2):
+				var occupants: Array = []
+				for r2 in io_map[pin2]:
+					occupants.append(r2["label"])
+				issues.append({"type": "Error",
+					"msg": "%s 已被摩擦轮固定占用，不能再分配给：%s" % [pin2, ", ".join(occupants)]})
 	# 检查每个引脚的所有引用
 	for pin3 in io_map.keys():
 		var refs: Array = io_map[pin3]
@@ -265,7 +284,7 @@ static func _check_gimbal_pin_conflict(issues: Array, cfg: Dictionary) -> void:
 		var pin: String = normalize_pin(ax["io"])
 		var drive: String = ax["drive"]
 		# 摩擦轮引脚不可用于 Yaw/Pitch（与摩擦轮固定占用冲突）
-		if pin in FRICTION_PINS:
+		if _friction_enabled(cfg) and pin in FRICTION_PINS:
 			issues.append({"type": "Error",
 				"msg": "%s 轴 IO 选用了 %s，该引脚已被摩擦轮占用" % [ax["name"], pin]})
 			continue
@@ -497,14 +516,15 @@ static func _check_eng_row(issues: Array, row: Dictionary, mode_no: int, row_idx
 
 
 # ------------------------------------------------------------------ 规则：步兵高级设置（共享多模式按键映射）
-# 步兵固定子系统占用：摩擦轮 P64/P66、拨弹电机、云台 Yaw/Pitch、底盘。
+# 步兵固定子系统占用：启用时的摩擦轮 P64/P66、拨弹电机、云台 Yaw/Pitch、底盘。
 # 共享按键映射的行不能指向这些引脚；摩擦轮频率允许在 IO 初始化区选择
 # 舵机(50Hz)或电机(10000Hz)，用于实机验证。
 static func _check_infantry_shared(issues: Array, cfg: Dictionary) -> void:
 	var io_init: Dictionary = cfg.get("io_init", {})
 	# 预留引脚：底盘 + 摩擦轮 + 拨弹 + 云台
 	var reserved: Array = _chassis_pins(cfg)
-	reserved.append_array(FRICTION_PINS)
+	if _friction_enabled(cfg):
+		reserved.append_array(FRICTION_PINS)
 	for key in ["booster_io", "yaw_io", "pitch_io"]:
 		var pin: String = str(cfg.get(key, "")).split(" ")[0]
 		if not pin.is_empty():
@@ -523,7 +543,7 @@ static func _check_infantry_shared(issues: Array, cfg: Dictionary) -> void:
 			row_idx += 1
 			var io: String = str(row.get("io", ""))
 			if io in reserved:
-				var who: String = "摩擦轮" if io in FRICTION_PINS else "底盘/云台/拨弹"
+				var who: String = "摩擦轮" if _friction_enabled(cfg) and io in FRICTION_PINS else "底盘/云台/拨弹"
 				issues.append({"type": "Error",
 					"msg": "步兵 模式%d第%d行 IO %s 与%s冲突，高级设置不能控制该引脚"
 						% [mi + 1, row_idx, io, who]})

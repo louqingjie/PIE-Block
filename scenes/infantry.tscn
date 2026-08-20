@@ -34,7 +34,7 @@ text = "拨弹电机"
 layout_mode = 2
 size_flags_horizontal = 8
 selected = 4
-item_count = 6
+item_count = 8
 popup/item_0/text = "P77 P27"
 popup/item_0/id = 0
 popup/item_1/text = "P76 P26"
@@ -47,6 +47,10 @@ popup/item_4/text = "P60 P61"
 popup/item_4/id = 4
 popup/item_5/text = "P62 P63"
 popup/item_5/id = 5
+popup/item_6/text = "P64 P65"
+popup/item_6/id = 6
+popup/item_7/text = "P66 P67"
+popup/item_7/id = 7
 
 [node name="OptionButton2" type="OptionButton" parent="GimbalSetting/Booster" unique_id=2003298706]
 layout_mode = 2
@@ -80,7 +84,7 @@ popup/item_1/id = 1
 layout_mode = 2
 size_flags_horizontal = 8
 selected = 6
-item_count = 8
+item_count = 10
 popup/item_0/text = "P60"
 popup/item_0/id = 0
 popup/item_1/text = "P62"
@@ -97,6 +101,10 @@ popup/item_6/text = "MP74"
 popup/item_6/id = 6
 popup/item_7/text = "MP03"
 popup/item_7/id = 7
+popup/item_8/text = "P64"
+popup/item_8/id = 8
+popup/item_9/text = "P66"
+popup/item_9/id = 9
 
 [node name="OptionButton3" type="OptionButton" parent="GimbalSetting/Yaw" unique_id=2062091791]
 layout_mode = 2
@@ -134,7 +142,7 @@ popup/item_1/id = 1
 layout_mode = 2
 size_flags_horizontal = 8
 selected = 7
-item_count = 8
+item_count = 10
 popup/item_0/text = "P60"
 popup/item_0/id = 0
 popup/item_1/text = "P62"
@@ -151,6 +159,10 @@ popup/item_6/text = "MP74"
 popup/item_6/id = 6
 popup/item_7/text = "MP03"
 popup/item_7/id = 7
+popup/item_8/text = "P64"
+popup/item_8/id = 8
+popup/item_9/text = "P66"
+popup/item_9/id = 9
 
 [node name="OptionButton3" type="OptionButton" parent="GimbalSetting/Pitch" unique_id=554558383]
 layout_mode = 2
@@ -229,6 +241,23 @@ item_count = 2
 popup/item_0/text = "阻塞开环"
 popup/item_0/id = 0
 popup/item_1/text = "目视闭环"
+popup/item_1/id = 1
+
+[node name="FrictionType" type="HBoxContainer" parent="KeySetting"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="KeySetting/FrictionType"]
+layout_mode = 2
+text = "摩擦轮类型"
+
+[node name="OptionButton" type="OptionButton" parent="KeySetting/FrictionType"]
+layout_mode = 2
+size_flags_horizontal = 10
+selected = 0
+item_count = 2
+popup/item_0/text = "无刷电调"
+popup/item_0/id = 0
+popup/item_1/text = "不使用"
 popup/item_1/id = 1
 
 [node name="Trigger" type="HBoxContainer" parent="KeySetting" unique_id=297138032]

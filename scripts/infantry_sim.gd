@@ -167,6 +167,7 @@ var _trigger_key_id: String = "E"
 var _booster_key_id: String = "A"
 var _trigger_time_ms: int = 250
 var _friction_max_duty: int = BOOSTER_DUTY_MAX
+var _friction_enabled: bool = true
 ## 拨弹模式：true=目视闭环（按住持续拨弹，松开即停，不阻塞），false=阻塞开环（单发）
 var _visual_feed: bool = false
 ## 目视闭环模式下的出弹节流累加器（ms），按住扳机期间累积
@@ -360,6 +361,7 @@ func _apply_config() -> void:
 	_ultra_speed = clampi(_cfg_int("sprint_speed", 8000), 0, 10000)
 	_deadzone = clampi(_cfg_int("deadzone", 10), 0, 2047)
 	_trigger_time_ms = clampi(_cfg_int("trigger_time", 250), 0, 65535)
+	_friction_enabled = str(_cfg.get("friction_type", "无刷电调")) != "不使用"
 	_friction_max_duty = clampi(_cfg_int("friction_max_duty", BOOSTER_DUTY_MAX),
 		BOOSTER_DUTY_MIN, BOOSTER_DUTY_MAX)
 	if _friction_max_duty % BOOSTER_STEP != 0:
@@ -433,7 +435,7 @@ func _update_config_label() -> void:
 			"舵机" if _pitch_is_servo else "电机",
 			_max_speed, _ultra_speed,
 			"目视闭环" if _visual_feed else "阻塞开环",
-			str(_cfg.get("booster_key", "A"))]
+			(str(_cfg.get("booster_key", "A")) if _friction_enabled else "不使用")]
 
 
 # ------------------------------------------------------------------ 材质
@@ -632,6 +634,7 @@ func _build_robot() -> void:
 		fw.mesh = fcyl
 		fw.position = Vector3(sx * (FRICTION_RADIUS + BARREL_RADIUS), 0.0, FRICTION_Z)
 		_pitch_root.add_child(fw)
+		fw.visible = _friction_enabled
 		_friction_nodes.append(fw)
 	# 枪口：弹丸出生点
 	_muzzle = Marker3D.new()
@@ -660,7 +663,7 @@ func _read_controller_inputs() -> void:
 	_key = snapshot["valueOfKey"].duplicate(true)
 	var pressed: Dictionary = snapshot["pressed"]
 	_trigger_key = 1 if pressed.has(_trigger_key_id) else 0
-	_booster_key = 1 if pressed.has(_booster_key_id) else 0
+	_booster_key = 1 if _friction_enabled and pressed.has(_booster_key_id) else 0
 
 
 ## 当前焦点是否落在可输入文本的控件上（否则输入 W/S 会同时开车）
@@ -719,7 +722,8 @@ func _step_once() -> void:
 	_calculate_motor_controls()
 	if _mode == Mode.OPERATE:
 		_calculate_gimbal_controls()
-	_calculate_booster_control()
+	if _friction_enabled:
+		_calculate_booster_control()
 	# 限幅（对应 C 侧 LIMIT_VALUE）
 	for i in range(4):
 		_duty_motor[i] = clampi(_duty_motor[i], -10000, 10000)
@@ -841,6 +845,12 @@ func _limit_servo() -> void:
 
 ## 对应 CalculateBoosterControl：只有开/关；使用非阻塞状态机平滑启停
 func _calculate_booster_control() -> void:
+	if not _friction_enabled:
+		_duty_booster = 0
+		_status_booster = 0
+		_friction_ramp_direction = 0
+		_last_booster_key = 0
+		return
 	if _booster_key == 1 and _last_booster_key == 0:
 		_status_booster = 0 if _status_booster == 1 else 1
 		if _status_booster == 1:
@@ -1137,6 +1147,8 @@ func _setup_audio() -> void:
 
 ## 摩擦轮目标频率（Hz）= 当前占空比数值。未启动时为 0（静音）
 func _friction_target_freq() -> float:
+	if not _friction_enabled:
+		return 0.0
 	if _duty_booster < BOOSTER_DUTY_MIN:
 		return 0.0
 	return float(_duty_booster)
@@ -1482,17 +1494,21 @@ func _on_mid_offset_changed(key: String, value: float) -> void:
 # --- 操控模式
 func _build_operate_params(parent: Node) -> void:
 	_add_section(parent, "摩擦轮")
-	_add_note(parent, ("只有开/关两种稳态。开关键 %s 上升沿翻转；开启时从 500 duty 起步，"
-		+ "每个主循环非阻塞增加 1，直到用户设定的 %d；关闭时按相同步长平滑降至 0。")
-			% [str(_cfg.get("booster_key", "A")), _friction_max_duty])
+	if _friction_enabled:
+		_add_note(parent, ("只有开/关两种稳态。开关键 %s 上升沿翻转；开启时从 500 duty 起步，"
+			+ "每个主循环非阻塞增加 1，直到用户设定的 %d；关闭时按相同步长平滑降至 0。")
+				% [str(_cfg.get("booster_key", "A")), _friction_max_duty])
+	else:
+		_add_note(parent, "配置为“不使用”：仿真隐藏摩擦轮并忽略开关键；拨弹仍工作，弹丸只会低速掉落。")
 	_add_section(parent, "音效")
 	var audio_cb: CheckButton = CheckButton.new()
 	audio_cb.text = "音效"
 	audio_cb.button_pressed = _audio_enabled
 	audio_cb.toggled.connect(_on_audio_toggled)
 	parent.add_child(audio_cb)
-	_add_note(parent, "摩擦轮音高等于当前占空比，非阻塞爬升的每一级都能听出来。"
-		+"\n开火是一段从高扫到低的短音。")
+	_add_note(parent, ("摩擦轮音高等于当前占空比，非阻塞爬升的每一级都能听出来。\n"
+		if _friction_enabled else "摩擦轮音效已关闭。\n")
+		+ "开火是一段从高扫到低的短音。")
 	_add_section(parent, "弹丸初速映射")
 	_add_slider_row(parent, "vlo", "duty 500 时 (m/s)", 1.0, 30.0, _muzzle_v_lo, 0.5)
 	_add_slider_row(parent, "vhi", "duty 800 时 (m/s)", 1.0, 40.0, _muzzle_v_hi, 0.5)
@@ -1582,9 +1598,12 @@ func _update_status() -> void:
 	lines.append("底盘 duty L1=%d L2=%d R1=%d R2=%d  拨弹=%d" % [
 		_duty_motor[0], _duty_motor[1], _duty_motor[2], _duty_motor[3], _duty_motor[4]])
 	lines.append(_gimbal_status_text())
-	var boost_state: String = "开" if _status_booster == 1 else "关"
-	lines.append("摩擦轮 %s  duty=%d（开机目标 %d）  出膛 %.1f m/s" % [
-		boost_state, _duty_booster, _friction_max_duty, _muzzle_speed()])
+	if _friction_enabled:
+		var boost_state: String = "开" if _status_booster == 1 else "关"
+		lines.append("摩擦轮 %s  duty=%d（开机目标 %d）  出膛 %.1f m/s" % [
+			boost_state, _duty_booster, _friction_max_duty, _muzzle_speed()])
+	else:
+		lines.append("摩擦轮 未使用  出膛 %.1f m/s（低速掉落）" % _muzzle_speed())
 	var shot: String = "尚未开火"
 	if not _last_shot.is_empty():
 		shot = "最近一发 出膛 %.1f m/s" % float(_last_shot.get("speed", 0.0))
