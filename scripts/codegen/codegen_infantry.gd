@@ -152,11 +152,17 @@ func generate(cfg: Dictionary) -> String:
 	var yaw_servo_on_main: bool = yaw_is_servo and yaw_pin in MAIN_BOARD_SERVO_PINS
 	var pitch_servo_on_main: bool = pitch_is_servo and pitch_pin in MAIN_BOARD_SERVO_PINS
 
-	# --- 槽位分配（先全部置「未使用」，再按角色填充）---
+	# --- 槽位分配（先按 IO 设置区初始化，再按固定角色覆盖）---
 	# 槽位 0-7 依次对应 p60,p62,p64,p66,p74,p75,p76,p77
-	# Init_Order 里 0 表示维持原状（不把该引脚配成任何动力源）
+	# UI 只提供「舵机 / 电机」两种状态，因此每个拓展板槽位都必须分别生成
+	# 50Hz / 10000Hz。不能把“没有被模式控制行引用”暗中解释成 0Hz；官方
+	# Init_Order 示例也没有定义 0Hz 为合法的“不初始化”值。
 	# Duty_Change_Order 里未使用槽位固定给 0，避免误驱动
-	var init_vals: Array = [0, 0, 0, 0, 0, 0, 0, 0]
+	var io_init_shared: Dictionary = cfg.get("io_init", {})
+	var init_vals: Array = []
+	for slot in range(8):
+		var pin: String = _exp_pin(slot)
+		init_vals.append(10000 if str(io_init_shared.get(pin, "舵机")) == "电机" else 50)
 	var dir_exprs: Array = ["1", "1", "1", "1", "1", "1", "1", "1"]
 	var duty_vals: Array = ["0", "0", "0", "0", "0", "0", "0", "0"]
 
@@ -254,7 +260,6 @@ func generate(cfg: Dictionary) -> String:
 
 	# --- 高级设置：共享多模式按键映射（步兵/工程共用同一份配置）---
 	# 行不能指向固定子系统占用的引脚（静态检查已拦，这里防御性跳过）
-	var io_init_shared: Dictionary = cfg.get("io_init", {})
 	var io_mid: Dictionary = cfg.get("io_mid", {})
 	var mode_count: int = clampi(int(float(str(cfg.get("mode_count", 1)))), 1, 4)
 	var switch_strategy: String = str(cfg.get("switch_strategy", "单击切换"))

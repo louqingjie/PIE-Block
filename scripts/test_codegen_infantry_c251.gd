@@ -6,6 +6,22 @@ const CG = preload("res://scripts/codegen/codegen_infantry.gd")
 
 func _initialize() -> void:
 	var code: String = CG.new().generate({})
+	# IO 初始化区只有「舵机 / 电机」两种状态；即使 P62 未被任何模式控制行
+	# 引用，也必须按 UI 类型生成 50/10000，不能泄漏内部默认值 0Hz。
+	var servo_p62_code: String = CG.new().generate({
+		"io_init": {"P62": "舵机"},
+	})
+	if not servo_p62_code.contains("10000, 50,\n                          50, 50,"):
+		printerr("未引用的 P62 选择舵机时必须按 50Hz 初始化，不能生成 0Hz")
+		quit(1)
+		return
+	var motor_p62_code: String = CG.new().generate({
+		"io_init": {"P62": "电机"},
+	})
+	if not motor_p62_code.contains("10000, 10000,\n                          50, 50,"):
+		printerr("未引用的 P62 选择电机时必须按 10000Hz 初始化")
+		quit(1)
+		return
 	if code.contains("remote_control_init();") \
 			or not code.contains("remoteControlInitWithTimeout();") \
 			or not code.contains("retry < 20"):
