@@ -9,13 +9,10 @@ const IK_CONFIG = preload("res://scripts/engineer_ik_config.gd")
 
 # ------------------------------------------------------------------ 常量
 # 扳机键 / 摩擦轮开关键的选项：0=R, 1=↑, 2=↓, 3=←, 4=->, 5..8=A/B/C/D
-# 索引 1..4 属于方向键；索引 6/7（B/C）被摩擦轮档位微调固定占用
+# 索引 1..4 属于方向键
 const ARROW_KEY_INDICES: Array = [1, 2, 3, 4]
-const BOOSTER_LEVEL_KEY_INDICES: Array = [6, 7]
 # 方向键文本（与 ARROW_KEY_INDICES 对应）
 const ARROW_KEY_TEXTS: Array = ["↑", "↓", "←", "->"]
-# 摩擦轮档位微调键文本（与 BOOSTER_LEVEL_KEY_INDICES 对应）
-const BOOSTER_LEVEL_KEY_TEXTS: Array = ["B", "C"]
 # 文档约束：P64/P66 固定用于两路摩擦轮
 const FRICTION_PINS: Array = ["P64", "P66"]
 # 扩展板引脚（通过 ExpansionBoradControl 控制）
@@ -39,6 +36,7 @@ static func check_infantry(cfg: Dictionary) -> Array:
 	_check_deadzone(issues, cfg)
 	_check_speeds(issues, cfg)
 	_check_trigger_params(issues, cfg)
+	_check_friction_params(issues, cfg)
 	_check_arrow_trigger_conflict(issues, cfg)
 	_check_io_duplicate(issues, cfg)
 	_check_gimbal_pin_conflict(issues, cfg)
@@ -153,6 +151,17 @@ static func _check_trigger_params(issues: Array, cfg: Dictionary) -> void:
 			"msg": "拨弹时间 %s ms 过长，单发期间主循环阻塞，底盘和云台会失去响应" % t_text})
 
 
+# ------------------------------------------------------------------ 规则：摩擦轮最大占空比
+static func _check_friction_params(issues: Array, cfg: Dictionary) -> void:
+	var text: String = str(cfg.get("friction_max_duty", "")).strip_edges()
+	_check_int_field(issues, text, "摩擦轮最大占空比", 500, 1000, true)
+	if text.is_valid_int():
+		var value: int = text.to_int()
+		if value >= 500 and value <= 1000 and value % 100 != 0:
+			issues.append({"type": "Error",
+				"msg": "摩擦轮最大占空比必须是 500~1000 内的整百值，才能严格按官方规则每次增加 100 duty"})
+
+
 # ------------------------------------------------------------------ 规则：按键冲突
 static func _check_arrow_trigger_conflict(issues: Array, cfg: Dictionary) -> void:
 	var trig_key: String = str(cfg.get("trigger_key", ""))
@@ -170,12 +179,6 @@ static func _check_arrow_trigger_conflict(issues: Array, cfg: Dictionary) -> voi
 				issues.append({"type": "Error",
 					"msg": "方向键已被设为「%s」，但%s也使用了方向键「%s」，二者不能相同"
 						% [arrow_key, pair[1], pair[0]]})
-	# B/C 键固定用于摩擦轮档位微调，不能再被扳机键/开关键占用
-	for pair2 in [[trig_key, "扳机键"], [boost_key, "摩擦轮开关键"]]:
-		if pair2[0] in BOOSTER_LEVEL_KEY_TEXTS:
-			issues.append({"type": "Warn",
-				"msg": "%s使用了「%s」，该键已固定用于摩擦轮转速档位微调"
-					% [pair2[1], pair2[0]]})
 
 
 # ------------------------------------------------------------------ 规则：IO 重复引用
@@ -562,7 +565,7 @@ static func _chassis_pins(cfg: Dictionary) -> Array:
 	return pins
 
 # ------------------------------------------------------------------ 规则：调试界面参数范围
-# 舵机偏移角 ∈ [-90, 90]（相对中位），电机速度 ∈ [0, 10000]，摩擦轮速度 ∈ [0, 1100]
+# 舵机偏移角 ∈ [-90, 90]（相对中位），电机速度 ∈ [0, 10000]，摩擦轮速度 ∈ [0, 1000]
 static func _check_debug_params(issues: Array, debug_rows: Array) -> void:
 	for row in debug_rows:
 		# 先 is bool 判类型（enabled 可能是字符串/数字），非 bool 当 false，不崩
@@ -590,9 +593,9 @@ static func _check_debug_params(issues: Array, debug_rows: Array) -> void:
 						"msg": "调试 %s 舵机角度 %d 超出范围（有效范围 -%d~%d，相对中位）"
 							% [pin_name, val, SERVO_MAX_ANGLE, SERVO_MAX_ANGLE]})
 			"摩擦轮":
-				if val < 0 or val > 1100:
+				if val < 0 or val > 1000:
 					issues.append({"type": "Error",
-						"msg": "调试 %s 摩擦轮速度 %d 超出范围（有效范围 0-1100）" % [pin_name, val]})
+						"msg": "调试 %s 摩擦轮速度 %d 超出范围（有效范围 0-1000）" % [pin_name, val]})
 
 
 # ------------------------------------------------------------------ 工程逆解算：静态检查

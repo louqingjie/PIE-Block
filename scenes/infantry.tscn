@@ -303,6 +303,13 @@ popup/item_7/id = 7
 popup/item_8/text = "D"
 popup/item_8/id = 8
 
+[node name="MaxDuty" type="LineEdit" parent="KeySetting/Booster"]
+custom_minimum_size = Vector2(150, 0)
+layout_mode = 2
+text = "1000"
+placeholder_text = "最大占空比 500~1000"
+tooltip_text = "只允许 500、600、700、800、900、1000；官方上限为 1000"
+
 [node name="Advanced" type="FoldableContainer" parent="." unique_id=144618528]
 layout_mode = 2
 size_flags_vertical = 3

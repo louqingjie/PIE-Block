@@ -41,8 +41,7 @@ func _initialize() -> void:
 		if case[3]:
 			# 摩擦轮拉满再连打几发，看弹道
 			sim._status_booster = 1
-			sim._level_duty_booster = 1100
-			sim._duty_booster = 1100
+			sim._duty_booster = 1000
 			for i in range(3):
 				sim._fire()
 				for j in range(12):

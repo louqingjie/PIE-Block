@@ -520,6 +520,7 @@ func _flatten_infantry_config(config: Dictionary) -> Dictionary:
 	flat["trigger_speed"] = str(_config_val(config, keyset + "/Trigger/Speed"))
 	flat["trigger_time"] = str(_config_val(config, keyset + "/Trigger/Time"))
 	flat["booster_key"] = str(_config_val(config, keyset + "/Booster/OptionButton"))
+	flat["friction_max_duty"] = str(_config_val(config, keyset + "/Booster/MaxDuty"))
 	flat["zero_enabled"] = bool(_config_val(config, keyset + "/Zero/CheckBox"))
 	# 共享多模式配置（步兵页「高级设置」内，与工程页共用同一份结构）
 	flat.merge(_flatten_shared_eng_config(config, "Infantry/Advanced/ScrollContainer/AdvancedAndEngineer"))
@@ -791,6 +792,8 @@ func _infantry_schema() -> Dictionary:
 		"trigger_speed": {"type": "string", "description": "拨弹速度 (0-10000)"},
 		"trigger_time": {"type": "string", "description": "拨弹时间 ms (0-65535)"},
 		"booster_key": {"type": "string", "description": "摩擦轮开关键"},
+		"friction_max_duty": {"type": "string", "enum": ["500", "600", "700", "800", "900", "1000"],
+			"description": "摩擦轮开启后的最大占空比（官方上限 1000）", "default": "1000"},
 		"zero_enabled": {"type": "boolean", "description": "松手归中", "default": false},
 	}
 

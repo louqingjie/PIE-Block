@@ -2,9 +2,27 @@ extends SceneTree
 
 const TC = preload("res://scripts/toolchain.gd")
 const CG = preload("res://scripts/codegen/codegen_infantry.gd")
+const SC = preload("res://scripts/static_checker.gd")
 
 
 func _initialize() -> void:
+	var infantry_scene: PackedScene = load("res://scenes/infantry.tscn")
+	var infantry_ui: Node = infantry_scene.instantiate()
+	if not infantry_ui.has_node("KeySetting/Booster/MaxDuty"):
+		printerr("步兵界面缺少摩擦轮最大占空比设置")
+		infantry_ui.free()
+		quit(1)
+		return
+	infantry_ui.free()
+	var friction_issues: Array = SC.check_infantry({"friction_max_duty": "1100"})
+	var found_friction_limit: bool = false
+	for issue in friction_issues:
+		if str(issue.get("msg", "")).contains("摩擦轮最大占空比"):
+			found_friction_limit = true
+	if not found_friction_limit:
+		printerr("静态检查未阻止超过官方上限的摩擦轮占空比")
+		quit(1)
+		return
 	var code: String = CG.new().generate({})
 	# IO 初始化区不能因“未被模式控制行引用”而泄漏内部默认值 0Hz。
 	# 步兵前四路与摩擦轮共用 50Hz 时基，因此 P60/P62 即使逻辑类型为电机，
@@ -61,6 +79,32 @@ func _initialize() -> void:
 		return
 	if code.contains("主循环周期 10ms，每周期变化 1"):
 		printerr("摩擦轮渐变注释仍错误地忽略了通信帧间隔")
+		quit(1)
+		return
+	# 摩擦轮必须完全采用官方阻塞式开关控制：500 起步，每 100ms 增加 100，
+	# 稳态只有 0 或用户设定的最大值，不再保留 B/C 档位和非阻塞目标跟踪。
+	if not code.contains("#define FRICTION_MAX_DUTY   1000") \
+			or not code.contains("while (dutyOfBooster < FRICTION_MAX_DUTY)") \
+			or not code.contains("Ms_Delay(FRICTION_STEP_MS);") \
+			or not code.contains("dutyOfBooster += FRICTION_STEP_DUTY;"):
+		printerr("生成代码缺少官方阻塞式摩擦轮增速序列")
+		quit(1)
+		return
+	for forbidden in ["expectDutyOfBooster", "levelDutyOfBooster",
+			"lastBoosterUpKeyValue", "lastBoosterDownKeyValue",
+			"singleChangeDutyOfBooster"]:
+		if code.contains(forbidden):
+			printerr("生成代码仍残留可停留中间占空比的逻辑：%s" % forbidden)
+			quit(1)
+			return
+	var limited_code: String = CG.new().generate({"friction_max_duty": "800"})
+	if not limited_code.contains("#define FRICTION_MAX_DUTY   800"):
+		printerr("用户指定的摩擦轮最大占空比未进入生成代码")
+		quit(1)
+		return
+	var over_limit_code: String = CG.new().generate({"friction_max_duty": "1100"})
+	if not over_limit_code.contains("#define FRICTION_MAX_DUTY   1000"):
+		printerr("超过官方上限的摩擦轮占空比未安全回退到 1000")
 		quit(1)
 		return
 	if not code.contains("P2INTE &= ~GPIO_Pin_6"):

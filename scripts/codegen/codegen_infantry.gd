@@ -85,6 +85,15 @@ func generate(cfg: Dictionary) -> String:
 	var trig_spd: String = _int_or_default(cfg.get("trigger_speed", ""), 10000, 0, 10000)
 	# Ms_Delay 参数是 uint16_t，超过 65535 会被静默截断
 	var trig_time: String = _int_or_default(cfg.get("trigger_time", ""), 250, 0, 65535)
+	# 官方摩擦轮守则：500 duty 起步，每 100ms 增加 100，最高 1000。
+	# 为保证每一级严格增加 100，只接受 500~1000 内的整百值；非法输入回退 1000。
+	var friction_max_text: String = str(cfg.get("friction_max_duty", "1000")).strip_edges()
+	var friction_max_duty: int = 1000
+	if friction_max_text.is_valid_int():
+		var requested_friction_max: int = friction_max_text.to_int()
+		if requested_friction_max >= 500 and requested_friction_max <= 1000 \
+				and requested_friction_max % 100 == 0:
+			friction_max_duty = requested_friction_max
 
 	# --- 按键映射 ---
 	var trigger_key_offset: String = _key_name_to_offset(cfg.get("trigger_key", "E"))
@@ -346,9 +355,10 @@ func generate(cfg: Dictionary) -> String:
 		% [yaw_mid_val, pitch_mid_val, yaw_mid_deg, pitch_mid_deg]
 	code += "// 摇杆可摆动幅度 ±%d°（相对归中位置）\n" % servo_swing_deg
 	code += "uint16_t maxChangeDutyOfServo[2] = {%d, %d};\n" % [servo_swing, servo_swing]
-	code += "uint16_t singleChangeDutyOfBooster = 100;       // 按下按键单次占空比改变量\n"
-	code += "uint16_t maxDutyOfBooster = 1100;               // 摩擦轮最大占空比（指南上限，不得提高）\n"
-	code += "uint16_t minDutyOfBooster = 500;                // 摩擦轮最低有效占空比\n"
+	code += "#define FRICTION_START_DUTY 500  // 官方守则：摩擦轮启动占空比\n"
+	code += "#define FRICTION_STEP_DUTY  100  // 官方守则：每次增加 100 duty\n"
+	code += "#define FRICTION_STEP_MS    100  // 官方守则：每级阻塞 100ms\n"
+	code += "#define FRICTION_MAX_DUTY   %d   // 用户设定，官方上限 1000\n" % friction_max_duty
 	code += "uint16_t boosterDutyOfFeed = %s;             // 拨弹电机单发转动占空比\n" % trig_spd
 	if not visual_feed:
 		code += "uint16_t boosterFeedDelayMs = %s;              // 拨弹电机单发转动时长(ms)\n" % trig_time
@@ -376,12 +386,10 @@ func generate(cfg: Dictionary) -> String:
 	code += "float floatDutyOfServo[2]; // 云台舵机\n"
 	code += "uint16_t dutyOfServo[2];\n"
 	code += "int dutyOfMotor[%d]; // 底盘电机、供弹电机、云台电机（如有）\n" % motor_array_size
-	code += "uint16_t dutyOfBooster = 0, expectDutyOfBooster = 0;\n"
-	code += "uint16_t levelDutyOfBooster = 1100; // 摩擦轮目标转速档位（B/C 键微调）\n"
+	code += "uint16_t dutyOfBooster = 0; // 稳态只允许 0 或 FRICTION_MAX_DUTY\n"
 	code += "uint8_t valueOfKey[3][4];\n"
 	code += "uint8_t valueOfEKey;\n"
 	code += "uint8_t triggerKeyValue, lastTriggerKeyValue, boosterKeyValue, lastBoosterKeyValue;\n"
-	code += "uint8_t lastBoosterUpKeyValue = 0, lastBoosterDownKeyValue = 0;\n"
 	code += "uint8_t statusOfBooster = 0;\n"
 	# 高级设置：共享多模式按键映射的辅助执行器
 	if not aux_servo_slots.is_empty() or not aux_motor_slots.is_empty() or use_aux_main[0] or use_aux_main[1]:
@@ -497,30 +505,12 @@ func generate(cfg: Dictionary) -> String:
 		code += "        if (triggerKeyValue && !lastTriggerKeyValue)\n"
 		code += "        {\n"
 		code += "            dutyOfMotor[4] = boosterDutyOfFeed;\n"
-		code += "            // 注意：此处保持 dutyOfBooster 不变，不能跳变到目标值，\n"
-		code += "            // 否则会违反摩擦轮占空比渐变要求\n"
 		code += "            Main_Countrol(dutyOfMotor, dutyOfServo, dutyOfBooster);\n"
 		code += "            Ms_Delay(boosterFeedDelayMs);\n"
 		code += "            dutyOfMotor[4] = 0;\n"
 		code += "            Main_Countrol(dutyOfMotor, dutyOfServo, dutyOfBooster);\n"
 		code += "        }\n"
 		code += "        lastTriggerKeyValue = triggerKeyValue;\n\n"
-	code += "        // 摩擦轮占空比平滑变化\n"
-	code += "        // 每轮至少包含方向/占空比帧间隔各 5ms，加循环尾延时 10ms，\n"
-	code += "        // 因此周期至少 20ms；每周期变化 1，即每秒最多变化 50，占空比渐变符合指南上限。\n"
-	code += "        // 从静止启动时先跳到 500（指南：启停不考虑 0~5% 区间）\n"
-	code += "        if (expectDutyOfBooster >= 500 && dutyOfBooster < 500)\n"
-	code += "            dutyOfBooster = 500;\n"
-	code += "        else if (dutyOfBooster < expectDutyOfBooster)\n"
-	code += "            dutyOfBooster++;\n"
-	code += "        else if (dutyOfBooster > expectDutyOfBooster)\n"
-	code += "        {\n"
-	code += "            // 降到 500 以下时直接停机，避免在低占空比区间长时间堵转\n"
-	code += "            if (dutyOfBooster <= 500 && expectDutyOfBooster == 0)\n"
-	code += "                dutyOfBooster = 0;\n"
-	code += "            else\n"
-	code += "                dutyOfBooster--;\n"
-	code += "        }\n\n"
 	code += "        // 发送控制函数\n"
 	code += "        Main_Countrol(dutyOfMotor, dutyOfServo, dutyOfBooster);\n"
 	code += "        Ms_Delay(10);\n"
@@ -609,34 +599,31 @@ func generate(cfg: Dictionary) -> String:
 
 	# --- CalculateBoosterControl ---
 	code += "void CalculateBoosterControl()\n{\n"
-	code += "    // B/C 键上升沿微调摩擦轮目标转速档位（不是直接改 expectDutyOfBooster，\n"
-	code += "    // 否则会被下面的开关逻辑覆盖）。档位限制在 500~1100，上限由指南规定\n"
-	code += "    if (valueOfKey[1][1] && !lastBoosterUpKeyValue)\n"
-	code += "    {\n"
-	code += "        if (levelDutyOfBooster + singleChangeDutyOfBooster <= maxDutyOfBooster)\n"
-	code += "            levelDutyOfBooster += singleChangeDutyOfBooster;\n"
-	code += "        else\n"
-	code += "            levelDutyOfBooster = maxDutyOfBooster;\n"
-	code += "    }\n"
-	code += "    if (valueOfKey[1][2] && !lastBoosterDownKeyValue)\n"
-	code += "    {\n"
-	code += "        if (levelDutyOfBooster >= minDutyOfBooster + singleChangeDutyOfBooster)\n"
-	code += "            levelDutyOfBooster -= singleChangeDutyOfBooster;\n"
-	code += "        else\n"
-	code += "            levelDutyOfBooster = minDutyOfBooster;\n"
-	code += "    }\n"
-	code += "    lastBoosterUpKeyValue = valueOfKey[1][1];\n"
-	code += "    lastBoosterDownKeyValue = valueOfKey[1][2];\n\n"
-	code += "    // 摩擦轮开关由 %s 上升沿翻转\n" % cfg.get("booster_key", "A")
+	code += "    // 摩擦轮只有开/关两种稳态；启动过程完全阻塞，严格复现官方守则。\n"
+	code += "    // 开：500 起步，每阻塞 100ms 增加 100，直到用户设定的最大值。\n"
+	code += "    // 关：直接输出 0，不允许通过按键停留在任意中间占空比。\n"
+	code += "    // 摩擦轮开关由 %s 上升沿触发\n" % cfg.get("booster_key", "A")
 	code += "    if (boosterKeyValue && !lastBoosterKeyValue)\n"
-	code += "    {                                       // 检测上升沿\n"
-	code += "        statusOfBooster = !statusOfBooster; // 翻转状态\n"
+	code += "    {\n"
+	code += "        statusOfBooster = !statusOfBooster;\n"
+	code += "        if (statusOfBooster)\n"
+	code += "        {\n"
+	code += "            dutyOfBooster = FRICTION_START_DUTY;\n"
+	code += "            Main_Countrol(dutyOfMotor, dutyOfServo, dutyOfBooster);\n"
+	code += "            while (dutyOfBooster < FRICTION_MAX_DUTY)\n"
+	code += "            {\n"
+	code += "                Ms_Delay(FRICTION_STEP_MS);\n"
+	code += "                dutyOfBooster += FRICTION_STEP_DUTY;\n"
+	code += "                Main_Countrol(dutyOfMotor, dutyOfServo, dutyOfBooster);\n"
+	code += "            }\n"
+	code += "        }\n"
+	code += "        else\n"
+	code += "        {\n"
+	code += "            dutyOfBooster = 0;\n"
+	code += "            Main_Countrol(dutyOfMotor, dutyOfServo, dutyOfBooster);\n"
+	code += "        }\n"
 	code += "    }\n"
-	code += "    lastBoosterKeyValue = boosterKeyValue;\n\n"
-	code += "    if (statusOfBooster)\n"
-	code += "        expectDutyOfBooster = levelDutyOfBooster;\n"
-	code += "    else\n"
-	code += "        expectDutyOfBooster = 0;\n"
+	code += "    lastBoosterKeyValue = boosterKeyValue;\n"
 	code += "}\n\n"
 
 	# --- CalculateGimbalControls ---

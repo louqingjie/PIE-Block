@@ -16,7 +16,6 @@ extends Control
 ##   - 归中角非整数或超出 -90~90（相对舵机中位）    -> Error
 ##   - 冲刺速度 < 普通速度                          -> Warn
 ##   - 同侧两轮共用 IO 但方向不同                   -> Warn
-##   - 扳机键/开关键占用 B/C（摩擦轮档位微调）      -> Warn
 ##   - 拨弹时间 > 1000ms（阻塞主循环）              -> Warn（仅「阻塞开环」模式）
 
 
@@ -63,6 +62,7 @@ const P_TRIGGER: NodePath = KEYSET + "/Trigger/OptionButton"
 const P_TRIGGER_SPEED: NodePath = KEYSET + "/Trigger/Speed"
 const P_TRIGGER_TIME: NodePath = KEYSET + "/Trigger/Time"
 const P_BOOSTER_KEY: NodePath = KEYSET + "/Booster/OptionButton"
+const P_FRICTION_MAX_DUTY: NodePath = KEYSET + "/Booster/MaxDuty"
 # 调试界面
 const DEBUG: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/Debug"
 # 调试界面各行容器名（P60, P62, P64, P66, P74, P75, P76, P77, MP03, MP74）
@@ -401,7 +401,7 @@ func _connect_signals() -> void:
 		gate_back.pressed.connect(_go_to_launcher)
 	# LineEdit 文本变化
 	for p in [P_CHANNEL, P_DEADZONE, P_NORMAL_SPEED, P_SPRINT_SPEED,
-			P_TRIGGER_SPEED, P_TRIGGER_TIME,
+			P_TRIGGER_SPEED, P_TRIGGER_TIME, P_FRICTION_MAX_DUTY,
 			P_YAW_MID_OFFSET, P_PITCH_MID_OFFSET]:
 		var node: Node = get_node_or_null(p)
 		if node is LineEdit:
@@ -1418,7 +1418,7 @@ func _update_debug_placeholders(_idx: int = -1) -> void:
 			"舵机":
 				placeholder = "角度 -90~90"
 			"摩擦轮":
-				placeholder = "速度 0~1100"
+				placeholder = "速度 0~1000"
 		line_edit.placeholder_text = placeholder
 
 
@@ -1963,6 +1963,7 @@ func _collect_config() -> Dictionary:
 	cfg["trigger_speed"] = _get_line_text(P_TRIGGER_SPEED).strip_edges()
 	cfg["trigger_time"] = _get_line_text(P_TRIGGER_TIME).strip_edges()
 	cfg["booster_key"] = _get_option_text(P_BOOSTER_KEY)
+	cfg["friction_max_duty"] = _get_line_text(P_FRICTION_MAX_DUTY).strip_edges()
 	var zero_cb: Node = get_node_or_null(P_ZERO_CB)
 	cfg["zero_enabled"] = (zero_cb is BaseButton) and zero_cb.button_pressed
 	return cfg
