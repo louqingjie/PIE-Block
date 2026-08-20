@@ -120,12 +120,17 @@ func _gen_led_diag_tools(led_port: String = "GPIO_P3",
 
 
 ## 生成 All_Init 开头的 LED GPIO 初始化（三颗 LED 推挽输出 + 全亮自检）。
+## 同时初始化蜂鸣器 PWM 通道：PWM_SET_Frequency 只改周期/比较寄存器，
+## 不会使能通道输出和启动定时器——没有这行 PWM_Init，Beep() 全程无声
+## （infantry/engineer/engineer_ik 均曾漏掉，2026-08 实机发现）。
 func _gen_led_diag_init() -> String:
 	return ("    // 诊断 LED（P35/P36/P37）推挽输出，全亮自检后熄灭\n"
 		+"    GPIO_Init(LED_PORT, (GPIO_Pin_enum)(LED1_PIN | LED2_PIN | LED3_PIN), GPIO_OUT_PP);\n"
 		+"    LedShow(7);\n"
 		+"    Ms_Delay(200);\n"
-		+"    LedShow(0);\n")
+		+"    LedShow(0);\n"
+		+"    // 蜂鸣器通道必须 PWM_Init（使能输出+启动定时器），否则 Beep 无声\n"
+		+"    PWM_Init(BUZZER_CH, 500, 0);\n")
 
 
 ## 生成串口初始化，**必须放在所有外设初始化之前**。

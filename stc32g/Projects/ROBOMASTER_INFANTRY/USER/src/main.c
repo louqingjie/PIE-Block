@@ -238,6 +238,8 @@ void All_Init()
     LedShow(7);
     Ms_Delay(200);
     LedShow(0);
+    // 蜂鸣器通道必须 PWM_Init（使能输出+启动定时器），否则 Beep 无声
+    PWM_Init(BUZZER_CH, 500, 0);
     StepDone(2);
     StepBegin(3);
     // NRF 遥控器初始化：全程关中断 + 初始化后关 P2.6 EXTI
