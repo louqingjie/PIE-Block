@@ -42,6 +42,7 @@ const AT = preload("res://scripts/agent_terminal.gd")
 const PF = preload("res://scripts/project_file.gd")
 const UPGRADE_PROGRESS = preload("res://scripts/upgrade_progress.gd")
 const KG = preload("res://scripts/keil_guide.gd")
+const FFG = preload("res://scripts/first_flash_guide.gd")
 const CLOUD_COMPILER = preload("res://scripts/cloud_compiler.gd")
 const CLOUD_GUIDE = preload("res://scripts/cloud_guide.gd")
 
@@ -671,6 +672,11 @@ func _on_download_pressed() -> void:
 	if code_hash.is_empty() or str(workflow.get("built_hash", "")) != code_hash:
 		_append_output("[Error] 当前 AI 代码尚未编译，请先点「编译」")
 		return
+	# 首次烧录指引：确认板上开关已断开（可勾选「不再显示」）后再烧录
+	FFG.ensure_guide(self, _start_download)
+
+
+func _start_download() -> void:
 	_download_controller.start(_project_dst)
 
 
@@ -707,6 +713,11 @@ func _on_upgrade_pressed() -> void:
 	if _upgrade_active or _build_controller == null or _build_controller.is_busy() \
 			or _download_controller == null or _download_controller.is_busy():
 		return
+	# 首次烧录指引：确认板上开关已断开（可勾选「不再显示」）后再进入升级流程
+	FFG.ensure_guide(self, _continue_upgrade_pressed)
+
+
+func _continue_upgrade_pressed() -> void:
 	# 引导成功后才进入升级流程（_upgrade_active 在 _do_upgrade 内置位，取消不残留状态）
 	# 云端编译模式下不需要本机 Keil，只需确认云端配置
 	if _is_cloud_mode():
