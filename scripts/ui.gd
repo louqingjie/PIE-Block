@@ -2204,7 +2204,7 @@ func _on_build_succeeded() -> void:
 		_set_upgrade_progress("求解器编译完成", 28.0, "正在连接主控板…")
 		if not _download_controller.start(TC.PROJECT_ENGINEER_SIM_DST):
 			_fail_upgrade_retry(true, "无法开始烧录",
-				"未检测到 USB-HID 设备。\n请确认板子已通过 USB 线连接，并处于 ISP 模式（拔下 USB 再插上）。")
+				"未检测到 USB-HID 设备。\n请确认板子已通过 USB 线连接，并处于 ISP 模式（拔下 USB 再插上）。\n请将主控板与扩展板彻底断开连接后再尝试烧录。")
 		return
 	if not _project.is_empty():
 		var workflow: Dictionary = _workflow()
@@ -2216,7 +2216,7 @@ func _on_build_succeeded() -> void:
 		_set_upgrade_progress("编译完成", 28.0, "正在连接主控板…")
 		if not _download_controller.start(_get_current_project_dst()):
 			_fail_upgrade_retry(false, "无法开始烧录",
-				"未检测到 USB-HID 设备。\n请确认板子已通过 USB 线连接，并处于 ISP 模式（拔下 USB 再插上）。")
+				"未检测到 USB-HID 设备。\n请确认板子已通过 USB 线连接，并处于 ISP 模式（拔下 USB 再插上）。\n请将主控板与扩展板彻底断开连接后再尝试烧录。")
 
 
 ## 编译成功后弹出保存对话框，让用户选择 hex 导出位置
@@ -2826,7 +2826,7 @@ func _on_upgrade_retry_pressed() -> void:
 	_set_upgrade_button_busy(true)
 	if not _download_controller.start(dst):
 		_fail_upgrade_retry(is_solver, "无法开始烧录",
-			"未检测到 USB-HID 设备。\n请确认板子已通过 USB 线连接，并处于 ISP 模式（拔下 USB 再插上）。")
+			"未检测到 USB-HID 设备。\n请确认板子已通过 USB 线连接，并处于 ISP 模式（拔下 USB 再插上）。\n请将主控板与扩展板彻底断开连接后再尝试烧录。")
 
 
 func _set_upgrade_button_busy(is_busy: bool) -> void:
