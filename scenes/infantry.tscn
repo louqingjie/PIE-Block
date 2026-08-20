@@ -22,42 +22,6 @@ layout_mode = 2
 [node name="GimbalSetting" type="VBoxContainer" parent="." unique_id=230919307]
 layout_mode = 2
 
-[node name="P64" type="HBoxContainer" parent="GimbalSetting" unique_id=1954507377]
-layout_mode = 2
-
-[node name="Label" type="Label" parent="GimbalSetting/P64" unique_id=6271396]
-layout_mode = 2
-size_flags_horizontal = 2
-text = "摩擦轮 P64"
-
-[node name="OptionButton" type="OptionButton" parent="GimbalSetting/P64" unique_id=1006653102]
-layout_mode = 2
-size_flags_horizontal = 8
-selected = 0
-item_count = 2
-popup/item_0/text = "正向"
-popup/item_0/id = 0
-popup/item_1/text = "反向"
-popup/item_1/id = 1
-
-[node name="P66" type="HBoxContainer" parent="GimbalSetting" unique_id=1182067176]
-layout_mode = 2
-
-[node name="Label" type="Label" parent="GimbalSetting/P66" unique_id=1495023328]
-layout_mode = 2
-size_flags_horizontal = 2
-text = "摩擦轮 P66"
-
-[node name="OptionButton" type="OptionButton" parent="GimbalSetting/P66" unique_id=1714150482]
-layout_mode = 2
-size_flags_horizontal = 8
-selected = 0
-item_count = 2
-popup/item_0/text = "正向"
-popup/item_0/id = 0
-popup/item_1/text = "反向"
-popup/item_1/id = 1
-
 [node name="Booster" type="HBoxContainer" parent="GimbalSetting" unique_id=1672469214]
 layout_mode = 2
 

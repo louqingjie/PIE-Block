@@ -119,8 +119,9 @@ func generate(cfg: Dictionary) -> String:
 	var r1_dir: int = _dir_to_int(cfg.get("r1_dir", "正向"))
 	var r2_dir: int = _dir_to_int(cfg.get("r2_dir", "正向"))
 	var booster_dir: int = _dir_to_int(cfg.get("booster_dir", "正向"))
-	var fric_l_dir: int = _dir_to_int(cfg.get("friction_l_dir", "正向"))
-	var fric_r_dir: int = _dir_to_int(cfg.get("friction_r_dir", "正向"))
+	# 摩擦轮 Dir 硬编码 0：实测拓展板 Dir_Change_Order 里摩擦轮槽位发 1 时
+	# ESC 无法解锁（摩擦轮不转），发 0 正常（2026-08 实机验证）。
+	# 两侧轮子的实际旋向靠接线调整，不走协议方向位。
 
 	# --- 归中角偏移与限幅（唯一真相源见 gimbal_params，3D 仿真共用同一份）---
 	var gp: Dictionary = gimbal_params(cfg)
@@ -159,11 +160,11 @@ func generate(cfg: Dictionary) -> String:
 	var dir_exprs: Array = ["1", "1", "1", "1", "1", "1", "1", "1"]
 	var duty_vals: Array = ["0", "0", "0", "0", "0", "0", "0", "0"]
 
-	# 摩擦轮固定占用 P64 / P66，频率 50Hz
+	# 摩擦轮固定占用 P64 / P66，频率 50Hz；Dir 固定 0（见上方实测说明）
 	init_vals[friction_l_slot] = 50
 	init_vals[friction_r_slot] = 50
-	dir_exprs[friction_l_slot] = str(fric_l_dir)
-	dir_exprs[friction_r_slot] = str(fric_r_dir)
+	dir_exprs[friction_l_slot] = "0"
+	dir_exprs[friction_r_slot] = "0"
 	duty_vals[friction_l_slot] = "dutyOfBooster"
 	duty_vals[friction_r_slot] = "dutyOfBooster"
 

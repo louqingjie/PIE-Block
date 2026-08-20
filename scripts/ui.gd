@@ -43,8 +43,7 @@ const P_R2_DIR: NodePath = CHASSIS + "/R2/OptionButton2"
 const GIMBAL: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/Infantry/GimbalSetting"
 const P_BOOSTER_IO: NodePath = GIMBAL + "/Booster/OptionButton"
 const P_BOOSTER_DIR: NodePath = GIMBAL + "/Booster/OptionButton2"
-const P_FRICTION_L_DIR: NodePath = GIMBAL + "/P64/OptionButton"
-const P_FRICTION_R_DIR: NodePath = GIMBAL + "/P66/OptionButton"
+# 摩擦轮方向已删除 UI：Dir 固定发 0（实测拓展板协议方向位 1 会导致摩擦轮不转）
 const P_YAW_DRIVE: NodePath = GIMBAL + "/Yaw/OptionButton"
 const P_YAW_IO: NodePath = GIMBAL + "/Yaw/OptionButton2"
 const P_YAW_DIR: NodePath = GIMBAL + "/Yaw/OptionButton3"
@@ -203,6 +202,8 @@ const BC = preload("res://scripts/build_controller.gd")
 const DC = preload("res://scripts/download_controller.gd")
 const UPGRADE_PROGRESS = preload("res://scripts/upgrade_progress.gd")
 const KG = preload("res://scripts/keil_guide.gd")
+## 首次烧录指引（烧录前确认板上开关已断开，可勾选「不再显示」）
+const FFG = preload("res://scripts/first_flash_guide.gd")
 ## 云端编译核心与配置引导（preload 避免全局类名缓存未建立）
 const CLOUD_COMPILER = preload("res://scripts/cloud_compiler.gd")
 const CLOUD_GUIDE = preload("res://scripts/cloud_guide.gd")
@@ -412,10 +413,9 @@ func _connect_signals() -> void:
 		if sub_btn is OptionButton:
 			sub_btn.item_selected.connect(_sync_io_locks)
 	# OptionButton 选项变化
-	for p in [P_L1_IO, P_L2_IO, P_R1_IO, P_R2_IO,
+		for p in [P_L1_IO, P_L2_IO, P_R1_IO, P_R2_IO,
 			P_L1_DIR, P_L2_DIR, P_R1_DIR, P_R2_DIR,
 			P_BOOSTER_IO, P_BOOSTER_DIR,
-			P_FRICTION_L_DIR, P_FRICTION_R_DIR,
 			P_YAW_DRIVE, P_YAW_IO, P_YAW_DIR,
 			P_PITCH_DRIVE, P_PITCH_IO, P_PITCH_DIR,
 			P_TRIGGER, P_BOOSTER_KEY, P_FEED_MODE]:
@@ -1937,8 +1937,6 @@ func _collect_config() -> Dictionary:
 	# --- 云台参数 ---
 	cfg["booster_io"] = _get_option_text(P_BOOSTER_IO)
 	cfg["booster_dir"] = _get_option_text(P_BOOSTER_DIR)
-	cfg["friction_l_dir"] = _get_option_text(P_FRICTION_L_DIR)
-	cfg["friction_r_dir"] = _get_option_text(P_FRICTION_R_DIR)
 	cfg["yaw_drive"] = _get_option_text(P_YAW_DRIVE)
 	cfg["yaw_io"] = _get_option_text(P_YAW_IO)
 	cfg["yaw_dir"] = _get_option_text(P_YAW_DIR)
@@ -2493,6 +2491,11 @@ func _on_solver_build_requested() -> void:
 		_append_output("[Error] 无法生成 MCU 求解器固件")
 		_show_solver_error_dialog("无法生成 MCU 求解器固件", ["生成器返回空代码，请检查配置。"])
 		return
+	# 首次烧录指引（求解器固件同样写入主控板，开关必须先断开），确认后再走 Keil 引导
+	FFG.ensure_guide(self, _continue_solver_build.bind(code))
+
+
+func _continue_solver_build(code: String) -> void:
 	# 确认外部 Keil 目录（引导成功）后再编译；状态置位在 _start_solver_build 内，取消不残留
 	KG.ensure_keil(self, _toolchain(), _start_solver_build.bind(code), _on_keil_guide_cancel)
 
@@ -2591,6 +2594,11 @@ func _on_download_pressed() -> void:
 	if _download_controller == null or _download_controller.is_busy() \
 			or (_build_controller != null and _build_controller.is_busy()):
 		return
+	# 首次烧录指引：确认板上开关已断开（可勾选「不再显示」）后再烧录
+	FFG.ensure_guide(self, _start_download)
+
+
+func _start_download() -> void:
 	_download_controller.start(_get_current_project_dst())
 
 
@@ -2654,6 +2662,11 @@ func _on_upgrade_pressed() -> void:
 	if _upgrade_active or _build_controller == null or _build_controller.is_busy() \
 			or _download_controller == null or _download_controller.is_busy():
 		return
+	# 首次烧录指引：确认板上开关已断开（可勾选「不再显示」）后再进入升级流程
+	FFG.ensure_guide(self, _continue_upgrade_pressed)
+
+
+func _continue_upgrade_pressed() -> void:
 	# 引导成功后才进入升级流程（_upgrade_active 在 _do_upgrade 内置位，取消不残留）
 	# 云端编译模式下不需要本机 Keil，只需确认云端配置
 	if _is_cloud_mode():

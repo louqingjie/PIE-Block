@@ -503,8 +503,7 @@ func _flatten_infantry_config(config: Dictionary) -> Dictionary:
 	var gimbal: String = "Infantry/GimbalSetting"
 	flat["booster_io"] = str(_config_val(config, gimbal + "/Booster/OptionButton"))
 	flat["booster_dir"] = str(_config_val(config, gimbal + "/Booster/OptionButton2"))
-	flat["friction_l_dir"] = str(_config_val(config, gimbal + "/P64/OptionButton"))
-	flat["friction_r_dir"] = str(_config_val(config, gimbal + "/P66/OptionButton"))
+	# 摩擦轮方向 UI 已删除：Dir 固定发 0（实测协议方向位 1 导致摩擦轮不转）
 	flat["yaw_drive"] = str(_config_val(config, gimbal + "/Yaw/OptionButton"))
 	flat["yaw_io"] = str(_config_val(config, gimbal + "/Yaw/OptionButton2"))
 	flat["yaw_dir"] = str(_config_val(config, gimbal + "/Yaw/OptionButton3"))
@@ -777,8 +776,6 @@ func _infantry_schema() -> Dictionary:
 		"r2_dir": {"type": "string", "enum": ["正向", "反向"], "default": "正向"},
 		"booster_io": {"type": "string", "description": "拨弹电机 IO（单引脚，扩展板）", "default": "P60"},
 		"booster_dir": {"type": "string", "enum": ["正向", "反向"], "default": "正向"},
-		"friction_l_dir": {"type": "string", "enum": ["正向", "反向"], "default": "正向", "description": "左摩擦轮方向（P64 固定）"},
-		"friction_r_dir": {"type": "string", "enum": ["正向", "反向"], "default": "正向", "description": "右摩擦轮方向（P66 固定）"},
 		"yaw_drive": {"type": "string", "enum": ["舵机", "电机"], "default": "舵机"},
 		"yaw_io": {"type": "string", "description": "Yaw 轴 IO"},
 		"yaw_dir": {"type": "string", "enum": ["正向", "反向"], "default": "正向"},

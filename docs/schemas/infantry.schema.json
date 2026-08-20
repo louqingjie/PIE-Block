@@ -48,24 +48,6 @@
       ],
       "type": "string"
     },
-    "friction_l_dir": {
-      "default": "正向",
-      "description": "左摩擦轮方向（P64 固定）",
-      "enum": [
-        "正向",
-        "反向"
-      ],
-      "type": "string"
-    },
-    "friction_r_dir": {
-      "default": "正向",
-      "description": "右摩擦轮方向（P66 固定）",
-      "enum": [
-        "正向",
-        "反向"
-      ],
-      "type": "string"
-    },
     "l1_dir": {
       "default": "正向",
       "enum": [

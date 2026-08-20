@@ -13,7 +13,6 @@ func _cfg(yaw_drive: String, pitch_drive: String) -> Dictionary:
 		"r2_io": "P77 P27", "r2_dir": "正向",
 		"normal_speed": "4000", "sprint_speed": "8000", "sprint_enabled": true,
 		"booster_io": "P60 P61", "booster_dir": "正向",
-		"friction_l_dir": "正向", "friction_r_dir": "反向",
 		"yaw_drive": yaw_drive, "yaw_io": "MP74", "yaw_dir": "正向",
 		"pitch_drive": pitch_drive, "pitch_io": "MP03", "pitch_dir": "正向",
 		"yaw_mid_offset": "0", "pitch_mid_offset": "0",
