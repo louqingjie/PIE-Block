@@ -498,15 +498,10 @@ static func _check_eng_row(issues: Array, row: Dictionary, mode_no: int, row_idx
 
 # ------------------------------------------------------------------ 规则：步兵高级设置（共享多模式按键映射）
 # 步兵固定子系统占用：摩擦轮 P64/P66、拨弹电机、云台 Yaw/Pitch、底盘。
-# 共享按键映射的行不能指向这些引脚；摩擦轮引脚在 IO 初始化区必须为舵机
-# （摩擦轮与舵机同为 50Hz 初始化，10000 才是电机）。
+# 共享按键映射的行不能指向这些引脚；摩擦轮频率允许在 IO 初始化区选择
+# 舵机(50Hz)或电机(10000Hz)，用于实机验证。
 static func _check_infantry_shared(issues: Array, cfg: Dictionary) -> void:
 	var io_init: Dictionary = cfg.get("io_init", {})
-	# 摩擦轮固定占用 P64/P66（硬件保护规则）
-	for pin in FRICTION_PINS:
-		if str(io_init.get(pin, "舵机")) != "舵机":
-			issues.append({"type": "Error",
-				"msg": "步兵 %s 已被摩擦轮固定占用，IO 初始化区必须设为舵机" % pin})
 	# 预留引脚：底盘 + 摩擦轮 + 拨弹 + 云台
 	var reserved: Array = _chassis_pins(cfg)
 	reserved.append_array(FRICTION_PINS)
@@ -535,7 +530,7 @@ static func _check_infantry_shared(issues: Array, cfg: Dictionary) -> void:
 				continue
 			_check_eng_row(issues, row, mi + 1, row_idx, cfg, "单击切换",
 				str(cfg.get("mode_switch_key", "E")), cfg.get("mode_keys", []), used_keys)
-	# 步兵云台/拨弹用到的引脚在 IO 初始化区必须与子系统类型一致（摩擦轮已查）
+	# 步兵云台/拨弹用到的引脚在 IO 初始化区必须与子系统类型一致；摩擦轮频率可自行选择。
 	for key in ["booster_io", "yaw_io", "pitch_io"]:
 		var pin: String = str(cfg.get(key, "")).split(" ")[0]
 		if pin.is_empty() or pin.begins_with("MP"):

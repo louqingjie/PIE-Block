@@ -85,7 +85,7 @@ func generate(cfg: Dictionary) -> String:
 	var trig_spd: String = _int_or_default(cfg.get("trigger_speed", ""), 10000, 0, 10000)
 	# Ms_Delay 参数是 uint16_t，超过 65535 会被静默截断
 	var trig_time: String = _int_or_default(cfg.get("trigger_time", ""), 250, 0, 65535)
-	# 校内赛安全策略：500 duty 起步，每个 50Hz PWM 周期增减 1，硬上限 800。
+	# 校内赛安全策略：500 duty 起步，每个主循环增减 1，硬上限 800。
 	# 最大档位只接受 500~800 内的整百值；非法输入回退 800。
 	var friction_max_text: String = str(cfg.get("friction_max_duty", "800")).strip_edges()
 	var friction_max_duty: int = 800
@@ -175,9 +175,8 @@ func generate(cfg: Dictionary) -> String:
 	var dir_exprs: Array = ["1", "1", "1", "1", "1", "1", "1", "1"]
 	var duty_vals: Array = ["0", "0", "0", "0", "0", "0", "0", "0"]
 
-	# 摩擦轮固定占用 P64 / P66，频率 50Hz；Dir 固定 0（见上方实测说明）
-	init_vals[friction_l_slot] = 50
-	init_vals[friction_r_slot] = 50
+	# 摩擦轮固定占用 P64 / P66；初始化频率服从 IO 设置区，便于实测 50/10000Hz。
+	# Dir 仍固定 0（见上方实测说明），占空比仍由摩擦轮状态机独占控制。
 	dir_exprs[friction_l_slot] = "0"
 	dir_exprs[friction_r_slot] = "0"
 	duty_vals[friction_l_slot] = "dutyOfBooster"
@@ -311,12 +310,8 @@ func generate(cfg: Dictionary) -> String:
 		init_vals[slot] = 10000
 		dir_exprs[slot] = "(dutyOfAuxMotor[%d] >= 0 ? 1 : 0)" % slot
 		duty_vals[slot] = "(uint16_t)abs(dutyOfAuxMotor[%d])" % slot
-	# 步兵拓展板前四路 P60/P62/P64/P66 共用摩擦轮所在的 50Hz PWM 时基。
-	# 官方 A.EXPAND_TEST、RM_playcar_example、RM_rub_wheel 均固定发送
-	# 50,50,50,50；实机独立诊断也验证该组合可同时驱动 P64/P66。
-	# P60 即使连接拨弹电机，仍通过 Duty/Dir 控制，但初始化频率必须留在 50Hz。
-	for slot in range(4):
-		init_vals[slot] = 50
+	# 不再覆盖 P60/P62/P64/P66 的初始化频率：四路均服从 IO 设置区及实际角色。
+	# 选择“舵机”生成 50Hz，选择“电机”生成 10000Hz，供实机验证扩展板时基行为。
 	# 主控板辅助舵机 PWM（初始角按 IO 初始化区）
 	for si in range(2):
 		if use_aux_main[si]:

@@ -228,13 +228,18 @@ func _initialize() -> void:
 	var adv_p77: OptionButton = ui.get_node(NodePath(ui._eng_io_path("P77")))
 	_check("拨弹电机改 P77 后 P77 强制为电机",
 		ui._option_text(adv_p77) == "电机", ui._option_text(adv_p77))
-	# 摩擦轮 P64/P66 恒舵机、电机禁用
+	# 摩擦轮 P64/P66 的频率类型开放选择，供实测 50/10000Hz
 	var adv_p64: OptionButton = ui.get_node(NodePath(ui._eng_io_path("P64")))
 	var adv_p66: OptionButton = ui.get_node(NodePath(ui._eng_io_path("P66")))
-	_check("摩擦轮 P64 恒舵机", ui._option_text(adv_p64) == "舵机", ui._option_text(adv_p64))
-	_check("摩擦轮 P64 电机选项被禁用", adv_p64.is_item_disabled(0), str(adv_p64.is_item_disabled(0)))
-	_check("摩擦轮 P66 恒舵机", ui._option_text(adv_p66) == "舵机", ui._option_text(adv_p66))
-	_check("摩擦轮 P66 电机选项被禁用", adv_p66.is_item_disabled(0), str(adv_p66.is_item_disabled(0)))
+	_check("摩擦轮 P64 的电机/舵机选项均开放",
+		not adv_p64.is_item_disabled(0) and not adv_p64.is_item_disabled(1))
+	_check("摩擦轮 P66 的电机/舵机选项均开放",
+		not adv_p66.is_item_disabled(0) and not adv_p66.is_item_disabled(1))
+	_set_io_init(ui, "P64", "电机")
+	_set_io_init(ui, "P66", "电机")
+	ui._sync_io_locks()
+	_check("摩擦轮 P64 可保持电机(10000Hz)选择", ui._option_text(adv_p64) == "电机")
+	_check("摩擦轮 P66 可保持电机(10000Hz)选择", ui._option_text(adv_p66) == "电机")
 	# Yaw/Pitch 跟随驱动类型
 	var yaw_drive_btn: OptionButton = ui.get_node(ui.P_YAW_DRIVE)
 	var yaw_io_btn: OptionButton = ui.get_node(ui.P_YAW_IO)

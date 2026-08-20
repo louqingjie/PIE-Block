@@ -24,23 +24,41 @@ func _initialize() -> void:
 		quit(1)
 		return
 	var code: String = CG.new().generate({})
-	# IO 初始化区不能因“未被模式控制行引用”而泄漏内部默认值 0Hz。
-	# 步兵前四路与摩擦轮共用 50Hz 时基，因此 P60/P62 即使逻辑类型为电机，
-	# Init_Order 也必须与官方示例一致保持 50,50,50,50。
-	var servo_p62_code: String = CG.new().generate({
-		"io_init": {"P62": "舵机"},
-	})
-	if not servo_p62_code.contains("50, 50,\n                          50, 50,"):
-		printerr("步兵前四路必须统一按 50Hz 初始化，不能生成 0Hz 或混合频率")
+	# P60/P62/P64/P66 不再统一覆盖为 50Hz，四路均服从 IO 设置区。
+	# 把拨弹/底盘角色移到后四路，隔离验证前四路的纯 IO 配置结果。
+	var front_role_cfg: Dictionary = {
+		"booster_io": "P74 P24", "l1_io": "P75 P25", "l2_io": "P76 P26",
+		"r1_io": "P77 P27", "r2_io": "P75 P25",
+	}
+	var servo_front_cfg: Dictionary = front_role_cfg.duplicate(true)
+	servo_front_cfg["io_init"] = {"P60": "舵机", "P62": "舵机", "P64": "舵机", "P66": "舵机"}
+	var servo_front_code: String = CG.new().generate(servo_front_cfg)
+	if not servo_front_code.contains("50, 50,\n                          50, 50,"):
+		printerr("P60/P62/P64/P66 选择舵机时必须分别生成 50Hz")
 		quit(1)
 		return
-	var motor_p62_code: String = CG.new().generate({
-		"io_init": {"P62": "电机"},
-	})
-	if not motor_p62_code.contains("50, 50,\n                          50, 50,"):
-		printerr("P62 作为电机时也不得破坏步兵前四路共享的 50Hz 时基")
+	var motor_front_cfg: Dictionary = front_role_cfg.duplicate(true)
+	motor_front_cfg["io_init"] = {"P60": "电机", "P62": "电机", "P64": "电机", "P66": "电机"}
+	var motor_front_code: String = CG.new().generate(motor_front_cfg)
+	if not motor_front_code.contains("10000, 10000,\n                          10000, 10000,"):
+		printerr("P60/P62/P64/P66 选择电机时必须分别生成 10000Hz")
 		quit(1)
 		return
+	var mixed_front_cfg: Dictionary = front_role_cfg.duplicate(true)
+	mixed_front_cfg["io_init"] = {"P60": "舵机", "P62": "电机", "P64": "舵机", "P66": "电机"}
+	var mixed_front_code: String = CG.new().generate(mixed_front_cfg)
+	if not mixed_front_code.contains("50, 10000,\n                          50, 10000,"):
+		printerr("P60/P62/P64/P66 的混合频率配置未逐路进入 Init_Order")
+		quit(1)
+		return
+	var friction_freq_issues: Array = SC.check_infantry({
+		"io_init": {"P64": "电机", "P66": "电机"},
+	})
+	for issue in friction_freq_issues:
+		if str(issue.get("msg", "")).contains("IO 初始化区必须设为舵机"):
+			printerr("静态检查仍阻止 P64/P66 选择 10000Hz")
+			quit(1)
+			return
 	if code.contains("remote_control_init();") \
 			or not code.contains("remoteControlInitWithTimeout();") \
 			or not code.contains("retry < 20"):
