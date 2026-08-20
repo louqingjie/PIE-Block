@@ -81,11 +81,12 @@ func _initialize() -> void:
 		printerr("摩擦轮渐变注释仍错误地忽略了通信帧间隔")
 		quit(1)
 		return
-	# 摩擦轮必须完全采用官方阻塞式开关控制：500 起步，每 1500ms 增加 100，
+	# 摩擦轮必须采用平滑阻塞式开关控制：500 起步，每 20ms 增加 1，
 	# 稳态只有 0 或用户设定的最大值，不再保留 B/C 档位和非阻塞目标跟踪。
 	if not code.contains("#define FRICTION_MAX_DUTY   1100") \
 			or not code.contains("while (dutyOfBooster < FRICTION_MAX_DUTY)") \
-			or not code.contains("#define FRICTION_STEP_MS    1500") \
+			or not code.contains("#define FRICTION_STEP_DUTY  1") \
+			or not code.contains("#define FRICTION_STEP_MS    20") \
 			or not code.contains("dutyOfBooster += FRICTION_STEP_DUTY;"):
 		printerr("生成代码缺少官方阻塞式摩擦轮增速序列")
 		quit(1)

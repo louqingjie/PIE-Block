@@ -112,9 +112,9 @@ const ROKER_FULL: float = 2047.0
 ## 摩擦轮占空比区间（《RM电控指南》硬性规定，不得提高上限）
 const BOOSTER_DUTY_MIN: int = 500
 const BOOSTER_DUTY_MAX: int = 1100
-## 官方阻塞启停序列：每 1500ms 增减 100 duty
-const BOOSTER_STEP: int = 100
-const BOOSTER_STEP_MS: float = 1500.0
+## 平滑阻塞启停序列：每个 50Hz PWM 周期增减 1 duty
+const BOOSTER_STEP: int = 1
+const BOOSTER_STEP_MS: float = 20.0
 ## 一帧最多补的步数，掉帧时不至于一次跳很远
 const MAX_STEPS_PER_FRAME: int = 20
 ## 目视闭环模式下按住扳机时的出弹间隔（ms）。
@@ -713,7 +713,7 @@ func _tick() -> void:
 		if _friction_ramp_ms <= 0.0:
 			if _friction_ramp_direction > 0 and _duty_booster < _friction_max_duty:
 				_duty_booster = mini(_duty_booster + BOOSTER_STEP, _friction_max_duty)
-				# 到达最大值后仍保持一个 1500ms 安全间隔，随后才恢复主循环。
+				# 到达最大值后仍保持一个 20ms 完整 PWM 周期，随后才恢复主循环。
 				_friction_ramp_ms = BOOSTER_STEP_MS
 			elif _friction_ramp_direction < 0 and _duty_booster > BOOSTER_DUTY_MIN:
 				_duty_booster -= BOOSTER_STEP
@@ -868,7 +868,7 @@ func _calculate_booster_control() -> void:
 			_friction_ramp_direction = 1
 			_friction_ramp_ms = BOOSTER_STEP_MS
 		else:
-			# 禁止高速直接断电：保持当前 duty，随后每 1500ms 减少 100，
+			# 禁止高速直接断电：保持当前 duty，随后每 20ms 减少 1，
 			# 经 500 后才降到 0，并在 0 duty 再等待一个安全间隔。
 			_friction_ramp_direction = -1
 			_friction_ramp_ms = BOOSTER_STEP_MS
@@ -1496,7 +1496,7 @@ func _on_mid_offset_changed(key: String, value: float) -> void:
 func _build_operate_params(parent: Node) -> void:
 	_add_section(parent, "摩擦轮")
 	_add_note(parent, ("只有开/关两种稳态。开关键 %s 上升沿翻转；开启时从 500 duty 起步，"
-		+ "每 1500ms 阻塞增加 100，直到用户设定的 %d；关闭时按相同间隔逐级降至 0。")
+		+ "每 20ms 阻塞增加 1，直到用户设定的 %d；关闭时按相同间隔平滑降至 0。")
 			% [str(_cfg.get("booster_key", "A")), _friction_max_duty])
 	_add_section(parent, "音效")
 	var audio_cb: CheckButton = CheckButton.new()
