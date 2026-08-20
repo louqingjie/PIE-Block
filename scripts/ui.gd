@@ -149,6 +149,12 @@ const P_HEX_EXPORT_BTN: NodePath = "VBoxContainer/TopPanel/HEXExport"
 const P_BUILD_MODE: NodePath = "VBoxContainer/TopPanel/BuildMode"
 const P_CLOUD_SETTINGS: NodePath = "VBoxContainer/TopPanel/Settings"
 const P_UPGRADE_BTN: NodePath = "VBoxContainer/TopPanel/Upgrade"
+
+## Debug 灯说明按钮（顶栏）
+const P_DEBUG_LIGHT_BTN: NodePath = "VBoxContainer/TopPanel/DebugLight"
+
+## Debug 灯说明弹窗场景
+const DEBUG_LIGHT_GUIDE_SCENE: String = "res://scenes/debug_light_guide.tscn"
 const P_UPGRADE_PROGRESS: NodePath = "UpgradeProgress"
 # 项目引导
 const P_MAIN_UI: NodePath = "VBoxContainer"
@@ -478,6 +484,10 @@ func _connect_signals() -> void:
 	var upgrade_btn: Node = get_node_or_null(P_UPGRADE_BTN)
 	if upgrade_btn is BaseButton:
 		upgrade_btn.pressed.connect(_on_upgrade_pressed)
+	# Debug 灯说明按钮
+	var debug_light_btn: Node = get_node_or_null(P_DEBUG_LIGHT_BTN)
+	if debug_light_btn is BaseButton:
+		debug_light_btn.pressed.connect(_on_debug_light_pressed)
 	# AI 编辑入口
 	var ai_btn: Node = get_node_or_null(P_AI_EDIT_BTN)
 	if ai_btn is BaseButton:
@@ -2590,6 +2600,17 @@ func _clear_output() -> void:
 
 
 # ------------------------------------------------------------------ 下载/烧录
+## Debug 灯说明：弹模态覆盖层，关闭即销毁（无持久化，每次点击都弹）。
+func _on_debug_light_pressed() -> void:
+	var packed: PackedScene = load(DEBUG_LIGHT_GUIDE_SCENE) as PackedScene
+	if packed == null:
+		return
+	var guide: Control = packed.instantiate()
+	add_child(guide)
+	# 进度面板 / 仿真等更高层覆盖始终排在它之后
+	guide.move_to_front()
+
+
 func _on_download_pressed() -> void:
 	if _download_controller == null or _download_controller.is_busy() \
 			or (_build_controller != null and _build_controller.is_busy()):

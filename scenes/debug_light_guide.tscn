@@ -1,0 +1,110 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/debug_light_guide.gd" id="1_script"]
+
+[sub_resource type="StyleBoxFlat" id="StylePanel"]
+content_margin_left = 28.0
+content_margin_top = 20.0
+content_margin_right = 28.0
+content_margin_bottom = 20.0
+bg_color = Color(0.105, 0.125, 0.145, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.28, 0.34, 0.39, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+shadow_color = Color(0, 0, 0, 0.45)
+shadow_size = 18
+
+[node name="DebugLightGuide" type="Control"]
+process_mode = 3
+z_index = 200
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 1
+script = ExtResource("1_script")
+
+[node name="Dim" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.015, 0.02, 0.025, 0.76)
+
+[node name="Center" type="CenterContainer" parent="Dim"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Panel" type="PanelContainer" parent="Dim/Center"]
+custom_minimum_size = Vector2(560, 0)
+propagate_maximum_size = false
+layout_mode = 2
+theme_override_styles/panel = SubResource("StylePanel")
+
+[node name="Content" type="VBoxContainer" parent="Dim/Center/Panel"]
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="Title" type="Label" parent="Dim/Center/Panel/Content"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 22
+text = "Debug 灯说明"
+horizontal_alignment = 1
+
+[node name="Intro" type="Label" parent="Dim/Center/Panel/Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.82, 0.85, 0.88, 1)
+theme_override_font_sizes/font_size = 15
+text = "主控板上有 4 颗 Debug 灯，从上到下依次为 P37、P36、P35、P34。
+
+上电初始化时，上三颗灯（P37 P36 P35）显示当前初始化步骤的
+3 位二进制编码：亮 = 1，灭 = 0（P37 是最高位）。
+初始化卡在哪一步，灯就停在对应的编码上。
+
+P34（最下面一颗）保留给 NRF 无线通信使用，不参与诊断编码。"
+autowrap_mode = 2
+
+[node name="TableTitle" type="Label" parent="Dim/Center/Panel/Content"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+text = "编码对照表（P37 P36 P35）"
+
+[node name="Table" type="Label" parent="Dim/Center/Panel/Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.72, 0.86, 0.82, 1)
+theme_override_font_sizes/font_size = 15
+text = "000  上电
+001  Board_Init 时钟初始化
+010  UART1 串口初始化
+011  LED 自检
+100  NRF 遥控初始化
+101  拓展板初始化
+110  PWM / 舵机初始化
+111  初始化完成"
+
+[node name="Hint" type="Label" parent="Dim/Center/Panel/Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.62, 0.66, 0.7, 1)
+theme_override_font_sizes/font_size = 13
+text = "每一步初始化成功时蜂鸣器会响一声音调递增的确认音。
+若灯停在某个编码且听不到后续确认音，说明卡在了该步：对照上表定位问题。"
+autowrap_mode = 2
+
+[node name="Close" type="Button" parent="Dim/Center/Panel/Content"]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+text = "关闭"

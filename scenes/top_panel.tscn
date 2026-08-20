@@ -35,6 +35,7 @@ layout_mode = 2
 text = "进入 C 代码后处理"
 
 [node name="EnableAI" type="Button" parent="." unique_id=1699049185]
+visible = false
 layout_mode = 2
 toggle_mode = true
 text = "启用 AI 功能"
@@ -59,9 +60,9 @@ text = "编译"
 
 [node name="BuildMode" type="OptionButton" parent="." unique_id=1075719196]
 visible = false
-disabled = true
 layout_mode = 2
 size_flags_horizontal = 8
+disabled = true
 selected = 0
 item_count = 2
 popup/item_0/text = "本地编译"
@@ -74,6 +75,10 @@ visible = false
 layout_mode = 2
 size_flags_horizontal = 8
 text = "烧录主控板"
+
+[node name="DebugLight" type="Button" parent="." unique_id=1898393431]
+layout_mode = 2
+text = "查看 Debug 灯说明"
 
 [node name="HEXExport" type="Button" parent="." unique_id=1243493293]
 layout_mode = 2
