@@ -113,6 +113,24 @@ func _initialize() -> void:
 		printerr("生成代码缺少摩擦轮阻塞式逐级关闭逻辑")
 		quit(1)
 		return
+	var booster_func_start: int = code.find("void CalculateBoosterControl()\n{")
+	var booster_func_end: int = code.find("void CalculateGimbalControls()\n{", booster_func_start)
+	var booster_func: String = code.substr(booster_func_start, booster_func_end - booster_func_start)
+	var booster_duty_frame: int = booster_func.find("ExpansionBoradControl(Duty_Change_Order")
+	var booster_dir_frame: int = booster_func.find("ExpansionBoradControl(Dir_Change_Order")
+	if booster_func.contains("Main_Countrol("):
+		printerr("摩擦轮阻塞启停仍错误地经过 Main_Countrol")
+		quit(1)
+		return
+	if booster_duty_frame < 0 or booster_dir_frame < 0 or booster_duty_frame > booster_dir_frame:
+		printerr("摩擦轮阻塞启停没有严格采用官方 Duty 帧 -> Dir 帧顺序")
+		quit(1)
+		return
+	if not booster_func.contains("Duty_Change_Order, 0, 0, dutyOfBooster, dutyOfBooster, 0, 0, 0, 0") \
+			or not booster_func.contains("Dir_Change_Order, 1, 1, 0, 0, 0, 0, 0, 0"):
+		printerr("摩擦轮阻塞启停的 P64/P66 直发参数不符合官方示例")
+		quit(1)
+		return
 	if not code.contains("Ms_Delay(1000);"):
 		printerr("摩擦轮初始化后缺少必须的 1000ms 硬件反应时间")
 		quit(1)
