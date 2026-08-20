@@ -28,7 +28,7 @@ const SERVO_MID_DUTY: int = SERVO_DUTY_MID
 # 摩擦轮渐变参数（参考 RM电控指南）
 const FRICTION_STEP: int = 100 # 每步增加 100 占空比
 const FRICTION_STEP_DELAY: int = 1500 # 每步间隔 1500ms
-const FRICTION_MAX: int = 1000 # 官方摩擦轮最大占空比
+const FRICTION_MAX: int = 1100 # 官方摩擦轮最大占空比
 
 
 ## 生成 main.c 代码。
@@ -61,7 +61,7 @@ func generate(cfg: Dictionary) -> String:
 	code += "// 摩擦轮渐变参数\n"
 	code += "#define FRICTION_STEP       100\n"
 	code += "#define FRICTION_STEP_MS   1500\n"
-	code += "#define FRICTION_MAX       1000\n"
+	code += "#define FRICTION_MAX       1100\n"
 	code += "\n"
 	code += "/*帧头帧尾，内部调用，无需关心*/\n"
 	code += "#define COMM_HEADER_1 0xAB\n#define COMM_HEADER_2 0xBC\n#define COMM_END_1 0xCD\n#define COMM_END_2 0xDE\n"

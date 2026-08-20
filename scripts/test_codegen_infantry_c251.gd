@@ -14,7 +14,7 @@ func _initialize() -> void:
 		quit(1)
 		return
 	infantry_ui.free()
-	var friction_issues: Array = SC.check_infantry({"friction_max_duty": "1100"})
+	var friction_issues: Array = SC.check_infantry({"friction_max_duty": "1200"})
 	var found_friction_limit: bool = false
 	for issue in friction_issues:
 		if str(issue.get("msg", "")).contains("摩擦轮最大占空比"):
@@ -81,11 +81,11 @@ func _initialize() -> void:
 		printerr("摩擦轮渐变注释仍错误地忽略了通信帧间隔")
 		quit(1)
 		return
-	# 摩擦轮必须完全采用官方阻塞式开关控制：500 起步，每 100ms 增加 100，
+	# 摩擦轮必须完全采用官方阻塞式开关控制：500 起步，每 1500ms 增加 100，
 	# 稳态只有 0 或用户设定的最大值，不再保留 B/C 档位和非阻塞目标跟踪。
-	if not code.contains("#define FRICTION_MAX_DUTY   1000") \
+	if not code.contains("#define FRICTION_MAX_DUTY   1100") \
 			or not code.contains("while (dutyOfBooster < FRICTION_MAX_DUTY)") \
-			or not code.contains("Ms_Delay(FRICTION_STEP_MS);") \
+			or not code.contains("#define FRICTION_STEP_MS    1500") \
 			or not code.contains("dutyOfBooster += FRICTION_STEP_DUTY;"):
 		printerr("生成代码缺少官方阻塞式摩擦轮增速序列")
 		quit(1)
@@ -102,9 +102,19 @@ func _initialize() -> void:
 		printerr("用户指定的摩擦轮最大占空比未进入生成代码")
 		quit(1)
 		return
-	var over_limit_code: String = CG.new().generate({"friction_max_duty": "1100"})
-	if not over_limit_code.contains("#define FRICTION_MAX_DUTY   1000"):
-		printerr("超过官方上限的摩擦轮占空比未安全回退到 1000")
+	var over_limit_code: String = CG.new().generate({"friction_max_duty": "1200"})
+	if not over_limit_code.contains("#define FRICTION_MAX_DUTY   1100"):
+		printerr("超过官方上限的摩擦轮占空比未安全回退到 1100")
+		quit(1)
+		return
+	if not code.contains("while (dutyOfBooster > FRICTION_START_DUTY)") \
+			or not code.contains("dutyOfBooster -= FRICTION_STEP_DUTY;") \
+			or not code.contains("dutyOfBooster = 0;"):
+		printerr("生成代码缺少摩擦轮阻塞式逐级关闭逻辑")
+		quit(1)
+		return
+	if not code.contains("Ms_Delay(1000);"):
+		printerr("摩擦轮初始化后缺少必须的 1000ms 硬件反应时间")
 		quit(1)
 		return
 	if not code.contains("P2INTE &= ~GPIO_Pin_6"):

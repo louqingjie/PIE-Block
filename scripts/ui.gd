@@ -1418,7 +1418,7 @@ func _update_debug_placeholders(_idx: int = -1) -> void:
 			"舵机":
 				placeholder = "角度 -90~90"
 			"摩擦轮":
-				placeholder = "速度 0~1000"
+				placeholder = "速度 0~1100"
 		line_edit.placeholder_text = placeholder
 
 

@@ -85,13 +85,13 @@ func generate(cfg: Dictionary) -> String:
 	var trig_spd: String = _int_or_default(cfg.get("trigger_speed", ""), 10000, 0, 10000)
 	# Ms_Delay 参数是 uint16_t，超过 65535 会被静默截断
 	var trig_time: String = _int_or_default(cfg.get("trigger_time", ""), 250, 0, 65535)
-	# 官方摩擦轮守则：500 duty 起步，每 100ms 增加 100，最高 1000。
-	# 为保证每一级严格增加 100，只接受 500~1000 内的整百值；非法输入回退 1000。
-	var friction_max_text: String = str(cfg.get("friction_max_duty", "1000")).strip_edges()
-	var friction_max_duty: int = 1000
+	# 官方摩擦轮守则：500 duty 起步，每 1500ms 增减 100，最高 1100。
+	# 为保证每一级严格增减 100，只接受 500~1100 内的整百值；非法输入回退 1100。
+	var friction_max_text: String = str(cfg.get("friction_max_duty", "1100")).strip_edges()
+	var friction_max_duty: int = 1100
 	if friction_max_text.is_valid_int():
 		var requested_friction_max: int = friction_max_text.to_int()
-		if requested_friction_max >= 500 and requested_friction_max <= 1000 \
+		if requested_friction_max >= 500 and requested_friction_max <= 1100 \
 				and requested_friction_max % 100 == 0:
 			friction_max_duty = requested_friction_max
 
@@ -357,8 +357,8 @@ func generate(cfg: Dictionary) -> String:
 	code += "uint16_t maxChangeDutyOfServo[2] = {%d, %d};\n" % [servo_swing, servo_swing]
 	code += "#define FRICTION_START_DUTY 500  // 官方守则：摩擦轮启动占空比\n"
 	code += "#define FRICTION_STEP_DUTY  100  // 官方守则：每次增加 100 duty\n"
-	code += "#define FRICTION_STEP_MS    100  // 官方守则：每级阻塞 100ms\n"
-	code += "#define FRICTION_MAX_DUTY   %d   // 用户设定，官方上限 1000\n" % friction_max_duty
+	code += "#define FRICTION_STEP_MS    1500 // 官方示例：每级阻塞 1500ms（每秒最多变化 100）\n"
+	code += "#define FRICTION_MAX_DUTY   %d   // 用户设定，官方上限 1100\n" % friction_max_duty
 	code += "uint16_t boosterDutyOfFeed = %s;             // 拨弹电机单发转动占空比\n" % trig_spd
 	if not visual_feed:
 		code += "uint16_t boosterFeedDelayMs = %s;              // 拨弹电机单发转动时长(ms)\n" % trig_time
@@ -600,8 +600,8 @@ func generate(cfg: Dictionary) -> String:
 	# --- CalculateBoosterControl ---
 	code += "void CalculateBoosterControl()\n{\n"
 	code += "    // 摩擦轮只有开/关两种稳态；启动过程完全阻塞，严格复现官方守则。\n"
-	code += "    // 开：500 起步，每阻塞 100ms 增加 100，直到用户设定的最大值。\n"
-	code += "    // 关：直接输出 0，不允许通过按键停留在任意中间占空比。\n"
+	code += "    // 开：500 起步，每阻塞 1500ms 增加 100，直到用户设定的最大值。\n"
+	code += "    // 关：从当前最大值每阻塞 1500ms 减少 100，经 500 后才能降到 0。\n"
 	code += "    // 摩擦轮开关由 %s 上升沿触发\n" % cfg.get("booster_key", "A")
 	code += "    if (boosterKeyValue && !lastBoosterKeyValue)\n"
 	code += "    {\n"
@@ -616,11 +616,21 @@ func generate(cfg: Dictionary) -> String:
 	code += "                dutyOfBooster += FRICTION_STEP_DUTY;\n"
 	code += "                Main_Countrol(dutyOfMotor, dutyOfServo, dutyOfBooster);\n"
 	code += "            }\n"
+	code += "            Ms_Delay(FRICTION_STEP_MS); // 目标转速至少保持一个安全间隔\n"
 	code += "        }\n"
 	code += "        else\n"
 	code += "        {\n"
+	code += "            Main_Countrol(dutyOfMotor, dutyOfServo, dutyOfBooster);\n"
+	code += "            while (dutyOfBooster > FRICTION_START_DUTY)\n"
+	code += "            {\n"
+	code += "                Ms_Delay(FRICTION_STEP_MS);\n"
+	code += "                dutyOfBooster -= FRICTION_STEP_DUTY;\n"
+	code += "                Main_Countrol(dutyOfMotor, dutyOfServo, dutyOfBooster);\n"
+	code += "            }\n"
+	code += "            Ms_Delay(FRICTION_STEP_MS);\n"
 	code += "            dutyOfBooster = 0;\n"
 	code += "            Main_Countrol(dutyOfMotor, dutyOfServo, dutyOfBooster);\n"
+	code += "            Ms_Delay(FRICTION_STEP_MS); // 0 duty 后仍保留硬件反应时间\n"
 	code += "        }\n"
 	code += "    }\n"
 	code += "    lastBoosterKeyValue = boosterKeyValue;\n"
