@@ -25,6 +25,27 @@ func _initialize() -> void:
 		printerr("生成代码 ExpansionBoradControl 仍用 UART_PutChar（应改 Uart1TxQuery）")
 		quit(1)
 		return
+	if not code.contains("uint8_t uart1InterruptEnabled = ES;") \
+			or not code.contains("ES = uart1InterruptEnabled;"):
+		printerr("UART1 查询发送必须保存并恢复调用前的串口中断状态")
+		quit(1)
+		return
+	var dir_pos: int = code.find("ExpansionBoradControl(Dir_Change_Order,", code.find("void Main_Countrol("))
+	var gap_pos: int = code.find("Ms_Delay(EXPANSION_FRAME_GAP_MS);", dir_pos)
+	var duty_pos: int = code.find("ExpansionBoradControl(Duty_Change_Order,", gap_pos)
+	if dir_pos < 0 or gap_pos < 0 or duty_pos < 0 or not (dir_pos < gap_pos and gap_pos < duty_pos):
+		printerr("Main_Countrol 必须按「方向帧 -> 帧间隔 -> 占空比帧」顺序发送")
+		quit(1)
+		return
+	var second_gap_pos: int = code.find("Ms_Delay(EXPANSION_FRAME_GAP_MS);", duty_pos)
+	if second_gap_pos < 0:
+		printerr("占空比帧后缺少拓展板处理间隔")
+		quit(1)
+		return
+	if code.contains("主循环周期 10ms，每周期变化 1"):
+		printerr("摩擦轮渐变注释仍错误地忽略了通信帧间隔")
+		quit(1)
+		return
 	if not code.contains("P2INTE &= ~GPIO_Pin_6"):
 		printerr("生成代码缺少关 P2.6 EXTI（NRF 中断死锁修复）")
 		quit(1)

@@ -353,8 +353,10 @@ func generate(cfg: Dictionary) -> String:
 	code += "#define Init_Order 0xAA        // 初始化模式\n"
 	code += "#define Duty_Change_Order 0xBB // 修改占空比\n"
 	code += "#define Freq_Change_Order 0xCC // 修改频率\n"
-	code += "#define Dir_Change_Order 0xDD  // 修改方向 1为正 0为负 设置一次即可\n"
+	code += "#define Dir_Change_Order 0xDD  // 修改方向：1为正、0为负，电机换向时需更新\n"
 	code += "#define Zero_Order 0xEE        // 0命令\n"
+	code += "// 拓展板需要帧间处理时间；连续命令之间不得删除此间隔\n"
+	code += "#define EXPANSION_FRAME_GAP_MS 5\n"
 	code += "/*内部调用变量，无需关心，请勿定义同名变量*/\n"
 	code += "uint16_t control_data[8] = {0};\n"
 	code += "uint16_t motor_dir[8] = {0};\n"
@@ -493,8 +495,8 @@ func generate(cfg: Dictionary) -> String:
 		code += "        }\n"
 		code += "        lastTriggerKeyValue = triggerKeyValue;\n\n"
 	code += "        // 摩擦轮占空比平滑变化\n"
-	code += "        // 主循环周期 10ms，每周期变化 1 => 每秒 100 占空比，\n"
-	code += "        // 符合《RM电控指南》「每秒增加/减少 100 占空比」的硬性要求，不得提高步长\n"
+	code += "        // 每轮至少包含方向/占空比帧间隔各 5ms，加循环尾延时 10ms，\n"
+	code += "        // 因此周期至少 20ms；每周期变化 1，即每秒最多变化 50，占空比渐变符合指南上限。\n"
 	code += "        // 从静止启动时先跳到 500（指南：启停不考虑 0~5% 区间）\n"
 	code += "        if (expectDutyOfBooster >= 500 && dutyOfBooster < 500)\n"
 	code += "            dutyOfBooster = 500;\n"
@@ -673,11 +675,12 @@ func generate(cfg: Dictionary) -> String:
 
 	# --- Main_Countrol ---
 	code += "void Main_Countrol(int *dutyOfMotor, uint16_t *dutyOfServo, uint16_t dutyOfBooster)\n{\n"
+	code += "    // 底盘方向会随摇杆实时变化，必须先发方向帧；拓展板处理完成后再发占空比帧\n"
 	code += "    ExpansionBoradControl(Dir_Change_Order,\n"
 	code += "                          %s);\n" % dir_str
-	code += "    Ms_Delay(5);\n"
+	code += "    Ms_Delay(EXPANSION_FRAME_GAP_MS);\n"
 	code += "    ExpansionBoradControl(Duty_Change_Order, %s);\n" % duty_str
-	code += "    Ms_Delay(5);\n"
+	code += "    Ms_Delay(EXPANSION_FRAME_GAP_MS);\n"
 	code += pwm_set_lines
 	code += "}\n\n"
 

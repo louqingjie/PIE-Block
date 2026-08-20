@@ -45,12 +45,14 @@ const UART_TX_QUERY_CODE: String = \
 	+"// 发送期间临时关串口中断，轮询硬件 TI 标志。要求 UART1 已 UART_Init 初始化。\n" \
 	+"static void Uart1TxQuery(uint8_t dat)\n" \
 	+"{\n" \
+	+"    uint8_t uart1InterruptEnabled = ES;\n\n" \
 	+"    ES = 0;          // 关 UART1 中断，避免中断抢先清 TI 导致死锁\n" \
+	+"    TI = 0;          // 丢弃可能残留的发送完成标志\n" \
 	+"    SBUF = dat;      // 启动发送\n" \
 	+"    while (!TI)      // 等硬件发送完成（TI 与中断无关，必定置位）\n" \
 	+"        ;\n" \
 	+"    TI = 0;          // 清发送完成标志\n" \
-	+"    ES = 1;          // 恢复 UART1 中断\n" \
+	+"    ES = uart1InterruptEnabled; // 恢复调用前的 UART1 中断状态\n" \
 	+"}\n\n"
 
 
@@ -464,4 +466,3 @@ func _parse_param(param_str: String, lo: int, hi: int) -> int:
 	if not s.is_valid_int():
 		return 0
 	return clampi(s.to_int(), lo, hi)
-

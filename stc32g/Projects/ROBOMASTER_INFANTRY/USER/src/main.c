@@ -41,8 +41,10 @@ float changeRateOfServo[2] = {0.005428, 0.005428};
 #define Init_Order 0xAA        // 初始化模式
 #define Duty_Change_Order 0xBB // 修改占空比
 #define Freq_Change_Order 0xCC // 修改频率
-#define Dir_Change_Order 0xDD  // 修改方向 1为正 0为负 设置一次即可
+#define Dir_Change_Order 0xDD  // 修改方向：1为正、0为负，电机换向时需更新
 #define Zero_Order 0xEE        // 0命令
+// 拓展板需要帧间处理时间；连续命令之间不得删除此间隔
+#define EXPANSION_FRAME_GAP_MS 5
 /*内部调用变量，无需关心，请勿定义同名变量*/
 uint16_t control_data[8] = {0};
 uint16_t motor_dir[8] = {0};
@@ -139,12 +141,15 @@ static void StepDone(uint8_t step)
 // 发送期间临时关串口中断，轮询硬件 TI 标志。要求 UART1 已 UART_Init 初始化。
 static void Uart1TxQuery(uint8_t dat)
 {
+    uint8_t uart1InterruptEnabled = ES;
+
     ES = 0;          // 关 UART1 中断，避免中断抢先清 TI 导致死锁
+    TI = 0;          // 丢弃可能残留的发送完成标志
     SBUF = dat;      // 启动发送
     while (!TI)      // 等硬件发送完成（TI 与中断无关，必定置位）
         ;
     TI = 0;          // 清发送完成标志
-    ES = 1;          // 恢复 UART1 中断
+    ES = uart1InterruptEnabled; // 恢复调用前的 UART1 中断状态
 }
 
 void main()
@@ -188,8 +193,8 @@ void main()
         lastTriggerKeyValue = triggerKeyValue;
 
         // 摩擦轮占空比平滑变化
-        // 主循环周期 10ms，每周期变化 1 => 每秒 100 占空比，
-        // 符合《RM电控指南》「每秒增加/减少 100 占空比」的硬性要求，不得提高步长
+        // 每轮至少包含方向/占空比帧间隔各 5ms，加循环尾延时 10ms，
+        // 因此周期至少 20ms；每周期变化 1，即每秒最多变化 50，占空比渐变符合指南上限。
         // 从静止启动时先跳到 500（指南：启停不考虑 0~5% 区间）
         if (expectDutyOfBooster >= 500 && dutyOfBooster < 500)
             dutyOfBooster = 500;
@@ -380,17 +385,18 @@ void CalculateGimbalControls()
 
 void Main_Countrol(int *dutyOfMotor, uint16_t *dutyOfServo, uint16_t dutyOfBooster)
 {
+    // 底盘方向会随摇杆实时变化，必须先发方向帧；拓展板处理完成后再发占空比帧
     ExpansionBoradControl(Dir_Change_Order,
                           1, 1,
                           0, 0,
                           Get_Dir(dutyOfMotor[0]), Get_Dir(dutyOfMotor[1]),
                           Get_Dir(dutyOfMotor[2]), Get_Dir(dutyOfMotor[3]));
-    Ms_Delay(5);
+    Ms_Delay(EXPANSION_FRAME_GAP_MS);
     ExpansionBoradControl(Duty_Change_Order, dutyOfMotor[4], 0,
                           dutyOfBooster, dutyOfBooster,
                           (uint16_t)abs(dutyOfMotor[0]), (uint16_t)abs(dutyOfMotor[1]),
                           (uint16_t)abs(dutyOfMotor[2]), (uint16_t)abs(dutyOfMotor[3]));
-    Ms_Delay(5);
+    Ms_Delay(EXPANSION_FRAME_GAP_MS);
     PWM_SET_Frequency(PWMB_CH1_P74, 50, dutyOfServo[0]);
     PWM_SET_Frequency(PWMB_CH4_P03, 50, dutyOfServo[1]);
 }
