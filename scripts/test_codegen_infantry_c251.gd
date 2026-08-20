@@ -6,20 +6,21 @@ const CG = preload("res://scripts/codegen/codegen_infantry.gd")
 
 func _initialize() -> void:
 	var code: String = CG.new().generate({})
-	# IO 初始化区只有「舵机 / 电机」两种状态；即使 P62 未被任何模式控制行
-	# 引用，也必须按 UI 类型生成 50/10000，不能泄漏内部默认值 0Hz。
+	# IO 初始化区不能因“未被模式控制行引用”而泄漏内部默认值 0Hz。
+	# 步兵前四路与摩擦轮共用 50Hz 时基，因此 P60/P62 即使逻辑类型为电机，
+	# Init_Order 也必须与官方示例一致保持 50,50,50,50。
 	var servo_p62_code: String = CG.new().generate({
 		"io_init": {"P62": "舵机"},
 	})
-	if not servo_p62_code.contains("10000, 50,\n                          50, 50,"):
-		printerr("未引用的 P62 选择舵机时必须按 50Hz 初始化，不能生成 0Hz")
+	if not servo_p62_code.contains("50, 50,\n                          50, 50,"):
+		printerr("步兵前四路必须统一按 50Hz 初始化，不能生成 0Hz 或混合频率")
 		quit(1)
 		return
 	var motor_p62_code: String = CG.new().generate({
 		"io_init": {"P62": "电机"},
 	})
-	if not motor_p62_code.contains("10000, 10000,\n                          50, 50,"):
-		printerr("未引用的 P62 选择电机时必须按 10000Hz 初始化")
+	if not motor_p62_code.contains("50, 50,\n                          50, 50,"):
+		printerr("P62 作为电机时也不得破坏步兵前四路共享的 50Hz 时基")
 		quit(1)
 		return
 	if code.contains("remote_control_init();") \

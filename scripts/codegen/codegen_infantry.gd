@@ -302,6 +302,12 @@ func generate(cfg: Dictionary) -> String:
 		init_vals[slot] = 10000
 		dir_exprs[slot] = "(dutyOfAuxMotor[%d] >= 0 ? 1 : 0)" % slot
 		duty_vals[slot] = "(uint16_t)abs(dutyOfAuxMotor[%d])" % slot
+	# 步兵拓展板前四路 P60/P62/P64/P66 共用摩擦轮所在的 50Hz PWM 时基。
+	# 官方 A.EXPAND_TEST、RM_playcar_example、RM_rub_wheel 均固定发送
+	# 50,50,50,50；实机独立诊断也验证该组合可同时驱动 P64/P66。
+	# P60 即使连接拨弹电机，仍通过 Duty/Dir 控制，但初始化频率必须留在 50Hz。
+	for slot in range(4):
+		init_vals[slot] = 50
 	# 主控板辅助舵机 PWM（初始角按 IO 初始化区）
 	for si in range(2):
 		if use_aux_main[si]:
