@@ -412,13 +412,13 @@ func _connect_signals() -> void:
 		var sub_btn: Node = get_node_or_null(p)
 		if sub_btn is OptionButton:
 			sub_btn.item_selected.connect(_sync_io_locks)
-	# OptionButton 选项变化
-		for p in [P_L1_IO, P_L2_IO, P_R1_IO, P_R2_IO,
-			P_L1_DIR, P_L2_DIR, P_R1_DIR, P_R2_DIR,
-			P_BOOSTER_IO, P_BOOSTER_DIR,
-			P_YAW_DRIVE, P_YAW_IO, P_YAW_DIR,
-			P_PITCH_DRIVE, P_PITCH_IO, P_PITCH_DIR,
-			P_TRIGGER, P_BOOSTER_KEY, P_FEED_MODE]:
+	# 步骤：OptionButton 选项变化
+	for p in [P_L1_IO, P_L2_IO, P_R1_IO, P_R2_IO,
+		P_L1_DIR, P_L2_DIR, P_R1_DIR, P_R2_DIR,
+		P_BOOSTER_IO, P_BOOSTER_DIR,
+		P_YAW_DRIVE, P_YAW_IO, P_YAW_DIR,
+		P_PITCH_DRIVE, P_PITCH_IO, P_PITCH_DIR,
+		P_TRIGGER, P_BOOSTER_KEY, P_FEED_MODE]:
 		var node2: Node = get_node_or_null(p)
 		if node2 is OptionButton:
 			node2.item_selected.connect(_run_check)
