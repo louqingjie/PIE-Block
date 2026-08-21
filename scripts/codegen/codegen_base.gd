@@ -82,14 +82,14 @@ func _gen_nrf_poll() -> String:
 
 ## 生成初始化诊断工具：3 颗 LED + 蜂鸣器，把初始化分步、每步 LED 编码定位。
 ##   - LED1/2/3 默认 P35/P36/P37（低电平点亮 0=亮）；P34 保留给 NRF CE。
-##   - 蜂鸣器用 PWM（buzzer_ch 默认 PWMB_CH3_P33）。
+##   - 蜂鸣器用 PWM（buzzer_ch 默认 PWMA_CH4N_P33，与舵机所在 PWMB 时基隔离）。
 ##   - StepBegin(n)：进入某步前显示编码（阻塞时 LED 停在该编码）；
 ##     StepDone(n)：该步成功后响推进音（音调随步骤递增）。
 ## 放在 main() 之前。All_Init 里用 StepBegin/StepDone 分步。
 func _gen_led_diag_tools(led_port: String = "GPIO_P3",
 		led1: String = "GPIO_Pin_5", led2: String = "GPIO_Pin_6",
 		led3: String = "GPIO_Pin_7",
-		buzzer_ch: String = "PWMB_CH3_P33") -> String:
+		buzzer_ch: String = "PWMA_CH4N_P33") -> String:
 	var code: String = ""
 	code += "// ==================== 初始化诊断：3 颗 LED + 蜂鸣器 ====================\n"
 	code += "// 3 颗 LED（低电平点亮）+ 蜂鸣器（PWM 驱动），把初始化拆成多步，\n"

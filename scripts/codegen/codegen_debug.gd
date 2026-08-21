@@ -13,8 +13,8 @@ const DEBUG_PINS: Array = [
 	"P75", "P76", "P77", "MP03", "MP74",
 ]
 
-# 蜂鸣器引脚：主控板 P33，通过 PWM 产生不同频率
-const BUZZER_PWM_CH: String = "PWMB_CH3_P33"
+# 蜂鸣器引脚：主控板 P33，使用独立的 PWMA 通道，避免干扰 PWMB 舵机时基
+const BUZZER_PWM_CH: String = "PWMA_CH4N_P33"
 
 # 调试时各驱动类型对应的频率
 const FREQ_MOTOR: int = 10000 # 电机模式频率

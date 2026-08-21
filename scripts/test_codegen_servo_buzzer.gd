@@ -114,6 +114,9 @@ func _initialize() -> void:
 
 	var engineer_code: String = Engineer.new().generate(_engineer_cfg())
 	_check("工程映射初始化频率不含 0", _init_frequencies_are_valid(engineer_code))
+	_check("工程蜂鸣器使用独立 PWMA 通道",
+		engineer_code.contains("#define BUZZER_CH PWMA_CH4N_P33")
+		and not engineer_code.contains("#define BUZZER_CH PWMB_CH3_P33"))
 	var engineer_helper: String = _helper(engineer_code)
 	_check("工程映射生成舵机反馈", engineer_helper.contains("lastServoBuzzerDuty[4]"))
 	var order: Array = [
@@ -158,6 +161,9 @@ func _initialize() -> void:
 			"value": 1000, "enabled": true}],
 	})
 	_check("调试初始化频率不含 0", _init_frequencies_are_valid(debug_code))
+	_check("调试蜂鸣器使用独立 PWMA 通道",
+		debug_code.contains("#define BUZZER_CH PWMA_CH4N_P33")
+		and not debug_code.contains("#define BUZZER_CH PWMB_CH3_P33"))
 	var debug_servo_code: String = Debug.new().generate({
 		"debug_rows": [{"pin": "P60", "drive_type": "舵机", "dir": 0,
 			"value": 30, "enabled": true}],
