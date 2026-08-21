@@ -166,8 +166,6 @@ const P_OPEN_BTN: NodePath = "VBoxContainer/TopPanel/Open"
 const P_SAVE_BTN: NodePath = "VBoxContainer/TopPanel/Save"
 # 顶栏标题（显示 项目名 · 构型 · 阶段）
 const P_TITLE_LABEL: NodePath = "VBoxContainer/TopPanel/Label"
-# AI 功能开关（启用后才显示 AI 编辑按钮）
-const P_ENABLE_AI_BTN: NodePath = "VBoxContainer/TopPanel/EnableAI"
 # 无项目时需要禁用的按钮（只留 新建 / 打开 可用）
 const PROJECT_GATED_BTNS: Array = [
 	"VBoxContainer/TopPanel/Save",
@@ -388,9 +386,6 @@ func _connect_signals() -> void:
 	var gate_confirm: Node = get_node_or_null(P_GATE_CONFIRM)
 	if gate_confirm is BaseButton:
 		gate_confirm.pressed.connect(_on_hardware_gate_confirmed)
-	var ai_enable_btn: Node = get_node_or_null(P_ENABLE_AI_BTN)
-	if ai_enable_btn is BaseButton:
-		ai_enable_btn.toggled.connect(_on_ai_enable_toggled)
 	var ik_gate: Node = get_node_or_null(P_IK_ENABLE_CB)
 	if ik_gate is BaseButton:
 		ik_gate.toggled.connect(_on_ik_gate_toggled)
@@ -519,11 +514,6 @@ func _connect_signals() -> void:
 	var create_btn: Node = get_node_or_null(P_CREATE_BTN)
 	if create_btn is BaseButton:
 		create_btn.pressed.connect(_on_create_pressed)
-	var enable_ai_btn: Node = get_node_or_null(P_ENABLE_AI_BTN)
-	if enable_ai_btn is BaseButton:
-		var ai_toggle_cb: Callable = Callable(self, "_on_ai_enable_toggled")
-		if not enable_ai_btn.toggled.is_connected(ai_toggle_cb):
-			enable_ai_btn.toggled.connect(ai_toggle_cb)
 	var open_btn: Node = get_node_or_null(P_OPEN_BTN)
 	if open_btn is BaseButton:
 		open_btn.pressed.connect(_on_open_pressed)
@@ -970,7 +960,7 @@ func _apply_no_project_state() -> void:
 	_ik_config = IK_CONFIG.default_config()
 	_ai_enabled = false
 	_ik_confirmed = false
-	_apply_ai_gate(false)
+	_apply_ai_entry()
 	_apply_hardware_gate(false)
 	_apply_ik_gate(false)
 	_stage2_preview = false
@@ -1007,31 +997,13 @@ func _set_node_tree_enabled(node: Node, enabled: bool) -> void:
 		_set_node_tree_enabled(child, enabled)
 
 
-func _apply_ai_gate(enabled: bool) -> void:
-	_ai_enabled = enabled
-	var enable_btn: Node = get_node_or_null(P_ENABLE_AI_BTN)
+func _apply_ai_entry() -> void:
 	var ai_btn: Node = get_node_or_null(P_AI_EDIT_BTN)
-	# 功能下线：无论开关状态如何，两个入口一律隐藏
-	if not AI_EDIT_ENABLED:
-		if enable_btn is CanvasItem:
-			enable_btn.visible = false
-		if ai_btn is CanvasItem:
-			ai_btn.visible = false
-		if ai_btn is BaseButton:
-			ai_btn.disabled = true
-		return
-	if enable_btn is BaseButton:
-		enable_btn.button_pressed = enabled
-	# 启用后隐藏「启用 AI 功能」按钮（已通过 10s 门禁确认，无需再显示）
-	if enable_btn is CanvasItem:
-		enable_btn.visible = not enabled
+	var available: bool = AI_EDIT_ENABLED and not _project.is_empty()
 	if ai_btn is CanvasItem:
-		ai_btn.visible = enabled
+		ai_btn.visible = available
 	if ai_btn is BaseButton:
-		ai_btn.disabled = not enabled
-	var ai_btn2: Node = get_node_or_null(P_AI_EDIT_BTN)
-	if ai_btn2 is BaseButton:
-		ai_btn2.disabled = not enabled
+		ai_btn.disabled = not available
 
 
 func _apply_ik_gate(confirmed: bool) -> void:
@@ -1144,7 +1116,7 @@ func _adopt_project(data: Dictionary, path: String) -> void:
 	_ik_config["enabled"] = bool(_workflow().get("ik_confirmed", false))
 	_ai_enabled = bool(_workflow().get("ai_enabled", false))
 	_ik_confirmed = bool(_workflow().get("ik_confirmed", false))
-	_apply_ai_gate(_ai_enabled)
+	_apply_ai_entry()
 	_apply_hardware_gate(not bool(_workflow().get("hardware_confirmed", false)))
 	var kind: String = str(data["kind"])
 	AppState.project_path = path
@@ -1163,7 +1135,7 @@ func _adopt_project(data: Dictionary, path: String) -> void:
 	_frozen_ik_config = _ik_config.duplicate(true)
 	_stage2_preview = int(data["stage"]) >= 2
 	_dirty = false
-	_apply_ai_gate(_ai_enabled)
+	_apply_ai_entry()
 	_apply_ik_gate(_ik_confirmed)
 	_update_title()
 
@@ -2291,19 +2263,19 @@ func _save_hex_to(dst_path: String) -> void:
 	_append_output("[✓] 已导出 HEX：%s" % dst)
 
 
-## AI 编辑入口（阶段一 -> 阶段二）。仅在 AI 功能已启用后可见。
+## AI 编辑入口（阶段一 -> 阶段二）。首次点击先完成风险确认。
 func _on_ai_edit_pressed() -> void:
-	# 功能下线：入口已隐藏，程序化触发也一律无效
-	if not AI_EDIT_ENABLED:
+	if not AI_EDIT_ENABLED or _project.is_empty():
 		return
 	# Web / 移动端没有桌面原生终端与子进程能力，提示后直接返回
 	if not WEB.is_desktop():
 		WEB.popup_desktop_only(self, "AI 编辑")
 		return
-	if not _ai_enabled and not _project.is_empty():
-		return
-	if _project.is_empty():
-		_enter_ai_edit()
+	if int(_project["stage"]) < 2 and not _ai_enabled:
+		# warn_ai 页面自带文案；确认后直接进入 AI 编辑。
+		_show_countdown_scene(WARN_AI_SCENE,
+			"", "", "", "", "",
+			Callable(self, "_on_ai_edit_confirmed"), Callable())
 		return
 	if int(_project["stage"]) >= 2:
 		_enter_ai_edit()
@@ -2312,55 +2284,15 @@ func _on_ai_edit_pressed() -> void:
 	_enter_ai_edit()
 
 
-func _on_ai_enable_toggled(pressed: bool) -> void:
-	# 功能下线：开关已隐藏，程序化触发一律无效并复位开关状态
-	if not AI_EDIT_ENABLED:
-		var off_toggle: BaseButton = get_node_or_null(P_ENABLE_AI_BTN)
-		if off_toggle is BaseButton:
-			off_toggle.set_pressed_no_signal(false)
-		return
-	# Web / 移动端没有桌面原生终端与子进程能力，开关不生效并提示
-	if pressed and not WEB.is_desktop():
-		var toggle: BaseButton = get_node_or_null(P_ENABLE_AI_BTN)
-		if toggle is BaseButton:
-			toggle.set_pressed_no_signal(false)
-		WEB.popup_desktop_only(self, "AI 编辑")
-		return
-	if _loading:
-		return
-	if pressed:
-		if _ai_enabled:
-			_apply_ai_gate(true)
-			return
-		# warn_ai 页面自带文案（启用 AI 编辑），这里不改动它的文本，只接回调
-		_show_countdown_scene(WARN_AI_SCENE,
-			"", "", "", "", "",
-			Callable(self, "_on_ai_enable_confirmed"), Callable(self, "_on_ai_enable_canceled"))
-		return
-	_apply_ai_gate(false)
-	if not AppState.project_path.is_empty():
-		var workflow: Dictionary = _workflow()
-		workflow["ai_enabled"] = false
-		_project["workflow"] = workflow
-		_save_project(false)
-
-
-func _on_ai_enable_confirmed() -> void:
-	_apply_ai_gate(true)
+func _on_ai_edit_confirmed() -> void:
+	_ai_enabled = true
 	if not AppState.project_path.is_empty():
 		var workflow: Dictionary = _workflow()
 		workflow["ai_enabled"] = true
 		_project["workflow"] = workflow
 		_save_project(false)
-
-
-func _on_ai_enable_canceled() -> void:
-	_loading = true
-	var enable_btn: Node = get_node_or_null(P_ENABLE_AI_BTN)
-	if enable_btn is BaseButton:
-		enable_btn.button_pressed = false
-	_loading = false
-	_apply_ai_gate(false)
+	_run_check()
+	_enter_ai_edit()
 
 
 ## 真正进入 AI 编辑：把阶段一的配置与生成代码冻结进 .pieproj，然后切场景

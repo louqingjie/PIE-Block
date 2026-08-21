@@ -34,12 +34,6 @@ visible = false
 layout_mode = 2
 text = "进入 C 代码后处理"
 
-[node name="EnableAI" type="Button" parent="." unique_id=1699049185]
-visible = false
-layout_mode = 2
-toggle_mode = true
-text = "启用 AI 功能"
-
 [node name="AIEdit" type="Button" parent="." unique_id=998092869]
 visible = false
 layout_mode = 2
