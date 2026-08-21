@@ -60,7 +60,6 @@ uint8_t valueOfEKey;
 uint8_t triggerKeyValue, lastTriggerKeyValue, boosterKeyValue, lastBoosterKeyValue;
 uint8_t lastBoosterUpKeyValue = 0, lastBoosterDownKeyValue = 0;
 uint8_t statusOfBooster = 0;
-uint8_t remoteDisplayLoopCounter = 0;
 uint8_t i, j;
 int valueOfRoker[2][2] // 左摇杆水平、竖直；右摇杆水平、竖直
     ,
@@ -76,7 +75,6 @@ void ReadControllerInputs();
 void CalculateMotorControls();
 void CalculateGimbalControls();
 void CalculateBoosterControl();
-void UpdateRemoteDutyDisplay(uint16_t duty);
 uint8_t Get_Dir(int rawdata);
 void Main_Countrol(int *dutyOfMotor, uint16_t *dutyOfServo, uint16_t dutyOfBooster);
 void ExpansionBoradControl(uint8_t control_cmd, uint16_t data_p60, uint16_t data_p62, uint16_t data_p64,
@@ -213,25 +211,8 @@ void main()
 
         // 发送控制函数
         Main_Countrol(dutyOfMotor, dutyOfServo, dutyOfBooster);
-
-        // 低频回传当前摩擦轮 Duty，避免占用遥控控制链路。
-        UpdateRemoteDutyDisplay(dutyOfBooster);
         Ms_Delay(10);
     }
-}
-
-void UpdateRemoteDutyDisplay(uint16_t duty)
-{
-    // 每约 200ms 更新一次显示；RCPacket_Send 每轮调用以维持显示帧分片节奏。
-    if (remoteDisplayLoopCounter == 0)
-    {
-        ShowStringData("DUTY", 4, (float)duty, 0, 1);
-        remoteDisplayLoopCounter = 10;
-    }
-    else
-        remoteDisplayLoopCounter--;
-
-    RCPacket_Send();
 }
 
 uint8_t Get_Dir(int rawdata)
