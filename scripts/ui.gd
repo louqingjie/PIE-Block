@@ -184,9 +184,8 @@ const PROJECT_GATED_BTNS: Array = [
 const P_AI_EDIT_BTN: NodePath = "VBoxContainer/TopPanel/AIEdit"
 # AI 代码编辑器场景
 const AI_EDIT_SCENE: String = "res://scenes/code_edit.tscn"
-## AI 编辑功能总开关：false 时隐藏一切入口（EnableAI 开关与 AIEdit 按钮），
-## 程序化触发也一律无效。置回 true 即可恢复原有入口与门禁流程。
-const AI_EDIT_ENABLED: bool = false
+## AI 编辑功能总开关。启用后保留风险确认和桌面端限制。
+const AI_EDIT_ENABLED: bool = true
 const WARN_AI_SCENE: String = "res://scenes/warn_ai.tscn"
 const WARN_IK_SCENE: String = "res://scenes/warn_ik.tscn"
 const ERROR_SCENE: String = "res://scenes/error.tscn"

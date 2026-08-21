@@ -551,21 +551,39 @@ func _test_lifecycle() -> void:
 		not bool(after_production_workflow["hardware_tested"]))
 
 	_check("AI 编辑按钮初始隐藏", not bool(ui2.get_node(ui2.P_AI_EDIT_BTN).visible))
-	_check("启用 AI 按钮初始隐藏", not bool(ui2.get_node(ui2.P_ENABLE_AI_BTN).visible))
-	# AI 编辑功能已下线（AI_EDIT_ENABLED=false）：点开关不该弹确认框，也不该解锁任何入口
+	_check("启用 AI 按钮初始显示", bool(ui2.get_node(ui2.P_ENABLE_AI_BTN).visible))
+	# 点「启用 AI 功能」应先弹确认框，此时还没解锁 AI 编辑。
 	ui2._on_ai_enable_toggled(true)
 	await process_frame
-	_check("点启用 AI 功能不弹确认框", _find_dialog(ui2, "警告") == null)
-	_check("AI 仍未启用", not bool(ui2._ai_enabled))
-	_check("AI 编辑按钮保持隐藏", not bool(ui2.get_node(ui2.P_AI_EDIT_BTN).visible))
-	_check("启用 AI 按钮保持隐藏", not bool(ui2.get_node(ui2.P_ENABLE_AI_BTN).visible))
-	var still1: Dictionary = PF.load_from(path)
-	_check("磁盘上仍未启用 AI", not bool((still1["data"]["workflow"] as Dictionary).get("ai_enabled", false)))
-	# 程序化触发进入 AI 编辑也应无效（不弹框、无副作用）
-	var dlg_cnt: int = _count_dialogs(ui2)
-	ui2._on_ai_edit_pressed()
+	var confirm: Node = _find_dialog(ui2, "警告")
+	_check("点启用 AI 功能先弹确认框", confirm != null)
+	_check("确认框弹出时 AI 编辑仍隐藏", not bool(ui2.get_node(ui2.P_AI_EDIT_BTN).visible))
+	if confirm != null:
+		# 取消：不该有任何变化
+		confirm.canceled.emit()
+		confirm.queue_free()
+		await process_frame
+		_check("取消后 AI 仍未启用", not bool(ui2._ai_enabled))
+		_check("取消后 AI 编辑仍隐藏", not bool(ui2.get_node(ui2.P_AI_EDIT_BTN).visible))
+		_check("取消后启用 AI 按钮仍可见", bool(ui2.get_node(ui2.P_ENABLE_AI_BTN).visible))
+		var still1: Dictionary = PF.load_from(path)
+		_check("取消后磁盘上仍未启用 AI", not bool((still1["data"]["workflow"] as Dictionary).get("ai_enabled", false)))
+	# 倒计时门控页应该先禁用主按钮
+	ui2._on_ai_enable_toggled(true)
 	await process_frame
-	_check("点 AI 编辑无任何反应", _count_dialogs(ui2) == dlg_cnt)
+	var confirm2: Node = _find_dialog(ui2, "警告")
+	_check("再次启用 AI 功能仍弹确认框", confirm2 != null)
+	if confirm2 != null:
+		var primary: Node = confirm2.get_node_or_null("VBoxContainer/HBoxContainer2/Button")
+		_check("确认框按钮初始禁用", primary is BaseButton and primary.disabled)
+		confirm2.confirmed.emit()
+		confirm2.queue_free()
+		await process_frame
+		_check("确认后 AI 已启用", bool(ui2._ai_enabled))
+		_check("确认后 AI 编辑已显示", bool(ui2.get_node(ui2.P_AI_EDIT_BTN).visible))
+		_check("确认后启用 AI 按钮已隐藏", not bool(ui2.get_node(ui2.P_ENABLE_AI_BTN).visible))
+		var still2: Dictionary = PF.load_from(path)
+		_check("确认后磁盘上记录 AI 已启用", bool((still2["data"]["workflow"] as Dictionary).get("ai_enabled", false)))
 
 	# 进入阶段二（不切场景，直接走冻结逻辑）
 	var code: String = ui2._current_preview_code()
