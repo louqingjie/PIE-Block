@@ -1,11 +1,6 @@
 // 步兵机器人操作代码
 #include "main.h"
 
-/* UART hook used by the generated MCU IK simulator. The normal engineer
- * firmware does not consume host protocol bytes. */
-void IKSimRxByte(uint8_t dat)
-{
-}
 #include "MATH.H"
 // ========================= 参数区 =========================
 uint8_t Channal = 36; // NRF24L01 通信通道（0-125），与遥控器一致

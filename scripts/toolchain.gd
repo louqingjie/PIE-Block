@@ -35,8 +35,6 @@ const PROJECT_DST: String = "user://stc32g/Projects/ROBOMASTER_INFANTRY"
 ## 工程师项目模板
 const PROJECT_ENGINEER_SRC: String = "res://stc32g/Projects/ROBOMASTER_ENGINEER"
 const PROJECT_ENGINEER_DST: String = "user://stc32g/Projects/ROBOMASTER_ENGINEER"
-const PROJECT_ENGINEER_SIM_SRC: String = "res://stc32g/Projects/ROBOMASTER_ENGINEER"
-const PROJECT_ENGINEER_SIM_DST: String = "user://stc32g/Projects/ROBOMASTER_ENGINEER_SIM"
 ## 库文件（uvproj 通过 ..\..\..\Libraries\ 相对引用，必须保持 stc32g/ 层级）
 const LIBRARIES_SRC: String = "res://stc32g/Libraries"
 const LIBRARIES_DST: String = "user://stc32g/Libraries"
@@ -65,7 +63,7 @@ const DOWNLOAD_LOG_NAME: String = "pie_block_download.log"
 ##     必须跳过整个中断向量表区（67 个入口 x 8 字节 = 536）。
 ## v7: 删除蓝牙烧录与自建 bootloader（UART 触发字 / IAP / DFU 全移除），
 ##     固件走芯片 ROM bootloader 的 USB-HID 烧录（pie_block_hid.py）。
-const PROJECT_VERSION: String = "proj_v7_no_iap_hid"
+const PROJECT_VERSION: String = "proj_v8_engineer_modes"
 
 ## STC 烧录脚本路径（Python）
 const STCFLASH_SRC: String = "res://stc32g/toolchain/stcflash"
@@ -147,7 +145,6 @@ func ensure_deployed() -> bool:
 	for pair in [
 		[PROJECT_SRC, PROJECT_DST, "项目模板"],
 		[PROJECT_ENGINEER_SRC, PROJECT_ENGINEER_DST, "工程项目模板"],
-		[PROJECT_ENGINEER_SIM_SRC, PROJECT_ENGINEER_SIM_DST, "工程仿真项目模板"],
 	]:
 		if need_redeploy or not _project_deployed(str(pair[1])):
 			if not _copy_dir_recursive(str(pair[0]), str(pair[1])):
@@ -183,12 +180,11 @@ func _project_deployed(project_dst: String) -> bool:
 	return true
 
 
-## 三个项目模板是否全部部署过（任一缺失都返回 false）
+## 两个项目模板是否全部部署过（任一缺失都返回 false）
 func _all_projects_deployed() -> bool:
 	for pair in [
 		[PROJECT_DST],
 		[PROJECT_ENGINEER_DST],
-		[PROJECT_ENGINEER_SIM_DST],
 	]:
 		if not _project_deployed(str(pair[0])):
 			return false

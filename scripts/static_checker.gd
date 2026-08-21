@@ -5,8 +5,6 @@ extends RefCounted
 ## 从 ui.gd 抽出，不再直接读控件，而是接收已收集好的配置 Dictionary。
 ## ui.gd 的 _run_check() 负责收集数据 -> 调本检查器 -> 显示结果 + 生成代码。
 
-const IK_CONFIG = preload("res://scripts/engineer_ik_config.gd")
-
 # ------------------------------------------------------------------ 常量
 # 扳机键 / 摩擦轮开关键的选项：0=R, 1=↑, 2=↓, 3=←, 4=->, 5..8=A/B/C/D
 # 索引 1..4 属于方向键
@@ -57,18 +55,14 @@ static func _check_friction_type(issues: Array, cfg: Dictionary) -> void:
 			"msg": "摩擦轮类型「%s」无效（只支持「无刷电调」或「不使用」）；已按无刷电调安全处理" % value})
 
 
-## 工程多模式检查（工程页 + 逆解算页共同配置同一份固件）
-## ik_cfg.enabled == false（或缺省视为 true）时跳过逆解算校验：
-## 未启用逆解的用户不应看到任何逆解相关的报错/警告。
-static func check_engineer(eng_cfg: Dictionary, ik_cfg: Dictionary) -> Array:
+## 工程多模式检查
+static func check_engineer(eng_cfg: Dictionary) -> Array:
 	var issues: Array = []
 	_check_channel(issues, eng_cfg)
 	_check_deadzone(issues, eng_cfg)
 	_check_speeds(issues, eng_cfg)
 	_check_engineer_io(issues, eng_cfg)
 	_check_engineer_modes(issues, eng_cfg)
-	if bool(ik_cfg.get("enabled", true)):
-		_check_ik_params(issues, ik_cfg, eng_cfg)
 	return issues
 
 
@@ -574,13 +568,6 @@ static func _check_debug_params(issues: Array, debug_rows: Array) -> void:
 				if val < 0 or val > 800:
 					issues.append({"type": "Error",
 						"msg": "调试 %s 摩擦轮速度 %d 超出范围（校内赛安全范围 0-800）" % [pin_name, val]})
-
-
-# ------------------------------------------------------------------ 工程逆解算：静态检查
-static func _check_ik_params(issues: Array, ik_cfg: Dictionary,
-		eng_cfg: Dictionary) -> void:
-	var result: Dictionary = IK_CONFIG.validate(ik_cfg, eng_cfg)
-	issues.append_array(result.get("issues", []))
 
 
 # ------------------------------------------------------------------ 工具

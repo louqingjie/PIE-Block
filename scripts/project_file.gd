@@ -5,7 +5,6 @@ extends RefCounted
 ##   - kind            项目类型，新建时定死，之后不可转换
 ##   - stage           1 = 图形化配置阶段；2 = AI 编辑阶段（只能 1 -> 2 单向推进）
 ##   - config          图形化配置快照（节点相对路径 -> 值），进入阶段二后冻结
-##   - ik_config       工程逆解结构化配置，由 3D 仿真页维护，进入阶段二后冻结
 ##   - active_tab      TabContainer 索引，工程项目使用「工程」页
 ##   - main_c_stage1   阶段一图形化生成的 C 源，进入阶段二时冻结
 ##   - main_c_ai       阶段二 AI / 手工编辑后的 C 源
@@ -16,9 +15,7 @@ extends RefCounted
 ## 文件扩展名（不含点）
 const EXT: String = "pieproj"
 ## 格式版本，将来迁移用
-const IK_CONFIG = preload("res://scripts/engineer_ik_config.gd")
-
-const FORMAT_VERSION: int = 7
+const FORMAT_VERSION: int = 8
 const GUIDE_STEP_COUNT: int = 7
 
 # ------------------------------------------------------------------ 项目类型
@@ -37,13 +34,12 @@ const KIND_LABELS: Dictionary = {
 }
 
 ## 类型 -> 该类型可见的 TabContainer 页索引。
-## Tab 顺序：0=步兵, 1=工程, 2=工程逆解算, 3=调试。
-## 桌面端暂时隐藏工程逆解算页，但保留索引和底层数据供 CLI/MCP 使用。
+## 逻辑页顺序：0=步兵, 1=工程, 2=调试。
 ## 这里是类型与 Tab 映射的唯一真相源，ui.gd 一律调用本文件，不要另写一份。
 const KIND_TABS: Dictionary = {
 	KIND_INFANTRY: [0],
 	KIND_ENGINEER: [1],
-	KIND_DEBUG: [3],
+	KIND_DEBUG: [2],
 }
 
 
@@ -65,9 +61,6 @@ static func kind_default_tab(kind: String) -> int:
 
 ## Tab 索引反查项目类型（给旧上下文兜底用）
 static func tab_to_kind(tab: int) -> String:
-	# 2 是保留的工程逆解算逻辑索引；虽然桌面端隐藏，底层调用仍按工程处理。
-	if tab == 2:
-		return KIND_ENGINEER
 	for kind in KINDS:
 		if tab in KIND_TABS[kind]:
 			return kind
@@ -84,33 +77,6 @@ static func stage_label(stage: int) -> String:
 	return "阶段二 · AI 编辑" if stage >= 2 else "阶段一 · 图形化配置"
 
 
-## 在项目归一化前判断原始文件是否包含已隐藏的工程逆解算状态。
-## 该接口只供桌面启动页调用，普通 load_from / CLI / MCP 仍保留底层数据。
-static func contains_hidden_ik_data(raw: Dictionary) -> bool:
-	if int(raw.get("active_tab", -1)) == 2:
-		return true
-	var workflow: Variant = raw.get("workflow", {})
-	if workflow is Dictionary and bool(workflow.get("ik_confirmed", false)):
-		return true
-	var raw_ik: Variant = raw.get("ik_config", {})
-	if raw_ik is Dictionary and not raw_ik.is_empty():
-		return IK_CONFIG.normalize(raw_ik) != IK_CONFIG.default_config()
-	return false
-
-
-## 读取原始项目 JSON，供桌面启动页在 normalize 前执行旧项目拦截。
-## 文件损坏或无法读取时返回 false，由 load_from 负责报告常规错误。
-static func contains_hidden_ik_project(path: String) -> bool:
-	if path.is_empty() or not FileAccess.file_exists(path):
-		return false
-	var f: FileAccess = FileAccess.open(path, FileAccess.READ)
-	if f == null:
-		return false
-	var parsed: Variant = JSON.parse_string(f.get_as_text())
-	f.close()
-	return parsed is Dictionary and contains_hidden_ik_data(parsed)
-
-
 # ------------------------------------------------------------------ 数据结构
 ## 新建一份空项目数据
 static func new_data(kind: String) -> Dictionary:
@@ -121,7 +87,6 @@ static func new_data(kind: String) -> Dictionary:
 		"stage": 1,
 		"active_tab": kind_default_tab(k),
 		"config": {},
-		"ik_config": IK_CONFIG.default_config(),
 		"main_c_stage1": "",
 		"main_c_ai": "",
 		"workflow": _default_workflow(),
@@ -132,11 +97,9 @@ static func _default_workflow() -> Dictionary:
 	return {
 		"hardware_confirmed": false,
 		"ai_enabled": false,
-		"ik_confirmed": false,
 		"checked_hash": "",
 		"built_hash": "",
 		"flashed_hash": "",
-		"firmware_mode": "unknown",
 		"hardware_tested": false,
 		"guide_completed": [false, false, false, false, false, false, false],
 	}
@@ -148,12 +111,9 @@ static func normalize_workflow(raw: Variant) -> Dictionary:
 		return workflow
 	workflow["hardware_confirmed"] = bool(raw.get("hardware_confirmed", false))
 	workflow["ai_enabled"] = bool(raw.get("ai_enabled", false))
-	workflow["ik_confirmed"] = bool(raw.get("ik_confirmed", false))
 	workflow["checked_hash"] = str(raw.get("checked_hash", ""))
 	workflow["built_hash"] = str(raw.get("built_hash", ""))
 	workflow["flashed_hash"] = str(raw.get("flashed_hash", ""))
-	var firmware_mode: String = str(raw.get("firmware_mode", "unknown"))
-	workflow["firmware_mode"] = firmware_mode if firmware_mode in ["unknown", "simulator", "production"] else "unknown"
 	workflow["hardware_tested"] = bool(raw.get("hardware_tested", false))
 	var raw_progress: Variant = raw.get("guide_completed", [])
 	if raw_progress is Array:
@@ -178,7 +138,6 @@ static func normalize(raw: Dictionary) -> Dictionary:
 	data["active_tab"] = tab if tab in kind_tabs(kind) else kind_default_tab(kind)
 	var cfg: Variant = raw.get("config", {})
 	data["config"] = normalize_config(cfg) if cfg is Dictionary else {}
-	data["ik_config"] = IK_CONFIG.normalize(raw.get("ik_config", {}))
 	data["main_c_stage1"] = str(raw.get("main_c_stage1", ""))
 	data["main_c_ai"] = str(raw.get("main_c_ai", ""))
 	data["workflow"] = normalize_workflow(raw.get("workflow", {}))

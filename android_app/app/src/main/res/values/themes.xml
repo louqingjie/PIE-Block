@@ -1,6 +1,0 @@
-<resources>
-    <style name="Theme.PieBlockRemote" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="colorPrimary">@color/purple_500</item>
-        <item name="colorOnPrimary">@color/white</item>
-    </style>
-</resources>

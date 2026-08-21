@@ -7,7 +7,7 @@ extends Control
 ## 云台的归中占空比与限幅边界直接取自 CodeGenInfantry.gimbal_params()，
 ## 不在本文件重推公式，避免仿真与生成的 C 代码脱节。
 ##
-## 单位：与机械臂仿真不同，这里 1 Godot 单位 = 1 米，
+## 单位：这里 1 Godot 单位 = 1 米，
 ## 好让 Jolt 的重力与弹丸抛物线天然正确。
 ##
 ## 输入：PC 手柄（XInput/DirectInput）与键盘都会被归一成
@@ -667,7 +667,7 @@ func _build_robot() -> void:
 
 
 ## 同帧内可能重建多次（改配置/拖滑块），必须立即释放而非 queue_free，
-## 否则旧节点会堆积（机械臂仿真踩过这个坑）
+## 否则重复进入仿真后旧节点会堆积。
 func _clear_children(node: Node) -> void:
 	for c in node.get_children():
 		node.remove_child(c)

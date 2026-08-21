@@ -156,8 +156,6 @@ func generate(cfg: Dictionary) -> String:
 	code += "// 工程机器人多模式操作代码（由 Pie-Block 配置生成器自动生成）\n"
 	code += "#include \"main.h\"\n"
 	code += "#include \"MATH.H\"\n"
-	# isr.c 的 UART1 中断通过该钩子把非 IAP 字节交给应用；无逆解仿真时是空操作
-	code += "void IKSimRxByte(uint8_t dat) { if (dat == 0u) return; }\n"
 	code += "// ========================= 参数区 =========================\n"
 	code += "uint8_t Channal = %s;                          // NRF24L01 通信通道（0-125），与遥控器一致\n" % ch
 	code += "uint16_t maxSpeed = %s;                         // 底盘普通速度\n" % normal_spd
@@ -186,9 +184,9 @@ func generate(cfg: Dictionary) -> String:
 	code += "uint8_t control_command = 0x00;\n"
 	code += "// 自定义变量\n"
 	code += "int dutyOfChassis[4];          // 底盘四个电机控制值\n"
-	code += "int dutyOfAuxMotor[8];          // 正解模式下的其他扩展板电机（按槽位）\n"
-	code += "float dutyOfAuxServo[8];        // 正解模式下的其他扩展板舵机（按槽位）\n"
-	code += "float dutyOfAuxMainServo[2];    // 正解模式下的 MP03/MP74 舵机\n"
+	code += "int dutyOfAuxMotor[8];          // 映射模式下的其他扩展板电机（按槽位）\n"
+	code += "float dutyOfAuxServo[8];        // 映射模式下的其他扩展板舵机（按槽位）\n"
+	code += "float dutyOfAuxMainServo[2];    // 映射模式下的 MP03/MP74 舵机\n"
 	code += "uint8_t currentMode = 1;        // 当前模式（1~%d），开机固定模式1\n" % mode_count
 	code += "uint8_t modeKeyHeld = 0;        // 单击切换键锁存\n"
 	if mode_count > 1 and not aux_motor_slots.is_empty():

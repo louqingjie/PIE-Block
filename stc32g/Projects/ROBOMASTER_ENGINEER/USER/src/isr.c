@@ -25,12 +25,8 @@
 
 #include "CNU_PIE_UART.h"
 #include "CNU_PIE_EXTI.h"
-/* Generated applications may consume non-IAP UART bytes (the IK simulator
- * uses this hook). Normal production applications provide a no-op function. */
-extern void IKSimRxByte(uint8_t dat);
 void UART1_Isr() interrupt 4
 {
-	char dat;
 	if (UART1_GET_TX_FLAG)
 	{
 		UART1_CLEAR_TX_FLAG;
@@ -40,8 +36,7 @@ void UART1_Isr() interrupt 4
 	{
 		UART1_CLEAR_RX_FLAG;
 		uart_receive[0]++;
-		dat = SBUF;
-		IKSimRxByte((uint8_t)dat);
+		(void)SBUF;
 		// 接收数据寄存器为：SBUF
 	}
 }

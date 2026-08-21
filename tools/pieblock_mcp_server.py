@@ -9,7 +9,7 @@ Copilot、open-code 等）调用。
 
 原理：
   1. 本 Server 通过 subprocess 调用 `scripts/cli_codegen.gd`（Godot headless CLI）
-  2. CLI 复用项目里现有的 CodeGenInfantry / CodeGenEngineerIK / CodeGenDebug
+  2. CLI 复用项目里现有的 CodeGenInfantry / CodeGenEngineer / CodeGenDebug
      与 StaticChecker，零逻辑重复
   3. 每次调用启动一个 Godot 进程（约 1~2 秒），对 Agent 交互来说可接受
 
@@ -124,9 +124,7 @@ def _apply_channel(cfg: dict[str, Any], channel: str | None = None) -> dict[str,
     优先级：显式参数 channel > 工具参数之外的 PIEBLOCK_CHANNEL 环境变量。
     显式传入时也允许覆盖 config 里的 channel（以参数为准）。
 
-    不改变调用方传入的字典（返回新字典）。支持两种结构：
-      - 扁平：{channel, ...}
-      - engineer 双字典：{engineer: {channel, ...}, ik: {...}}
+    不改变调用方传入的字典（返回新字典）。配置使用扁平结构 {channel, ...}。
     debug 模式没有 channel 字段，跳过。
     """
     resolved: str = (channel or "").strip() or DEFAULT_CHANNEL
@@ -149,9 +147,6 @@ def _apply_channel(cfg: dict[str, Any], channel: str | None = None) -> dict[str,
         _fill(out)
     elif isinstance(out.get("channel"), str):
         _fill(out)
-    eng = out.get("engineer")
-    if isinstance(eng, dict):
-        _fill(eng)
     return out
 
 
@@ -201,7 +196,7 @@ mcp = MCPServer(
     version="0.1.0",
     instructions=(
         "此服务器把 Pie-Block 图形化代码生成器暴露为命令行工具。\n"
-        "支持的 kind: infantry（步兵）/ engineer（工程，含 2~6 关节机械臂逆解算）/ debug（调试）。\n"
+        "支持的 kind: infantry（步兵）/ engineer（工程多模式控制）/ debug（调试）。\n"
         "生成配置用 JSON 字符串传入。可用 get_schema(kind) 获取每种 kind 的完整字段定义。\n"
         "重要硬件约束（不可违反）：\n"
         "- 只向主控板烧录，绝不向机械扩展板烧录\n"
@@ -246,7 +241,7 @@ def generate_code(kind: str, config: str, out_path: str | None = None, channel: 
 
     参数:
       kind: infantry / engineer / debug
-      config: JSON 字符串。字段定义见 get_schema(kind)。engineer 需要 {engineer, ik} 双字典。
+      config: JSON 字符串。字段定义见 get_schema(kind)，所有类型都使用扁平对象。
       out_path: 可选，把生成的 C 代码写入此绝对路径（不指定则只返回 JSON，code 字段含代码）。
       channel: 可选，遥控器通道号（0-125）。传入后自动填入 config 的 channel（覆盖环境变量默认值）。
 

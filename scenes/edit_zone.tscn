@@ -3,7 +3,6 @@
 [ext_resource type="Theme" uid="uid://cryqvh2g7gqj" path="res://assets/themes/main.tres" id="1_6qtce"]
 [ext_resource type="PackedScene" uid="uid://dpq854m2cihg8" path="res://scenes/advanced_and_engineer.tscn" id="1_sv5ud"]
 [ext_resource type="PackedScene" uid="uid://cqjw5gums3ld7" path="res://scenes/infantry.tscn" id="1_temp3"]
-[ext_resource type="PackedScene" uid="uid://mul8oj43en67" path="res://scenes/engineer_advanced.tscn" id="3_6qtce"]
 [ext_resource type="PackedScene" uid="uid://1bdtv6q4jaq1" path="res://scenes/debug.tscn" id="4_mwfoh"]
 
 [node name="EditZone" type="HBoxContainer" unique_id=377730197]
@@ -26,17 +25,10 @@ size_flags_horizontal = 3
 size_flags_vertical = 3
 current_tab = 0
 tab_0/title = "工程"
-tab_1/title = "工程逆解算"
-tab_1/disabled = true
-tab_1/hidden = true
 
 [node name="Engineer" parent="Engineer" unique_id=1878163608 instance=ExtResource("1_sv5ud")]
 layout_mode = 2
 metadata/_tab_index = 0
-
-[node name="EngineerAdvanced" parent="Engineer" unique_id=1904980488 instance=ExtResource("3_6qtce")]
-layout_mode = 2
-metadata/_tab_index = 1
 
 [node name="Debug" parent="." unique_id=99662280 instance=ExtResource("4_mwfoh")]
 layout_mode = 2

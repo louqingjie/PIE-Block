@@ -1,0 +1,380 @@
+{
+	"active_tab": 0,
+	"config": {
+		"Debug/HBoxContainer/LineEdit": {
+			"t": ""
+		},
+		"Debug/HBoxContainer/OptionButton": {
+			"i": 0,
+			"s": "电机"
+		},
+		"Debug/HBoxContainer/OptionButton2": {
+			"i": 0,
+			"s": "正"
+		},
+		"Debug/HBoxContainer10/LineEdit": {
+			"t": ""
+		},
+		"Debug/HBoxContainer10/OptionButton": {
+			"i": 0,
+			"s": "电机"
+		},
+		"Debug/HBoxContainer10/OptionButton2": {
+			"i": 0,
+			"s": "正"
+		},
+		"Debug/HBoxContainer2/LineEdit": {
+			"t": ""
+		},
+		"Debug/HBoxContainer2/OptionButton": {
+			"i": 0,
+			"s": "电机"
+		},
+		"Debug/HBoxContainer2/OptionButton2": {
+			"i": 0,
+			"s": "正"
+		},
+		"Debug/HBoxContainer3/LineEdit": {
+			"t": ""
+		},
+		"Debug/HBoxContainer3/OptionButton": {
+			"i": 0,
+			"s": "电机"
+		},
+		"Debug/HBoxContainer3/OptionButton2": {
+			"i": 0,
+			"s": "正"
+		},
+		"Debug/HBoxContainer4/LineEdit": {
+			"t": ""
+		},
+		"Debug/HBoxContainer4/OptionButton": {
+			"i": 0,
+			"s": "电机"
+		},
+		"Debug/HBoxContainer4/OptionButton2": {
+			"i": 0,
+			"s": "正"
+		},
+		"Debug/HBoxContainer5/LineEdit": {
+			"t": ""
+		},
+		"Debug/HBoxContainer5/OptionButton": {
+			"i": 0,
+			"s": "电机"
+		},
+		"Debug/HBoxContainer5/OptionButton2": {
+			"i": 0,
+			"s": "正"
+		},
+		"Debug/HBoxContainer6/LineEdit": {
+			"t": ""
+		},
+		"Debug/HBoxContainer6/OptionButton": {
+			"i": 0,
+			"s": "电机"
+		},
+		"Debug/HBoxContainer6/OptionButton2": {
+			"i": 0,
+			"s": "正"
+		},
+		"Debug/HBoxContainer7/LineEdit": {
+			"t": ""
+		},
+		"Debug/HBoxContainer7/OptionButton": {
+			"i": 0,
+			"s": "电机"
+		},
+		"Debug/HBoxContainer7/OptionButton2": {
+			"i": 0,
+			"s": "正"
+		},
+		"Debug/HBoxContainer8/LineEdit": {
+			"t": ""
+		},
+		"Debug/HBoxContainer8/OptionButton": {
+			"i": 0,
+			"s": "电机"
+		},
+		"Debug/HBoxContainer8/OptionButton2": {
+			"i": 0,
+			"s": "正"
+		},
+		"Debug/HBoxContainer9/LineEdit": {
+			"t": ""
+		},
+		"Debug/HBoxContainer9/OptionButton": {
+			"i": 0,
+			"s": "电机"
+		},
+		"Debug/HBoxContainer9/OptionButton2": {
+			"i": 0,
+			"s": "正"
+		},
+		"Engineer": {
+			"i": 0
+		},
+		"Engineer/Engineer/IOs/Row1/P60/MidDegree2": {
+			"t": ""
+		},
+		"Engineer/Engineer/IOs/Row1/P60/OptionButton": {
+			"i": 1,
+			"s": "舵机"
+		},
+		"Engineer/Engineer/IOs/Row1/P62/MidDegree2": {
+			"t": ""
+		},
+		"Engineer/Engineer/IOs/Row1/P62/OptionButton": {
+			"i": 1,
+			"s": "舵机"
+		},
+		"Engineer/Engineer/IOs/Row1/P64/MidDegree2": {
+			"t": ""
+		},
+		"Engineer/Engineer/IOs/Row1/P64/OptionButton": {
+			"i": 1,
+			"s": "舵机"
+		},
+		"Engineer/Engineer/IOs/Row1/P66/MidDegree2": {
+			"t": ""
+		},
+		"Engineer/Engineer/IOs/Row1/P66/OptionButton": {
+			"i": 1,
+			"s": "舵机"
+		},
+		"Engineer/Engineer/IOs/Row1/P74/MidDegree2": {
+			"t": ""
+		},
+		"Engineer/Engineer/IOs/Row1/P74/OptionButton": {
+			"i": 0,
+			"s": "电机"
+		},
+		"Engineer/Engineer/IOs/Row2/MP03/MidDegree2": {
+			"t": ""
+		},
+		"Engineer/Engineer/IOs/Row2/MP03/OptionButton": {
+			"i": 1,
+			"s": "舵机"
+		},
+		"Engineer/Engineer/IOs/Row2/MP74/MidDegree2": {
+			"t": ""
+		},
+		"Engineer/Engineer/IOs/Row2/MP74/OptionButton": {
+			"i": 1,
+			"s": "舵机"
+		},
+		"Engineer/Engineer/IOs/Row2/P75/MidDegree2": {
+			"t": ""
+		},
+		"Engineer/Engineer/IOs/Row2/P75/OptionButton": {
+			"i": 0,
+			"s": "电机"
+		},
+		"Engineer/Engineer/IOs/Row2/P76/MidDegree2": {
+			"t": ""
+		},
+		"Engineer/Engineer/IOs/Row2/P76/OptionButton": {
+			"i": 0,
+			"s": "电机"
+		},
+		"Engineer/Engineer/IOs/Row2/P77/MidDegree2": {
+			"t": ""
+		},
+		"Engineer/Engineer/IOs/Row2/P77/OptionButton": {
+			"i": 0,
+			"s": "电机"
+		},
+		"Engineer/Engineer/Mode/OptionButton": {
+			"i": 0,
+			"s": "1"
+		},
+		"Engineer/Engineer/Mode/TabContainer": {
+			"i": 1
+		},
+		"Engineer/Engineer/Mode/TabContainer/Change/OptionButton2": {
+			"i": 0,
+			"s": "E"
+		},
+		"Engineer/Engineer/Mode/TabContainer/Select/Key": {
+			"i": 0,
+			"s": "E"
+		},
+		"Engineer/Engineer/Mode/TabContainer/Select/Key2": {
+			"i": 0,
+			"s": "E"
+		},
+		"Engineer/Engineer/Mode/TabContainer/Select/Key3": {
+			"i": 0,
+			"s": "E"
+		},
+		"Engineer/Engineer/Mode/TabContainer/Select/Key4": {
+			"i": 0,
+			"s": "E"
+		},
+		"Engineer/Engineer/TabContainer": {
+			"i": 0
+		},
+		"Engineer/Engineer/TabContainer/M1/Chassis/CheckButton": {
+			"b": true
+		},
+		"Engineer/Engineer/TabContainer/M2/Chassis/CheckButton": {
+			"b": false
+		},
+		"Engineer/Engineer/TabContainer/M3/Chassis/CheckButton": {
+			"b": false
+		},
+		"Engineer/Engineer/TabContainer/M4/Chassis/CheckButton": {
+			"b": false
+		},
+		"FirstRow/Chassis/L1/OptionButton": {
+			"i": 3,
+			"s": "P74 P24"
+		},
+		"FirstRow/Chassis/L1/OptionButton2": {
+			"i": 0,
+			"s": "正向"
+		},
+		"FirstRow/Chassis/L2/OptionButton": {
+			"i": 2,
+			"s": "P75 P25"
+		},
+		"FirstRow/Chassis/L2/OptionButton2": {
+			"i": 0,
+			"s": "正向"
+		},
+		"FirstRow/Chassis/R1/OptionButton": {
+			"i": 1,
+			"s": "P76 P26"
+		},
+		"FirstRow/Chassis/R1/OptionButton2": {
+			"i": 0,
+			"s": "正向"
+		},
+		"FirstRow/Chassis/R2/OptionButton": {
+			"i": 0,
+			"s": "P77 P27"
+		},
+		"FirstRow/Chassis/R2/OptionButton2": {
+			"i": 0,
+			"s": "正向"
+		},
+		"FirstRow/Chassis/Speed/LineEdit": {
+			"t": "8000"
+		},
+		"FirstRow/Chassis/Sprint/CheckBox": {
+			"b": true
+		},
+		"FirstRow/Chassis/SprintSpeed/LineEdit": {
+			"t": "10000"
+		},
+		"FirstRow/RemoteSetting/Channel/LineEdit": {
+			"t": "3"
+		},
+		"FirstRow/RemoteSetting/DeadZone/LineEdit": {
+			"t": "10"
+		},
+		"Infantry/GimbalSetting/Booster/OptionButton": {
+			"i": 4,
+			"s": "P60 P61"
+		},
+		"Infantry/GimbalSetting/Booster/OptionButton2": {
+			"i": 0,
+			"s": "正向"
+		},
+		"Infantry/GimbalSetting/Pitch/LineEdit": {
+			"t": "0"
+		},
+		"Infantry/GimbalSetting/Pitch/OptionButton": {
+			"i": 1,
+			"s": "舵机"
+		},
+		"Infantry/GimbalSetting/Pitch/OptionButton2": {
+			"i": 7,
+			"s": "MP03"
+		},
+		"Infantry/GimbalSetting/Pitch/OptionButton3": {
+			"i": 0,
+			"s": "正向"
+		},
+		"Infantry/GimbalSetting/Yaw/LineEdit": {
+			"t": "0"
+		},
+		"Infantry/GimbalSetting/Yaw/OptionButton": {
+			"i": 1,
+			"s": "舵机"
+		},
+		"Infantry/GimbalSetting/Yaw/OptionButton2": {
+			"i": 6,
+			"s": "MP74"
+		},
+		"Infantry/GimbalSetting/Yaw/OptionButton3": {
+			"i": 0,
+			"s": "正向"
+		},
+		"Infantry/KeySetting/ArrowKey/OptionButton": {
+			"i": 1,
+			"s": "冲刺"
+		},
+		"Infantry/KeySetting/Booster/OptionButton": {
+			"i": 5,
+			"s": "A"
+		},
+		"Infantry/KeySetting/BoosterSpeed/MaxDuty": {
+			"t": "800"
+		},
+		"Infantry/KeySetting/BoosterSpeedControl/MaxDuty": {
+			"t": "10"
+		},
+		"Infantry/KeySetting/BoosterSpeedControl/OptionButton": {
+			"i": 6,
+			"s": "B"
+		},
+		"Infantry/KeySetting/BoosterSpeedControl/OptionButton2": {
+			"i": 7,
+			"s": "C"
+		},
+		"Infantry/KeySetting/FeedMode/OptionButton": {
+			"i": 1,
+			"s": "目视闭环"
+		},
+		"Infantry/KeySetting/FrictionType/OptionButton": {
+			"i": 0,
+			"s": "无刷电调"
+		},
+		"Infantry/KeySetting/Trigger/OptionButton": {
+			"i": 0,
+			"s": "E"
+		},
+		"Infantry/KeySetting/Trigger/Speed": {
+			"t": "500"
+		},
+		"Infantry/KeySetting/Trigger/Time": {
+			"t": ""
+		},
+		"Infantry/KeySetting/Zero/CheckBox": {
+			"b": true
+		}
+	},
+	"format_version": 8,
+	"kind": "infantry",
+	"main_c_ai": "",
+	"main_c_stage1": "// 步兵机器人操作代码（由 Pie-Block 配置生成器自动生成）\n#include \"main.h\"\n#include \"MATH.H\"\n// ========================= 参数区 =========================\nuint8_t Channal = 3;                          // NRF24L01 通信通道（0-125），与遥控器一致\nuint16_t maxSpeed = 8000;\nuint16_t ultraSpeed = 10000;\nuint16_t deadBandOfLeft = 10;                   // 左摇杆中心死区\nuint16_t deadBandOfRight = 10;                  // 右摇杆中心死区\n// 舵机占空比：250=-90°，750=中位(0°)，1250=+90°，总行程 180°\n#define SERVO_DUTY_MIN     250\n#define SERVO_DUTY_MID     750\n#define SERVO_DUTY_MAX     1250\n// 每度对应的占空比增量（1000 duty / 180°）\n#define SERVO_DUTY_PER_DEG 5.555556f\nuint16_t midDutyOfServo[2] = {750, 750};        // 云台水平/垂直舵机中值（归中角 +0° / +0°）\n// 摇杆可摆动幅度 ±60°（相对归中位置）\nuint16_t maxChangeDutyOfServo[2] = {333, 333};\n#define FRICTION_START_DUTY 500  // 官方守则：摩擦轮启动占空比\n#define FRICTION_STEP_DUTY  1    // 平滑启停：每个主循环只变化 1 duty\n#define FRICTION_SPEED_STEP 10   // 增减速键每次调整的目标 Duty 步长\n#define FRICTION_MAX_DUTY   800   // 用户设定，校内赛安全硬上限 800\nuint16_t boosterDutyOfFeed = 500;             // 拨弹电机单发转动占空比\n// 摇杆推到底时云台每周期转过 2.0°\nfloat changeRateOfServo[2] = {0.005428, 0.005428};\n\n#define LIMIT_VALUE(x, min, max) \\\n    do                           \\\n    {                            \\\n        if ((x) < (min))         \\\n            (x) = (min);         \\\n        else if ((x) > (max))    \\\n            (x) = (max);         \\\n    } while (0)\n/*帧头帧尾，内部调用，无需关心*/\n#define COMM_HEADER_1 0xAB\n#define COMM_HEADER_2 0xBC\n#define COMM_END_1 0xCD\n#define COMM_END_2 0xDE\n/*命令码*/\n#define Init_Order 0xAA        // 初始化模式\n#define Duty_Change_Order 0xBB // 修改占空比\n#define Freq_Change_Order 0xCC // 修改频率\n#define Dir_Change_Order 0xDD  // 修改方向：1为正、0为负，电机换向时需更新\n#define Zero_Order 0xEE        // 0命令\n// 拓展板需要帧间处理时间；连续命令之间不得删除此间隔\n#define EXPANSION_FRAME_GAP_MS 5\n/*内部调用变量，无需关心，请勿定义同名变量*/\nuint16_t control_data[8] = {0};\nuint16_t motor_dir[8] = {0};\nuint8_t control_command = 0x00;\n// 自定义变量\nfloat floatDutyOfServo[2]; // 云台舵机\nuint16_t dutyOfServo[2];\nint dutyOfMotor[5]; // 底盘电机、供弹电机、云台电机（如有）\nuint16_t dutyOfBooster = 0;       // 当前摩擦轮占空比\nuint16_t targetDutyOfBooster = 0; // 当前斜坡追赶的目标占空比\nuint8_t frictionRampActive = 0;\nuint8_t valueOfKey[3][4];\nuint8_t triggerKeyValue, lastTriggerKeyValue;\nuint8_t boosterKeyValue, lastBoosterKeyValue;\nuint8_t frictionSpeedUpKeyValue, lastFrictionSpeedUpKeyValue;\nuint8_t frictionSpeedDownKeyValue, lastFrictionSpeedDownKeyValue;\nuint8_t statusOfBooster = 0;\nuint8_t i, j;\nint valueOfRoker[2][2] // 左摇杆水平、竖直；右摇杆水平、竖直\n    ,\n    baseSpeed, turnSpeed;\nstatic const uint8_t keyOffsets[3][4] = {\n    {KEY_OFFSET_UP, KEY_OFFSET_DOWN, KEY_OFFSET_LEFT, KEY_OFFSET_RIGHT},\n    {KEY_OFFSET_A, KEY_OFFSET_B, KEY_OFFSET_C, KEY_OFFSET_D},\n    {KEY_OFFSET_Rocker11, KEY_OFFSET_Rocker21, 0, 0} // 实际只有2个\n};\n\nvoid All_Init();\nvoid ReadControllerInputs();\nvoid CalculateMotorControls();\nvoid CalculateGimbalControls();\nvoid CalculateBoosterControl();\nuint8_t Get_Dir(int rawdata);\nvoid Main_Countrol(int *dutyOfMotor, uint16_t *dutyOfServo, uint16_t dutyOfBooster);\nvoid ExpansionBoradControl(uint8_t control_cmd, uint16_t data_p60, uint16_t data_p62, uint16_t data_p64,\n                           uint16_t data_p66, uint16_t data_p74, uint16_t data_p75, uint16_t data_p76,\n                           uint16_t data_p77);\n\nstatic void remoteControlInitWithTimeout(void)\n{\n    uint8_t retry;\n\n    for (retry = 0; retry < 20; retry++)\n    {\n        if (NRF24L01_Init())\n        {\n            Ms_Delay(200);\n            return;\n        }\n        Ms_Delay(10);\n    }\n}\n\n// ==================== 初始化诊断：3 颗 LED + 蜂鸣器 ====================\n// 3 颗 LED（低电平点亮）+ 蜂鸣器（PWM 驱动），把初始化拆成多步，\n// 每步用 LED 编码 + 蜂鸣器音调双重定位：\n//   - 进入某步前：LED 显示该步编码（3 bit 二进制，P35=bit0 P36=bit1 P37=bit2）\n//   - 该步成功后：蜂鸣器响一声推进确认音（音调随步骤递增）\n//   - 若某步阻塞：LED 停在编码、听不到后续确认音 -> 对照编码表定位\n#define LED_PORT GPIO_P3\n#define LED1_PIN GPIO_Pin_5   // 编码 bit0\n#define LED2_PIN GPIO_Pin_6   // 编码 bit1\n#define LED3_PIN GPIO_Pin_7   // 编码 bit2\n#define BUZZER_CH PWMA_CH4N_P33  // 蜂鸣器（PWM 驱动）\n\n// LED 显示步骤编码 0~7（低电平点亮：0=亮 1=灭）\nstatic void LedShow(uint8_t show)\n{\n    GPIO_Write_Bit(LED_PORT, LED1_PIN, (show & 0x01) ? 0 : 1);\n    GPIO_Write_Bit(LED_PORT, LED2_PIN, (show & 0x02) ? 0 : 1);\n    GPIO_Write_Bit(LED_PORT, LED3_PIN, (show & 0x04) ? 0 : 1);\n}\n\n// 蜂鸣器响一声（PWM 驱动，freq 音调 / ms 时长）\nstatic void Beep(uint16_t freq, uint16_t ms)\n{\n    PWM_SET_Frequency(BUZZER_CH, freq, 5000);\n    Ms_Delay(ms);\n    PWM_SET_Frequency(BUZZER_CH, freq, 0);\n}\n\n// 进入某步：先显示编码（若该步阻塞，LED 就停在这里）\nstatic void StepBegin(uint8_t step)\n{\n    LedShow(step & 0x07);\n}\n\n// 某步初始化成功：蜂鸣器推进确认音（音调随步骤递增，可听声定位）\nstatic void StepDone(uint8_t step)\n{\n    Beep(500 + (uint16_t)(step % 8) * 60, 60);\n}\n\n// UART1 查询发送一字节：不依赖 UART1 TX 中断（避免 UART_PutChar 的\n// UART_BUSY 死锁——TX 中断被 NRF P2.6 高优先级中断抢占时 BUSY 永远清不掉）。\n// 发送期间临时关串口中断，轮询硬件 TI 标志。要求 UART1 已 UART_Init 初始化。\nstatic void Uart1TxQuery(uint8_t dat)\n{\n    uint8_t uart1InterruptEnabled = ES;\n\n    ES = 0;          // 关 UART1 中断，避免中断抢先清 TI 导致死锁\n    TI = 0;          // 丢弃可能残留的发送完成标志\n    SBUF = dat;      // 启动发送\n    while (!TI)      // 等硬件发送完成（TI 与中断无关，必定置位）\n        ;\n    TI = 0;          // 清发送完成标志\n    ES = uart1InterruptEnabled; // 恢复调用前的 UART1 中断状态\n}\n\n// 舵机 Duty 变化蜂鸣反馈：当前周期变化时播放当前 Duty，稳定后立即静音。\nstatic uint8_t servoBuzzerInitialized = 0;\nstatic uint16_t lastServoBuzzerDuty[2] = {0};\nstatic uint8_t frictionBuzzerActive = 0;\nstatic uint16_t frictionBuzzerDuty = 0;\nstatic void FrictionBuzzerTrace(uint16_t duty)\n{\n    frictionBuzzerActive = 1;\n    frictionBuzzerDuty = duty;\n}\n\nstatic void FrictionBuzzerOff(void)\n{\n    frictionBuzzerActive = 0;\n    frictionBuzzerDuty = 0;\n}\n\nstatic void UpdateBuzzerFeedback(void)\n{\n    uint8_t changed = 0;\n    uint16_t currentDuty = 0;\n    uint16_t duty = 0;\n    currentDuty = (uint16_t)(dutyOfServo[0]);\n    if (servoBuzzerInitialized && currentDuty != lastServoBuzzerDuty[0])\n    {\n        changed = 1;\n        duty = currentDuty;\n    }\n    lastServoBuzzerDuty[0] = currentDuty;\n    currentDuty = (uint16_t)(dutyOfServo[1]);\n    if (servoBuzzerInitialized && currentDuty != lastServoBuzzerDuty[1])\n    {\n        changed = 1;\n        duty = currentDuty;\n    }\n    lastServoBuzzerDuty[1] = currentDuty;\n    if (!servoBuzzerInitialized)\n    {\n        servoBuzzerInitialized = 1;\n        changed = 0;\n    }\n    if (changed)\n        PWM_SET_Frequency(BUZZER_CH, duty, 5000);\n    else if (frictionBuzzerActive)\n        PWM_SET_Frequency(BUZZER_CH, frictionBuzzerDuty, 5000);\n    else\n        PWM_SET_Frequency(BUZZER_CH, 500, 0);\n}\n\nvoid main()\n{\n    All_Init();\n    floatDutyOfServo[0] = midDutyOfServo[0];\n    floatDutyOfServo[1] = midDutyOfServo[1];\n    while (1)\n    {\n        nrf_handler(); // 轮询 NRF 接收（P2.6 中断已关）\n        // 测试手柄连接状态\n        if (RcKeyValueRead(KEY_OFFSET_UP))\n            GPIO_Write_Bit(GPIO_P3, GPIO_Pin_7, 0);\n        else\n            GPIO_Write_Bit(GPIO_P3, GPIO_Pin_7, 1);\n\n        ReadControllerInputs();    // 统一读取输入\n        CalculateMotorControls();  // 计算电机控制\n        CalculateGimbalControls(); // 计算云台控制\n        CalculateBoosterControl(); // 计算摩擦轮控制\n        LIMIT_VALUE(dutyOfMotor[0], -10000, 10000);\n        LIMIT_VALUE(dutyOfMotor[1], -10000, 10000);\n        LIMIT_VALUE(dutyOfMotor[2], -10000, 10000);\n        LIMIT_VALUE(dutyOfMotor[3], -10000, 10000);\n        LIMIT_VALUE(dutyOfMotor[4], 0, 10000);\n        // Yaw 限幅 417~1083（归中 +0° ±60°，已收敛到舵机行程内）\n        LIMIT_VALUE(floatDutyOfServo[0], 417, 1083);\n        dutyOfServo[0] = (uint16_t)floatDutyOfServo[0];\n        // Pitch 限幅 417~1083（归中 +0° ±60°，已收敛到舵机行程内）\n        LIMIT_VALUE(floatDutyOfServo[1], 417, 1083);\n        dutyOfServo[1] = (uint16_t)floatDutyOfServo[1];\n        // 目视闭环拨弹：按住扳机键持续拨弹，松开即停（不阻塞主循环）\n        dutyOfMotor[4] = triggerKeyValue ? boosterDutyOfFeed : 0;\n        lastTriggerKeyValue = triggerKeyValue;\n\n        // 发送控制函数\n        Main_Countrol(dutyOfMotor, dutyOfServo, dutyOfBooster);\n        UpdateBuzzerFeedback();\n        Ms_Delay(10);\n    }\n}\n\nuint8_t Get_Dir(int rawdata)\n{\n    if (rawdata >= 0)\n        return 1;\n    else\n        return 0;\n}\n\nvoid All_Init()\n{\n    // 初始化诊断分步：卡在哪步，LED 就停在对应编码（P37 P36 P35 二进制）\n    //   000 上电   001 Board_Init   010 UART1   011 LED 自检\n    //   100 NRF遥控 101 拓展板 Init 110 PWM/舵机 111 完成\n    StepBegin(0);\n    Board_Init();\n    StepDone(0);\n    StepBegin(1);\n    // 串口必须最先初始化：UART1 是扩展板控制的唯一通道。\n    // 放在外设之后的话，一旦某个外设没接好卡住初始化，\n    // 扩展板控制就彻底失效了。\n    UART_Init(UART_1, UART1_RX_P30, UART1_TX_P31, 230400, TIM1);\n    StepDone(1);\n    StepBegin(2);\n    // 诊断 LED（P35/P36/P37）推挽输出，全亮自检后熄灭\n    GPIO_Init(LED_PORT, (GPIO_Pin_enum)(LED1_PIN | LED2_PIN | LED3_PIN), GPIO_OUT_PP);\n    LedShow(7);\n    Ms_Delay(200);\n    LedShow(0);\n    // 蜂鸣器通道必须 PWM_Init（使能输出+启动定时器），否则 Beep 无声\n    PWM_Init(BUZZER_CH, 500, 0);\n    StepDone(2);\n    StepBegin(3);\n    // NRF 遥控器初始化：全程关中断 + 初始化后关 P2.6 EXTI\n    // （P2.6 高优先级中断在 ISR 里做 SPI/reentrant，遥控器开着会卡死；\n    //  接收改为主循环轮询 nrf_handler()，见主循环开头）\n    EA = 0;\n    remoteControlInitWithTimeout();\n    P2INTE &= ~GPIO_Pin_6; // 关 P2.6 EXTI：接收改主循环轮询\n    EA = 1;\n    StepDone(3);\n    StepBegin(4);\n    ExpansionBoradControl(Init_Order,\n                          10000, 50,\n                          50, 50,\n                          10000, 10000,\n                          10000, 10000); // p60,p62,p64,p66,p74,p75,p76,p77\n    // 摩擦轮初始化后必须留 >=1000ms 硬件反应时间（见《RM电控指南》），不得缩短\n    Ms_Delay(1000);\n    StepDone(4);\n    StepBegin(5);\n    PWM_Init(PWMB_CH1_P74, 50, midDutyOfServo[0]); // 云台水平舵机\n    PWM_Init(PWMB_CH4_P03, 50, midDutyOfServo[1]); // 云台垂直舵机\n    StepDone(5);\n    // 初始化完成提示音：P33 蜂鸣器演奏上行琶音\n    Beep(523, 120);\n    Beep(659, 120);\n    Beep(784, 120);\n    Beep(1047, 240);\n}\n\nvoid ReadControllerInputs()\n{\n    // 摇杆读数读取\n    valueOfRoker[0][0] = RcRockerValueRead(ROCKER_LEFT_HORIZONTAL);\n    valueOfRoker[0][1] = RcRockerValueRead(ROCKER_LEFT_VERTICAL);\n    valueOfRoker[1][0] = RcRockerValueRead(ROCKER_RIGHT_HORIZONTAL);\n    valueOfRoker[1][1] = RcRockerValueRead(ROCKER_RIGHT_VERTICAL);\n    // 死区过滤\n    if (abs(valueOfRoker[0][0]) <= deadBandOfLeft)\n        valueOfRoker[0][0] = 0;\n    if (abs(valueOfRoker[0][1]) <= deadBandOfLeft)\n        valueOfRoker[0][1] = 0;\n    if (abs(valueOfRoker[1][0]) <= deadBandOfRight)\n        valueOfRoker[1][0] = 0;\n    if (abs(valueOfRoker[1][1]) <= deadBandOfRight)\n        valueOfRoker[1][1] = 0;\n\n    for (i = 0; i < 3; i++)\n    {\n        for (j = 0; j < 4; j++)\n        {\n            if (i == 2 && j >= 2)\n                break; // 第三行只有2个按键\n            valueOfKey[i][j] = RcKeyValueRead(keyOffsets[i][j]);\n        }\n    }\n    // 读取扳机键\n    triggerKeyValue = RcKeyValueRead(KEY_OFFSET_1);\n    // 读取摩擦轮开关键\n    boosterKeyValue = RcKeyValueRead(KEY_OFFSET_A);\n    // 读取摩擦轮增减速键\n    frictionSpeedUpKeyValue = RcKeyValueRead(KEY_OFFSET_B);\n    frictionSpeedDownKeyValue = RcKeyValueRead(KEY_OFFSET_C);\n}\n\nvoid CalculateMotorControls()\n{\n\n    // 冲刺模式：按下左摇杆时使用冲刺速度\n    if (valueOfKey[2][0])\n    {\n        baseSpeed = (int)((float)valueOfRoker[0][1] * ultraSpeed / 2047);\n        turnSpeed = (int)((float)valueOfRoker[0][0] * ultraSpeed / 2047);\n    }\n    else\n    {\n        baseSpeed = (int)((float)valueOfRoker[0][1] * maxSpeed / 2047);\n        turnSpeed = (int)((float)valueOfRoker[0][0] * maxSpeed / 2047);\n    }\n\n    // 方向键设为冲刺\n    if (valueOfKey[0][0] == 1)\n        baseSpeed = ultraSpeed;\n    if (valueOfKey[0][1] == 1)\n        baseSpeed = -ultraSpeed;\n    if (valueOfKey[0][2] == 1)\n        turnSpeed = -ultraSpeed;\n    if (valueOfKey[0][3] == 1)\n        turnSpeed = ultraSpeed;\n    dutyOfMotor[0] = -baseSpeed - turnSpeed;\n    dutyOfMotor[1] = -baseSpeed - turnSpeed;\n    dutyOfMotor[2] = baseSpeed - turnSpeed;\n    dutyOfMotor[3] = baseSpeed - turnSpeed;\n\n    // 供弹电机控制值计算\n    if (valueOfKey[1][3])\n        dutyOfMotor[4] = 0;\n}\n\nvoid CalculateBoosterControl()\n{\n    // 非阻塞状态机：开关和增减速只修改目标值；运行区间从 500 duty 起步，斜坡每轮变化 1。\n    // 摩擦轮开关由 A 上升沿触发；增减速键也只响应上升沿。\n    uint8_t frictionStartedThisCycle = 0;\n    if (boosterKeyValue && !lastBoosterKeyValue)\n    {\n        statusOfBooster = !statusOfBooster;\n        targetDutyOfBooster = statusOfBooster ? FRICTION_MAX_DUTY : 0;\n        if (statusOfBooster && dutyOfBooster == 0)\n        {\n            dutyOfBooster = FRICTION_START_DUTY;\n            frictionStartedThisCycle = 1;\n        }\n        frictionRampActive = (dutyOfBooster != targetDutyOfBooster);\n    }\n    else if (statusOfBooster && frictionSpeedUpKeyValue && !lastFrictionSpeedUpKeyValue\n             && !(frictionSpeedUpKeyValue && frictionSpeedDownKeyValue))\n    {\n        if (targetDutyOfBooster < FRICTION_MAX_DUTY)\n        {\n            targetDutyOfBooster += FRICTION_SPEED_STEP;\n            if (targetDutyOfBooster > FRICTION_MAX_DUTY)\n                targetDutyOfBooster = FRICTION_MAX_DUTY;\n        }\n    }\n    else if (statusOfBooster && frictionSpeedDownKeyValue && !lastFrictionSpeedDownKeyValue\n             && !(frictionSpeedUpKeyValue && frictionSpeedDownKeyValue))\n    {\n        if (targetDutyOfBooster > FRICTION_START_DUTY)\n        {\n            if (targetDutyOfBooster > FRICTION_START_DUTY + FRICTION_SPEED_STEP)\n                targetDutyOfBooster -= FRICTION_SPEED_STEP;\n            else\n                targetDutyOfBooster = FRICTION_START_DUTY;\n        }\n    }\n    frictionRampActive = (dutyOfBooster != targetDutyOfBooster);\n    if (frictionRampActive)\n    {\n        if (!frictionStartedThisCycle)\n        {\n            if (targetDutyOfBooster > dutyOfBooster)\n                dutyOfBooster += FRICTION_STEP_DUTY;\n            else if (statusOfBooster == 0 && dutyOfBooster <= FRICTION_START_DUTY)\n                dutyOfBooster = 0;\n            else if (dutyOfBooster > targetDutyOfBooster)\n                dutyOfBooster -= FRICTION_STEP_DUTY;\n        }\n        if (dutyOfBooster == targetDutyOfBooster)\n        {\n            frictionRampActive = 0;\n            FrictionBuzzerOff();\n        }\n        else\n            FrictionBuzzerTrace(dutyOfBooster);\n    }\n    else\n        FrictionBuzzerOff();\n    lastBoosterKeyValue = boosterKeyValue;\n    lastFrictionSpeedUpKeyValue = frictionSpeedUpKeyValue;\n    lastFrictionSpeedDownKeyValue = frictionSpeedDownKeyValue;\n}\n\nvoid CalculateGimbalControls()\n{\n    // 云台舵机控制值计算\n    floatDutyOfServo[0] += valueOfRoker[1][0] * changeRateOfServo[0];\n    floatDutyOfServo[1] += valueOfRoker[1][1] * changeRateOfServo[1];\n    // 按下右摇杆云台归中\n    if (valueOfKey[2][1])\n    {\n        floatDutyOfServo[0] = midDutyOfServo[0];\n        floatDutyOfServo[1] = midDutyOfServo[1];\n    }\n    dutyOfServo[0] = (uint16_t)floatDutyOfServo[0];\n    dutyOfServo[1] = (uint16_t)floatDutyOfServo[1];\n}\n\nvoid Main_Countrol(int *dutyOfMotor, uint16_t *dutyOfServo, uint16_t dutyOfBooster)\n{\n    // 底盘方向会随摇杆实时变化，必须先发方向帧；拓展板处理完成后再发占空比帧\n    ExpansionBoradControl(Dir_Change_Order,\n                          1, 1,\n                          0, 0,\n                          Get_Dir(dutyOfMotor[0]), Get_Dir(dutyOfMotor[1]),\n                          Get_Dir(dutyOfMotor[2]), Get_Dir(dutyOfMotor[3]));\n    Ms_Delay(EXPANSION_FRAME_GAP_MS);\n    ExpansionBoradControl(Duty_Change_Order, dutyOfMotor[4], 0,\n                          dutyOfBooster, dutyOfBooster,\n                          (uint16_t)abs(dutyOfMotor[0]), (uint16_t)abs(dutyOfMotor[1]),\n                          (uint16_t)abs(dutyOfMotor[2]), (uint16_t)abs(dutyOfMotor[3]));\n    Ms_Delay(EXPANSION_FRAME_GAP_MS);\n    PWM_SET_Frequency(PWMB_CH1_P74, 50, dutyOfServo[0]);\n    PWM_SET_Frequency(PWMB_CH4_P03, 50, dutyOfServo[1]);\n}\n\n/// @brief 板间通信函数，用于主控给拓展版发送\n/// @param control_cmd\n/// @param data_p60 供弹电机\n/// @param data_p62 空\n/// @param data_p64 右摩擦轮\n/// @param data_p66 左摩擦轮\n/// @param data_p74 左前电机\n/// @param data_p75 左后电机\n/// @param data_p76 右前电机\n/// @param data_p77 右后电机\nvoid ExpansionBoradControl(uint8_t control_cmd, uint16_t data_p60, uint16_t data_p62, uint16_t data_p64,\n                           uint16_t data_p66, uint16_t data_p74, uint16_t data_p75, uint16_t data_p76,\n                           uint16_t data_p77)\n{\n    uint8_t i = 0;\n    uint8_t control_frame_pack[21] = {0};\n    control_frame_pack[0] = COMM_HEADER_1;\n    control_frame_pack[1] = COMM_HEADER_2;\n    control_frame_pack[19] = COMM_END_1;\n    control_frame_pack[20] = COMM_END_2;\n    control_frame_pack[2] = control_cmd;\n    control_frame_pack[3] = (uint8_t)((data_p60 >> 8) & 0xFF);\n    control_frame_pack[4] = (uint8_t)(data_p60 & 0xFF);\n    control_frame_pack[5] = (uint8_t)((data_p62 >> 8) & 0xFF);\n    control_frame_pack[6] = (uint8_t)(data_p62 & 0xFF);\n    control_frame_pack[7] = (uint8_t)((data_p64 >> 8) & 0xFF);\n    control_frame_pack[8] = (uint8_t)(data_p64 & 0xFF);\n    control_frame_pack[9] = (uint8_t)((data_p66 >> 8) & 0xFF);\n    control_frame_pack[10] = (uint8_t)(data_p66 & 0xFF);\n    control_frame_pack[11] = (uint8_t)((data_p74 >> 8) & 0xFF);\n    control_frame_pack[12] = (uint8_t)(data_p74 & 0xFF);\n    control_frame_pack[13] = (uint8_t)((data_p75 >> 8) & 0xFF);\n    control_frame_pack[14] = (uint8_t)(data_p75 & 0xFF);\n    control_frame_pack[15] = (uint8_t)((data_p76 >> 8) & 0xFF);\n    control_frame_pack[16] = (uint8_t)(data_p76 & 0xFF);\n    control_frame_pack[17] = (uint8_t)((data_p77 >> 8) & 0xFF);\n    control_frame_pack[18] = (uint8_t)(data_p77 & 0xFF);\n    for (i = 0; i < 21; i++)\n        Uart1TxQuery(control_frame_pack[i]); // 查询发送，不依赖 TX 中断\n}\n",
+	"stage": 1,
+	"workflow": {
+		"ai_enabled": false,
+		"built_hash": "ae2f9d8f6c86083621736e793194d558a2c447c143fd611fecb1079e021c6cc1",
+		"checked_hash": "",
+		"flashed_hash": "ae2f9d8f6c86083621736e793194d558a2c447c143fd611fecb1079e021c6cc1",
+		"guide_completed": [
+			true,
+			true,
+			true,
+			false,
+			true,
+			true,
+			false
+		],
+		"hardware_confirmed": true,
+		"hardware_tested": false
+	}
+}

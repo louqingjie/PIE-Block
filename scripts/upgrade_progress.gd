@@ -38,18 +38,6 @@ func begin() -> void:
 	_show_on_top()
 
 
-## 求解器烧录专用：显示进度面板（标题与提示面向"编译并烧录 MCU 求解器"）。
-## 此前该路径只调 set_progress 未 show，导致 3D 页面点击后无任何进度反馈。
-func begin_solver() -> void:
-	_title.text = "编译并烧录 MCU 求解器"
-	_close.hide()
-	_cancel.show()
-	_cancel.disabled = true
-	_retry.hide()
-	set_progress("准备编译求解器", 2.0, "仿真固件不会初始化或输出任何执行器 IO。")
-	_show_on_top()
-
-
 ## 确保面板在节点树中排最后（z_index 对运行时动态添加的同级兄弟不可靠），
 ## 否则后添加的 3D 仿真视图（SubViewportContainer 全屏拦截鼠标）会挡住面板按钮。
 func _show_on_top() -> void:

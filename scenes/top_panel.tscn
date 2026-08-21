@@ -42,7 +42,7 @@ layout_mode = 2
 size_flags_horizontal = 8
 text = "AI 编辑"
 
-[node name="ArmSim" type="Button" parent="." unique_id=818349062]
+[node name="Simulation" type="Button" parent="." unique_id=818349062]
 visible = false
 layout_mode = 2
 size_flags_horizontal = 8

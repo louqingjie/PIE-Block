@@ -223,9 +223,6 @@ func _on_open_pressed() -> void:
 
 
 func _open_project(path: String) -> void:
-	if PF.contains_hidden_ik_project(path):
-		_set_status("该项目包含已隐藏的工程逆解算功能，当前版本无法打开")
-		return
 	var res: Dictionary = PF.load_from(path)
 	if not res["ok"]:
 		# 打不开的项目从最近列表里摘掉，别一直摆着

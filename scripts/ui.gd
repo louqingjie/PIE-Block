@@ -84,7 +84,7 @@ const DEBUG_ROWS: Array = [
 const INFANTRY_PAGE: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/Infantry"
 const ENGINEER_TABS: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/Engineer"
 const DEBUG_PAGE: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/Debug"
-# 工程师界面（工程页：Engineer TabContainer 的第 0 个 tab）
+# 工程师界面（Engineer TabContainer 的唯一页面）
 const ENGINEER: String = ENGINEER_TABS + "/Engineer"
 # 步兵页「高级设置」折叠区内的同一套 IO+模式+按键映射（与工程页共用同一份配置）
 const ADV_ENGINEER: String = INFANTRY_PAGE + "/Advanced/ScrollContainer/AdvancedAndEngineer"
@@ -137,14 +137,7 @@ func _eng_io_mid_path(pin: String) -> String:
 	return _shared_cfg_root() + "/" + str(ENG_IO_MID_REL.get(pin, ""))
 
 
-# 工程逆解算界面（Engineer TabContainer 的第 1 个 tab）
-const IK: String = ENGINEER_TABS + "/EngineerAdvanced"
-const P_IK: NodePath = IK
-const P_IK_SUMMARY: NodePath = IK + "/Summary"
-const P_IK_OPEN_SIM: NodePath = IK + "/OpenSim"
-const P_IK_ENABLE_CB: NodePath = IK + "/HBoxContainer/CheckButton"
-const P_IK_PANEL_LABEL: NodePath = IK + "/Label"
-# 工程内部 TabContainer（0=工程, 1=工程逆解算）；步兵/调试是平铺 Control
+# 工程内部 TabContainer；步兵/调试是平铺 Control
 const P_TAB_CONTAINER: NodePath = ENGINEER_TABS
 # 输出
 const P_OUTPUT: NodePath = "VBoxContainer/HBoxContainer/HSplitContainer/CodeZone/VSplitContainer/Output/Output"
@@ -178,7 +171,7 @@ const PROJECT_GATED_BTNS: Array = [
 	"VBoxContainer/TopPanel/Export",
 	"VBoxContainer/TopPanel/Button",
 	"VBoxContainer/TopPanel/AIEdit",
-	"VBoxContainer/TopPanel/ArmSim",
+	"VBoxContainer/TopPanel/Simulation",
 	"VBoxContainer/TopPanel/Build",
 	"VBoxContainer/TopPanel/Download",
 	"VBoxContainer/TopPanel/HEXExport",
@@ -191,16 +184,13 @@ const AI_EDIT_SCENE: String = "res://scenes/code_edit.tscn"
 ## AI 编辑功能总开关。启用后保留风险确认和桌面端限制。
 const AI_EDIT_ENABLED: bool = true
 const WARN_AI_SCENE: String = "res://scenes/warn_ai.tscn"
-const WARN_IK_SCENE: String = "res://scenes/warn_ik.tscn"
 const ERROR_SCENE: String = "res://scenes/error.tscn"
 const FATAL_ERROR_SCENE: String = "res://scenes/fatal_error.tscn"
 # 启动页（新建 / 打开项目都在那里做）
 const LAUNCHER_SCENE: String = "res://scenes/launcher.tscn"
 # 3D 仿真入口
-const P_ARM_SIM_BTN: NodePath = "VBoxContainer/TopPanel/ArmSim"
-# 3D 仿真场景（作为子节点覆盖显示，避免切场景丢失整页配置状态）
-const ARM_SIM_SCENE: String = "res://scenes/arm_sim.tscn"
-## 步兵整车仿真（底盘 / 云台 / 发射），入口与机械臂仿真共用顶栏按钮
+const P_SIM_BTN: NodePath = "VBoxContainer/TopPanel/Simulation"
+## 步兵整车仿真（底盘 / 云台 / 发射）
 const INFANTRY_SIM_SCENE: String = "res://scenes/infantry_sim.tscn"
 # 注：工具链路径常量与部署/编译实现已迁到 scripts/toolchain.gd，与 AI 编辑器共用
 # 用 preload 而非 class_name：headless / 首次导入时全局类名缓存可能尚未建立
@@ -214,10 +204,8 @@ const CLOUD_COMPILER = preload("res://scripts/cloud_compiler.gd")
 const CLOUD_GUIDE = preload("res://scripts/cloud_guide.gd")
 # Web 平台工具（浏览器版功能禁用 / 文件下载）
 const WEB = preload("res://scripts/web_support.gd")
-## 构形诊断（判定末端可控自由度与俯仰角是否解耦）
 # 项目文件（.pieproj）读写与「项目类型 <-> Tab」映射表
 const PF = preload("res://scripts/project_file.gd")
-const IK_CONFIG = preload("res://scripts/engineer_ik_config.gd")
 const SC = preload("res://scripts/static_checker.gd")
 
 
@@ -227,11 +215,8 @@ var _download_controller = null
 ## 编译方式下拉（本地/云端）；null 表示场景里没有（不应发生）
 var _build_mode: OptionButton = null
 var _upgrade_active: bool = false
-var _solver_upgrade_active: bool = false
 ## 「无法开始烧录（HID 未连接）」重试时要用到的编译产物路径与构型
 var _retry_download_dst: String = ""
-var _retry_is_solver: bool = false
-var _project_dst_override: String = ""
 ## 正在走「导出 HEX」流程：编译成功回调改弹保存对话框而不是烧录
 var _hex_export_pending: bool = false
 # 当前选中的代码生成器（随 Tab 切换）
@@ -239,7 +224,7 @@ var _codegen: CodeGenBase = null
 # 工具链管理器（惰性创建，见 _toolchain()）
 var _tc = null
 # 当前打开的 3D 仿真视图实例（null 表示未打开）
-var _arm_sim: Control = null
+var _simulation_view: Control = null
 
 # --- 项目状态 ---
 ## 当前 .pieproj 数据（见 project_file.gd），无项目时为空字典
@@ -254,12 +239,6 @@ var _dirty: bool = false
 var _stage2_preview: bool = false
 ## 阶段二回滚用的基准配置（已与默认值合并过，缺项也能回滚干净）
 var _frozen_config: Dictionary = {}
-## 工程逆解唯一状态源。主页面不再从 Tab 2 控件树拼装配置。
-var _ik_config: Dictionary = {}
-## 阶段二只读预览时用于恢复结构化逆解配置。
-var _frozen_ik_config: Dictionary = {}
-## 工程逆解系统门控是否已经确认
-var _ik_confirmed: bool = false
 ## AI 功能是否已经启用
 var _ai_enabled: bool = false
 ## 已经弹过「继续修改将丢弃 AI 代码」确认框，避免连点堆叠弹窗
@@ -274,7 +253,7 @@ const GUIDE_HINTS: Array[String] = [
 	"确认程序只烧录到主控板，绝不向机械扩展板烧录程序。",
 	"填写遥控器通道号（0-125）和死区。不确定死区时可保持默认值 10。",
 	"按机械接线配置底盘、云台、执行机构和按键。P74 是扩展板口，MP74 是主控板舵机口。",
-	"修正“问题与输出”中的错误；步兵和机械臂项目建议再进入 3D 仿真检查方向。",
+	"修正“问题与输出”中的错误；步兵项目建议再进入 3D 仿真检查方向。",
 	"静态检查通过后升级：程序会先编译，再自动烧录到主控板。",
 	"确认升级面板显示完成。这里只升级主控板，绝不要给机械扩展板烧录程序。",
 	"架空底盘或拆下危险机构，逐个低速测试方向和停止功能，确认后完成项目。",
@@ -298,7 +277,6 @@ func _ready() -> void:
 	_sync_chassis_switch()
 	# 场景刚实例化，此刻的控件值就是「默认配置」，新建项目时用它复位
 	_default_config = _snapshot_config()
-	_ik_config = IK_CONFIG.default_config()
 	# 初始化调试界面占位提示
 	_update_debug_placeholders()
 	# 初始化工程界面参数框占位提示
@@ -385,14 +363,11 @@ func _setup_download_controller() -> void:
 
 # ------------------------------------------------------------------ 信号连接
 func _connect_signals() -> void:
-	# Web 版禁用：AI 编辑（WebView）、烧录/升级、下载固件、3D 仿真（串口桥）
-	WEB.disable_buttons(self, [P_AI_EDIT_BTN, P_UPGRADE_BTN, P_DOWNLOAD_BTN, P_ARM_SIM_BTN])
+	# Web 版禁用：AI 编辑（WebView）、烧录/升级、下载固件与 3D 仿真
+	WEB.disable_buttons(self, [P_AI_EDIT_BTN, P_UPGRADE_BTN, P_DOWNLOAD_BTN, P_SIM_BTN])
 	var gate_confirm: Node = get_node_or_null(P_GATE_CONFIRM)
 	if gate_confirm is BaseButton:
 		gate_confirm.pressed.connect(_on_hardware_gate_confirmed)
-	var ik_gate: Node = get_node_or_null(P_IK_ENABLE_CB)
-	if ik_gate is BaseButton:
-		ik_gate.toggled.connect(_on_ik_gate_toggled)
 	var gate_back: Node = get_node_or_null(P_GATE_BACK)
 	if gate_back is BaseButton:
 		gate_back.pressed.connect(_go_to_launcher)
@@ -492,12 +467,9 @@ func _connect_signals() -> void:
 	if ai_btn is BaseButton:
 		ai_btn.pressed.connect(_on_ai_edit_pressed)
 	# 3D 仿真入口
-	var sim_btn: Node = get_node_or_null(P_ARM_SIM_BTN)
+	var sim_btn: Node = get_node_or_null(P_SIM_BTN)
 	if sim_btn is BaseButton:
-		sim_btn.pressed.connect(_on_arm_sim_pressed)
-	var ik_sim_btn: Node = get_node_or_null(P_IK_OPEN_SIM)
-	if ik_sim_btn is BaseButton:
-		ik_sim_btn.pressed.connect(_on_arm_sim_pressed)
+		sim_btn.pressed.connect(_on_sim_pressed)
 	# 调试界面：驱动类型变化时更新占位提示并触发检查
 	for row_name in DEBUG_ROWS:
 		var drive_btn: Node = get_node_or_null(NodePath(DEBUG +"/"+ row_name +"/OptionButton"))
@@ -528,7 +500,7 @@ func _connect_signals() -> void:
 	var save_btn: Node = get_node_or_null(P_SAVE_BTN)
 	if save_btn is BaseButton:
 		save_btn.pressed.connect(_on_save_pressed)
-	# 升级进度面板关闭后重置升级/求解器标志，避免面板已隐藏但标志残留
+	# 升级进度面板关闭后重置升级标志，避免面板已隐藏但标志残留
 	var upgrade_progress: Node = get_node_or_null(P_UPGRADE_PROGRESS)
 	if upgrade_progress != null and upgrade_progress.has_signal("closed"):
 		upgrade_progress.closed.connect(_on_upgrade_panel_closed)
@@ -561,8 +533,6 @@ func _snapshot_config() -> Dictionary:
 
 func _snapshot_node(node: Node, zone: Node, out: Dictionary) -> void:
 	for child in node.get_children():
-		if child == get_node_or_null(P_IK_ENABLE_CB):
-			continue
 		# 隐藏模板行 Example 不算配置，不进快照
 		if child.name == "Example":
 			continue
@@ -575,8 +545,6 @@ func _snapshot_node(node: Node, zone: Node, out: Dictionary) -> void:
 ## 取单个控件的可序列化值，非输入控件返回 null。
 ## OptionButton 同时存索引和文本：选项顺序变了还能按文本找回。
 func _control_value(node: Node) -> Variant:
-	if node == get_node_or_null(P_IK_ENABLE_CB):
-		return null
 	if node is TabContainer:
 		# 工程「切换方式」等 TabContainer 需要持久化当前 tab
 		return {"i": node.current_tab}
@@ -613,8 +581,6 @@ func _apply_config(cfg: Dictionary) -> void:
 	_ensure_eng_rows_from_config(cfg)
 	for key in cfg.keys():
 		var path: String = str(key)
-		if path == String(P_IK_ENABLE_CB):
-			continue
 		# 场景已将最大 Duty 从 Booster 行移到 BoosterSpeed 行；旧工程仍可回填。
 		if path == OLD_FRICTION_MAX_DUTY_CONFIG_PATH:
 			path = "Infantry/KeySetting/BoosterSpeed/MaxDuty"
@@ -676,8 +642,6 @@ func _connect_config_watchers() -> void:
 
 func _watch_node(node: Node) -> void:
 	for child in node.get_children():
-		if child == get_node_or_null(P_IK_ENABLE_CB):
-			continue
 		if child is OptionButton:
 			child.item_selected.connect(_on_config_touched.unbind(1))
 		elif child is LineEdit:
@@ -745,16 +709,15 @@ func _guide_done_states() -> Array[bool]:
 	var checked: bool = not code_hash.is_empty() and not has_error
 	var tab: int = _current_tab()
 	var input_done: bool = remote_done if tab == 0 or tab == 1 else checked
-	var production_firmware: bool = str(workflow.get("firmware_mode", "unknown")) == "production"
 	return [
 		bool(workflow.get("hardware_confirmed", false)),
 		input_done,
 		checked,
 		str(workflow.get("checked_hash", "")) == code_hash and checked,
 		str(workflow.get("built_hash", "")) == code_hash and not code_hash.is_empty(),
-		production_firmware and str(workflow.get("flashed_hash", "")) == code_hash
+		str(workflow.get("flashed_hash", "")) == code_hash
 			and not code_hash.is_empty(),
-		production_firmware and bool(workflow.get("hardware_tested", false))
+		bool(workflow.get("hardware_tested", false))
 			and str(workflow.get("flashed_hash", "")) == code_hash and not code_hash.is_empty(),
 	]
 
@@ -786,9 +749,6 @@ func _guide_titles() -> Array[String]:
 	var titles: Array[String] = GUIDE_TITLES.duplicate()
 	match _current_tab():
 		2:
-			titles[1] = "配置机械臂构形"
-			titles[2] = "配置关节与控制"
-		3:
 			titles[1] = "选择测试端口"
 			titles[2] = "配置测试参数"
 	return titles
@@ -801,13 +761,11 @@ func _on_guide_step_pressed(step: int) -> void:
 		1:
 			match _current_tab():
 				2:
-					_on_arm_sim_pressed()
-				3:
 					_focus_control(NodePath(DEBUG +"/HBoxContainer/OptionButton"))
 				_:
 					_focus_control(P_CHANNEL)
 		2:
-			_focus_control(P_L1_IO if _current_tab() != 3 else NodePath(DEBUG +"/HBoxContainer/LineEdit"))
+			_focus_control(P_L1_IO if _current_tab() != 2 else NodePath(DEBUG +"/HBoxContainer/LineEdit"))
 		3:
 			_run_guide_check()
 		4:
@@ -818,7 +776,7 @@ func _on_guide_step_pressed(step: int) -> void:
 			_confirm_hardware_test()
 
 
-## 当前编辑页的逻辑索引（0=步兵, 1=工程, 3=调试）。
+## 当前编辑页的逻辑索引（0=步兵, 1=工程, 2=调试）。
 ## 步兵/调试是平铺 Control（按项目类型切换可见性），工程是内部 TabContainer。
 func _current_tab() -> int:
 	var edit_zone: Node = get_node_or_null(P_EDIT_ZONE)
@@ -829,10 +787,9 @@ func _current_tab() -> int:
 	if infra is CanvasItem and infra.visible:
 		return 0
 	if dbg is CanvasItem and dbg.visible:
-		return 3
+		return 2
 	var tabs: Node = get_node_or_null(P_TAB_CONTAINER)
 	if tabs is TabContainer:
-		# 工程逆解算页保留在场景中供底层能力使用，但桌面端不可达。
 		return 1
 	return 0
 
@@ -960,12 +917,9 @@ func _restore_project_context() -> void:
 ## 不禁用任何东西，只是标题上说明一下、编译等操作退化成按 Tab 猜构型。
 func _apply_no_project_state() -> void:
 	_project = {}
-	_ik_config = IK_CONFIG.default_config()
 	_ai_enabled = false
-	_ik_confirmed = false
 	_apply_ai_entry()
 	_apply_hardware_gate(false)
-	_apply_ik_gate(false)
 	_stage2_preview = false
 	_dirty = false
 	# 无项目（自由编辑）：默认显示步兵页
@@ -1008,36 +962,6 @@ func _apply_ai_entry() -> void:
 		ai_btn.disabled = not available
 
 
-func _apply_ik_gate(confirmed: bool) -> void:
-	_ik_confirmed = confirmed
-	_ik_config["enabled"] = confirmed
-	var root: Node = get_node_or_null(P_IK)
-	if root != null:
-		_set_node_tree_enabled(root, confirmed)
-	var gate_row: Node = get_node_or_null(NodePath(IK +"/HBoxContainer"))
-	if gate_row != null:
-		_set_node_tree_enabled(gate_row, true)
-	var panel_label: Node = get_node_or_null(P_IK_PANEL_LABEL)
-	if panel_label is CanvasItem:
-		panel_label.visible = confirmed
-	var summary: Node = get_node_or_null(P_IK_SUMMARY)
-	if summary is CanvasItem:
-		summary.visible = confirmed
-	var open_sim: Node = get_node_or_null(P_IK_OPEN_SIM)
-	if open_sim is CanvasItem:
-		open_sim.visible = confirmed
-	if open_sim is BaseButton:
-		open_sim.disabled = not confirmed
-	var gate_cb: Node = get_node_or_null(P_IK_ENABLE_CB)
-	if gate_cb is BaseButton:
-		gate_cb.disabled = false
-		if gate_cb.button_pressed != confirmed:
-			_loading = true
-			gate_cb.button_pressed = confirmed
-			_loading = false
-	_update_ik_summary()
-
-
 func _show_countdown_scene(scene_path: String, title: String, body: String,
 		primary_text: String, secondary_text: String = "", error_text: String = "",
 		on_confirm: Callable = Callable(), on_cancel: Callable = Callable()) -> void:
@@ -1062,62 +986,10 @@ func _show_countdown_scene(scene_path: String, title: String, body: String,
 		dialog.canceled.connect(dialog.queue_free)
 
 
-func _on_ik_gate_toggled(pressed: bool) -> void:
-	if _loading:
-		return
-	if pressed:
-		if _ik_confirmed:
-			_apply_ik_gate(true)
-			if not AppState.project_path.is_empty():
-				var workflow: Dictionary = _workflow()
-				workflow["ik_confirmed"] = true
-				_project["workflow"] = workflow
-				_save_project(false)
-			return
-		# warn_ik 页面自带文案（启用机械臂逆解），这里不改动它的文本，只接回调
-		_show_countdown_scene(WARN_IK_SCENE,
-			"", "", "", "", "",
-			Callable(self, "_on_ik_gate_confirmed"), Callable(self, "_on_ik_gate_canceled"))
-		return
-	_apply_ik_gate(false)
-	if not AppState.project_path.is_empty():
-		var workflow2: Dictionary = _workflow()
-		workflow2["ik_confirmed"] = false
-		_project["workflow"] = workflow2
-		_save_project(false)
-
-
-func _on_ik_gate_confirmed() -> void:
-	_apply_ik_gate(true)
-	if not AppState.project_path.is_empty():
-		var workflow: Dictionary = _workflow()
-		workflow["ik_confirmed"] = true
-		_project["workflow"] = workflow
-		_save_project(false)
-
-
-func _on_ik_gate_confirmed_and_open_sim() -> void:
-	_on_ik_gate_confirmed()
-	_on_arm_sim_pressed()
-
-
-func _on_ik_gate_canceled() -> void:
-	_loading = true
-	var gate_cb: Node = get_node_or_null(P_IK_ENABLE_CB)
-	if gate_cb is BaseButton:
-		gate_cb.button_pressed = false
-	_loading = false
-	_apply_ik_gate(false)
-
-
 ## 把一份项目数据装载进界面
 func _adopt_project(data: Dictionary, path: String) -> void:
 	_project = data
-	_ik_config = IK_CONFIG.normalize(data.get("ik_config", {}))
-	# workflow.ik_confirmed 是旧存档门控状态的唯一可信源：缺字段一律视为未启用
-	_ik_config["enabled"] = bool(_workflow().get("ik_confirmed", false))
 	_ai_enabled = bool(_workflow().get("ai_enabled", false))
-	_ik_confirmed = bool(_workflow().get("ik_confirmed", false))
 	_apply_ai_entry()
 	_apply_hardware_gate(not bool(_workflow().get("hardware_confirmed", false)))
 	var kind: String = str(data["kind"])
@@ -1134,11 +1006,9 @@ func _adopt_project(data: Dictionary, path: String) -> void:
 	cfg.merge(data["config"] as Dictionary, true)
 	_apply_config(cfg)
 	_frozen_config = cfg
-	_frozen_ik_config = _ik_config.duplicate(true)
 	_stage2_preview = int(data["stage"]) >= 2
 	_dirty = false
 	_apply_ai_entry()
-	_apply_ik_gate(_ik_confirmed)
 	_update_title()
 
 
@@ -1157,16 +1027,8 @@ func _apply_kind_visibility(kind: String, want_tab: int) -> void:
 		eng_tabs.visible = (kind == PF.KIND_ENGINEER)
 	if dbg is CanvasItem:
 		dbg.visible = (kind == PF.KIND_DEBUG)
-	# 工程逆解算页暂不属于桌面端功能，始终保持隐藏；
-	# 节点和底层配置仍保留，便于 CLI/MCP 和未来重新开放。
 	if eng_tabs is TabContainer:
-		for i in range(eng_tabs.get_tab_count()):
-			eng_tabs.set_tab_hidden(i, i != 0)
 		eng_tabs.current_tab = 0
-	var ik_page: Node = get_node_or_null(P_IK)
-	if ik_page is CanvasItem:
-		ik_page.visible = false
-	# 工程内部只允许桌面端的工程正解页。
 	_update_mode_page_visibility()
 	_sync_io_locks()
 	_update_sim_btn_visibility()
@@ -1211,7 +1073,6 @@ func _create_project_at(kind: String, path: String) -> bool:
 	var data: Dictionary = PF.new_data(kind)
 	# 新项目从场景默认值开始
 	data["config"] = _default_config.duplicate(true)
-	data["ik_config"] = IK_CONFIG.default_config()
 	var res: Dictionary = PF.save_to(path, data)
 	if not res["ok"]:
 		_clear_output()
@@ -1243,7 +1104,6 @@ func _save_project(verbose: bool) -> void:
 		return
 	if int(_project["stage"]) < 2:
 		_project["config"] = _snapshot_config()
-		_project["ik_config"] = _ik_config.duplicate(true)
 		_project["main_c_stage1"] = _current_preview_code()
 		_project["active_tab"] = _current_tab()
 	var res: Dictionary = PF.save_to(AppState.project_path, _project)
@@ -1350,28 +1210,22 @@ func _on_tab_changed(_tab: int) -> void:
 
 ## 顶栏「3D 仿真」按钮只保留步兵整车仿真入口。
 func _update_sim_btn_visibility() -> void:
-	var sim_btn: Node = get_node_or_null(P_ARM_SIM_BTN)
+	var sim_btn: Node = get_node_or_null(P_SIM_BTN)
 	if not sim_btn is CanvasItem:
 		return
-	var ik_page: Node = get_node_or_null(P_IK)
-	if ik_page is CanvasItem:
-		ik_page.visible = false
 	var tab: int = _current_tab()
 	sim_btn.visible = tab == 0
 
 
 ## 根据当前 Tab 选项获取对应的代码生成器
 func _get_current_codegen() -> CodeGenBase:
-	# Tab 顺序：0=步兵, 1=工程, 2=工程逆解算, 3=调试
+	# 逻辑页顺序：0=步兵, 1=工程, 2=调试
 	match _current_tab():
 		0:
 			return CodeGenInfantry.new()
-		1, 2:
-			# 未启用逆解算时生成纯正解（按键映射）固件，不含任何逆解内容
-			if not bool(_ik_config.get("enabled", false)):
-				return CodeGenEngineer.new()
-			return CodeGenEngineerIK.new()
-		3:
+		1:
+			return CodeGenEngineer.new()
+		2:
 			return CodeGenDebug.new()
 		_:
 			return CodeGenInfantry.new()
@@ -1821,20 +1675,6 @@ func _collect_debug_config() -> Array:
 	return rows
 
 
-# ------------------------------------------------------------------ 工程逆解算：配置收集
-## 下拉选项索引 -> 关节数。0 对应 2 个关节，以此类推至 6。
-func _collect_ik_config() -> Dictionary:
-	return _ik_config.duplicate(true)
-
-
-## 两个工程配置页共同描述同一份双模式固件。
-func _collect_engineer_dual_config() -> Dictionary:
-	return {
-		"engineer": _collect_engineer_config(),
-		"ik": _collect_ik_config(),
-	}
-
-
 # ------------------------------------------------------------------ 检查入口
 func _run_check(_a = null, _b = null) -> void:
 	# 批量回填配置期间不检查：上百个控件的信号会触发上百次全量检查 + 代码生成
@@ -1851,15 +1691,11 @@ func _run_check(_a = null, _b = null) -> void:
 			var inf_cfg: Dictionary = _collect_config()
 			inf_cfg.merge(_collect_engineer_config(), true)
 			issues = SC.check_infantry(inf_cfg)
-		1, 2:
-			# 工程多模式：工程页与逆解算页共同配置同一份固件。
-			# 未启用逆解算时只检查正解（按键映射）部分，逆解校验由检查器按 enabled 跳过。
-			issues = SC.check_engineer(_collect_engineer_config(), _collect_ik_config())
-		3:
-			# 调试模式检查（tab 顺序：0=步兵, 1=工程, 2=工程逆解算, 3=调试）
+		1:
+			issues = SC.check_engineer(_collect_engineer_config())
+		2:
 			issues = SC.check_debug(_collect_debug_config())
 	_last_issues = issues
-	_update_ik_summary()
 	# 将问题展示到 Output
 	var out: Node = get_node_or_null(P_OUTPUT)
 	if out and out.has_method("set_issues"):
@@ -1868,14 +1704,10 @@ func _run_check(_a = null, _b = null) -> void:
 	_codegen = _get_current_codegen()
 	var cfg: Dictionary
 	match current_tab:
-		3:
+		2:
 			cfg = {"debug_rows": _collect_debug_config()}
-		1, 2:
-			# 未启用逆解算时走纯正解生成器，需要扁平工程配置
-			if bool(_ik_config.get("enabled", false)):
-				cfg = _collect_engineer_dual_config()
-			else:
-				cfg = _collect_engineer_config()
+		1:
+			cfg = _collect_engineer_config()
 		_:
 			# 步兵：固定云台/发射配置 + 高级设置的共享多模式按键映射
 			var inf_gen_cfg: Dictionary = _collect_config()
@@ -1885,40 +1717,6 @@ func _run_check(_a = null, _b = null) -> void:
 	var code_edit: Node = get_node_or_null(P_CODE_EDIT)
 	if code_edit is CodeEdit:
 		code_edit.text = code
-
-func _update_ik_summary() -> void:
-	var label: Node = get_node_or_null(P_IK_SUMMARY)
-	if not label is Label:
-		return
-	if not bool(_ik_config.get("enabled", false)):
-		# 未启用逆解算：不校验配置，摘要只说明当前状态（门控关闭时该标签本就隐藏）
-		label.text = "机械臂逆解算未启用"
-		return
-	var result: Dictionary = IK_CONFIG.validate(_ik_config, _collect_engineer_config())
-	var errors: int = 0
-	var warnings: int = 0
-	for issue in result.get("issues", []):
-		if str(issue.get("type", "")) == "Error":
-			errors += 1
-		else:
-			warnings += 1
-	var ios: Array[String] = []
-	for joint in _ik_config.get("joints", []):
-		ios.append(str(joint.get("io", "")))
-	var active_presets: int = 0
-	for preset in _ik_config.get("presets", []):
-		if preset.get("enabled", false):
-			active_presets += 1
-	var gripper: Dictionary = _ik_config.get("gripper", {})
-	var gripper_text: String = "夹爪 %s" % str(gripper.get("io", "")) \
-		if bool(gripper.get("enabled", false)) else "夹爪未启用"
-	label.text = "%d 个关节  |  IO %s  |  %s  |  %d 个预设\n%d 个错误，%d 个警告" % [
-		int(_ik_config.get("joint_count", 3)), ", ".join(ios), gripper_text,
-		active_presets, errors, warnings,
-	]
-	if str(_workflow().get("firmware_mode", "unknown")) == "simulator":
-		label.text += "\n主控板当前记录为仿真固件，不能直接驱动机器人"
-
 
 ## 拨弹模式联动：目视闭环按住持续拨弹，不需要「时间(ms)」参数，隐藏输入框。
 ## 只改可见性，不改 editable，避免与 _set_node_tree_enabled 的门控逻辑相互干扰。
@@ -2141,12 +1939,8 @@ func _toolchain():
 
 
 ## 获取项目部署路径。
-## 按**项目类型**判定而非当前 Tab：工程与工程逆解算同属工程项目，
-## 都应送去 ROBOMASTER_ENGINEER 模板编译（旧实现只认 Tab 1，
-## 会把逆解算代码送进步兵工程）。
+## 按项目类型判定，工程项目使用 ROBOMASTER_ENGINEER 模板。
 func _get_current_project_dst() -> String:
-	if not _project_dst_override.is_empty():
-		return _project_dst_override
 	if not _project.is_empty():
 		return AppState.project_dst_for_kind(str(_project["kind"]))
 	# 没有项目时（直接运行本场景）退化成按 Tab 猜
@@ -2237,12 +2031,6 @@ func _on_build_succeeded() -> void:
 		_hex_export_pending = false
 		_open_hex_save_dialog()
 		return
-	if _solver_upgrade_active:
-		_set_upgrade_progress("求解器编译完成", 28.0, "正在连接主控板…")
-		if not _download_controller.start(TC.PROJECT_ENGINEER_SIM_DST):
-			_fail_upgrade_retry(true, "无法开始烧录",
-				"未检测到 USB-HID 设备。\n请确认板子已通过 USB 线连接，并处于 ISP 模式（拔下 USB 再插上）。")
-		return
 	if not _project.is_empty():
 		var workflow: Dictionary = _workflow()
 		workflow["built_hash"] = _code_hash()
@@ -2252,7 +2040,7 @@ func _on_build_succeeded() -> void:
 	if _upgrade_active:
 		_set_upgrade_progress("编译完成", 28.0, "正在连接主控板…")
 		if not _download_controller.start(_get_current_project_dst()):
-			_fail_upgrade_retry(false, "无法开始烧录",
+			_fail_upgrade_retry("无法开始烧录",
 				"未检测到 USB-HID 设备。\n请确认板子已通过 USB 线连接，并处于 ISP 模式（拔下 USB 再插上）。")
 
 
@@ -2358,7 +2146,6 @@ func _enter_ai_edit() -> void:
 	# 冻结阶段一：配置快照 + 生成代码；AI 从这份代码起步
 	if int(_project["stage"]) < 2:
 		_project["config"] = _snapshot_config()
-		_project["ik_config"] = _ik_config.duplicate(true)
 		_project["main_c_stage1"] = code
 		_project["active_tab"] = tab
 		_project["stage"] = 2
@@ -2370,13 +2157,11 @@ func _enter_ai_edit() -> void:
 
 
 # ------------------------------------------------------------------ 3D 仿真
-## 打开 3D 仿真，按当前 Tab 分派：
-##   Tab 0（步兵）      -> 步兵整车仿真（底盘 / 云台 / 发射）
-##   工程逆解算仿真入口已隐藏，不再从桌面端打开。
+## 打开步兵整车 3D 仿真（底盘 / 云台 / 发射）。
 ## 用「加子节点覆盖」而非 change_scene_to_file：整页配置状态留在内存里，
 ## 返回时不需要重建任何控件。
-func _on_arm_sim_pressed() -> void:
-	if _arm_sim != null:
+func _on_sim_pressed() -> void:
+	if _simulation_view != null:
 		return
 	var tab: int = _current_tab()
 	var scene_path: String = ""
@@ -2397,22 +2182,16 @@ func _on_arm_sim_pressed() -> void:
 	if not sim is Control:
 		push_error("3D 仿真场景根节点不是 Control")
 		return
-	_arm_sim = sim
-	_arm_sim.set_anchors_preset(Control.PRESET_FULL_RECT)
-	if _arm_sim.has_signal("closed"):
-		_arm_sim.closed.connect(_on_arm_sim_closed)
-	# 仿真里改了参数时回填到配置界面（两种仿真回填的字段不同）
-	if _arm_sim.has_signal("config_changed"):
-		if tab == 0:
-			_arm_sim.config_changed.connect(_on_infantry_sim_config_changed)
-		else:
-			_arm_sim.config_changed.connect(_on_arm_sim_config_changed)
-	if _arm_sim.has_signal("solver_build_requested"):
-		_arm_sim.solver_build_requested.connect(_on_solver_build_requested)
+	_simulation_view = sim
+	_simulation_view.set_anchors_preset(Control.PRESET_FULL_RECT)
+	if _simulation_view.has_signal("closed"):
+		_simulation_view.closed.connect(_on_sim_closed)
+	if _simulation_view.has_signal("config_changed"):
+		_simulation_view.config_changed.connect(_on_infantry_sim_config_changed)
 	# set_config 在 add_child 之前调用，_ready 里会自行应用
-	if _arm_sim.has_method("set_config"):
-		_arm_sim.set_config(cfg)
-	add_child(_arm_sim)
+	if _simulation_view.has_method("set_config"):
+		_simulation_view.set_config(cfg)
+	add_child(_simulation_view)
 	# 3D 仿真视图全屏覆盖且拦截鼠标，升级进度面板必须始终排在它之后，
 	# 否则面板的按钮（完成/关闭）无法被点击或悬停。
 	var panel_front: Node = get_node_or_null(P_UPGRADE_PROGRESS)
@@ -2420,99 +2199,11 @@ func _on_arm_sim_pressed() -> void:
 		panel_front.move_to_front()
 
 
-func _on_arm_sim_closed() -> void:
-	if _arm_sim == null:
+func _on_sim_closed() -> void:
+	if _simulation_view == null:
 		return
-	_arm_sim.queue_free()
-	_arm_sim = null
-
-func _on_solver_build_requested() -> void:
-	# 自愈：进度面板已隐藏但标志残留（上次流程异常结束）时自动清理，
-	# 否则之后所有点击都会被静默拦截，表现为“点了没反应”。
-	if (_solver_upgrade_active or _upgrade_active) and not _upgrade_panel_visible():
-		_solver_upgrade_active = false
-		_upgrade_active = false
-		_project_dst_override = ""
-		_set_upgrade_button_busy(false)
-	if _solver_upgrade_active or _upgrade_active or _build_controller == null \
-			or _build_controller.is_busy() or _download_controller == null \
-			or _download_controller.is_busy():
-		var reason: String = _solver_block_reason()
-		if not reason.is_empty():
-			_append_output("[Warn] 暂无法开始求解器编译：%s" % reason)
-		return
-	# 配置校验/代码生成是纯计算、不依赖 Keil，先做（配置错误的提示优先级更高）；
-	# 校验与生成都通过后，才需要确认外部 Keil 目录（引导成功再进入状态置位与编译）。
-	var ik_config: Dictionary = IK_CONFIG.normalize(_collect_ik_config())
-	var validation: Dictionary = IK_CONFIG.validate(ik_config, _collect_engineer_config())
-	var errors: Array[String] = []
-	var io_issues: Array[String] = []
-	for issue in validation.get("issues", []):
-		if str(issue.get("type", "")) != "Error":
-			continue
-		var message: String = str(issue.get("msg", ""))
-		# MCU 求解器固件不初始化任何执行器 IO（generate_simulator 明确无 IO），
-		# 因此 IO 冲突/初始化错误不影响求解器编译，只影响正式固件
-		# （编译正式固件时会再次检查）。
-		if message.contains("IO"):
-			io_issues.append(message)
-		else:
-			errors.append(message)
-	if not io_issues.is_empty():
-		_append_output("[Info] MCU 求解器无执行器 IO，已忽略 %d 条 IO 配置问题（编译正式固件时仍会检查）：" \
-			% io_issues.size())
-		for message in io_issues:
-			_append_output("  - " + message)
-	if not errors.is_empty():
-		_append_output("[Error] MCU 求解器构型无效，未开始编译：")
-		for message in errors:
-			_append_output("  - " + message)
-		# 3D 仿真全屏覆盖主界面输出面板，必须弹窗让用户能看到失败原因
-		_show_solver_error_dialog("MCU 求解器构型无效", errors)
-		return
-	var code: String = CodeGenEngineerIK.new().generate_simulator(ik_config)
-	if code.is_empty():
-		_append_output("[Error] 无法生成 MCU 求解器固件")
-		_show_solver_error_dialog("无法生成 MCU 求解器固件", ["生成器返回空代码，请检查配置。"])
-		return
-	# 确认外部 Keil 目录（引导成功）后再编译；状态置位在 _start_solver_build 内，取消不残留
-	KG.ensure_keil(self, _toolchain(), _start_solver_build.bind(code), _on_keil_guide_cancel)
-
-
-func _start_solver_build(code: String) -> void:
-	if _arm_sim != null and _arm_sim.has_method("prepare_solver_build"):
-		_arm_sim.prepare_solver_build()
-	_solver_upgrade_active = true
-	_upgrade_active = true
-	_project_dst_override = TC.PROJECT_ENGINEER_SIM_DST
-	_set_upgrade_button_busy(true)
-	# 显示进度面板（此前只 set_progress 未 show，3D 页面点击后无反馈）
-	var panel_sim: Node = get_node_or_null(P_UPGRADE_PROGRESS)
-	if panel_sim != null and panel_sim.has_method("begin_solver"):
-		panel_sim.begin_solver()
-	_set_upgrade_progress("正在编译 MCU 求解器", 8.0, "仿真固件不会初始化或输出任何执行器 IO。")
-	if not _build_controller.start(TC.PROJECT_ENGINEER_SIM_DST, code):
-		_solver_upgrade_active = false
-		_project_dst_override = ""
-		_fail_upgrade("无法开始编译", "请查看下方输出中的详细提示。")
-
-
-## 返回求解器编译被拦截的具体原因（空串=未被拦截）。
-## 用于把“点击无反应”变成可读的提示，方便定位是状态残留还是控制器卡死。
-func _solver_block_reason() -> String:
-	if _solver_upgrade_active:
-		return "上一次求解器编译/烧录流程尚未结束（若进度面板已关闭请重启编辑器）"
-	if _upgrade_active:
-		return "主控板升级流程正在进行中"
-	if _build_controller == null:
-		return "编译控制器未初始化"
-	if _download_controller == null:
-		return "烧录控制器未初始化"
-	if _build_controller.is_busy():
-		return "编译器正在运行，请等待完成"
-	if _download_controller.is_busy():
-		return "烧录正在进行，请等待完成"
-	return ""
+	_simulation_view.queue_free()
+	_simulation_view = null
 
 
 ## 步兵仿真里标定出来的云台归中角回填到配置界面，再重跑检查与代码生成
@@ -2520,38 +2211,6 @@ func _on_infantry_sim_config_changed(cfg: Dictionary) -> void:
 	_set_line_text(P_YAW_MID_OFFSET, str(cfg.get("yaw_mid_offset", "")))
 	_set_line_text(P_PITCH_MID_OFFSET, str(cfg.get("pitch_mid_offset", "")))
 	_run_check()
-
-
-## 把 3D 标定台里的编辑结果写回配置界面控件，再重跑检查与代码生成。
-## 只回填仿真能改的字段，IO/方向/摇杆映射等仍由配置界面独占。
-func _on_arm_sim_config_changed(payload: Dictionary) -> void:
-	if _stage2_preview:
-		return
-	var next_ik: Variant = payload.get("ik", payload)
-	var prev_enabled: bool = bool(_ik_config.get("enabled", false))
-	_ik_config = IK_CONFIG.normalize(next_ik)
-	_ik_config["enabled"] = prev_enabled
-	var io_patch: Dictionary = payload.get("io_init", {})
-	_loading = true
-	for pin in io_patch.keys():
-		if ENG_IO_REL.has(pin):
-			var node: Node = get_node_or_null(NodePath(_shared_cfg_root() + "/" + str(ENG_IO_REL.get(pin, ""))))
-			if node is OptionButton:
-				_select_option_by_text(node, str(io_patch[pin]))
-	_loading = false
-	_mark_dirty()
-	_run_check()
-	_update_ik_summary()
-
-
-## 按显示文本选中 OptionButton 的对应项（找不到则保持原选择）
-func _select_option_by_text(btn: OptionButton, text: String) -> void:
-	if text.is_empty():
-		return
-	for i in range(btn.item_count):
-		if btn.get_item_text(i) == text:
-			btn.selected = i
-			return
 
 
 ## 向 Output 框追加一行（复用 output.gd 的 append_line）
@@ -2595,31 +2254,9 @@ func _on_download_busy_changed(is_busy: bool) -> void:
 
 
 func _on_download_succeeded() -> void:
-	if _solver_upgrade_active:
-		_solver_upgrade_active = false
-		_upgrade_active = false
-		_project_dst_override = ""
-		_append_output("MCU 求解器已烧录；进入操控模式后将自动握手并校验构型指纹。")
-		var panel_sim: Node = get_node_or_null(P_UPGRADE_PROGRESS)
-		if panel_sim != null and panel_sim.has_method("complete"):
-			panel_sim.complete()
-		_set_upgrade_button_busy(false)
-		if not _project.is_empty():
-			var sim_workflow: Dictionary = _workflow()
-			sim_workflow["firmware_mode"] = "simulator"
-			sim_workflow["flashed_hash"] = ""
-			sim_workflow["hardware_tested"] = false
-			_project["workflow"] = sim_workflow
-			_save_project(false)
-			_update_ik_summary()
-			_update_guide()
-		if _arm_sim != null and _arm_sim.has_method("reconnect_mcu_solver_after_flash"):
-			_arm_sim.call_deferred("reconnect_mcu_solver_after_flash")
-		return
 	if not _project.is_empty():
 		var workflow: Dictionary = _workflow()
 		workflow["flashed_hash"] = _code_hash()
-		workflow["firmware_mode"] = "production"
 		workflow["hardware_tested"] = false
 		_project["workflow"] = workflow
 		_save_project(false)
@@ -2680,11 +2317,9 @@ func _on_upgrade_build_finished(result: Dictionary) -> void:
 func _on_upgrade_download_finished(result: Dictionary) -> void:
 	# 用户取消 / 硬超时：显示「已取消」状态，而不是「烧录失败」。
 	if bool(result.get("canceled", false)):
-		if not (_upgrade_active or _solver_upgrade_active):
+		if not _upgrade_active:
 			return
 		_upgrade_active = false
-		_solver_upgrade_active = false
-		_project_dst_override = ""
 		var panel: Node = get_node_or_null(P_UPGRADE_PROGRESS)
 		if panel != null and panel.has_method("canceled"):
 			if str(result.get("stage", "")) == "timeout":
@@ -2698,7 +2333,7 @@ func _on_upgrade_download_finished(result: Dictionary) -> void:
 		if _upgrade_active:
 			# 连不上主控板（HID 未连接/中途掉线）：弹窗带「重试」，重新连接后可直接重试
 			if failed_stage in ["", "connect"]:
-				_fail_upgrade_retry(_solver_upgrade_active, "烧录失败",
+				_fail_upgrade_retry("烧录失败",
 					"未能连接主控板。\n请确认板子已通过 USB 线连接，并处于 ISP 模式（拔下 USB 再插上）。")
 			else:
 				_fail_upgrade("烧录失败", "连接或写入未完成，请查看下方输出。")
@@ -2721,37 +2356,17 @@ func _set_upgrade_progress(stage: String, percent: float, detail: String) -> voi
 		panel.set_progress(stage, percent, detail)
 
 
-## 进度面板当前是否可见。用于区分「流程正在进行」与「标志残留」。
-func _upgrade_panel_visible() -> bool:
-	var panel: Node = get_node_or_null(P_UPGRADE_PROGRESS)
-	return panel != null and panel.visible
-
-
-## 升级主控编译失败弹窗：阶段一且未开启逆解属于基础功能，编译错误不可容忍，
-## 弹致命错误页；第二阶段或已开启逆解属于高级功能，编译错误可容忍，弹普通错误页。
+## 升级主控编译失败弹窗：阶段一编译错误不可容忍，阶段二错误可由 AI 修复。
 ## 保留场景自带文案，只把编译日志填进页面的 TextEdit。
 func _show_upgrade_error_scene(project_stage: int, log_text: String) -> void:
-	var advanced: bool = project_stage >= 2 or _ik_confirmed
+	var advanced: bool = project_stage >= 2
 	var scene_path: String = ERROR_SCENE if advanced else FATAL_ERROR_SCENE
 	_show_countdown_scene(scene_path, "", "", "", "", log_text)
 
 
-## 求解器编译失败弹窗：3D 仿真全屏覆盖主界面输出面板，
-## 错误必须弹出可见对话框，否则用户以为「点击没反应」。
-func _show_solver_error_dialog(title: String, messages: Array) -> void:
-	var scene_path: String = ERROR_SCENE if title.contains("构型") else FATAL_ERROR_SCENE
-	_show_countdown_scene(scene_path,
-		title,
-		"您在使用高级功能时遇到了编译错误，这是可被容忍的，但在修复范围内",
-		"确认并导出错误的项目文件", "", "\n".join(messages))
-
-
 func _fail_upgrade(stage: String, detail: String) -> void:
 	_upgrade_active = false
-	_solver_upgrade_active = false
-	_project_dst_override = ""
 	_retry_download_dst = ""
-	_retry_is_solver = false
 	var panel: Node = get_node_or_null(P_UPGRADE_PROGRESS)
 	if panel != null and panel.has_method("fail"):
 		panel.fail(stage, detail)
@@ -2760,13 +2375,9 @@ func _fail_upgrade(stage: String, detail: String) -> void:
 
 ## 烧录前连接失败（如未检测到 USB-HID 设备）：弹窗带「重试」按钮，
 ## 用户重新连接设备后点重试可直接烧录，无需重新编译。
-func _fail_upgrade_retry(is_solver: bool, stage: String, detail: String) -> void:
-	_retry_download_dst = TC.PROJECT_ENGINEER_SIM_DST if is_solver \
-		else _get_current_project_dst()
-	_retry_is_solver = is_solver
+func _fail_upgrade_retry(stage: String, detail: String) -> void:
+	_retry_download_dst = _get_current_project_dst()
 	_upgrade_active = false
-	_solver_upgrade_active = false
-	_project_dst_override = ""
 	var panel: Node = get_node_or_null(P_UPGRADE_PROGRESS)
 	if panel != null and panel.has_method("fail_with_retry"):
 		panel.fail_with_retry(stage, detail)
@@ -2776,25 +2387,19 @@ func _fail_upgrade_retry(is_solver: bool, stage: String, detail: String) -> void
 ## 弹窗「重试」按钮：设备重新连接后重跑烧录（编译产物已存在，无需重新编译）。
 func _on_upgrade_retry_pressed() -> void:
 	var dst: String = _retry_download_dst
-	var is_solver: bool = _retry_is_solver
 	_retry_download_dst = ""
-	_retry_is_solver = false
 	if dst.is_empty() or _download_controller == null \
 			or _download_controller.is_busy() \
 			or (_build_controller != null and _build_controller.is_busy()):
 		return
 	var panel: Node = get_node_or_null(P_UPGRADE_PROGRESS)
-	if panel != null:
-		if is_solver and panel.has_method("begin_solver"):
-			panel.begin_solver()
-		elif panel.has_method("begin"):
-			panel.begin()
+	if panel != null and panel.has_method("begin"):
+		panel.begin()
 	_upgrade_active = true
-	_solver_upgrade_active = is_solver
 	_set_upgrade_progress("正在连接主控板", 30.0, "正在启动烧录程序…")
 	_set_upgrade_button_busy(true)
 	if not _download_controller.start(dst):
-		_fail_upgrade_retry(is_solver, "无法开始烧录",
+		_fail_upgrade_retry("无法开始烧录",
 			"未检测到 USB-HID 设备。\n请确认板子已通过 USB 线连接，并处于 ISP 模式（拔下 USB 再插上）。")
 
 
@@ -2805,10 +2410,8 @@ func _set_upgrade_button_busy(is_busy: bool) -> void:
 		button.text = "升级中…" if is_busy else "升级主控板"
 
 
-## 升级/求解器烧录进度面板关闭后，重置标志并恢复按钮状态。
+## 升级进度面板关闭后，重置标志并恢复按钮状态。
 ## complete()/fail() 已经 show 了关闭按钮，用户点「完成/关闭」后来到这里。
 func _on_upgrade_panel_closed() -> void:
 	_upgrade_active = false
-	_solver_upgrade_active = false
-	_project_dst_override = ""
 	_set_upgrade_button_busy(false)

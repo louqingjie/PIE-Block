@@ -25,12 +25,10 @@ extends SceneTree
 
 # headless 下 class_name 全局类名缓存可能未建立，用 preload
 const CG_INFANTRY = preload("res://scripts/codegen/codegen_infantry.gd")
-const CG_ENGINEER_IK = preload("res://scripts/codegen/codegen_engineer_ik.gd")
 const CG_DEBUG = preload("res://scripts/codegen/codegen_debug.gd")
 const CG_ENGINEER = preload("res://scripts/codegen/codegen_engineer.gd")
 const SC = preload("res://scripts/static_checker.gd")
 const PF = preload("res://scripts/project_file.gd")
-const IK_CONFIG = preload("res://scripts/engineer_ik_config.gd")
 const TC = preload("res://scripts/toolchain.gd")
 
 # ---- 颜色码（纯文本终端用，不用 ANSI，方便脚本解析） ----
@@ -394,16 +392,7 @@ func _generate_code(kind: String, cfg: Dictionary) -> String:
 		PF.KIND_INFANTRY:
 			return CG_INFANTRY.new().generate(cfg)
 		PF.KIND_ENGINEER:
-			# 工程逆解算生成器需要 {engineer, ik} 双字典。
-			# 未启用逆解算（enabled=false）时走纯正解生成器，不含任何逆解内容。
-			var dual: Dictionary = cfg.get("dual", {})
-			if dual.is_empty():
-				# 如果传入的不是 dual 结构，尝试包装
-				dual = {"engineer": cfg.get("engineer", cfg), "ik": cfg.get("ik", IK_CONFIG.default_config())}
-			var ik_cfg: Dictionary = dual.get("ik", {})
-			if not bool(ik_cfg.get("enabled", true)):
-				return CG_ENGINEER.new().generate(dual.get("engineer", {}))
-			return CG_ENGINEER_IK.new().generate(dual)
+			return CG_ENGINEER.new().generate(cfg)
 		PF.KIND_DEBUG:
 			# debug_rows 可能是 null/字符串等畸形输入，非数组一律按空处理，避免生成器崩
 			var dr2: Variant = cfg.get("debug_rows", [])
@@ -420,9 +409,7 @@ func _run_check(kind: String, cfg: Dictionary) -> Array:
 		PF.KIND_INFANTRY:
 			return SC.check_infantry(cfg)
 		PF.KIND_ENGINEER:
-			var engineer_cfg: Dictionary = cfg.get("engineer", cfg)
-			var ik_cfg: Dictionary = cfg.get("ik", IK_CONFIG.default_config())
-			return SC.check_engineer(engineer_cfg, ik_cfg)
+			return SC.check_engineer(cfg)
 		PF.KIND_DEBUG:
 			# debug_rows 可能是 null/字符串等畸形输入，非数组一律按空处理，避免 check_debug 崩
 			var dr: Variant = cfg.get("debug_rows", cfg.get("rows", []))
@@ -449,13 +436,7 @@ func _config_from_project(data: Dictionary, kind: String) -> Dictionary:
 		PF.KIND_INFANTRY:
 			return _flatten_infantry_config(config)
 		PF.KIND_ENGINEER:
-			var engineer_cfg: Dictionary = _flatten_engineer_config(config)
-			var ik_cfg: Dictionary = IK_CONFIG.normalize(data.get("ik_config", {}))
-			# 门控状态（workflow.ik_confirmed）是工程是否启用逆解算的唯一可信源，
-			# 旧存档缺字段一律视为未启用
-			ik_cfg["enabled"] = bool(PF.normalize_workflow(data.get("workflow", {})).get("ik_confirmed", false))
-			return {"engineer": engineer_cfg, "ik": ik_cfg,
-				"dual": {"engineer": engineer_cfg, "ik": ik_cfg}}
+			return _flatten_engineer_config(config)
 		PF.KIND_DEBUG:
 			return {"debug_rows": _flatten_debug_config(config)}
 		_:
@@ -744,12 +725,6 @@ func _parse_config_json(text: String, kind: String) -> Dictionary:
 		quit(EXIT_ARG)
 		return {}
 	var cfg: Dictionary = parsed
-	# 如果是工程模式，检查是否有 engineer/ik 子字典
-	if kind == PF.KIND_ENGINEER:
-		if cfg.has("engineer") and cfg.has("ik"):
-			return cfg
-		# 单独传 IK 配置也行
-		return cfg
 	if kind == PF.KIND_DEBUG:
 		# debug 需要 debug_rows 数组
 		if cfg.has("debug_rows"):
@@ -824,18 +799,7 @@ func _infantry_schema() -> Dictionary:
 
 
 func _engineer_schema() -> Dictionary:
-	return {
-		"engineer": {
-			"type": "object",
-			"description": "工程底盘与按键映射配置",
-			"properties": _engineer_base_schema(),
-		},
-		"ik": {
-			"type": "object",
-			"description": "工程逆解算机械臂配置",
-			"properties": _ik_schema(),
-		},
-	}
+	return _engineer_base_schema()
 
 
 func _engineer_base_schema() -> Dictionary:
@@ -923,88 +887,6 @@ func _engineer_base_schema() -> Dictionary:
 				},
 			},
 		},
-		"key_map": {
-			"type": "array",
-			"description": "按键映射区，每项控制一个 IO 的行为",
-			"items": {
-				"type": "object",
-				"properties": {
-					"input": {"type": "string", "description": "按键名 (R/↑/↓/←/->/A/B/C/D)"},
-					"dir": {"type": "string", "enum": ["正向", "反向"]},
-					"mode": {"type": "string", "enum": ["增量", "直接", "速度", "增速"], "description": "控制模式"},
-					"param": {"type": "string", "description": "参数（角度/速度/增量值）"},
-					"target": {"type": "string", "description": "目标 IO（P60/P62/.../MP03/MP74），'不使用'或空=跳过"},
-				},
-			},
-		},
-	}
-
-
-func _ik_schema() -> Dictionary:
-	return {
-		"enabled": {"type": "boolean", "description": "是否启用机械臂逆解算（未启用时生成纯正解固件）", "default": false},
-		"joint_count": {"type": "integer", "minimum": 2, "maximum": 6, "default": 3},
-		"mode_switch_key": {"type": "string", "default": "E"},
-		"joints": {
-			"type": "array",
-			"minItems": 2,
-			"maxItems": 6,
-			"items": {
-				"type": "object",
-				"properties": {
-					"io": {"type": "string", "enum": ["P60", "P62", "P64", "P66", "P74", "P75", "P76", "P77", "MP03", "MP74"]},
-					"dir": {"type": "string", "enum": ["正向", "反向"]},
-					"axis": {"type": "string", "enum": ["Pitch", "Roll", "Yaw"]},
-					"len": {"type": "string", "description": "连杆长度 (mm)"},
-					"offset": {"type": "string", "description": "中位朝向偏移角 (度)"},
-					"zero": {"type": "string", "description": "初始角 (度)"},
-					"min": {"type": "string", "description": "关节角下限 (度)"},
-					"max": {"type": "string", "description": "关节角上限 (度)"},
-				},
-			},
-		},
-		"gripper": {
-			"type": "object",
-			"properties": {
-				"enabled": {"type": "boolean", "default": false},
-				"io": {"type": "string", "enum": ["MP03", "MP74"]},
-				"dir": {"type": "string", "enum": ["正向", "反向"]},
-				"open_angle": {"type": "string", "default": "45"},
-				"closed_angle": {"type": "string", "default": "-45"},
-				"initial_open": {"type": "boolean", "default": true},
-				"key": {"type": "string", "default": "D"},
-			},
-		},
-		"presets": {
-			"type": "array",
-			"maxItems": 4,
-			"items": {
-				"type": "object",
-				"properties": {
-					"enabled": {"type": "boolean", "default": false},
-					"key": {"type": "string"},
-					"x": {"type": "string"}, "y": {"type": "string"}, "z": {"type": "string"},
-					"roll": {"type": "string"}, "pitch": {"type": "string"}, "yaw": {"type": "string"},
-				},
-			},
-		},
-		"joy_x": {"type": "string", "default": "右X->末端X"},
-		"joy_y": {"type": "string", "default": "右Y->末端Y"},
-		"joy_z": {"type": "string", "default": "右X->末端Z"},
-		"joy_scale": {"type": "string", "default": "5"},
-		"keymove_speed": {"type": "string", "default": "2"},
-		"orientation_key_speed": {"type": "string", "default": "1"},
-		"rocker2_home_enabled": {"type": "boolean", "default": false},
-		"keymove": {
-			"type": "array",
-			"items": {
-				"type": "object",
-				"properties": {
-					"plus": {"type": "string"},
-					"minus": {"type": "string"},
-				},
-			},
-		},
 	}
 
 
@@ -1035,7 +917,7 @@ func _kind_description(kind: String) -> String:
 		PF.KIND_INFANTRY:
 			return "步兵机器人：底盘4电机+云台(Yaw/Pitch)+摩擦轮+拨弹。P64/P66固定用于摩擦轮。"
 		PF.KIND_ENGINEER:
-			return "工程机器人：底盘4电机+任意IO按键映射+2~6关节机械臂逆解算。支持舵机/电机混用。"
+			return "工程机器人：底盘4电机、1～4个独立操作模式、两种切换策略和任意IO按键映射。支持舵机/电机混用。"
 		PF.KIND_DEBUG:
 			return "调试模式：逐行测试各引脚，每个命令持续3秒，蜂鸣器提示开始/结束。"
 		_:

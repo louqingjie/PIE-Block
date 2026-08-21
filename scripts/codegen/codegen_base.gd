@@ -146,7 +146,7 @@ func _gen_mode_switch_feedback() -> String:
 ## 生成 All_Init 开头的 LED GPIO 初始化（三颗 LED 推挽输出 + 全亮自检）。
 ## 同时初始化蜂鸣器 PWM 通道：PWM_SET_Frequency 只改周期/比较寄存器，
 ## 不会使能通道输出和启动定时器——没有这行 PWM_Init，Beep() 全程无声
-## （infantry/engineer/engineer_ik 均曾漏掉，2026-08 实机发现）。
+## （多个生成器均曾漏掉，2026-08 实机发现）。
 func _gen_led_diag_init() -> String:
 	return ("    // 诊断 LED（P35/P36/P37）推挽输出，全亮自检后熄灭\n"
 		+"    GPIO_Init(LED_PORT, (GPIO_Pin_enum)(LED1_PIN | LED2_PIN | LED3_PIN), GPIO_OUT_PP);\n"
@@ -487,6 +487,8 @@ func _gen_mode_rows(rows: Array, io_init: Dictionary, mode_label: String) -> Str
 					s += "        %s = %d.0f; // %+d°\n" % [tgt, target_duty, angle]
 			"速度", "增速":
 				# 仅电机摇杆行（按键行静态检查已拦）
+				if not is_joystick:
+					continue
 				var spd2: int = _parse_param(param, 0, MOTOR_SPEED_MAX)
 				var op: String = "=" if mode == "速度" else "+="
 				s += "    %s %s %s(int)((float)valueOfRoker[%d][%d] * %d / 2047);\n" \

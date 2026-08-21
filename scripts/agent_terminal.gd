@@ -212,7 +212,7 @@ func _kind_main_c_path(kind: String) -> String:
 ## 需要从 AI 视野隐藏的其他构型项目目录
 func _kind_hidden_dirs(kind: String) -> Array:
 	var current: String = _kind_project_dir(kind)
-	var all: Array = ["ROBOMASTER_INFANTRY", "ROBOMASTER_ENGINEER", "ROBOMASTER_ENGINEER_SIM"]
+	var all: Array = ["ROBOMASTER_INFANTRY", "ROBOMASTER_ENGINEER"]
 	var hidden: Array = []
 	for d in all:
 		if d != current:
