@@ -29,7 +29,7 @@ const MOTOR_SPEED_MAX: int = 10000
 
 
 # ------------------------------------------------------------------ 公开入口
-## 步兵模式检查（含「高级设置」里的共享多模式按键映射）
+## 步兵模式检查
 static func check_infantry(cfg: Dictionary) -> Array:
 	var issues: Array = []
 	_check_channel(issues, cfg)
@@ -42,7 +42,6 @@ static func check_infantry(cfg: Dictionary) -> Array:
 	_check_arrow_trigger_conflict(issues, cfg)
 	_check_io_duplicate(issues, cfg)
 	_check_gimbal_pin_conflict(issues, cfg)
-	_check_infantry_shared(issues, cfg)
 	return issues
 
 
@@ -513,69 +512,6 @@ static func _check_eng_row(issues: Array, row: Dictionary, mode_no: int, row_idx
 			"msg": "%s 按键「%s」在本模式已被第%d行使用，两行会同时生效"
 				% [label, key, used_keys[key]["row"]]})
 	used_keys[key] = {"mode": mode_no, "row": row_idx}
-
-
-# ------------------------------------------------------------------ 规则：步兵高级设置（共享多模式按键映射）
-# 步兵固定子系统占用：启用时的摩擦轮 P64/P66、拨弹电机、云台 Yaw/Pitch、底盘。
-# 共享按键映射的行不能指向这些引脚；启用无刷摩擦轮时，P64/P66 必须
-# 在 IO 初始化区保持“摩擦轮”(50Hz)，不能错误地按电机或舵机初始化。
-static func _check_infantry_shared(issues: Array, cfg: Dictionary) -> void:
-	var io_init: Dictionary = cfg.get("io_init", {})
-	# 预留引脚：底盘 + 摩擦轮 + 拨弹 + 云台
-	var reserved: Array = _chassis_pins(cfg)
-	if _friction_enabled(cfg):
-		reserved.append_array(FRICTION_PINS)
-	for key in ["booster_io", "yaw_io", "pitch_io"]:
-		var pin: String = str(cfg.get(key, "")).split(" ")[0]
-		if not pin.is_empty():
-			reserved.append(pin)
-	# 行检查（复用工程行检查 + 预留引脚拦截）
-	var used_keys: Dictionary = {}
-	var row_idx: int = 0
-	var mode_count: int = 1
-	var mc_text: String = str(cfg.get("mode_count", "1")).strip_edges()
-	if mc_text.is_valid_int():
-		mode_count = clampi(mc_text.to_int(), 1, 4)
-	var modes: Array = cfg.get("modes", []) if cfg.get("modes", []) is Array else []
-	for mi in range(mode_count):
-		var rows: Array = modes[mi].get("rows", []) if mi < modes.size() 			and modes[mi] is Dictionary else []
-		for row in rows:
-			row_idx += 1
-			var io: String = str(row.get("io", ""))
-			if io in reserved:
-				var who: String = "摩擦轮" if _friction_enabled(cfg) and io in FRICTION_PINS else "底盘/云台/拨弹"
-				issues.append({"type": "Error",
-					"msg": "步兵 模式%d第%d行 IO %s 与%s冲突，高级设置不能控制该引脚"
-						% [mi + 1, row_idx, io, who]})
-				continue
-			_check_eng_row(issues, row, mi + 1, row_idx, cfg, "单击切换",
-				str(cfg.get("mode_switch_key", "E")), cfg.get("mode_keys", []), used_keys)
-	# 启用无刷摩擦轮时，P64/P66 在 IO 初始化区必须锁定为摩擦轮。
-	if _friction_enabled(cfg):
-		for friction_pin in FRICTION_PINS:
-			var friction_type: String = str(io_init.get(friction_pin, ""))
-			if not friction_type.is_empty() and friction_type != "摩擦轮":
-				issues.append({"type": "Error",
-					"msg": "步兵启用无刷摩擦轮时，IO 初始化区 %s 必须设为「摩擦轮」（当前为「%s」）"
-						% [friction_pin, friction_type]})
-	# 步兵云台/拨弹用到的引脚在 IO 初始化区必须与子系统类型一致。
-	for key in ["booster_io", "yaw_io", "pitch_io"]:
-		var pin: String = str(cfg.get(key, "")).split(" ")[0]
-		if pin.is_empty() or pin.begins_with("MP"):
-			continue
-		var t2: String = str(io_init.get(pin, ""))
-		if t2.is_empty():
-			continue
-		var want: String = "电机"
-		if key == "yaw_io" and str(cfg.get("yaw_drive", "舵机")) == "舵机":
-			want = "舵机"
-		if key == "pitch_io" and str(cfg.get("pitch_drive", "舵机")) == "舵机":
-			want = "舵机"
-		if t2 != want:
-			var label: String = "拨弹电机" if key == "booster_io" 				else ("Yaw 轴" if key == "yaw_io" else "Pitch 轴")
-			issues.append({"type": "Error",
-				"msg": "步兵 %s 使用 %s，但 IO 初始化区将其设为「%s」（应为「%s」）"
-					% [label, pin, t2, want]})
 
 
 ## 底盘四轮引脚（去重）

@@ -523,8 +523,6 @@ func _flatten_infantry_config(config: Dictionary) -> Dictionary:
 	flat["booster_key"] = str(_config_val(config, keyset + "/Booster/OptionButton"))
 	flat["friction_max_duty"] = str(_config_val(config, keyset + "/Booster/MaxDuty"))
 	flat["zero_enabled"] = bool(_config_val(config, keyset + "/Zero/CheckBox"))
-	# 共享多模式配置（步兵页「高级设置」内，与工程页共用同一份结构）
-	flat.merge(_flatten_shared_eng_config(config, "Infantry/Advanced/ScrollContainer/AdvancedAndEngineer"))
 	return _merge_defaults(flat, "infantry")
 
 
@@ -550,7 +548,7 @@ func _flatten_engineer_config(config: Dictionary) -> Dictionary:
 	return _merge_defaults(flat, "engineer")
 
 
-## 工程/步兵共用的 IO 初始化区 + 模式配置 + 每模式动态按键映射行
+## 工程 IO 初始化区 + 模式配置 + 每模式动态按键映射行
 func _flatten_shared_eng_config(config: Dictionary, root: String) -> Dictionary:
 	var flat: Dictionary = {}
 	# IO 初始化区（10 引脚：类型 + 初始角）

@@ -52,53 +52,16 @@ func _initialize() -> void:
 		printerr("旧项目缺少 friction_type 时未保持原有无刷生成结果")
 		quit(1)
 		return
-	# 不使用摩擦轮时，P60/P62/P64/P66 均服从 IO 设置区。
-	# 把拨弹/底盘角色移到后四路，隔离验证前四路的纯 IO 配置结果。
-	var front_role_cfg: Dictionary = {
-		"friction_type": "不使用",
-		"booster_io": "P74 P24", "l1_io": "P75 P25", "l2_io": "P76 P26",
-		"r1_io": "P77 P27", "r2_io": "P75 P25",
-	}
-	var low_freq_front_cfg: Dictionary = front_role_cfg.duplicate(true)
-	low_freq_front_cfg["io_init"] = {"P60": "舵机", "P62": "舵机", "P64": "摩擦轮", "P66": "摩擦轮"}
-	var low_freq_front_code: String = CG.new().generate(low_freq_front_cfg)
-	if not low_freq_front_code.contains("50, 50,\n                          50, 50,"):
-		printerr("P60/P62 选择舵机且 P64/P66 选择摩擦轮时必须分别生成 50Hz")
-		quit(1)
-		return
-	var motor_front_cfg: Dictionary = front_role_cfg.duplicate(true)
-	motor_front_cfg["io_init"] = {"P60": "电机", "P62": "电机", "P64": "电机", "P66": "电机"}
-	var motor_front_code: String = CG.new().generate(motor_front_cfg)
-	if not motor_front_code.contains("10000, 10000,\n                          10000, 10000,"):
-		printerr("P60/P62/P64/P66 选择电机时必须分别生成 10000Hz")
-		quit(1)
-		return
-	var mixed_front_cfg: Dictionary = front_role_cfg.duplicate(true)
-	mixed_front_cfg["io_init"] = {"P60": "舵机", "P62": "电机", "P64": "摩擦轮", "P66": "电机"}
-	var mixed_front_code: String = CG.new().generate(mixed_front_cfg)
-	if not mixed_front_code.contains("50, 10000,\n                          50, 10000,"):
-		printerr("P60/P62/P64/P66 的混合频率配置未逐路进入 Init_Order")
-		quit(1)
-		return
-	# 启用无刷摩擦轮时，P64/P66 必须忽略错误的电机初始化并强制 50Hz。
-	var locked_friction_code: String = CG.new().generate({
+	# 步兵不再读取 IO 初始化和高级模式字段；固定角色以外的端口安全按 50Hz 初始化。
+	var stale_advanced_code: String = CG.new().generate({
 		"io_init": {"P60": "电机", "P62": "电机", "P64": "电机", "P66": "电机"},
+		"mode_count": "4", "modes": [{"rows": [{"io": "P62", "key": "A", "mode": "直接", "param": "1000"}]}],
 	})
-	if not locked_friction_code.contains("10000, 10000,\n                          50, 50,"):
-		printerr("启用无刷摩擦轮时 P64/P66 必须强制生成 50Hz")
-		quit(1)
-		return
-	var friction_freq_issues: Array = SC.check_infantry({
-		"io_init": {"P64": "电机", "P66": "电机"},
-	})
-	var found_locked_friction_error: bool = false
-	for issue in friction_freq_issues:
-		if str(issue.get("msg", "")).contains("必须设为「摩擦轮」"):
-			found_locked_friction_error = true
-	if not found_locked_friction_error:
-		printerr("静态检查未阻止无刷摩擦轮 P64/P66 的错误电机初始化")
-		quit(1)
-		return
+	for forbidden_advanced in ["currentMode", "UpdateMode", "Calculate_Mode", "dutyOfAux"]:
+		if stale_advanced_code.contains(forbidden_advanced):
+			printerr("步兵代码仍包含高级设置符号：%s" % forbidden_advanced)
+			quit(1)
+			return
 	if code.contains("remote_control_init();") \
 			or not code.contains("remoteControlInitWithTimeout();") \
 			or not code.contains("retry < 20"):
@@ -264,7 +227,6 @@ func _initialize() -> void:
 		"friction_type": "不使用",
 		"l1_io": "P64 P65",
 		"booster_io": "P66 P67",
-		"io_init": {"P64": "电机", "P66": "电机"},
 	}
 	var dcode: String = CG.new().generate(dcfg)
 	for forbidden_friction in ["FRICTION_MAX_DUTY", "dutyOfBooster", "boosterKeyValue",
@@ -285,16 +247,6 @@ func _initialize() -> void:
 	})
 	if not yaw_p64_code.contains("(uint16_t)abs(dutyOfMotor[5]), dutyOfServo[1]"):
 		printerr("禁用摩擦轮后 P64/P66 未按云台电机/舵机生成")
-		quit(1)
-		return
-	var aux_p64_code: String = CG.new().generate({
-		"friction_type": "不使用", "io_init": {"P64": "电机"},
-		"mode_count": "1", "modes": [{"rows": [{
-			"key": "A", "dir": "正向", "mode": "直接", "param": "1234", "io": "P64",
-		}]}],
-	})
-	if not aux_p64_code.contains("dutyOfAuxMotor[2]"):
-		printerr("禁用摩擦轮后高级映射不能使用 P64")
 		quit(1)
 		return
 	var invalid_code: String = CG.new().generate({"friction_type": "非法值"})

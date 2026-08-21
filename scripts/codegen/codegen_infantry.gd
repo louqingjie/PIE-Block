@@ -164,24 +164,16 @@ func generate(cfg: Dictionary) -> String:
 	var yaw_servo_on_main: bool = yaw_is_servo and yaw_pin in MAIN_BOARD_SERVO_PINS
 	var pitch_servo_on_main: bool = pitch_is_servo and pitch_pin in MAIN_BOARD_SERVO_PINS
 
-	# --- 槽位分配（先按 IO 设置区初始化，再按固定角色覆盖）---
+	# --- 槽位分配（由步兵固定角色决定初始化）---
 	# 槽位 0-7 依次对应 p60,p62,p64,p66,p74,p75,p76,p77
-	# 普通端口提供「舵机 / 电机」，步兵 P64/P66 在无刷摩擦轮启用时固定为
-	# 「摩擦轮」50Hz；其他时候可选择「摩擦轮 / 电机」。不能把“没有被模式控制行
-	# 引用”暗中解释成 0Hz；官方
-	# Init_Order 示例也没有定义 0Hz 为合法的“不初始化”值。
-	# Duty_Change_Order 里未使用槽位固定给 0，避免误驱动
-	var io_init_shared: Dictionary = cfg.get("io_init", {})
-	var init_vals: Array = []
-	for slot in range(8):
-		var pin: String = _exp_pin(slot)
-		init_vals.append(10000 if str(io_init_shared.get(pin, "舵机")) == "电机" else 50)
+	# 未被固定角色使用的端口按 50Hz、0 占空比安全初始化。
+	var init_vals: Array = [50, 50, 50, 50, 50, 50, 50, 50]
 	var dir_exprs: Array = ["1", "1", "1", "1", "1", "1", "1", "1"]
 	var duty_vals: Array = ["0", "0", "0", "0", "0", "0", "0", "0"]
 
 	# 启用无刷电调时固定占用 P64/P66；禁用时不写方向、占空比或所有权。
 	if friction_enabled:
-		# 与 UI/静态检查的锁定规则一致，防御旧配置将摩擦轮错误初始化为电机。
+		# 固定按摩擦轮 50Hz 初始化，避免与其他角色的电机配置混用。
 		init_vals[friction_l_slot] = 50
 		init_vals[friction_r_slot] = 50
 		dir_exprs[friction_l_slot] = "0"
@@ -273,64 +265,6 @@ func generate(cfg: Dictionary) -> String:
 		pwm_init_lines += "    PWM_Init(%s, 50, midDutyOfServo[1]); // 云台垂直舵机\n" % _pin_to_pwm_channel(pitch_pin)
 		pwm_set_lines += "    PWM_SET_Frequency(%s, 50, dutyOfServo[1]);\n" % _pin_to_pwm_channel(pitch_pin)
 
-	# --- 高级设置：共享多模式按键映射（步兵/工程共用同一份配置）---
-	# 行不能指向固定子系统占用的引脚（静态检查已拦，这里防御性跳过）
-	var io_mid: Dictionary = cfg.get("io_mid", {})
-	var mode_count: int = clampi(int(float(str(cfg.get("mode_count", 1)))), 1, 4)
-	var switch_strategy: String = str(cfg.get("switch_strategy", "单击切换"))
-	var switch_key: String = str(cfg.get("mode_switch_key", "E"))
-	var mode_keys: Array = cfg.get("mode_keys", [])
-	var modes: Array = cfg.get("modes", []) if cfg.get("modes", []) is Array else []
-	# 固定子系统占用的扩展板槽位（启用时的摩擦轮 / 拨弹 / 底盘 / 云台）
-	var owned_slots: Array = []
-	var fixed_slots: Array = [feeder_slot, yaw_slot, pitch_slot]
-	if friction_enabled:
-		fixed_slots.append_array([friction_l_slot, friction_r_slot])
-	for s in fixed_slots:
-		if s >= 0 and not s in owned_slots:
-			owned_slots.append(s)
-	for pair in motor_slots:
-		if pair[0] >= 0 and not pair[0] in owned_slots:
-			owned_slots.append(pair[0])
-	# 辅助槽位（行指向的扩展板引脚，未被固定子系统占用）
-	var aux_servo_slots: Array = []
-	var aux_motor_slots: Array = []
-	var use_aux_main: Array = [false, false]
-	for mi in range(mini(mode_count, modes.size())):
-		for row in (modes[mi].get("rows", []) as Array):
-			var io: String = str(row.get("io", ""))
-			var slot: int = _io_to_exp_slot(io)
-			if slot >= 0:
-				if slot in owned_slots:
-					continue
-				if str(io_init_shared.get(io, "舵机")) == "电机":
-					if not slot in aux_motor_slots:
-						aux_motor_slots.append(slot)
-				elif not slot in aux_servo_slots:
-					aux_servo_slots.append(slot)
-			elif io == "MP03":
-				use_aux_main[0] = true
-			elif io == "MP74":
-				use_aux_main[1] = true
-	# 辅助槽位填充到 Init/Dir/Duty
-	for slot in aux_servo_slots:
-		init_vals[slot] = 50
-		duty_vals[slot] = "(uint16_t)dutyOfAuxServo[%d]" % slot
-	for slot in aux_motor_slots:
-		init_vals[slot] = 10000
-		dir_exprs[slot] = "(dutyOfAuxMotor[%d] >= 0 ? 1 : 0)" % slot
-		duty_vals[slot] = "(uint16_t)abs(dutyOfAuxMotor[%d])" % slot
-	# 不再覆盖 P60/P62/P64/P66 的初始化频率：四路均服从 IO 设置区及实际角色。
-	# P60/P62 选择“舵机”、P64/P66 选择“摩擦轮”生成 50Hz；
-	# 选择“电机”生成 10000Hz，供实机验证扩展板时基行为。
-	# 主控板辅助舵机 PWM（初始角按 IO 初始化区）
-	for si in range(2):
-		if use_aux_main[si]:
-			var aux_pin: String = "MP03" if si == 0 else "MP74"
-			pwm_init_lines += "    PWM_Init(%s, 50, %d); // %s 舵机初始角\n" \
-				% [_pin_to_pwm_channel(aux_pin), _io_mid_duty(io_mid, aux_pin), aux_pin]
-			pwm_set_lines += "    PWM_SET_Frequency(%s, 50, (uint16_t)dutyOfAuxMainServo[%d]);\n" \
-				% [_pin_to_pwm_channel(aux_pin), si]
 
 	# --- 生成 init_vals 字符串 ---
 	var init_str: String = "%d, %d,\n                          %d, %d,\n                          %d, %d,\n                          %d, %d" % [init_vals[0], init_vals[1], init_vals[2], init_vals[3], init_vals[4], init_vals[5], init_vals[6], init_vals[7]]
@@ -402,22 +336,10 @@ func generate(cfg: Dictionary) -> String:
 		code += "uint16_t targetDutyOfBooster = 0; // 目标只允许 0 或 FRICTION_MAX_DUTY\n"
 		code += "uint8_t frictionRampActive = 0;\n"
 	code += "uint8_t valueOfKey[3][4];\n"
-	code += "uint8_t valueOfEKey;\n"
 	code += "uint8_t triggerKeyValue, lastTriggerKeyValue;\n"
 	if friction_enabled:
 		code += "uint8_t boosterKeyValue, lastBoosterKeyValue;\n"
 		code += "uint8_t statusOfBooster = 0;\n"
-	# 高级设置：共享多模式按键映射的辅助执行器
-	if not aux_servo_slots.is_empty() or not aux_motor_slots.is_empty() or use_aux_main[0] or use_aux_main[1]:
-		code += "int dutyOfAuxMotor[8];          // 高级设置辅助电机（按槽位）\n"
-		code += "float dutyOfAuxServo[8];        // 高级设置辅助舵机（按槽位）\n"
-		code += "float dutyOfAuxMainServo[2];    // 高级设置 MP03/MP74 舵机\n"
-		code += "uint8_t currentMode = 1;        // 当前模式（1~%d），开机固定模式1\n" % mode_count
-		code += "uint8_t modeKeyHeld = 0;        // 单击切换键锁存\n"
-		if mode_count > 1 and not aux_motor_slots.is_empty():
-			code += "uint8_t prevMode = 1;        // 上一次模式，切换后未映射的辅助电机下电\n"
-		if switch_strategy == "一一对应" and mode_count > 1:
-			code += "uint8_t modeKeyLast[4] = {0};  // 一一对应各模式键锁存\n"
 	code += "uint8_t i, j;\n"
 	code += "int valueOfRoker[2][2] // 左摇杆水平、竖直；右摇杆水平、竖直\n    ,\n    baseSpeed, turnSpeed;\n"
 	code += "static const uint8_t keyOffsets[3][4] = {\n"
@@ -430,10 +352,6 @@ func generate(cfg: Dictionary) -> String:
 	code += "void CalculateGimbalControls();\n"
 	if friction_enabled:
 		code += "void CalculateBoosterControl();\n"
-	if not aux_servo_slots.is_empty() or not aux_motor_slots.is_empty() or use_aux_main[0] or use_aux_main[1]:
-		code += "void UpdateMode();\n"
-		for mi in range(mode_count):
-			code += "void Calculate_Mode%d_Controls();\n" % (mi + 1)
 	code += "uint8_t Get_Dir(int rawdata);\n"
 	code += "void Main_Countrol(%s);\n" % main_control_params
 	code += "void ExpansionBoradControl(uint8_t control_cmd, uint16_t data_p60, uint16_t data_p62, uint16_t data_p64,\n"
@@ -461,13 +379,6 @@ func generate(cfg: Dictionary) -> String:
 		code += "    floatDutyOfServo[0] = midDutyOfServo[0];\n"
 	if pitch_is_servo:
 		code += "    floatDutyOfServo[1] = midDutyOfServo[1];\n"
-	if not aux_servo_slots.is_empty() or use_aux_main[0] or use_aux_main[1]:
-		for slot in aux_servo_slots:
-			code += "    dutyOfAuxServo[%d] = %d.0f; // 高级设置初始角\n" % [slot, _io_mid_duty(io_mid, _exp_pin(slot))]
-		for si in range(2):
-			if use_aux_main[si]:
-				var apin: String = "MP03" if si == 0 else "MP74"
-				code += "    dutyOfAuxMainServo[%d] = %d.0f; // %s 初始角\n" % [si, _io_mid_duty(io_mid, apin), apin]
 	code += "    while (1)\n"
 	code += "    {\n"
 	code += _gen_nrf_poll()
@@ -481,25 +392,6 @@ func generate(cfg: Dictionary) -> String:
 	code += "        CalculateGimbalControls(); // 计算云台控制\n"
 	if friction_enabled:
 		code += "        CalculateBoosterControl(); // 计算摩擦轮控制\n"
-	if not aux_servo_slots.is_empty() or not aux_motor_slots.is_empty() or use_aux_main[0] or use_aux_main[1]:
-		code += "        UpdateMode();\n"
-		code += "        // 高级设置：按当前模式执行按键映射\n"
-		code += "        switch (currentMode)\n"
-		code += "        {\n"
-		for mi in range(mode_count):
-			code += "            case %d:\n" % (mi + 1)
-			code += "                Calculate_Mode%d_Controls();\n" % (mi + 1)
-			code += "                break;\n"
-		code += "            default:\n"
-		code += "                break;\n"
-		code += "        }\n"
-		for slot in aux_motor_slots:
-			code += "        LIMIT_VALUE(dutyOfAuxMotor[%d], -10000, 10000);\n" % slot
-		for slot in aux_servo_slots:
-			code += "        LIMIT_VALUE(dutyOfAuxServo[%d], %d, %d);\n" % [slot, SERVO_DUTY_MIN, SERVO_DUTY_MAX]
-		for si in range(2):
-			if use_aux_main[si]:
-				code += "        LIMIT_VALUE(dutyOfAuxMainServo[%d], %d, %d);\n" % [si, SERVO_DUTY_MIN, SERVO_DUTY_MAX]
 	code += "        LIMIT_VALUE(dutyOfMotor[0], -10000, 10000);\n"
 	code += "        LIMIT_VALUE(dutyOfMotor[1], -10000, 10000);\n"
 	code += "        LIMIT_VALUE(dutyOfMotor[2], -10000, 10000);\n"
@@ -610,8 +502,6 @@ func generate(cfg: Dictionary) -> String:
 	if friction_enabled:
 		code += "    // 读取摩擦轮开关键\n"
 		code += "    boosterKeyValue = RcKeyValueRead(%s);\n" % booster_key_offset
-	if not aux_servo_slots.is_empty() or not aux_motor_slots.is_empty() or use_aux_main[0] or use_aux_main[1]:
-		code += "    valueOfEKey = RcKeyValueRead(KEY_OFFSET_1); // 高级设置模式切换键\n"
 	code += "}\n\n"
 
 	# --- CalculateMotorControls ---
@@ -704,13 +594,6 @@ func generate(cfg: Dictionary) -> String:
 		code += "    // 云台 Pitch 电机控制值计算\n"
 		code += "    dutyOfMotor[%d] = %s;\n" % [pitch_motor_idx, pitch_expr]
 	code += "}\n\n"
-
-	# --- 高级设置：模式切换与每模式按键映射 ---
-	if not aux_servo_slots.is_empty() or not aux_motor_slots.is_empty() or use_aux_main[0] or use_aux_main[1]:
-		code += _gen_update_mode(mode_count, switch_strategy, switch_key, mode_keys, aux_motor_slots)
-		for mi in range(mode_count):
-			var rows: Array = modes[mi].get("rows", []) if mi < modes.size() else []
-			code += _gen_mode_rows(rows, io_init_shared, "Mode%d" % (mi + 1))
 
 	# --- Main_Countrol ---
 	code += "void Main_Countrol(%s)\n{\n" % main_control_params

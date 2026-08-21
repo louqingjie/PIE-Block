@@ -77,14 +77,10 @@ const ENGINEER_TABS: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZ
 const DEBUG_PAGE: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/Debug"
 # 工程师界面（工程页：Engineer TabContainer 的第 0 个 tab）
 const ENGINEER: String = ENGINEER_TABS + "/Engineer"
-# 步兵页「高级设置」折叠区内的同一套 IO+模式+按键映射（与工程页共用同一份配置）
-const ADV_ENGINEER: String = INFANTRY_PAGE + "/Advanced/ScrollContainer/AdvancedAndEngineer"
-# 共享配置根：按当前构型返回 工程页 / 步兵高级设置
+# 工程页 IO 初始化与多模式映射配置根。
 func _shared_cfg_root() -> String:
-	return ADV_ENGINEER if _current_tab() == 0 else ENGINEER
-# 共享 IO 初始化区相对路径（工程页与步兵高级设置结构一致）。
-# 每个引脚一个 OptionButton + MidDegree2(初始角)。工程页均为电机/舵机；
-# 步兵页的 P64/P66 为电机/摩擦轮，分别对应 10000Hz/50Hz。
+	return ENGINEER
+# 工程页 IO 初始化区相对路径。每个引脚一个 OptionButton + MidDegree2(初始角)。
 const ENG_IO_REL: Dictionary = {
 	"P60": "IOs/Row1/P60/OptionButton",
 	"P62": "IOs/Row1/P62/OptionButton",
@@ -287,8 +283,6 @@ const GUIDE_HINTS: Array[String] = [
 func _ready() -> void:
 	# 移动端圆角屏/刘海：整屏内缩到安全区（桌面端恒为 0）
 	SafeArea.apply_to_root(self)
-	# 共用场景默认是工程页语义；只改步兵实例的 P64/P66，避免影响工程构型。
-	_setup_infantry_io_options()
 	# 为 C 代码预览框挂载语法高亮器（状态机正则）
 	var code_edit: Node = get_node_or_null(P_CODE_EDIT)
 	if code_edit is CodeEdit:
@@ -320,24 +314,6 @@ func _ready() -> void:
 	# 无项目路径会整体重开配置区控件（_set_config_enabled），
 	# 左摇杆保留开关的模式1强制状态必须最后再兜一次
 	_sync_chassis_switch()
-
-
-## 步兵机械拓展板的 P64/P66 是摩擦轮专用输出区，不在这里提供舵机角色。
-## 共用场景仍保留工程页的“电机/舵机”；这里只改步兵高级设置实例。
-func _setup_infantry_io_options() -> void:
-	for pin in ["P64", "P66"]:
-		var btn: Node = get_node_or_null(NodePath(
-			ADV_ENGINEER + "/" + str(ENG_IO_REL.get(pin, ""))))
-		if btn is OptionButton:
-			for i in range(btn.item_count):
-				if btn.get_item_text(i) == "舵机":
-					btn.set_item_text(i, "摩擦轮")
-			btn.tooltip_text = "电机：10000Hz；摩擦轮：50Hz"
-		var mid_edit: Node = get_node_or_null(NodePath(
-			ADV_ENGINEER + "/" + str(ENG_IO_MID_REL.get(pin, ""))))
-		if mid_edit is LineEdit:
-			# 摩擦轮没有舵机初始角，隐藏无意义的输入框。
-			mid_edit.visible = false
 
 
 ## 窗口尺寸/方向变化后重算安全区内缩（旋转屏幕、折叠屏展开等场景）。
@@ -436,11 +412,6 @@ func _connect_signals() -> void:
 		var ch_btn: Node = get_node_or_null(p)
 		if ch_btn is OptionButton:
 			ch_btn.item_selected.connect(_sync_io_locks)
-	# 步兵固定子系统（拨弹电机 / Yaw / Pitch）配置变化时，IO 初始化区自动同步
-	for p in [P_BOOSTER_IO, P_YAW_DRIVE, P_YAW_IO, P_PITCH_DRIVE, P_PITCH_IO]:
-		var sub_btn: Node = get_node_or_null(p)
-		if sub_btn is OptionButton:
-			sub_btn.item_selected.connect(_sync_io_locks)
 	var friction_type_btn: Node = get_node_or_null(P_FRICTION_TYPE)
 	if friction_type_btn is OptionButton:
 		friction_type_btn.item_selected.connect(_on_friction_type_selected)
@@ -466,8 +437,8 @@ func _connect_signals() -> void:
 	var zero_cb: Node = get_node_or_null(P_ZERO_CB)
 	if zero_cb is BaseButton:
 		zero_cb.toggled.connect(_run_check)
-	# 工程师界面：共享 IO 初始化区（工程页 + 步兵高级设置，两份实例都接线）
-	for root in [ENGINEER, ADV_ENGINEER]:
+	# 工程师界面：IO 初始化区与多模式映射。
+	for root in [ENGINEER]:
 		for pin in ENG_ALL_PINS:
 			var eng_btn: Node = get_node_or_null(NodePath(root + "/" + str(ENG_IO_REL.get(pin, ""))))
 			if eng_btn is OptionButton:
@@ -1474,18 +1445,17 @@ const EXPANSION_PINS: Array = ["P60", "P62", "P64", "P66", "P74", "P75", "P76", 
 ## 与静态检查器的合法性矩阵一致，从源头杜绝非法组合。程序化重建不触发 item_selected。
 ## 舵机角度一律是「相对中位的偏移角」，行程 ±90°，不是 0~180°。
 func _update_engineer_placeholders(_idx: int = -1) -> void:
-	# 工程页与步兵高级设置是两份实例，都要过滤，否则切页后残留旧选项
-	for root in [ENGINEER, ADV_ENGINEER]:
+	for root in [ENGINEER]:
 		_update_engineer_root_placeholders(root)
 
 
-## 单个共享配置根（工程页 / 步兵高级设置）的过滤与占位提示
+## 工程配置根的过滤与占位提示
 func _update_engineer_root_placeholders(root: String) -> void:
 	var io_init: Dictionary = {}
 	for pin in ENG_ALL_PINS:
 		var io_type: String = _get_option_text(NodePath(root + "/" + str(ENG_IO_REL.get(pin, ""))))
 		io_init[pin] = io_type
-		# 初始角仅对舵机有效；电机和步兵摩擦轮都不显示该输入框。
+		# 初始角仅对舵机有效；电机不显示该输入框。
 		var mid_edit: Node = get_node_or_null(NodePath(
 			root + "/" + str(ENG_IO_MID_REL.get(pin, ""))))
 		if mid_edit is LineEdit:
@@ -1549,7 +1519,7 @@ func _update_engineer_root_placeholders(root: String) -> void:
 ## 场景里的模板行保持名为 Example（隐藏），只作为「+」新建行的原型；
 ## 真实行从 Row01 开始命名，使配置快照路径稳定。
 func _normalize_eng_row_names() -> void:
-	for root in [ENGINEER, ADV_ENGINEER]:
+	for root in [ENGINEER]:
 		for page in ENG_MODE_PAGES:
 			var vb: Node = get_node_or_null(NodePath(root + "/" + page + "/ScrollContainer/VBoxContainer"))
 			if vb == null:
@@ -1655,7 +1625,7 @@ func _eng_row_count(vb: Node) -> int:
 ## 一一对应模式下 Label 与模式键下拉个数跟随模式数
 ## 带可选参数以兼容 item_selected 信号（信号会传入被选中的索引）
 func _update_mode_page_visibility(_idx: int = -1) -> void:
-	for root in [ENGINEER, ADV_ENGINEER]:
+	for root in [ENGINEER]:
 		var count_btn: Node = get_node_or_null(NodePath(root + "/Mode/OptionButton"))
 		if not count_btn is OptionButton:
 			continue
@@ -1688,43 +1658,18 @@ func _update_mode_page_visibility(_idx: int = -1) -> void:
 			tabs.current_tab = mini(prev_tab, maxi(count - 1, 0))
 
 
-## 计算某个 IO 初始化区根下每个引脚的期望类型（空字符串 = 不锁定）。
-## 底盘四轮对两个根（工程页 / 步兵高级设置）都生效；
-## 步兵固定子系统（摩擦轮 / 拨弹电机 / Yaw / Pitch）只对步兵高级设置生效。
-## 期望类型与 static_checker._check_infantry_shared 保持一致。
+## 计算工程 IO 初始化区内每个引脚的期望类型（空字符串 = 不锁定）。
+## 工程底盘四轮必须保持电机初始化。
 func _compute_io_desired(root: String) -> Dictionary:
 	var desired: Dictionary = {}
-	# 底盘四轮：恒为电机（两个根都适用）
+	# 底盘四轮：恒为电机。
 	var chassis_pins: Array = []
 	for p in [P_L1_IO, P_L2_IO, P_R1_IO, P_R2_IO]:
 		var pin: String = _get_option_text(p).split(" ")[0].strip_edges()
 		if not pin.is_empty() and not pin in chassis_pins:
 			chassis_pins.append(pin)
-	# 步兵固定子系统：仅步兵高级设置（ADV_ENGINEER）
-	if root == ADV_ENGINEER:
-		# Yaw / Pitch：跟随驱动类型（舵机 -> 舵机，电机 -> 电机），优先级最低
-		var yaw_drive: String = _get_option_text(P_YAW_DRIVE)
-		var yaw_pin: String = _get_option_text(P_YAW_IO).split(" ")[0].strip_edges()
-		if not yaw_pin.is_empty() and not yaw_pin.begins_with("MP") \
-				and (yaw_drive == "电机" or yaw_drive == "舵机"):
-			desired[yaw_pin] = yaw_drive
-		var pitch_drive: String = _get_option_text(P_PITCH_DRIVE)
-		var pitch_pin: String = _get_option_text(P_PITCH_IO).split(" ")[0].strip_edges()
-		if not pitch_pin.is_empty() and not pitch_pin.begins_with("MP") \
-				and (pitch_drive == "电机" or pitch_drive == "舵机"):
-			desired[pitch_pin] = pitch_drive
-		# 拨弹电机：恒为电机（10000Hz 初始化），优先级高于 Yaw/Pitch
-		var booster_pin: String = _get_option_text(P_BOOSTER_IO).split(" ")[0].strip_edges()
-		if not booster_pin.is_empty() and not booster_pin.begins_with("MP"):
-			desired[booster_pin] = "电机"
-	# 底盘四轮：恒为电机，优先级高于云台和拨弹。
 	for pin in chassis_pins:
 		desired[pin] = "电机"
-	# 无刷摩擦轮固定占用 P64/P66，优先级最高。即使旧配置残留了
-	# 底盘、云台或拨弹对这些引脚的引用，也绝不允许错误初始化为电机/舵机。
-	if root == ADV_ENGINEER and _get_option_text(P_FRICTION_TYPE) == "无刷电调":
-		for pin in ["P64", "P66"]:
-			desired[pin] = "摩擦轮"
 	return desired
 
 
@@ -1755,13 +1700,13 @@ func _on_friction_type_selected(_idx: int) -> void:
 	_sync_io_locks()
 
 
-## 步兵 IO 初始化区自动同步：固定子系统（底盘 / 摩擦轮 / 拨弹电机 / Yaw / Pitch）
+## 工程 IO 初始化区自动同步：底盘四轮
 ## 选中的引脚在 IO 初始化区强制为对应类型并禁用另一项，
-## 防止用户未展开高级设置时因类型不匹配而报错。
-## 子系统配置变化、项目载入后都要调用。
+## 防止配置与底盘角色不匹配。
+## 底盘配置变化、项目载入后都要调用。
 ## 带可选参数以兼容 item_selected 信号（信号会传入被选中的索引）
 func _sync_io_locks(_idx: int = -1) -> void:
-	for root in [ENGINEER, ADV_ENGINEER]:
+	for root in [ENGINEER]:
 		var desired: Dictionary = _compute_io_desired(root)
 		for pin in ENG_IO_REL.keys():
 			var btn: Node = get_node_or_null(NodePath(root + "/" + str(ENG_IO_REL.get(pin, ""))))
@@ -1800,7 +1745,7 @@ func _sync_io_locks(_idx: int = -1) -> void:
 ## 模式1 强制开启且不可关；开启的模式页禁用该页所有行的 LX/LY 键位（左摇杆已归底盘）。
 ## 带可选参数以兼容 toggled 信号（信号会传入开关状态）
 func _sync_chassis_switch(_pressed: bool = false) -> void:
-	for root in [ENGINEER, ADV_ENGINEER]:
+	for root in [ENGINEER]:
 		for mi in range(4):
 			var ck: Node = get_node_or_null(NodePath(
 				root + "/" + ENG_MODE_PAGES[mi] + "/Chassis/CheckButton"))
@@ -1898,10 +1843,7 @@ func _run_check(_a = null, _b = null) -> void:
 	var issues: Array = []
 	match current_tab:
 		0:
-			# 步兵模式检查（含高级设置里的共享多模式按键映射）
-			var inf_cfg: Dictionary = _collect_config()
-			inf_cfg.merge(_collect_engineer_config(), true)
-			issues = SC.check_infantry(inf_cfg)
+			issues = SC.check_infantry(_collect_config())
 		1, 2:
 			# 工程多模式：工程页与逆解算页共同配置同一份固件。
 			# 未启用逆解算时只检查正解（按键映射）部分，逆解校验由检查器按 enabled 跳过。
@@ -1928,10 +1870,7 @@ func _run_check(_a = null, _b = null) -> void:
 			else:
 				cfg = _collect_engineer_config()
 		_:
-			# 步兵：固定云台/发射配置 + 高级设置的共享多模式按键映射
-			var inf_gen_cfg: Dictionary = _collect_config()
-			inf_gen_cfg.merge(_collect_engineer_config(), true)
-			cfg = inf_gen_cfg
+			cfg = _collect_config()
 	var code: String = _codegen.generate(cfg)
 	var code_edit: Node = get_node_or_null(P_CODE_EDIT)
 	if code_edit is CodeEdit:
@@ -2059,7 +1998,7 @@ func _collect_engineer_config() -> Dictionary:
 	cfg["sprint_speed"] = _get_line_text(P_SPRINT_SPEED).strip_edges()
 	var sprint_cb: Node = get_node_or_null(P_SPRINT_CB)
 	cfg["sprint_enabled"] = (sprint_cb is BaseButton) and sprint_cb.button_pressed
-	# --- IO 初始化区（共享区：工程页 / 步兵高级设置，含主控板口）---
+	# --- IO 初始化区（工程页，含主控板口）---
 	var root: String = _shared_cfg_root()
 	var io_init: Dictionary = {}
 	for pin in ENG_ALL_PINS:
@@ -2116,7 +2055,7 @@ func _ensure_eng_rows_from_config(cfg: Dictionary) -> void:
 	var zone: Node = get_node_or_null(P_EDIT_ZONE)
 	if zone == null:
 		return
-	for root in [ENGINEER, ADV_ENGINEER]:
+	for root in [ENGINEER]:
 		for page in ENG_MODE_PAGES:
 			var vb: Node = get_node_or_null(NodePath(
 				root + "/" + page + "/ScrollContainer/VBoxContainer"))

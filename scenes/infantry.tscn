@@ -1,7 +1,5 @@
 [gd_scene format=3 uid="uid://cqjw5gums3ld7"]
 
-[ext_resource type="PackedScene" uid="uid://dpq854m2cihg8" path="res://scenes/advanced_and_engineer.tscn" id="1_mmosd"]
-
 [node name="Infantry" type="VBoxContainer" unique_id=2096911062]
 anchors_preset = 15
 anchor_right = 1.0
@@ -332,25 +330,9 @@ popup/item_7/id = 7
 popup/item_8/text = "D"
 popup/item_8/id = 8
 
-[node name="MaxDuty" type="LineEdit" parent="KeySetting/Booster"]
-custom_minimum_size = Vector2(150, 0)
+[node name="MaxDuty" type="LineEdit" parent="KeySetting/Booster" unique_id=1740901772]
+custom_minimum_size = Vector2(170, 0)
 layout_mode = 2
+tooltip_text = "校内赛安全硬上限：只允许 500、600、700、800"
 text = "800"
 placeholder_text = "最大占空比 500~800"
-tooltip_text = "校内赛安全硬上限：只允许 500、600、700、800"
-
-[node name="Advanced" type="FoldableContainer" parent="." unique_id=144618528]
-layout_mode = 2
-size_flags_vertical = 3
-folded = true
-title = "高级设置"
-title_alignment = 1
-
-[node name="ScrollContainer" type="ScrollContainer" parent="Advanced" unique_id=1449661723]
-visible = false
-layout_mode = 2
-horizontal_scroll_mode = 0
-
-[node name="AdvancedAndEngineer" parent="Advanced/ScrollContainer" unique_id=727657335 instance=ExtResource("1_mmosd")]
-layout_mode = 2
-size_flags_vertical = 3
