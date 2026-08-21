@@ -173,6 +173,28 @@ func generate(cfg: Dictionary) -> String:
 	var channel: String = _int_or_default(engineer_cfg.get("channel", "36"), 36, 0, 125)
 	var deadzone: String = _int_or_default(engineer_cfg.get("deadzone", "10"), 10, 0, 2047)
 
+	# 舵机蜂鸣反馈固定按关节、夹爪、正解辅助舵机的稳定顺序检查。
+	# 辅助舵机按扩展板物理槽位 P60~P77，再按主控板 MP03、MP74 排列。
+	var servo_buzzer_exprs: Array = []
+	for i in range(jc):
+		servo_buzzer_exprs.append("dutyOfServo[%d]" % i)
+	if gripper_enabled:
+		servo_buzzer_exprs.append("dutyOfGripper")
+	if dual_mode:
+		var gripper_pin_for_buzzer: String = str(gripper.get("io", "")) if gripper_enabled else ""
+		var aux_buzzer_slots: Array = _aux_servo_slots(
+			engineer_cfg, joints, jc, gripper_pin_for_buzzer)
+		for slot in range(EXP_PINS.size()):
+			if slot in aux_buzzer_slots:
+				servo_buzzer_exprs.append("(uint16_t)dutyOfAuxServo[%d]" % slot)
+		var aux_buzzer_main: Array = _aux_main_servo_list(
+			engineer_cfg, joints, jc, gripper_pin_for_buzzer)
+		for si in [0, 1]:
+			for entry in aux_buzzer_main:
+				if int(entry["idx"]) == si:
+					servo_buzzer_exprs.append("(uint16_t)dutyOfAuxMainServo[%d]" % si)
+					break
+
 	var code: String = ""
 	code += "// 工程机器人正解/逆解双模式代码（由 Pie-Block 配置生成器自动生成）\n" if dual_mode \
 		else "// 工程机器人逆解算代码（由 Pie-Block 配置生成器自动生成）\n"
@@ -304,6 +326,7 @@ func generate(cfg: Dictionary) -> String:
 	# 初始化诊断工具（LED + 蜂鸣器）与 UART1 查询发送（修复 UART 死锁）
 	code += _gen_led_diag_tools()
 	code += CodeGenBase.UART_TX_QUERY_CODE
+	code += _gen_servo_buzzer_tools(servo_buzzer_exprs)
 
 	# --- main() ---
 	# 增量模式目标由 MCU 在设置初始关节角后通过共享 FK 初始化。
@@ -371,6 +394,7 @@ func generate(cfg: Dictionary) -> String:
 		if rocker2_home_enabled:
 			code += "        }\n"
 	code += "        ApplyServoControl();           // 应用舵机控制\n"
+	code += "        UpdateBuzzerFeedback();\n"
 	code += "        Ms_Delay(%d);                   // 与舵机发送延时合计 %dms/周期\n" % [tail_delay, LOOP_PERIOD_MS]
 	code += "    }\n"
 	code += "}\n\n"

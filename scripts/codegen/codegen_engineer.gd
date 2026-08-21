@@ -88,6 +88,17 @@ func generate(cfg: Dictionary) -> String:
 			elif io == "MP74":
 				use_main_servo[1] = true
 
+	# 舵机蜂鸣反馈固定按物理通道顺序检查：扩展板 P60~P77，再检查 MP03、MP74。
+	# 只纳入实际被模式配置使用的舵机，避免生成无效数组访问。
+	var servo_buzzer_exprs: Array = []
+	for slot in range(EXP_PINS.size()):
+		if slot in aux_servo_slots:
+			servo_buzzer_exprs.append("(uint16_t)dutyOfAuxServo[%d]" % slot)
+	if use_main_servo[0]:
+		servo_buzzer_exprs.append("(uint16_t)dutyOfAuxMainServo[0]")
+	if use_main_servo[1]:
+		servo_buzzer_exprs.append("(uint16_t)dutyOfAuxMainServo[1]")
+
 	# --- 底盘电机公式 ---
 	var l1_formula: String = "-baseSpeed - turnSpeed" if l1_dir == 1 else "baseSpeed + turnSpeed"
 	var l2_formula: String = "-baseSpeed - turnSpeed" if l2_dir == 1 else "baseSpeed + turnSpeed"
@@ -211,6 +222,7 @@ func generate(cfg: Dictionary) -> String:
 	# 初始化诊断工具（LED + 蜂鸣器）与 UART1 查询发送（修复 UART 死锁）
 	code += _gen_led_diag_tools()
 	code += CodeGenBase.UART_TX_QUERY_CODE
+	code += _gen_servo_buzzer_tools(servo_buzzer_exprs)
 
 	# --- main() ---
 	code += "void main()\n"
@@ -245,6 +257,8 @@ func generate(cfg: Dictionary) -> String:
 	code += limit_code
 	code += "\n"
 	code += "        Main_Countrol();\n"
+	if not servo_buzzer_exprs.is_empty():
+		code += "        UpdateBuzzerFeedback();\n"
 	code += "        Ms_Delay(10);\n"
 	code += "    }\n"
 	code += "}\n\n"

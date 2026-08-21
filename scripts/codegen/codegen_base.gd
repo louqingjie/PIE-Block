@@ -165,6 +165,64 @@ func _gen_init_done(buzzer: String) -> String:
 		+"    %s(1047, 240);\n" % buzzer)
 
 
+# ============================================================ 舵机 Duty 蜂鸣反馈
+## 生成舵机 Duty 变化检测与蜂鸣器仲裁代码。
+## servo_exprs 按调用方给定的固定顺序排列，后变化的表达式覆盖先变化的频率。
+## has_friction 为 true 时，舵机无变化才回退到摩擦轮蜂鸣请求。
+func _gen_servo_buzzer_tools(servo_exprs: Array, has_friction: bool = false) -> String:
+	if servo_exprs.is_empty() and not has_friction:
+		return ""
+	var code: String = ""
+	var count: int = servo_exprs.size()
+	code += "// 舵机 Duty 变化蜂鸣反馈：当前周期变化时播放当前 Duty，稳定后立即静音。\n"
+	code += "static uint8_t servoBuzzerInitialized = 0;\n"
+	if count > 0:
+		code += "static uint16_t lastServoBuzzerDuty[%d] = {0};\n" % count
+	if has_friction:
+		code += "static uint8_t frictionBuzzerActive = 0;\n"
+		code += "static uint16_t frictionBuzzerDuty = 0;\n"
+		code += "static void FrictionBuzzerTrace(uint16_t duty)\n"
+		code += "{\n"
+		code += "    frictionBuzzerActive = 1;\n"
+		code += "    frictionBuzzerDuty = duty;\n"
+		code += "}\n\n"
+		code += "static void FrictionBuzzerOff(void)\n"
+		code += "{\n"
+		code += "    frictionBuzzerActive = 0;\n"
+		code += "    frictionBuzzerDuty = 0;\n"
+		code += "}\n\n"
+	code += "static void UpdateBuzzerFeedback(void)\n"
+	code += "{\n"
+	code += "    uint8_t changed = 0;\n"
+	code += "    uint16_t currentDuty = 0;\n"
+	code += "    uint16_t duty = 0;\n"
+	for i in range(count):
+		code += "    currentDuty = (uint16_t)(%s);\n" % str(servo_exprs[i])
+		code += "    if (servoBuzzerInitialized && currentDuty != lastServoBuzzerDuty[%d])\n" % i
+		code += "    {\n"
+		code += "        changed = 1;\n"
+		code += "        duty = currentDuty;\n"
+		code += "    }\n"
+		code += "    lastServoBuzzerDuty[%d] = currentDuty;\n" % i
+	if count > 0:
+		code += "    if (!servoBuzzerInitialized)\n"
+		code += "    {\n"
+		code += "        servoBuzzerInitialized = 1;\n"
+		code += "        changed = 0;\n"
+		code += "    }\n"
+	else:
+		code += "    servoBuzzerInitialized = 1;\n"
+	code += "    if (changed)\n"
+	code += "        PWM_SET_Frequency(BUZZER_CH, duty, 5000);\n"
+	if has_friction:
+		code += "    else if (frictionBuzzerActive)\n"
+		code += "        PWM_SET_Frequency(BUZZER_CH, frictionBuzzerDuty, 5000);\n"
+	code += "    else\n"
+	code += "        PWM_SET_Frequency(BUZZER_CH, 500, 0);\n"
+	code += "}\n\n"
+	return code
+
+
 # ============================================================ 共享工具函数
 ## 从 IO 对字符串中提取通信脚（前半），如 "P77 P27" -> "P77"
 func _parse_io_pair(text: String) -> String:

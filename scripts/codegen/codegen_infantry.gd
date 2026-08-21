@@ -160,6 +160,11 @@ func generate(cfg: Dictionary) -> String:
 	# --- Yaw/Pitch 驱动类型 ---
 	var yaw_is_servo: bool = str(cfg.get("yaw_drive", "舵机")) == "舵机"
 	var pitch_is_servo: bool = str(cfg.get("pitch_drive", "舵机")) == "舵机"
+	var servo_buzzer_exprs: Array = []
+	if yaw_is_servo:
+		servo_buzzer_exprs.append("dutyOfServo[0]")
+	if pitch_is_servo:
+		servo_buzzer_exprs.append("dutyOfServo[1]")
 	var yaw_pin: String = _parse_io_pair(cfg.get("yaw_io", "MP74"))
 	var pitch_pin: String = _parse_io_pair(cfg.get("pitch_io", "MP03"))
 	# 扩展板槽位（-1 表示不在扩展板上，即主控板 PWM 引脚）
@@ -372,14 +377,7 @@ func generate(cfg: Dictionary) -> String:
 	# P33 改用 PWMA_CH4N，避免斜坡音调连续变频扰动主控舵机所在的 PWMB 时基。
 	code += _gen_led_diag_tools("GPIO_P3", "GPIO_Pin_5", "GPIO_Pin_6", "GPIO_Pin_7", "PWMA_CH4N_P33")
 	code += CodeGenBase.UART_TX_QUERY_CODE
-	if friction_enabled:
-		code += "// 摩擦轮斜坡蜂鸣器跟踪：音调 Hz 等于当前 duty；只在增减速期间发声。\n"
-		code += "static void FrictionBuzzerTrace(uint16_t duty)\n{\n"
-		code += "    PWM_SET_Frequency(BUZZER_CH, duty, 5000);\n"
-		code += "}\n\n"
-		code += "static void FrictionBuzzerOff(void)\n{\n"
-		code += "    PWM_SET_Frequency(BUZZER_CH, 500, 0);\n"
-		code += "}\n\n"
+	code += _gen_servo_buzzer_tools(servo_buzzer_exprs, friction_enabled)
 
 	# --- main() ---
 	code += "void main()\n{\n"
@@ -417,10 +415,12 @@ func generate(cfg: Dictionary) -> String:
 		code += "        // Yaw 限幅 %d~%d（归中 %+d° ±%d°，已收敛到舵机行程内）\n" \
 			% [yaw_lo, yaw_hi, yaw_mid_deg, servo_swing_deg]
 		code += "        LIMIT_VALUE(floatDutyOfServo[0], %d, %d);\n" % [yaw_lo, yaw_hi]
+		code += "        dutyOfServo[0] = (uint16_t)floatDutyOfServo[0];\n"
 	if pitch_is_servo:
 		code += "        // Pitch 限幅 %d~%d（归中 %+d° ±%d°，已收敛到舵机行程内）\n" \
 			% [pitch_lo, pitch_hi, pitch_mid_deg, servo_swing_deg]
 		code += "        LIMIT_VALUE(floatDutyOfServo[1], %d, %d);\n" % [pitch_lo, pitch_hi]
+		code += "        dutyOfServo[1] = (uint16_t)floatDutyOfServo[1];\n"
 	# 拨弹：两种模式二选一
 	# 目视闭环：按住扳机持续拨弹，松开即停；不阻塞主循环，操作手目视到出弹后松手
 	# 阻塞开环：按一下扳机，拨弹电机转动 boosterFeedDelayMs 后停，期间阻塞主线程
@@ -441,6 +441,8 @@ func generate(cfg: Dictionary) -> String:
 		code += "        lastTriggerKeyValue = triggerKeyValue;\n\n"
 	code += "        // 发送控制函数\n"
 	code += "        Main_Countrol(%s);\n" % main_control_args
+	if friction_enabled or not servo_buzzer_exprs.is_empty():
+		code += "        UpdateBuzzerFeedback();\n"
 	code += "        Ms_Delay(10);\n"
 	code += "    }\n}\n\n"
 
