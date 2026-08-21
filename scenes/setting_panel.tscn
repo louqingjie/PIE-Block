@@ -129,6 +129,15 @@ size_flags_horizontal = 3
 layout_mode = 2
 text = " ... "
 
+[node name="ScanButton" type="Button" parent="Panel/VBoxContainer/HBoxContainer/VBoxContainer/Keil" unique_id=1793709412]
+layout_mode = 2
+text = "自动查找"
+
+[node name="KeilStatus" type="Label" parent="Panel/VBoxContainer/HBoxContainer/VBoxContainer" unique_id=1793709413]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
+autowrap_mode = 3
+
 [node name="HSeparator2" type="HSeparator" parent="Panel/VBoxContainer/HBoxContainer/VBoxContainer" unique_id=1097825075]
 visible = false
 layout_mode = 2

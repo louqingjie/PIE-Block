@@ -1,6 +1,8 @@
 class_name SettingPanel
 extends Control
 
+const TC = preload("res://scripts/toolchain.gd")
+
 ## 设置面板（scenes/setting_panel.tscn 的驱动脚本）。
 ##
 ## 负责三块设置的读写：
@@ -17,11 +19,15 @@ const P_BASE_URL_EDIT: NodePath = "Panel/VBoxContainer/HBoxContainer/VBoxContain
 const P_API_KEY_EDIT: NodePath = "Panel/VBoxContainer/HBoxContainer/VBoxContainer/API/LineEdit"
 const P_KEIL_EDIT: NodePath = "Panel/VBoxContainer/HBoxContainer/VBoxContainer/Keil/LineEdit"
 const P_KEIL_PICK: NodePath = "Panel/VBoxContainer/HBoxContainer/VBoxContainer/Keil/Button"
+const P_KEIL_SCAN: NodePath = "Panel/VBoxContainer/HBoxContainer/VBoxContainer/Keil/ScanButton"
+const P_KEIL_STATUS: NodePath = "Panel/VBoxContainer/HBoxContainer/VBoxContainer/KeilStatus"
 const P_KEIL_DIALOG: NodePath = "Panel/KeilDirDialog"
 const P_INVALID_DIALOG: NodePath = "Panel/InvalidDialog"
 const P_CLOSE_BTN: NodePath = "Panel/CloseButton"
 
 var _toolchain = null
+var _scan_thread: Thread = null
+var _scan_active: bool = false
 
 func configure(toolchain) -> void:
 	_toolchain = toolchain
@@ -54,6 +60,7 @@ func _connect_signals() -> void:
 	var key_edit: LineEdit = get_node_or_null(P_API_KEY_EDIT)
 	var keil_edit: LineEdit = get_node_or_null(P_KEIL_EDIT)
 	var pick_btn: Button = get_node_or_null(P_KEIL_PICK)
+	var scan_btn: Button = get_node_or_null(P_KEIL_SCAN)
 	var keil_dlg: FileDialog = get_node_or_null(P_KEIL_DIALOG)
 	var close_btn: Button = get_node_or_null(P_CLOSE_BTN)
 
@@ -74,6 +81,10 @@ func _connect_signals() -> void:
 		keil_dlg.dir_selected.connect(_on_keil_dir_selected)
 	else:
 		push_error("设置面板缺少 Keil 选择按钮或目录对话框")
+	if scan_btn != null:
+		scan_btn.pressed.connect(_on_scan_pressed)
+	else:
+		push_error("设置面板缺少 Keil 自动查找按钮（%s）" % P_KEIL_SCAN)
 
 	if close_btn != null:
 		close_btn.pressed.connect(_on_close_pressed)
@@ -114,8 +125,79 @@ func _on_keil_dir_selected(path: String) -> void:
 	var keil_edit: LineEdit = get_node_or_null(P_KEIL_EDIT)
 	if keil_edit != null:
 		keil_edit.text = path
+	_set_scan_status("已设置 Keil 路径")
+
+
+## 手动扫描入口。roots 仅供测试注入临时目录，实际按钮调用默认全盘扫描。
+func _on_scan_pressed() -> void:
+	_start_keil_scan()
+
+
+func _start_keil_scan(roots: PackedStringArray = PackedStringArray()) -> void:
+	if _scan_active or _toolchain == null:
+		return
+	_scan_active = true
+	var scan_btn: Button = get_node_or_null(P_KEIL_SCAN)
+	if scan_btn != null:
+		scan_btn.disabled = true
+	_set_scan_status("正在扫描 Keil 安装，请稍候…")
+	_scan_thread = Thread.new()
+	var error: Error = _scan_thread.start(_scan_worker.bind(roots))
+	if error != OK:
+		_scan_active = false
+		_scan_thread = null
+		if scan_btn != null:
+			scan_btn.disabled = false
+		_set_scan_status("无法启动扫描，请稍后重试")
+
+
+func _scan_worker(roots: PackedStringArray) -> Dictionary:
+	var scanner = TC.new()
+	var candidates: Array[String] = scanner.scan_keil_installations(roots)
+	var result := {
+		"best": scanner.choose_best_keil_path(candidates),
+		"count": candidates.size(),
+	}
+	call_deferred("_on_scan_finished", result)
+	return result
+
+
+func _on_scan_finished(result: Dictionary) -> void:
+	if _scan_thread != null:
+		_scan_thread.wait_to_finish()
+	_scan_thread = null
+	_scan_active = false
+	var scan_btn: Button = get_node_or_null(P_KEIL_SCAN)
+	if scan_btn != null:
+		scan_btn.disabled = false
+	var best: String = str(result.get("best", "")).strip_edges()
+	if best.is_empty():
+		_toolchain.mark_keil_auto_scan_completed()
+		_set_scan_status("未找到有效的 Keil C251 安装")
+		return
+	if not _toolchain.set_configured_keil_path(best):
+		_set_scan_status("找到 Keil，但保存路径失败")
+		return
+	_toolchain.mark_keil_auto_scan_completed()
+	var keil_edit: LineEdit = get_node_or_null(P_KEIL_EDIT)
+	if keil_edit != null:
+		keil_edit.text = best
+	_set_scan_status("已找到并保存 Keil C251（共 %d 个候选）" % int(result.get("count", 0)))
+
+
+func _set_scan_status(text: String) -> void:
+	var status: Label = get_node_or_null(P_KEIL_STATUS)
+	if status != null:
+		status.text = text
 
 
 func _on_close_pressed() -> void:
 	closed.emit()
 	queue_free()
+
+
+func _exit_tree() -> void:
+	if _scan_thread != null and _scan_active:
+		_scan_thread.wait_to_finish()
+	_scan_thread = null
+	_scan_active = false
