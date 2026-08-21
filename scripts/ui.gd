@@ -62,6 +62,7 @@ const P_TRIGGER: NodePath = KEYSET + "/Trigger/OptionButton"
 const P_TRIGGER_SPEED: NodePath = KEYSET + "/Trigger/Speed"
 const P_TRIGGER_TIME: NodePath = KEYSET + "/Trigger/Time"
 const P_FRICTION_TYPE: NodePath = KEYSET + "/FrictionType/OptionButton"
+const P_FRICTION_SWITCH_ROW: NodePath = KEYSET + "/Booster"
 const P_BOOSTER_KEY: NodePath = KEYSET + "/Booster/OptionButton"
 const P_FRICTION_MAX_DUTY: NodePath = KEYSET + "/Booster/MaxDuty"
 # 调试界面
@@ -290,6 +291,7 @@ func _ready() -> void:
 	# 固定子系统引脚在 IO 初始化区自动同步（须在默认快照之前，让默认配置自洽）
 	_sync_friction_type_ui()
 	_sync_io_locks()
+	_sync_friction_switch_visibility()
 	# 左摇杆保留开关：模式1 强制开启（须在默认快照之前，让默认配置自洽）
 	_sync_chassis_switch()
 	# 场景刚实例化，此刻的控件值就是「默认配置」，新建项目时用它复位
@@ -409,6 +411,7 @@ func _connect_signals() -> void:
 	var friction_type_btn: Node = get_node_or_null(P_FRICTION_TYPE)
 	if friction_type_btn is OptionButton:
 		friction_type_btn.item_selected.connect(_on_friction_type_selected)
+		friction_type_btn.item_selected.connect(_sync_friction_switch_visibility)
 	# 步骤：OptionButton 选项变化
 	for p in [P_L1_IO, P_L2_IO, P_R1_IO, P_R2_IO,
 		P_L1_DIR, P_L2_DIR, P_R1_DIR, P_R2_DIR,
@@ -617,6 +620,7 @@ func _apply_config(cfg: Dictionary) -> void:
 	_update_engineer_placeholders()
 	_update_mode_page_visibility()
 	_sync_friction_type_ui()
+	_sync_friction_switch_visibility()
 	# 固定子系统引脚锁定：旧存档把引脚存成错误类型时，这里自动纠正
 	_sync_io_locks()
 	# 左摇杆保留开关：模式1 强制开启，各模式 LX/LY 键位随开关禁用
@@ -1730,6 +1734,13 @@ func _sync_chassis_switch(_pressed: bool = false) -> void:
 			_sync_row_axis_locks(root, ENG_MODE_PAGES[mi], ck.button_pressed)
 	# LX/LY 键位锁定后键位类型可能从摇杆轴回退成按键，控制方式下拉同步刷新
 	_update_engineer_placeholders()
+
+## 选择「不使用」摩擦轮时，摩擦轮开关键及最大占空比均不再适用。
+## 可见性须在用户切换、项目回填和首次实例化时同步。
+func _sync_friction_switch_visibility(_idx: int = -1) -> void:
+	var row: Node = get_node_or_null(P_FRICTION_SWITCH_ROW)
+	if row is CanvasItem:
+		row.visible = _get_option_text(P_FRICTION_TYPE) != "不使用"
 
 
 ## 模式页开关开启时，该页所有行的 LX/LY 键位禁用
