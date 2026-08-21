@@ -102,6 +102,7 @@ func _initialize() -> void:
 		not _pin_item_disabled(engineer_l1, "P64") and not _pin_item_disabled(engineer_l1, "P66"))
 	var engineer_p64_type: OptionButton = ui.get_node(NodePath(ui._eng_io_path("P64")))
 	var engineer_p66_type: OptionButton = ui.get_node(NodePath(ui._eng_io_path("P66")))
+	var engineer_p60_mid: LineEdit = ui.get_node(NodePath(ui._eng_io_mid_path("P60")))
 	_check("工程 P64/P66 仍保持电机/舵机",
 		_mode_items(engineer_p64_type) == ["电机", "舵机"]
 		and _mode_items(engineer_p66_type) == ["电机", "舵机"])
@@ -129,6 +130,7 @@ func _initialize() -> void:
 		ui._option_text(opt1) == "直接", ui._option_text(opt1))
 	var para1: LineEdit = row1.get_node("Para")
 	_check("电机直接模式占位为速度", para1.placeholder_text.contains("速度"))
+	_check("P60 选电机后隐藏初始角", not engineer_p60_mid.visible)
 
 	# ---- 电机 + 摇杆轴：速度/增速 ----
 	_pick(ui, row1.get_node("Key"), "RX")
@@ -143,6 +145,7 @@ func _initialize() -> void:
 	_check("P60 切回舵机后选项恢复 增量/直接",
 		_mode_items(opt1) == ["增量", "直接"], str(_mode_items(opt1)))
 	_check("舵机直接模式占位为偏移角", para1.placeholder_text.contains("偏移角"))
+	_check("P60 切回舵机后显示初始角", engineer_p60_mid.visible)
 
 	# ---- 舵机 + 摇杆轴：只剩 增量，原选中 直接 回退 ----
 	_pick(ui, opt1, "直接")

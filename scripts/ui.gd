@@ -1483,7 +1483,13 @@ func _update_engineer_placeholders(_idx: int = -1) -> void:
 func _update_engineer_root_placeholders(root: String) -> void:
 	var io_init: Dictionary = {}
 	for pin in ENG_ALL_PINS:
-		io_init[pin] = _get_option_text(NodePath(root + "/" + str(ENG_IO_REL.get(pin, ""))))
+		var io_type: String = _get_option_text(NodePath(root + "/" + str(ENG_IO_REL.get(pin, ""))))
+		io_init[pin] = io_type
+		# 初始角仅对舵机有效；电机和步兵摩擦轮都不显示该输入框。
+		var mid_edit: Node = get_node_or_null(NodePath(
+			root + "/" + str(ENG_IO_MID_REL.get(pin, ""))))
+		if mid_edit is LineEdit:
+			mid_edit.visible = io_type == "舵机"
 	for page in ENG_MODE_PAGES:
 		var vb: Node = get_node_or_null(NodePath(root + "/" + page + "/ScrollContainer/VBoxContainer"))
 		if vb == null:
