@@ -373,6 +373,7 @@ func generate(cfg: Dictionary) -> String:
 		send_dir[slot] = "(dutyOfAuxMotor[%d] >= 0 ? 1 : 0)" % slot
 	code += "void Main_Countrol()\n"
 	code += "{\n"
+	code += "    // 舵机槽位方向固定发送 1；只有电机槽位按控制值切换方向，舵机正反通过 PWM 占空比体现。\n"
 	code += "    ExpansionBoradControl(Dir_Change_Order,\n"
 	code += "                          %s);\n" % _exp_args(send_dir)
 	code += "    Ms_Delay(5);\n"

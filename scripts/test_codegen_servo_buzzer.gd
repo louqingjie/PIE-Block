@@ -33,6 +33,12 @@ func _mode_controls(code: String) -> String:
 	return code.substr(start, end - start if start >= 0 and end > start else 0)
 
 
+func _main_control(code: String) -> String:
+	var start: int = code.find("void Main_Countrol()\n{")
+	var end: int = code.find("/// @brief 板间通信函数", start)
+	return code.substr(start, end - start if start >= 0 and end > start else 0)
+
+
 func _debug_row_section(code: String, pin: String) -> String:
 	var start: int = code.find("// ===== 测试 %s" % pin)
 	var end: int = code.find("Buzzer_Play(BUZZER_FREQ_DONE", start)
@@ -137,6 +143,9 @@ func _initialize() -> void:
 		direct_positive_controls.contains("dutyOfAuxServo[0] = 917.0f; // +30°"))
 	_check("工程舵机映射不发送硬件方向帧",
 		not direct_positive_controls.contains("Dir_Change_Order"))
+	_check("工程代码明确舵机方向固定为 1",
+		_main_control(direct_positive_code).contains(
+			"舵机槽位方向固定发送 1；只有电机槽位按控制值切换方向"))
 
 	var direct_negative_cfg: Dictionary = direct_positive_cfg.duplicate(true)
 	direct_negative_cfg["modes"][0]["rows"][0]["dir"] = "反"
