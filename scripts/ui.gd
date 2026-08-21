@@ -807,7 +807,7 @@ func _on_guide_step_pressed(step: int) -> void:
 			_confirm_hardware_test()
 
 
-## 当前编辑页的逻辑索引（0=步兵, 1=工程, 2=工程逆解算, 3=调试）。
+## 当前编辑页的逻辑索引（0=步兵, 1=工程, 3=调试）。
 ## 步兵/调试是平铺 Control（按项目类型切换可见性），工程是内部 TabContainer。
 func _current_tab() -> int:
 	var edit_zone: Node = get_node_or_null(P_EDIT_ZONE)
@@ -821,7 +821,8 @@ func _current_tab() -> int:
 		return 3
 	var tabs: Node = get_node_or_null(P_TAB_CONTAINER)
 	if tabs is TabContainer:
-		return 1 if tabs.current_tab == 0 else 2
+		# 工程逆解算页保留在场景中供底层能力使用，但桌面端不可达。
+		return 1
 	return 0
 
 
@@ -1145,19 +1146,18 @@ func _apply_kind_visibility(kind: String, want_tab: int) -> void:
 		eng_tabs.visible = (kind == PF.KIND_ENGINEER)
 	if dbg is CanvasItem:
 		dbg.visible = (kind == PF.KIND_DEBUG)
-	# 场景默认隐藏工程逆解算 Tab，避免首次显示时抢占界面；
-	# 进入工程项目或自由编辑模式时必须恢复全部工程 Tab，
-	# 否则工程逆解算页会一直不可选，且自由编辑模式的 Tab 状态不完整。
+	# 工程逆解算页暂不属于桌面端功能，始终保持隐藏；
+	# 节点和底层配置仍保留，便于 CLI/MCP 和未来重新开放。
 	if eng_tabs is TabContainer:
-		var show_engineer_tabs: bool = kind == PF.KIND_ENGINEER or _project.is_empty()
 		for i in range(eng_tabs.get_tab_count()):
-			eng_tabs.set_tab_hidden(i, not show_engineer_tabs)
-	# 工程内部 tab：0=工程, 1=工程逆解算（want_tab 是逻辑索引 1/2）
-	var allowed: Array = PF.kind_tabs(kind)
-	var target: int = want_tab if want_tab in allowed else PF.kind_default_tab(kind)
-	if eng_tabs is TabContainer and kind == PF.KIND_ENGINEER:
-		eng_tabs.current_tab = target - 1
+			eng_tabs.set_tab_hidden(i, i != 0)
+		eng_tabs.current_tab = 0
+	var ik_page: Node = get_node_or_null(P_IK)
+	if ik_page is CanvasItem:
+		ik_page.visible = false
+	# 工程内部只允许桌面端的工程正解页。
 	_update_mode_page_visibility()
+	_update_sim_btn_visibility()
 
 
 ## 顶栏标题：* 项目名 · 构型 · 阶段
@@ -1336,16 +1336,16 @@ func _on_tab_changed(_tab: int) -> void:
 	_run_check()
 
 
-## 顶栏「3D 仿真」按钮按当前 Tab 显示：
-##   0=步兵 -> 步兵整车仿真（基础功能，无需机械臂逆解门控）
-##   2=工程逆解算 -> 机械臂仿真（点击时经 IK 门控确认）
-##   其余 Tab 没有仿真，隐藏按钮以免点到「当前构型没有 3D 仿真」警告。
+## 顶栏「3D 仿真」按钮只保留步兵整车仿真入口。
 func _update_sim_btn_visibility() -> void:
 	var sim_btn: Node = get_node_or_null(P_ARM_SIM_BTN)
 	if not sim_btn is CanvasItem:
 		return
+	var ik_page: Node = get_node_or_null(P_IK)
+	if ik_page is CanvasItem:
+		ik_page.visible = false
 	var tab: int = _current_tab()
-	sim_btn.visible = (tab == 0 or tab == 2)
+	sim_btn.visible = tab == 0
 
 
 ## 根据当前 Tab 选项获取对应的代码生成器
@@ -2319,35 +2319,22 @@ func _enter_ai_edit() -> void:
 # ------------------------------------------------------------------ 3D 仿真
 ## 打开 3D 仿真，按当前 Tab 分派：
 ##   Tab 0（步兵）      -> 步兵整车仿真（底盘 / 云台 / 发射）
-##   Tab 2（工程逆解算）-> 机械臂逆解仿真与标定台
+##   工程逆解算仿真入口已隐藏，不再从桌面端打开。
 ## 用「加子节点覆盖」而非 change_scene_to_file：整页配置状态留在内存里，
 ## 返回时不需要重建任何控件。
 func _on_arm_sim_pressed() -> void:
 	if _arm_sim != null:
 		return
 	var tab: int = _current_tab()
-	if tab == 2 and not _ik_confirmed:
-		# warn_ik 页面自带文案（启用机械臂逆解），这里不改动它的文本，只接回调
-		_show_countdown_scene(WARN_IK_SCENE,
-			"", "", "", "", "",
-			Callable(self, "_on_ik_gate_confirmed_and_open_sim"), Callable(self, "_on_ik_gate_canceled"))
-		return
 	var scene_path: String = ""
 	var cfg: Dictionary = {}
 	match tab:
 		0:
 			scene_path = INFANTRY_SIM_SCENE
 			cfg = _collect_config()
-		2:
-			scene_path = ARM_SIM_SCENE
-			cfg = {
-				"ik": _collect_ik_config(),
-				"engineer": _collect_engineer_config(),
-				"editable": not _stage2_preview,
-			}
 		_:
 			_clear_output()
-			_append_output("[Warn] 当前构型没有 3D 仿真，请切到「步兵」或「工程逆解算」标签页")
+			_append_output("[Warn] 当前构型没有可用的 3D 仿真，请切到「步兵」标签页")
 			return
 	var packed: PackedScene = load(scene_path) as PackedScene
 	if packed == null:

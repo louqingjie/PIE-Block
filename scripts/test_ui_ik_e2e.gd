@@ -40,9 +40,12 @@ func _initialize() -> void:
 	root.add_child(ui)
 	await process_frame
 
-	# 切到工程构型页（工程 TabContainer + 内部「工程逆解算」tab）
+	# 逆解算配置节点仍保留供底层测试，但桌面 Tab 与页面入口必须隐藏。
 	ui._apply_kind_visibility("engineer", 2)
 	var ik_root: String = str(ui.IK)
+	var tabs: TabContainer = ui.get_node(ui.P_TAB_CONTAINER)
+	_check("工程逆解算 Tab 对桌面隐藏", tabs.is_tab_hidden(1))
+	_check("工程逆解算页面不可见", not ui.get_node(ik_root).visible)
 	_check("旧关节数控件已移除", ui.get_node_or_null(ik_root + "/ConfigType") == null)
 	_check("入口摘要存在", ui.get_node_or_null(ik_root + "/Summary") is Label)
 	_check("3D 配置入口存在", ui.get_node_or_null(ik_root + "/OpenSim") is Button)
@@ -76,7 +79,6 @@ func _initialize() -> void:
 	var code_after: String = CODEGEN.new().generate(ui._collect_engineer_dual_config())
 	_check("仿真配置改变生成代码", code_before != code_after and code_after.contains("175.00f"))
 
-	var tabs: TabContainer = ui.get_node(ui.P_TAB_CONTAINER)
 	tabs.current_tab = 0
 	ui._run_check()
 	var code_edit: CodeEdit = ui.get_node(ui.P_CODE_EDIT)
@@ -119,19 +121,8 @@ func _initialize() -> void:
 	ui._run_check()
 	_check("未启用时两张工程页仍生成相同代码", code_edit.text == no_ik_code)
 	ui._on_ik_gate_confirmed()
-	ui._on_arm_sim_pressed()
-	await process_frame
-	_check("入口传入双模式配置", ui._arm_sim != null and ui._arm_sim._jc == 4)
-	_check("阶段一仿真可编辑", ui._arm_sim != null and ui._arm_sim._editable)
-	ui._on_arm_sim_closed()
-	await process_frame
-	ui._stage2_preview = true
-	ui._ik_confirmed = true
-	ui._apply_ik_gate(true)
-	ui._on_arm_sim_pressed()
-	await process_frame
-	_check("阶段二仿真只读", ui._arm_sim != null and not ui._arm_sim._editable)
-	ui._on_arm_sim_closed()
+	_check("确认逆解不会显示隐藏页面", not ui.get_node(ik_root).visible)
+	_check("确认逆解不会显示机械臂仿真按钮", not ui.get_node(ui.P_ARM_SIM_BTN).visible)
 
 	# 升级主控编译失败：阶段一且未开逆解 -> 致命错误页；阶段二或开逆解 -> 普通错误页
 	ui._project["stage"] = 1

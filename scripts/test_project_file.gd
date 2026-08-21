@@ -110,9 +110,9 @@ func _test_kind_mapping() -> void:
 	print("--- 项目类型 <-> Tab 映射 ---")
 	_check("三种类型", PF.KINDS.size() == 3)
 	_check("步兵 -> [0]", PF.kind_tabs(PF.KIND_INFANTRY) == [0])
-	_check("工程 -> [1, 2]（含工程逆解算）", PF.kind_tabs(PF.KIND_ENGINEER) == [1, 2])
+	_check("工程桌面端仅显示 [1]", PF.kind_tabs(PF.KIND_ENGINEER) == [1])
 	_check("调试 -> [3]", PF.kind_tabs(PF.KIND_DEBUG) == [3])
-	# 三种类型的 Tab 集合互不重叠，且并集覆盖全部 4 页
+	# 三种类型的 Tab 集合互不重叠；2 是保留给底层能力的隐藏页
 	var seen: Array = []
 	var overlap: bool = false
 	for kind in PF.KINDS:
@@ -122,16 +122,16 @@ func _test_kind_mapping() -> void:
 			seen.append(t)
 	seen.sort()
 	_check("Tab 集合互不重叠", not overlap)
-	_check("并集覆盖全部 4 个 Tab", seen == [0, 1, 2, 3])
+	_check("桌面端可见 Tab 为 [0, 1, 3]", seen == [0, 1, 3])
 	_check("默认 Tab：工程 = 1", PF.kind_default_tab(PF.KIND_ENGINEER) == 1)
-	_check("Tab 反查类型：2 -> 工程", PF.tab_to_kind(2) == PF.KIND_ENGINEER)
+	_check("隐藏 Tab 2 仍反查到工程底层类型", PF.tab_to_kind(2) == PF.KIND_ENGINEER)
 	_check("Tab 反查类型：3 -> 调试", PF.tab_to_kind(3) == PF.KIND_DEBUG)
 	_check("kind_label 覆盖调试", PF.kind_label(PF.KIND_DEBUG) == "调试")
 	_check("非法 kind 回退步兵", PF.kind_label("nonsense") == "步兵")
 	# kind_tabs 返回副本，改它不能污染常量表
 	var tabs: Array = PF.kind_tabs(PF.KIND_ENGINEER)
 	tabs.append(99)
-	_check("kind_tabs 返回副本", PF.kind_tabs(PF.KIND_ENGINEER) == [1, 2])
+	_check("kind_tabs 返回副本", PF.kind_tabs(PF.KIND_ENGINEER) == [1])
 	print("")
 
 
@@ -140,7 +140,7 @@ func _test_roundtrip() -> void:
 	print("--- 存 / 读往返 ---")
 	var cases: Array = [
 		[PF.KIND_INFANTRY, 1, 0],
-		[PF.KIND_ENGINEER, 1, 2],
+		[PF.KIND_ENGINEER, 1, 1],
 		[PF.KIND_ENGINEER, 2, 1],
 		[PF.KIND_DEBUG, 2, 3],
 	]
@@ -297,7 +297,18 @@ func _test_normalize() -> void:
 	var eng: Dictionary = PF.normalize({"kind": PF.KIND_ENGINEER, "active_tab": 0})
 	_check("工程的 active_tab=0 纠正为 1", int(eng["active_tab"]) == 1)
 	var eng2: Dictionary = PF.normalize({"kind": PF.KIND_ENGINEER, "active_tab": 2})
-	_check("工程的 active_tab=2 保留（工程逆解算）", int(eng2["active_tab"]) == 2)
+	_check("工程的 active_tab=2 归一化到工程页", int(eng2["active_tab"]) == 1)
+	_check("默认逆解配置不触发旧项目拦截",
+		not PF.contains_hidden_ik_data(PF.new_data(PF.KIND_ENGINEER)))
+	_check("active_tab=2 触发旧项目拦截",
+		PF.contains_hidden_ik_data({"kind": PF.KIND_ENGINEER, "active_tab": 2}))
+	_check("已确认逆解触发旧项目拦截",
+		PF.contains_hidden_ik_data({"kind": PF.KIND_ENGINEER,
+			"workflow": {"ik_confirmed": true}}))
+	var custom_ik: Dictionary = IK_CONFIG.default_config()
+	custom_ik["joint_count"] = 4
+	_check("自定义逆解配置触发旧项目拦截",
+		PF.contains_hidden_ik_data({"kind": PF.KIND_ENGINEER, "ik_config": custom_ik}))
 	_check("ensure_ext 补扩展名",
 		PF.ensure_ext("C:/a/b/我的项目") == "C:/a/b/我的项目." + PF.EXT)
 	_check("ensure_ext 已有扩展名不重复",
@@ -757,6 +768,24 @@ func _test_launcher() -> void:
 		not str(lau.get_node(lau.P_STATUS).text).is_empty())
 	_check("损坏项目被移出最近列表", not bad in PF.recent_list())
 
+	# 含隐藏逆解状态的旧项目：启动页阻止进入，但不修改文件和最近列表
+	var hidden: String = TMP_DIR + "/launcher_hidden_ik." + PF.EXT
+	var hidden_data: Dictionary = PF.new_data(PF.KIND_ENGINEER)
+	hidden_data["active_tab"] = 2
+	var hidden_json: String = JSON.stringify(hidden_data, "\t")
+	var hf: FileAccess = FileAccess.open(hidden, FileAccess.WRITE)
+	hf.store_string(hidden_json)
+	hf.close()
+	PF.recent_add(hidden)
+	_app().reset()
+	lau._open_project(hidden)
+	_check("旧逆解项目不写入上下文", not _app().has_project())
+	_check("旧逆解项目状态栏明确提示",
+		str(lau.get_node(lau.P_STATUS).text)
+			== "该项目包含已隐藏的工程逆解算功能，当前版本无法打开")
+	_check("旧逆解项目保留在最近列表", hidden in PF.recent_list())
+	_check("旧逆解项目文件未被修改", FileAccess.get_file_as_string(hidden) == hidden_json)
+
 	# 正常进入：写好上下文（不真的切场景，只验证上下文）
 	var eng_path: String = str(paths[PF.KIND_ENGINEER])
 	var info: Dictionary = PF.load_from(eng_path)
@@ -780,7 +809,7 @@ func _test_launcher() -> void:
 	else:
 		DirAccess.remove_absolute(scan_state_abs)
 
-	# 主界面无项目上下文时保持自由编辑（不被启动页的引入锁死）
+	# 主界面无项目上下文时保持自由编辑，同时隐藏逆解算入口
 	_app().reset()
 	var ui_packed: PackedScene = load("res://scenes/ui.tscn") as PackedScene
 	var ui: Node = ui_packed.instantiate()
@@ -792,7 +821,8 @@ func _test_launcher() -> void:
 	for i in range(tabs.get_tab_count()):
 		if tabs.is_tab_hidden(i):
 			any_hidden = true
-	_check("直跑主界面时 Tab 全可见", not any_hidden)
+	_check("直跑主界面时隐藏工程逆解算 Tab", any_hidden and tabs.is_tab_hidden(1))
+	_check("直跑主界面时仍显示工程正解 Tab", not tabs.is_tab_hidden(0))
 	_check("直跑主界面时配置区可编辑", ui.get_node(ui.P_CHANNEL).editable)
 	_check("直跑主界面时编译按钮可用", not ui.get_node(ui.P_BUILD_BTN).disabled)
 	var ui_hex_btn: Node = ui.get_node_or_null(ui.P_HEX_EXPORT_BTN)
