@@ -2,11 +2,13 @@
 
 [ext_resource type="PackedScene" uid="uid://xbwtsa85kv5m" path="res://scenes/key.tscn" id="1_fri6j"]
 [ext_resource type="PackedScene" uid="uid://eef3fn71heeg" path="res://scenes/io_and_key.tscn" id="2_uf4nc"]
+[ext_resource type="Theme" uid="uid://cryqvh2g7gqj" path="res://assets/themes/main.tres" id="3_yl5g4"]
 
 [node name="AdvancedAndEngineer" type="VBoxContainer" unique_id=727657335]
 offset_right = 699.0
 offset_bottom = 528.0
 size_flags_horizontal = 3
+theme = ExtResource("3_yl5g4")
 metadata/_tab_index = 1
 metadata/_tab_name = "工程"
 
@@ -348,6 +350,7 @@ layout_mode = 2
 [node name="TabContainer" type="TabContainer" parent="." unique_id=1926583464]
 layout_mode = 2
 size_flags_vertical = 3
+theme = ExtResource("3_yl5g4")
 tab_alignment = 1
 current_tab = 0
 tab_0/title = "模式1"
@@ -357,6 +360,7 @@ tab_3/title = "模式4"
 
 [node name="M1" parent="TabContainer" unique_id=1049315007 instance=ExtResource("2_uf4nc")]
 layout_mode = 2
+theme = ExtResource("3_yl5g4")
 metadata/_tab_name = "模式1"
 
 [node name="M2" parent="TabContainer" unique_id=1756059760 instance=ExtResource("2_uf4nc")]

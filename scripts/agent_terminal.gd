@@ -4,7 +4,7 @@ extends Node
 ## 在程序内嵌入真实终端，跑 AI Agent 的 TUI。
 ##
 ## 架构：用 Godot 原生 TerminalControl（XTerm.NET + ConPTY）在进程内渲染
-## opencode 的 TUI，不依赖浏览器容器或额外的原生扩展。
+## opencode 的 TUI，不再依赖 ttyd + WRY WebView。
 ##   - TerminalControl 内置 VT 引擎（XTerm.NET）：alternate screen、
 ##     光标定位、真彩 ANSI 与键盘输入回传全部在 Godot 内完成
 ##   - ConPTY 由 Porta.Pty 提供，opencode 作为子进程直接跑在工作区目录

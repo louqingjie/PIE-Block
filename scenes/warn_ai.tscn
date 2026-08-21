@@ -37,7 +37,7 @@ offset_right = 736.0
 offset_bottom = 382.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_constants/separation = 40
+theme_override_constants/separation = 17
 
 [node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer" unique_id=1738460922]
 layout_mode = 2
@@ -56,11 +56,10 @@ label_settings = SubResource("LabelSettings_ynwaf")
 [node name="Label" type="Label" parent="VBoxContainer" unique_id=1609310078]
 layout_mode = 2
 size_flags_vertical = 3
-text = "·首次启用AI编辑功能会自动安装OpenCode，请学习相关教程后使用
-·初始有一定AI额度，大量使用需要接入API， 并可能产生费用
-·在你未接入API前不会产生任何费用
+text = "·AI编辑功能仅限于对基础功能不满足或你的机器人构型特殊的情况下启用
+·首次启用AI编辑功能会自动安装OpenCode，请学习相关教程后使用
+·初始有一定免费AI额度，用尽后需要接入API，会产生费用，未接入API前不会产生费用
 ·内置AI编辑功能是实验性的，组委会不对AI生成的代码负任何责任
-·内置AI编辑功能不保证后续的更新和维护
 ·因使用内置AI编辑功能在校内赛中造成的失误无法申诉
 ·引入内置AI编辑功能可能导致机器人异常甚至不可控
 ·如需使用本功能，请确保你会对机器人进行足够的测试

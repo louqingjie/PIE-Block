@@ -1,6 +1,9 @@
 [gd_scene format=3 uid="uid://cixhirpix64rt"]
 
+[ext_resource type="Theme" uid="uid://cryqvh2g7gqj" path="res://assets/themes/main.tres" id="1_85l1y"]
+
 [node name="TopPanel" type="HBoxContainer" unique_id=683907026]
+theme = ExtResource("1_85l1y")
 
 [node name="Create" type="Button" parent="." unique_id=38610963]
 layout_mode = 2
@@ -35,7 +38,6 @@ layout_mode = 2
 text = "进入 C 代码后处理"
 
 [node name="AIEdit" type="Button" parent="." unique_id=998092869]
-visible = false
 layout_mode = 2
 size_flags_horizontal = 8
 text = "AI 编辑"
