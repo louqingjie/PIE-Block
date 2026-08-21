@@ -83,7 +83,8 @@ const ADV_ENGINEER: String = INFANTRY_PAGE + "/Advanced/ScrollContainer/Advanced
 func _shared_cfg_root() -> String:
 	return ADV_ENGINEER if _current_tab() == 0 else ENGINEER
 # 共享 IO 初始化区相对路径（工程页与步兵高级设置结构一致）。
-# 每个引脚一个 OptionButton(电机/舵机) + MidDegree2(初始角)。
+# 每个引脚一个 OptionButton + MidDegree2(初始角)。工程页均为电机/舵机；
+# 步兵页的 P64/P66 为电机/摩擦轮，分别对应 10000Hz/50Hz。
 const ENG_IO_REL: Dictionary = {
 	"P60": "IOs/Row1/P60/OptionButton",
 	"P62": "IOs/Row1/P62/OptionButton",
@@ -286,6 +287,8 @@ const GUIDE_HINTS: Array[String] = [
 func _ready() -> void:
 	# 移动端圆角屏/刘海：整屏内缩到安全区（桌面端恒为 0）
 	SafeArea.apply_to_root(self)
+	# 共用场景默认是工程页语义；只改步兵实例的 P64/P66，避免影响工程构型。
+	_setup_infantry_io_options()
 	# 为 C 代码预览框挂载语法高亮器（状态机正则）
 	var code_edit: Node = get_node_or_null(P_CODE_EDIT)
 	if code_edit is CodeEdit:
@@ -317,6 +320,24 @@ func _ready() -> void:
 	# 无项目路径会整体重开配置区控件（_set_config_enabled），
 	# 左摇杆保留开关的模式1强制状态必须最后再兜一次
 	_sync_chassis_switch()
+
+
+## 步兵机械拓展板的 P64/P66 是摩擦轮专用输出区，不在这里提供舵机角色。
+## 共用场景仍保留工程页的“电机/舵机”；这里只改步兵高级设置实例。
+func _setup_infantry_io_options() -> void:
+	for pin in ["P64", "P66"]:
+		var btn: Node = get_node_or_null(NodePath(
+			ADV_ENGINEER + "/" + str(ENG_IO_REL.get(pin, ""))))
+		if btn is OptionButton:
+			for i in range(btn.item_count):
+				if btn.get_item_text(i) == "舵机":
+					btn.set_item_text(i, "摩擦轮")
+			btn.tooltip_text = "电机：10000Hz；摩擦轮：50Hz"
+		var mid_edit: Node = get_node_or_null(NodePath(
+			ADV_ENGINEER + "/" + str(ENG_IO_MID_REL.get(pin, ""))))
+		if mid_edit is LineEdit:
+			# 摩擦轮没有舵机初始角，隐藏无意义的输入框。
+			mid_edit.visible = false
 
 
 ## 窗口尺寸/方向变化后重算安全区内缩（旋转屏幕、折叠屏展开等场景）。
@@ -1747,20 +1768,19 @@ func _sync_io_locks(_idx: int = -1) -> void:
 							btn.selected = i
 							break
 				continue
-			# 占用：选中期望类型并禁用另一项（IO 初始化区只有 电机/舵机 两项）
-			var other: String = "舵机" if want == "电机" else "电机"
+			# 占用：选中期望类型并禁用另一项。步兵 P64/P66 没有“舵机”项；
+			# 若子系统请求了面板不支持的类型，则保持解锁，交给静态检查明确报错。
 			var want_idx: int = -1
-			var other_idx: int = -1
 			for i in range(btn.item_count):
-				match btn.get_item_text(i):
-					want:
-						want_idx = i
-					other:
-						other_idx = i
+				if btn.get_item_text(i) == want:
+					want_idx = i
 			if want_idx >= 0:
 				btn.selected = want_idx
-			if other_idx >= 0:
-				btn.set_item_disabled(other_idx, true)
+				for i in range(btn.item_count):
+					btn.set_item_disabled(i, i != want_idx)
+			else:
+				for i in range(btn.item_count):
+					btn.set_item_disabled(i, false)
 	# IO 类型变化后，相关按键映射行的「控制方式」下拉同步刷新
 	_update_engineer_placeholders()
 

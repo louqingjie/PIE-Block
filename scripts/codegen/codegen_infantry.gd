@@ -166,8 +166,9 @@ func generate(cfg: Dictionary) -> String:
 
 	# --- 槽位分配（先按 IO 设置区初始化，再按固定角色覆盖）---
 	# 槽位 0-7 依次对应 p60,p62,p64,p66,p74,p75,p76,p77
-	# UI 只提供「舵机 / 电机」两种状态，因此每个拓展板槽位都必须分别生成
-	# 50Hz / 10000Hz。不能把“没有被模式控制行引用”暗中解释成 0Hz；官方
+	# 普通端口提供「舵机 / 电机」，步兵 P64/P66 提供「摩擦轮 / 电机」；
+	# 舵机或摩擦轮均生成 50Hz，电机生成 10000Hz。不能把“没有被模式控制行
+	# 引用”暗中解释成 0Hz；官方
 	# Init_Order 示例也没有定义 0Hz 为合法的“不初始化”值。
 	# Duty_Change_Order 里未使用槽位固定给 0，避免误驱动
 	var io_init_shared: Dictionary = cfg.get("io_init", {})
@@ -317,7 +318,8 @@ func generate(cfg: Dictionary) -> String:
 		dir_exprs[slot] = "(dutyOfAuxMotor[%d] >= 0 ? 1 : 0)" % slot
 		duty_vals[slot] = "(uint16_t)abs(dutyOfAuxMotor[%d])" % slot
 	# 不再覆盖 P60/P62/P64/P66 的初始化频率：四路均服从 IO 设置区及实际角色。
-	# 选择“舵机”生成 50Hz，选择“电机”生成 10000Hz，供实机验证扩展板时基行为。
+	# P60/P62 选择“舵机”、P64/P66 选择“摩擦轮”生成 50Hz；
+	# 选择“电机”生成 10000Hz，供实机验证扩展板时基行为。
 	# 主控板辅助舵机 PWM（初始角按 IO 初始化区）
 	for si in range(2):
 		if use_aux_main[si]:

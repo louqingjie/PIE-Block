@@ -518,7 +518,7 @@ static func _check_eng_row(issues: Array, row: Dictionary, mode_no: int, row_idx
 # ------------------------------------------------------------------ 规则：步兵高级设置（共享多模式按键映射）
 # 步兵固定子系统占用：启用时的摩擦轮 P64/P66、拨弹电机、云台 Yaw/Pitch、底盘。
 # 共享按键映射的行不能指向这些引脚；摩擦轮频率允许在 IO 初始化区选择
-# 舵机(50Hz)或电机(10000Hz)，用于实机验证。
+# 摩擦轮(50Hz)或电机(10000Hz)，用于实机验证。
 static func _check_infantry_shared(issues: Array, cfg: Dictionary) -> void:
 	var io_init: Dictionary = cfg.get("io_init", {})
 	# 预留引脚：底盘 + 摩擦轮 + 拨弹 + 云台

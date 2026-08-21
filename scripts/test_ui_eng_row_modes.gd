@@ -100,6 +100,11 @@ func _initialize() -> void:
 	var engineer_l1: OptionButton = ui.get_node(CHASSIS_L1)
 	_check("工程构型底盘可使用 P64/P66",
 		not _pin_item_disabled(engineer_l1, "P64") and not _pin_item_disabled(engineer_l1, "P66"))
+	var engineer_p64_type: OptionButton = ui.get_node(NodePath(ui._eng_io_path("P64")))
+	var engineer_p66_type: OptionButton = ui.get_node(NodePath(ui._eng_io_path("P66")))
+	_check("工程 P64/P66 仍保持电机/舵机",
+		_mode_items(engineer_p64_type) == ["电机", "舵机"]
+		and _mode_items(engineer_p66_type) == ["电机", "舵机"])
 	var eng_page: String = ui.ENGINEER + "/TabContainer/M1"
 	var vb: Node = ui.get_node(NodePath(eng_page + "/ScrollContainer/VBoxContainer"))
 	# 默认场景 0 真实行，先加两行
@@ -183,6 +188,16 @@ func _initialize() -> void:
 
 	# ---- 步兵高级设置（ADV_ENGINEER）同样过滤 ----
 	ui._apply_kind_visibility("infantry", 0)
+	var adv_p64_type: OptionButton = ui.get_node(NodePath(ui._eng_io_path("P64")))
+	var adv_p66_type: OptionButton = ui.get_node(NodePath(ui._eng_io_path("P66")))
+	_check("步兵 P64 初始化选项为电机/摩擦轮",
+		_mode_items(adv_p64_type) == ["电机", "摩擦轮"], str(_mode_items(adv_p64_type)))
+	_check("步兵 P66 初始化选项为电机/摩擦轮",
+		_mode_items(adv_p66_type) == ["电机", "摩擦轮"], str(_mode_items(adv_p66_type)))
+	var adv_p64_mid: LineEdit = ui.get_node(NodePath(ui._eng_io_mid_path("P64")))
+	var adv_p66_mid: LineEdit = ui.get_node(NodePath(ui._eng_io_mid_path("P66")))
+	_check("步兵 P64/P66 不显示舵机初始角",
+		not adv_p64_mid.visible and not adv_p66_mid.visible)
 	# ---- 摩擦轮类型：无刷保留 P64/P66；禁用后释放并关闭参数控件 ----
 	var friction_type: OptionButton = ui.get_node(ui.P_FRICTION_TYPE)
 	var friction_key: OptionButton = ui.get_node(ui.P_BOOSTER_KEY)
@@ -277,9 +292,9 @@ func _initialize() -> void:
 	# 摩擦轮 P64/P66 的频率类型开放选择，供实测 50/10000Hz
 	var adv_p64: OptionButton = ui.get_node(NodePath(ui._eng_io_path("P64")))
 	var adv_p66: OptionButton = ui.get_node(NodePath(ui._eng_io_path("P66")))
-	_check("摩擦轮 P64 的电机/舵机选项均开放",
+	_check("摩擦轮 P64 的电机/摩擦轮选项均开放",
 		not adv_p64.is_item_disabled(0) and not adv_p64.is_item_disabled(1))
-	_check("摩擦轮 P66 的电机/舵机选项均开放",
+	_check("摩擦轮 P66 的电机/摩擦轮选项均开放",
 		not adv_p66.is_item_disabled(0) and not adv_p66.is_item_disabled(1))
 	_set_io_init(ui, "P64", "电机")
 	_set_io_init(ui, "P66", "电机")

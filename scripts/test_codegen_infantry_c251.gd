@@ -58,11 +58,11 @@ func _initialize() -> void:
 		"booster_io": "P74 P24", "l1_io": "P75 P25", "l2_io": "P76 P26",
 		"r1_io": "P77 P27", "r2_io": "P75 P25",
 	}
-	var servo_front_cfg: Dictionary = front_role_cfg.duplicate(true)
-	servo_front_cfg["io_init"] = {"P60": "舵机", "P62": "舵机", "P64": "舵机", "P66": "舵机"}
-	var servo_front_code: String = CG.new().generate(servo_front_cfg)
-	if not servo_front_code.contains("50, 50,\n                          50, 50,"):
-		printerr("P60/P62/P64/P66 选择舵机时必须分别生成 50Hz")
+	var low_freq_front_cfg: Dictionary = front_role_cfg.duplicate(true)
+	low_freq_front_cfg["io_init"] = {"P60": "舵机", "P62": "舵机", "P64": "摩擦轮", "P66": "摩擦轮"}
+	var low_freq_front_code: String = CG.new().generate(low_freq_front_cfg)
+	if not low_freq_front_code.contains("50, 50,\n                          50, 50,"):
+		printerr("P60/P62 选择舵机且 P64/P66 选择摩擦轮时必须分别生成 50Hz")
 		quit(1)
 		return
 	var motor_front_cfg: Dictionary = front_role_cfg.duplicate(true)
@@ -73,7 +73,7 @@ func _initialize() -> void:
 		quit(1)
 		return
 	var mixed_front_cfg: Dictionary = front_role_cfg.duplicate(true)
-	mixed_front_cfg["io_init"] = {"P60": "舵机", "P62": "电机", "P64": "舵机", "P66": "电机"}
+	mixed_front_cfg["io_init"] = {"P60": "舵机", "P62": "电机", "P64": "摩擦轮", "P66": "电机"}
 	var mixed_front_code: String = CG.new().generate(mixed_front_cfg)
 	if not mixed_front_code.contains("50, 10000,\n                          50, 10000,"):
 		printerr("P60/P62/P64/P66 的混合频率配置未逐路进入 Init_Order")
