@@ -1690,7 +1690,7 @@ func _update_mode_page_visibility(_idx: int = -1) -> void:
 
 ## 计算某个 IO 初始化区根下每个引脚的期望类型（空字符串 = 不锁定）。
 ## 底盘四轮对两个根（工程页 / 步兵高级设置）都生效；
-## 步兵固定子系统（拨弹电机 / Yaw / Pitch）只对步兵高级设置生效。
+## 步兵固定子系统（摩擦轮 / 拨弹电机 / Yaw / Pitch）只对步兵高级设置生效。
 ## 期望类型与 static_checker._check_infantry_shared 保持一致。
 func _compute_io_desired(root: String) -> Dictionary:
 	var desired: Dictionary = {}
@@ -1717,9 +1717,14 @@ func _compute_io_desired(root: String) -> Dictionary:
 		var booster_pin: String = _get_option_text(P_BOOSTER_IO).split(" ")[0].strip_edges()
 		if not booster_pin.is_empty() and not booster_pin.begins_with("MP"):
 			desired[booster_pin] = "电机"
-	# 底盘四轮：恒为电机，优先级高于步兵子系统
+	# 底盘四轮：恒为电机，优先级高于云台和拨弹。
 	for pin in chassis_pins:
 		desired[pin] = "电机"
+	# 无刷摩擦轮固定占用 P64/P66，优先级最高。即使旧配置残留了
+	# 底盘、云台或拨弹对这些引脚的引用，也绝不允许错误初始化为电机/舵机。
+	if root == ADV_ENGINEER and _get_option_text(P_FRICTION_TYPE) == "无刷电调":
+		for pin in ["P64", "P66"]:
+			desired[pin] = "摩擦轮"
 	return desired
 
 
@@ -1750,7 +1755,7 @@ func _on_friction_type_selected(_idx: int) -> void:
 	_sync_io_locks()
 
 
-## 步兵 IO 初始化区自动同步：固定子系统（底盘 / 拨弹电机 / Yaw / Pitch）
+## 步兵 IO 初始化区自动同步：固定子系统（底盘 / 摩擦轮 / 拨弹电机 / Yaw / Pitch）
 ## 选中的引脚在 IO 初始化区强制为对应类型并禁用另一项，
 ## 防止用户未展开高级设置时因类型不匹配而报错。
 ## 子系统配置变化、项目载入后都要调用。

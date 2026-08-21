@@ -52,9 +52,10 @@ func _initialize() -> void:
 		printerr("旧项目缺少 friction_type 时未保持原有无刷生成结果")
 		quit(1)
 		return
-	# P60/P62/P64/P66 不再统一覆盖为 50Hz，四路均服从 IO 设置区。
+	# 不使用摩擦轮时，P60/P62/P64/P66 均服从 IO 设置区。
 	# 把拨弹/底盘角色移到后四路，隔离验证前四路的纯 IO 配置结果。
 	var front_role_cfg: Dictionary = {
+		"friction_type": "不使用",
 		"booster_io": "P74 P24", "l1_io": "P75 P25", "l2_io": "P76 P26",
 		"r1_io": "P77 P27", "r2_io": "P75 P25",
 	}
@@ -79,14 +80,25 @@ func _initialize() -> void:
 		printerr("P60/P62/P64/P66 的混合频率配置未逐路进入 Init_Order")
 		quit(1)
 		return
+	# 启用无刷摩擦轮时，P64/P66 必须忽略错误的电机初始化并强制 50Hz。
+	var locked_friction_code: String = CG.new().generate({
+		"io_init": {"P60": "电机", "P62": "电机", "P64": "电机", "P66": "电机"},
+	})
+	if not locked_friction_code.contains("10000, 10000,\n                          50, 50,"):
+		printerr("启用无刷摩擦轮时 P64/P66 必须强制生成 50Hz")
+		quit(1)
+		return
 	var friction_freq_issues: Array = SC.check_infantry({
 		"io_init": {"P64": "电机", "P66": "电机"},
 	})
+	var found_locked_friction_error: bool = false
 	for issue in friction_freq_issues:
-		if str(issue.get("msg", "")).contains("IO 初始化区必须设为舵机"):
-			printerr("静态检查仍阻止 P64/P66 选择 10000Hz")
-			quit(1)
-			return
+		if str(issue.get("msg", "")).contains("必须设为「摩擦轮」"):
+			found_locked_friction_error = true
+	if not found_locked_friction_error:
+		printerr("静态检查未阻止无刷摩擦轮 P64/P66 的错误电机初始化")
+		quit(1)
+		return
 	if code.contains("remote_control_init();") \
 			or not code.contains("remoteControlInitWithTimeout();") \
 			or not code.contains("retry < 20"):

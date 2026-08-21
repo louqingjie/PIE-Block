@@ -166,8 +166,8 @@ func generate(cfg: Dictionary) -> String:
 
 	# --- 槽位分配（先按 IO 设置区初始化，再按固定角色覆盖）---
 	# 槽位 0-7 依次对应 p60,p62,p64,p66,p74,p75,p76,p77
-	# 普通端口提供「舵机 / 电机」，步兵 P64/P66 提供「摩擦轮 / 电机」；
-	# 舵机或摩擦轮均生成 50Hz，电机生成 10000Hz。不能把“没有被模式控制行
+	# 普通端口提供「舵机 / 电机」，步兵 P64/P66 在无刷摩擦轮启用时固定为
+	# 「摩擦轮」50Hz；其他时候可选择「摩擦轮 / 电机」。不能把“没有被模式控制行
 	# 引用”暗中解释成 0Hz；官方
 	# Init_Order 示例也没有定义 0Hz 为合法的“不初始化”值。
 	# Duty_Change_Order 里未使用槽位固定给 0，避免误驱动
@@ -181,6 +181,9 @@ func generate(cfg: Dictionary) -> String:
 
 	# 启用无刷电调时固定占用 P64/P66；禁用时不写方向、占空比或所有权。
 	if friction_enabled:
+		# 与 UI/静态检查的锁定规则一致，防御旧配置将摩擦轮错误初始化为电机。
+		init_vals[friction_l_slot] = 50
+		init_vals[friction_r_slot] = 50
 		dir_exprs[friction_l_slot] = "0"
 		dir_exprs[friction_r_slot] = "0"
 		duty_vals[friction_l_slot] = "dutyOfBooster"

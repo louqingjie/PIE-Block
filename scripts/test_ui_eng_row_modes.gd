@@ -86,6 +86,13 @@ func _pin_item_disabled(btn: OptionButton, pin: String) -> bool:
 	return true
 
 
+func _item_disabled_by_text(btn: OptionButton, text: String) -> bool:
+	for i in range(btn.item_count):
+		if btn.get_item_text(i) == text:
+			return btn.is_item_disabled(i)
+	return true
+
+
 func _initialize() -> void:
 	print("=== 按键映射行控制方式过滤验证 ===")
 	# In --script mode autoload names are registered after this script's constants.
@@ -292,18 +299,14 @@ func _initialize() -> void:
 	var adv_p77: OptionButton = ui.get_node(NodePath(ui._eng_io_path("P77")))
 	_check("拨弹电机改 P77 后 P77 强制为电机",
 		ui._option_text(adv_p77) == "电机", ui._option_text(adv_p77))
-	# 摩擦轮 P64/P66 的频率类型开放选择，供实测 50/10000Hz
+	# 启用无刷摩擦轮后，P64/P66 必须锁定为摩擦轮，不能错误初始化为电机。
 	var adv_p64: OptionButton = ui.get_node(NodePath(ui._eng_io_path("P64")))
 	var adv_p66: OptionButton = ui.get_node(NodePath(ui._eng_io_path("P66")))
-	_check("摩擦轮 P64 的电机/摩擦轮选项均开放",
-		not adv_p64.is_item_disabled(0) and not adv_p64.is_item_disabled(1))
-	_check("摩擦轮 P66 的电机/摩擦轮选项均开放",
-		not adv_p66.is_item_disabled(0) and not adv_p66.is_item_disabled(1))
-	_set_io_init(ui, "P64", "电机")
-	_set_io_init(ui, "P66", "电机")
 	ui._sync_io_locks()
-	_check("摩擦轮 P64 可保持电机(10000Hz)选择", ui._option_text(adv_p64) == "电机")
-	_check("摩擦轮 P66 可保持电机(10000Hz)选择", ui._option_text(adv_p66) == "电机")
+	_check("无刷摩擦轮锁定 P64/P66 为摩擦轮",
+		ui._option_text(adv_p64) == "摩擦轮" and ui._option_text(adv_p66) == "摩擦轮")
+	_check("无刷摩擦轮禁用 P64/P66 的电机选项",
+		_item_disabled_by_text(adv_p64, "电机") and _item_disabled_by_text(adv_p66, "电机"))
 	# Yaw/Pitch 跟随驱动类型
 	var yaw_drive_btn: OptionButton = ui.get_node(ui.P_YAW_DRIVE)
 	var yaw_io_btn: OptionButton = ui.get_node(ui.P_YAW_IO)
@@ -313,10 +316,14 @@ func _initialize() -> void:
 	var adv_p74: OptionButton = ui.get_node(NodePath(ui._eng_io_path("P74")))
 	_check("Yaw 驱动=电机+P74 后 IO 初始化区强制为电机",
 		ui._option_text(adv_p74) == "电机", ui._option_text(adv_p74))
+	_check("Yaw 电机占用 P74 后禁用舵机初始化",
+		_item_disabled_by_text(adv_p74, "舵机"))
 	_pick(ui, yaw_drive_btn, "舵机")
 	ui._sync_io_locks()
 	_check("Yaw 驱动=舵机+P74 后 IO 初始化区强制为舵机",
 		ui._option_text(adv_p74) == "舵机", ui._option_text(adv_p74))
+	_check("Yaw 舵机占用 P74 后禁用电机初始化",
+		_item_disabled_by_text(adv_p74, "电机"))
 	# 工程页根不受步兵子系统锁定影响（显式设 P62 舵机后验证不被拨弹锁定）
 	ui._apply_kind_visibility("engineer", 1)
 	_set_io_init(ui, "P62", "舵机")
