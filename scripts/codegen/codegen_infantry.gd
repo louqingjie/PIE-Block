@@ -309,6 +309,7 @@ func generate(cfg: Dictionary) -> String:
 	if friction_enabled:
 		code += "#define FRICTION_START_DUTY 500  // 官方守则：摩擦轮启动占空比\n"
 		code += "#define FRICTION_STEP_DUTY  1    // 平滑启停：每个主循环只变化 1 duty\n"
+		code += "#define FRICTION_SPEED_STEP %d   // 增减速键每次调整的目标 Duty 步长\n" % friction_speed_step
 		code += "#define FRICTION_MAX_DUTY   %d   // 用户设定，校内赛安全硬上限 800\n" % friction_max_duty
 	code += "uint16_t boosterDutyOfFeed = %s;             // 拨弹电机单发转动占空比\n" % trig_spd
 	if not visual_feed:
@@ -550,7 +551,7 @@ func generate(cfg: Dictionary) -> String:
 		code += "    {\n"
 		code += "        if (targetDutyOfBooster < FRICTION_MAX_DUTY)\n"
 		code += "        {\n"
-		code += "            targetDutyOfBooster += %d;\n" % friction_speed_step
+		code += "            targetDutyOfBooster += FRICTION_SPEED_STEP;\n"
 		code += "            if (targetDutyOfBooster > FRICTION_MAX_DUTY)\n"
 		code += "                targetDutyOfBooster = FRICTION_MAX_DUTY;\n"
 		code += "        }\n"
@@ -560,8 +561,8 @@ func generate(cfg: Dictionary) -> String:
 		code += "    {\n"
 		code += "        if (targetDutyOfBooster > FRICTION_START_DUTY)\n"
 		code += "        {\n"
-		code += "            if (targetDutyOfBooster > FRICTION_START_DUTY + %d)\n" % friction_speed_step
-		code += "                targetDutyOfBooster -= %d;\n" % friction_speed_step
+		code += "            if (targetDutyOfBooster > FRICTION_START_DUTY + FRICTION_SPEED_STEP)\n"
+		code += "                targetDutyOfBooster -= FRICTION_SPEED_STEP;\n"
 		code += "            else\n"
 		code += "                targetDutyOfBooster = FRICTION_START_DUTY;\n"
 		code += "        }\n"

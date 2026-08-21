@@ -106,12 +106,13 @@ func _initialize() -> void:
 	# 当前 Duty 每轮增加/减少 1，蜂鸣器只在实际变化期间跟随当前 Duty。
 	if not code.contains("#define FRICTION_MAX_DUTY   800") \
 			or not code.contains("#define FRICTION_STEP_DUTY  1") \
+			or not code.contains("#define FRICTION_SPEED_STEP 100") \
 			or not code.contains("targetDutyOfBooster = statusOfBooster ? FRICTION_MAX_DUTY : 0;") \
 			or not code.contains("dutyOfBooster = FRICTION_START_DUTY;") \
 			or not code.contains("frictionStartedThisCycle = 1;") \
 			or not code.contains("frictionSpeedUpKeyValue && !lastFrictionSpeedUpKeyValue") \
 			or not code.contains("frictionSpeedDownKeyValue && !lastFrictionSpeedDownKeyValue") \
-			or not code.contains("targetDutyOfBooster += 100;") \
+			or not code.contains("targetDutyOfBooster += FRICTION_SPEED_STEP;") \
 			or not code.contains("dutyOfBooster += FRICTION_STEP_DUTY;"):
 		printerr("生成代码缺少校内赛安全的非阻塞摩擦轮增速状态机")
 		quit(1)
