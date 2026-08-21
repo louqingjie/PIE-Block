@@ -8,6 +8,7 @@ extends Control
 ## 所以主界面直接单跑时行为不变（没有项目上下文 = 老的自由编辑模式）。
 
 const PF = preload("res://scripts/project_file.gd")
+const TC = preload("res://scripts/toolchain.gd")
 # Web 平台工具（浏览器版：新建免对话框 / 拖放打开工程）
 const WEB = preload("res://scripts/web_support.gd")
 
@@ -26,6 +27,8 @@ const UI_SCENE: String = "res://scenes/ui.tscn"
 
 ## 待创建项目的类型（选完类型、还没选保存路径时暂存在这里）
 var _pending_kind: String = ""
+var _keil_scan_thread: Thread = null
+var _keil_scan_active: bool = false
 
 
 func _ready() -> void:
@@ -36,9 +39,65 @@ func _ready() -> void:
 	AppState.reset()
 	_connect_signals()
 	_rebuild_recent_list()
+	_start_keil_auto_scan()
 	if WEB.is_web():
 		# 浏览器版：把 .pieproj 文件拖进窗口即可打开（虚拟 FS 无文件对话框）
 		get_window().files_dropped.connect(_on_files_dropped)
+
+
+## 首次启动后台探测外部 Keil，不阻塞启动页的项目管理操作。
+func _start_keil_auto_scan() -> void:
+	var tc = TC.new()
+	if not tc.should_auto_scan_keil():
+		return
+	_keil_scan_active = true
+	_set_status("正在查找 Keil C251 安装，请稍候…")
+	_keil_scan_thread = Thread.new()
+	var error: Error = _keil_scan_thread.start(_scan_keil_worker)
+	if error != OK:
+		_keil_scan_active = false
+		_keil_scan_thread = null
+		tc.mark_keil_auto_scan_completed()
+		_set_status("未能启动 Keil 自动探测，编译时可手动选择目录")
+
+
+## 线程工作函数只访问文件系统；所有配置写入和 UI 更新都在主线程完成。
+func _scan_keil_worker(roots: PackedStringArray = PackedStringArray()) -> Dictionary:
+	var tc = TC.new()
+	var candidates: Array[String] = tc.scan_keil_installations(roots)
+	var result := {
+		"candidates": candidates,
+		"best": tc.choose_best_keil_path(candidates),
+	}
+	call_deferred("_on_keil_scan_finished", result)
+	return result
+
+
+## 线程完成后回到主线程，重新检查配置，避免覆盖扫描期间的用户选择。
+func _on_keil_scan_finished(result: Dictionary) -> void:
+	if _keil_scan_thread != null:
+		_keil_scan_thread.wait_to_finish()
+	_keil_scan_thread = null
+	_keil_scan_active = false
+	var tc = TC.new()
+	if not tc.should_auto_scan_keil():
+		tc.mark_keil_auto_scan_completed()
+		return
+	var best: String = str(result.get("best", "")).strip_edges()
+	if not best.is_empty() and tc.set_configured_keil_path(best):
+		tc.mark_keil_auto_scan_completed()
+		_set_status("已自动找到 Keil C251：%s（可在设置中修改）" % best)
+		return
+	tc.mark_keil_auto_scan_completed()
+	_set_status("未自动找到有效的 Keil C251，编译时可手动选择目录")
+
+
+## Thread 不允许在节点释放后继续存活；启动页切场景时收尾后台探测。
+func _exit_tree() -> void:
+	if _keil_scan_thread != null and _keil_scan_active:
+		_keil_scan_thread.wait_to_finish()
+		_keil_scan_thread = null
+		_keil_scan_active = false
 
 
 ## 旋转/尺寸变化后重算安全区内缩。

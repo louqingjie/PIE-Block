@@ -21,6 +21,8 @@ extends RefCounted
 ## 外部 Keil 目录配置文件（user://，记录用户指定的 Keil 安装根目录）。
 ## JSON 格式 {"path": "C:\\Keil_v5"}；环境变量 PIEBLOCK_KEIL 优先级更高。
 const KEIL_SETTINGS_PATH: String = "user://keil_settings.json"
+## 首次启动自动探测状态（JSON：{"completed": true}）。
+const KEIL_SCAN_STATE_PATH: String = "user://keil_scan_state.json"
 ## 指定外部 Keil 目录的环境变量（headless/CLI/CI 用，优先级高于配置文件）
 const KEIL_ENV_VAR: String = "PIEBLOCK_KEIL"
 ## 云端编译服务器配置（user://，记录 Base URL 与 API Key）。
@@ -81,6 +83,14 @@ const EXIT_TIMEOUT: int = -3
 ## UV4.exe 是 GUI 子系统版本，会弹窗抢焦点，仅作回退。
 ## 注：PackedStringArray 字面量不是常量表达式，故用 var 而非 const
 var UV4_CANDIDATES: PackedStringArray = PackedStringArray(["uVision.com", "UV4.exe"])
+
+## 全盘探测时跳过的高风险/高容量目录名。比较时不区分大小写。
+var KEIL_SCAN_SKIP_DIRS: PackedStringArray = PackedStringArray([
+	"$recycle.bin", "system volume information", "windows", "winnt",
+	"node_modules", ".git", ".godot", "android", "library", "programdata",
+])
+## 探测只递归到有限深度，避免首次启动无界遍历整个文件系统。
+const KEIL_SCAN_MAX_DEPTH: int = 6
 
 ## 日志输出回调，签名 func(line: String) -> void
 var _log: Callable
@@ -362,6 +372,161 @@ func set_configured_keil_path(path: String) -> bool:
 	f.store_string(JSON.stringify({"path": path}))
 	f.close()
 	return true
+
+
+## 是否已经完成过首次启动自动探测。
+func is_keil_auto_scan_completed() -> bool:
+	if not FileAccess.file_exists(KEIL_SCAN_STATE_PATH):
+		return false
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(KEIL_SCAN_STATE_PATH))
+	return parsed is Dictionary and bool(parsed.get("completed", false))
+
+
+## 记录首次启动自动探测已完成。找不到 Keil 时也要记录，避免每次启动重复扫盘。
+func mark_keil_auto_scan_completed() -> bool:
+	var f: FileAccess = FileAccess.open(KEIL_SCAN_STATE_PATH, FileAccess.WRITE)
+	if f == null:
+		push_error("无法写入 Keil 探测状态: %s（%s）"
+			% [KEIL_SCAN_STATE_PATH, FileAccess.get_open_error()])
+		return false
+	f.store_string(JSON.stringify({"completed": true}))
+	f.close()
+	return true
+
+
+## 判断本次启动是否需要自动探测。环境变量和用户配置优先，不会被扫描覆盖。
+func should_auto_scan_keil() -> bool:
+	if OS.get_name() != "Windows":
+		return false
+	if not OS.get_environment(KEIL_ENV_VAR).strip_edges().is_empty():
+		return false
+	if not get_configured_keil_path().is_empty():
+		return false
+	return not is_keil_auto_scan_completed()
+
+
+## 扫描 Keil 安装目录并返回所有通过 validate_keil_dir 的根目录。
+## roots 非空时只扫描传入根目录，供单元测试注入临时目录；为空时扫描 Windows 文件系统盘。
+func scan_keil_installations(roots: PackedStringArray = PackedStringArray()) -> Array[String]:
+	var scan_roots: PackedStringArray = roots
+	if scan_roots.is_empty():
+		scan_roots = _default_keil_scan_roots()
+	var candidates: Dictionary = {}
+	var visited: Dictionary = {}
+	for root in scan_roots:
+		var root_abs: String = str(root).strip_edges().replace("\\", "/")
+		if root_abs.is_empty() or not DirAccess.dir_exists_absolute(root_abs):
+			continue
+		_scan_keil_tree(root_abs, 0, visited, candidates)
+	var result: Array[String] = []
+	for path in candidates.keys():
+		result.append(str(path))
+	result.sort_custom(func(a: String, b: String) -> bool:
+		return a.to_lower() < b.to_lower())
+	return result
+
+
+## 从扫描结果中选择最佳安装：优先标准布局和控制台版 uVision.com，
+## 再优先路径更浅、TOOLS.INI 更新的安装，最后用路径保证结果稳定。
+func choose_best_keil_path(candidates: Array[String]) -> String:
+	var ranked: Array[Dictionary] = []
+	for raw_path in candidates:
+		var path: String = str(raw_path).strip_edges().replace("\\", "/")
+		if path.is_empty():
+			continue
+		var check: Dictionary = validate_keil_dir(path)
+		if not check.ok:
+			continue
+		var score: int = 0
+		if FileAccess.file_exists(path.path_join("UV4/uVision.com")):
+			score += 100
+		if FileAccess.file_exists(path.path_join("C251/BIN/C251.EXE")):
+			score += 50
+		var uv4_path: String = str(check.get("uv4", "")).to_lower()
+		if uv4_path.ends_with("/uvision.com"):
+			score += 25
+		var tools_ini: String = str(check.get("tools_ini", ""))
+		var mtime: int = FileAccess.get_modified_time(tools_ini) if not tools_ini.is_empty() else 0
+		ranked.append({
+			"path": path,
+			"score": score,
+			"depth": path.count("/"),
+			"mtime": mtime,
+		})
+	if ranked.is_empty():
+		return ""
+	ranked.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		if int(a.score) != int(b.score):
+			return int(a.score) > int(b.score)
+		if int(a.depth) != int(b.depth):
+			return int(a.depth) < int(b.depth)
+		if int(a.mtime) != int(b.mtime):
+			return int(a.mtime) > int(b.mtime)
+		return str(a.path).to_lower() < str(b.path).to_lower()
+	)
+	return str(ranked[0].path)
+
+
+## 默认扫描根目录：先覆盖所有 Godot 可枚举的 Windows 文件系统盘，
+## 再补充常见安装位置；visited 会合并重复根目录。
+func _default_keil_scan_roots() -> PackedStringArray:
+	var roots := PackedStringArray()
+	for drive_index in range(DirAccess.get_drive_count()):
+		var drive: String = DirAccess.get_drive_name(drive_index)
+		roots.append(drive)
+		for rel in ["Keil", "Keil_v5", "MDK", "Program Files/Keil", "Program Files (x86)/Keil"]:
+			roots.append(drive.path_join(rel))
+	for env_name in ["ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"]:
+		var base: String = OS.get_environment(env_name).strip_edges()
+		if not base.is_empty():
+			roots.append(base.path_join("Keil"))
+			roots.append(base.path_join("Keil_v5"))
+			roots.append(base.path_join("MDK"))
+	return roots
+
+
+func _scan_keil_tree(
+	dir_abs: String, depth: int, visited: Dictionary, candidates: Dictionary) -> void:
+	if depth > KEIL_SCAN_MAX_DEPTH:
+		return
+	var normalized: String = dir_abs.replace("\\", "/").trim_suffix("/").to_lower()
+	if normalized.is_empty() or visited.has(normalized):
+		return
+	visited[normalized] = true
+	if _is_keil_candidate_dir(dir_abs):
+		var check: Dictionary = validate_keil_dir(dir_abs)
+		if check.ok:
+			candidates[dir_abs] = true
+	if depth == KEIL_SCAN_MAX_DEPTH:
+		return
+	var da: DirAccess = DirAccess.open(dir_abs)
+	if da == null:
+		return
+	da.list_dir_begin()
+	var entry: String = da.get_next()
+	while entry != "":
+		if da.current_is_dir() and not _is_keil_scan_skip_dir(entry):
+			_scan_keil_tree(dir_abs.path_join(entry), depth + 1, visited, candidates)
+		entry = da.get_next()
+	da.list_dir_end()
+
+
+## 只有目录名带 Keil/MDK，或包含 UV4/C251 标记目录时才做完整校验，
+## 避免对文件系统中的每个目录触发递归查找。
+func _is_keil_candidate_dir(dir_abs: String) -> bool:
+	var lower: String = dir_abs.get_file().to_lower()
+	if lower.contains("keil") or lower.contains("mdk"):
+		return true
+	return DirAccess.dir_exists_absolute(dir_abs.path_join("UV4")) \
+		or DirAccess.dir_exists_absolute(dir_abs.path_join("C251"))
+
+
+func _is_keil_scan_skip_dir(name: String) -> bool:
+	var lower: String = name.to_lower()
+	for blocked in KEIL_SCAN_SKIP_DIRS:
+		if lower == str(blocked).to_lower():
+			return true
+	return false
 
 
 ## 校验一个目录是否是合法的 Keil C251 安装根：

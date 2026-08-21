@@ -29,6 +29,12 @@ func _check(label: String, ok: bool) -> void:
 func _initialize() -> void:
 	print("=== Keil 目录设置测试 ===")
 	var tc = TC.new()
+	var scan_state_abs: String = ProjectSettings.globalize_path(TC.KEIL_SCAN_STATE_PATH)
+	var scan_state_backup_exists: bool = FileAccess.file_exists(scan_state_abs)
+	var scan_state_backup: String = FileAccess.get_file_as_string(scan_state_abs) \
+		if scan_state_backup_exists else ""
+	if scan_state_backup_exists:
+		DirAccess.remove_absolute(scan_state_abs)
 	# 从干净状态开始（清掉环境变量与配置）
 	OS.set_environment(TC.KEIL_ENV_VAR, "")
 	tc.set_configured_keil_path("")
@@ -91,16 +97,42 @@ func _initialize() -> void:
 	_check("环境变量失效时报失效", not ready4.ok and str(ready4.reason).contains("失效"))
 	OS.set_environment(TC.KEIL_ENV_VAR, "")
 
-	# 9) build_project 未配置时报错并提示配置方式
+	# 9) 自动扫描：注入临时根目录，不触碰真实磁盘。
+	var custom_root: String = fake_root.path_join("custom_install")
+	DirAccess.make_dir_recursive_absolute(custom_root.path_join("UV4"))
+	DirAccess.make_dir_recursive_absolute(custom_root.path_join("C251").path_join("BIN"))
+	_write_text(custom_root.path_join("UV4/UV4.exe"), "gui app")
+	_write_text(custom_root.path_join("C251/BIN/C251.EXE"), "c251")
+	var scan_results: Array[String] = tc.scan_keil_installations(
+		PackedStringArray([fake_root.get_base_dir()]))
+	_check("自动扫描识别有效 Keil 安装", fake_root in scan_results and custom_root in scan_results)
+	_check("自动扫描排除无 C251 的目录", no_c251 not in scan_results)
+	_check("多个安装优先选择标准 uVision.com 布局",
+		tc.choose_best_keil_path(scan_results) == fake_root)
+	_check("首次自动扫描状态初始为未完成", not tc.is_keil_auto_scan_completed())
+	tc.set_configured_keil_path(fake_root)
+	_check("已有用户配置时不触发自动扫描", not tc.should_auto_scan_keil())
+	tc.set_configured_keil_path("")
+	OS.set_environment(TC.KEIL_ENV_VAR, fake_root)
+	_check("已有环境变量时不触发自动扫描", not tc.should_auto_scan_keil())
+	OS.set_environment(TC.KEIL_ENV_VAR, "")
+	_check("记录首次自动扫描状态成功", tc.mark_keil_auto_scan_completed())
+	_check("记录后不再触发自动扫描", not tc.should_auto_scan_keil())
+
+	# 10) build_project 未配置时报错并提示配置方式
 	tc.set_configured_keil_path("")
 	var bres: Dictionary = tc.build_project("user://stc32g/Projects/ROBOMASTER_INFANTRY")
 	_check("build_project 未配置时返回失败", not bres.ok)
 	_check("build_project 报错提示配置 Keil 目录", str(bres.log).contains("Keil 目录"))
 
-	# 10) 清理测试目录与配置
+	# 11) 清理测试目录与配置
 	_remove_tree(fake_root)
 	_remove_tree(no_c251)
 	tc.set_configured_keil_path("")
+	if scan_state_backup_exists:
+		_write_text(scan_state_abs, scan_state_backup)
+	else:
+		DirAccess.remove_absolute(scan_state_abs)
 
 	print("=== 结果: %s ===" % ("全部通过 ✓" if _fail == 0 else "%d 项失败 ✗" % _fail))
 	quit(0 if _fail == 0 else 1)

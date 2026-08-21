@@ -5,6 +5,7 @@ extends SceneTree
 
 const PF = preload("res://scripts/project_file.gd")
 const IK_CONFIG = preload("res://scripts/engineer_ik_config.gd")
+const TC = preload("res://scripts/toolchain.gd")
 
 const TMP_DIR: String = "user://_test_pieproj"
 
@@ -671,6 +672,13 @@ func _test_launcher() -> void:
 	_check("launcher.tscn 可加载", packed != null)
 	if packed == null:
 		return
+	# 启动页测试不应扫描真实磁盘；保存并临时标记自动探测已完成。
+	var scan_state_abs: String = ProjectSettings.globalize_path(TC.KEIL_SCAN_STATE_PATH)
+	var scan_state_exists: bool = FileAccess.file_exists(scan_state_abs)
+	var scan_state_backup: String = FileAccess.get_file_as_string(scan_state_abs) \
+		if scan_state_exists else ""
+	if not scan_state_exists:
+		TC.new().mark_keil_auto_scan_completed()
 	# 最近列表是本机偏好，测试前后都要清干净，别污染真实使用
 	var recent_backup: Array = PF.recent_list()
 	_clear_recent()
@@ -679,6 +687,7 @@ func _test_launcher() -> void:
 	root.add_child(lau)
 	await process_frame
 	await process_frame
+	_check("已有自动探测状态时启动页不重复扫描", lau._keil_scan_thread == null)
 	_check("启动页清空了项目上下文", not _app().has_project())
 	_check("最近列表为空时显示占位", lau.get_node(lau.P_RECENT_LIST).get_child_count() == 1)
 
@@ -762,7 +771,14 @@ func _test_launcher() -> void:
 
 	if lau.is_inside_tree():
 		root.remove_child(lau)
-	lau.free()
+		lau.free()
+	if scan_state_exists:
+		var state_file: FileAccess = FileAccess.open(scan_state_abs, FileAccess.WRITE)
+		if state_file:
+			state_file.store_string(scan_state_backup)
+			state_file.close()
+	else:
+		DirAccess.remove_absolute(scan_state_abs)
 
 	# 主界面无项目上下文时保持自由编辑（不被启动页的引入锁死）
 	_app().reset()
