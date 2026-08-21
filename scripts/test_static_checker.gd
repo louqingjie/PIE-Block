@@ -112,6 +112,18 @@ func _initialize() -> void:
 	_check("单模式不检查未生效的一一对应模式键",
 		not _has_mode_switch_error(_issues(one_to_one_unused)))
 
+	var servo_direct_negative: Dictionary = _with_row(
+		_base_config(1, "单击切换"), 0, "A")
+	servo_direct_negative["modes"][0]["rows"][0]["param"] = "-10"
+	_check("舵机直接模式拒绝负数角度参数",
+		_has_error(_issues(servo_direct_negative), "舵机角度参数"))
+
+	var debug_servo_negative: Array = SC.check_debug([{
+		"pin": "P60", "drive_type": "舵机", "value": -10, "enabled": true,
+	}])
+	_check("调试舵机拒绝负数角度参数",
+		_has_error(debug_servo_negative, "舵机角度参数"))
+
 	if _fail > 0:
 		print("失败 %d 项" % _fail)
 		quit(1)

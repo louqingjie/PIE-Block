@@ -507,10 +507,10 @@ static func _check_eng_row(issues: Array, row: Dictionary, mode_no: int, row_idx
 						% [label, val, SERVO_STEP_WARN_DEG]})
 		"直接":
 			if pin_type == "舵机":
-				if val < -SERVO_MAX_ANGLE or val > SERVO_MAX_ANGLE:
+				if val < 0 or val > SERVO_MAX_ANGLE:
 					issues.append({"type": "Error",
-						"msg": "%s 舵机角度 %d 超出范围（-%d~%d，相对中位）"
-							% [label, val, SERVO_MAX_ANGLE, SERVO_MAX_ANGLE]})
+						"msg": "%s 舵机角度参数 %d 超出范围（0-%d，正/反由方向选项决定）"
+							% [label, val, SERVO_MAX_ANGLE]})
 			else:
 				if val < 0 or val > 10000:
 					issues.append({"type": "Error",
@@ -559,11 +559,11 @@ static func _check_debug_params(issues: Array, debug_rows: Array) -> void:
 					issues.append({"type": "Error",
 						"msg": "调试 %s 电机速度 %d 超出范围（有效范围 0-10000）" % [pin_name, val]})
 			"舵机":
-				# 相对中位的偏移角，舵机总行程 180°，即 ±90°
-				if val < -SERVO_MAX_ANGLE or val > SERVO_MAX_ANGLE:
+				# 参数取正值，正/反由方向选项决定；舵机总行程 180°
+				if val < 0 or val > SERVO_MAX_ANGLE:
 					issues.append({"type": "Error",
-						"msg": "调试 %s 舵机角度 %d 超出范围（有效范围 -%d~%d，相对中位）"
-							% [pin_name, val, SERVO_MAX_ANGLE, SERVO_MAX_ANGLE]})
+						"msg": "调试 %s 舵机角度参数 %d 超出范围（有效范围 0-%d，正/反由方向选项决定）"
+							% [pin_name, val, SERVO_MAX_ANGLE]})
 			"摩擦轮":
 				if val < 0 or val > 800:
 					issues.append({"type": "Error",

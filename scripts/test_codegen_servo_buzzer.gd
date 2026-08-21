@@ -27,6 +27,18 @@ func _helper(code: String) -> String:
 	return code.substr(start, end - start if end >= 0 else code.length() - start)
 
 
+func _mode_controls(code: String) -> String:
+	var start: int = code.find("void Calculate_Mode1_Controls()\n{")
+	var end: int = code.find("void Main_Countrol()", start)
+	return code.substr(start, end - start if start >= 0 and end > start else 0)
+
+
+func _debug_row_section(code: String, pin: String) -> String:
+	var start: int = code.find("// ===== 测试 %s" % pin)
+	var end: int = code.find("Buzzer_Play(BUZZER_FREQ_DONE", start)
+	return code.substr(start, end - start if start >= 0 and end > start else 0)
+
+
 func _init_frequencies_are_valid(code: String) -> bool:
 	var marker: String = "ExpansionBoradControl(Init_Order,"
 	var cursor: int = 0
@@ -116,11 +128,35 @@ func _initialize() -> void:
 	_check("工程首周期只建立比较基准", engineer_helper.contains("if (!servoBuzzerInitialized)")
 		and engineer_helper.contains("changed = 0;"))
 
+	var direct_positive_cfg: Dictionary = _engineer_cfg(false)
+	direct_positive_cfg["modes"] = [{"rows": [{"key": "A", "dir": "正", "mode": "直接",
+		"param": "30", "io": "P60"}]}]
+	var direct_positive_code: String = Engineer.new().generate(direct_positive_cfg)
+	var direct_positive_controls: String = _mode_controls(direct_positive_code)
+	_check("工程舵机直接正向增加角度",
+		direct_positive_controls.contains("dutyOfAuxServo[0] = 917.0f; // +30°"))
+	_check("工程舵机映射不发送硬件方向帧",
+		not direct_positive_controls.contains("Dir_Change_Order"))
+
+	var direct_negative_cfg: Dictionary = direct_positive_cfg.duplicate(true)
+	direct_negative_cfg["modes"][0]["rows"][0]["dir"] = "反"
+	var direct_negative_code: String = Engineer.new().generate(direct_negative_cfg)
+	_check("工程舵机直接反向减少角度",
+		_mode_controls(direct_negative_code).contains("dutyOfAuxServo[0] = 583.0f; // -30°"))
+
 	var debug_code: String = Debug.new().generate({
 		"debug_rows": [{"pin": "P60", "drive_type": "电机", "dir": 1,
 			"value": 1000, "enabled": true}],
 	})
 	_check("调试初始化频率不含 0", _init_frequencies_are_valid(debug_code))
+	var debug_servo_code: String = Debug.new().generate({
+		"debug_rows": [{"pin": "P60", "drive_type": "舵机", "dir": 0,
+			"value": 30, "enabled": true}],
+	})
+	_check("调试舵机反向使用负角度占空比",
+		debug_servo_code.contains("ExpansionBoradControl(Duty_Change_Order, 583, 0"))
+	_check("调试舵机不发送硬件方向帧",
+		not _debug_row_section(debug_servo_code, "P60").contains("Dir_Change_Order"))
 
 	print("\n=== 结果: %s ===" % ("全部通过 ✓" if _fail == 0 else "%d 项失败 ✗" % _fail))
 	quit(0 if _fail == 0 else 1)

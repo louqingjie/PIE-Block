@@ -143,7 +143,7 @@ func _initialize() -> void:
 	_set_io_init(ui, "P60", "舵机")
 	_check("P60 切回舵机后选项恢复 增量/直接",
 		_mode_items(opt1) == ["增量", "直接"], str(_mode_items(opt1)))
-	_check("舵机直接模式占位为偏移角", para1.placeholder_text.contains("偏移角"))
+	_check("舵机直接模式占位包含正反方向", para1.placeholder_text.contains("正/反"))
 	_check("P60 切回舵机后显示初始角", engineer_p60_mid.visible)
 
 	# ---- 舵机 + 摇杆轴：只剩 增量，原选中 直接 回退 ----

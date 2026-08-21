@@ -110,7 +110,12 @@ func generate(cfg: Dictionary) -> String:
 		if is_main_board:
 			# 主控板 PWM 引脚（MP03/MP74），只有舵机模式
 			var pwm_ch: String = _pin_to_pwm_channel(pin)
-			code += "    PWM_Init(%s, 50, %d); // %s 舵机归中\n" % [pwm_ch, SERVO_MID_DUTY, pin]
+			var main_servo_angle: int = clampi(value, 0, SERVO_MAX_OFFSET_DEG)
+			if dir == 0:
+				main_servo_angle = -main_servo_angle
+			var main_servo_duty: int = _servo_angle_to_duty(main_servo_angle)
+			code += "    PWM_Init(%s, 50, %d); // %s 舵机角度 %+d°\n" \
+				% [pwm_ch, main_servo_duty, pin, main_servo_angle]
 			code += "    Ms_Delay(TEST_DURATION_MS); // 持续 3S\n"
 			code += "    PWM_SET_Duty(%s, 0); // 停止\n" % pwm_ch
 		elif drive_type == "摩擦轮":
@@ -121,11 +126,15 @@ func generate(cfg: Dictionary) -> String:
 			var freq: int = FREQ_MOTOR if drive_type == "电机" else FREQ_SERVO
 			var test_duty: int = value
 			if drive_type == "舵机":
-				test_duty = _servo_angle_to_duty(value)
+				var servo_angle: int = clampi(value, 0, SERVO_MAX_OFFSET_DEG)
+				if dir == 0:
+					servo_angle = -servo_angle
+				test_duty = _servo_angle_to_duty(servo_angle)
 			code += "    ExpansionBoradControl(Init_Order, %s); // 初始化 %s（频率 %d）\n" % [_slot_init_str(slot, freq), pin, freq]
 			code += "    Ms_Delay(20);\n"
-			code += "    ExpansionBoradControl(Dir_Change_Order, %s); // 方向：%s\n" % [_slot_dir_str(slot, dir), "正" if dir == 1 else "反"]
-			code += "    Ms_Delay(5);\n"
+			if drive_type != "舵机":
+				code += "    ExpansionBoradControl(Dir_Change_Order, %s); // 方向：%s\n" % [_slot_dir_str(slot, dir), "正" if dir == 1 else "反"]
+				code += "    Ms_Delay(5);\n"
 			code += "    ExpansionBoradControl(Duty_Change_Order, %s); // 设置占空比 %d\n" % [_slot_duty_str(slot, test_duty), test_duty]
 			code += "    Ms_Delay(TEST_DURATION_MS); // 持续 3S\n"
 			code += "    ExpansionBoradControl(Duty_Change_Order, %s); // 停止\n" % [_slot_duty_str(slot, 0)]

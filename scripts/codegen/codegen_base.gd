@@ -479,9 +479,9 @@ func _gen_mode_rows(rows: Array, io_init: Dictionary, mode_label: String) -> Str
 					s += "    if (%s)\n" % _row_key_expr(key)
 					s += "        %s = %s%d;\n" % [tgt, dir_sign, spd]
 				else:
-					# 目标角度带符号，方向选项对舵机直接模式无意义
-					var angle: int = _parse_param(param,
-						- SERVO_MAX_OFFSET_DEG, SERVO_MAX_OFFSET_DEG)
+					# 舵机正反通过目标角度符号表达，不发送硬件 Dir_Change_Order。
+					var angle_magnitude: int = _parse_param(param, 0, SERVO_MAX_OFFSET_DEG)
+					var angle: int = -angle_magnitude if dir_sign == "-" else angle_magnitude
 					var target_duty: int = _servo_angle_to_duty(angle)
 					s += "    if (%s)\n" % _row_key_expr(key)
 					s += "        %s = %d.0f; // %+d°\n" % [tgt, target_duty, angle]

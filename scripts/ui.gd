@@ -1229,7 +1229,7 @@ func _update_debug_placeholders(_idx: int = -1) -> void:
 			"电机":
 				placeholder = "速度 0~10000"
 			"舵机":
-				placeholder = "角度 -90~90"
+				placeholder = "角度 0~90°，正/反控制方向"
 			"摩擦轮":
 				placeholder = "速度 0~1100"
 		line_edit.placeholder_text = placeholder
@@ -1247,7 +1247,7 @@ const EXPANSION_PINS: Array = ["P60", "P62", "P64", "P66", "P74", "P75", "P76", 
 ##   舵机（MP 恒舵机或拓展板选舵机）+ 按键 -> 增量/直接；+ 摇杆轴 -> 增量
 ##   电机 + 按键 -> 直接；+ 摇杆轴 -> 速度/增速
 ## 与静态检查器的合法性矩阵一致，从源头杜绝非法组合。程序化重建不触发 item_selected。
-## 舵机角度一律是「相对中位的偏移角」，行程 ±90°，不是 0~180°。
+## 舵机生成角度是相对中位的偏移角（±90°）；映射行参数取正值，正/反决定符号。
 func _update_engineer_placeholders(_idx: int = -1) -> void:
 	# 工程页与步兵高级设置是两份实例，都要过滤，否则切页后残留旧选项
 	for root in [ENGINEER, ADV_ENGINEER]:
@@ -1310,7 +1310,7 @@ func _update_engineer_root_placeholders(root: String) -> void:
 					placeholder = "步长 0~%d°" % SERVO_MAX_ANGLE
 				"直接":
 					if is_servo:
-						placeholder = "偏移角 -%d~%d°" % [SERVO_MAX_ANGLE, SERVO_MAX_ANGLE]
+						placeholder = "角度 0~%d°，正/反控制方向" % SERVO_MAX_ANGLE
 					else:
 						placeholder = "速度 0~%d" % MOTOR_SPEED_MAX
 				"速度", "增速":
