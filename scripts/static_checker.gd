@@ -394,7 +394,8 @@ static func _check_engineer_modes(issues: Array, cfg: Dictionary) -> void:
 			mode_count = mc
 	var strategy: String = str(cfg.get("switch_strategy", "单击切换"))
 	var switch_key: String = str(cfg.get("mode_switch_key", "E"))
-	var mode_keys: Array = cfg.get("mode_keys", [])
+	var raw_mode_keys: Variant = cfg.get("mode_keys", [])
+	var mode_keys: Array = raw_mode_keys if raw_mode_keys is Array else []
 	# 一一对应：模式键互不重复
 	if strategy == "一一对应":
 		var used: Dictionary = {}
@@ -417,15 +418,17 @@ static func _check_engineer_modes(issues: Array, cfg: Dictionary) -> void:
 			row_idx += 1
 			_check_eng_row(issues, row, mi + 1, row_idx, cfg, strategy,
 				switch_key, mode_keys, used_keys)
-	# 切换键与行按键冲突（单击切换：1 个切换键；一一对应：各模式键）
+	# 切换键与行按键冲突。
+	# 单模式时生成器不会读取任何模式切换键，因此不能把未生效的键当成冲突。
 	var conflict_keys: Array = []
-	if strategy == "一一对应":
-		for i in range(mode_count):
-			var k2: String = str(mode_keys[i]) if i < mode_keys.size() else ""
-			if not k2.is_empty():
-				conflict_keys.append(k2)
-	else:
-		conflict_keys.append(switch_key)
+	if mode_count > 1:
+		if strategy == "一一对应":
+			for i in range(mode_count):
+				var k2: String = str(mode_keys[i]) if i < mode_keys.size() else ""
+				if not k2.is_empty():
+					conflict_keys.append(k2)
+		else:
+			conflict_keys.append(switch_key)
 	for ck in conflict_keys:
 		if used_keys.has(ck):
 			issues.append({"type": "Error",
