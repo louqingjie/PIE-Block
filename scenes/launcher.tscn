@@ -118,6 +118,11 @@ custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
 text = "调试"
 
+[node name="Music" type="Button" parent="KindDialog/KindBox"]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+text = "音乐"
+
 [node name="SaveDialog" type="FileDialog" parent="." unique_id=400981032]
 oversampling_override = 1.0
 title = "保存项目"

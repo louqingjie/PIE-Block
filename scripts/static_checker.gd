@@ -24,6 +24,8 @@ const SERVO_MAX_ANGLE: int = 90
 const SERVO_STEP_WARN_DEG: int = 30
 # 电机速度上限
 const MOTOR_SPEED_MAX: int = 10000
+const MUSIC_MAX_SEGMENTS: int = 8192
+const MUSIC_MAX_DURATION_MS: int = 20 * 60 * 1000
 
 
 # ------------------------------------------------------------------ 公开入口
@@ -70,6 +72,52 @@ static func check_engineer(eng_cfg: Dictionary) -> Array:
 static func check_debug(debug_rows: Array) -> Array:
 	var issues: Array = []
 	_check_debug_params(issues, debug_rows)
+	return issues
+
+
+## 音乐模式检查。music.segments 使用 {note: 0~127, duration_ms: >=1}。
+## note=0 表示休止；frequency 形式也允许 CLI/测试直接传入。
+static func check_music(cfg: Dictionary) -> Array:
+	var issues: Array = []
+	var music_value: Variant = cfg.get("music", cfg)
+	if not music_value is Dictionary:
+		issues.append({"type": "Error", "msg": "音乐配置不是合法对象，请重新导入 MIDI"})
+		return issues
+	var music: Dictionary = music_value
+	var track_index: int = int(music.get("track_index", -1))
+	var track_count: int = int(music.get("track_count", 0))
+	if track_index < 0 or track_count <= 0 or track_index >= track_count:
+		issues.append({"type": "Error", "msg": "尚未选择 MIDI 轨道"})
+	var raw_segments: Variant = music.get("segments", [])
+	if not raw_segments is Array or (raw_segments as Array).is_empty():
+		issues.append({"type": "Error", "msg": "尚未导入包含音符的 MIDI 轨道"})
+		return issues
+	var segments: Array = raw_segments
+	if segments.size() > MUSIC_MAX_SEGMENTS:
+		issues.append({"type": "Error", "msg": "音乐片段数 %d 超过上限 %d" % [segments.size(), MUSIC_MAX_SEGMENTS]})
+	var total_ms: int = 0
+	for index in range(segments.size()):
+		var item: Variant = segments[index]
+		if not item is Dictionary:
+			issues.append({"type": "Error", "msg": "音乐片段 %d 格式无效" % (index + 1)})
+			continue
+		var segment: Dictionary = item
+		var duration: int = int(segment.get("duration_ms", 0))
+		if duration < 1:
+			issues.append({"type": "Error", "msg": "音乐片段 %d 时长必须大于 0" % (index + 1)})
+		total_ms += maxi(duration, 0)
+		if segment.has("note"):
+			var note: int = int(segment.get("note", -1))
+			if note < 0 or note > 127:
+				issues.append({"type": "Error", "msg": "音乐片段 %d 音高超出 MIDI 范围 0~127" % (index + 1)})
+		elif segment.has("frequency"):
+			var frequency: int = int(segment.get("frequency", -1))
+			if frequency < 0 or frequency > 65535:
+				issues.append({"type": "Error", "msg": "音乐片段 %d 频率无效" % (index + 1)})
+		else:
+			issues.append({"type": "Error", "msg": "音乐片段 %d 缺少音高" % (index + 1)})
+	if total_ms > MUSIC_MAX_DURATION_MS:
+		issues.append({"type": "Error", "msg": "音乐时长超过 20 分钟上限"})
 	return issues
 
 

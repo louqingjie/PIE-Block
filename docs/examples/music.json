@@ -1,0 +1,14 @@
+{
+  "music": {
+    "source_name": "旋律.mid",
+    "track_index": 0,
+    "track_name": "主旋律",
+    "track_count": 1,
+    "duration_ms": 1200,
+    "segments": [
+      {"note": 60, "duration_ms": 500},
+      {"note": 0, "duration_ms": 100},
+      {"note": 64, "duration_ms": 600}
+    ]
+  }
+}

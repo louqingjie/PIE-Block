@@ -4,6 +4,7 @@
 [ext_resource type="PackedScene" uid="uid://dpq854m2cihg8" path="res://scenes/advanced_and_engineer.tscn" id="1_sv5ud"]
 [ext_resource type="PackedScene" uid="uid://cqjw5gums3ld7" path="res://scenes/infantry.tscn" id="1_temp3"]
 [ext_resource type="PackedScene" uid="uid://1bdtv6q4jaq1" path="res://scenes/debug.tscn" id="4_mwfoh"]
+[ext_resource type="PackedScene" path="res://scenes/music.tscn" id="5_music"]
 
 [node name="EditZone" type="HBoxContainer" unique_id=377730197]
 anchors_preset = 15
@@ -23,5 +24,9 @@ size_flags_horizontal = 3
 layout_mode = 2
 
 [node name="Debug" parent="." unique_id=99662280 instance=ExtResource("4_mwfoh")]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Music" parent="." instance=ExtResource("5_music")]
 layout_mode = 2
 size_flags_horizontal = 3

@@ -1,0 +1,50 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/music_page.gd" id="1_music"]
+
+[node name="Music" type="VBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 12
+script = ExtResource("1_music")
+
+[node name="Title" type="Label" parent="."]
+layout_mode = 2
+text = "音乐模式"
+theme_override_font_sizes/font_size = 24
+
+[node name="Hint" type="Label" parent="."]
+layout_mode = 2
+text = "导入 MIDI 文件，选择一条单轨旋律，生成主控板 P33 蜂鸣器自动循环播放的程序。"
+autowrap_mode = 3
+
+[node name="Open" type="Button" parent="."]
+custom_minimum_size = Vector2(0, 44)
+layout_mode = 2
+text = "选择 MIDI 文件"
+
+[node name="Source" type="Label" parent="."]
+layout_mode = 2
+text = "未选择 MIDI 文件"
+autowrap_mode = 3
+
+[node name="TrackLabel" type="Label" parent="."]
+layout_mode = 2
+text = "播放轨道"
+
+[node name="Track" type="OptionButton" parent="."]
+custom_minimum_size = Vector2(0, 42)
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Status" type="Label" parent="."]
+layout_mode = 2
+text = "请选择一个包含音符的轨道"
+autowrap_mode = 3
+
+[node name="MidiDialog" type="FileDialog" parent="."]
+title = "选择 MIDI 文件"
+file_mode = 0
+access = 2
+filters = PackedStringArray("*.mid ; MIDI 文件", "*.midi ; MIDI 文件")
+use_native_dialog = true

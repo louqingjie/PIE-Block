@@ -9,7 +9,7 @@ Copilot、open-code 等）调用。
 
 原理：
   1. 本 Server 通过 subprocess 调用 `scripts/cli_codegen.gd`（Godot headless CLI）
-  2. CLI 复用项目里现有的 CodeGenInfantry / CodeGenEngineer / CodeGenDebug
+  2. CLI 复用项目里现有的 CodeGenInfantry / CodeGenEngineer / CodeGenDebug / CodeGenMusic
      与 StaticChecker，零逻辑重复
   3. 每次调用启动一个 Godot 进程（约 1~2 秒），对 Agent 交互来说可接受
 
@@ -45,7 +45,7 @@ DEFAULT_ROOT: Path = Path(__file__).resolve().parent.parent
 ROOT: Path = Path(os.environ.get("PIEBLOCK_ROOT", str(DEFAULT_ROOT)))
 CLI_SCRIPT: Path = ROOT / "scripts" / "cli_codegen.gd"
 
-KINDS = ["infantry", "engineer", "debug"]
+KINDS = ["infantry", "engineer", "debug", "music"]
 
 # 默认遥控器通道号（0-125）。在 MCP 客户端配置的 env 里设 PIEBLOCK_CHANNEL。
 # 设置了之后，generate/build/check 时若 config 里 channel 为空/缺失会自动填入。
@@ -191,12 +191,12 @@ def _result_text(result: dict[str, Any]) -> str:
 mcp = MCPServer(
     name="pie-block-codegen",
     title="Pie-Block 代码生成器",
-    description="为 STC32G 主控板生成步兵/工程/调试机器人 main.c 代码，并做静态检查。"
+    description="为 STC32G 主控板生成步兵/工程/调试机器人或 P33 蜂鸣器音乐 main.c 代码，并做静态检查。"
                 "用户是制作机器人机械结构的大一学生，不熟悉编程。",
     version="0.1.0",
     instructions=(
         "此服务器把 Pie-Block 图形化代码生成器暴露为命令行工具。\n"
-        "支持的 kind: infantry（步兵）/ engineer（工程多模式控制）/ debug（调试）。\n"
+        "支持的 kind: infantry（步兵）/ engineer（工程多模式控制）/ debug（调试）/ music（MIDI 单轨音乐）。\n"
         "生成配置用 JSON 字符串传入。可用 get_schema(kind) 获取每种 kind 的完整字段定义。\n"
         "重要硬件约束（不可违反）：\n"
         "- 只向主控板烧录，绝不向机械扩展板烧录\n"
@@ -212,7 +212,7 @@ mcp = MCPServer(
 
 @mcp.tool()
 def list_profiles() -> str:
-    """列出所有支持的项目类型（infantry / engineer / debug）及其用途说明。"""
+    """列出所有支持的项目类型（infantry / engineer / debug / music）及其用途说明。"""
     try:
         result = _run_cli(["profiles"])
     except RuntimeError as e:
@@ -224,7 +224,7 @@ def list_profiles() -> str:
 def get_schema(kind: str) -> str:
     """获取指定项目类型的配置 JSON Schema（字段名、类型、默认值、可选值）。
 
-    参数 kind: infantry / engineer / debug 之一。
+    参数 kind: infantry / engineer / debug / music 之一。
     """
     if kind not in KINDS:
         return f"错误: 未知 kind「{kind}」，合法值: {', '.join(KINDS)}"
@@ -240,8 +240,8 @@ def generate_code(kind: str, config: str, out_path: str | None = None, channel: 
     """根据 JSON 配置生成 main.c 代码，并返回静态检查结果。
 
     参数:
-      kind: infantry / engineer / debug
-      config: JSON 字符串。字段定义见 get_schema(kind)，所有类型都使用扁平对象。
+      kind: infantry / engineer / debug / music
+      config: JSON 字符串。字段定义见 get_schema(kind)；音乐类型使用 music.segments 保存的 MIDI 解析结果。
       out_path: 可选，把生成的 C 代码写入此绝对路径（不指定则只返回 JSON，code 字段含代码）。
       channel: 可选，遥控器通道号（0-125）。传入后自动填入 config 的 channel（覆盖环境变量默认值）。
 
@@ -287,7 +287,7 @@ def check_config(kind: str, config: str, channel: str | None = None) -> str:
     """仅运行静态检查，不生成代码。
 
     参数:
-      kind: infantry / engineer / debug
+      kind: infantry / engineer / debug / music
       config: JSON 字符串，同 generate_code。
       channel: 可选，遥控器通道号（0-125），同 generate_code。
 
@@ -347,7 +347,7 @@ def build_code(kind: str, config: str, channel: str | None = None) -> str:
     """生成代码并用 Keil C251 编译为 hex 固件（供真机烧录）。
 
     参数:
-      kind: infantry / engineer / debug
+      kind: infantry / engineer / debug / music
       config: JSON 字符串，同 generate_code。字段定义见 get_schema(kind)。
       channel: 可选，遥控器通道号（0-125），同 generate_code。
 

@@ -2,7 +2,7 @@
 
 把 Pie-Block 图形化代码生成器做成**命令行工具**（Godot headless CLI），再包一层
 **MCP Server**，让任何 AI Agent（Claude、GitHub Copilot、opencode 等）都能直接
-调用同一套代码生成逻辑，生成步兵 / 工程 / 调试机器人固件。
+调用同一套代码生成逻辑，生成步兵 / 工程 / 调试机器人固件，或生成 P33 蜂鸣器音乐固件。
 
 **零逻辑重复**：CLI 直接复用 `scripts/codegen/*.gd` 和 `scripts/static_checker.gd`，
 不重写任何生成规则。改 GUI 的生成器，CLI / MCP 自动跟着变。
@@ -128,6 +128,41 @@ godot --headless --no-header --path . --script scripts/cli_codegen.gd -- help
 
 > `has_error` = 配置存在 Error 级问题。**代码仍会生成**（供参考），
 > 但真机烧录前必须清零。
+
+### 音乐模式配置
+
+音乐模式只接受项目中已经保存的 MIDI 解析结果，不读取 `source_name` 对应的原始文件。
+Windows 桌面端通过图形界面导入 MIDI、选择轨道并保存后，可直接使用：
+
+```powershell
+godot --headless --no-header --path . --script scripts/cli_codegen.gd -- generate `
+  --project "音乐项目.pieproj" --out main.c
+
+godot --headless --no-header --path . --script scripts/cli_codegen.gd -- check `
+  --kind music --config music.json
+```
+
+`music.json` 的结构为：
+
+```json
+{
+  "music": {
+    "source_name": "旋律.mid",
+    "track_index": 0,
+    "track_name": "主旋律",
+    "track_count": 2,
+    "duration_ms": 1200,
+    "segments": [
+      {"note": 60, "duration_ms": 500},
+      {"note": 0, "duration_ms": 100},
+      {"note": 64, "duration_ms": 600}
+    ]
+  }
+}
+```
+
+`note` 是 MIDI 音高，`0` 表示休止；最多 8192 个片段，最长 20 分钟。
+休止不会调用频率 0，代码生成器会将 `Ms_Delay` 长参数拆成多个 16 位延时。
 
 ## 二、MCP Server
 

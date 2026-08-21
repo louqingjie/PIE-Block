@@ -43,7 +43,7 @@ var _agent_path: String = ""
 var _is_ready: bool = false
 ## AI 工作区（user:// 虚拟路径），start() 记录、装完 opencode 后继续用
 var _workspace: String = ""
-## 当前构型（infantry / engineer / debug），用于生成构型专属的 AGENTS.md 与 .gitignore
+## 当前构型（infantry / engineer / debug / music），用于生成构型专属的 AGENTS.md 与 .gitignore
 var _kind: String = ""
 ## opencode 自动安装状态
 var _installing: bool = false
@@ -200,6 +200,8 @@ func _kind_label(kind: String) -> String:
 			return "工程"
 		"debug":
 			return "调试"
+		"music":
+			return "音乐"
 		_:
 			return "步兵"
 

@@ -34,7 +34,7 @@ func _check(label: String, ok: bool, detail: String = "") -> void:
 
 func _initialize() -> void:
 	print("=== 项目文件与配置序列化测试 ===\n")
-	_check("项目格式版本已升级到 8", PF.FORMAT_VERSION == 8)
+	_check("项目格式版本已升级到 9", PF.FORMAT_VERSION == 9)
 	DirAccess.make_dir_recursive_absolute(TMP_DIR)
 	_test_kind_mapping()
 	_test_roundtrip()
@@ -100,11 +100,12 @@ func _test_code_edit_focus_setup() -> void:
 # ------------------------------------------------------------------ 类型映射
 func _test_kind_mapping() -> void:
 	print("--- 项目类型 <-> Tab 映射 ---")
-	_check("三种类型", PF.KINDS.size() == 3)
+	_check("四种类型", PF.KINDS.size() == 4)
 	_check("步兵 -> [0]", PF.kind_tabs(PF.KIND_INFANTRY) == [0])
 	_check("工程桌面端仅显示 [1]", PF.kind_tabs(PF.KIND_ENGINEER) == [1])
 	_check("调试 -> [2]", PF.kind_tabs(PF.KIND_DEBUG) == [2])
-	# 三种类型的逻辑页集合互不重叠
+	_check("音乐 -> [3]", PF.kind_tabs(PF.KIND_MUSIC) == [3])
+	# 四种类型的逻辑页集合互不重叠
 	var seen: Array = []
 	var overlap: bool = false
 	for kind in PF.KINDS:
@@ -114,7 +115,7 @@ func _test_kind_mapping() -> void:
 			seen.append(t)
 	seen.sort()
 	_check("Tab 集合互不重叠", not overlap)
-	_check("逻辑页为 [0, 1, 2]", seen == [0, 1, 2])
+	_check("逻辑页为 [0, 1, 2, 3]", seen == [0, 1, 2, 3])
 	_check("默认 Tab：工程 = 1", PF.kind_default_tab(PF.KIND_ENGINEER) == 1)
 	_check("Tab 反查类型：2 -> 调试", PF.tab_to_kind(2) == PF.KIND_DEBUG)
 	_check("kind_label 覆盖调试", PF.kind_label(PF.KIND_DEBUG) == "调试")
@@ -134,6 +135,7 @@ func _test_roundtrip() -> void:
 		[PF.KIND_ENGINEER, 1, 1],
 		[PF.KIND_ENGINEER, 2, 1],
 		[PF.KIND_DEBUG, 2, 2],
+		[PF.KIND_MUSIC, 1, 3],
 	]
 	for c in cases:
 		var kind: String = c[0]
@@ -142,6 +144,19 @@ func _test_roundtrip() -> void:
 		var data: Dictionary = PF.new_data(kind)
 		data["stage"] = stage
 		data["active_tab"] = tab
+		if kind == PF.KIND_MUSIC:
+			data["music"] = {
+				"source_name": "旋律.mid",
+				"track_index": 1,
+				"track_name": "主旋律",
+				"track_count": 2,
+				"duration_ms": 1500,
+				"segments": [
+					{"note": 60, "duration_ms": 500},
+					{"note": 0, "duration_ms": 250},
+					{"note": 64, "duration_ms": 750},
+				],
+			}
 		# 含中文、引号、反斜杠、换行的配置值与代码
 		data["config"] = {
 			"FirstRow/RemoteSetting/Channel/LineEdit": {"t": "36"},
@@ -178,6 +193,8 @@ func _test_roundtrip() -> void:
 			got["main_c_ai"] == data["main_c_ai"])
 		_check("%s/阶段%d workflow 一致" % [kind, stage],
 			got["workflow"] == PF.normalize_workflow(data["workflow"]))
+		_check("%s/阶段%d music 解析结果一致" % [kind, stage],
+			got["music"] == PF.normalize_music(data["music"]))
 	# current_main_c：阶段二优先 AI 版
 	var d2: Dictionary = PF.new_data(PF.KIND_ENGINEER)
 	d2["stage"] = 2
@@ -272,6 +289,23 @@ func _test_normalize() -> void:
 	})
 	_check("超长引导进度截断为七步",
 		(long_progress["workflow"]["guide_completed"] as Array).size() == PF.GUIDE_STEP_COUNT)
+	var music_norm: Dictionary = PF.normalize_music({
+		"source_name": "test.mid", "track_index": 2, "track_count": 3,
+		"segments": [
+			{"note": 60, "duration_ms": 100},
+			{"note": 200, "duration_ms": 100},
+			{"frequency": 440, "duration_ms": 200},
+			{"note": 0, "duration_ms": 0},
+		],
+	})
+	_check("音乐数据保留合法片段并过滤非法值",
+		music_norm["segments"] == [
+			{"note": 60, "duration_ms": 100},
+			{"frequency": 440, "duration_ms": 200},
+		])
+	_check("音乐数据自动计算总时长", int(music_norm["duration_ms"]) == 300)
+	_check("音乐 active_tab 只能落在音乐页",
+		int(PF.normalize({"kind": PF.KIND_MUSIC, "active_tab": 0})["active_tab"]) == 3)
 
 	# 工程项目的 active_tab 不能落在步兵页上
 	var eng: Dictionary = PF.normalize({"kind": PF.KIND_ENGINEER, "active_tab": 0})
@@ -372,14 +406,15 @@ func _test_config_roundtrip() -> void:
 			break
 	_check("部分回填时其余项保持原值", ok_partial)
 
-	# 构型页可见性：三种类型各自只显示自己的页（步兵/调试是平铺 Control）
+	# 构型页可见性：四种类型各自只显示自己的页（均是 EditZone 下平铺 Control）
 	var edit_zone: Node = ui.get_node(ui.P_EDIT_ZONE)
 	for kind in PF.KINDS:
 		ui._apply_kind_visibility(kind, PF.kind_default_tab(kind))
 		_check("%s 只显示自己的页" % PF.kind_label(kind),
 			edit_zone.get_node("Infantry").visible == (kind == PF.KIND_INFANTRY)
 			and edit_zone.get_node("Engineer").visible == (kind == PF.KIND_ENGINEER)
-			and edit_zone.get_node("Debug").visible == (kind == PF.KIND_DEBUG))
+			and edit_zone.get_node("Debug").visible == (kind == PF.KIND_DEBUG)
+			and edit_zone.get_node("Music").visible == (kind == PF.KIND_MUSIC))
 		_check("%s 的逻辑 Tab 落在可见页" % PF.kind_label(kind),
 			ui._current_tab() in PF.kind_tabs(kind))
 
@@ -418,7 +453,8 @@ func _test_lifecycle() -> void:
 	_check("新建后保存按钮可用", not save_btn.disabled)
 	_check("新建后只显示工程页", edit_zone.get_node("Engineer").visible
 		and not edit_zone.get_node("Infantry").visible
-		and not edit_zone.get_node("Debug").visible)
+		and not edit_zone.get_node("Debug").visible
+		and not edit_zone.get_node("Music").visible)
 	var created: Dictionary = PF.load_from(path)
 	_check("新建即落盘", created["ok"])
 	_check("新建后是阶段一", int(created["data"]["stage"]) == 1)
@@ -601,10 +637,11 @@ func _test_lifecycle() -> void:
 	ch3.text_changed.emit("5")
 	_check("降级后配置可编辑", str(ch3.text) == "5")
 
-	# 类型不可转换：工程项目里永远看不到步兵 / 调试页
+	# 类型不可转换：工程项目里永远看不到步兵 / 调试 / 音乐页
 	var edit_zone3: Node = ui3.get_node(ui3.P_EDIT_ZONE)
 	_check("工程项目看不到步兵页", not edit_zone3.get_node("Infantry").visible)
 	_check("工程项目看不到调试页", not edit_zone3.get_node("Debug").visible)
+	_check("工程项目看不到音乐页", not edit_zone3.get_node("Music").visible)
 	_check("项目类型未被改动", str(ui3._project["kind"]) == PF.KIND_ENGINEER)
 
 	root.remove_child(ui3)
@@ -614,7 +651,7 @@ func _test_lifecycle() -> void:
 
 
 # ------------------------------------------------------------------ 启动页
-## 启动页负责项目管理：新建三种类型、打开、最近列表、损坏文件处理
+## 启动页负责项目管理：新建四种类型、打开、最近列表、损坏文件处理
 func _test_launcher() -> void:
 	print("--- 启动页 ---")
 	var packed: PackedScene = load("res://scenes/launcher.tscn") as PackedScene
@@ -663,7 +700,7 @@ func _test_launcher() -> void:
 			open_dlg.file_mode == FileDialog.FILE_MODE_OPEN_FILE,
 			"file_mode=%d 期望 %d" % [open_dlg.file_mode, FileDialog.FILE_MODE_OPEN_FILE])
 
-	# 三种类型各新建一个
+	# 四种类型各新建一个
 	var paths: Dictionary = {}
 	for kind in PF.KINDS:
 		var path: String = "%s/launcher_%s.%s" % [TMP_DIR, kind, PF.EXT]
@@ -679,20 +716,20 @@ func _test_launcher() -> void:
 
 	lau._rebuild_recent_list()
 	var rows: int = lau.get_node(lau.P_RECENT_LIST).get_child_count()
-	_check("最近列表列出 3 个项目", rows == 3, "实际 %d 行" % rows)
+	_check("最近列表列出 4 个项目", rows == 4, "实际 %d 行" % rows)
 	# 最近打开是「最新在前」
-	_check("最近列表最新在前", str(PF.recent_list()[0]) == str(paths[PF.KIND_DEBUG]))
+	_check("最近列表最新在前", str(PF.recent_list()[0]) == str(paths[PF.KIND_MUSIC]))
 	# 重复添加同一个项目不该产生重复行
 	PF.recent_add(str(paths[PF.KIND_INFANTRY]))
-	_check("重复添加不产生重复项", PF.recent_list().size() == 3)
+	_check("重复添加不产生重复项", PF.recent_list().size() == 4)
 	_check("重复添加会提到首位",
 		str(PF.recent_list()[0]) == str(paths[PF.KIND_INFANTRY]))
 	# 移除
 	PF.recent_remove(str(paths[PF.KIND_INFANTRY]))
-	_check("移除后只剩 2 个", PF.recent_list().size() == 2)
+	_check("移除后只剩 3 个", PF.recent_list().size() == 3)
 	# 文件被删掉的条目自动过滤
 	DirAccess.open(TMP_DIR).remove(str(paths[PF.KIND_DEBUG]).get_file())
-	_check("文件已删的条目被过滤", PF.recent_list().size() == 1)
+	_check("文件已删的条目被过滤", PF.recent_list().size() == 2)
 
 	# 打开损坏文件：不进主界面，报错并从最近列表摘掉
 	var bad: String = TMP_DIR + "/launcher_bad." + PF.EXT

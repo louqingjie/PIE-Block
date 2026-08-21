@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Pie-Block 音乐 配置",
+  "description": "从 MIDI 选定单轨并解析出的播放数据；CLI 不读取原始 MIDI 文件。",
+  "kind": "music",
+  "type": "object",
+  "properties": {
+    "music": {
+      "type": "object",
+      "properties": {
+        "source_name": {"type": "string"},
+        "track_index": {"type": "integer", "minimum": 0},
+        "track_name": {"type": "string"},
+        "track_count": {"type": "integer", "minimum": 1},
+        "duration_ms": {"type": "integer", "minimum": 1, "maximum": 1200000},
+        "segments": {
+          "type": "array",
+          "maxItems": 8192,
+          "items": {
+            "type": "object",
+            "properties": {
+              "note": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 127,
+                "description": "MIDI 音高；0 表示休止"
+              },
+              "duration_ms": {"type": "integer", "minimum": 1}
+            },
+            "required": ["note", "duration_ms"]
+          }
+        }
+      },
+      "required": ["track_index", "segments"]
+    }
+  },
+  "required": ["music"]
+}

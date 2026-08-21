@@ -39,8 +39,9 @@ from keil_server.config import PROJECT_ROOT
 PROJECT_DIRS = {
     "infantry": "ROBOMASTER_INFANTRY",
     "engineer": "ROBOMASTER_ENGINEER",
-    # debug 复用步兵模板（与 scripts/cli_codegen.gd 的 _project_dst_for_kind 一致）
+    # debug / music 复用步兵模板（与 scripts/cli_codegen.gd 的 _project_dst_for_kind 一致）
     "debug": "ROBOMASTER_INFANTRY",
+    "music": "ROBOMASTER_INFANTRY",
 }
 
 

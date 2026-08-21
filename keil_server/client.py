@@ -42,11 +42,12 @@ import httpx
 from keil_server.config import PROJECT_ROOT
 
 # ------------------------------------------------------------------ 常量
-# 构型 -> 打包用的工程模板目录（debug 复用步兵模板，与 cli_codegen 一致）
+# 构型 -> 打包用的工程模板目录（debug / music 复用步兵模板，与 cli_codegen 一致）
 PROJECT_DIRS = {
     "infantry": "ROBOMASTER_INFANTRY",
     "engineer": "ROBOMASTER_ENGINEER",
     "debug": "ROBOMASTER_INFANTRY",
+    "music": "ROBOMASTER_INFANTRY",
 }
 DEFAULT_SERVER = "http://127.0.0.1:8000"
 POLL_INTERVAL = 1.0
@@ -228,7 +229,7 @@ def build_fixture_zip(
 ) -> Path:
     """把工程模板 + main.c 打成自包含 zip（复用 make_fixture）。
 
-    kind 直接传给 make_fixture（infantry/engineer/debug），由它内部映射模板目录。
+    kind 直接传给 make_fixture（infantry/engineer/debug/music），由它内部映射模板目录。
     """
     from keil_server.make_fixture import build_fixture
 

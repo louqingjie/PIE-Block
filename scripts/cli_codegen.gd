@@ -9,14 +9,14 @@ extends SceneTree
 ##   godot --headless --path <项目根> --script scripts/cli_codegen.gd -- <命令> [参数]
 ##
 ## 命令:
-##   generate  --kind <infantry|engineer|debug> --config <json文件或-> [--out <文件>]
+##   generate  --kind <infantry|engineer|debug|music> --config <json文件或-> [--out <文件>]
 ##   generate  --project <.pieproj文件> [--out <文件>]
-##   check     --kind <infantry|engineer|debug> --config <json文件或->
+##   check     --kind <infantry|engineer|debug|music> --config <json文件或->
 ##   check     --project <.pieproj文件>
-##   build     --kind <infantry|engineer|debug> --config <json文件或->
+##   build     --kind <infantry|engineer|debug|music> --config <json文件或->
 ##   build     --code <c文件>   （直接编译已有 C 代码，--kind 指定模板）
 ##   build     --project <.pieproj文件>
-##   schema    --kind <infantry|engineer|debug>
+##   schema    --kind <infantry|engineer|debug|music>
 ##   profiles
 ##
 ## 所有命令均输出 JSON 到 stdout（generate 的 --out 除外，见下文）。
@@ -27,6 +27,7 @@ extends SceneTree
 const CG_INFANTRY = preload("res://scripts/codegen/codegen_infantry.gd")
 const CG_DEBUG = preload("res://scripts/codegen/codegen_debug.gd")
 const CG_ENGINEER = preload("res://scripts/codegen/codegen_engineer.gd")
+const CG_MUSIC = preload("res://scripts/codegen/codegen_music.gd")
 const SC = preload("res://scripts/static_checker.gd")
 const PF = preload("res://scripts/project_file.gd")
 const TC = preload("res://scripts/toolchain.gd")
@@ -105,7 +106,7 @@ func _cmd_generate(args: PackedStringArray) -> void:
 	elif parsed.has("--config"):
 		kind = parsed.get("--kind", "infantry")
 		if not PF.is_valid_kind(kind):
-			_print_error("未知项目类型: %s（合法值: infantry/engineer/debug）" % kind)
+			_print_error("未知项目类型: %s（合法值: infantry/engineer/debug/music）" % kind)
 			quit(EXIT_ARG)
 			return
 		var config_text: String = _read_config_source(parsed["--config"])
@@ -271,7 +272,7 @@ func _cmd_build(args: PackedStringArray) -> void:
 		return
 	var kind: String = parsed.get("--kind", "infantry")
 	if not PF.is_valid_kind(kind):
-		_print_error("未知项目类型: %s（合法值: infantry/engineer/debug）" % kind)
+		_print_error("未知项目类型: %s（合法值: infantry/engineer/debug/music）" % kind)
 		quit(EXIT_ARG)
 		return
 
@@ -397,6 +398,8 @@ func _generate_code(kind: String, cfg: Dictionary) -> String:
 			# debug_rows 可能是 null/字符串等畸形输入，非数组一律按空处理，避免生成器崩
 			var dr2: Variant = cfg.get("debug_rows", [])
 			return CG_DEBUG.new().generate({"debug_rows": dr2 if dr2 is Array else []})
+		PF.KIND_MUSIC:
+			return CG_MUSIC.new().generate({"music": cfg.get("music", {})})
 		_:
 			return CG_INFANTRY.new().generate(cfg)
 
@@ -414,6 +417,8 @@ func _run_check(kind: String, cfg: Dictionary) -> Array:
 			# debug_rows 可能是 null/字符串等畸形输入，非数组一律按空处理，避免 check_debug 崩
 			var dr: Variant = cfg.get("debug_rows", cfg.get("rows", []))
 			return SC.check_debug(dr if dr is Array else [])
+		PF.KIND_MUSIC:
+			return SC.check_music(cfg)
 		_:
 			return SC.check_infantry(cfg)
 
@@ -439,6 +444,8 @@ func _config_from_project(data: Dictionary, kind: String) -> Dictionary:
 			return _flatten_engineer_config(config)
 		PF.KIND_DEBUG:
 			return {"debug_rows": _flatten_debug_config(config)}
+		PF.KIND_MUSIC:
+			return {"music": data.get("music", {})}
 		_:
 			return _flatten_infantry_config(config)
 
@@ -751,6 +758,8 @@ func _build_schema(kind: String) -> Dictionary:
 			schema["properties"] = _engineer_schema()
 		PF.KIND_DEBUG:
 			schema["properties"] = _debug_schema()
+		PF.KIND_MUSIC:
+			schema["properties"] = _music_schema()
 	schema["description"] = _kind_description(kind)
 	return schema
 
@@ -909,6 +918,36 @@ func _debug_schema() -> Dictionary:
 	}
 
 
+func _music_schema() -> Dictionary:
+	return {
+		"music": {
+			"type": "object",
+			"description": "已从 MIDI 选定单轨并解析出的播放数据；CLI 不读取原始 MIDI 文件",
+			"required": ["track_index", "track_count", "segments"],
+			"properties": {
+				"source_name": {"type": "string"},
+				"track_index": {"type": "integer", "minimum": 0},
+				"track_name": {"type": "string"},
+				"track_count": {"type": "integer", "minimum": 1},
+				"duration_ms": {"type": "integer", "minimum": 1, "maximum": 1200000},
+				"segments": {
+					"type": "array",
+					"maxItems": 8192,
+					"items": {
+						"type": "object",
+						"required": ["note", "duration_ms"],
+						"properties": {
+							"note": {"type": "integer", "minimum": 0, "maximum": 127,
+								"description": "MIDI 音高；0 表示休止"},
+							"duration_ms": {"type": "integer", "minimum": 1},
+						},
+					},
+				},
+			},
+		},
+	}
+
+
 # ====================================================================
 # 辅助
 # ====================================================================
@@ -920,6 +959,8 @@ func _kind_description(kind: String) -> String:
 			return "工程机器人：底盘4电机、1～4个独立操作模式、两种切换策略和任意IO按键映射。支持舵机/电机混用。"
 		PF.KIND_DEBUG:
 			return "调试模式：逐行测试各引脚，每个命令持续3秒，蜂鸣器提示开始/结束。"
+		PF.KIND_MUSIC:
+			return "音乐模式：导入 MIDI 后选择单轨，使用主控板 P33 蜂鸣器自动循环播放。"
 		_:
 			return ""
 
@@ -962,18 +1003,18 @@ Pie-Block 代码生成器 CLI
   help        显示此帮助
 
 generate 参数:
-  --kind <infantry|engineer|debug>   项目类型（与 --config 配合）
+  --kind <infantry|engineer|debug|music>   项目类型（与 --config 配合）
   --config <json文件>                配置 JSON 文件路径
   --project <.pieproj文件>           从项目文件加载（含配置和代码）
   --out <文件>                       输出到文件（不指定则输出 JSON 到 stdout）
 
 check 参数:
-  --kind <infantry|engineer|debug>   项目类型
+  --kind <infantry|engineer|debug|music>   项目类型
   --config <json文件>                配置 JSON 文件路径
   --project <.pieproj文件>           从项目文件加载
 
 build 参数:
-  --kind <infantry|engineer|debug>   项目类型（决定用哪个项目模板编译）
+  --kind <infantry|engineer|debug|music>   项目类型（决定用哪个项目模板编译）
   --config <json文件>                配置 JSON 文件路径（先生成再编译）
   --code <c文件>                     直接编译已有的 C 代码文件
   --project <.pieproj文件>           从项目文件编译（优先用已保存的代码）
@@ -982,7 +1023,7 @@ build 参数:
                                      可用 PIEBLOCK_PYTHON 指定 python 解释器
 
 schema 参数:
-  --kind <infantry|engineer|debug>   项目类型
+  --kind <infantry|engineer|debug|music>   项目类型
 
 示例:
   # 用默认步兵配置生成代码

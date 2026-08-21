@@ -20,7 +20,7 @@ func _ready() -> void:
 		var font: Font = load("res://assets/fonts/NotoSansSC-Regular-subset.ttf")
 		if font is Font:
 			ThemeDB.fallback_font = font
-## 构型标识，用于界面显示与日志（infantry / engineer / debug）
+## 构型标识，用于界面显示与日志（infantry / engineer / debug / music）
 var project_kind: String = "infantry"
 ## 来源 Tab 索引，返回图形化界面时恢复
 var source_tab: int = 0
@@ -62,7 +62,7 @@ func has_project() -> bool:
 	return not project_path.is_empty()
 
 
-## 构型对应的项目部署路径（工程走 ENGINEER 模板，步兵与调试走 INFANTRY 模板）
+## 构型对应的项目部署路径（工程走 ENGINEER 模板，其余构型走 INFANTRY 模板）
 func project_dst_for_kind(kind: String) -> String:
 	if kind == PF.KIND_ENGINEER:
 		return TC.PROJECT_ENGINEER_DST

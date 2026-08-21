@@ -75,6 +75,7 @@ const P_FRICTION_SPEED_STEP: NodePath = KEYSET + "/BoosterSpeedControl/MaxDuty"
 const OLD_FRICTION_MAX_DUTY_CONFIG_PATH: String = "Infantry/KeySetting/Booster/MaxDuty"
 # 调试界面
 const DEBUG: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/Debug"
+const MUSIC: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/Music"
 # 调试界面各行容器名（P60, P62, P64, P66, P74, P75, P76, P77, MP03, MP74）
 const DEBUG_ROWS: Array = [
 	"HBoxContainer", "HBoxContainer2", "HBoxContainer3", "HBoxContainer4", "HBoxContainer5",
@@ -84,6 +85,7 @@ const DEBUG_ROWS: Array = [
 const INFANTRY_PAGE: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/Infantry"
 const ENGINEER: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/Engineer"
 const DEBUG_PAGE: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/Debug"
+const MUSIC_PAGE: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/Music"
 # 工程页已直接挂在 EditZone 下，不再经过外层 TabContainer。
 # 步兵页「高级设置」折叠区内的同一套 IO+模式+按键映射（与工程页共用同一份配置）
 const ADV_ENGINEER: String = INFANTRY_PAGE + "/Advanced/ScrollContainer/AdvancedAndEngineer"
@@ -204,6 +206,7 @@ const WEB = preload("res://scripts/web_support.gd")
 # 项目文件（.pieproj）读写与「项目类型 <-> Tab」映射表
 const PF = preload("res://scripts/project_file.gd")
 const SC = preload("res://scripts/static_checker.gd")
+const CG_MUSIC = preload("res://scripts/codegen/codegen_music.gd")
 
 
 # ------------------------------------------------------------------ 生命周期
@@ -236,6 +239,8 @@ var _dirty: bool = false
 var _stage2_preview: bool = false
 ## 阶段二回滚用的基准配置（已与默认值合并过，缺项也能回滚干净）
 var _frozen_config: Dictionary = {}
+## 音乐项目阶段二回滚用的解析结果快照
+var _frozen_music: Dictionary = {}
 ## AI 功能是否已经启用
 var _ai_enabled: bool = false
 ## 已经弹过「继续修改将丢弃 AI 代码」确认框，避免连点堆叠弹窗
@@ -368,6 +373,9 @@ func _connect_signals() -> void:
 	var gate_back: Node = get_node_or_null(P_GATE_BACK)
 	if gate_back is BaseButton:
 		gate_back.pressed.connect(_go_to_launcher)
+	var music_page: Node = get_node_or_null(MUSIC)
+	if music_page != null and music_page.has_signal("music_changed"):
+		music_page.connect("music_changed", _on_music_changed)
 	# LineEdit 文本变化
 	for p in [P_CHANNEL, P_DEADZONE, P_NORMAL_SPEED, P_SPRINT_SPEED,
 			P_TRIGGER_SPEED, P_TRIGGER_TIME, P_FRICTION_MAX_DUTY, P_FRICTION_SPEED_STEP,
@@ -654,6 +662,17 @@ func _on_config_touched() -> void:
 	_mark_dirty()
 
 
+## MIDI 文件或轨道改变时的配置变更入口。
+func _on_music_changed() -> void:
+	if _loading:
+		return
+	if _stage2_preview:
+		_prompt_discard_ai_code()
+		return
+	_mark_dirty()
+	_run_check()
+
+
 func _mark_dirty() -> void:
 	if not _dirty:
 		_dirty = true
@@ -701,7 +720,11 @@ func _guide_done_states() -> Array[bool]:
 			break
 	var checked: bool = not code_hash.is_empty() and not has_error
 	var tab: int = _current_tab()
-	var input_done: bool = remote_done if tab == 0 or tab == 1 else checked
+	var music_data: Dictionary = _get_music_data()
+	var music_done: bool = int(music_data.get("track_index", -1)) >= 0 \
+		and not (music_data.get("segments", []) as Array).is_empty() \
+		and _get_music_parse_error().is_empty()
+	var input_done: bool = remote_done if tab == 0 or tab == 1 else music_done if tab == 3 else checked
 	return [
 		bool(workflow.get("hardware_confirmed", false)),
 		input_done,
@@ -744,6 +767,9 @@ func _guide_titles() -> Array[String]:
 		2:
 			titles[1] = "选择测试端口"
 			titles[2] = "配置测试参数"
+		3:
+			titles[1] = "选择 MIDI 文件"
+			titles[2] = "选择播放轨道"
 	return titles
 
 
@@ -755,10 +781,18 @@ func _on_guide_step_pressed(step: int) -> void:
 			match _current_tab():
 				2:
 					_focus_control(NodePath(DEBUG +"/HBoxContainer/OptionButton"))
+				3:
+					_focus_control(NodePath(MUSIC +"/Open"))
 				_:
 					_focus_control(P_CHANNEL)
 		2:
-			_focus_control(P_L1_IO if _current_tab() != 2 else NodePath(DEBUG +"/HBoxContainer/LineEdit"))
+			match _current_tab():
+				2:
+					_focus_control(NodePath(DEBUG +"/HBoxContainer/LineEdit"))
+				3:
+					_focus_control(NodePath(MUSIC +"/Track"))
+				_:
+					_focus_control(P_L1_IO)
 		3:
 			_run_guide_check()
 		4:
@@ -769,8 +803,8 @@ func _on_guide_step_pressed(step: int) -> void:
 			_confirm_hardware_test()
 
 
-## 当前编辑页的逻辑索引（0=步兵, 1=工程, 2=调试）。
-## 三种构型页都直接挂在 EditZone 下，以可见性判定当前逻辑页。
+## 当前编辑页的逻辑索引（0=步兵, 1=工程, 2=调试, 3=音乐）。
+## 各构型页都直接挂在 EditZone 下，以可见性判定当前逻辑页。
 func _current_tab() -> int:
 	var edit_zone: Node = get_node_or_null(P_EDIT_ZONE)
 	if not is_instance_valid(edit_zone):
@@ -778,10 +812,13 @@ func _current_tab() -> int:
 	var infra: Node = edit_zone.get_node_or_null("Infantry")
 	var eng: Node = edit_zone.get_node_or_null("Engineer")
 	var dbg: Node = edit_zone.get_node_or_null("Debug")
+	var music: Node = edit_zone.get_node_or_null("Music")
 	if infra is CanvasItem and infra.visible:
 		return 0
 	if dbg is CanvasItem and dbg.visible:
 		return 2
+	if music is CanvasItem and music.visible:
+		return 3
 	if eng is CanvasItem and eng.visible:
 		return 1
 	return 0
@@ -998,7 +1035,9 @@ func _adopt_project(data: Dictionary, path: String) -> void:
 	var cfg: Dictionary = _default_config.duplicate(true)
 	cfg.merge(data["config"] as Dictionary, true)
 	_apply_config(cfg)
+	_set_music_data(data.get("music", {}))
 	_frozen_config = cfg
+	_frozen_music = _get_music_data().duplicate(true)
 	_stage2_preview = int(data["stage"]) >= 2
 	_dirty = false
 	_apply_ai_entry()
@@ -1006,7 +1045,7 @@ func _adopt_project(data: Dictionary, path: String) -> void:
 
 
 ## 按项目类型显示对应页面（类型不可转换的第二道保证）。
-## 三种构型页都是 EditZone 下平铺的 Control，仅通过可见性切换。
+## 各构型页都是 EditZone 下平铺的 Control，仅通过可见性切换。
 func _apply_kind_visibility(kind: String, _want_tab: int) -> void:
 	var edit_zone: Node = get_node_or_null(P_EDIT_ZONE)
 	if not is_instance_valid(edit_zone):
@@ -1014,12 +1053,18 @@ func _apply_kind_visibility(kind: String, _want_tab: int) -> void:
 	var infra: Node = edit_zone.get_node_or_null("Infantry")
 	var engineer: Node = edit_zone.get_node_or_null("Engineer")
 	var dbg: Node = edit_zone.get_node_or_null("Debug")
+	var music: Node = edit_zone.get_node_or_null("Music")
 	if infra is CanvasItem:
 		infra.visible = (kind == PF.KIND_INFANTRY)
 	if engineer is CanvasItem:
 		engineer.visible = (kind == PF.KIND_ENGINEER)
 	if dbg is CanvasItem:
 		dbg.visible = (kind == PF.KIND_DEBUG)
+	if music is CanvasItem:
+		music.visible = (kind == PF.KIND_MUSIC)
+	var first_row: Node = get_node_or_null(P_FIRST_ROW)
+	if first_row is CanvasItem:
+		first_row.visible = kind != PF.KIND_MUSIC
 	_update_mode_page_visibility()
 	_sync_io_locks()
 	_update_sim_btn_visibility()
@@ -1097,6 +1142,8 @@ func _save_project(verbose: bool) -> void:
 		_project["config"] = _snapshot_config()
 		_project["main_c_stage1"] = _current_preview_code()
 		_project["active_tab"] = _current_tab()
+		if _current_tab() == 3:
+			_project["music"] = _get_music_data()
 	var res: Dictionary = PF.save_to(AppState.project_path, _project)
 	if not res["ok"]:
 		_append_output("[Error] 保存失败：%s" % res["err"])
@@ -1162,6 +1209,7 @@ func _prompt_discard_ai_code() -> void:
 		return
 	_discard_dialog_open = true
 	_apply_config(_frozen_config)
+	_set_music_data(_frozen_music)
 	var dlg := ConfirmationDialog.new()
 	dlg.title = "确认修改图形化配置"
 	dlg.dialog_text = "继续修改将丢弃 AI 编辑的代码，项目回到图形化配置阶段。\n" \
@@ -1203,7 +1251,7 @@ func _update_sim_btn_visibility() -> void:
 
 ## 根据当前 Tab 选项获取对应的代码生成器
 func _get_current_codegen() -> CodeGenBase:
-	# 逻辑页顺序：0=步兵, 1=工程, 2=调试
+	# 逻辑页顺序：0=步兵, 1=工程, 2=调试, 3=音乐
 	match _current_tab():
 		0:
 			return CodeGenInfantry.new()
@@ -1211,6 +1259,8 @@ func _get_current_codegen() -> CodeGenBase:
 			return CodeGenEngineer.new()
 		2:
 			return CodeGenDebug.new()
+		3:
+			return CG_MUSIC.new()
 		_:
 			return CodeGenInfantry.new()
 
@@ -1679,6 +1729,11 @@ func _run_check(_a = null, _b = null) -> void:
 			issues = SC.check_engineer(_collect_engineer_config())
 		2:
 			issues = SC.check_debug(_collect_debug_config())
+		3:
+			issues = SC.check_music({"music": _get_music_data()})
+			var parse_error: String = _get_music_parse_error()
+			if not parse_error.is_empty():
+				issues.push_front({"type": "Error", "msg": parse_error})
 	_last_issues = issues
 	# 将问题展示到 Output
 	var out: Node = get_node_or_null(P_OUTPUT)
@@ -1692,6 +1747,8 @@ func _run_check(_a = null, _b = null) -> void:
 			cfg = {"debug_rows": _collect_debug_config()}
 		1:
 			cfg = _collect_engineer_config()
+		3:
+			cfg = {"music": _get_music_data()}
 		_:
 			# 步兵：固定云台/发射配置 + 高级设置的共享多模式按键映射
 			var inf_gen_cfg: Dictionary = _collect_config()
@@ -1701,6 +1758,37 @@ func _run_check(_a = null, _b = null) -> void:
 	var code_edit: Node = get_node_or_null(P_CODE_EDIT)
 	if code_edit is CodeEdit:
 		code_edit.text = code
+
+
+func _get_music_page() -> Node:
+	return get_node_or_null(MUSIC)
+
+
+func _get_music_data() -> Dictionary:
+	var page: Node = _get_music_page()
+	if page != null and page.has_method("get_music_data"):
+		return page.call("get_music_data") as Dictionary
+	return {
+		"source_name": "",
+		"track_index": -1,
+		"track_name": "",
+		"track_count": 0,
+		"duration_ms": 0,
+		"segments": [],
+	}
+
+
+func _set_music_data(data: Dictionary) -> void:
+	var page: Node = _get_music_page()
+	if page != null and page.has_method("set_music_data"):
+		page.call("set_music_data", data)
+
+
+func _get_music_parse_error() -> String:
+	var page: Node = _get_music_page()
+	if page != null and page.has_method("get_parse_error"):
+		return str(page.call("get_parse_error"))
+	return ""
 
 ## 拨弹模式联动：目视闭环按住持续拨弹，不需要「时间(ms)」参数，隐藏输入框。
 ## 只改可见性，不改 editable，避免与 _set_node_tree_enabled 的门控逻辑相互干扰。
@@ -2132,6 +2220,8 @@ func _enter_ai_edit() -> void:
 		_project["config"] = _snapshot_config()
 		_project["main_c_stage1"] = code
 		_project["active_tab"] = tab
+		if tab == 3:
+			_project["music"] = _get_music_data()
 		_project["stage"] = 2
 		_project["main_c_ai"] = code
 	AppState.set_context(project_dst, str(_project["kind"]), tab)

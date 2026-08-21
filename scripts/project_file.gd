@@ -15,31 +15,36 @@ extends RefCounted
 ## 文件扩展名（不含点）
 const EXT: String = "pieproj"
 ## 格式版本，将来迁移用
-const FORMAT_VERSION: int = 8
+const FORMAT_VERSION: int = 9
 const GUIDE_STEP_COUNT: int = 7
+const MUSIC_MAX_SEGMENTS: int = 8192
+const MUSIC_MAX_DURATION_MS: int = 20 * 60 * 1000
 
 # ------------------------------------------------------------------ 项目类型
 const KIND_INFANTRY: String = "infantry"
 const KIND_ENGINEER: String = "engineer"
 const KIND_DEBUG: String = "debug"
+const KIND_MUSIC: String = "music"
 
 ## 全部合法类型（新建对话框按此顺序列出）
-const KINDS: Array = [KIND_INFANTRY, KIND_ENGINEER, KIND_DEBUG]
+const KINDS: Array = [KIND_INFANTRY, KIND_ENGINEER, KIND_DEBUG, KIND_MUSIC]
 
 ## 类型 -> 中文显示名
 const KIND_LABELS: Dictionary = {
 	KIND_INFANTRY: "步兵",
 	KIND_ENGINEER: "工程",
 	KIND_DEBUG: "调试",
+	KIND_MUSIC: "音乐",
 }
 
 ## 类型 -> 该类型可见的 TabContainer 页索引。
-## 逻辑页顺序：0=步兵, 1=工程, 2=调试。
+## 逻辑页顺序：0=步兵, 1=工程, 2=调试, 3=音乐。
 ## 这里是类型与 Tab 映射的唯一真相源，ui.gd 一律调用本文件，不要另写一份。
 const KIND_TABS: Dictionary = {
 	KIND_INFANTRY: [0],
 	KIND_ENGINEER: [1],
 	KIND_DEBUG: [2],
+	KIND_MUSIC: [3],
 }
 
 
@@ -87,10 +92,72 @@ static func new_data(kind: String) -> Dictionary:
 		"stage": 1,
 		"active_tab": kind_default_tab(k),
 		"config": {},
+		"music": _default_music(),
 		"main_c_stage1": "",
 		"main_c_ai": "",
 		"workflow": _default_workflow(),
+}
+
+
+static func _default_music() -> Dictionary:
+	return {
+		"source_name": "",
+		"track_index": -1,
+		"track_name": "",
+		"track_count": 0,
+		"duration_ms": 0,
+		"segments": [],
 	}
+
+
+## 规整音乐模式的解析结果。原始 MIDI 不嵌入项目，只保存选中轨道的播放片段。
+static func normalize_music(raw: Variant) -> Dictionary:
+	var out: Dictionary = _default_music()
+	if not raw is Dictionary:
+		return out
+	var source: Dictionary = raw
+	out["source_name"] = str(source.get("source_name", ""))
+	out["track_index"] = int(source.get("track_index", -1))
+	out["track_name"] = str(source.get("track_name", ""))
+	out["track_count"] = maxi(0, int(source.get("track_count", 0)))
+	if out["track_index"] < -1 or out["track_count"] <= 0 \
+		or out["track_index"] >= out["track_count"]:
+		out["track_index"] = -1
+		out["track_name"] = ""
+	var segments_value: Variant = source.get("segments", [])
+	if segments_value is Array:
+		var segments: Array = []
+		var total_ms: int = 0
+		for value in segments_value:
+			if not value is Dictionary or segments.size() >= MUSIC_MAX_SEGMENTS:
+				continue
+			var item: Dictionary = value
+			var duration_ms: int = int(item.get("duration_ms", 0))
+			if duration_ms < 1:
+				continue
+			var segment: Dictionary = {"duration_ms": duration_ms}
+			if item.has("note"):
+				var note: int = int(item.get("note", -1))
+				if note < 0 or note > 127:
+					continue
+				segment["note"] = note
+			elif item.has("frequency"):
+				var frequency: int = int(item.get("frequency", -1))
+				if frequency < 0 or frequency > 65535:
+					continue
+				segment["frequency"] = frequency
+			else:
+				continue
+			segments.append(segment)
+			total_ms += duration_ms
+		out["segments"] = segments
+		out["duration_ms"] = mini(total_ms, MUSIC_MAX_DURATION_MS)
+	if int(out["track_index"]) < 0:
+		out["segments"] = []
+		out["duration_ms"] = 0
+	if out["duration_ms"] == 0:
+		out["duration_ms"] = mini(maxi(0, int(source.get("duration_ms", 0))), MUSIC_MAX_DURATION_MS)
+	return out
 
 
 static func _default_workflow() -> Dictionary:
@@ -138,6 +205,7 @@ static func normalize(raw: Dictionary) -> Dictionary:
 	data["active_tab"] = tab if tab in kind_tabs(kind) else kind_default_tab(kind)
 	var cfg: Variant = raw.get("config", {})
 	data["config"] = normalize_config(cfg) if cfg is Dictionary else {}
+	data["music"] = normalize_music(raw.get("music", {}))
 	data["main_c_stage1"] = str(raw.get("main_c_stage1", ""))
 	data["main_c_ai"] = str(raw.get("main_c_ai", ""))
 	data["workflow"] = normalize_workflow(raw.get("workflow", {}))

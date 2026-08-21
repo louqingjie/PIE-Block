@@ -20,8 +20,8 @@ const P_KIND_DIALOG: NodePath = "KindDialog"
 const P_SAVE_DIALOG: NodePath = "SaveDialog"
 const P_OPEN_DIALOG: NodePath = "OpenDialog"
 
-## 类型选择对话框里三个按钮的节点名，与 PF.KINDS 一一对应
-const KIND_BUTTONS: Array = ["Infantry", "Engineer", "Debug"]
+## 类型选择对话框里的按钮节点名，与 PF.KINDS 一一对应
+const KIND_BUTTONS: Array = ["Infantry", "Engineer", "Debug", "Music"]
 
 const UI_SCENE: String = "res://scenes/ui.tscn"
 
