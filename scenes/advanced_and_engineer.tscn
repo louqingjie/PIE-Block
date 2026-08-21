@@ -12,6 +12,9 @@ theme = ExtResource("3_yl5g4")
 metadata/_tab_index = 1
 metadata/_tab_name = "工程"
 
+[node name="HSeparator5" type="HSeparator" parent="." unique_id=369212510]
+layout_mode = 2
+
 [node name="Label" type="Label" parent="." unique_id=785385574]
 layout_mode = 2
 size_flags_horizontal = 4

@@ -533,8 +533,8 @@ func _flatten_engineer_config(config: Dictionary) -> Dictionary:
 	flat["r1_dir"] = str(_config_val(config, "FirstRow/Chassis/R1/OptionButton2"))
 	flat["r2_io"] = str(_config_val(config, "FirstRow/Chassis/R2/OptionButton"))
 	flat["r2_dir"] = str(_config_val(config, "FirstRow/Chassis/R2/OptionButton2"))
-	# 共享 IO/模式/按键映射（工程页：Engineer TabContainer 的第 0 个 tab）
-	flat.merge(_flatten_shared_eng_config(config, "Engineer/Engineer"))
+	# 共享 IO/模式/按键映射（工程页直接挂在 EditZone/Engineer）
+	flat.merge(_flatten_shared_eng_config(config, "Engineer"))
 	return _merge_defaults(flat, "engineer")
 
 
@@ -565,7 +565,7 @@ func _flatten_shared_eng_config(config: Dictionary, root: String) -> Dictionary:
 		var rows: Array = []
 		var row_keys: Dictionary = {}
 		for key in config.keys():
-			# Engineer/Engineer/TabContainer/M2/ScrollContainer/VBoxContainer/Row03/Key
+			# Engineer/TabContainer/M2/ScrollContainer/VBoxContainer/Row03/Key
 			var prefix: String = root + "/TabContainer/M%d/ScrollContainer/VBoxContainer/" % (mi + 1)
 			if not str(key).begins_with(prefix):
 				continue

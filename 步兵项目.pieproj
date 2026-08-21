@@ -111,119 +111,116 @@
 			"i": 0,
 			"s": "正"
 		},
-		"Engineer": {
-			"i": 0
-		},
-		"Engineer/Engineer/IOs/Row1/P60/MidDegree2": {
+		"Engineer/IOs/Row1/P60/MidDegree2": {
 			"t": ""
 		},
-		"Engineer/Engineer/IOs/Row1/P60/OptionButton": {
+		"Engineer/IOs/Row1/P60/OptionButton": {
 			"i": 1,
 			"s": "舵机"
 		},
-		"Engineer/Engineer/IOs/Row1/P62/MidDegree2": {
+		"Engineer/IOs/Row1/P62/MidDegree2": {
 			"t": ""
 		},
-		"Engineer/Engineer/IOs/Row1/P62/OptionButton": {
+		"Engineer/IOs/Row1/P62/OptionButton": {
 			"i": 1,
 			"s": "舵机"
 		},
-		"Engineer/Engineer/IOs/Row1/P64/MidDegree2": {
+		"Engineer/IOs/Row1/P64/MidDegree2": {
 			"t": ""
 		},
-		"Engineer/Engineer/IOs/Row1/P64/OptionButton": {
+		"Engineer/IOs/Row1/P64/OptionButton": {
 			"i": 1,
 			"s": "舵机"
 		},
-		"Engineer/Engineer/IOs/Row1/P66/MidDegree2": {
+		"Engineer/IOs/Row1/P66/MidDegree2": {
 			"t": ""
 		},
-		"Engineer/Engineer/IOs/Row1/P66/OptionButton": {
+		"Engineer/IOs/Row1/P66/OptionButton": {
 			"i": 1,
 			"s": "舵机"
 		},
-		"Engineer/Engineer/IOs/Row1/P74/MidDegree2": {
+		"Engineer/IOs/Row1/P74/MidDegree2": {
 			"t": ""
 		},
-		"Engineer/Engineer/IOs/Row1/P74/OptionButton": {
+		"Engineer/IOs/Row1/P74/OptionButton": {
 			"i": 0,
 			"s": "电机"
 		},
-		"Engineer/Engineer/IOs/Row2/MP03/MidDegree2": {
+		"Engineer/IOs/Row2/MP03/MidDegree2": {
 			"t": ""
 		},
-		"Engineer/Engineer/IOs/Row2/MP03/OptionButton": {
+		"Engineer/IOs/Row2/MP03/OptionButton": {
 			"i": 1,
 			"s": "舵机"
 		},
-		"Engineer/Engineer/IOs/Row2/MP74/MidDegree2": {
+		"Engineer/IOs/Row2/MP74/MidDegree2": {
 			"t": ""
 		},
-		"Engineer/Engineer/IOs/Row2/MP74/OptionButton": {
+		"Engineer/IOs/Row2/MP74/OptionButton": {
 			"i": 1,
 			"s": "舵机"
 		},
-		"Engineer/Engineer/IOs/Row2/P75/MidDegree2": {
+		"Engineer/IOs/Row2/P75/MidDegree2": {
 			"t": ""
 		},
-		"Engineer/Engineer/IOs/Row2/P75/OptionButton": {
+		"Engineer/IOs/Row2/P75/OptionButton": {
 			"i": 0,
 			"s": "电机"
 		},
-		"Engineer/Engineer/IOs/Row2/P76/MidDegree2": {
+		"Engineer/IOs/Row2/P76/MidDegree2": {
 			"t": ""
 		},
-		"Engineer/Engineer/IOs/Row2/P76/OptionButton": {
+		"Engineer/IOs/Row2/P76/OptionButton": {
 			"i": 0,
 			"s": "电机"
 		},
-		"Engineer/Engineer/IOs/Row2/P77/MidDegree2": {
+		"Engineer/IOs/Row2/P77/MidDegree2": {
 			"t": ""
 		},
-		"Engineer/Engineer/IOs/Row2/P77/OptionButton": {
+		"Engineer/IOs/Row2/P77/OptionButton": {
 			"i": 0,
 			"s": "电机"
 		},
-		"Engineer/Engineer/Mode/OptionButton": {
+		"Engineer/Mode/OptionButton": {
 			"i": 0,
 			"s": "1"
 		},
-		"Engineer/Engineer/Mode/TabContainer": {
+		"Engineer/Mode/TabContainer": {
 			"i": 1
 		},
-		"Engineer/Engineer/Mode/TabContainer/Change/OptionButton2": {
+		"Engineer/Mode/TabContainer/Change/OptionButton2": {
 			"i": 0,
 			"s": "E"
 		},
-		"Engineer/Engineer/Mode/TabContainer/Select/Key": {
+		"Engineer/Mode/TabContainer/Select/Key": {
 			"i": 0,
 			"s": "E"
 		},
-		"Engineer/Engineer/Mode/TabContainer/Select/Key2": {
+		"Engineer/Mode/TabContainer/Select/Key2": {
 			"i": 0,
 			"s": "E"
 		},
-		"Engineer/Engineer/Mode/TabContainer/Select/Key3": {
+		"Engineer/Mode/TabContainer/Select/Key3": {
 			"i": 0,
 			"s": "E"
 		},
-		"Engineer/Engineer/Mode/TabContainer/Select/Key4": {
+		"Engineer/Mode/TabContainer/Select/Key4": {
 			"i": 0,
 			"s": "E"
 		},
-		"Engineer/Engineer/TabContainer": {
+		"Engineer/TabContainer": {
 			"i": 0
 		},
-		"Engineer/Engineer/TabContainer/M1/Chassis/CheckButton": {
+		"Engineer/TabContainer/M1/Chassis/CheckButton": {
 			"b": true
 		},
-		"Engineer/Engineer/TabContainer/M2/Chassis/CheckButton": {
+		"Engineer/TabContainer/M2/Chassis/CheckButton": {
 			"b": false
 		},
-		"Engineer/Engineer/TabContainer/M3/Chassis/CheckButton": {
+		"Engineer/TabContainer/M3/Chassis/CheckButton": {
 			"b": false
 		},
-		"Engineer/Engineer/TabContainer/M4/Chassis/CheckButton": {
+		"Engineer/TabContainer/M4/Chassis/CheckButton": {
 			"b": false
 		},
 		"FirstRow/Chassis/L1/OptionButton": {

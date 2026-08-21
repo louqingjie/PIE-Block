@@ -26,17 +26,17 @@ func _initialize() -> void:
 	await process_frame
 
 	var btn: Button = ui.get_node(ui.P_SIM_BTN)
-	var tabs: TabContainer = ui.get_node(ui.P_TAB_CONTAINER)
+	var engineer: Control = ui.get_node(ui.ENGINEER)
 
 	# 无项目自由编辑默认显示步兵页，按钮应可见
-	_check("初始按钮可见（默认 Tab %d）" % tabs.current_tab, btn.visible,
-		"tab=%d visible=%s" % [tabs.current_tab, str(btn.visible)])
+	_check("初始按钮可见（默认逻辑页 %d）" % ui._current_tab(), btn.visible,
+		"tab=%d visible=%s" % [ui._current_tab(), str(btn.visible)])
 
 	# 进入工程项目上下文后，顶栏仿真入口应隐藏。
 	ui._apply_kind_visibility("engineer", 1)
 	await process_frame
 	_check("工程 Tab（1）按钮隐藏", not btn.visible)
-	_check("工程区域只保留一个配置页", tabs.get_tab_count() == 1)
+	_check("工程配置页直接挂在 EditZone 下", engineer.get_parent() == ui.get_node(ui.P_EDIT_ZONE))
 
 	# 回到步兵项目上下文后，整车仿真入口仍可用。
 	ui._apply_kind_visibility("infantry", 0)
@@ -44,7 +44,6 @@ func _initialize() -> void:
 	_check("步兵 Tab（0）按钮可见", btn.visible)
 
 	# 步兵 Tab 点顶栏按钮 -> 步兵整车仿真
-	tabs.current_tab = 0
 	await process_frame
 	ui._on_sim_pressed()
 	await process_frame

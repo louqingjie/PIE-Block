@@ -150,6 +150,14 @@ static func normalize(raw: Dictionary) -> Dictionary:
 static func normalize_config(raw: Dictionary) -> Dictionary:
 	var out: Dictionary = {}
 	for key in raw.keys():
+		var original_path: String = str(key)
+		# 工程页已从 Engineer/Engineer 展平为 Engineer。旧快照在读取时
+		# 重定位到新控件路径，避免普通工程配置因纯 UI 层级调整而丢失。
+		if original_path == "Engineer":
+			continue # 旧外层 TabContainer 的 current_tab 已无意义
+		var path: String = original_path
+		if path.begins_with("Engineer/Engineer/"):
+			path = "Engineer/" + path.trim_prefix("Engineer/Engineer/")
 		var v: Variant = raw[key]
 		if not v is Dictionary:
 			continue
@@ -164,7 +172,9 @@ static func normalize_config(raw: Dictionary) -> Dictionary:
 		if item.has("b"):
 			norm["b"] = bool(item["b"])
 		if not norm.is_empty():
-			out[str(key)] = norm
+			# 同时存在新旧路径时以新路径为准。
+			if path == original_path or not out.has(path):
+				out[path] = norm
 	return out
 
 

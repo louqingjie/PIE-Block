@@ -82,10 +82,9 @@ const DEBUG_ROWS: Array = [
 ]
 # 构型页：EditZone 下平铺三个 Control（按项目类型切换可见性，无外层 TabContainer）
 const INFANTRY_PAGE: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/Infantry"
-const ENGINEER_TABS: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/Engineer"
+const ENGINEER: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/Engineer"
 const DEBUG_PAGE: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/Debug"
-# 工程师界面（Engineer TabContainer 的唯一页面）
-const ENGINEER: String = ENGINEER_TABS + "/Engineer"
+# 工程页已直接挂在 EditZone 下，不再经过外层 TabContainer。
 # 步兵页「高级设置」折叠区内的同一套 IO+模式+按键映射（与工程页共用同一份配置）
 const ADV_ENGINEER: String = INFANTRY_PAGE + "/Advanced/ScrollContainer/AdvancedAndEngineer"
 # 共享配置根：按当前构型返回 工程页 / 步兵高级设置
@@ -137,8 +136,6 @@ func _eng_io_mid_path(pin: String) -> String:
 	return _shared_cfg_root() + "/" + str(ENG_IO_MID_REL.get(pin, ""))
 
 
-# 工程内部 TabContainer；步兵/调试是平铺 Control
-const P_TAB_CONTAINER: NodePath = ENGINEER_TABS
 # 输出
 const P_OUTPUT: NodePath = "VBoxContainer/HBoxContainer/HSplitContainer/CodeZone/VSplitContainer/Output/Output"
 const P_CODE_EDIT: NodePath = "VBoxContainer/HBoxContainer/HSplitContainer/CodeZone/VSplitContainer/Code/CodeEdit"
@@ -486,10 +483,6 @@ func _connect_signals() -> void:
 		var debug_le: Node = get_node_or_null(NodePath(DEBUG +"/"+ row_name +"/LineEdit"))
 		if debug_le is LineEdit:
 			debug_le.text_changed.connect(_run_check)
-	# Tab 切换时更新代码生成器
-	var tab_container: Node = get_node_or_null(P_TAB_CONTAINER)
-	if tab_container is TabContainer:
-		tab_container.tab_changed.connect(_on_tab_changed)
 	# 项目管理按钮
 	var create_btn: Node = get_node_or_null(P_CREATE_BTN)
 	if create_btn is BaseButton:
@@ -777,19 +770,19 @@ func _on_guide_step_pressed(step: int) -> void:
 
 
 ## 当前编辑页的逻辑索引（0=步兵, 1=工程, 2=调试）。
-## 步兵/调试是平铺 Control（按项目类型切换可见性），工程是内部 TabContainer。
+## 三种构型页都直接挂在 EditZone 下，以可见性判定当前逻辑页。
 func _current_tab() -> int:
 	var edit_zone: Node = get_node_or_null(P_EDIT_ZONE)
 	if not is_instance_valid(edit_zone):
 		return 0
 	var infra: Node = edit_zone.get_node_or_null("Infantry")
+	var eng: Node = edit_zone.get_node_or_null("Engineer")
 	var dbg: Node = edit_zone.get_node_or_null("Debug")
 	if infra is CanvasItem and infra.visible:
 		return 0
 	if dbg is CanvasItem and dbg.visible:
 		return 2
-	var tabs: Node = get_node_or_null(P_TAB_CONTAINER)
-	if tabs is TabContainer:
+	if eng is CanvasItem and eng.visible:
 		return 1
 	return 0
 
@@ -1013,22 +1006,20 @@ func _adopt_project(data: Dictionary, path: String) -> void:
 
 
 ## 按项目类型显示对应页面（类型不可转换的第二道保证）。
-## 步兵/调试是 EditZone 下平铺的 Control（可见性切换）；工程是内部 TabContainer。
-func _apply_kind_visibility(kind: String, want_tab: int) -> void:
+## 三种构型页都是 EditZone 下平铺的 Control，仅通过可见性切换。
+func _apply_kind_visibility(kind: String, _want_tab: int) -> void:
 	var edit_zone: Node = get_node_or_null(P_EDIT_ZONE)
 	if not is_instance_valid(edit_zone):
 		return
 	var infra: Node = edit_zone.get_node_or_null("Infantry")
-	var eng_tabs: Node = edit_zone.get_node_or_null("Engineer")
+	var engineer: Node = edit_zone.get_node_or_null("Engineer")
 	var dbg: Node = edit_zone.get_node_or_null("Debug")
 	if infra is CanvasItem:
 		infra.visible = (kind == PF.KIND_INFANTRY)
-	if eng_tabs is CanvasItem:
-		eng_tabs.visible = (kind == PF.KIND_ENGINEER)
+	if engineer is CanvasItem:
+		engineer.visible = (kind == PF.KIND_ENGINEER)
 	if dbg is CanvasItem:
 		dbg.visible = (kind == PF.KIND_DEBUG)
-	if eng_tabs is TabContainer:
-		eng_tabs.current_tab = 0
 	_update_mode_page_visibility()
 	_sync_io_locks()
 	_update_sim_btn_visibility()
@@ -1198,13 +1189,6 @@ func _downgrade_to_stage1() -> void:
 	_save_project(false)
 	_clear_output()
 	_append_output("已回到阶段一，AI 编辑的代码已丢弃")
-	_run_check()
-
-
-# ------------------------------------------------------------------ Tab 切换
-## Tab 切换时更新代码生成器并重新生成预览
-func _on_tab_changed(_tab: int) -> void:
-	_update_sim_btn_visibility()
 	_run_check()
 
 

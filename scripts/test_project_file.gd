@@ -253,6 +253,14 @@ func _test_normalize() -> void:
 		"workflow": {"obsolete_step": true}})
 	_check("未知旧字段归一化时被丢弃", not legacy.has("obsolete_config")
 		and not legacy["workflow"].has("obsolete_step"))
+	var rebased: Dictionary = PF.normalize({"kind": PF.KIND_ENGINEER, "config": {
+		"Engineer": {"i": 0},
+		"Engineer/Engineer/Mode/OptionButton": {"i": 2, "s": "3"},
+	}})
+	_check("工程配置快照重定位到展平后的 UI 路径",
+		rebased["config"].get("Engineer/Mode/OptionButton", {}).get("s", "") == "3"
+		and not rebased["config"].has("Engineer/Engineer/Mode/OptionButton")
+		and not rebased["config"].has("Engineer"))
 	var short_progress: Dictionary = PF.normalize({
 		"workflow": {"guide_completed": [true, true, false]},
 	})
@@ -292,7 +300,7 @@ func _test_config_roundtrip() -> void:
 
 	var base: Dictionary = ui._snapshot_config()
 	_check("快照非空", base.size() > 50, "实际 %d 项" % base.size())
-	_check("工程配置快照存在", "Engineer/Engineer/Mode/OptionButton" in base)
+	_check("工程配置快照存在", "Engineer/Mode/OptionButton" in base)
 
 	# 改一批控件：LineEdit / OptionButton / CheckBox 三类都覆盖
 	var touched: int = 0
@@ -728,9 +736,9 @@ func _test_launcher() -> void:
 	root.add_child(ui)
 	await process_frame
 	await process_frame
-	var tabs: Node = ui.get_node(ui.P_TAB_CONTAINER)
-	_check("工程区域只保留一个配置页", tabs.get_tab_count() == 1)
-	_check("直跑主界面时工程配置页可用", not tabs.is_tab_hidden(0))
+	var engineer: Node = ui.get_node(ui.ENGINEER)
+	_check("工程配置页直接挂在 EditZone 下", engineer.get_parent() == ui.get_node(ui.P_EDIT_ZONE))
+	_check("直跑主界面时工程配置页存在", engineer is Control)
 	_check("直跑主界面时配置区可编辑", ui.get_node(ui.P_CHANNEL).editable)
 	_check("直跑主界面时编译按钮可用", not ui.get_node(ui.P_BUILD_BTN).disabled)
 	var ui_hex_btn: Node = ui.get_node_or_null(ui.P_HEX_EXPORT_BTN)

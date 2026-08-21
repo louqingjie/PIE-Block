@@ -19,16 +19,8 @@ theme = ExtResource("1_6qtce")
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="Engineer" type="TabContainer" parent="." unique_id=134582402]
+[node name="Engineer" parent="." unique_id=1878163608 instance=ExtResource("1_sv5ud")]
 layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 3
-current_tab = 0
-tab_0/title = "工程"
-
-[node name="Engineer" parent="Engineer" unique_id=1878163608 instance=ExtResource("1_sv5ud")]
-layout_mode = 2
-metadata/_tab_index = 0
 
 [node name="Debug" parent="." unique_id=99662280 instance=ExtResource("4_mwfoh")]
 layout_mode = 2
