@@ -5,7 +5,7 @@ extends Control
 ## 数据流：磁盘上的 main.c 是唯一真相源。
 ##   - 进入场景时从磁盘读取填充 CodeEdit
 ##   - 用户手工编辑后打脏标记，发消息/编译前先落盘
-##   - AI 改完文件后比对 mtime，有变化则重新读取刷新 CodeEdit
+##   - AI 改完文件后比对内容签名，有变化则重新读取刷新 CodeEdit
 ## 不做内存态双向同步 —— 那样两边会互相覆盖。
 
 # ------------------------------------------------------------------ 节点路径
@@ -42,12 +42,13 @@ const AT = preload("res://scripts/agent_terminal.gd")
 const PF = preload("res://scripts/project_file.gd")
 const UPGRADE_PROGRESS = preload("res://scripts/upgrade_progress.gd")
 const KG = preload("res://scripts/keil_guide.gd")
-const FFG = preload("res://scripts/first_flash_guide.gd")
 const CLOUD_COMPILER = preload("res://scripts/cloud_compiler.gd")
 const CLOUD_GUIDE = preload("res://scripts/cloud_guide.gd")
 
-## AI 随时会在终端里改盘上的 main.c，靠轮询 mtime 发现
+## AI 随时会在终端里改盘上的 main.c，靠轮询内容签名发现
 const RELOAD_POLL_SEC: float = 1.5
+## 手工编辑采用类似 VS Code afterDelay 的延迟自动保存。
+const AUTOSAVE_DELAY_SEC: float = 1.0
 
 const GUIDE_TITLES: Array[String] = [
 	"项目与硬件确认", "配置遥控器", "配置执行机构", "检查与仿真",
@@ -68,7 +69,10 @@ var _tc = null
 var _client = null
 var _project_dst: String = ""
 var _dirty: bool = false
-var _last_mtime: int = 0
+var _last_disk_signature: String = ""
+var _suppress_text_changed: bool = false
+var _autosave_timer: Timer = null
+var _conflict_dialog: ConfirmationDialog = null
 var _build_controller = null
 var _download_controller = null
 ## 编译方式下拉（本地/云端）
@@ -234,15 +238,31 @@ func _connect_signals() -> void:
 		restart.pressed.connect(_on_restart_pressed)
 	var ce: Node = get_node_or_null(P_CODE_EDIT)
 	if ce is CodeEdit:
-		ce.text_changed.connect(func() -> void:
-			_dirty = true
-			_update_guide())
+		ce.text_changed.connect(_on_code_text_changed)
 	# AI 会在终端里改盘上的 main.c，定时回读
 	var t: Timer = Timer.new()
 	t.wait_time = RELOAD_POLL_SEC
 	t.autostart = true
 	t.timeout.connect(_on_reload_tick)
 	add_child(t)
+	_autosave_timer = Timer.new()
+	_autosave_timer.wait_time = AUTOSAVE_DELAY_SEC
+	_autosave_timer.one_shot = true
+	_autosave_timer.timeout.connect(_on_autosave_timeout)
+	add_child(_autosave_timer)
+
+
+func _on_code_text_changed() -> void:
+	if _suppress_text_changed:
+		return
+	_dirty = true
+	_schedule_autosave()
+	_update_guide()
+
+
+func _schedule_autosave() -> void:
+	if _autosave_timer != null:
+		_autosave_timer.start(AUTOSAVE_DELAY_SEC)
 
 
 func _setup_guide() -> void:
@@ -355,32 +375,50 @@ func _load_from_disk() -> void:
 	var code: String = _tc.read_main_c(_project_dst)
 	var ce: Node = get_node_or_null(P_CODE_EDIT)
 	if ce is CodeEdit:
-		ce.text = code
-	_last_mtime = _tc.main_c_mtime(_project_dst)
+		_set_editor_text(code)
+	_last_disk_signature = _tc.main_c_signature(_project_dst)
 	_dirty = false
+	if _autosave_timer != null:
+		_autosave_timer.stop()
 	if code.is_empty():
 		_append_output("[Warn] 磁盘上没有 main.c，请先在图形化界面生成一次")
 
 
-## 把编辑器内容落盘（仅在有改动时）
+## 把编辑器内容落盘（仅在有改动时）。
+## 写入前检查磁盘签名，防止旧编辑器内容覆盖 AI 的最新修改。
 func _flush_to_disk() -> bool:
 	if not _dirty:
 		return true
 	var ce: Node = get_node_or_null(P_CODE_EDIT)
 	if not ce is CodeEdit:
 		return false
+	var disk_signature: String = _tc.main_c_signature(_project_dst)
+	var editor_signature: String = ce.text.sha256_text()
+	if disk_signature != _last_disk_signature and disk_signature != editor_signature:
+		_show_disk_conflict()
+		return false
+	return _write_editor_to_disk()
+
+
+## 强制把编辑器内容写入磁盘，仅由用户明确选择覆盖 AI 修改时调用。
+func _write_editor_to_disk() -> bool:
+	var ce: Node = get_node_or_null(P_CODE_EDIT)
+	if not ce is CodeEdit:
+		return false
 	if not _tc.write_main_c(_project_dst, ce.text):
 		_append_output("[Error] 写入 main.c 失败")
 		return false
-	_last_mtime = _tc.main_c_mtime(_project_dst)
+	_last_disk_signature = _tc.main_c_signature(_project_dst)
 	_dirty = false
+	if _autosave_timer != null:
+		_autosave_timer.stop()
 	return true
 
 
-## AI 可能改过文件，检查 mtime 并刷新编辑器。返回是否发生了刷新
+## 使用内容签名检查 AI 是否改过文件并刷新编辑器。返回是否发生了刷新。
 func _reload_if_changed() -> bool:
-	var mtime: int = _tc.main_c_mtime(_project_dst)
-	if mtime == _last_mtime:
+	var signature: String = _tc.main_c_signature(_project_dst)
+	if signature == _last_disk_signature:
 		return false
 	var code: String = _tc.read_main_c(_project_dst)
 	var ce: Node = get_node_or_null(P_CODE_EDIT)
@@ -388,13 +426,66 @@ func _reload_if_changed() -> bool:
 		# 尽量保留视口位置，避免刷新后跳到文件开头
 		var scroll_v: float = ce.scroll_vertical
 		var caret_line: int = ce.get_caret_line()
-		ce.text = code
+		_set_editor_text(code)
 		ce.scroll_vertical = scroll_v
 		if caret_line < ce.get_line_count():
 			ce.set_caret_line(caret_line)
-	_last_mtime = mtime
+	_last_disk_signature = signature
 	_dirty = false
+	if _autosave_timer != null:
+		_autosave_timer.stop()
+	# AI 修改也要及时进入工程文件，避免只存在于工作区副本。
+	if AppState.has_project():
+		_save_project(false)
 	return true
+
+
+func _set_editor_text(code: String) -> void:
+	var ce: Node = get_node_or_null(P_CODE_EDIT)
+	if not ce is CodeEdit:
+		return
+	_suppress_text_changed = true
+	ce.text = code
+	_suppress_text_changed = false
+
+
+func _show_disk_conflict() -> void:
+	if is_instance_valid(_conflict_dialog):
+		return
+	_append_output("[Warn] 检测到编辑器与 AI 同时修改 main.c，已暂停自动保存")
+	_conflict_dialog = ConfirmationDialog.new()
+	_conflict_dialog.title = "main.c 修改冲突"
+	_conflict_dialog.dialog_text = "AI 已修改磁盘上的 main.c，但编辑器还有未保存内容。请选择如何处理。"
+	_conflict_dialog.ok_button_text = "载入 AI 修改"
+	_conflict_dialog.cancel_button_text = "保留我的修改"
+	_conflict_dialog.confirmed.connect(_resolve_conflict_load)
+	_conflict_dialog.canceled.connect(_resolve_conflict_keep)
+	_conflict_dialog.close_requested.connect(_on_conflict_closed)
+	add_child(_conflict_dialog)
+	if is_inside_tree():
+		_conflict_dialog.popup_centered(Vector2i(520, 220))
+
+
+func _on_conflict_closed() -> void:
+	if is_instance_valid(_conflict_dialog):
+		_conflict_dialog.queue_free()
+	_conflict_dialog = null
+
+
+func _resolve_conflict_load() -> void:
+	_on_conflict_closed()
+	_load_from_disk()
+	_append_output("已载入 AI 对 main.c 的修改")
+
+
+func _resolve_conflict_keep() -> void:
+	_on_conflict_closed()
+	if not _write_editor_to_disk():
+		return
+	if AppState.has_project() and not _save_project(false):
+		_append_output("[Error] 工程文件自动保存失败")
+	else:
+		_append_output("已保留编辑器修改并覆盖磁盘 main.c")
 
 
 # ------------------------------------------------------------------ AI 面板
@@ -409,19 +500,45 @@ func _on_ai_ready_changed(is_ready: bool) -> void:
 func _on_restart_pressed() -> void:
 	if _client == null:
 		return
-	_flush_to_disk()
+	if not _flush_to_disk():
+		return
 	_set_status("正在重启终端…")
 	_client.stop()
 	_client.start(TC.WORKSPACE_DST, AppState.project_kind)
 
 
 ## 定时回读：AI 在终端里改盘上的 main.c 后刷新编辑器。
-## 用户有未保存改动时不覆盖，避免吞掉手工编辑。
+## 用户有未保存改动时弹出冲突处理，不静默覆盖任一方。
 func _on_reload_tick() -> void:
-	if _dirty or (_build_controller != null and _build_controller.is_busy()):
+	if _conflict_dialog != null or (_build_controller != null and _build_controller.is_busy()):
 		return
+	var signature: String = _tc.main_c_signature(_project_dst)
+	if _dirty and signature != _last_disk_signature:
+		var ce: Node = get_node_or_null(P_CODE_EDIT)
+		if ce is CodeEdit and signature != ce.text.sha256_text():
+			_show_disk_conflict()
+			return
+		# 磁盘内容已经等于编辑器内容，只是编辑器还没来得及更新基线。
+		_last_disk_signature = signature
+		_dirty = false
 	if _reload_if_changed():
 		_append_output("检测到 main.c 已被 AI 修改，编辑器已刷新")
+
+
+func _on_autosave_timeout() -> void:
+	if not _dirty:
+		return
+	if _conflict_dialog != null:
+		return
+	if _build_controller != null and _build_controller.is_busy():
+		_schedule_autosave()
+		return
+	if not _flush_to_disk():
+		return
+	if AppState.has_project() and not _save_project(false):
+		_append_output("[Error] 工程文件自动保存失败")
+	else:
+		_append_output("已自动保存 main.c 和工程文件")
 
 
 # ------------------------------------------------------------------ 项目文件
@@ -470,15 +587,6 @@ func _leave_for_project_action(action: String, text: String) -> void:
 
 
 # ------------------------------------------------------------------ 编译
-## Ctrl+S 触发保存（与顶栏「保存」按钮等效）。
-## 走 _unhandled_key_input：焦点在 CodeEdit 里时按键未被消费才会到达这里。
-func _unhandled_key_input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo \
-			and event.keycode == KEY_S and event.ctrl_pressed:
-		_on_save_pressed()
-		get_viewport().set_input_as_handled()
-
-
 func _on_save_pressed() -> void:
 	if not _flush_to_disk():
 		return
@@ -561,7 +669,7 @@ func _on_build_succeeded() -> void:
 		_set_upgrade_progress("编译完成", 28.0, "正在连接主控板…")
 		if not _download_controller.start(_project_dst):
 			_fail_upgrade_retry("无法开始烧录",
-				"未检测到 USB-HID 设备。\n请确认板子已通过 USB 线连接，并处于 ISP 模式（拔下 USB 再插上）。\n请将主控板与扩展板彻底断开连接后再尝试烧录。")
+				"未检测到 USB-HID 设备。\n请确认板子已通过 USB 线连接，并处于 ISP 模式（拔下 USB 再插上）。")
 
 
 ## 编译成功后弹出保存对话框，让用户选择 hex 导出位置
@@ -672,11 +780,6 @@ func _on_download_pressed() -> void:
 	if code_hash.is_empty() or str(workflow.get("built_hash", "")) != code_hash:
 		_append_output("[Error] 当前 AI 代码尚未编译，请先点「编译」")
 		return
-	# 首次烧录指引：确认板上开关已断开（可勾选「不再显示」）后再烧录
-	FFG.ensure_guide(self, _start_download)
-
-
-func _start_download() -> void:
 	_download_controller.start(_project_dst)
 
 
@@ -713,11 +816,6 @@ func _on_upgrade_pressed() -> void:
 	if _upgrade_active or _build_controller == null or _build_controller.is_busy() \
 			or _download_controller == null or _download_controller.is_busy():
 		return
-	# 首次烧录指引：确认板上开关已断开（可勾选「不再显示」）后再进入升级流程
-	FFG.ensure_guide(self, _continue_upgrade_pressed)
-
-
-func _continue_upgrade_pressed() -> void:
 	# 引导成功后才进入升级流程（_upgrade_active 在 _do_upgrade 内置位，取消不残留状态）
 	# 云端编译模式下不需要本机 Keil，只需确认云端配置
 	if _is_cloud_mode():
@@ -829,7 +927,7 @@ func _on_upgrade_retry_pressed() -> void:
 	_set_upgrade_button_busy(true)
 	if not _download_controller.start(dst):
 		_fail_upgrade_retry("无法开始烧录",
-			"未检测到 USB-HID 设备。\n请确认板子已通过 USB 线连接，并处于 ISP 模式（拔下 USB 再插上）。\n请将主控板与扩展板彻底断开连接后再尝试烧录。")
+			"未检测到 USB-HID 设备。\n请确认板子已通过 USB 线连接，并处于 ISP 模式（拔下 USB 再插上）。")
 
 
 func _set_upgrade_button_busy(is_busy: bool) -> void:
@@ -866,7 +964,8 @@ func _on_back_pressed() -> void:
 ## 离开本场景：落盘 + 停子进程 + 复位全局设置，最后切到目标场景。
 ## 这套清理顺序有实测依据，见下方各条注释，改动前先看注释。
 func _leave_to_scene(scene_path: String) -> void:
-	_flush_to_disk()
+	if not _flush_to_disk():
+		return
 	# AI 成果不能只留在磁盘 main.c 里，项目文件才是真相源
 	if AppState.has_project():
 		_save_project(false)

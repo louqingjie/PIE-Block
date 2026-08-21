@@ -783,9 +783,15 @@ func detect_license_failure(build_log: String) -> bool:
 
 
 # ------------------------------------------------------------------ main.c 读写
+## 返回指定项目的 main.c 绝对路径。
+## AI 终端、编辑器和编译器都通过同一条路径工作，避免各自拼接出不同目录。
+func main_c_path(project_dst: String) -> String:
+	return to_abs(project_dst.path_join("USER/src/main.c"))
+
+
 ## 把代码写入指定项目的 USER/src/main.c
 func write_main_c(project_dst: String, code: String) -> bool:
-	var abs_path: String = to_abs(project_dst.path_join("USER/src/main.c"))
+	var abs_path: String = main_c_path(project_dst)
 	var f: FileAccess = FileAccess.open(abs_path, FileAccess.WRITE)
 	if f == null:
 		push_error("无法写入 main.c: %s（%s）" % [abs_path, FileAccess.get_open_error()])
@@ -797,15 +803,25 @@ func write_main_c(project_dst: String, code: String) -> bool:
 
 ## 读取指定项目的 main.c；文件不存在返回空串
 func read_main_c(project_dst: String) -> String:
-	var abs_path: String = to_abs(project_dst.path_join("USER/src/main.c"))
+	var abs_path: String = main_c_path(project_dst)
 	if not FileAccess.file_exists(abs_path):
 		return ""
 	return FileAccess.get_file_as_string(abs_path)
 
 
+## main.c 的内容签名；文件不存在返回特殊值。
+## 不能只依赖 get_modified_time()：Windows 文件时间精度可能只有秒，
+## AI 在同一秒内连续写入时编辑器会漏掉外部修改。
+func main_c_signature(project_dst: String) -> String:
+	var abs_path: String = main_c_path(project_dst)
+	if not FileAccess.file_exists(abs_path):
+		return "<missing>"
+	return FileAccess.get_file_as_string(abs_path).sha256_text()
+
+
 ## main.c 的最后修改时间（秒）；文件不存在返回 0。用于检测 AI 是否改动过文件
 func main_c_mtime(project_dst: String) -> int:
-	var abs_path: String = to_abs(project_dst.path_join("USER/src/main.c"))
+	var abs_path: String = main_c_path(project_dst)
 	if not FileAccess.file_exists(abs_path):
 		return 0
 	return FileAccess.get_modified_time(abs_path)
