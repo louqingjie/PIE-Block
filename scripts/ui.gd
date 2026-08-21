@@ -408,7 +408,7 @@ func _setup_download_controller() -> void:
 
 # ------------------------------------------------------------------ 信号连接
 func _connect_signals() -> void:
-	# Web 版禁用：AI 编辑（WebView）、烧录/升级、下载固件、3D 仿真（串口桥）
+	# Web 版禁用：AI 原生终端、烧录/升级、下载固件、3D 仿真（串口桥）
 	WEB.disable_buttons(self, [P_AI_EDIT_BTN, P_UPGRADE_BTN, P_DOWNLOAD_BTN, P_ARM_SIM_BTN])
 	var gate_confirm: Node = get_node_or_null(P_GATE_CONFIRM)
 	if gate_confirm is BaseButton:
@@ -2347,7 +2347,7 @@ func _on_ai_edit_pressed() -> void:
 	# 功能下线：入口已隐藏，程序化触发也一律无效
 	if not AI_EDIT_ENABLED:
 		return
-	# Web / 移动端：AI 编辑依赖桌面 WebView，提示后直接返回
+	# Web / 移动端没有桌面原生终端与子进程能力，提示后直接返回
 	if not WEB.is_desktop():
 		WEB.popup_desktop_only(self, "AI 编辑")
 		return
@@ -2370,7 +2370,7 @@ func _on_ai_enable_toggled(pressed: bool) -> void:
 		if off_toggle is BaseButton:
 			off_toggle.set_pressed_no_signal(false)
 		return
-	# Web / 移动端：AI 编辑依赖桌面 WebView，开关不生效并提示
+	# Web / 移动端没有桌面原生终端与子进程能力，开关不生效并提示
 	if pressed and not WEB.is_desktop():
 		var toggle: BaseButton = get_node_or_null(P_ENABLE_AI_BTN)
 		if toggle is BaseButton:
