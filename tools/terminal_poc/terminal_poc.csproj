@@ -10,5 +10,7 @@
   <ItemGroup>
     <PackageReference Include="XTerm.NET" Version="1.0.15" />
     <PackageReference Include="Porta.Pty" Version="1.0.7" />
+    <Compile Include="..\..\scripts\cs\StreamingUtf8Decoder.cs" Link="StreamingUtf8Decoder.cs" />
+    <Compile Include="..\..\scripts\cs\TerminalMouseEncoder.cs" Link="TerminalMouseEncoder.cs" />
   </ItemGroup>
 </Project>

@@ -5,6 +5,10 @@ using XTerm;
 using XTerm.Buffer;
 using XKey = XTerm.Input.Key;
 using XMods = XTerm.Input.KeyModifiers;
+using XMouseButton = XTerm.Input.MouseButton;
+using XMouseEventType = XTerm.Input.MouseEventType;
+using XMouseTrackingMode = XTerm.Input.MouseTrackingMode;
+using XSelectionMode = XTerm.Selection.SelectionMode;
 
 namespace PieBlock;
 
@@ -37,6 +41,13 @@ public partial class TerminalControl : Control
     private volatile bool _dirty;
     private int _lastCols = -1;
     private int _lastRows = -1;
+    private bool _selecting;
+    private Vector2I _lastMouseCell = new Vector2I(-1, -1);
+    private Vector2I _lastClickCell = new Vector2I(-1, -1);
+    private ulong _lastClickTime;
+    private int _clickCount;
+    private string _imeText = "";
+    private Vector2I _imeSelection = Vector2I.Zero;
 
     // 主题色
     private static readonly Color Bg = new Color(0.07f, 0.07f, 0.09f);
@@ -51,7 +62,11 @@ public partial class TerminalControl : Control
         MouseFilter = MouseFilterEnum.Stop;
         _font = new SystemFont
         {
-            FontNames = new string[] { "Cascadia Mono", "Consolas", "Courier New", "DejaVu Sans Mono" }
+            FontNames = new string[]
+            {
+                "Cascadia Mono", "Microsoft YaHei UI", "Noto Sans Mono CJK SC",
+                "Consolas", "Courier New", "DejaVu Sans Mono"
+            }
         };
         _cellW = _font.GetStringSize("M", HorizontalAlignment.Left, -1, FontSize).X;
         _cellH = _font.GetHeight(FontSize);
@@ -79,6 +94,11 @@ public partial class TerminalControl : Control
             _session = new TerminalSession(options, () => _dirty = true);
             _lastCols = -1;
             _lastRows = -1;
+            if (HasFocus())
+            {
+                SetImeActive(true);
+                UpdateImePosition();
+            }
             QueueRedraw();
         }
         catch (Exception ex)
@@ -90,6 +110,8 @@ public partial class TerminalControl : Control
 
     public void Stop()
     {
+        SetImeActive(false);
+        ClearImeComposition();
         if (_session == null)
             return;
         _session.Dispose();
@@ -100,6 +122,47 @@ public partial class TerminalControl : Control
     public void Write(string text) => _session?.Write(text);
 
     public void WriteLine(string text) => _session?.Write(text + "\r");
+
+    public string GetSelectedText()
+    {
+        return _session?.WithTerminal(t => t.Selection.GetSelectionText()) ?? "";
+    }
+
+    public void CopySelection()
+    {
+        string text = GetSelectedText();
+        if (!string.IsNullOrEmpty(text))
+            DisplayServer.ClipboardSet(text);
+    }
+
+    public void PasteClipboard()
+    {
+        if (_session == null || !DisplayServer.ClipboardHas())
+            return;
+        string text = DisplayServer.ClipboardGet();
+        if (string.IsNullOrEmpty(text))
+            return;
+        text = text.Replace("\r\n", "\r").Replace("\n", "\r");
+        bool bracketed = _session.WithTerminal(t => t.BracketedPasteMode);
+        _session.Write(bracketed ? "\x1b[200~" + text + "\x1b[201~" : text);
+    }
+
+    public void SelectAll()
+    {
+        if (_session == null)
+            return;
+        _session.WithTerminal(t => t.Selection.SelectAll());
+        MarkDirty();
+    }
+
+    public void ClearSelection()
+    {
+        if (_session == null)
+            return;
+        _session.WithTerminal(t => t.Selection.ClearSelection());
+        _selecting = false;
+        MarkDirty();
+    }
 
     /// <summary>供 GDScript 读取当前可见行（方法对 GDScript 可见，属性需 [Export]）。</summary>
     public string[] GetVisibleLines()
@@ -224,6 +287,8 @@ public partial class TerminalControl : Control
             _lastRows = rows;
             _session.Resize(cols, rows);
         }
+        if (HasFocus())
+            UpdateImePosition();
         if (_dirty)
         {
             _dirty = false;
@@ -247,13 +312,14 @@ public partial class TerminalControl : Control
             {
                 var line = buffer.Lines[buffer.YDisp + r];
                 if (line != null)
-                    DrawLine(line, r);
+                    DrawLine(term, line, r);
             }
             DrawCursor(term);
+            DrawImeComposition(term);
         });
     }
 
-    private void DrawLine(BufferLine line, int row)
+    private void DrawLine(Terminal term, BufferLine line, int row)
     {
         float y = row * _cellH;
         float ascent = _font.GetAscent(FontSize);
@@ -270,7 +336,13 @@ public partial class TerminalControl : Control
                 (fg, bg) = (bg, fg);
             if (attr.IsDim())
                 fg = fg.Lerp(Bg, 0.5f);
-            if (bg != Bg)
+            bool selected = term.Selection.IsCellSelected(c, row);
+            if (selected)
+            {
+                bg = new Color(0.25f, 0.45f, 0.72f, 0.95f);
+                fg = new Color(1f, 1f, 1f);
+            }
+            if (bg != Bg || selected)
                 DrawRect(new Rect2(c * _cellW, y, _cellW * cell.Width, _cellH), bg);
             string glyph = cell.Content;
             float x = c * _cellW;
@@ -289,12 +361,51 @@ public partial class TerminalControl : Control
         if (!term.CursorVisible)
             return;
         var buffer = term.Buffer;
-        int cr = buffer.Y - buffer.YDisp;
+        int cr = buffer.Y + buffer.YBase - buffer.YDisp;
         int cc = buffer.X;
         if (cr < 0 || cr >= term.Rows)
             return;
         var rect = new Rect2(cc * _cellW, cr * _cellH, _cellW, _cellH);
         DrawRect(rect, new Color(1f, 1f, 1f, 0.35f));
+    }
+
+    private void DrawImeComposition(Terminal term)
+    {
+        if (string.IsNullOrEmpty(_imeText))
+            return;
+        var buffer = term.Buffer;
+        int row = buffer.Y + buffer.YBase - buffer.YDisp;
+        if (row < 0 || row >= term.Rows)
+            return;
+        float x = buffer.X * _cellW;
+        float y = row * _cellH;
+        float width = Math.Max(_cellW, _font.GetStringSize(
+            _imeText, HorizontalAlignment.Left, -1, FontSize).X);
+        DrawRect(new Rect2(x, y, width, _cellH), new Color(0.12f, 0.12f, 0.16f, 0.98f));
+        DrawString(_font, new Vector2(x, y + _font.GetAscent(FontSize)), _imeText,
+            HorizontalAlignment.Left, -1, FontSize, Fg);
+        DrawRect(new Rect2(x, y + _cellH - 2f, width, 2f), new Color(0.45f, 0.7f, 1f));
+
+        if (_imeSelection.Y > 0 && _imeSelection.X >= 0)
+        {
+            int start = CodepointIndexToUtf16(_imeText, _imeSelection.X);
+            int end = CodepointIndexToUtf16(_imeText, _imeSelection.X + _imeSelection.Y);
+            int length = Math.Max(0, end - start);
+            float before = _font.GetStringSize(_imeText[..start],
+                HorizontalAlignment.Left, -1, FontSize).X;
+            float selected = _font.GetStringSize(_imeText.Substring(start, length),
+                HorizontalAlignment.Left, -1, FontSize).X;
+            DrawRect(new Rect2(x + before, y, Math.Max(1f, selected), _cellH),
+                new Color(0.35f, 0.55f, 0.85f, 0.4f));
+        }
+    }
+
+    private static int CodepointIndexToUtf16(string text, int codepointIndex)
+    {
+        int utf16 = 0;
+        for (int i = 0; i < codepointIndex && utf16 < text.Length; i++)
+            utf16 += char.IsSurrogatePair(text, utf16) ? 2 : 1;
+        return Math.Min(utf16, text.Length);
     }
 
     /// <summary>
@@ -352,33 +463,300 @@ public partial class TerminalControl : Control
     {
         if (_session == null)
             return;
-        if (@event is InputEventKey key && key.Pressed && !key.Echo)
+        if (@event is InputEventKey key && key.Pressed)
         {
+            if (HandleClipboardShortcut(key))
+            {
+                AcceptEvent();
+                return;
+            }
             string input = EncodeKey(key);
             if (!string.IsNullOrEmpty(input))
                 _session.Write(input);
             AcceptEvent();
+            return;
         }
-        else if (@event is InputEventMouseButton mb && mb.Pressed)
+        if (@event is InputEventMouseButton mb)
         {
-            GrabFocus();
+            HandleMouseButton(mb);
+            AcceptEvent();
+            return;
+        }
+        if (@event is InputEventMouseMotion motion)
+        {
+            HandleMouseMotion(motion);
             AcceptEvent();
         }
     }
 
+    private bool HandleClipboardShortcut(InputEventKey e)
+    {
+        Godot.Key code = (Godot.Key)((uint)e.Keycode & (uint)KeyModifierMask.CodeMask);
+        if (e.CtrlPressed && e.ShiftPressed && code == Godot.Key.C)
+        {
+            CopySelection();
+            return true;
+        }
+        if (e.CtrlPressed && e.ShiftPressed && code == Godot.Key.V)
+        {
+            PasteClipboard();
+            return true;
+        }
+        if (e.ShiftPressed && !e.CtrlPressed && code == Godot.Key.Insert)
+        {
+            PasteClipboard();
+            return true;
+        }
+        return false;
+    }
+
     private string EncodeKey(InputEventKey e)
+    {
+        XMods mods = ToXTermModifiers(e);
+        Godot.Key code = (Godot.Key)((uint)e.Keycode & (uint)KeyModifierMask.CodeMask);
+
+        XKey? k = ToXTermKey(code);
+        if (k.HasValue)
+            return _session.WithTerminal(t => t.GenerateKeyInput(k.Value, mods));
+
+        if (e.Unicode > 0 && e.Unicode <= 0x10FFFF)
+        {
+            string unicode = char.ConvertFromUtf32((int)e.Unicode);
+            // Unicode is already shifted/localized by Godot. Sending it directly avoids
+            // truncating supplementary-plane code points and lets IME commits pass intact.
+            if (!e.CtrlPressed && !e.AltPressed)
+                return unicode;
+            // AltGr is reported as Ctrl+Alt on some layouts. A non-ASCII printable value is
+            // text input, not a terminal control chord.
+            if (e.CtrlPressed && e.AltPressed && e.Unicode > 0x7F)
+                return unicode;
+            if (e.Unicode <= 0xFFFF)
+                return _session.WithTerminal(t => t.GenerateCharInput((char)e.Unicode, mods));
+            return e.AltPressed ? "\x1b" + unicode : unicode;
+        }
+
+        char ascii = KeycodeToAscii(code);
+        if (ascii != '\0')
+            return _session.WithTerminal(t => t.GenerateCharInput(ascii, mods));
+        return null;
+    }
+
+    private static char KeycodeToAscii(Godot.Key key)
+    {
+        uint value = (uint)key;
+        if (value >= (uint)Godot.Key.A && value <= (uint)Godot.Key.Z)
+            return char.ToLowerInvariant((char)value);
+        return value >= 0x20 && value <= 0x7E ? (char)value : '\0';
+    }
+
+    private static XMods ToXTermModifiers(InputEventWithModifiers e)
     {
         var mods = XMods.None;
         if (e.ShiftPressed) mods |= XMods.Shift;
         if (e.AltPressed) mods |= XMods.Alt;
         if (e.CtrlPressed) mods |= XMods.Control;
+        return mods;
+    }
 
-        XKey? k = ToXTermKey(e.Keycode);
-        if (k.HasValue)
-            return _session.Terminal.GenerateKeyInput(k.Value, mods);
-        if (e.Unicode > 0 && e.Unicode < 0x10000)
-            return _session.Terminal.GenerateCharInput((char)e.Unicode, mods);
-        return null;
+    private void HandleMouseButton(InputEventMouseButton e)
+    {
+        if (e.Pressed)
+            GrabFocus();
+        Vector2I cell = PositionToCell(e.Position);
+        bool tracking = IsMouseTrackingEnabled();
+        bool local = e.ShiftPressed || !tracking || _selecting;
+
+        if (e.ButtonIndex is Godot.MouseButton.WheelUp or Godot.MouseButton.WheelDown)
+        {
+            if (!e.Pressed)
+                return;
+            int repeats = Math.Max(1, (int)Math.Round(Math.Abs(e.Factor)));
+            if (!local)
+            {
+                XMouseButton button = e.ButtonIndex == Godot.MouseButton.WheelUp
+                    ? XMouseButton.WheelUp : XMouseButton.WheelDown;
+                XMouseEventType type = e.ButtonIndex == Godot.MouseButton.WheelUp
+                    ? XMouseEventType.WheelUp : XMouseEventType.WheelDown;
+                for (int i = 0; i < repeats; i++)
+                    SendMouse(button, cell, type, ToXTermModifiers(e));
+            }
+            else
+            {
+                int lines = (e.ButtonIndex == Godot.MouseButton.WheelUp ? -3 : 3) * repeats;
+                _session.WithTerminal(t => t.ScrollLines(lines));
+                MarkDirty();
+            }
+            return;
+        }
+
+        if (!local)
+        {
+            XMouseButton button = ToXTermMouseButton(e.ButtonIndex);
+            if (button != XMouseButton.None)
+                SendMouse(button, cell, e.Pressed ? XMouseEventType.Down : XMouseEventType.Up,
+                    ToXTermModifiers(e));
+            return;
+        }
+
+        if (e.ButtonIndex != Godot.MouseButton.Left)
+            return;
+        if (e.Pressed)
+        {
+            ulong now = Time.GetTicksMsec();
+            if (cell == _lastClickCell && now - _lastClickTime <= 500)
+                _clickCount = Math.Min(3, _clickCount + 1);
+            else
+                _clickCount = 1;
+            if (e.DoubleClick)
+                _clickCount = Math.Max(2, _clickCount);
+            _lastClickCell = cell;
+            _lastClickTime = now;
+            XSelectionMode mode = _clickCount >= 3 ? XSelectionMode.Line
+                : _clickCount == 2 ? XSelectionMode.Word : XSelectionMode.Normal;
+            _session.WithTerminal(t => t.Selection.StartSelection(cell.X, cell.Y, mode));
+            _selecting = true;
+            MarkDirty();
+        }
+        else if (_selecting)
+        {
+            _session.WithTerminal(t => t.Selection.EndSelection());
+            _selecting = false;
+            MarkDirty();
+        }
+    }
+
+    private void HandleMouseMotion(InputEventMouseMotion e)
+    {
+        Vector2I cell = PositionToCell(e.Position);
+        if (cell == _lastMouseCell)
+            return;
+        _lastMouseCell = cell;
+        if (_selecting)
+        {
+            _session.WithTerminal(t => t.Selection.UpdateSelection(cell.X, cell.Y));
+            MarkDirty();
+            return;
+        }
+        if (e.ShiftPressed || !IsMouseTrackingEnabled())
+            return;
+        XMouseButton button = ButtonMaskToXTerm(e.ButtonMask);
+        XMouseEventType type = button == XMouseButton.None ? XMouseEventType.Move : XMouseEventType.Drag;
+        SendMouse(button, cell, type, ToXTermModifiers(e));
+    }
+
+    private bool IsMouseTrackingEnabled()
+    {
+        return _session != null &&
+            _session.WithTerminal(t => t.MouseTrackingMode != XMouseTrackingMode.None);
+    }
+
+    private void SendMouse(XMouseButton button, Vector2I cell, XMouseEventType type, XMods mods)
+    {
+        string sequence = _session.WithTerminal(t =>
+            TerminalMouseEncoder.Generate(t, button, cell.X, cell.Y, type, mods));
+        _session.Write(sequence);
+    }
+
+    private Vector2I PositionToCell(Vector2 position)
+    {
+        int maxCols = Math.Max(1, _lastCols > 0 ? _lastCols : Columns);
+        int maxRows = Math.Max(1, _lastRows > 0 ? _lastRows : Rows);
+        return new Vector2I(
+            Math.Clamp((int)(position.X / _cellW), 0, maxCols - 1),
+            Math.Clamp((int)(position.Y / _cellH), 0, maxRows - 1));
+    }
+
+    private static XMouseButton ToXTermMouseButton(Godot.MouseButton button)
+    {
+        return button switch
+        {
+            Godot.MouseButton.Left => XMouseButton.Left,
+            Godot.MouseButton.Middle => XMouseButton.Middle,
+            Godot.MouseButton.Right => XMouseButton.Right,
+            _ => XMouseButton.None
+        };
+    }
+
+    private static XMouseButton ButtonMaskToXTerm(MouseButtonMask mask)
+    {
+        if ((mask & MouseButtonMask.Left) != 0) return XMouseButton.Left;
+        if ((mask & MouseButtonMask.Middle) != 0) return XMouseButton.Middle;
+        if ((mask & MouseButtonMask.Right) != 0) return XMouseButton.Right;
+        return XMouseButton.None;
+    }
+
+    public override void _Notification(int what)
+    {
+        if (what == NotificationFocusEnter)
+        {
+            SetImeActive(true);
+            UpdateImePosition();
+            SendFocusEvent(true);
+        }
+        else if (what == NotificationFocusExit)
+        {
+            SetImeActive(false);
+            ClearImeComposition();
+            SendFocusEvent(false);
+        }
+        else if (what == NotificationOsImeUpdate)
+        {
+            _imeText = DisplayServer.ImeGetText();
+            _imeSelection = DisplayServer.ImeGetSelection();
+            UpdateImePosition();
+            MarkDirty();
+        }
+    }
+
+    private void SetImeActive(bool active)
+    {
+        if (!SupportsIme() || GetWindow() == null)
+            return;
+        GetWindow().SetImeActive(active);
+    }
+
+    private void UpdateImePosition()
+    {
+        if (_session == null || GetWindow() == null || !SupportsIme())
+            return;
+        Vector2 local = _session.WithTerminal(t =>
+        {
+            int row = Math.Max(0, t.Buffer.Y + t.Buffer.YBase - t.Buffer.YDisp);
+            return new Vector2(t.Buffer.X * _cellW, (row + 1) * _cellH);
+        });
+        Vector2 windowPosition = GetGlobalTransformWithCanvas() * local;
+        GetWindow().SetImePosition(new Vector2I(
+            (int)Math.Round(windowPosition.X), (int)Math.Round(windowPosition.Y)));
+    }
+
+    private static bool SupportsIme()
+    {
+        return DisplayServer.GetName() != "headless" &&
+            DisplayServer.HasFeature(DisplayServer.Feature.Ime);
+    }
+
+    private void ClearImeComposition()
+    {
+        if (string.IsNullOrEmpty(_imeText) && _imeSelection == Vector2I.Zero)
+            return;
+        _imeText = "";
+        _imeSelection = Vector2I.Zero;
+        MarkDirty();
+    }
+
+    private void SendFocusEvent(bool focused)
+    {
+        if (_session == null)
+            return;
+        string sequence = _session.WithTerminal(t =>
+            t.SendFocusEvents ? t.GenerateFocusEvent(focused) : "");
+        _session.Write(sequence);
+    }
+
+    private void MarkDirty()
+    {
+        _dirty = true;
+        QueueRedraw();
     }
 
     private static XKey? ToXTermKey(Godot.Key k)
@@ -434,6 +812,7 @@ public partial class TerminalControl : Control
 
     public override void _ExitTree()
     {
+        SetImeActive(false);
         Stop();
     }
 }
