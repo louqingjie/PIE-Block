@@ -41,21 +41,21 @@ func _initialize() -> void:
 	var click_update: String = _update_mode_section(click_code)
 	_check("多模式生成 ModeSwitchFeedback", click_code.contains(
 		"static void ModeSwitchFeedback(uint8_t mode)"))
-	_check("长音为 523Hz/1000ms", click_code.contains("Beep(523, 1000);"))
-	_check("长音后等待 300ms", click_code.contains(
-		"Beep(523, 1000);\n    Ms_Delay(300);"))
+	_check("长音为 523Hz/500ms", click_code.contains("Beep(523, 500);"))
+	_check("长音后等待 200ms", click_code.contains(
+		"Beep(523, 500);\n    Ms_Delay(200);"))
 	var short_order: Array[String] = [
-		"Beep(659, 300);", "Beep(784, 300);", "Beep(1047, 300);", "Beep(1319, 300)",
+		"Beep(659, 200);", "Beep(784, 200);", "Beep(1047, 200);", "Beep(1319, 200)",
 	]
 	var previous: int = -1
 	for note in short_order:
 		var position: int = click_code.find(note)
 		_check("短音包含 %s" % note, position > previous)
 		previous = position
-	_check("短音之间使用 300ms 间隔",
-		click_code.contains("Beep(659, 300);\n        if (mode > 1)\n            Ms_Delay(300);")
-		and click_code.contains("Beep(784, 300);\n        if (mode > 2)\n            Ms_Delay(300);")
-		and click_code.contains("Beep(1047, 300);\n        if (mode > 3)\n            Ms_Delay(300);"))
+	_check("短音之间使用 200ms 间隔",
+		click_code.contains("Beep(659, 200);\n        if (mode > 1)\n            Ms_Delay(200);")
+		and click_code.contains("Beep(784, 200);\n        if (mode > 2)\n            Ms_Delay(200);")
+		and click_code.contains("Beep(1047, 200);\n        if (mode > 3)\n            Ms_Delay(200);"))
 	_check("单击切换更新模式后播放反馈",
 		click_update.find("currentMode = (currentMode % 4) + 1;")
 			< click_update.find("ModeSwitchFeedback(currentMode);"))
@@ -78,7 +78,7 @@ func _initialize() -> void:
 	_check("单模式不生成模式反馈函数",
 		not single_code.contains("ModeSwitchFeedback"))
 	_check("单模式不生成模式反馈长音",
-		not single_code.contains("Beep(523, 1000);"))
+		not single_code.contains("Beep(523, 500);"))
 
 	if _fail > 0:
 		print("失败 %d 项" % _fail)

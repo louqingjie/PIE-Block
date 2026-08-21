@@ -129,15 +129,15 @@ func _gen_mode_switch_feedback() -> String:
 	code += "// 工程多模式切换反馈：长音后按目标模式播放上行音阶琶音\n"
 	code += "static void ModeSwitchFeedback(uint8_t mode)\n"
 	code += "{\n"
-	code += "    Beep(523, 1000);\n"
-	code += "    Ms_Delay(300);\n"
+	code += "    Beep(523, 500);\n"
+	code += "    Ms_Delay(200);\n"
 	for i in range(short_freqs.size()):
 		code += "    if (mode >= %d)\n" % (i + 1)
 		code += "    {\n"
-		code += "        Beep(%d, 300);\n" % short_freqs[i]
+		code += "        Beep(%d, 200);\n" % short_freqs[i]
 		if i < short_freqs.size() - 1:
 			code += "        if (mode > %d)\n" % (i + 1)
-			code += "            Ms_Delay(300);\n"
+			code += "            Ms_Delay(200);\n"
 		code += "    }\n"
 	code += "}\n\n"
 	return code
