@@ -168,16 +168,17 @@ func _test_friction_switch(packed: PackedScene) -> void:
 	sim._booster_key = 1
 	sim._last_booster_key = 0
 	sim._calculate_booster_control()
-	_check("摩擦轮开启只走 1 duty 斜坡", sim._duty_booster == 1,
+	_check("摩擦轮启动初始 Duty 为 500", sim._duty_booster == 500,
 		"实际 %d" % sim._duty_booster)
 	_check("摩擦轮开启目标为最大 Duty", sim._target_duty_booster == 800)
 	_check("摩擦轮开启进入逐主循环平滑非阻塞序列", sim._friction_ramp_direction == 1)
+	_check("摩擦轮启动蜂鸣器从 500Hz 跟随", sim._friction_target_freq() == 500.0)
 	# 长按开关键不会反复切换状态；斜坡仍会继续前进。
 	sim._calculate_booster_control()
-	_check("长按开关键不重复切换", sim._status_booster == 1 and sim._duty_booster == 2)
-	# 已推进 2 个主循环；1 duty 斜坡还需 798 轮。
+	_check("长按开关键不重复切换", sim._status_booster == 1 and sim._duty_booster == 501)
+	# 已推进 1 个 1-duty 斜坡；还需 299 轮到达 800。
 	sim._booster_key = 0
-	for i in range(798):
+	for i in range(299):
 		sim._calculate_booster_control()
 	_check("摩擦轮按每轮 1 duty 平滑非阻塞增速至 800", sim._duty_booster == 800,
 		"实际 %d" % sim._duty_booster)
@@ -215,9 +216,12 @@ func _test_friction_switch(packed: PackedScene) -> void:
 	sim._calculate_booster_control()
 	_check("摩擦轮关闭后仍按 1 duty 平滑降速", sim._duty_booster == 796
 		and sim._status_booster == 0 and sim._target_duty_booster == 0)
-	for i in range(795):
+	for i in range(295):
 		sim._calculate_booster_control()
-	_check("摩擦轮关闭前仍保持逐 duty 变化", sim._duty_booster == 1)
+	_check("摩擦轮关闭前最低运行 Duty 仍为 500", sim._duty_booster == 501)
+	sim._calculate_booster_control()
+	_check("摩擦轮关闭到 500 后归零并停止蜂鸣器", sim._duty_booster == 500
+		and sim._friction_ramp_direction == -1)
 	sim._calculate_booster_control()
 	_check("摩擦轮逐级关闭后归零并停止蜂鸣器", sim._duty_booster == 0
 		and sim._friction_ramp_direction == 0 and not sim._friction_buzzer_active)
@@ -377,10 +381,10 @@ func _test_audio(packed: PackedScene) -> void:
 		_check("占空比 %d 对应 %dHz" % [duty, duty],
 			absf(sim._friction_target_freq() - float(duty)) < 0.01,
 			"实际 %.1f" % sim._friction_target_freq())
-	# 启动斜坡中仍按当前 Duty 发声，直到目标完成才停止
+	# 低于 500 的 Duty 不属于摩擦轮运行区间，保持静音
 	sim._duty_booster = 499
 	sim._friction_buzzer_active = true
-	_check("斜坡中占空比 499 对应 499Hz", absf(sim._friction_target_freq() - 499.0) < 0.01)
+	_check("占空比 499 仍静音", sim._friction_target_freq() == 0.0)
 	sim._friction_buzzer_active = false
 	sim._duty_booster = 800
 	_check("Duty 到达目标后蜂鸣器停止", sim._friction_target_freq() == 0.0)

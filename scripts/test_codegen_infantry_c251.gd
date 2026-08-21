@@ -107,6 +107,8 @@ func _initialize() -> void:
 	if not code.contains("#define FRICTION_MAX_DUTY   800") \
 			or not code.contains("#define FRICTION_STEP_DUTY  1") \
 			or not code.contains("targetDutyOfBooster = statusOfBooster ? FRICTION_MAX_DUTY : 0;") \
+			or not code.contains("dutyOfBooster = FRICTION_START_DUTY;") \
+			or not code.contains("frictionStartedThisCycle = 1;") \
 			or not code.contains("frictionSpeedUpKeyValue && !lastFrictionSpeedUpKeyValue") \
 			or not code.contains("frictionSpeedDownKeyValue && !lastFrictionSpeedDownKeyValue") \
 			or not code.contains("targetDutyOfBooster += 100;") \
@@ -130,7 +132,9 @@ func _initialize() -> void:
 		printerr("超过校内赛安全上限的摩擦轮占空比未安全回退到 800")
 		quit(1)
 		return
-	if not code.contains("else if (dutyOfBooster > targetDutyOfBooster)") \
+	if not code.contains("else if (statusOfBooster == 0 && dutyOfBooster <= FRICTION_START_DUTY)") \
+			or not code.contains("dutyOfBooster = 0;") \
+			or not code.contains("else if (dutyOfBooster > targetDutyOfBooster)") \
 			or not code.contains("dutyOfBooster -= FRICTION_STEP_DUTY;"):
 		printerr("生成代码缺少摩擦轮非阻塞逐级关闭逻辑")
 		quit(1)

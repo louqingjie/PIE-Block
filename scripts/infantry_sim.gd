@@ -878,10 +878,15 @@ func _calculate_booster_control() -> void:
 		_last_friction_speed_up_key = 0
 		_last_friction_speed_down_key = 0
 		return
+	var previous_duty: int = _duty_booster
 	var booster_toggled: bool = false
+	var friction_started_this_cycle: bool = false
 	if _booster_key == 1 and _last_booster_key == 0:
 		_status_booster = 0 if _status_booster == 1 else 1
 		_target_duty_booster = _friction_max_duty if _status_booster == 1 else 0
+		if _status_booster == 1 and _duty_booster == 0:
+			_duty_booster = BOOSTER_DUTY_MIN
+			friction_started_this_cycle = true
 		booster_toggled = true
 	if not booster_toggled and _status_booster == 1 and _friction_speed_up_key == 1 \
 			and _last_friction_speed_up_key == 0 \
@@ -893,11 +898,13 @@ func _calculate_booster_control() -> void:
 		_target_duty_booster = maxi(_target_duty_booster - _friction_speed_step, BOOSTER_DUTY_MIN)
 	_target_duty_booster = clampi(_target_duty_booster,
 		0 if _status_booster == 0 else BOOSTER_DUTY_MIN, _friction_max_duty)
-	var previous_duty: int = _duty_booster
-	if _duty_booster < _target_duty_booster:
-		_duty_booster = mini(_duty_booster + BOOSTER_STEP, _target_duty_booster)
-	elif _duty_booster > _target_duty_booster:
-		_duty_booster = maxi(_duty_booster - BOOSTER_STEP, _target_duty_booster)
+	if not friction_started_this_cycle:
+		if _duty_booster < _target_duty_booster:
+			_duty_booster = mini(_duty_booster + BOOSTER_STEP, _target_duty_booster)
+		elif _status_booster == 0 and _duty_booster <= BOOSTER_DUTY_MIN:
+			_duty_booster = 0
+		elif _duty_booster > _target_duty_booster:
+			_duty_booster = maxi(_duty_booster - BOOSTER_STEP, _target_duty_booster)
 	_friction_ramp_direction = 1 if _duty_booster < _target_duty_booster else (-1 if _duty_booster > _target_duty_booster else 0)
 	if _duty_booster != previous_duty:
 		_friction_buzzer_active = _duty_booster != _target_duty_booster
@@ -1185,7 +1192,7 @@ func _setup_audio() -> void:
 func _friction_target_freq() -> float:
 	if not _friction_enabled or not _friction_buzzer_active:
 		return 0.0
-	if _duty_booster <= 0:
+	if _duty_booster < BOOSTER_DUTY_MIN:
 		return 0.0
 	return float(_duty_booster)
 
