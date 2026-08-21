@@ -52,6 +52,13 @@ func _initialize() -> void:
 	_check("音乐页无解析错误", str(page.get_parse_error()).is_empty())
 	_check("音乐页显示轨道摘要", str(page.get_node("TrackScroll/TrackList").get_child(0).text).contains("主旋律")
 		and str(page.get_node("Status").text).contains("四声部伪复音"))
+	var second_track: CheckButton = page.get_node("TrackScroll/TrackList").get_child(1) as CheckButton
+	second_track.set_pressed_no_signal(false)
+	second_track.toggled.emit(false)
+	await process_frame
+	_check("轨道切换回调结束后可安全重建列表",
+		page.get_node("TrackScroll/TrackList").get_child_count() == 2)
+	page.set_music_data(selected)
 	page._on_polyphonic_toggled(false)
 	_check("关闭伪复音后只保留首条轨道", not bool(page.get_music_data().get("polyphonic", true))
 		and page.get_music_data().get("track_indices", []) == [0])

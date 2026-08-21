@@ -14,6 +14,7 @@ var _parse_result: Dictionary = {}
 var _music: Dictionary = _empty_music()
 var _parse_error: String = ""
 var _updating_tracks: bool = false
+var _refresh_queued: bool = false
 
 
 func _ready() -> void:
@@ -106,12 +107,22 @@ func _on_track_toggled(track_index: int, pressed: bool) -> void:
 		selected = [track_index]
 		_set_track_buttons(selected)
 	_apply_selection(selected)
-	_refresh_view()
+	# 当前 CheckButton 仍在发出 toggled 信号，不能在回调中释放它。
+	_request_refresh_view()
 	music_changed.emit()
-	return
-	_apply_selection(selected)
-	_refresh_view()
-	music_changed.emit()
+
+
+func _request_refresh_view() -> void:
+	if _refresh_queued:
+		return
+	_refresh_queued = true
+	call_deferred("_deferred_refresh_view")
+
+
+func _deferred_refresh_view() -> void:
+	_refresh_queued = false
+	if is_inside_tree():
+		_refresh_view()
 
 
 func _selected_track_indices() -> Array:
