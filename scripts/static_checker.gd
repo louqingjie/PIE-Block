@@ -173,26 +173,42 @@ static func _check_friction_params(issues: Array, cfg: Dictionary) -> void:
 		if value >= 500 and value <= 800 and value % 100 != 0:
 			issues.append({"type": "Error",
 				"msg": "摩擦轮最大占空比必须是 500~800 内的整百值；启停过程每个主循环平滑变化 1 duty"})
+	_check_int_field(issues, str(cfg.get("friction_speed_step", "")).strip_edges(),
+		"摩擦轮速度调整步长", 1, 800)
 
 
 # ------------------------------------------------------------------ 规则：按键冲突
 static func _check_arrow_trigger_conflict(issues: Array, cfg: Dictionary) -> void:
 	var trig_key: String = str(cfg.get("trigger_key", ""))
 	var boost_key: String = str(cfg.get("booster_key", ""))
+	var speed_up_key: String = str(cfg.get("friction_speed_up_key", ""))
+	var speed_down_key: String = str(cfg.get("friction_speed_down_key", ""))
 	var friction_enabled: bool = _friction_enabled(cfg)
 	var arrow_key: String = str(cfg.get("arrow_key", "移动"))
-	# 扳机键与摩擦轮开关键不能相同
-	if friction_enabled and trig_key == boost_key:
-		issues.append({"type": "Error",
-			"msg": "扳机键与摩擦轮开关键都设为「%s」，会同时触发单发拨弹和摩擦轮开关" % trig_key})
+	# 摩擦轮相关按键不能相互占用；空值不作为冲突键，兼容旧配置。
+	if friction_enabled:
+		var key_roles: Array = [
+			[trig_key, "扳机键"], [boost_key, "摩擦轮开关键"],
+			[speed_up_key, "摩擦轮增速键"], [speed_down_key, "摩擦轮减速键"],
+		]
+		for i in range(key_roles.size()):
+			if str(key_roles[i][0]).is_empty():
+				continue
+			for j in range(i + 1, key_roles.size()):
+				if key_roles[i][0] == key_roles[j][0]:
+					issues.append({"type": "Error",
+						"msg": "%s与%s都设为「%s」，会同时触发多个摩擦轮/发射动作"
+							% [key_roles[i][1], key_roles[j][1], key_roles[i][0]]})
 	# 方向键被设为「移动」或「冲刺」时，扳机键/开关键不能占用方向键
 	var arrow_active: bool = arrow_key in ["移动", "冲刺"]
 	if arrow_active:
 		var key_roles: Array = [[trig_key, "扳机键"]]
 		if friction_enabled:
 			key_roles.append([boost_key, "摩擦轮开关键"])
+			key_roles.append([speed_up_key, "摩擦轮增速键"])
+			key_roles.append([speed_down_key, "摩擦轮减速键"])
 		for pair in key_roles:
-			if pair[0] in ARROW_KEY_TEXTS:
+			if not str(pair[0]).is_empty() and pair[0] in ARROW_KEY_TEXTS:
 				issues.append({"type": "Error",
 					"msg": "方向键已被设为「%s」，但%s也使用了方向键「%s」，二者不能相同"
 						% [arrow_key, pair[1], pair[0]]})

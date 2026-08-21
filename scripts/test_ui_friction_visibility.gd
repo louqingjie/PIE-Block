@@ -26,8 +26,11 @@ func _initialize() -> void:
 	await process_frame
 	var friction_type: Node = ui.get_node_or_null(ui.P_FRICTION_TYPE)
 	var switch_row: Node = ui.get_node_or_null(ui.P_FRICTION_SWITCH_ROW)
+	var speed_row: Node = ui.get_node_or_null(ui.P_FRICTION_SPEED_ROW)
+	var speed_control_row: Node = ui.get_node_or_null(ui.P_FRICTION_SPEED_CONTROL_ROW)
 	_check("摩擦轮类型下拉存在", friction_type is OptionButton)
 	_check("摩擦轮开关行存在", switch_row is CanvasItem)
+	_check("摩擦轮最大速度和调速行存在", speed_row is CanvasItem and speed_control_row is CanvasItem)
 	if friction_type is OptionButton and switch_row is CanvasItem:
 		var unused_index: int = -1
 		for i in range(friction_type.item_count):
@@ -39,15 +42,18 @@ func _initialize() -> void:
 			friction_type.select(unused_index)
 			friction_type.item_selected.emit(unused_index)
 			await process_frame
-			_check("不使用时隐藏摩擦轮开关行", not switch_row.visible)
+			_check("不使用时隐藏全部摩擦轮控制行",
+				not switch_row.visible and not speed_row.visible and not speed_control_row.visible)
 			var unused_config: Dictionary = ui._snapshot_config()
 			friction_type.select(0)
 			friction_type.item_selected.emit(0)
 			await process_frame
-			_check("重新启用时显示摩擦轮开关行", switch_row.visible)
+			_check("重新启用时显示全部摩擦轮控制行",
+				switch_row.visible and speed_row.visible and speed_control_row.visible)
 			ui._apply_config(unused_config)
 			await process_frame
-			_check("回填不使用配置后保持隐藏", not switch_row.visible)
+			_check("回填不使用配置后保持隐藏",
+				not switch_row.visible and not speed_row.visible and not speed_control_row.visible)
 	root.remove_child(ui)
 	ui.free()
 	print("=== 结果: %s ===" % ("全部通过 ✓" if _fail == 0 else "%d 项失败 ✗" % _fail))

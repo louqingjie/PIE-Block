@@ -97,10 +97,16 @@ func generate(cfg: Dictionary) -> String:
 		if requested_friction_max >= 500 and requested_friction_max <= 800 \
 				and requested_friction_max % 100 == 0:
 			friction_max_duty = requested_friction_max
+	var friction_speed_step: int = int(_int_or_default(
+		cfg.get("friction_speed_step", "100"), 100, 1, 800))
 
 	# --- 按键映射 ---
 	var trigger_key_offset: String = _key_name_to_offset(cfg.get("trigger_key", "E"))
 	var booster_key_offset: String = _key_name_to_offset(cfg.get("booster_key", "A"))
+	var friction_speed_up_key_offset: String = _key_name_to_offset(
+		cfg.get("friction_speed_up_key", "B"))
+	var friction_speed_down_key_offset: String = _key_name_to_offset(
+		cfg.get("friction_speed_down_key", "C"))
 	# --- 拨弹模式 ---
 	# 目视闭环：按住扳机持续拨弹、松开即停（不阻塞主循环）
 	# 阻塞开环：按一下扳机，拨弹电机转动 trigger_time ms 后停（阻塞主循环）
@@ -333,12 +339,14 @@ func generate(cfg: Dictionary) -> String:
 	code += "int dutyOfMotor[%d]; // 底盘电机、供弹电机、云台电机（如有）\n" % motor_array_size
 	if friction_enabled:
 		code += "uint16_t dutyOfBooster = 0;       // 当前摩擦轮占空比\n"
-		code += "uint16_t targetDutyOfBooster = 0; // 目标只允许 0 或 FRICTION_MAX_DUTY\n"
+		code += "uint16_t targetDutyOfBooster = 0; // 当前斜坡追赶的目标占空比\n"
 		code += "uint8_t frictionRampActive = 0;\n"
 	code += "uint8_t valueOfKey[3][4];\n"
 	code += "uint8_t triggerKeyValue, lastTriggerKeyValue;\n"
 	if friction_enabled:
 		code += "uint8_t boosterKeyValue, lastBoosterKeyValue;\n"
+		code += "uint8_t frictionSpeedUpKeyValue, lastFrictionSpeedUpKeyValue;\n"
+		code += "uint8_t frictionSpeedDownKeyValue, lastFrictionSpeedDownKeyValue;\n"
 		code += "uint8_t statusOfBooster = 0;\n"
 	code += "uint8_t i, j;\n"
 	code += "int valueOfRoker[2][2] // 左摇杆水平、竖直；右摇杆水平、竖直\n    ,\n    baseSpeed, turnSpeed;\n"
@@ -502,6 +510,9 @@ func generate(cfg: Dictionary) -> String:
 	if friction_enabled:
 		code += "    // 读取摩擦轮开关键\n"
 		code += "    boosterKeyValue = RcKeyValueRead(%s);\n" % booster_key_offset
+		code += "    // 读取摩擦轮增减速键\n"
+		code += "    frictionSpeedUpKeyValue = RcKeyValueRead(%s);\n" % friction_speed_up_key_offset
+		code += "    frictionSpeedDownKeyValue = RcKeyValueRead(%s);\n" % friction_speed_down_key_offset
 	code += "}\n\n"
 
 	# --- CalculateMotorControls ---
@@ -520,32 +531,42 @@ func generate(cfg: Dictionary) -> String:
 	# --- CalculateBoosterControl ---
 	if friction_enabled:
 		code += "void CalculateBoosterControl()\n{\n"
-		code += "    // 非阻塞开关状态机：稳态只有 0/最大值，中间 duty 仅用于平滑斜坡。\n"
-		code += "    // 将一次完整主循环视作原 Delay 间隔；每轮最多变化 1，不使用定时器中断。\n"
-		code += "    // 摩擦轮开关由 %s 上升沿触发\n" % cfg.get("booster_key", "A")
+		code += "    // 非阻塞状态机：开关和增减速只修改目标值，当前 duty 每轮最多变化 1。\n"
+		code += "    // 摩擦轮开关由 %s 上升沿触发；增减速键也只响应上升沿。\n" % cfg.get("booster_key", "A")
 		code += "    if (boosterKeyValue && !lastBoosterKeyValue)\n"
 		code += "    {\n"
 		code += "        statusOfBooster = !statusOfBooster;\n"
 		code += "        targetDutyOfBooster = statusOfBooster ? FRICTION_MAX_DUTY : 0;\n"
-		code += "        if (statusOfBooster && dutyOfBooster == 0)\n"
-		code += "        {\n"
-		code += "            dutyOfBooster = FRICTION_START_DUTY;\n"
-		code += "        }\n"
 		code += "        frictionRampActive = (dutyOfBooster != targetDutyOfBooster);\n"
-		code += "        if (frictionRampActive)\n"
-		code += "            FrictionBuzzerTrace(dutyOfBooster);\n"
-		code += "        else\n"
-		code += "            FrictionBuzzerOff();\n"
 		code += "    }\n"
-		code += "    else if (frictionRampActive)\n"
+		code += "    else if (statusOfBooster && frictionSpeedUpKeyValue && !lastFrictionSpeedUpKeyValue\n"
+		code += "             && !(frictionSpeedUpKeyValue && frictionSpeedDownKeyValue))\n"
+		code += "    {\n"
+		code += "        if (targetDutyOfBooster < FRICTION_MAX_DUTY)\n"
+		code += "        {\n"
+		code += "            targetDutyOfBooster += %d;\n" % friction_speed_step
+		code += "            if (targetDutyOfBooster > FRICTION_MAX_DUTY)\n"
+		code += "                targetDutyOfBooster = FRICTION_MAX_DUTY;\n"
+		code += "        }\n"
+		code += "    }\n"
+		code += "    else if (statusOfBooster && frictionSpeedDownKeyValue && !lastFrictionSpeedDownKeyValue\n"
+		code += "             && !(frictionSpeedUpKeyValue && frictionSpeedDownKeyValue))\n"
+		code += "    {\n"
+		code += "        if (targetDutyOfBooster > FRICTION_START_DUTY)\n"
+		code += "        {\n"
+		code += "            if (targetDutyOfBooster > FRICTION_START_DUTY + %d)\n" % friction_speed_step
+		code += "                targetDutyOfBooster -= %d;\n" % friction_speed_step
+		code += "            else\n"
+		code += "                targetDutyOfBooster = FRICTION_START_DUTY;\n"
+		code += "        }\n"
+		code += "    }\n"
+		code += "    frictionRampActive = (dutyOfBooster != targetDutyOfBooster);\n"
+		code += "    if (frictionRampActive)\n"
 		code += "    {\n"
 		code += "        if (targetDutyOfBooster > dutyOfBooster)\n"
 		code += "            dutyOfBooster += FRICTION_STEP_DUTY;\n"
-		code += "        else if (dutyOfBooster > FRICTION_START_DUTY)\n"
+		code += "        else if (dutyOfBooster > targetDutyOfBooster)\n"
 		code += "            dutyOfBooster -= FRICTION_STEP_DUTY;\n"
-		code += "        else\n"
-		code += "            dutyOfBooster = 0; // 跳过无有效转动的 0~5% 区间\n"
-		code += "\n"
 		code += "        if (dutyOfBooster == targetDutyOfBooster)\n"
 		code += "        {\n"
 		code += "            frictionRampActive = 0;\n"
@@ -555,6 +576,8 @@ func generate(cfg: Dictionary) -> String:
 		code += "            FrictionBuzzerTrace(dutyOfBooster);\n"
 		code += "    }\n"
 		code += "    lastBoosterKeyValue = boosterKeyValue;\n"
+		code += "    lastFrictionSpeedUpKeyValue = frictionSpeedUpKeyValue;\n"
+		code += "    lastFrictionSpeedDownKeyValue = frictionSpeedDownKeyValue;\n"
 		code += "}\n\n"
 
 	# --- CalculateGimbalControls ---

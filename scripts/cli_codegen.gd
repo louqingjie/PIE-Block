@@ -521,7 +521,16 @@ func _flatten_infantry_config(config: Dictionary) -> Dictionary:
 	flat["trigger_time"] = str(_config_val(config, keyset + "/Trigger/Time"))
 	flat["friction_type"] = str(_config_val(config, keyset + "/FrictionType/OptionButton"))
 	flat["booster_key"] = str(_config_val(config, keyset + "/Booster/OptionButton"))
-	flat["friction_max_duty"] = str(_config_val(config, keyset + "/Booster/MaxDuty"))
+	var max_duty_value: Variant = _config_val(config, keyset + "/BoosterSpeed/MaxDuty")
+	if max_duty_value == null or str(max_duty_value).is_empty():
+		max_duty_value = _config_val(config, keyset + "/Booster/MaxDuty")
+	flat["friction_max_duty"] = str(max_duty_value)
+	flat["friction_speed_up_key"] = str(_config_val(config,
+		keyset + "/BoosterSpeedControl/OptionButton"))
+	flat["friction_speed_down_key"] = str(_config_val(config,
+		keyset + "/BoosterSpeedControl/OptionButton2"))
+	flat["friction_speed_step"] = str(_config_val(config,
+		keyset + "/BoosterSpeedControl/MaxDuty"))
 	flat["zero_enabled"] = bool(_config_val(config, keyset + "/Zero/CheckBox"))
 	return _merge_defaults(flat, "infantry")
 
@@ -664,6 +673,15 @@ func _merge_defaults(flat: Dictionary, _kind: String) -> Dictionary:
 	if _kind == "infantry" and (not flat.has("friction_type") \
 			or str(flat["friction_type"]) == "" or str(flat["friction_type"]) == "<null>"):
 		flat["friction_type"] = "无刷电调"
+	if _kind == "infantry":
+		if not flat.has("friction_max_duty") or str(flat["friction_max_duty"]) in ["", "<null>"]:
+			flat["friction_max_duty"] = "800"
+		if not flat.has("friction_speed_up_key") or str(flat["friction_speed_up_key"]) in ["", "<null>"]:
+			flat["friction_speed_up_key"] = "B"
+		if not flat.has("friction_speed_down_key") or str(flat["friction_speed_down_key"]) in ["", "<null>"]:
+			flat["friction_speed_down_key"] = "C"
+		if not flat.has("friction_speed_step") or str(flat["friction_speed_step"]) in ["", "<null>"]:
+			flat["friction_speed_step"] = "100"
 	if not flat.has("l1_io") or str(flat["l1_io"]) == "" or str(flat["l1_io"]) == "<null>":
 		flat["l1_io"] = "P74 P24"
 	if not flat.has("l2_io") or str(flat["l2_io"]) == "" or str(flat["l2_io"]) == "<null>":
@@ -798,6 +816,9 @@ func _infantry_schema() -> Dictionary:
 		"booster_key": {"type": "string", "description": "摩擦轮开关键"},
 		"friction_max_duty": {"type": "string", "enum": ["500", "600", "700", "800"],
 			"description": "摩擦轮开启后的最大占空比（校内赛安全硬上限 800）", "default": "800"},
+		"friction_speed_up_key": {"type": "string", "description": "摩擦轮增速键", "default": "B"},
+		"friction_speed_down_key": {"type": "string", "description": "摩擦轮减速键", "default": "C"},
+		"friction_speed_step": {"type": "string", "description": "摩擦轮目标 Duty 调整步长", "default": "100"},
 		"zero_enabled": {"type": "boolean", "description": "松手归中", "default": false},
 	}
 

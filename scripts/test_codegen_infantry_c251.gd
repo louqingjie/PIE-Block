@@ -8,7 +8,7 @@ const SC = preload("res://scripts/static_checker.gd")
 func _initialize() -> void:
 	var infantry_scene: PackedScene = load("res://scenes/infantry.tscn")
 	var infantry_ui: Node = infantry_scene.instantiate()
-	if not infantry_ui.has_node("KeySetting/Booster/MaxDuty"):
+	if not infantry_ui.has_node("KeySetting/BoosterSpeed/MaxDuty"):
 		printerr("步兵界面缺少摩擦轮最大占空比设置")
 		infantry_ui.free()
 		quit(1)
@@ -102,17 +102,19 @@ func _initialize() -> void:
 		printerr("摩擦轮渐变注释仍错误地忽略了通信帧间隔")
 		quit(1)
 		return
-	# 摩擦轮采用主循环驱动的平滑非阻塞状态机：500 起步，每轮增加 1，
-	# 稳态只有 0 或用户设定的最大值，不再保留 B/C 调档。
+	# 摩擦轮采用主循环驱动的平滑非阻塞状态机：开关和 B/C 只改目标，
+	# 当前 Duty 每轮增加/减少 1，蜂鸣器只在实际变化期间跟随当前 Duty。
 	if not code.contains("#define FRICTION_MAX_DUTY   800") \
 			or not code.contains("#define FRICTION_STEP_DUTY  1") \
 			or not code.contains("targetDutyOfBooster = statusOfBooster ? FRICTION_MAX_DUTY : 0;") \
+			or not code.contains("frictionSpeedUpKeyValue && !lastFrictionSpeedUpKeyValue") \
+			or not code.contains("frictionSpeedDownKeyValue && !lastFrictionSpeedDownKeyValue") \
+			or not code.contains("targetDutyOfBooster += 100;") \
 			or not code.contains("dutyOfBooster += FRICTION_STEP_DUTY;"):
 		printerr("生成代码缺少校内赛安全的非阻塞摩擦轮增速状态机")
 		quit(1)
 		return
 	for forbidden in ["expectDutyOfBooster", "levelDutyOfBooster",
-			"lastBoosterUpKeyValue", "lastBoosterDownKeyValue",
 			"singleChangeDutyOfBooster"]:
 		if code.contains(forbidden):
 			printerr("生成代码仍残留可停留中间占空比的逻辑：%s" % forbidden)
@@ -128,9 +130,8 @@ func _initialize() -> void:
 		printerr("超过校内赛安全上限的摩擦轮占空比未安全回退到 800")
 		quit(1)
 		return
-	if not code.contains("else if (dutyOfBooster > FRICTION_START_DUTY)") \
-			or not code.contains("dutyOfBooster -= FRICTION_STEP_DUTY;") \
-			or not code.contains("dutyOfBooster = 0;"):
+	if not code.contains("else if (dutyOfBooster > targetDutyOfBooster)") \
+			or not code.contains("dutyOfBooster -= FRICTION_STEP_DUTY;"):
 		printerr("生成代码缺少摩擦轮非阻塞逐级关闭逻辑")
 		quit(1)
 		return
@@ -165,7 +166,7 @@ func _initialize() -> void:
 			printerr("摩擦轮主循环状态机仍残留定时器逻辑：%s" % forbidden_timer)
 			quit(1)
 			return
-	if not booster_func.contains("else if (frictionRampActive)"):
+	if not booster_func.contains("if (frictionRampActive)"):
 		printerr("摩擦轮非阻塞状态机没有按主循环逐次推进")
 		quit(1)
 		return
@@ -190,13 +191,17 @@ func _initialize() -> void:
 		printerr("生成代码 All_Init 未分步（初始化阻塞定位）")
 		quit(1)
 		return
+	var skip_c251: bool = OS.get_environment("PIE_BLOCK_SKIP_C251") == "1"
 	var tc = TC.new(func(line: String) -> void: print(line))
-	var result: Dictionary = tc.build_project(TC.PROJECT_DST, code)
-	if not bool(result.get("ok", false)):
-		printerr(str(result.get("log", "步兵 C251 编译失败")))
-		quit(1)
-		return
-	print("=== C251 步兵 阻塞开环拨弹 编译: 通过 ===")
+	if skip_c251:
+		print("=== C251 外部编译器不可用：跳过步兵 C251 编译，仅执行生成断言 ===")
+	else:
+		var result: Dictionary = tc.build_project(TC.PROJECT_DST, code)
+		if not bool(result.get("ok", false)):
+			printerr(str(result.get("log", "步兵 C251 编译失败")))
+			quit(1)
+			return
+		print("=== C251 步兵 阻塞开环拨弹 编译: 通过 ===")
 	# —— 目视闭环拨弹模式（按住持续拨弹、松开即停，不阻塞）——
 	var vcfg: Dictionary = {"feed_mode": "目视闭环"}
 	var vcode: String = CG.new().generate(vcfg)
@@ -216,12 +221,13 @@ func _initialize() -> void:
 		printerr("阻塞开环模式（默认）必须保留单发阻塞延时")
 		quit(1)
 		return
-	var vresult: Dictionary = tc.build_project(TC.PROJECT_DST, vcode)
-	if not bool(vresult.get("ok", false)):
-		printerr(str(vresult.get("log", "目视闭环 C251 编译失败")))
-		quit(1)
-		return
-	print("=== C251 步兵 目视闭环拨弹 编译: 通过 ===")
+	if not skip_c251:
+		var vresult: Dictionary = tc.build_project(TC.PROJECT_DST, vcode)
+		if not bool(vresult.get("ok", false)):
+			printerr(str(vresult.get("log", "目视闭环 C251 编译失败")))
+			quit(1)
+			return
+		print("=== C251 步兵 目视闭环拨弹 编译: 通过 ===")
 	# —— 不使用摩擦轮：彻底移除控制逻辑并释放 P64/P66 ——
 	var dcfg: Dictionary = {
 		"friction_type": "不使用",
@@ -230,6 +236,7 @@ func _initialize() -> void:
 	}
 	var dcode: String = CG.new().generate(dcfg)
 	for forbidden_friction in ["FRICTION_MAX_DUTY", "dutyOfBooster", "boosterKeyValue",
+			"frictionSpeedUpKeyValue", "frictionSpeedDownKeyValue",
 			"CalculateBoosterControl", "FrictionBuzzerTrace", "FrictionBuzzerOff",
 			"Ms_Delay(1000);"]:
 		if dcode.contains(forbidden_friction):
@@ -254,10 +261,11 @@ func _initialize() -> void:
 		printerr("非法摩擦轮类型未安全回退到无刷电调")
 		quit(1)
 		return
-	var dresult: Dictionary = tc.build_project(TC.PROJECT_DST, dcode)
-	if not bool(dresult.get("ok", false)):
-		printerr(str(dresult.get("log", "禁用摩擦轮 C251 编译失败")))
-		quit(1)
-		return
-	print("=== C251 步兵 不使用摩擦轮 编译: 通过 ===")
+	if not skip_c251:
+		var dresult: Dictionary = tc.build_project(TC.PROJECT_DST, dcode)
+		if not bool(dresult.get("ok", false)):
+			printerr(str(dresult.get("log", "禁用摩擦轮 C251 编译失败")))
+			quit(1)
+			return
+		print("=== C251 步兵 不使用摩擦轮 编译: 通过 ===")
 	quit(0)

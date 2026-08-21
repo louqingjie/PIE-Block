@@ -165,8 +165,11 @@ var _pitch_is_servo: bool = true
 var _wheel_dirs: Array = [1, 1, 1, 1]
 var _trigger_key_id: String = "E"
 var _booster_key_id: String = "A"
+var _friction_speed_up_key_id: String = "B"
+var _friction_speed_down_key_id: String = "C"
 var _trigger_time_ms: int = 250
 var _friction_max_duty: int = BOOSTER_DUTY_MAX
+var _friction_speed_step: int = 100
 var _friction_enabled: bool = true
 ## 拨弹模式：true=目视闭环（按住持续拨弹，松开即停，不阻塞），false=阻塞开环（单发）
 var _visual_feed: bool = false
@@ -182,8 +185,12 @@ var _key: Array = [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]]
 ## 单独读取的扳机键与摩擦轮开关键
 var _trigger_key: int = 0
 var _booster_key: int = 0
+var _friction_speed_up_key: int = 0
+var _friction_speed_down_key: int = 0
 var _last_trigger_key: int = 0
 var _last_booster_key: int = 0
+var _last_friction_speed_up_key: int = 0
+var _last_friction_speed_down_key: int = 0
 var _base_speed: int = 0
 var _turn_speed: int = 0
 ## dutyOfMotor[0..3] = L1/L2/R1/R2，[4] = 拨弹
@@ -195,6 +202,7 @@ var _duty_servo: Array = [0, 0]
 ## 云台被限幅时的标记，状态行用
 var _servo_clamped: Array = [false, false]
 var _duty_booster: int = 0
+var _target_duty_booster: int = 0
 var _status_booster: int = 0
 ## 1=非阻塞增速，-1=非阻塞减速，0=稳态
 var _friction_ramp_direction: int = 0
@@ -253,6 +261,8 @@ var _friction_playback: AudioStreamGeneratorPlayback = null
 var _friction_phase: float = 0.0
 ## 当前实际发声的频率（Hz），平滑趋近目标频率
 var _friction_freq: float = 0.0
+## 只有当前 duty 实际变化时才发声；到达目标立即清零。
+var _friction_buzzer_active: bool = false
 ## 开火音效播放缓冲与剩余待填样本数
 var _shot_playback: AudioStreamGeneratorPlayback = null
 var _shot_remain: int = 0
@@ -366,6 +376,7 @@ func _apply_config() -> void:
 		BOOSTER_DUTY_MIN, BOOSTER_DUTY_MAX)
 	if _friction_max_duty % BOOSTER_STEP != 0:
 		_friction_max_duty = BOOSTER_DUTY_MAX
+	_friction_speed_step = clampi(_cfg_int("friction_speed_step", 100), 1, BOOSTER_DUTY_MAX)
 	_visual_feed = str(_cfg.get("feed_mode", "阻塞开环")) == "目视闭环"
 	_sprint_enabled = bool(_cfg.get("sprint_enabled", false))
 	_zero_enabled = bool(_cfg.get("zero_enabled", false))
@@ -380,6 +391,10 @@ func _apply_config() -> void:
 	]
 	_trigger_key_id = REMOTE_INPUT.CONFIG_KEY_TO_ID.get(str(_cfg.get("trigger_key", "E")), "E")
 	_booster_key_id = REMOTE_INPUT.CONFIG_KEY_TO_ID.get(str(_cfg.get("booster_key", "A")), "A")
+	_friction_speed_up_key_id = REMOTE_INPUT.CONFIG_KEY_TO_ID.get(
+		str(_cfg.get("friction_speed_up_key", "B")), "B")
+	_friction_speed_down_key_id = REMOTE_INPUT.CONFIG_KEY_TO_ID.get(
+		str(_cfg.get("friction_speed_down_key", "C")), "C")
 	# 云台数值语义（归中占空比 / 限幅边界 / 变化率）全部来自生成器
 	_gp = _cg.gimbal_params(_cfg)
 	_reset_control_state()
@@ -402,8 +417,14 @@ func _reset_control_state() -> void:
 	_duty_motor = [0, 0, 0, 0, 0]
 	_duty_gimbal = [0, 0]
 	_duty_booster = 0
+	_target_duty_booster = 0
 	_status_booster = 0
 	_friction_ramp_direction = 0
+	_friction_buzzer_active = false
+	_last_trigger_key = 0
+	_last_booster_key = 0
+	_last_friction_speed_up_key = 0
+	_last_friction_speed_down_key = 0
 	_base_speed = 0
 	_turn_speed = 0
 	_block_ms = 0.0
@@ -664,6 +685,8 @@ func _read_controller_inputs() -> void:
 	var pressed: Dictionary = snapshot["pressed"]
 	_trigger_key = 1 if pressed.has(_trigger_key_id) else 0
 	_booster_key = 1 if _friction_enabled and pressed.has(_booster_key_id) else 0
+	_friction_speed_up_key = 1 if _friction_enabled and pressed.has(_friction_speed_up_key_id) else 0
+	_friction_speed_down_key = 1 if _friction_enabled and pressed.has(_friction_speed_down_key_id) else 0
 
 
 ## 当前焦点是否落在可输入文本的控件上（否则输入 W/S 会同时开车）
@@ -843,33 +866,46 @@ func _limit_servo() -> void:
 		_duty_servo[1] = int(_float_duty_servo[1])
 
 
-## 对应 CalculateBoosterControl：只有开/关；使用非阻塞状态机平滑启停
+## 对应 CalculateBoosterControl：开关和增减速只改目标，当前 Duty 每轮只变化 1。
 func _calculate_booster_control() -> void:
 	if not _friction_enabled:
 		_duty_booster = 0
+		_target_duty_booster = 0
 		_status_booster = 0
 		_friction_ramp_direction = 0
+		_friction_buzzer_active = false
 		_last_booster_key = 0
+		_last_friction_speed_up_key = 0
+		_last_friction_speed_down_key = 0
 		return
+	var booster_toggled: bool = false
 	if _booster_key == 1 and _last_booster_key == 0:
 		_status_booster = 0 if _status_booster == 1 else 1
-		if _status_booster == 1:
-			_duty_booster = BOOSTER_DUTY_MIN
-			_friction_ramp_direction = 1
-		else:
-			# 禁止高速直接断电：保持当前 duty，随后每个主循环减少 1，
-			# 经 500 后才降到 0；斜坡期间主循环继续响应。
-			_friction_ramp_direction = -1
-	elif _friction_ramp_direction > 0 and _duty_booster < _friction_max_duty:
-		_duty_booster = mini(_duty_booster + BOOSTER_STEP, _friction_max_duty)
-		if _duty_booster >= _friction_max_duty:
-			_friction_ramp_direction = 0
-	elif _friction_ramp_direction < 0 and _duty_booster > BOOSTER_DUTY_MIN:
-		_duty_booster -= BOOSTER_STEP
-	elif _friction_ramp_direction < 0 and _duty_booster == BOOSTER_DUTY_MIN:
-		_duty_booster = 0
-		_friction_ramp_direction = 0
+		_target_duty_booster = _friction_max_duty if _status_booster == 1 else 0
+		booster_toggled = true
+	if not booster_toggled and _status_booster == 1 and _friction_speed_up_key == 1 \
+			and _last_friction_speed_up_key == 0 \
+			and not (_friction_speed_up_key == 1 and _friction_speed_down_key == 1):
+		_target_duty_booster = mini(_target_duty_booster + _friction_speed_step, _friction_max_duty)
+	elif not booster_toggled and _status_booster == 1 and _friction_speed_down_key == 1 \
+			and _last_friction_speed_down_key == 0 \
+			and not (_friction_speed_up_key == 1 and _friction_speed_down_key == 1):
+		_target_duty_booster = maxi(_target_duty_booster - _friction_speed_step, BOOSTER_DUTY_MIN)
+	_target_duty_booster = clampi(_target_duty_booster,
+		0 if _status_booster == 0 else BOOSTER_DUTY_MIN, _friction_max_duty)
+	var previous_duty: int = _duty_booster
+	if _duty_booster < _target_duty_booster:
+		_duty_booster = mini(_duty_booster + BOOSTER_STEP, _target_duty_booster)
+	elif _duty_booster > _target_duty_booster:
+		_duty_booster = maxi(_duty_booster - BOOSTER_STEP, _target_duty_booster)
+	_friction_ramp_direction = 1 if _duty_booster < _target_duty_booster else (-1 if _duty_booster > _target_duty_booster else 0)
+	if _duty_booster != previous_duty:
+		_friction_buzzer_active = _duty_booster != _target_duty_booster
+	else:
+		_friction_buzzer_active = false
 	_last_booster_key = _booster_key
+	_last_friction_speed_up_key = _friction_speed_up_key
+	_last_friction_speed_down_key = _friction_speed_down_key
 
 
 # ------------------------------------------------------------------ 底盘运动
@@ -1145,11 +1181,11 @@ func _setup_audio() -> void:
 		sp.volume_db = linear_to_db(SHOT_VOLUME)
 
 
-## 摩擦轮目标频率（Hz）= 当前占空比数值。未启动时为 0（静音）
+## 摩擦轮目标频率（Hz）= 当前占空比数值。只有实际斜坡变化时发声。
 func _friction_target_freq() -> float:
-	if not _friction_enabled:
+	if not _friction_enabled or not _friction_buzzer_active:
 		return 0.0
-	if _duty_booster < BOOSTER_DUTY_MIN:
+	if _duty_booster <= 0:
 		return 0.0
 	return float(_duty_booster)
 
@@ -1236,6 +1272,7 @@ func _stop_audio() -> void:
 		if p is AudioStreamPlayer and p.playing:
 			p.stop()
 	_friction_playback = null
+	_friction_freq = 0.0
 	_shot_playback = null
 	_shot_remain = 0
 
@@ -1600,8 +1637,9 @@ func _update_status() -> void:
 	lines.append(_gimbal_status_text())
 	if _friction_enabled:
 		var boost_state: String = "开" if _status_booster == 1 else "关"
-		lines.append("摩擦轮 %s  duty=%d（开机目标 %d）  出膛 %.1f m/s" % [
-			boost_state, _duty_booster, _friction_max_duty, _muzzle_speed()])
+		lines.append("摩擦轮 %s  duty=%d / 目标=%d / 最大=%d%s  出膛 %.1f m/s" % [
+			boost_state, _duty_booster, _target_duty_booster, _friction_max_duty,
+			"  蜂鸣反馈中" if _friction_buzzer_active else "", _muzzle_speed()])
 	else:
 		lines.append("摩擦轮 未使用  出膛 %.1f m/s（低速掉落）" % _muzzle_speed())
 	var shot: String = "尚未开火"

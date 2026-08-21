@@ -66,6 +66,13 @@ const P_TRIGGER_TIME: NodePath = KEYSET + "/Trigger/Time"
 const P_FRICTION_TYPE: NodePath = KEYSET + "/FrictionType/OptionButton"
 const P_FRICTION_SWITCH_ROW: NodePath = KEYSET + "/Booster"
 const P_BOOSTER_KEY: NodePath = KEYSET + "/Booster/OptionButton"
+const P_FRICTION_MAX_DUTY: NodePath = KEYSET + "/BoosterSpeed/MaxDuty"
+const P_FRICTION_SPEED_ROW: NodePath = KEYSET + "/BoosterSpeed"
+const P_FRICTION_SPEED_CONTROL_ROW: NodePath = KEYSET + "/BoosterSpeedControl"
+const P_FRICTION_SPEED_UP_KEY: NodePath = KEYSET + "/BoosterSpeedControl/OptionButton"
+const P_FRICTION_SPEED_DOWN_KEY: NodePath = KEYSET + "/BoosterSpeedControl/OptionButton2"
+const P_FRICTION_SPEED_STEP: NodePath = KEYSET + "/BoosterSpeedControl/MaxDuty"
+const OLD_FRICTION_MAX_DUTY_CONFIG_PATH: String = "Infantry/KeySetting/Booster/MaxDuty"
 # 调试界面
 const DEBUG: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/Debug"
 # 调试界面各行容器名（P60, P62, P64, P66, P74, P75, P76, P77, MP03, MP74）
@@ -391,7 +398,7 @@ func _connect_signals() -> void:
 		gate_back.pressed.connect(_go_to_launcher)
 	# LineEdit 文本变化
 	for p in [P_CHANNEL, P_DEADZONE, P_NORMAL_SPEED, P_SPRINT_SPEED,
-			P_TRIGGER_SPEED, P_TRIGGER_TIME,
+			P_TRIGGER_SPEED, P_TRIGGER_TIME, P_FRICTION_MAX_DUTY, P_FRICTION_SPEED_STEP,
 			P_YAW_MID_OFFSET, P_PITCH_MID_OFFSET]:
 		var node: Node = get_node_or_null(p)
 		if node is LineEdit:
@@ -419,7 +426,8 @@ func _connect_signals() -> void:
 			P_FRICTION_L_DIR, P_FRICTION_R_DIR,
 			P_YAW_DRIVE, P_YAW_IO, P_YAW_DIR,
 			P_PITCH_DRIVE, P_PITCH_IO, P_PITCH_DIR,
-			P_TRIGGER, P_BOOSTER_KEY, P_FEED_MODE]:
+			P_TRIGGER, P_BOOSTER_KEY, P_FRICTION_SPEED_UP_KEY, P_FRICTION_SPEED_DOWN_KEY,
+			P_FEED_MODE]:
 		var node2: Node = get_node_or_null(p)
 		if node2 is OptionButton:
 			node2.item_selected.connect(_run_check)
@@ -607,6 +615,9 @@ func _apply_config(cfg: Dictionary) -> void:
 		var path: String = str(key)
 		if path == String(P_IK_ENABLE_CB):
 			continue
+		# 场景已将最大 Duty 从 Booster 行移到 BoosterSpeed 行；旧工程仍可回填。
+		if path == OLD_FRICTION_MAX_DUTY_CONFIG_PATH:
+			path = "Infantry/KeySetting/BoosterSpeed/MaxDuty"
 		var node: Node = first_row.get_parent().get_node_or_null(NodePath(path)) \
 			if path.begins_with("FirstRow/") else zone.get_node_or_null(NodePath(path))
 		if node == null:
@@ -616,7 +627,7 @@ func _apply_config(cfg: Dictionary) -> void:
 	_update_debug_placeholders()
 	_update_engineer_placeholders()
 	_update_mode_page_visibility()
-	_sync_friction_switch_visibility()
+	_sync_friction_type_ui()
 	# 固定子系统引脚锁定：旧存档把引脚存成错误类型时，这里自动纠正
 	_sync_io_locks()
 	# 左摇杆保留开关：模式1 强制开启，各模式 LX/LY 键位随开关禁用
@@ -1157,6 +1168,7 @@ func _apply_kind_visibility(kind: String, want_tab: int) -> void:
 		ik_page.visible = false
 	# 工程内部只允许桌面端的工程正解页。
 	_update_mode_page_visibility()
+	_sync_io_locks()
 	_update_sim_btn_visibility()
 
 
@@ -1408,7 +1420,11 @@ func _update_engineer_placeholders(_idx: int = -1) -> void:
 func _update_engineer_root_placeholders(root: String) -> void:
 	var io_init: Dictionary = {}
 	for pin in ENG_ALL_PINS:
-		io_init[pin] = _get_option_text(NodePath(root + "/" + str(ENG_IO_REL.get(pin, ""))))
+		var io_text: String = _get_option_text(NodePath(root + "/" + str(ENG_IO_REL.get(pin, ""))))
+		io_init[pin] = io_text
+		var mid: Node = get_node_or_null(NodePath(root + "/" + str(ENG_IO_MID_REL.get(pin, ""))))
+		if mid is CanvasItem:
+			mid.visible = io_text == "舵机"
 	for page in ENG_MODE_PAGES:
 		var vb: Node = get_node_or_null(NodePath(root + "/" + page + "/ScrollContainer/VBoxContainer"))
 		if vb == null:
@@ -1658,6 +1674,7 @@ func _sync_io_locks(_idx: int = -1) -> void:
 			var btn: Node = get_node_or_null(NodePath(root + "/" + str(ENG_IO_REL.get(pin, ""))))
 			if not btn is OptionButton:
 				continue
+			var mid: Node = get_node_or_null(NodePath(root + "/" + str(ENG_IO_MID_REL.get(pin, ""))))
 			var want: String = str(desired.get(pin, ""))
 			if want.is_empty():
 				# 未占用：解锁，恢复两个选项
@@ -1669,6 +1686,8 @@ func _sync_io_locks(_idx: int = -1) -> void:
 						if not btn.is_item_disabled(i):
 							btn.selected = i
 							break
+				if mid is CanvasItem:
+					mid.visible = _option_text(btn) == "舵机"
 				continue
 			# 占用：选中期望类型并禁用另一项（IO 初始化区只有 电机/舵机 两项）
 			var other: String = "舵机" if want == "电机" else "电机"
@@ -1684,6 +1703,21 @@ func _sync_io_locks(_idx: int = -1) -> void:
 				btn.selected = want_idx
 			if other_idx >= 0:
 				btn.set_item_disabled(other_idx, true)
+			if mid is CanvasItem:
+				mid.visible = _option_text(btn) == "舵机"
+	# 摩擦轮启用时，P64/P66 也必须从其他步兵角色下拉中释放出来，
+	# 禁用摩擦轮后恢复可选；保留旧项目中已选的 P64/P66 以便检查器提示冲突。
+	var friction_reserved: bool = _current_tab() == 0 \
+		and _get_option_text(P_FRICTION_TYPE) != "不使用"
+	for role_path in [P_L1_IO, P_L2_IO, P_R1_IO, P_R2_IO,
+		P_BOOSTER_IO, P_YAW_IO, P_PITCH_IO]:
+		var role_btn: Node = get_node_or_null(role_path)
+		if not role_btn is OptionButton:
+			continue
+		for i in range(role_btn.item_count):
+			var pin: String = role_btn.get_item_text(i).split(" ")[0]
+			if pin == "P64" or pin == "P66":
+				role_btn.set_item_disabled(i, friction_reserved)
 	# IO 类型变化后，相关按键映射行的「控制方式」下拉同步刷新
 	_update_engineer_placeholders()
 
@@ -1708,12 +1742,27 @@ func _sync_chassis_switch(_pressed: bool = false) -> void:
 	_update_engineer_placeholders()
 
 
-## 选择「不使用」摩擦轮时，摩擦轮开关键及最大占空比均不再适用。
+## 选择「不使用」摩擦轮时隐藏并禁用全部摩擦轮控制项。
 ## 可见性须在用户切换、项目回填和首次实例化时同步。
+func _sync_friction_type_ui(_idx: int = -1) -> void:
+	var enabled: bool = _get_option_text(P_FRICTION_TYPE) != "不使用"
+	for row_path in [P_FRICTION_SWITCH_ROW, P_FRICTION_SPEED_ROW, P_FRICTION_SPEED_CONTROL_ROW]:
+		var row: Node = get_node_or_null(row_path)
+		if row is CanvasItem:
+			row.visible = enabled
+	for control_path in [P_BOOSTER_KEY, P_FRICTION_MAX_DUTY,
+			P_FRICTION_SPEED_UP_KEY, P_FRICTION_SPEED_DOWN_KEY, P_FRICTION_SPEED_STEP]:
+		var control: Node = get_node_or_null(control_path)
+		if control is BaseButton:
+			control.disabled = not enabled
+		elif control is LineEdit:
+			control.editable = enabled
+	_sync_io_locks()
+
+
+## 兼容已有信号连接和测试调用。
 func _sync_friction_switch_visibility(_idx: int = -1) -> void:
-	var row: Node = get_node_or_null(P_FRICTION_SWITCH_ROW)
-	if row is CanvasItem:
-		row.visible = _get_option_text(P_FRICTION_TYPE) != "不使用"
+	_sync_friction_type_ui(_idx)
 
 
 ## 模式页开关开启时，该页所有行的 LX/LY 键位禁用
@@ -1937,6 +1986,10 @@ func _collect_config() -> Dictionary:
 	cfg["trigger_time"] = _get_line_text(P_TRIGGER_TIME).strip_edges()
 	cfg["friction_type"] = _get_option_text(P_FRICTION_TYPE)
 	cfg["booster_key"] = _get_option_text(P_BOOSTER_KEY)
+	cfg["friction_max_duty"] = _get_line_text(P_FRICTION_MAX_DUTY).strip_edges()
+	cfg["friction_speed_up_key"] = _get_option_text(P_FRICTION_SPEED_UP_KEY)
+	cfg["friction_speed_down_key"] = _get_option_text(P_FRICTION_SPEED_DOWN_KEY)
+	cfg["friction_speed_step"] = _get_line_text(P_FRICTION_SPEED_STEP).strip_edges()
 	var zero_cb: Node = get_node_or_null(P_ZERO_CB)
 	cfg["zero_enabled"] = (zero_cb is BaseButton) and zero_cb.button_pressed
 	return cfg

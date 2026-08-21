@@ -196,6 +196,9 @@ func _initialize() -> void:
 	var friction_type: OptionButton = ui.get_node(ui.P_FRICTION_TYPE)
 	var friction_key: OptionButton = ui.get_node(ui.P_BOOSTER_KEY)
 	var friction_duty: LineEdit = ui.get_node(ui.P_FRICTION_MAX_DUTY)
+	var friction_up: OptionButton = ui.get_node(ui.P_FRICTION_SPEED_UP_KEY)
+	var friction_down: OptionButton = ui.get_node(ui.P_FRICTION_SPEED_DOWN_KEY)
+	var friction_step: LineEdit = ui.get_node(ui.P_FRICTION_SPEED_STEP)
 	var infantry_port_selectors: Array = [
 		ui.get_node(ui.P_L1_IO), ui.get_node(ui.P_L2_IO),
 		ui.get_node(ui.P_R1_IO), ui.get_node(ui.P_R2_IO),
@@ -213,11 +216,23 @@ func _initialize() -> void:
 		disabled_released = disabled_released \
 			and not _pin_item_disabled(port_btn, "P64") and not _pin_item_disabled(port_btn, "P66")
 	_check("不使用摩擦轮时释放 P64/P66 给底盘/拨弹/云台", disabled_released)
-	_check("不使用摩擦轮时禁用开关键和最大 duty", friction_key.disabled and not friction_duty.editable)
+	_check("不使用摩擦轮时隐藏并禁用全部速度控件",
+		friction_key.disabled and not friction_duty.editable
+		and friction_up.disabled and friction_down.disabled and not friction_step.editable
+		and not ui.get_node(ui.P_FRICTION_SPEED_ROW).visible
+		and not ui.get_node(ui.P_FRICTION_SPEED_CONTROL_ROW).visible)
 	var friction_l1: OptionButton = ui.get_node(ui.P_L1_IO)
 	_pick(ui, friction_l1, "P64 P65")
 	_pick(ui, friction_type, "无刷电调")
 	ui._sync_friction_type_ui()
+	var collected_friction: Dictionary = ui._collect_config()
+	_check("摩擦轮新控件接线并收集配置",
+		collected_friction.has("friction_max_duty")
+		and collected_friction.has("friction_speed_up_key")
+		and collected_friction.has("friction_speed_down_key")
+		and collected_friction.has("friction_speed_step"))
+	ui._apply_config({"Infantry/KeySetting/Booster/MaxDuty": {"t": "700"}})
+	_check("旧 Booster/MaxDuty 配置可回填到新控件", friction_duty.text == "700")
 	_check("切回无刷时保留已选 P64 配置", ui._option_text(friction_l1) == "P64 P65")
 	var has_friction_conflict: bool = false
 	for issue in SC.check_infantry(ui._collect_config()):
