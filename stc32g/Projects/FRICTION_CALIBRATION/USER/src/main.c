@@ -14,6 +14,10 @@
 #define FRICTION_MAX_DUTY 1100
 #define FRICTION_STEP_DUTY 10
 #define FRICTION_RAMP_STEP 1
+#define FRICTION_P64_DIRECTION 0
+#define FRICTION_P66_DIRECTION 0
+#define EXPANSION_MOTOR_FREQUENCY 10000
+#define FRICTION_FREQUENCY 50
 #define EXPANSION_FRAME_GAP_MS 5
 #define MAIN_LOOP_DELAY_MS 10
 
@@ -203,8 +207,10 @@ static void ShowDutyOnLcd(uint16_t duty)
 
 static void SendFrictionOutput(uint16_t duty)
 {
-    /* P64/P66 的方向沿用现有实测配置：方向位为 0。 */
-    ExpansionBoradControl(Dir_Change_Order, 0, 0, 0, 0, 0, 0, 0, 0);
+    /* P64/P66 的方向沿用现有实测配置：两个摩擦轮方向位均为 0。 */
+    ExpansionBoradControl(Dir_Change_Order, 0, 0,
+                          FRICTION_P64_DIRECTION, FRICTION_P66_DIRECTION,
+                          0, 0, 0, 0);
     Ms_Delay(EXPANSION_FRAME_GAP_MS);
     ExpansionBoradControl(Duty_Change_Order, 0, 0, duty, duty, 0, 0, 0, 0);
     Ms_Delay(EXPANSION_FRAME_GAP_MS);
@@ -218,10 +224,16 @@ void All_Init(void)
     Button_Init();
     LCD_Init();
 
-    /* 机械拓展板上的 P64/P66 为 50Hz 摩擦轮输出，初始 Duty 必须为 0。 */
-    ExpansionBoradControl(Init_Order, 0, 0, 50, 50, 0, 0, 0, 0);
+    /* 所有拓展板通道的初始化频率必须非零；P64/P66 使用 50Hz。 */
+    ExpansionBoradControl(Init_Order,
+                          EXPANSION_MOTOR_FREQUENCY, EXPANSION_MOTOR_FREQUENCY,
+                          FRICTION_FREQUENCY, FRICTION_FREQUENCY,
+                          EXPANSION_MOTOR_FREQUENCY, EXPANSION_MOTOR_FREQUENCY,
+                          EXPANSION_MOTOR_FREQUENCY, EXPANSION_MOTOR_FREQUENCY);
     Ms_Delay(1000);
-    ExpansionBoradControl(Dir_Change_Order, 0, 0, 0, 0, 0, 0, 0, 0);
+    ExpansionBoradControl(Dir_Change_Order, 0, 0,
+                          FRICTION_P64_DIRECTION, FRICTION_P66_DIRECTION,
+                          0, 0, 0, 0);
     Ms_Delay(EXPANSION_FRAME_GAP_MS);
     ExpansionBoradControl(Duty_Change_Order, 0, 0, 0, 0, 0, 0, 0, 0);
     Ms_Delay(EXPANSION_FRAME_GAP_MS);
