@@ -26,6 +26,7 @@ const SERVO_STEP_WARN_DEG: int = 30
 const MOTOR_SPEED_MAX: int = 10000
 const MUSIC_MAX_SEGMENTS: int = 8192
 const MUSIC_MAX_DURATION_MS: int = 20 * 60 * 1000
+const MUSIC_MAX_VOICES: int = 4
 
 
 # ------------------------------------------------------------------ 公开入口
@@ -75,8 +76,8 @@ static func check_debug(debug_rows: Array) -> Array:
 	return issues
 
 
-## 音乐模式检查。music.segments 使用 {note: 0~127, duration_ms: >=1}。
-## note=0 表示休止；frequency 形式也允许 CLI/测试直接传入。
+## 音乐模式检查。music.segments 使用 {notes: [1~127], duration_ms: >=1}。
+## notes=[] 表示休止；单轨单音片段也统一使用单元素 notes 数组。
 static func check_music(cfg: Dictionary) -> Array:
 	var issues: Array = []
 	var music_value: Variant = cfg.get("music", cfg)
@@ -84,10 +85,27 @@ static func check_music(cfg: Dictionary) -> Array:
 		issues.append({"type": "Error", "msg": "音乐配置不是合法对象，请重新导入 MIDI"})
 		return issues
 	var music: Dictionary = music_value
-	var track_index: int = int(music.get("track_index", -1))
+	var polyphonic: bool = bool(music.get("polyphonic", false))
 	var track_count: int = int(music.get("track_count", 0))
-	if track_index < 0 or track_count <= 0 or track_index >= track_count:
+	if track_count <= 0:
 		issues.append({"type": "Error", "msg": "尚未选择 MIDI 轨道"})
+	var raw_indices: Variant = music.get("track_indices", [])
+	var track_indices: Array = raw_indices if raw_indices is Array else []
+	if track_indices.is_empty() and music.has("track_index"):
+		track_indices = [music.get("track_index", -1)]
+	if track_indices.is_empty():
+		issues.append({"type": "Error", "msg": "尚未选择 MIDI 轨道"})
+	var seen_indices: Dictionary = {}
+	for raw_index in track_indices:
+		var track_index: int = int(raw_index)
+		if track_index < 0 or track_index >= track_count:
+			issues.append({"type": "Error", "msg": "MIDI 轨道索引 %d 超出范围" % track_index})
+		elif seen_indices.has(track_index):
+			issues.append({"type": "Error", "msg": "MIDI 轨道不能重复选择：%d" % (track_index + 1)})
+		else:
+			seen_indices[track_index] = true
+	if not polyphonic and track_indices.size() > 1:
+		issues.append({"type": "Error", "msg": "未启用伪复音时只能选择一条 MIDI 轨道"})
 	var raw_segments: Variant = music.get("segments", [])
 	if not raw_segments is Array or (raw_segments as Array).is_empty():
 		issues.append({"type": "Error", "msg": "尚未导入包含音符的 MIDI 轨道"})
@@ -106,16 +124,21 @@ static func check_music(cfg: Dictionary) -> Array:
 		if duration < 1:
 			issues.append({"type": "Error", "msg": "音乐片段 %d 时长必须大于 0" % (index + 1)})
 		total_ms += maxi(duration, 0)
-		if segment.has("note"):
-			var note: int = int(segment.get("note", -1))
-			if note < 0 or note > 127:
-				issues.append({"type": "Error", "msg": "音乐片段 %d 音高超出 MIDI 范围 0~127" % (index + 1)})
-		elif segment.has("frequency"):
-			var frequency: int = int(segment.get("frequency", -1))
-			if frequency < 0 or frequency > 65535:
-				issues.append({"type": "Error", "msg": "音乐片段 %d 频率无效" % (index + 1)})
-		else:
-			issues.append({"type": "Error", "msg": "音乐片段 %d 缺少音高" % (index + 1)})
+		var raw_notes: Variant = segment.get("notes", null)
+		if not raw_notes is Array:
+			issues.append({"type": "Error", "msg": "音乐片段 %d 缺少 notes 数组" % (index + 1)})
+			continue
+		var notes: Array = raw_notes
+		if notes.size() > MUSIC_MAX_VOICES:
+			issues.append({"type": "Error", "msg": "音乐片段 %d 声部数超过 %d" % [index + 1, MUSIC_MAX_VOICES]})
+		var seen_notes: Dictionary = {}
+		for note_value in notes:
+			var note: int = int(note_value)
+			if note < 1 or note > 127:
+				issues.append({"type": "Error", "msg": "音乐片段 %d 音高超出 MIDI 范围 1~127" % (index + 1)})
+			elif seen_notes.has(note):
+				issues.append({"type": "Error", "msg": "音乐片段 %d 含重复音高" % (index + 1)})
+			seen_notes[note] = true
 	if total_ms > MUSIC_MAX_DURATION_MS:
 		issues.append({"type": "Error", "msg": "音乐时长超过 20 分钟上限"})
 	return issues

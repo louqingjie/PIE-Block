@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Pie-Block 音乐 配置",
-  "description": "从 MIDI 选定单轨并解析出的播放数据；CLI 不读取原始 MIDI 文件。",
+  "description": "从 MIDI 选定一条或多条轨道并解析出的播放数据；CLI 不读取原始 MIDI 文件。polyphonic 开启后为四声部 5ms 时间片伪复音。",
   "kind": "music",
   "type": "object",
   "properties": {
@@ -9,8 +9,12 @@
       "type": "object",
       "properties": {
         "source_name": {"type": "string"},
+        "polyphonic": {"type": "boolean", "default": false},
         "track_index": {"type": "integer", "minimum": 0},
+        "track_indices": {"type": "array", "minItems": 1,
+          "items": {"type": "integer", "minimum": 0}},
         "track_name": {"type": "string"},
+        "track_names": {"type": "array", "items": {"type": "string"}},
         "track_count": {"type": "integer", "minimum": 1},
         "duration_ms": {"type": "integer", "minimum": 1, "maximum": 1200000},
         "segments": {
@@ -19,19 +23,19 @@
           "items": {
             "type": "object",
             "properties": {
-              "note": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 127,
-                "description": "MIDI 音高；0 表示休止"
+              "notes": {
+                "type": "array",
+                "maxItems": 4,
+                "items": {"type": "integer", "minimum": 1, "maximum": 127},
+                "description": "按音高降序排列的 MIDI 音符；空数组表示休止"
               },
               "duration_ms": {"type": "integer", "minimum": 1}
             },
-            "required": ["note", "duration_ms"]
+            "required": ["notes", "duration_ms"]
           }
         }
       },
-      "required": ["track_index", "segments"]
+      "required": ["polyphonic", "track_indices", "track_count", "segments"]
     }
   },
   "required": ["music"]

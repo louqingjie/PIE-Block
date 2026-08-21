@@ -922,12 +922,16 @@ func _music_schema() -> Dictionary:
 	return {
 		"music": {
 			"type": "object",
-			"description": "已从 MIDI 选定单轨并解析出的播放数据；CLI 不读取原始 MIDI 文件",
-			"required": ["track_index", "track_count", "segments"],
+			"description": "已从 MIDI 选定一条或多条轨道并解析出的播放数据；CLI 不读取原始 MIDI 文件。开启 polyphonic 后使用四声部 5ms 时间片伪复音",
+			"required": ["polyphonic", "track_indices", "track_count", "segments"],
 			"properties": {
 				"source_name": {"type": "string"},
+				"polyphonic": {"type": "boolean", "default": false},
 				"track_index": {"type": "integer", "minimum": 0},
+				"track_indices": {"type": "array", "minItems": 1,
+					"items": {"type": "integer", "minimum": 0}},
 				"track_name": {"type": "string"},
+				"track_names": {"type": "array", "items": {"type": "string"}},
 				"track_count": {"type": "integer", "minimum": 1},
 				"duration_ms": {"type": "integer", "minimum": 1, "maximum": 1200000},
 				"segments": {
@@ -935,10 +939,11 @@ func _music_schema() -> Dictionary:
 					"maxItems": 8192,
 					"items": {
 						"type": "object",
-						"required": ["note", "duration_ms"],
+						"required": ["notes", "duration_ms"],
 						"properties": {
-							"note": {"type": "integer", "minimum": 0, "maximum": 127,
-								"description": "MIDI 音高；0 表示休止"},
+							"notes": {"type": "array", "maxItems": 4,
+								"items": {"type": "integer", "minimum": 1, "maximum": 127},
+								"description": "按音高降序排列的 MIDI 音符；空数组表示休止"},
 							"duration_ms": {"type": "integer", "minimum": 1},
 						},
 					},
@@ -960,7 +965,7 @@ func _kind_description(kind: String) -> String:
 		PF.KIND_DEBUG:
 			return "调试模式：逐行测试各引脚，每个命令持续3秒，蜂鸣器提示开始/结束。"
 		PF.KIND_MUSIC:
-			return "音乐模式：导入 MIDI 后选择单轨，使用主控板 P33 蜂鸣器自动循环播放。"
+			return "音乐模式：导入 MIDI 后选择一条或多条轨道；可选四声部 5ms 时间片伪复音，使用主控板 P33 蜂鸣器自动循环播放。"
 		_:
 			return ""
 

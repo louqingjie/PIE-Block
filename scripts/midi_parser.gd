@@ -4,12 +4,13 @@ extends RefCounted
 ## Standard MIDI File 解析器。
 ##
 ## 首版只接受 SMF Format 0/1 + PPQ 时间分辨率，解析音符、轨道名和 tempo
-## 事件。解析结果已经转换成单音播放片段：note=0 表示休止，note=1~127
-## 表示 MIDI 音高。多个音符重叠时保留最高音。
+## 事件。每条轨道同时保留可用于多轨合并的绝对微秒音符区间；普通轨道摘要
+## 仍输出单音片段，note=0 表示休止。merge_tracks() 输出最多四声部的 notes 数组。
 
 const DEFAULT_TEMPO_US_PER_QUARTER: int = 500000 # 120 BPM
 const MAX_SEGMENTS: int = 8192
 const MAX_DURATION_MS: int = 20 * 60 * 1000
+const MAX_VOICES: int = 4
 
 
 static func parse_file(path: String) -> Dictionary:
@@ -73,6 +74,8 @@ static func parse_bytes(bytes: PackedByteArray, source_name: String = "") -> Dic
 	var tracks: Array = []
 	var playable_track_count: int = 0
 	for raw in raw_tracks:
+		var intervals_result: Dictionary = _build_intervals(
+			raw["events"], int(raw["end_tick"]), tempo_events, division)
 		var segments_result: Dictionary = _build_segments(
 			raw["events"], int(raw["end_tick"]), tempo_events, division)
 		var track: Dictionary = {
@@ -81,6 +84,7 @@ static func parse_bytes(bytes: PackedByteArray, source_name: String = "") -> Dic
 			"note_count": int(raw["note_count"]),
 			"duration_ms": int(segments_result.get("duration_ms", 0)),
 			"segments": segments_result.get("segments", []),
+			"intervals": intervals_result.get("intervals", []),
 			"error": str(segments_result.get("err", "")),
 		}
 		if track["error"].is_empty() and not (track["segments"] as Array).is_empty():
@@ -97,6 +101,43 @@ static func parse_bytes(bytes: PackedByteArray, source_name: String = "") -> Dic
 		"tracks": tracks,
 		"has_playable_track": playable_track_count > 0,
 	}
+
+
+## 将解析结果中的多条轨道合并成单个蜂鸣器可播放的片段序列。
+## 每个片段使用 {notes: [最高音, ...], duration_ms}，notes=[] 表示休止。
+static func merge_tracks(parsed: Dictionary, track_indices: Array,
+		max_voices: int = MAX_VOICES) -> Dictionary:
+	if not bool(parsed.get("ok", false)):
+		return {"ok": false, "segments": [], "duration_ms": 0,
+			"err": str(parsed.get("err", "MIDI 解析结果无效"))}
+	var tracks: Array = parsed.get("tracks", [])
+	var selected: Array[int] = []
+	var seen: Dictionary = {}
+	for raw_index in track_indices:
+		var index: int = int(raw_index)
+		if index < 0 or index >= tracks.size():
+			return {"ok": false, "segments": [], "duration_ms": 0,
+				"err": "MIDI 轨道索引无效：%d" % index}
+		if seen.has(index):
+			continue
+		seen[index] = true
+		var track: Dictionary = tracks[index]
+		if not str(track.get("error", "")).is_empty():
+			return {"ok": false, "segments": [], "duration_ms": 0,
+				"err": "轨道 %d 不可播放：%s" % [index + 1, str(track["error"])]}
+		var intervals: Array = track.get("intervals", [])
+		if intervals.is_empty():
+			return {"ok": false, "segments": [], "duration_ms": 0,
+				"err": "轨道 %d 没有可播放的音符" % (index + 1)}
+		selected.append(index)
+	if selected.is_empty():
+		return {"ok": false, "segments": [], "duration_ms": 0,
+			"err": "至少选择一条可播放轨道"}
+	var voices: int = clampi(max_voices, 1, MAX_VOICES)
+	var all_intervals: Array = []
+	for index in selected:
+		all_intervals.append_array((tracks[index].get("intervals", []) as Array))
+	return _segments_from_intervals(all_intervals, voices, true)
 
 
 static func _parse_track(bytes: PackedByteArray, start: int, end: int,
@@ -197,6 +238,13 @@ static func _parse_track(bytes: PackedByteArray, start: int, end: int,
 
 
 static func _build_segments(events: Array, end_tick: int, tempos: Array, ppq: int) -> Dictionary:
+	var interval_result: Dictionary = _build_intervals(events, end_tick, tempos, ppq)
+	if not str(interval_result.get("err", "")).is_empty():
+		return {"segments": [], "duration_ms": 0, "err": str(interval_result["err"])}
+	return _segments_from_intervals(interval_result.get("intervals", []), 1, false)
+
+
+static func _build_intervals(events: Array, end_tick: int, tempos: Array, ppq: int) -> Dictionary:
 	var active: Dictionary = {}
 	var notes: Array = []
 	for event in events:
@@ -226,12 +274,26 @@ static func _build_segments(events: Array, end_tick: int, tempos: Array, ppq: in
 				notes.append({"start": start_tick, "end": end_tick, "note": int(note_key),
 					"order": int(opening["order"])})
 	if notes.is_empty():
-		return {"segments": [], "duration_ms": 0, "err": "该轨道没有可播放的音符"}
+		return {"intervals": [], "err": "该轨道没有可播放的音符"}
+	var intervals: Array = []
+	for note in notes:
+		intervals.append({
+			"start_us": _tick_to_us(int(note["start"]), tempos, ppq),
+			"end_us": _tick_to_us(int(note["end"]), tempos, ppq),
+			"note": int(note["note"]),
+		})
+	return {"intervals": intervals, "err": ""}
+
+
+static func _segments_from_intervals(intervals: Array, max_voices: int,
+		polyphonic: bool) -> Dictionary:
+	if intervals.is_empty():
+		return {"ok": false, "segments": [], "duration_ms": 0, "err": "该轨道没有可播放的音符"}
 
 	var boundaries: Array[int] = [0]
-	for note in notes:
-		boundaries.append(int(note["start"]))
-		boundaries.append(int(note["end"]))
+	for interval in intervals:
+		boundaries.append(int(interval["start_us"]))
+		boundaries.append(int(interval["end_us"]))
 	boundaries.sort()
 	var unique_boundaries: Array[int] = []
 	for boundary in boundaries:
@@ -244,32 +306,50 @@ static func _build_segments(events: Array, end_tick: int, tempos: Array, ppq: in
 		var right: int = unique_boundaries[i + 1]
 		if right <= left:
 			continue
-		var selected_note: int = 0
-		for note in notes:
-			if int(note["start"]) <= left and int(note["end"]) > left:
-				selected_note = maxi(selected_note, int(note["note"]))
+		var active_notes: Array[int] = []
+		for interval in intervals:
+			if int(interval["start_us"]) <= left and int(interval["end_us"]) > left:
+				var note_value: int = int(interval["note"])
+				if note_value > 0 and note_value not in active_notes:
+					active_notes.append(note_value)
+		active_notes.sort()
+		active_notes.reverse()
+		if active_notes.size() > max_voices:
+			active_notes = active_notes.slice(0, max_voices)
 		var duration_ms: int = maxi(1, int(round(
-			float(_tick_to_us(right, tempos, ppq) - _tick_to_us(left, tempos, ppq)) / 1000.0)))
-		if not segments.is_empty() and int(segments[-1]["note"]) == selected_note:
+			float(right - left) / 1000.0)))
+		var current_notes: Array = active_notes
+		if not polyphonic:
+			current_notes = [active_notes[0]] if not active_notes.is_empty() else []
+		if not segments.is_empty() and segments[-1]["notes"] == current_notes:
 			segments[-1]["duration_ms"] = int(segments[-1]["duration_ms"]) + duration_ms
 		else:
-			segments.append({"note": selected_note, "duration_ms": duration_ms})
+			segments.append({"notes": current_notes, "duration_ms": duration_ms})
 
 	# 曲尾静音不影响循环，去掉它；开头和音符间的休止保留。
-	while not segments.is_empty() and int(segments[-1]["note"]) == 0:
+	while not segments.is_empty() and (segments[-1]["notes"] as Array).is_empty():
 		segments.pop_back()
 	if segments.is_empty():
-		return {"segments": [], "duration_ms": 0, "err": "该轨道没有可播放的音符"}
+		return {"ok": false, "segments": [], "duration_ms": 0, "err": "该轨道没有可播放的音符"}
 	var duration_ms: int = 0
 	for segment in segments:
 		duration_ms += int(segment["duration_ms"])
 	if segments.size() > MAX_SEGMENTS:
-		return {"segments": [], "duration_ms": duration_ms,
+		return {"ok": false, "segments": [], "duration_ms": duration_ms,
 			"err": "该轨道解析后有 %d 个片段，超过上限 %d" % [segments.size(), MAX_SEGMENTS]}
 	if duration_ms > MAX_DURATION_MS:
-		return {"segments": [], "duration_ms": duration_ms,
+		return {"ok": false, "segments": [], "duration_ms": duration_ms,
 			"err": "该轨道时长超过 20 分钟上限"}
-	return {"segments": segments, "duration_ms": duration_ms, "err": ""}
+	if not polyphonic:
+		var single_segments: Array = []
+		for segment in segments:
+			var notes: Array = segment["notes"]
+			single_segments.append({
+				"note": int(notes[0]) if not notes.is_empty() else 0,
+				"duration_ms": int(segment["duration_ms"]),
+			})
+		return {"ok": true, "segments": single_segments, "duration_ms": duration_ms, "err": ""}
+	return {"ok": true, "segments": segments, "duration_ms": duration_ms, "err": ""}
 
 
 static func _tick_to_us(tick: int, tempos: Array, ppq: int) -> int:

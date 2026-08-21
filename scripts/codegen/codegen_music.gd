@@ -3,9 +3,11 @@ extends CodeGenBase
 
 ## MIDI 音乐代码生成器。
 ## 生成只使用主控板 P33 被动蜂鸣器的独立固件，不启动遥控器或拓展板通信。
+## 多声部是 5ms 时间片轮换的伪复音，不是真正的同时波形叠加。
 
 const BUZZER_PWM_CH: String = "PWMB_CH3_P33"
-const DEFAULT_NOTE: int = 0
+const MAX_VOICES: int = 4
+const VOICE_SLICE_MS: int = 5
 const DEFAULT_DURATION_MS: int = 1
 
 
@@ -16,7 +18,7 @@ func generate(cfg: Dictionary) -> String:
 	if segments.is_empty():
 		# C251 不允许零长数组；非法配置仍生成可编译的静音固件，
 		# 具体错误由 StaticChecker.check_music() 展示。
-		segments = [{"frequency": 0, "duration_ms": DEFAULT_DURATION_MS}]
+		segments = [{"notes": [], "duration_ms": DEFAULT_DURATION_MS}]
 
 	var code: String = ""
 	code += "// MIDI 音乐代码（由 Pie-Block 配置生成器自动生成）\n"
@@ -25,16 +27,37 @@ func generate(cfg: Dictionary) -> String:
 	code += "uint8_t Channal = 36;\n\n"
 	code += "#define MUSIC_BUZZER_CH %s\n" % BUZZER_PWM_CH
 	code += "#define MUSIC_DUTY_ON  5000\n"
-	code += "#define MUSIC_DUTY_OFF 0\n\n"
+	code += "#define MUSIC_DUTY_OFF 0\n"
+	code += "#define MUSIC_MAX_VOICES %d\n" % MAX_VOICES
+	code += "#define MUSIC_VOICE_SLICE_MS %dUL\n\n" % VOICE_SLICE_MS
 	code += "typedef struct\n"
 	code += "{\n"
-	code += "    uint16_t frequency;\n"
 	code += "    uint32_t duration_ms;\n"
+	code += "    uint8_t voice_count;\n"
+	code += "    uint8_t notes[MUSIC_MAX_VOICES];\n"
 	code += "} MusicSegment;\n\n"
+	code += "// MIDI 音符编号 -> PWM 整数频率，索引 0 仅作安全占位，不播放频率 0。\n"
+	code += "static const uint16_t musicFrequencies[128] =\n"
+	code += "{\n"
+	var frequencies: Array = []
+	for note in range(128):
+		frequencies.append(_midi_note_to_frequency(note))
+	for row in range(16):
+		var values: Array = []
+		for column in range(8):
+			values.append(str(frequencies[row * 8 + column]))
+		code += "    %s%s\n" % [", ".join(values), "," if row < 15 else ""]
+	code += "};\n\n"
+
 	code += "static const MusicSegment musicSegments[%d] =\n" % segments.size()
 	code += "{\n"
 	for segment in segments:
-		code += "    {%d, %dUL},\n" % [int(segment["frequency"]), int(segment["duration_ms"])]
+		var notes: Array = segment["notes"] as Array
+		var note_bytes: Array = []
+		for index in range(MAX_VOICES):
+			note_bytes.append(str(int(notes[index])) if index < notes.size() else "0")
+		code += "    {%dUL, %d, {%s}},\n" % [
+			int(segment["duration_ms"]), notes.size(), ", ".join(note_bytes)]
 	code += "};\n"
 	code += "#define MUSIC_SEGMENT_COUNT %d\n\n" % segments.size()
 
@@ -56,17 +79,44 @@ func generate(cfg: Dictionary) -> String:
 	code += "    PWM_SET_Frequency(MUSIC_BUZZER_CH, 1000, MUSIC_DUTY_OFF);\n"
 	code += "}\n\n"
 
+	code += "static void Music_PlaySegment(const MusicSegment *segment)\n"
+	code += "{\n"
+	code += "    uint32_t remaining_ms = segment->duration_ms;\n"
+	code += "    uint8_t voice = 0;\n"
+	code += "    uint32_t slice_ms;\n"
+	code += "    if (segment->voice_count == 0)\n"
+	code += "    {\n"
+	code += "        Music_Stop();\n"
+	code += "        Music_Wait(remaining_ms);\n"
+	code += "        return;\n"
+	code += "    }\n"
+	code += "    if (segment->voice_count == 1)\n"
+	code += "    {\n"
+	code += "        PWM_SET_Frequency(MUSIC_BUZZER_CH,\n"
+	code += "            musicFrequencies[segment->notes[0]], MUSIC_DUTY_ON);\n"
+	code += "        Music_Wait(remaining_ms);\n"
+	code += "        return;\n"
+	code += "    }\n"
+	code += "    // 伪复音：每个声部播放 5ms；最后不足 5ms 的时间片不延长节奏。\n"
+	code += "    while (remaining_ms > 0UL)\n"
+	code += "    {\n"
+	code += "        slice_ms = remaining_ms > MUSIC_VOICE_SLICE_MS\n"
+	code += "            ? MUSIC_VOICE_SLICE_MS : remaining_ms;\n"
+	code += "        PWM_SET_Frequency(MUSIC_BUZZER_CH,\n"
+	code += "            musicFrequencies[segment->notes[voice]], MUSIC_DUTY_ON);\n"
+	code += "        Music_Wait(slice_ms);\n"
+	code += "        remaining_ms -= slice_ms;\n"
+	code += "        voice++;\n"
+	code += "        if (voice >= segment->voice_count)\n"
+	code += "            voice = 0;\n"
+	code += "    }\n"
+	code += "}\n\n"
+
 	code += "static void Music_PlayOnce(void)\n"
 	code += "{\n"
 	code += "    uint16_t i;\n"
 	code += "    for (i = 0; i < MUSIC_SEGMENT_COUNT; i++)\n"
-	code += "    {\n"
-	code += "        if (musicSegments[i].frequency == 0)\n"
-	code += "            Music_Stop();\n"
-	code += "        else\n"
-	code += "            PWM_SET_Frequency(MUSIC_BUZZER_CH, musicSegments[i].frequency, MUSIC_DUTY_ON);\n"
-	code += "        Music_Wait(musicSegments[i].duration_ms);\n"
-	code += "    }\n"
+	code += "        Music_PlaySegment(&musicSegments[i]);\n"
 	code += "    Music_Stop();\n"
 	code += "}\n\n"
 
@@ -93,20 +143,29 @@ func _safe_segments(raw: Array) -> Array:
 		if not item is Dictionary:
 			continue
 		var segment: Dictionary = item
-		var frequency: int = int(segment.get("frequency", 0))
-		if frequency == 0 and segment.has("note"):
-			var note: int = int(segment.get("note", 0))
-			frequency = _midi_note_to_frequency(note)
+		var notes: Array = []
+		var raw_notes: Variant = segment.get("notes", null)
+		if raw_notes is Array:
+			for value in raw_notes:
+				var note: int = int(value)
+				if note >= 1 and note <= 127 and note not in notes:
+					notes.append(note)
+		elif segment.has("note"):
+			var old_note: int = int(segment.get("note", 0))
+			if old_note >= 1 and old_note <= 127:
+				notes = [old_note]
+		notes.sort()
+		notes.reverse()
+		if notes.size() > MAX_VOICES:
+			notes = notes.slice(0, MAX_VOICES)
 		var duration_ms: int = int(segment.get("duration_ms", DEFAULT_DURATION_MS))
-		if frequency < 0 or frequency > 65535:
-			frequency = 0
 		if duration_ms < 1:
 			duration_ms = DEFAULT_DURATION_MS
-		result.append({"frequency": frequency, "duration_ms": duration_ms})
+		result.append({"notes": notes, "duration_ms": duration_ms})
 	return result
 
 
 static func _midi_note_to_frequency(note: int) -> int:
 	if note <= 0 or note > 127:
-		return 0
+		return 1000
 	return int(round(440.0 * pow(2.0, float(note - 69) / 12.0)))

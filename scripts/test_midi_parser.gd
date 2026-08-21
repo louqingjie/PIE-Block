@@ -133,6 +133,20 @@ func _track_at_tempo_only() -> PackedByteArray:
 	return _track(payload)
 
 
+func _notes_track(track_name: String, notes: Array[int], duration: int = 480) -> PackedByteArray:
+	var payload: PackedByteArray = PackedByteArray()
+	var name_bytes: PackedByteArray = track_name.to_utf8_buffer()
+	payload.append_array(_event(0, [0xff, 0x03, name_bytes.size()]))
+	payload.append_array(name_bytes)
+	for note in notes:
+		payload.append_array(_event(0, [0x90, note, 64]))
+	for index in range(notes.size()):
+		payload.append_array(_event(duration if index == 0 else 0,
+			[0x80, notes[index], 64]))
+	payload.append_array(_end())
+	return _track(payload)
+
+
 func _initialize() -> void:
 	print("=== MIDI 解析器测试 ===\n")
 	var format0: Dictionary = Midi.parse_bytes(_file(0, [_format0_track()]), "format0.mid")
@@ -154,12 +168,40 @@ func _initialize() -> void:
 		{"note": 70, "duration_ms": 250},
 	], JSON.stringify(format1["tracks"][1]["segments"]))
 	_check("轨道名保留", format1["tracks"][1]["name"] == "Melod")
+	var merged_tempo: Dictionary = Midi.merge_tracks(format1, [1])
+	_check("多轨接口沿用全局 tempo map", bool(merged_tempo.get("ok", false))
+		and merged_tempo["segments"] == [
+			{"notes": [69], "duration_ms": 500},
+			{"notes": [], "duration_ms": 250},
+			{"notes": [70], "duration_ms": 250},
+		], JSON.stringify(merged_tempo))
 
 	var overlap: Dictionary = Midi.parse_bytes(_file(0, [_overlap_track()]))
 	_check("重叠音符取最高音", overlap["tracks"][0]["segments"] == [
 		{"note": 64, "duration_ms": 250},
 		{"note": 60, "duration_ms": 250},
 	])
+
+	var multi: Dictionary = Midi.parse_bytes(_file(1, [
+		_tempo_track(), _notes_track("上声部", [60, 64]), _notes_track("重复声部", [60, 67]),
+	]))
+	var merged: Dictionary = Midi.merge_tracks(multi, [1, 2])
+	_check("多轨重叠合并为音符集合", bool(merged.get("ok", false))
+		and merged["segments"] == [{"notes": [67, 64, 60], "duration_ms": 500}],
+		JSON.stringify(merged))
+	var duplicate_merged: Dictionary = Midi.merge_tracks(multi, [1, 1, 2])
+	_check("多轨同音符去重", bool(duplicate_merged.get("ok", false))
+		and (duplicate_merged["segments"][0]["notes"] as Array).size() == 3)
+	var five_tracks: Array[PackedByteArray] = [_tempo_track()]
+	for note in [60, 62, 64, 65, 67]:
+		five_tracks.append(_notes_track("声部", [note]))
+	var four: Dictionary = Midi.merge_tracks(Midi.parse_bytes(_file(1, five_tracks)), [1, 2, 3, 4, 5])
+	_check("超过四声部时保留最高四音", bool(four.get("ok", false))
+		and four["segments"][0]["notes"] == [67, 65, 64, 62], JSON.stringify(four))
+	var invalid_track: Dictionary = Midi.merge_tracks(multi, [99])
+	_check("多轨索引越界返回错误", not bool(invalid_track.get("ok", false)))
+	var empty_selection: Dictionary = Midi.merge_tracks(multi, [])
+	_check("多轨空选择返回错误", not bool(empty_selection.get("ok", false)))
 
 	var invalid: Dictionary = Midi.parse_bytes(PackedByteArray([0x00, 0x01]))
 	_check("截断文件返回错误", not bool(invalid.get("ok", false)))

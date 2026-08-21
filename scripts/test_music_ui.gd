@@ -27,27 +27,34 @@ func _initialize() -> void:
 	root.add_child(page)
 	await process_frame
 	_check("音乐页包含 MIDI 打开按钮", page.get_node_or_null("Open") is Button)
-	_check("音乐页包含轨道选择框", page.get_node_or_null("Track") is OptionButton)
+	_check("音乐页包含多轨复选列表", page.get_node_or_null("TrackScroll/TrackList") is VBoxContainer)
+	_check("音乐页包含伪复音开关", page.get_node_or_null("Polyphonic") is CheckButton)
 	_check("音乐页使用原生 MIDI 文件对话框",
 		page.get_node_or_null("MidiDialog") is FileDialog
 		and page.get_node("MidiDialog").use_native_dialog)
 	var selected: Dictionary = {
 		"source_name": "旋律.mid",
-		"track_index": 1,
+		"polyphonic": true,
+		"track_index": 0,
+		"track_indices": [0, 1],
 		"track_name": "主旋律",
+		"track_names": ["主旋律", "和弦"],
 		"track_count": 2,
 		"duration_ms": 900,
 		"segments": [
-			{"note": 60, "duration_ms": 500},
-			{"note": 0, "duration_ms": 100},
-			{"note": 64, "duration_ms": 300},
+			{"notes": [64, 60], "duration_ms": 500},
+			{"notes": [], "duration_ms": 100},
+			{"notes": [64], "duration_ms": 300},
 		],
 	}
 	page.set_music_data(selected)
 	_check("音乐页可回填已保存解析结果", page.get_music_data() == selected)
 	_check("音乐页无解析错误", str(page.get_parse_error()).is_empty())
-	_check("音乐页显示轨道摘要", str(page.get_node("Status").text).contains("主旋律")
-		and str(page.get_node("Status").text).contains("0:01"))
+	_check("音乐页显示轨道摘要", str(page.get_node("TrackScroll/TrackList").get_child(0).text).contains("主旋律")
+		and str(page.get_node("Status").text).contains("四声部伪复音"))
+	page._on_polyphonic_toggled(false)
+	_check("关闭伪复音后只保留首条轨道", not bool(page.get_music_data().get("polyphonic", true))
+		and page.get_music_data().get("track_indices", []) == [0])
 	root.remove_child(page)
 	page.free()
 

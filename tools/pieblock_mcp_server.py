@@ -196,7 +196,7 @@ mcp = MCPServer(
     version="0.1.0",
     instructions=(
         "此服务器把 Pie-Block 图形化代码生成器暴露为命令行工具。\n"
-        "支持的 kind: infantry（步兵）/ engineer（工程多模式控制）/ debug（调试）/ music（MIDI 单轨音乐）。\n"
+        "支持的 kind: infantry（步兵）/ engineer（工程多模式控制）/ debug（调试）/ music（MIDI 旋律，可选四声部 5ms 时间片伪复音）。\n"
         "生成配置用 JSON 字符串传入。可用 get_schema(kind) 获取每种 kind 的完整字段定义。\n"
         "重要硬件约束（不可违反）：\n"
         "- 只向主控板烧录，绝不向机械扩展板烧录\n"
@@ -241,7 +241,7 @@ def generate_code(kind: str, config: str, out_path: str | None = None, channel: 
 
     参数:
       kind: infantry / engineer / debug / music
-      config: JSON 字符串。字段定义见 get_schema(kind)；音乐类型使用 music.segments 保存的 MIDI 解析结果。
+      config: JSON 字符串。字段定义见 get_schema(kind)；音乐类型使用 music.track_indices 和 music.segments 保存已解析的 MIDI 结果，CLI 不读取原始 MIDI。
       out_path: 可选，把生成的 C 代码写入此绝对路径（不指定则只返回 JSON，code 字段含代码）。
       channel: 可选，遥控器通道号（0-125）。传入后自动填入 config 的 channel（覆盖环境变量默认值）。
 

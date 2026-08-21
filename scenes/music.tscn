@@ -15,7 +15,7 @@ theme_override_font_sizes/font_size = 24
 
 [node name="Hint" type="Label" parent="."]
 layout_mode = 2
-text = "导入 MIDI 文件，选择一条单轨旋律，生成主控板 P33 蜂鸣器自动循环播放的程序。"
+text = "导入 MIDI 文件，选择一条或多条轨道，生成主控板 P33 蜂鸣器自动循环播放的程序。伪复音为每声部 5ms 的时间片轮换，并非真正同时发声。"
 autowrap_mode = 3
 
 [node name="Open" type="Button" parent="."]
@@ -30,16 +30,25 @@ autowrap_mode = 3
 
 [node name="TrackLabel" type="Label" parent="."]
 layout_mode = 2
-text = "播放轨道"
+text = "播放轨道（可多选）"
 
-[node name="Track" type="OptionButton" parent="."]
-custom_minimum_size = Vector2(0, 42)
+[node name="TrackScroll" type="ScrollContainer" parent="."]
+custom_minimum_size = Vector2(0, 150)
 layout_mode = 2
 size_flags_horizontal = 3
 
+[node name="TrackList" type="VBoxContainer" parent="TrackScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Polyphonic" type="CheckButton" parent="."]
+custom_minimum_size = Vector2(0, 42)
+layout_mode = 2
+text = "启用四声部伪复音（每声部 5ms 轮换）"
+
 [node name="Status" type="Label" parent="."]
 layout_mode = 2
-text = "请选择一个包含音符的轨道"
+text = "请选择至少一条包含音符的轨道"
 autowrap_mode = 3
 
 [node name="MidiDialog" type="FileDialog" parent="."]

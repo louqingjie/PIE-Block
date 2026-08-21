@@ -790,7 +790,7 @@ func _on_guide_step_pressed(step: int) -> void:
 				2:
 					_focus_control(NodePath(DEBUG +"/HBoxContainer/LineEdit"))
 				3:
-					_focus_control(NodePath(MUSIC +"/Track"))
+					_focus_control(NodePath(MUSIC +"/TrackScroll"))
 				_:
 					_focus_control(P_L1_IO)
 		3:
@@ -1770,8 +1770,11 @@ func _get_music_data() -> Dictionary:
 		return page.call("get_music_data") as Dictionary
 	return {
 		"source_name": "",
+		"polyphonic": false,
 		"track_index": -1,
+		"track_indices": [],
 		"track_name": "",
+		"track_names": [],
 		"track_count": 0,
 		"duration_ms": 0,
 		"segments": [],

@@ -148,20 +148,23 @@ godot --headless --no-header --path . --script scripts/cli_codegen.gd -- check `
 {
   "music": {
     "source_name": "旋律.mid",
+    "polyphonic": true,
     "track_index": 0,
+    "track_indices": [0, 1],
     "track_name": "主旋律",
+    "track_names": ["主旋律", "和弦"],
     "track_count": 2,
     "duration_ms": 1200,
     "segments": [
-      {"note": 60, "duration_ms": 500},
-      {"note": 0, "duration_ms": 100},
-      {"note": 64, "duration_ms": 600}
+      {"notes": [64, 60], "duration_ms": 500},
+      {"notes": [], "duration_ms": 100},
+      {"notes": [64], "duration_ms": 600}
     ]
   }
 }
 ```
 
-`note` 是 MIDI 音高，`0` 表示休止；最多 8192 个片段，最长 20 分钟。
+`track_indices` 是选中的 MIDI 轨道索引；`polyphonic` 默认关闭，开启后最多保留四个最高音符，并以每声部 5ms 的时间片轮换实现伪复音。`notes` 按音高降序排列，空数组表示休止；最多 8192 个片段，最长 20 分钟。
 休止不会调用频率 0，代码生成器会将 `Ms_Delay` 长参数拆成多个 16 位延时。
 
 ## 二、MCP Server

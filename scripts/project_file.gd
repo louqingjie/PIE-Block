@@ -15,10 +15,11 @@ extends RefCounted
 ## 文件扩展名（不含点）
 const EXT: String = "pieproj"
 ## 格式版本，将来迁移用
-const FORMAT_VERSION: int = 9
+const FORMAT_VERSION: int = 10
 const GUIDE_STEP_COUNT: int = 7
 const MUSIC_MAX_SEGMENTS: int = 8192
 const MUSIC_MAX_DURATION_MS: int = 20 * 60 * 1000
+const MUSIC_MAX_VOICES: int = 4
 
 # ------------------------------------------------------------------ 项目类型
 const KIND_INFANTRY: String = "infantry"
@@ -102,8 +103,11 @@ static func new_data(kind: String) -> Dictionary:
 static func _default_music() -> Dictionary:
 	return {
 		"source_name": "",
+		"polyphonic": false,
 		"track_index": -1,
+		"track_indices": [],
 		"track_name": "",
+		"track_names": [],
 		"track_count": 0,
 		"duration_ms": 0,
 		"segments": [],
@@ -117,13 +121,39 @@ static func normalize_music(raw: Variant) -> Dictionary:
 		return out
 	var source: Dictionary = raw
 	out["source_name"] = str(source.get("source_name", ""))
-	out["track_index"] = int(source.get("track_index", -1))
-	out["track_name"] = str(source.get("track_name", ""))
+	out["polyphonic"] = bool(source.get("polyphonic", false))
 	out["track_count"] = maxi(0, int(source.get("track_count", 0)))
-	if out["track_index"] < -1 or out["track_count"] <= 0 \
-		or out["track_index"] >= out["track_count"]:
-		out["track_index"] = -1
-		out["track_name"] = ""
+	var raw_indices: Variant = source.get("track_indices", [])
+	var candidate_indices: Array = []
+	if raw_indices is Array and not (raw_indices as Array).is_empty():
+		candidate_indices = raw_indices
+	elif source.has("track_index"):
+		candidate_indices = [source.get("track_index", -1)]
+	var selected_indices: Array = []
+	for value in candidate_indices:
+		var index: int = int(value)
+		if index < 0 or index >= int(out["track_count"]) or index in selected_indices:
+			continue
+		selected_indices.append(index)
+	if not bool(out["polyphonic"]) and selected_indices.size() > 1:
+		selected_indices = [selected_indices[0]]
+	out["track_indices"] = selected_indices
+	out["track_index"] = int(selected_indices[0]) if not selected_indices.is_empty() else -1
+
+	var raw_names: Variant = source.get("track_names", [])
+	var names: Array = []
+	if raw_names is Array:
+		for index in range(selected_indices.size()):
+			var name: String = str(raw_names[index]) if index < raw_names.size() else ""
+			if name.is_empty() and index == 0:
+				name = str(source.get("track_name", ""))
+			names.append(name)
+	else:
+		for index in selected_indices:
+			names.append(str(source.get("track_name", "")) if index == selected_indices[0] else "")
+	out["track_names"] = names
+	out["track_name"] = str(names[0]) if not names.is_empty() else ""
+
 	var segments_value: Variant = source.get("segments", [])
 	if segments_value is Array:
 		var segments: Array = []
@@ -135,17 +165,23 @@ static func normalize_music(raw: Variant) -> Dictionary:
 			var duration_ms: int = int(item.get("duration_ms", 0))
 			if duration_ms < 1:
 				continue
-			var segment: Dictionary = {"duration_ms": duration_ms}
-			if item.has("note"):
-				var note: int = int(item.get("note", -1))
-				if note < 0 or note > 127:
+			var segment: Dictionary = {"duration_ms": duration_ms, "notes": []}
+			if item.has("notes") and item["notes"] is Array:
+				var note_values: Array = []
+				for note_value in item["notes"]:
+					var note: int = int(note_value)
+					if note >= 1 and note <= 127 and note not in note_values:
+						note_values.append(note)
+				note_values.sort()
+				note_values.reverse()
+				if note_values.size() > MUSIC_MAX_VOICES:
+					note_values = note_values.slice(0, MUSIC_MAX_VOICES)
+				segment["notes"] = note_values
+			elif item.has("note"):
+				var old_note: int = int(item.get("note", -1))
+				if old_note < 0 or old_note > 127:
 					continue
-				segment["note"] = note
-			elif item.has("frequency"):
-				var frequency: int = int(item.get("frequency", -1))
-				if frequency < 0 or frequency > 65535:
-					continue
-				segment["frequency"] = frequency
+				segment["notes"] = [] if old_note == 0 else [old_note]
 			else:
 				continue
 			segments.append(segment)
@@ -155,8 +191,8 @@ static func normalize_music(raw: Variant) -> Dictionary:
 	if int(out["track_index"]) < 0:
 		out["segments"] = []
 		out["duration_ms"] = 0
-	if out["duration_ms"] == 0:
-		out["duration_ms"] = mini(maxi(0, int(source.get("duration_ms", 0))), MUSIC_MAX_DURATION_MS)
+	if (out["segments"] as Array).is_empty():
+		out["duration_ms"] = 0
 	return out
 
 

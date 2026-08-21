@@ -34,7 +34,7 @@ func _check(label: String, ok: bool, detail: String = "") -> void:
 
 func _initialize() -> void:
 	print("=== 项目文件与配置序列化测试 ===\n")
-	_check("项目格式版本已升级到 9", PF.FORMAT_VERSION == 9)
+	_check("项目格式版本已升级到 10", PF.FORMAT_VERSION == 10)
 	DirAccess.make_dir_recursive_absolute(TMP_DIR)
 	_test_kind_mapping()
 	_test_roundtrip()
@@ -147,14 +147,17 @@ func _test_roundtrip() -> void:
 		if kind == PF.KIND_MUSIC:
 			data["music"] = {
 				"source_name": "旋律.mid",
+				"polyphonic": true,
 				"track_index": 1,
+				"track_indices": [0, 1],
 				"track_name": "主旋律",
+				"track_names": ["和弦", "主旋律"],
 				"track_count": 2,
 				"duration_ms": 1500,
 				"segments": [
-					{"note": 60, "duration_ms": 500},
-					{"note": 0, "duration_ms": 250},
-					{"note": 64, "duration_ms": 750},
+					{"notes": [60, 64], "duration_ms": 500},
+					{"notes": [], "duration_ms": 250},
+					{"notes": [64], "duration_ms": 750},
 				],
 			}
 		# 含中文、引号、反斜杠、换行的配置值与代码
@@ -290,20 +293,25 @@ func _test_normalize() -> void:
 	_check("超长引导进度截断为七步",
 		(long_progress["workflow"]["guide_completed"] as Array).size() == PF.GUIDE_STEP_COUNT)
 	var music_norm: Dictionary = PF.normalize_music({
-		"source_name": "test.mid", "track_index": 2, "track_count": 3,
+		"source_name": "test.mid", "polyphonic": true,
+		"track_indices": [2, 1, 2, 99], "track_names": ["高音", "低音", "重复"],
+		"track_index": 2, "track_name": "高音", "track_count": 3,
 		"segments": [
 			{"note": 60, "duration_ms": 100},
 			{"note": 200, "duration_ms": 100},
-			{"frequency": 440, "duration_ms": 200},
-			{"note": 0, "duration_ms": 0},
+			{"notes": [64, 60, 64, 67, 72], "duration_ms": 200},
+			{"notes": [], "duration_ms": 0},
 		],
 	})
 	_check("音乐数据保留合法片段并过滤非法值",
 		music_norm["segments"] == [
-			{"note": 60, "duration_ms": 100},
-			{"frequency": 440, "duration_ms": 200},
+			{"duration_ms": 100, "notes": [60]},
+			{"duration_ms": 200, "notes": [72, 67, 64, 60]},
 		])
 	_check("音乐数据自动计算总时长", int(music_norm["duration_ms"]) == 300)
+	_check("音乐数据保留多轨选择", music_norm["track_indices"] == [2, 1]
+		and music_norm["track_names"] == ["高音", "低音"]
+		and bool(music_norm["polyphonic"]))
 	_check("音乐 active_tab 只能落在音乐页",
 		int(PF.normalize({"kind": PF.KIND_MUSIC, "active_tab": 0})["active_tab"]) == 3)
 
