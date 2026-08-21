@@ -221,6 +221,8 @@ func generate(cfg: Dictionary) -> String:
 	code += CodeGenBase.REMOTE_CONTROL_INIT_CODE
 	# 初始化诊断工具（LED + 蜂鸣器）与 UART1 查询发送（修复 UART 死锁）
 	code += _gen_led_diag_tools()
+	if mode_count > 1:
+		code += _gen_mode_switch_feedback()
 	code += CodeGenBase.UART_TX_QUERY_CODE
 	code += _gen_servo_buzzer_tools(servo_buzzer_exprs)
 

@@ -117,3 +117,4 @@ func _initialize() -> void:
 		quit(1)
 	else:
 		print("全部通过")
+		quit(0)

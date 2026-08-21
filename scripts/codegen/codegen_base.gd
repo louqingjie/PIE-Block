@@ -121,6 +121,28 @@ func _gen_led_diag_tools(led_port: String = "GPIO_P3",
 	return code
 
 
+## 生成工程多模式切换反馈：固定长音后按目标模式播放递增短音。
+## 目标模式 1~4 分别播放 1~4 个短音，所有时序均为阻塞式。
+func _gen_mode_switch_feedback() -> String:
+	var code: String = ""
+	var short_freqs: Array[int] = [659, 784, 1047, 1319]
+	code += "// 工程多模式切换反馈：长音后按目标模式播放上行音阶琶音\n"
+	code += "static void ModeSwitchFeedback(uint8_t mode)\n"
+	code += "{\n"
+	code += "    Beep(523, 1000);\n"
+	code += "    Ms_Delay(300);\n"
+	for i in range(short_freqs.size()):
+		code += "    if (mode >= %d)\n" % (i + 1)
+		code += "    {\n"
+		code += "        Beep(%d, 300);\n" % short_freqs[i]
+		if i < short_freqs.size() - 1:
+			code += "        if (mode > %d)\n" % (i + 1)
+			code += "            Ms_Delay(300);\n"
+		code += "    }\n"
+	code += "}\n\n"
+	return code
+
+
 ## 生成 All_Init 开头的 LED GPIO 初始化（三颗 LED 推挽输出 + 全亮自检）。
 ## 同时初始化蜂鸣器 PWM 通道：PWM_SET_Frequency 只改周期/比较寄存器，
 ## 不会使能通道输出和启动定时器——没有这行 PWM_Init，Beep() 全程无声
@@ -488,7 +510,10 @@ func _gen_update_mode(mode_count: int, strategy: String, switch_key: String,
 			if key.is_empty():
 				continue
 			s += "    if (%s && !modeKeyLast[%d])\n" % [_row_key_expr(key), i]
+			s += "    {\n"
 			s += "        currentMode = %d;\n" % (i + 1)
+			s += "        ModeSwitchFeedback(%d);\n" % (i + 1)
+			s += "    }\n"
 		for i in range(mode_count):
 			var key2: String = str(mode_keys[i]) if i < mode_keys.size() else ""
 			if key2.is_empty():
@@ -498,7 +523,10 @@ func _gen_update_mode(mode_count: int, strategy: String, switch_key: String,
 		# 单击切换：一个键轮换模式
 		s += "    uint8_t pressed = %s;\n" % _row_key_expr(switch_key)
 		s += "    if (pressed && !modeKeyHeld)\n"
+		s += "    {\n"
 		s += "        currentMode = (currentMode %% %d) + 1;\n" % mode_count
+		s += "        ModeSwitchFeedback(currentMode);\n"
+		s += "    }\n"
 		s += "    modeKeyHeld = pressed;\n"
 	# 切换模式：新模式未映射的辅助电机下电（摩擦轮与舵机保持原状）
 	if mode_count > 1 and not aux_motor_slots.is_empty():
