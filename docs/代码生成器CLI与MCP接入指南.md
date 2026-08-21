@@ -197,8 +197,8 @@ godot --headless --no-header --path . --script scripts/cli_codegen.gd -- help
 | `build_code(kind, config, channel?)` | 生成代码并用 Keil C251 编译为 hex 固件 |
 | `build_project(project_path)` | 从 `.pieproj` 编译（优先用已保存代码） |
 
-`config` 是 **JSON 字符串**（不是对象）。`engineer` 需要 `{engineer, ik}`
-双字典结构，示例见 `tools/test_engineer_config.json`。
+`config` 是 **JSON 字符串**（不是对象）。`engineer` 直接接收扁平工程配置，
+示例见 `tools/test_engineer_config.json`。
 
 > `channel` 是**可选参数**（0-125）：传了就直接用它，不传则回落到 config 里的
 > `channel` 字段，再没有才用环境变量 `PIEBLOCK_CHANNEL`。三种方式都不必在每次
@@ -243,24 +243,19 @@ godot --headless --no-header --path . --script scripts/cli_codegen.gd -- help
 
 ```json
 {
-  "engineer": {
-    "channel": "36",
-    "l1_io": "P74 P24", "...": "...",
-    "io_init": { "P60": "舵机", "P62": "电机", "P64": "电机", "...": "..." },
-    "key_map": [
-      {"input": "A", "dir": "正向", "mode": "速度", "param": "3000", "target": "P62"}
-    ]
-  },
-  "ik": {
-    "joint_count": 3,
-    "joints": [
-      {"io": "P74", "dir": "正向", "axis": "Yaw", "len": "0", "zero": "10", "min": "-90", "max": "90"}
-    ],
-    "gripper": {"enabled": false, "io": "MP03", "open_angle": "45", "closed_angle": "-45"},
-    "presets": [],
-    "joy_x": "右X->末端X", "joy_y": "右Y->末端Y", "joy_z": "右X->末端Z",
-    "joy_scale": "5", "keymove_speed": "2"
-  }
+  "channel": "36",
+  "l1_io": "P74 P24", "...": "...",
+  "io_init": { "P60": "舵机", "P62": "电机", "P64": "电机", "...": "..." },
+  "mode_count": 4,
+  "switch_strategy": "单击切换",
+  "mode_switch_key": "E",
+  "mode_keys": ["A", "B", "C", "D"],
+  "modes": [
+    {"rows": [{"key": "LX", "dir": "正", "mode": "速度", "param": "3000", "io": "P62"}]},
+    {"rows": []},
+    {"rows": []},
+    {"rows": []}
+  ]
 }
 ```
 
@@ -284,7 +279,7 @@ godot --headless --no-header --path . --script scripts/cli_codegen.gd -- help
 3. 步兵上 **P64/P66 固定用于两个摩擦轮**，不可改作他用
 4. 主控板 **MP74 / MP03 只能驱动舵机**，且与扩展板 P74 不是同一个 IO
 5. 舵机角度都是「相对中位的偏移角」，区间 **[-90, +90]**
-6. 工程机械臂关节 IO 不能与底盘电机、拨弹电机等冲突（静态检查会报）
+6. 工程模式切换键不能与模式内动作键冲突，模式选择键也不能重复（静态检查会报）
 
 ## 五、常见问题
 

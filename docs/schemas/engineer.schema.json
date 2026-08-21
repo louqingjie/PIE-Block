@@ -1,527 +1,289 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "工程机器人：底盘4电机+任意IO按键映射+2~6关节机械臂逆解算。支持舵机/电机混用。",
+  "description": "工程机器人：底盘4电机、1～4个独立操作模式、两种切换策略和任意IO按键映射。支持舵机/电机混用。",
   "kind": "engineer",
   "properties": {
-    "engineer": {
-      "description": "工程底盘与按键映射配置",
+    "channel": {
+      "default": "36",
+      "description": "NRF24L01 通道号 (0-125)",
+      "type": "string"
+    },
+    "deadzone": {
+      "default": "10",
+      "description": "摇杆死区 (0-2047)",
+      "type": "string"
+    },
+    "io_init": {
+      "description": "扩展板各引脚初始化类型",
       "properties": {
-        "channel": {
-          "default": "36",
-          "description": "NRF24L01 通道号 (0-125)",
-          "type": "string"
-        },
-        "deadzone": {
-          "default": "10",
-          "description": "摇杆死区 (0-2047)",
-          "type": "string"
-        },
-        "io_init": {
-          "description": "扩展板各引脚初始化类型",
-          "properties": {
-            "P60": {
-              "default": "舵机",
-              "enum": [
-                "舵机",
-                "电机"
-              ],
-              "type": "string"
-            },
-            "P62": {
-              "default": "舵机",
-              "enum": [
-                "舵机",
-                "电机"
-              ],
-              "type": "string"
-            },
-            "P64": {
-              "default": "电机",
-              "enum": [
-                "舵机",
-                "电机"
-              ],
-              "type": "string"
-            },
-            "P66": {
-              "default": "电机",
-              "enum": [
-                "舵机",
-                "电机"
-              ],
-              "type": "string"
-            },
-            "P74": {
-              "default": "电机",
-              "enum": [
-                "舵机",
-                "电机"
-              ],
-              "type": "string"
-            },
-            "P75": {
-              "default": "电机",
-              "enum": [
-                "舵机",
-                "电机"
-              ],
-              "type": "string"
-            },
-            "P76": {
-              "default": "电机",
-              "enum": [
-                "舵机",
-                "电机"
-              ],
-              "type": "string"
-            },
-            "P77": {
-              "default": "电机",
-              "enum": [
-                "舵机",
-                "电机"
-              ],
-              "type": "string"
-            },
-            "MP03": {
-              "default": "舵机",
-              "enum": [
-                "舵机",
-                "电机"
-              ],
-              "type": "string"
-            },
-            "MP74": {
-              "default": "舵机",
-              "enum": [
-                "舵机",
-                "电机"
-              ],
-              "type": "string"
-            }
-          },
-          "type": "object"
-        },
-        "io_mid": {
-          "description": "各引脚舵机初始角（相对中位偏移角，-90~90，仅舵机有效）",
-          "properties": {
-            "P60": {
-              "default": "",
-              "type": "string"
-            },
-            "P62": {
-              "default": "",
-              "type": "string"
-            },
-            "P64": {
-              "default": "",
-              "type": "string"
-            },
-            "P66": {
-              "default": "",
-              "type": "string"
-            },
-            "P74": {
-              "default": "",
-              "type": "string"
-            },
-            "P75": {
-              "default": "",
-              "type": "string"
-            },
-            "P76": {
-              "default": "",
-              "type": "string"
-            },
-            "P77": {
-              "default": "",
-              "type": "string"
-            },
-            "MP03": {
-              "default": "",
-              "type": "string"
-            },
-            "MP74": {
-              "default": "",
-              "type": "string"
-            }
-          },
-          "type": "object"
-        },
-        "key_map": {
-          "description": "按键映射区，每项控制一个 IO 的行为",
-          "items": {
-            "properties": {
-              "dir": {
-                "enum": [
-                  "正向",
-                  "反向"
-                ],
-                "type": "string"
-              },
-              "input": {
-                "description": "按键名 (R/↑/↓/←/->/A/B/C/D)",
-                "type": "string"
-              },
-              "mode": {
-                "description": "控制模式",
-                "enum": [
-                  "增量",
-                  "直接",
-                  "速度",
-                  "增速"
-                ],
-                "type": "string"
-              },
-              "param": {
-                "description": "参数（角度/速度/增量值）",
-                "type": "string"
-              },
-              "target": {
-                "description": "目标 IO（P60/P62/.../MP03/MP74），'不使用'或空=跳过",
-                "type": "string"
-              }
-            },
-            "type": "object"
-          },
-          "type": "array"
-        },
-        "l1_dir": {
-          "default": "正向",
+        "P60": {
+          "default": "舵机",
           "enum": [
-            "正向",
-            "反向"
+            "舵机",
+            "电机"
           ],
           "type": "string"
         },
-        "l1_io": {
-          "default": "P74 P24",
-          "type": "string"
-        },
-        "l2_dir": {
-          "default": "正向",
+        "P62": {
+          "default": "舵机",
           "enum": [
-            "正向",
-            "反向"
+            "舵机",
+            "电机"
           ],
           "type": "string"
         },
-        "l2_io": {
-          "default": "P75 P25",
-          "type": "string"
-        },
-        "normal_speed": {
-          "default": "4000",
-          "description": "普通速度 (0-10000)",
-          "type": "string"
-        },
-        "r1_dir": {
-          "default": "正向",
+        "P64": {
+          "default": "电机",
           "enum": [
-            "正向",
-            "反向"
+            "舵机",
+            "电机"
           ],
           "type": "string"
         },
-        "r1_io": {
-          "default": "P76 P26",
-          "type": "string"
-        },
-        "r2_dir": {
-          "default": "正向",
+        "P66": {
+          "default": "电机",
           "enum": [
-            "正向",
-            "反向"
+            "舵机",
+            "电机"
           ],
           "type": "string"
         },
-        "r2_io": {
-          "default": "P77 P27",
-          "type": "string"
-        },
-        "sprint_enabled": {
-          "default": false,
-          "description": "按下左摇杆冲刺",
-          "type": "boolean"
-        },
-        "sprint_speed": {
-          "default": "8000",
-          "description": "冲刺速度 (0-10000)",
-          "type": "string"
-        },
-        "mode_count": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 4,
-          "default": 1,
-          "description": "操作模式个数（1~4）"
-        },
-        "switch_strategy": {
-          "type": "string",
+        "P74": {
+          "default": "电机",
           "enum": [
-            "单击切换",
-            "一一对应"
+            "舵机",
+            "电机"
           ],
-          "default": "单击切换",
-          "description": "模式切换方式"
+          "type": "string"
         },
-        "mode_switch_key": {
-          "type": "string",
-          "default": "E",
-          "description": "单击切换时的模式切换键"
+        "P75": {
+          "default": "电机",
+          "enum": [
+            "舵机",
+            "电机"
+          ],
+          "type": "string"
         },
-        "mode_keys": {
-          "type": "array",
-          "description": "一一对应时各模式的切换键",
-          "maxItems": 4,
-          "items": {
-            "type": "string"
-          }
+        "P76": {
+          "default": "电机",
+          "enum": [
+            "舵机",
+            "电机"
+          ],
+          "type": "string"
         },
-        "modes": {
-          "type": "array",
-          "description": "每模式一组动态按键映射行",
-          "maxItems": 4,
-          "items": {
-            "type": "object",
-            "properties": {
-              "rows": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "key": {
-                      "type": "string"
-                    },
-                    "dir": {
-                      "type": "string",
-                      "enum": [
-                        "正",
-                        "反"
-                      ]
-                    },
-                    "mode": {
-                      "type": "string",
-                      "enum": [
-                        "增量",
-                        "直接",
-                        "速度",
-                        "增速"
-                      ]
-                    },
-                    "param": {
-                      "type": "string"
-                    },
-                    "io": {
-                      "type": "string"
-                    }
-                  }
+        "P77": {
+          "default": "电机",
+          "enum": [
+            "舵机",
+            "电机"
+          ],
+          "type": "string"
+        },
+        "MP03": {
+          "default": "舵机",
+          "enum": [
+            "舵机",
+            "电机"
+          ],
+          "type": "string"
+        },
+        "MP74": {
+          "default": "舵机",
+          "enum": [
+            "舵机",
+            "电机"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "io_mid": {
+      "description": "各引脚舵机初始角（相对中位偏移角，-90~90，仅舵机有效）",
+      "properties": {
+        "P60": {
+          "default": "",
+          "type": "string"
+        },
+        "P62": {
+          "default": "",
+          "type": "string"
+        },
+        "P64": {
+          "default": "",
+          "type": "string"
+        },
+        "P66": {
+          "default": "",
+          "type": "string"
+        },
+        "P74": {
+          "default": "",
+          "type": "string"
+        },
+        "P75": {
+          "default": "",
+          "type": "string"
+        },
+        "P76": {
+          "default": "",
+          "type": "string"
+        },
+        "P77": {
+          "default": "",
+          "type": "string"
+        },
+        "MP03": {
+          "default": "",
+          "type": "string"
+        },
+        "MP74": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "l1_dir": {
+      "default": "正向",
+      "enum": [
+        "正向",
+        "反向"
+      ],
+      "type": "string"
+    },
+    "l1_io": {
+      "default": "P74 P24",
+      "type": "string"
+    },
+    "l2_dir": {
+      "default": "正向",
+      "enum": [
+        "正向",
+        "反向"
+      ],
+      "type": "string"
+    },
+    "l2_io": {
+      "default": "P75 P25",
+      "type": "string"
+    },
+    "normal_speed": {
+      "default": "4000",
+      "description": "普通速度 (0-10000)",
+      "type": "string"
+    },
+    "r1_dir": {
+      "default": "正向",
+      "enum": [
+        "正向",
+        "反向"
+      ],
+      "type": "string"
+    },
+    "r1_io": {
+      "default": "P76 P26",
+      "type": "string"
+    },
+    "r2_dir": {
+      "default": "正向",
+      "enum": [
+        "正向",
+        "反向"
+      ],
+      "type": "string"
+    },
+    "r2_io": {
+      "default": "P77 P27",
+      "type": "string"
+    },
+    "sprint_enabled": {
+      "default": false,
+      "description": "按下左摇杆冲刺",
+      "type": "boolean"
+    },
+    "sprint_speed": {
+      "default": "8000",
+      "description": "冲刺速度 (0-10000)",
+      "type": "string"
+    },
+    "mode_count": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4,
+      "default": 1,
+      "description": "操作模式个数（1~4）"
+    },
+    "switch_strategy": {
+      "type": "string",
+      "enum": [
+        "单击切换",
+        "一一对应"
+      ],
+      "default": "单击切换",
+      "description": "模式切换方式：单击切换=一个键轮换；一一对应=每模式一个键"
+    },
+    "mode_switch_key": {
+      "type": "string",
+      "default": "E",
+      "description": "单击切换时的模式切换键"
+    },
+    "mode_keys": {
+      "type": "array",
+      "description": "一一对应时各模式的切换键（模式1~4）",
+      "maxItems": 4,
+      "items": {
+        "type": "string"
+      }
+    },
+    "modes": {
+      "type": "array",
+      "description": "每模式一组动态按键映射行（最多 4 个模式）",
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "properties": {
+          "rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "description": "E/↑/↓/←/→/A/B/C/D/LC/RC（按键）或 LX/LY/RX/RY（摇杆轴）"
+                },
+                "dir": {
+                  "type": "string",
+                  "enum": [
+                    "正",
+                    "反"
+                  ],
+                  "default": "正"
+                },
+                "mode": {
+                  "type": "string",
+                  "enum": [
+                    "增量",
+                    "直接",
+                    "速度",
+                    "增速"
+                  ],
+                  "description": "增量/直接（舵机），直接/速度/增速（电机）；摇杆行只能用 增量/速度/增速"
+                },
+                "param": {
+                  "type": "string",
+                  "description": "步长(°) / 角度(°) / 速度(0-10000)"
+                },
+                "io": {
+                  "type": "string",
+                  "description": "目标 IO（P60~P77/MP03/MP74）"
                 }
               }
             }
           }
         }
-      },
-      "type": "object"
-    },
-    "ik": {
-      "description": "工程逆解算机械臂配置",
-      "properties": {
-        "enabled": {
-          "default": false,
-          "description": "是否启用机械臂逆解算（未启用时生成纯正解固件）",
-          "type": "boolean"
-        },
-        "gripper": {
-          "properties": {
-            "closed_angle": {
-              "default": "-45",
-              "type": "string"
-            },
-            "dir": {
-              "enum": [
-                "正向",
-                "反向"
-              ],
-              "type": "string"
-            },
-            "enabled": {
-              "default": false,
-              "type": "boolean"
-            },
-            "initial_open": {
-              "default": true,
-              "type": "boolean"
-            },
-            "io": {
-              "enum": [
-                "MP03",
-                "MP74"
-              ],
-              "type": "string"
-            },
-            "key": {
-              "default": "D",
-              "type": "string"
-            },
-            "open_angle": {
-              "default": "45",
-              "type": "string"
-            }
-          },
-          "type": "object"
-        },
-        "joint_count": {
-          "default": 3,
-          "maximum": 6,
-          "minimum": 2,
-          "type": "integer"
-        },
-        "joints": {
-          "items": {
-            "properties": {
-              "axis": {
-                "enum": [
-                  "Pitch",
-                  "Roll",
-                  "Yaw"
-                ],
-                "type": "string"
-              },
-              "dir": {
-                "enum": [
-                  "正向",
-                  "反向"
-                ],
-                "type": "string"
-              },
-              "io": {
-                "enum": [
-                  "P60",
-                  "P62",
-                  "P64",
-                  "P66",
-                  "P74",
-                  "P75",
-                  "P76",
-                  "P77",
-                  "MP03",
-                  "MP74"
-                ],
-                "type": "string"
-              },
-              "len": {
-                "description": "连杆长度 (mm)",
-                "type": "string"
-              },
-              "max": {
-                "description": "关节角上限 (度)",
-                "type": "string"
-              },
-              "min": {
-                "description": "关节角下限 (度)",
-                "type": "string"
-              },
-              "offset": {
-                "description": "中位朝向偏移角 (度)",
-                "type": "string"
-              },
-              "zero": {
-                "description": "初始角 (度)",
-                "type": "string"
-              }
-            },
-            "type": "object"
-          },
-          "maxItems": 6,
-          "minItems": 2,
-          "type": "array"
-        },
-        "joy_scale": {
-          "default": "5",
-          "type": "string"
-        },
-        "joy_x": {
-          "default": "右X->末端X",
-          "description": "右X/右Y->末端轴；在右X或右Y后加‘反向’可反转该轴",
-          "type": "string"
-        },
-        "joy_y": {
-          "default": "右Y->末端Y",
-          "description": "右X/右Y->末端轴；在右X或右Y后加‘反向’可反转该轴",
-          "type": "string"
-        },
-        "joy_z": {
-          "default": "右X->末端Z",
-          "description": "右X/右Y->末端轴；在右X或右Y后加‘反向’可反转该轴",
-          "type": "string"
-        },
-        "keymove": {
-          "items": {
-            "properties": {
-              "minus": {
-                "type": "string"
-              },
-              "plus": {
-                "type": "string"
-              }
-            },
-            "type": "object"
-          },
-          "type": "array"
-        },
-        "keymove_speed": {
-          "default": "2",
-          "type": "string"
-        },
-        "mode_switch_key": {
-          "default": "E",
-          "type": "string"
-        },
-        "orientation_key_speed": {
-          "default": "1",
-          "type": "string"
-        },
-        "presets": {
-          "items": {
-            "properties": {
-              "enabled": {
-                "default": false,
-                "type": "boolean"
-              },
-              "key": {
-                "type": "string"
-              },
-              "pitch": {
-                "type": "string"
-              },
-              "roll": {
-                "type": "string"
-              },
-              "x": {
-                "type": "string"
-              },
-              "y": {
-                "type": "string"
-              },
-              "yaw": {
-                "type": "string"
-              },
-              "z": {
-                "type": "string"
-              }
-            },
-            "type": "object"
-          },
-          "maxItems": 4,
-          "type": "array"
-        },
-        "rocker2_home_enabled": {
-          "default": false,
-          "type": "boolean"
-        }
-      },
-      "type": "object"
+      }
     }
   },
   "title": "Pie-Block 工程 配置",
