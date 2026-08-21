@@ -61,7 +61,7 @@ func _with_row(cfg: Dictionary, mode_index: int, key: String) -> Dictionary:
 
 
 func _issues(cfg: Dictionary) -> Array:
-	return SC.check_engineer(cfg, {"enabled": false})
+	return SC.check_engineer(cfg)
 
 
 func _has_error(issues: Array, text: String) -> bool:

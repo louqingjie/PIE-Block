@@ -63,13 +63,14 @@ async def main() -> int:
         data = json.loads(r.content[0].text)
         print(f"[4] generate_code infantry OK: has_error={data['has_error']}, code_lines={len(data['code'].splitlines())}")
 
-        # 5. check_config engineer（有错误的配置 -> 应返回 error_count > 0）
+        # 5. check_config engineer（扁平 4 模式配置）
         r = await client.call_tool("check_config", {
             "kind": "engineer",
             "config": json.dumps(_cfg("test_engineer_config.json")),
         })
         data = json.loads(r.content[0].text)
         print(f"[5] check_config engineer OK: errors={data['error_count']}")
+        assert data["error_count"] == 0, "扁平工程配置应通过静态检查"
 
         # 6. generate_code debug
         r = await client.call_tool("generate_code", {
@@ -83,12 +84,13 @@ async def main() -> int:
         r = await client.call_tool("generate_code", {"kind": "bogus", "config": "{}"})
         print(f"[7] 非法 kind -> {r.content[0].text[:50]}")
 
-        # 8. generate_from_project（调试项目）
+        # 8. generate_from_project（工程项目）
         r = await client.call_tool("generate_from_project", {
-            "project_path": str(ROOT / "调试项目.pieproj"),
+            "project_path": str(ROOT / "工程项目.pieproj"),
         })
         data = json.loads(r.content[0].text)
         print(f"[8] generate_from_project OK: kind={data['kind']}, has_error={data['has_error']}")
+        assert data["kind"] == "engineer"
 
         # 9. build_code infantry（编译为 hex 固件）
         r = await client.call_tool("build_code", {
@@ -100,9 +102,9 @@ async def main() -> int:
         assert data["ok"], "编译应当成功（0 Error(s)）"
         assert data["hex_exists"], "应当生成 hex 固件"
 
-        # 10. build_project（从 .pieproj 编译）
+        # 10. build_project（从工程 .pieproj 编译）
         r = await client.call_tool("build_project", {
-            "project_path": str(ROOT / "调试项目.pieproj"),
+            "project_path": str(ROOT / "工程项目.pieproj"),
         })
         data = _first_json(r.content[0].text)
         print(f"[10] build_project OK: ok={data['ok']}, kind={data['kind']}, hex_exists={data['hex_exists']}")

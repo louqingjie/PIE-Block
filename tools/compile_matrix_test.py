@@ -22,112 +22,39 @@ ROOT = Path(__file__).resolve().parent.parent
 CLI = ROOT / "scripts" / "cli_codegen.gd"
 
 
-def _eng(joints, presets=None, key_map=None, gripper=None, engineer_extra=None,
-         mode_switch="E"):
+def _eng(mode_count=1, switch_strategy="单击切换", extra=None):
+    rows = [
+        {"key": "LX", "dir": "正", "mode": "速度", "param": "3000", "io": "P62"},
+        {"key": "RX", "dir": "反", "mode": "增速", "param": "100", "io": "P64"},
+    ]
     engineer = {
         "channel": "36", "deadzone": "10", "normal_speed": "4000",
         "sprint_speed": "8000", "sprint_enabled": False,
         "l1_io": "P74 P24", "l2_io": "P75 P25", "r1_io": "P76 P26", "r2_io": "P77 P27",
         "l1_dir": "正向", "l2_dir": "正向", "r1_dir": "正向", "r2_dir": "正向",
-        "io_init": {"P60": "舵机", "P62": "舵机", "P64": "舵机", "P66": "舵机",
-                    "P74": "电机", "P75": "电机", "P76": "电机", "P77": "电机"},
-        "key_map": key_map if key_map is not None else [],
+        "io_init": {"P60": "舵机", "P62": "电机", "P64": "电机", "P66": "舵机",
+                     "P74": "电机", "P75": "电机", "P76": "电机", "P77": "电机"},
+        "mode_count": mode_count,
+        "switch_strategy": switch_strategy,
+        "mode_switch_key": "E",
+        "mode_keys": ["A", "B", "C", "D"],
+        "modes": [{"rows": rows} for _ in range(mode_count)],
     }
-    if engineer_extra:
-        engineer.update(engineer_extra)
-    ik = {
-        "joint_count": len(joints),
-        "mode_switch_key": mode_switch,
-        "joints": joints,
-        "gripper": gripper if gripper is not None else {
-            "enabled": False, "io": "MP03", "dir": "正向",
-            "open_angle": "45", "closed_angle": "-45", "initial_open": True, "key": "D"},
-        "presets": presets if presets is not None else [],
-        "joy_x": "右X->末端X", "joy_y": "右Y->末端Y", "joy_z": "右X->末端Z",
-        "joy_scale": "5", "keymove_speed": "2", "orientation_key_speed": "1",
-        "rocker2_home_enabled": False,
-        "keymove": [
-            {"plus": "上", "minus": "下"}, {"plus": "左", "minus": "右"},
-            {"plus": "不使用", "minus": "不使用"}, {"plus": "不使用", "minus": "不使用"},
-            {"plus": "不使用", "minus": "不使用"}, {"plus": "不使用", "minus": "不使用"}],
-    }
-    return {"engineer": engineer, "ik": ik}
-
-
-def _joint(io, axis, length="120", extra=None):
-    j = {"io": io, "dir": "正向", "axis": axis, "len": length,
-         "offset": "", "zero": "10", "min": "-90", "max": "90"}
     if extra:
-        j.update(extra)
-    return j
-
-
-IOS = ["P60", "P62", "P64", "P66", "MP03", "MP74"]
+        engineer.update(extra)
+    return engineer
 
 # ---------------------------------------------------------------------------
 # A. 编译矩阵用例
 # ---------------------------------------------------------------------------
 CASES = []
-ENG_AXES = ["Yaw", "Pitch", "Pitch", "Roll", "Pitch", "Roll"]
-
-
-def _eng_axes(n):
-    return [_joint(IOS[i], ENG_AXES[i]) for i in range(n)]
-
-
-# -- 工程：关节数边界 --
-CASES.append(("eng_1joint", "engineer", _eng([_joint("P60", "Yaw", "0")])))          # 钳到 2
-j7cfg = _eng(_eng_axes(6))
-j7cfg["ik"]["joint_count"] = 7                                                        # 钳到 6
-CASES.append(("eng_7joint", "engineer", j7cfg))
-CASES.append(("eng_6roll", "engineer", _eng([_joint(IOS[i], "Roll") for i in range(6)])))  # 全 Roll 病态
-CASES.append(("eng_5mix", "engineer", _eng(_eng_axes(5))))
-# -- 工程：转轴组合 --
-CASES.append(("eng_2j_pure_pitch", "engineer", _eng(
-    [_joint("P60", "Pitch"), _joint("P62", "Pitch")])))
-CASES.append(("eng_3j_pure_yaw", "engineer", _eng(
-    [_joint("P60", "Yaw", "0"), _joint("P62", "Yaw"), _joint("P64", "Yaw")])))
-CASES.append(("eng_3j_mix_roll", "engineer", _eng(
-    [_joint("P60", "Yaw", "0"), _joint("P62", "Roll"), _joint("P64", "Pitch")])))
-CASES.append(("eng_4j_roll_first", "engineer", _eng(
-    [_joint("P60", "Roll", "0"), _joint("P62", "Pitch"),
-     _joint("P64", "Pitch"), _joint("P66", "Yaw")])))
-CASES.append(("eng_6j_alt", "engineer", _eng(
-    [_joint(IOS[i], ["Roll", "Pitch", "Roll", "Pitch", "Roll", "Pitch"][i]) for i in range(6)])))
-# -- 工程：连杆长度 --
-CASES.append(("eng_zero_len_mix", "engineer", _eng(
-    [_joint("P60", "Yaw", "0"), _joint("P62", "Pitch"), _joint("P64", "Pitch", "60")])))
-CASES.append(("eng_all_zero_len", "engineer", _eng(
-    [_joint("P60", "Yaw", "0"), _joint("P62", "Pitch", "0"), _joint("P64", "Pitch", "0")])))
-# -- 工程：预设点位 --
-presets4 = [{"enabled": True, "key": k, "x": str(50 * i), "y": "10", "z": "40",
-             "roll": "0", "pitch": "-15", "yaw": "5"}
-            for i, k in enumerate(["A", "B", "C", "D"])]
-j3 = _eng_axes(3)
-CASES.append(("eng_presets4", "engineer", _eng(j3, presets=presets4)))
-CASES.append(("eng_preset_pos_only", "engineer", _eng(j3, presets=[
-    {"enabled": True, "key": "A", "x": "100", "y": "20", "z": "50",
-     "roll": "", "pitch": "", "yaw": ""}])))
-# -- 工程：夹爪 / key_map / 模式切换 --
-grip = {"enabled": True, "io": "MP03", "dir": "正向", "open_angle": "45",
-        "closed_angle": "-45", "initial_open": True, "key": "D"}
-km_all = [
-    {"input": "右摇杆X", "dir": "正向", "mode": "速度", "param": "3000", "target": "P60"},
-    {"input": "右摇杆Y", "dir": "反向", "mode": "增速", "param": "5000", "target": "P62"},
-    {"input": "A", "dir": "正向", "mode": "增量", "param": "5", "target": "MP03"},
-    {"input": "B", "dir": "反向", "mode": "直接", "param": "30", "target": "P64"},
-]
-CASES.append(("eng_gripper", "engineer", _eng(j3, gripper=grip)))
-CASES.append(("eng_gripper_full", "engineer", _eng(j3, presets=presets4, gripper=grip, key_map=km_all)))
-CASES.append(("eng_keymap_speed", "engineer", _eng(j3, key_map=[
-    {"input": "右摇杆X", "dir": "正向", "mode": "速度", "param": "3000", "target": "P60"},
-    {"input": "A", "dir": "正向", "mode": "直接", "param": "30", "target": "P62"}])))
-CASES.append(("eng_keymap_all", "engineer", _eng(j3, key_map=km_all)))
-CASES.append(("eng_mode_switch_D", "engineer", _eng(j3, mode_switch="D")))
-# -- 工程：IO 冲突（检查器应拦） --
-CASES.append(("eng_dupio", "engineer", _eng([_joint("P60", "Yaw", "0"), _joint("P60", "Pitch")])))
-CASES.append(("eng_io_conflict", "engineer", _eng([_joint("P74", "Yaw", "0"), _joint("P75", "Pitch")])))
-CASES.append(("eng_empty_ioinit", "engineer", _eng(j3, engineer_extra={"io_init": {}})))
+# -- 工程：1~4 模式与两种切换策略 --
+CASES.append(("eng_mode_1", "engineer", _eng(1)))
+CASES.append(("eng_mode_2_click", "engineer", _eng(2)))
+CASES.append(("eng_mode_3_direct", "engineer", _eng(3, "一一对应")))
+CASES.append(("eng_mode_4_click", "engineer", _eng(4)))
+CASES.append(("eng_mode_4_direct", "engineer", _eng(4, "一一对应")))
+CASES.append(("eng_empty_ioinit", "engineer", _eng(2, extra={"io_init": {}})))
 
 # -- 步兵 --
 inf_full = {
@@ -186,12 +113,9 @@ ROBUST = [
     ("r_channel_neg", "infantry", {"channel": "-5"}),
     ("r_null_config", "infantry", {"channel": None, "sprint_enabled": "yes"}),
     ("r_array_config", "infantry", [1, 2, 3]),                               # config 是数组
-    ("r_bad_axis", "engineer", _eng([_joint("P60", "X", "120")])),           # 非法转轴
-    ("r_bad_dir", "engineer", _eng([_joint("P60", "Pitch", "120", {"dir": "歪"})])),
-    ("r_short_joints", "engineer", _eng(_eng_axes(2))),                      # joint_count=6 但只给 2 个
-    ("r_missing_ik", "engineer", {"engineer": {}}),                          # 缺 ik
-    ("r_missing_engineer", "engineer", {"ik": {}}),                          # 缺 engineer
-    ("r_joint_no_fields", "engineer", {"ik": {"joint_count": 3, "joints": [{}, {}, {}]}}),
+    ("r_bad_mode_count", "engineer", _eng(6)),
+    ("r_bad_switch_strategy", "engineer", _eng(2, "未知策略")),
+    ("r_missing_engineer_fields", "engineer", {}),
     ("r_debug_null_rows", "debug", {"debug_rows": None}),
     ("r_debug_rows_not_array", "debug", {"debug_rows": "P60"}),
 ]
@@ -201,7 +125,7 @@ ROBUST = [
 # CLI 封装
 # ---------------------------------------------------------------------------
 def run_cli(args, timeout=300):
-    godot = "godot"
+    godot = os.environ.get("PIEBLOCK_GODOT", "godot")
     cmd = [godot, "--headless", "--no-header", "--path", str(ROOT),
            "--script", str(CLI), "--"] + args
     try:

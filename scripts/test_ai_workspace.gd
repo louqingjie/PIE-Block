@@ -28,12 +28,10 @@ func _run() -> void:
 	_check("步兵 AGENTS 标明当前构型", agents.contains("当前构型：步兵"), agents.substr(0, 200))
 	_check("步兵 AGENTS 指明唯一 main.c", agents.contains("Projects/ROBOMASTER_INFANTRY/USER/src/main.c"))
 	_check("步兵 AGENTS 禁止工程目录", agents.contains("Projects/ROBOMASTER_ENGINEER/"))
-	_check("步兵 AGENTS 禁止工程逆解算目录", agents.contains("Projects/ROBOMASTER_ENGINEER_SIM/"))
 	_check("步兵 AGENTS 不出现占位符", not agents.contains("{{"))
 	var gi: String = FileAccess.get_file_as_string(
 		ProjectSettings.globalize_path(ws).path_join(".gitignore"))
 	_check("步兵 gitignore 隐藏工程", gi.contains("Projects/ROBOMASTER_ENGINEER/"))
-	_check("步兵 gitignore 隐藏工程逆解算", gi.contains("Projects/ROBOMASTER_ENGINEER_SIM/"))
 	_check("步兵 gitignore 保留步兵项目", not gi.contains("Projects/ROBOMASTER_INFANTRY/"))
 
 	# ---- 工程构型 ----

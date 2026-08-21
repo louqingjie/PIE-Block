@@ -6,7 +6,6 @@ extends SceneTree
 
 const Infantry = preload("res://scripts/codegen/codegen_infantry.gd")
 const Engineer = preload("res://scripts/codegen/codegen_engineer.gd")
-const EngineerIK = preload("res://scripts/codegen/codegen_engineer_ik.gd")
 const Debug = preload("res://scripts/codegen/codegen_debug.gd")
 
 var _fail: int = 0
@@ -78,20 +77,6 @@ func _engineer_cfg(with_servos: bool = true) -> Dictionary:
 	}
 
 
-func _ik_cfg() -> Dictionary:
-	return {
-		"joint_count": 2,
-		"joints": [
-			{"io": "P74", "axis": "Yaw", "len": "100", "zero": "0",
-				"min": "-90", "max": "90", "dir": "正向"},
-			{"io": "MP03", "axis": "Pitch", "len": "80", "zero": "0",
-				"min": "-90", "max": "90", "dir": "正向"},
-		],
-		"gripper": {"enabled": true, "io": "P75", "open_angle": "45",
-			"closed_angle": "-45", "initial_open": true, "key": "D"},
-	}
-
-
 func _initialize() -> void:
 	var infantry = Infantry.new()
 	var infantry_code: String = infantry.generate(_infantry_cfg())
@@ -110,33 +95,26 @@ func _initialize() -> void:
 		and not infantry_no_servo.contains("lastServoBuzzerDuty"))
 
 	var engineer_code: String = Engineer.new().generate(_engineer_cfg())
-	_check("工程正解初始化频率不含 0", _init_frequencies_are_valid(engineer_code))
+	_check("工程映射初始化频率不含 0", _init_frequencies_are_valid(engineer_code))
 	var engineer_helper: String = _helper(engineer_code)
-	_check("工程正解生成舵机反馈", engineer_helper.contains("lastServoBuzzerDuty[4]"))
+	_check("工程映射生成舵机反馈", engineer_helper.contains("lastServoBuzzerDuty[4]"))
 	var order: Array = [
 		engineer_helper.find("dutyOfAuxServo[0]"),
 		engineer_helper.find("dutyOfAuxServo[1]"),
 		engineer_helper.find("dutyOfAuxMainServo[0]"),
 		engineer_helper.find("dutyOfAuxMainServo[1]"),
 	]
-	_check("工程正解按扩展板再主控板固定顺序检测", order[0] >= 0 and order[0] < order[1]
+	_check("工程映射按扩展板再主控板固定顺序检测", order[0] >= 0 and order[0] < order[1]
 		and order[1] < order[2] and order[2] < order[3])
-	_check("工程正解稳定后停止蜂鸣", engineer_helper.contains("PWM_SET_Frequency(BUZZER_CH, 500, 0);"))
-	_check("工程正解发送后更新蜂鸣", engineer_code.find("Main_Countrol();") < engineer_code.find("UpdateBuzzerFeedback();"))
+	_check("工程映射稳定后停止蜂鸣", engineer_helper.contains("PWM_SET_Frequency(BUZZER_CH, 500, 0);"))
+	_check("工程映射发送后更新蜂鸣", engineer_code.find("Main_Countrol();") < engineer_code.find("UpdateBuzzerFeedback();"))
 	var engineer_no_servo: String = Engineer.new().generate(_engineer_cfg(false))
-	_check("工程正解无配置舵机时不生成反馈", not engineer_no_servo.contains("UpdateBuzzerFeedback")
+	_check("工程映射无配置舵机时不生成反馈", not engineer_no_servo.contains("UpdateBuzzerFeedback")
 		and not engineer_no_servo.contains("lastServoBuzzerDuty"))
 
-	var ik_code: String = EngineerIK.new().generate(_ik_cfg())
-	_check("工程逆解初始化频率不含 0", _init_frequencies_are_valid(ik_code))
-	var ik_helper: String = _helper(ik_code)
-	_check("工程逆解生成关节与夹爪反馈", ik_helper.contains("lastServoBuzzerDuty[3]")
-		and ik_helper.contains("dutyOfServo[0]") and ik_helper.contains("dutyOfServo[1]")
-		and ik_helper.contains("dutyOfGripper"))
-	_check("工程逆解应用舵机后更新蜂鸣", ik_code.find("ApplyServoControl();") < ik_code.find("UpdateBuzzerFeedback();"))
-	_check("反馈函数不引入阻塞延时", not ik_helper.contains("Ms_Delay") and not engineer_helper.contains("Ms_Delay"))
-	_check("首周期只建立比较基准", ik_helper.contains("if (!servoBuzzerInitialized)")
-		and ik_helper.contains("changed = 0;"))
+	_check("工程反馈函数不引入阻塞延时", not engineer_helper.contains("Ms_Delay"))
+	_check("工程首周期只建立比较基准", engineer_helper.contains("if (!servoBuzzerInitialized)")
+		and engineer_helper.contains("changed = 0;"))
 
 	var debug_code: String = Debug.new().generate({
 		"debug_rows": [{"pin": "P60", "drive_type": "电机", "dir": 1,

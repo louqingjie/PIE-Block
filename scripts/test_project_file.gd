@@ -4,7 +4,6 @@ extends SceneTree
 ## 运行方式：godot --headless --path . --script scripts/test_project_file.gd
 
 const PF = preload("res://scripts/project_file.gd")
-const IK_CONFIG = preload("res://scripts/engineer_ik_config.gd")
 const TC = preload("res://scripts/toolchain.gd")
 
 const TMP_DIR: String = "user://_test_pieproj"
@@ -18,13 +17,6 @@ class MissingHexToolchain extends RefCounted:
 
 	func hex_exists(_project_dst: String) -> bool:
 		return false
-
-
-class SolverReconnectProbe extends Control:
-	var reconnect_count: int = 0
-
-	func reconnect_mcu_solver_after_flash() -> void:
-		reconnect_count += 1
 
 
 ## AppState 是 autoload，--script 模式下没有全局标识符，只能从 root 拿
@@ -42,7 +34,7 @@ func _check(label: String, ok: bool, detail: String = "") -> void:
 
 func _initialize() -> void:
 	print("=== 项目文件与配置序列化测试 ===\n")
-	_check("项目格式版本已升级到 7", PF.FORMAT_VERSION == 7)
+	_check("项目格式版本已升级到 8", PF.FORMAT_VERSION == 8)
 	DirAccess.make_dir_recursive_absolute(TMP_DIR)
 	_test_kind_mapping()
 	_test_roundtrip()
@@ -111,8 +103,8 @@ func _test_kind_mapping() -> void:
 	_check("三种类型", PF.KINDS.size() == 3)
 	_check("步兵 -> [0]", PF.kind_tabs(PF.KIND_INFANTRY) == [0])
 	_check("工程桌面端仅显示 [1]", PF.kind_tabs(PF.KIND_ENGINEER) == [1])
-	_check("调试 -> [3]", PF.kind_tabs(PF.KIND_DEBUG) == [3])
-	# 三种类型的 Tab 集合互不重叠；2 是保留给底层能力的隐藏页
+	_check("调试 -> [2]", PF.kind_tabs(PF.KIND_DEBUG) == [2])
+	# 三种类型的逻辑页集合互不重叠
 	var seen: Array = []
 	var overlap: bool = false
 	for kind in PF.KINDS:
@@ -122,10 +114,9 @@ func _test_kind_mapping() -> void:
 			seen.append(t)
 	seen.sort()
 	_check("Tab 集合互不重叠", not overlap)
-	_check("桌面端可见 Tab 为 [0, 1, 3]", seen == [0, 1, 3])
+	_check("逻辑页为 [0, 1, 2]", seen == [0, 1, 2])
 	_check("默认 Tab：工程 = 1", PF.kind_default_tab(PF.KIND_ENGINEER) == 1)
-	_check("隐藏 Tab 2 仍反查到工程底层类型", PF.tab_to_kind(2) == PF.KIND_ENGINEER)
-	_check("Tab 反查类型：3 -> 调试", PF.tab_to_kind(3) == PF.KIND_DEBUG)
+	_check("Tab 反查类型：2 -> 调试", PF.tab_to_kind(2) == PF.KIND_DEBUG)
 	_check("kind_label 覆盖调试", PF.kind_label(PF.KIND_DEBUG) == "调试")
 	_check("非法 kind 回退步兵", PF.kind_label("nonsense") == "步兵")
 	# kind_tabs 返回副本，改它不能污染常量表
@@ -142,7 +133,7 @@ func _test_roundtrip() -> void:
 		[PF.KIND_INFANTRY, 1, 0],
 		[PF.KIND_ENGINEER, 1, 1],
 		[PF.KIND_ENGINEER, 2, 1],
-		[PF.KIND_DEBUG, 2, 3],
+		[PF.KIND_DEBUG, 2, 2],
 	]
 	for c in cases:
 		var kind: String = c[0]
@@ -158,12 +149,6 @@ func _test_roundtrip() -> void:
 			"FirstRow/Chassis/Sprint/CheckBox": {"b": true},
 			"SecondRow/中文节点/Weird": {"t": "引号\" 反斜杠\\ 换行\n结束"},
 		}
-		data["ik_config"]["joint_count"] = 6
-		data["ik_config"]["joints"] = []
-		for i in range(6):
-			data["ik_config"]["joints"].append({"io": ["P60", "P62", "P64", "P66", "P74", "P75"][i],
-				"dir": "正向", "axis": "Yaw" if i == 0 else "Pitch", "len": str(i * 10),
-				"offset": "0", "zero": "0", "min": "-90", "max": "90"})
 		data["main_c_stage1"] = "#include \"main.h\"\nint main(){return 0;}\n"
 		data["main_c_ai"] = "// AI 改过\nint main(){while(1);}\n" if stage >= 2 else ""
 		data["workflow"] = {
@@ -171,7 +156,6 @@ func _test_roundtrip() -> void:
 			"checked_hash": "check-123",
 			"built_hash": "build-123",
 			"flashed_hash": "flash-123",
-			"firmware_mode": "simulator" if kind == PF.KIND_ENGINEER else "production",
 			"hardware_tested": stage >= 2,
 			"guide_completed": [true, true, true, true, true, true, stage >= 2],
 		}
@@ -188,8 +172,6 @@ func _test_roundtrip() -> void:
 		_check("%s/阶段%d active_tab 保持" % [kind, stage], int(got["active_tab"]) == tab)
 		_check("%s/阶段%d config 完全一致" % [kind, stage],
 			got["config"] == data["config"])
-		_check("%s/阶段%d ik_config 完全一致" % [kind, stage],
-			got["ik_config"] == data["ik_config"])
 		_check("%s/阶段%d main_c_stage1 一致" % [kind, stage],
 			got["main_c_stage1"] == data["main_c_stage1"])
 		_check("%s/阶段%d main_c_ai 一致" % [kind, stage],
@@ -252,7 +234,7 @@ func _test_normalize() -> void:
 		_check("缺 kind 回退步兵", d["kind"] == PF.KIND_INFANTRY)
 		_check("缺 stage 回退 1", int(d["stage"]) == 1)
 		_check("缺 config 回退空字典", (d["config"] as Dictionary).is_empty())
-		_check("缺夹爪配置补默认固定舵机", d["ik_config"]["gripper"] == IK_CONFIG.default_gripper())
+		_check("新格式不包含废弃配置", not d.has("obsolete_config"))
 		_check("缺 main_c 回退空串", d["main_c_stage1"] == "" and d["main_c_ai"] == "")
 
 	var weird: Dictionary = PF.normalize({
@@ -266,21 +248,11 @@ func _test_normalize() -> void:
 	_check("main_c 非字符串转字符串", weird["main_c_stage1"] == "12345")
 	_check("旧项目补齐七步引导进度",
 		weird["workflow"]["guide_completed"] == [false, false, false, false, false, false, false])
-	_check("缺少固件状态时回退 unknown",
-		str(weird["workflow"]["firmware_mode"]) == "unknown")
-	_check("正式固件状态可规范化保存",
-		str(PF.normalize_workflow({"firmware_mode": "production"})["firmware_mode"])
-			== "production")
-	_check("非法固件状态不会伪装成已烧录",
-		str(PF.normalize_workflow({"firmware_mode": "broken"})["firmware_mode"])
-			== "unknown")
-	var v6: Dictionary = PF.normalize({"format_version": 6, "kind": PF.KIND_ENGINEER,
-		"ik_config": {"keymove": [ {}, {}, {}, {}]}})
-	_check("版本6工程补齐六维遥控默认字段",
-		v6["format_version"] == PF.FORMAT_VERSION
-		and v6["ik_config"]["keymove"].size() == 6
-		and v6["ik_config"]["orientation_key_speed"] == "1"
-		and not v6["ik_config"]["rocker2_home_enabled"])
+	var legacy: Dictionary = PF.normalize({"format_version": 7, "kind": PF.KIND_ENGINEER,
+		"obsolete_config": {"enabled": true},
+		"workflow": {"obsolete_step": true}})
+	_check("未知旧字段归一化时被丢弃", not legacy.has("obsolete_config")
+		and not legacy["workflow"].has("obsolete_step"))
 	var short_progress: Dictionary = PF.normalize({
 		"workflow": {"guide_completed": [true, true, false]},
 	})
@@ -298,17 +270,6 @@ func _test_normalize() -> void:
 	_check("工程的 active_tab=0 纠正为 1", int(eng["active_tab"]) == 1)
 	var eng2: Dictionary = PF.normalize({"kind": PF.KIND_ENGINEER, "active_tab": 2})
 	_check("工程的 active_tab=2 归一化到工程页", int(eng2["active_tab"]) == 1)
-	_check("默认逆解配置不触发旧项目拦截",
-		not PF.contains_hidden_ik_data(PF.new_data(PF.KIND_ENGINEER)))
-	_check("active_tab=2 触发旧项目拦截",
-		PF.contains_hidden_ik_data({"kind": PF.KIND_ENGINEER, "active_tab": 2}))
-	_check("已确认逆解触发旧项目拦截",
-		PF.contains_hidden_ik_data({"kind": PF.KIND_ENGINEER,
-			"workflow": {"ik_confirmed": true}}))
-	var custom_ik: Dictionary = IK_CONFIG.default_config()
-	custom_ik["joint_count"] = 4
-	_check("自定义逆解配置触发旧项目拦截",
-		PF.contains_hidden_ik_data({"kind": PF.KIND_ENGINEER, "ik_config": custom_ik}))
 	_check("ensure_ext 补扩展名",
 		PF.ensure_ext("C:/a/b/我的项目") == "C:/a/b/我的项目." + PF.EXT)
 	_check("ensure_ext 已有扩展名不重复",
@@ -331,8 +292,7 @@ func _test_config_roundtrip() -> void:
 
 	var base: Dictionary = ui._snapshot_config()
 	_check("快照非空", base.size() > 50, "实际 %d 项" % base.size())
-	_check("快照不再包含工程逆解控件", not "EngineerAdvanced/ConfigType" in " ".join(base.keys()))
-	_check("结构化 IK 默认切换键为 E", str(ui._ik_config.get("mode_switch_key", "")) == "E")
+	_check("工程配置快照存在", "Engineer/Engineer/Mode/OptionButton" in base)
 
 	# 改一批控件：LineEdit / OptionButton / CheckBox 三类都覆盖
 	var touched: int = 0
@@ -523,40 +483,10 @@ func _test_lifecycle() -> void:
 	_check("重开项目保留七步引导进度",
 		reopened["data"]["workflow"]["guide_completed"] == saved_guide_progress)
 
-	# 仿真求解器烧录会替换主控板上的正式固件，因此必须撤销正式烧录和真机验收状态。
-	var production_hash: String = ui2._code_hash()
-	var workflow_before_sim: Dictionary = ui2._workflow()
-	workflow_before_sim["firmware_mode"] = "production"
-	workflow_before_sim["flashed_hash"] = production_hash
-	workflow_before_sim["hardware_tested"] = true
-	ui2._project["workflow"] = workflow_before_sim
-	var reconnect_probe := SolverReconnectProbe.new()
-	ui2.add_child(reconnect_probe)
-	ui2._arm_sim = reconnect_probe
-	ui2._solver_upgrade_active = true
-	ui2._upgrade_active = true
-	ui2._project_dst_override = ui2.TC.PROJECT_ENGINEER_SIM_DST
-	ui2._on_download_succeeded()
-	await process_frame
-	var after_sim_workflow: Dictionary = ui2._workflow()
-	_check("求解器烧录记录主控板为仿真固件",
-		str(after_sim_workflow["firmware_mode"]) == "simulator")
-	_check("求解器烧录撤销旧正式固件哈希",
-		str(after_sim_workflow["flashed_hash"]).is_empty())
-	_check("求解器烧录撤销旧真机验收", not bool(after_sim_workflow["hardware_tested"]))
-	_check("求解器烧录完成后等待重启并请求串口重连", reconnect_probe.reconnect_count == 1)
-	var sim_guide: Array[bool] = ui2._guide_done_states()
-	_check("仿真固件不会把正式烧录步骤标为完成", not sim_guide[5])
-	_check("仿真固件不会把真机测试步骤标为完成", not sim_guide[6])
-
-	# 用户明确烧录正式工程代码后，仿真警告才清除。
-	ui2._arm_sim = null
-	reconnect_probe.queue_free()
+	# 烧录成功记录当前代码哈希，并要求重新做真机测试。
 	ui2._upgrade_active = true
 	ui2._on_download_succeeded()
 	var after_production_workflow: Dictionary = ui2._workflow()
-	_check("正式烧录恢复 production 固件状态",
-		str(after_production_workflow["firmware_mode"]) == "production")
 	_check("正式烧录记录当前代码哈希",
 		str(after_production_workflow["flashed_hash"]) == ui2._code_hash())
 	_check("正式烧录要求重新做真机测试",
@@ -768,24 +698,6 @@ func _test_launcher() -> void:
 		not str(lau.get_node(lau.P_STATUS).text).is_empty())
 	_check("损坏项目被移出最近列表", not bad in PF.recent_list())
 
-	# 含隐藏逆解状态的旧项目：启动页阻止进入，但不修改文件和最近列表
-	var hidden: String = TMP_DIR + "/launcher_hidden_ik." + PF.EXT
-	var hidden_data: Dictionary = PF.new_data(PF.KIND_ENGINEER)
-	hidden_data["active_tab"] = 2
-	var hidden_json: String = JSON.stringify(hidden_data, "\t")
-	var hf: FileAccess = FileAccess.open(hidden, FileAccess.WRITE)
-	hf.store_string(hidden_json)
-	hf.close()
-	PF.recent_add(hidden)
-	_app().reset()
-	lau._open_project(hidden)
-	_check("旧逆解项目不写入上下文", not _app().has_project())
-	_check("旧逆解项目状态栏明确提示",
-		str(lau.get_node(lau.P_STATUS).text)
-			== "该项目包含已隐藏的工程逆解算功能，当前版本无法打开")
-	_check("旧逆解项目保留在最近列表", hidden in PF.recent_list())
-	_check("旧逆解项目文件未被修改", FileAccess.get_file_as_string(hidden) == hidden_json)
-
 	# 正常进入：写好上下文（不真的切场景，只验证上下文）
 	var eng_path: String = str(paths[PF.KIND_ENGINEER])
 	var info: Dictionary = PF.load_from(eng_path)
@@ -809,7 +721,7 @@ func _test_launcher() -> void:
 	else:
 		DirAccess.remove_absolute(scan_state_abs)
 
-	# 主界面无项目上下文时保持自由编辑，同时隐藏逆解算入口
+	# 主界面无项目上下文时保持自由编辑
 	_app().reset()
 	var ui_packed: PackedScene = load("res://scenes/ui.tscn") as PackedScene
 	var ui: Node = ui_packed.instantiate()
@@ -817,12 +729,8 @@ func _test_launcher() -> void:
 	await process_frame
 	await process_frame
 	var tabs: Node = ui.get_node(ui.P_TAB_CONTAINER)
-	var any_hidden: bool = false
-	for i in range(tabs.get_tab_count()):
-		if tabs.is_tab_hidden(i):
-			any_hidden = true
-	_check("直跑主界面时隐藏工程逆解算 Tab", any_hidden and tabs.is_tab_hidden(1))
-	_check("直跑主界面时仍显示工程正解 Tab", not tabs.is_tab_hidden(0))
+	_check("工程区域只保留一个配置页", tabs.get_tab_count() == 1)
+	_check("直跑主界面时工程配置页可用", not tabs.is_tab_hidden(0))
 	_check("直跑主界面时配置区可编辑", ui.get_node(ui.P_CHANNEL).editable)
 	_check("直跑主界面时编译按钮可用", not ui.get_node(ui.P_BUILD_BTN).disabled)
 	var ui_hex_btn: Node = ui.get_node_or_null(ui.P_HEX_EXPORT_BTN)

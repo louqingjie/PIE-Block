@@ -18,9 +18,16 @@ func _check(label: String, ok: bool, detail: String = "") -> void:
 
 func _config(mode_count: int, strategy: String) -> Dictionary:
 	var modes: Array = []
-	for _i in range(4):
-		modes.append({"rows": []})
+	for i in range(4):
+		modes.append({"rows": [{
+			"key": "LX",
+			"dir": "正",
+			"mode": "速度",
+			"param": str(1000 + i * 1000),
+			"io": "P62",
+		}]})
 	return {
+		"io_init": {"P62": "电机"},
 		"mode_count": mode_count,
 		"switch_strategy": strategy,
 		"mode_switch_key": "E",
@@ -35,8 +42,28 @@ func _update_mode_section(code: String) -> String:
 	return code.substr(start, end - start) if start >= 0 and end > start else ""
 
 
+func _mode_section(code: String, mode_no: int) -> String:
+	var start: int = code.find("void Calculate_Mode%d_Controls()\n{" % mode_no,
+		code.find("void Calculate_Chassis_Control()\n"))
+	var next: int = code.find("void Calculate_Mode%d_Controls()\n{" % (mode_no + 1), start + 1)
+	var end: int = next if next >= 0 else code.find("void Main_Countrol()\n", start)
+	return code.substr(start, end - start) if start >= 0 and end > start else ""
+
+
 func _initialize() -> void:
 	var generator = ENGINEER.new()
+	for mode_count in range(1, 5):
+		for strategy in ["单击切换", "一一对应"]:
+			var generated: String = generator.generate(_config(mode_count, strategy))
+			for mode_no in range(1, mode_count + 1):
+				_check("%s %d模式生成模式%d函数" % [strategy, mode_count, mode_no],
+					generated.contains("void Calculate_Mode%d_Controls()" % mode_no))
+				_check("%s %d模式保留模式%d独立参数" % [strategy, mode_count, mode_no],
+					_mode_section(generated, mode_no).contains(
+						"* %d / 2047);" % (mode_no * 1000)))
+			_check("%s %d模式不生成越界模式" % [strategy, mode_count],
+				not generated.contains("void Calculate_Mode%d_Controls()" % (mode_count + 1)))
+
 	var click_code: String = generator.generate(_config(4, "单击切换"))
 	var click_update: String = _update_mode_section(click_code)
 	_check("多模式生成 ModeSwitchFeedback", click_code.contains(

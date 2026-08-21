@@ -1,5 +1,5 @@
 ## 顶栏「3D 仿真」入口回归测试。
-## 步兵整车仿真保留，工程逆解算机械臂仿真入口隐藏。
+## 步兵整车仿真保留，工程与调试项目不显示仿真入口。
 ## 运行：godot --headless --path . --script scripts/test_ui_sim_entry.gd
 extends SceneTree
 
@@ -25,7 +25,7 @@ func _initialize() -> void:
 	root.add_child(ui)
 	await process_frame
 
-	var btn: Button = ui.get_node(ui.P_ARM_SIM_BTN)
+	var btn: Button = ui.get_node(ui.P_SIM_BTN)
 	var tabs: TabContainer = ui.get_node(ui.P_TAB_CONTAINER)
 
 	# 无项目自由编辑默认显示步兵页，按钮应可见
@@ -36,23 +36,23 @@ func _initialize() -> void:
 	ui._apply_kind_visibility("engineer", 1)
 	await process_frame
 	_check("工程 Tab（1）按钮隐藏", not btn.visible)
-	_check("工程逆解算 Tab 被永久隐藏", tabs.is_tab_hidden(1))
+	_check("工程区域只保留一个配置页", tabs.get_tab_count() == 1)
 
 	# 回到步兵项目上下文后，整车仿真入口仍可用。
 	ui._apply_kind_visibility("infantry", 0)
 	await process_frame
 	_check("步兵 Tab（0）按钮可见", btn.visible)
 
-	# 步兵 Tab 点顶栏按钮 -> 步兵整车仿真（不属 IK 门控，直接打开）
+	# 步兵 Tab 点顶栏按钮 -> 步兵整车仿真
 	tabs.current_tab = 0
 	await process_frame
-	ui._on_arm_sim_pressed()
+	ui._on_sim_pressed()
 	await process_frame
 	_check("步兵仿真可打开",
-		ui._arm_sim != null and ui._arm_sim.scene_file_path.ends_with("infantry_sim.tscn"),
-		"arm_sim=%s" % str(ui._arm_sim))
-	if ui._arm_sim != null:
-		ui._on_arm_sim_closed()
+		ui._simulation_view != null and ui._simulation_view.scene_file_path.ends_with("infantry_sim.tscn"),
+		"simulation=%s" % str(ui._simulation_view))
+	if ui._simulation_view != null:
+		ui._on_sim_closed()
 	await process_frame
 
 	print("失败数: %d" % _fail)
