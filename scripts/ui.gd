@@ -7,15 +7,16 @@ extends Control
 ##   - 死区、冲刺速度、拨弹速度、拨弹时间非整数或越界 -> Error
 ##   - 冲刺复选框选中但未设冲刺速度                 -> Error
 ##   - 同一物理引脚被多次引用（跨侧/跨云台）        -> Error（引脚对已归一化后比较）
-##   - 启用无刷摩擦轮时 P64/P66 被其他角色占用       -> Error
+##   - 摩擦轮引脚 P64/P66 被其他角色占用            -> Error
 ##   - Yaw/Pitch 在主控板 MP74/MP03 上选「电机」    -> Error（该端口只能驱动舵机）
 ##   - Yaw/Pitch 选了既非拓展板也非 MP74/MP03 的引脚 -> Error
 ##   - Yaw 与 Pitch 使用同一引脚                    -> Error
-##   - 启用无刷摩擦轮时扳机键与摩擦轮开关键相同      -> Error
+##   - 扳机键与摩擦轮开关键相同                     -> Error
 ##   - 方向键设为冲刺/移动但扳机键或开关键占用方向键 -> Error
 ##   - 归中角非整数或超出 -90~90（相对舵机中位）    -> Error
 ##   - 冲刺速度 < 普通速度                          -> Warn
 ##   - 同侧两轮共用 IO 但方向不同                   -> Warn
+##   - 扳机键/开关键占用 B/C（摩擦轮档位微调）      -> Warn
 ##   - 拨弹时间 > 1000ms（阻塞主循环）              -> Warn（仅「阻塞开环」模式）
 
 
@@ -42,7 +43,8 @@ const P_R2_DIR: NodePath = CHASSIS + "/R2/OptionButton2"
 const GIMBAL: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/Infantry/GimbalSetting"
 const P_BOOSTER_IO: NodePath = GIMBAL + "/Booster/OptionButton"
 const P_BOOSTER_DIR: NodePath = GIMBAL + "/Booster/OptionButton2"
-# 摩擦轮方向已删除 UI：Dir 固定发 0（实测拓展板协议方向位 1 会导致摩擦轮不转）
+const P_FRICTION_L_DIR: NodePath = GIMBAL + "/P64/OptionButton"
+const P_FRICTION_R_DIR: NodePath = GIMBAL + "/P66/OptionButton"
 const P_YAW_DRIVE: NodePath = GIMBAL + "/Yaw/OptionButton"
 const P_YAW_IO: NodePath = GIMBAL + "/Yaw/OptionButton2"
 const P_YAW_DIR: NodePath = GIMBAL + "/Yaw/OptionButton3"
@@ -64,7 +66,6 @@ const P_TRIGGER_TIME: NodePath = KEYSET + "/Trigger/Time"
 const P_FRICTION_TYPE: NodePath = KEYSET + "/FrictionType/OptionButton"
 const P_FRICTION_SWITCH_ROW: NodePath = KEYSET + "/Booster"
 const P_BOOSTER_KEY: NodePath = KEYSET + "/Booster/OptionButton"
-const P_FRICTION_MAX_DUTY: NodePath = KEYSET + "/Booster/MaxDuty"
 # 调试界面
 const DEBUG: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/Debug"
 # 调试界面各行容器名（P60, P62, P64, P66, P74, P75, P76, P77, MP03, MP74）
@@ -78,10 +79,13 @@ const ENGINEER_TABS: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZ
 const DEBUG_PAGE: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/Debug"
 # 工程师界面（工程页：Engineer TabContainer 的第 0 个 tab）
 const ENGINEER: String = ENGINEER_TABS + "/Engineer"
-# 工程页 IO 初始化与多模式映射配置根。
+# 步兵页「高级设置」折叠区内的同一套 IO+模式+按键映射（与工程页共用同一份配置）
+const ADV_ENGINEER: String = INFANTRY_PAGE + "/Advanced/ScrollContainer/AdvancedAndEngineer"
+# 共享配置根：按当前构型返回 工程页 / 步兵高级设置
 func _shared_cfg_root() -> String:
-	return ENGINEER
-# 工程页 IO 初始化区相对路径。每个引脚一个 OptionButton + MidDegree2(初始角)。
+	return ADV_ENGINEER if _current_tab() == 0 else ENGINEER
+# 共享 IO 初始化区相对路径（工程页与步兵高级设置结构一致）。
+# 每个引脚一个 OptionButton(电机/舵机) + MidDegree2(初始角)。
 const ENG_IO_REL: Dictionary = {
 	"P60": "IOs/Row1/P60/OptionButton",
 	"P62": "IOs/Row1/P62/OptionButton",
@@ -148,12 +152,6 @@ const P_HEX_EXPORT_BTN: NodePath = "VBoxContainer/TopPanel/HEXExport"
 const P_BUILD_MODE: NodePath = "VBoxContainer/TopPanel/BuildMode"
 const P_CLOUD_SETTINGS: NodePath = "VBoxContainer/TopPanel/Settings"
 const P_UPGRADE_BTN: NodePath = "VBoxContainer/TopPanel/Upgrade"
-
-## Debug 灯说明按钮（顶栏）
-const P_DEBUG_LIGHT_BTN: NodePath = "VBoxContainer/TopPanel/DebugLight"
-
-## Debug 灯说明弹窗场景
-const DEBUG_LIGHT_GUIDE_SCENE: String = "res://scenes/debug_light_guide.tscn"
 const P_UPGRADE_PROGRESS: NodePath = "UpgradeProgress"
 # 项目引导
 const P_MAIN_UI: NodePath = "VBoxContainer"
@@ -204,8 +202,6 @@ const BC = preload("res://scripts/build_controller.gd")
 const DC = preload("res://scripts/download_controller.gd")
 const UPGRADE_PROGRESS = preload("res://scripts/upgrade_progress.gd")
 const KG = preload("res://scripts/keil_guide.gd")
-## 首次烧录指引（烧录前确认板上开关已断开，可勾选「不再显示」）
-const FFG = preload("res://scripts/first_flash_guide.gd")
 ## 云端编译核心与配置引导（preload 避免全局类名缓存未建立）
 const CLOUD_COMPILER = preload("res://scripts/cloud_compiler.gd")
 const CLOUD_GUIDE = preload("res://scripts/cloud_guide.gd")
@@ -289,7 +285,6 @@ func _ready() -> void:
 	# 场景模板行保持隐藏（Example 仅作「+」新建行的原型），真实行命名为 RowNN
 	_normalize_eng_row_names()
 	# 固定子系统引脚在 IO 初始化区自动同步（须在默认快照之前，让默认配置自洽）
-	_sync_friction_type_ui()
 	_sync_io_locks()
 	_sync_friction_switch_visibility()
 	# 左摇杆保留开关：模式1 强制开启（须在默认快照之前，让默认配置自洽）
@@ -383,7 +378,7 @@ func _setup_download_controller() -> void:
 
 # ------------------------------------------------------------------ 信号连接
 func _connect_signals() -> void:
-	# Web 版禁用：AI 原生终端、烧录/升级、下载固件、3D 仿真（串口桥）
+	# Web 版禁用：AI 编辑（WebView）、烧录/升级、下载固件、3D 仿真（串口桥）
 	WEB.disable_buttons(self, [P_AI_EDIT_BTN, P_UPGRADE_BTN, P_DOWNLOAD_BTN, P_ARM_SIM_BTN])
 	var gate_confirm: Node = get_node_or_null(P_GATE_CONFIRM)
 	if gate_confirm is BaseButton:
@@ -396,7 +391,7 @@ func _connect_signals() -> void:
 		gate_back.pressed.connect(_go_to_launcher)
 	# LineEdit 文本变化
 	for p in [P_CHANNEL, P_DEADZONE, P_NORMAL_SPEED, P_SPRINT_SPEED,
-			P_TRIGGER_SPEED, P_TRIGGER_TIME, P_FRICTION_MAX_DUTY,
+			P_TRIGGER_SPEED, P_TRIGGER_TIME,
 			P_YAW_MID_OFFSET, P_PITCH_MID_OFFSET]:
 		var node: Node = get_node_or_null(p)
 		if node is LineEdit:
@@ -410,15 +405,21 @@ func _connect_signals() -> void:
 			ch_btn.item_selected.connect(_sync_io_locks)
 	var friction_type_btn: Node = get_node_or_null(P_FRICTION_TYPE)
 	if friction_type_btn is OptionButton:
-		friction_type_btn.item_selected.connect(_on_friction_type_selected)
 		friction_type_btn.item_selected.connect(_sync_friction_switch_visibility)
-	# 步骤：OptionButton 选项变化
+		friction_type_btn.item_selected.connect(_run_check)
+	# 步兵固定子系统（拨弹电机 / Yaw / Pitch）配置变化时，IO 初始化区自动同步
+	for p in [P_BOOSTER_IO, P_YAW_DRIVE, P_YAW_IO, P_PITCH_DRIVE, P_PITCH_IO]:
+		var sub_btn: Node = get_node_or_null(p)
+		if sub_btn is OptionButton:
+			sub_btn.item_selected.connect(_sync_io_locks)
+	# OptionButton 选项变化
 	for p in [P_L1_IO, P_L2_IO, P_R1_IO, P_R2_IO,
-		P_L1_DIR, P_L2_DIR, P_R1_DIR, P_R2_DIR,
-		P_BOOSTER_IO, P_BOOSTER_DIR,
-		P_YAW_DRIVE, P_YAW_IO, P_YAW_DIR,
-		P_PITCH_DRIVE, P_PITCH_IO, P_PITCH_DIR,
-		P_TRIGGER, P_BOOSTER_KEY, P_FEED_MODE, P_FRICTION_TYPE]:
+			P_L1_DIR, P_L2_DIR, P_R1_DIR, P_R2_DIR,
+			P_BOOSTER_IO, P_BOOSTER_DIR,
+			P_FRICTION_L_DIR, P_FRICTION_R_DIR,
+			P_YAW_DRIVE, P_YAW_IO, P_YAW_DIR,
+			P_PITCH_DRIVE, P_PITCH_IO, P_PITCH_DIR,
+			P_TRIGGER, P_BOOSTER_KEY, P_FEED_MODE]:
 		var node2: Node = get_node_or_null(p)
 		if node2 is OptionButton:
 			node2.item_selected.connect(_run_check)
@@ -434,8 +435,8 @@ func _connect_signals() -> void:
 	var zero_cb: Node = get_node_or_null(P_ZERO_CB)
 	if zero_cb is BaseButton:
 		zero_cb.toggled.connect(_run_check)
-	# 工程师界面：IO 初始化区与多模式映射。
-	for root in [ENGINEER]:
+	# 工程师界面：共享 IO 初始化区（工程页 + 步兵高级设置，两份实例都接线）
+	for root in [ENGINEER, ADV_ENGINEER]:
 		for pin in ENG_ALL_PINS:
 			var eng_btn: Node = get_node_or_null(NodePath(root + "/" + str(ENG_IO_REL.get(pin, ""))))
 			if eng_btn is OptionButton:
@@ -478,10 +479,6 @@ func _connect_signals() -> void:
 	var upgrade_btn: Node = get_node_or_null(P_UPGRADE_BTN)
 	if upgrade_btn is BaseButton:
 		upgrade_btn.pressed.connect(_on_upgrade_pressed)
-	# Debug 灯说明按钮
-	var debug_light_btn: Node = get_node_or_null(P_DEBUG_LIGHT_BTN)
-	if debug_light_btn is BaseButton:
-		debug_light_btn.pressed.connect(_on_debug_light_pressed)
 	# AI 编辑入口
 	var ai_btn: Node = get_node_or_null(P_AI_EDIT_BTN)
 	if ai_btn is BaseButton:
@@ -619,7 +616,6 @@ func _apply_config(cfg: Dictionary) -> void:
 	_update_debug_placeholders()
 	_update_engineer_placeholders()
 	_update_mode_page_visibility()
-	_sync_friction_type_ui()
 	_sync_friction_switch_visibility()
 	# 固定子系统引脚锁定：旧存档把引脚存成错误类型时，这里自动纠正
 	_sync_io_locks()
@@ -859,15 +855,6 @@ func _run_guide_build() -> void:
 	_on_build_pressed()
 
 
-func _block_action_on_static_errors(action: String) -> bool:
-	_run_check()
-	for issue in _last_issues:
-		if str(issue.get("type", "")) == "Error":
-			_append_output("[Error] 配置仍有错误，禁止%s；请先修正静态检查中的 Error" % action)
-			return true
-	return false
-
-
 func _confirm_hardware() -> void:
 	var dialog := ConfirmationDialog.new()
 	dialog.title = "查看第一步确认"
@@ -973,7 +960,6 @@ func _apply_no_project_state() -> void:
 	_apply_kind_visibility(PF.KIND_INFANTRY, 0)
 	_set_gated_buttons_disabled(false)
 	_set_config_enabled(true)
-	_sync_friction_type_ui()
 	_update_title()
 	_run_check()
 
@@ -1159,13 +1145,19 @@ func _apply_kind_visibility(kind: String, want_tab: int) -> void:
 		eng_tabs.visible = (kind == PF.KIND_ENGINEER)
 	if dbg is CanvasItem:
 		dbg.visible = (kind == PF.KIND_DEBUG)
+	# 场景默认隐藏工程逆解算 Tab，避免首次显示时抢占界面；
+	# 进入工程项目或自由编辑模式时必须恢复全部工程 Tab，
+	# 否则工程逆解算页会一直不可选，且自由编辑模式的 Tab 状态不完整。
+	if eng_tabs is TabContainer:
+		var show_engineer_tabs: bool = kind == PF.KIND_ENGINEER or _project.is_empty()
+		for i in range(eng_tabs.get_tab_count()):
+			eng_tabs.set_tab_hidden(i, not show_engineer_tabs)
 	# 工程内部 tab：0=工程, 1=工程逆解算（want_tab 是逻辑索引 1/2）
 	var allowed: Array = PF.kind_tabs(kind)
 	var target: int = want_tab if want_tab in allowed else PF.kind_default_tab(kind)
 	if eng_tabs is TabContainer and kind == PF.KIND_ENGINEER:
 		eng_tabs.current_tab = target - 1
 	_update_mode_page_visibility()
-	_sync_friction_type_ui()
 
 
 ## 顶栏标题：* 项目名 · 构型 · 阶段
@@ -1223,19 +1215,6 @@ func _create_project_at(kind: String, path: String) -> bool:
 
 
 # ------------------------------------------------------------------ 保存
-## 快捷键：Ctrl+S 保存、Ctrl+B 编译（与顶栏按钮等效）。
-## 走 _unhandled_key_input：控件未消费的按键才会到达这里，不影响输入框打字。
-func _unhandled_key_input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed and not event.echo \
-			and event.ctrl_pressed:
-		if event.keycode == KEY_S:
-			_on_save_pressed()
-			get_viewport().set_input_as_handled()
-		elif event.keycode == KEY_B:
-			_on_build_pressed()
-			get_viewport().set_input_as_handled()
-
-
 func _on_save_pressed() -> void:
 	if _project.is_empty():
 		_clear_output()
@@ -1402,7 +1381,7 @@ func _update_debug_placeholders(_idx: int = -1) -> void:
 			"舵机":
 				placeholder = "角度 -90~90"
 			"摩擦轮":
-				placeholder = "速度 0~800"
+				placeholder = "速度 0~1100"
 		line_edit.placeholder_text = placeholder
 
 
@@ -1420,21 +1399,16 @@ const EXPANSION_PINS: Array = ["P60", "P62", "P64", "P66", "P74", "P75", "P76", 
 ## 与静态检查器的合法性矩阵一致，从源头杜绝非法组合。程序化重建不触发 item_selected。
 ## 舵机角度一律是「相对中位的偏移角」，行程 ±90°，不是 0~180°。
 func _update_engineer_placeholders(_idx: int = -1) -> void:
-	for root in [ENGINEER]:
+	# 工程页与步兵高级设置是两份实例，都要过滤，否则切页后残留旧选项
+	for root in [ENGINEER, ADV_ENGINEER]:
 		_update_engineer_root_placeholders(root)
 
 
-## 工程配置根的过滤与占位提示
+## 单个共享配置根（工程页 / 步兵高级设置）的过滤与占位提示
 func _update_engineer_root_placeholders(root: String) -> void:
 	var io_init: Dictionary = {}
 	for pin in ENG_ALL_PINS:
-		var io_type: String = _get_option_text(NodePath(root + "/" + str(ENG_IO_REL.get(pin, ""))))
-		io_init[pin] = io_type
-		# 初始角仅对舵机有效；电机不显示该输入框。
-		var mid_edit: Node = get_node_or_null(NodePath(
-			root + "/" + str(ENG_IO_MID_REL.get(pin, ""))))
-		if mid_edit is LineEdit:
-			mid_edit.visible = io_type == "舵机"
+		io_init[pin] = _get_option_text(NodePath(root + "/" + str(ENG_IO_REL.get(pin, ""))))
 	for page in ENG_MODE_PAGES:
 		var vb: Node = get_node_or_null(NodePath(root + "/" + page + "/ScrollContainer/VBoxContainer"))
 		if vb == null:
@@ -1494,7 +1468,7 @@ func _update_engineer_root_placeholders(root: String) -> void:
 ## 场景里的模板行保持名为 Example（隐藏），只作为「+」新建行的原型；
 ## 真实行从 Row01 开始命名，使配置快照路径稳定。
 func _normalize_eng_row_names() -> void:
-	for root in [ENGINEER]:
+	for root in [ENGINEER, ADV_ENGINEER]:
 		for page in ENG_MODE_PAGES:
 			var vb: Node = get_node_or_null(NodePath(root + "/" + page + "/ScrollContainer/VBoxContainer"))
 			if vb == null:
@@ -1600,7 +1574,7 @@ func _eng_row_count(vb: Node) -> int:
 ## 一一对应模式下 Label 与模式键下拉个数跟随模式数
 ## 带可选参数以兼容 item_selected 信号（信号会传入被选中的索引）
 func _update_mode_page_visibility(_idx: int = -1) -> void:
-	for root in [ENGINEER]:
+	for root in [ENGINEER, ADV_ENGINEER]:
 		var count_btn: Node = get_node_or_null(NodePath(root + "/Mode/OptionButton"))
 		if not count_btn is OptionButton:
 			continue
@@ -1633,55 +1607,52 @@ func _update_mode_page_visibility(_idx: int = -1) -> void:
 			tabs.current_tab = mini(prev_tab, maxi(count - 1, 0))
 
 
-## 计算工程 IO 初始化区内每个引脚的期望类型（空字符串 = 不锁定）。
-## 工程底盘四轮必须保持电机初始化。
+## 计算某个 IO 初始化区根下每个引脚的期望类型（空字符串 = 不锁定）。
+## 底盘四轮对两个根（工程页 / 步兵高级设置）都生效；
+## 步兵固定子系统（拨弹电机 / 摩擦轮 / Yaw / Pitch）只对步兵高级设置生效。
+## 期望类型与 static_checker._check_infantry_shared 保持一致。
 func _compute_io_desired(root: String) -> Dictionary:
 	var desired: Dictionary = {}
-	# 底盘四轮：恒为电机。
+	# 底盘四轮：恒为电机（两个根都适用）
 	var chassis_pins: Array = []
 	for p in [P_L1_IO, P_L2_IO, P_R1_IO, P_R2_IO]:
 		var pin: String = _get_option_text(p).split(" ")[0].strip_edges()
 		if not pin.is_empty() and not pin in chassis_pins:
 			chassis_pins.append(pin)
+	# 步兵固定子系统：仅步兵高级设置（ADV_ENGINEER）
+	if root == ADV_ENGINEER:
+		# Yaw / Pitch：跟随驱动类型（舵机 -> 舵机，电机 -> 电机），优先级最低
+		var yaw_drive: String = _get_option_text(P_YAW_DRIVE)
+		var yaw_pin: String = _get_option_text(P_YAW_IO).split(" ")[0].strip_edges()
+		if not yaw_pin.is_empty() and not yaw_pin.begins_with("MP") \
+				and (yaw_drive == "电机" or yaw_drive == "舵机"):
+			desired[yaw_pin] = yaw_drive
+		var pitch_drive: String = _get_option_text(P_PITCH_DRIVE)
+		var pitch_pin: String = _get_option_text(P_PITCH_IO).split(" ")[0].strip_edges()
+		if not pitch_pin.is_empty() and not pitch_pin.begins_with("MP") \
+				and (pitch_drive == "电机" or pitch_drive == "舵机"):
+			desired[pitch_pin] = pitch_drive
+		# 拨弹电机：恒为电机（10000Hz 初始化），优先级高于 Yaw/Pitch
+		var booster_pin: String = _get_option_text(P_BOOSTER_IO).split(" ")[0].strip_edges()
+		if not booster_pin.is_empty() and not booster_pin.begins_with("MP"):
+			desired[booster_pin] = "电机"
+	# 底盘四轮：恒为电机，优先级高于步兵子系统
 	for pin in chassis_pins:
 		desired[pin] = "电机"
+	# 摩擦轮固定占用 P64/P66，恒为舵机（50Hz 初始化，与舵机同频），优先级最高
+	if root == ADV_ENGINEER:
+		for pin in ["P64", "P66"]:
+			desired[pin] = "舵机"
 	return desired
 
 
-## 摩擦轮类型切换：禁用模式释放 P64/P66，并关闭无意义的开关键/最大 duty 输入。
-## 切回无刷时只禁用新选择，不迁移已占用端口；静态检查会保留并报告冲突。
-func _sync_friction_type_ui(_idx: int = -1) -> void:
-	var brushless: bool = _get_option_text(P_FRICTION_TYPE) != "不使用"
-	var reserve_ports: bool = brushless and _current_tab() == 0
-	var key_btn: Node = get_node_or_null(P_BOOSTER_KEY)
-	if key_btn is OptionButton:
-		key_btn.disabled = not brushless
-	var duty_edit: Node = get_node_or_null(P_FRICTION_MAX_DUTY)
-	if duty_edit is LineEdit:
-		duty_edit.editable = brushless
-	for path in [P_L1_IO, P_L2_IO, P_R1_IO, P_R2_IO,
-			P_BOOSTER_IO, P_YAW_IO, P_PITCH_IO]:
-		var btn: Node = get_node_or_null(path)
-		if not btn is OptionButton:
-			continue
-		for i in range(btn.item_count):
-			var pin: String = btn.get_item_text(i).split(" ")[0].strip_edges()
-			if pin == "P64" or pin == "P66":
-				btn.set_item_disabled(i, reserve_ports)
-
-
-func _on_friction_type_selected(_idx: int) -> void:
-	_sync_friction_type_ui()
-	_sync_io_locks()
-
-
-## 工程 IO 初始化区自动同步：底盘四轮
+## 步兵 IO 初始化区自动同步：固定子系统（底盘 / 拨弹电机 / 摩擦轮 / Yaw / Pitch）
 ## 选中的引脚在 IO 初始化区强制为对应类型并禁用另一项，
-## 防止配置与底盘角色不匹配。
-## 底盘配置变化、项目载入后都要调用。
+## 防止用户未展开高级设置时因类型不匹配而报错。
+## 子系统配置变化、项目载入后都要调用。
 ## 带可选参数以兼容 item_selected 信号（信号会传入被选中的索引）
 func _sync_io_locks(_idx: int = -1) -> void:
-	for root in [ENGINEER]:
+	for root in [ENGINEER, ADV_ENGINEER]:
 		var desired: Dictionary = _compute_io_desired(root)
 		for pin in ENG_IO_REL.keys():
 			var btn: Node = get_node_or_null(NodePath(root + "/" + str(ENG_IO_REL.get(pin, ""))))
@@ -1699,19 +1670,20 @@ func _sync_io_locks(_idx: int = -1) -> void:
 							btn.selected = i
 							break
 				continue
-			# 占用：选中期望类型并禁用另一项。步兵 P64/P66 没有“舵机”项；
-			# 若子系统请求了面板不支持的类型，则保持解锁，交给静态检查明确报错。
+			# 占用：选中期望类型并禁用另一项（IO 初始化区只有 电机/舵机 两项）
+			var other: String = "舵机" if want == "电机" else "电机"
 			var want_idx: int = -1
+			var other_idx: int = -1
 			for i in range(btn.item_count):
-				if btn.get_item_text(i) == want:
-					want_idx = i
+				match btn.get_item_text(i):
+					want:
+						want_idx = i
+					other:
+						other_idx = i
 			if want_idx >= 0:
 				btn.selected = want_idx
-				for i in range(btn.item_count):
-					btn.set_item_disabled(i, i != want_idx)
-			else:
-				for i in range(btn.item_count):
-					btn.set_item_disabled(i, false)
+			if other_idx >= 0:
+				btn.set_item_disabled(other_idx, true)
 	# IO 类型变化后，相关按键映射行的「控制方式」下拉同步刷新
 	_update_engineer_placeholders()
 
@@ -1720,7 +1692,7 @@ func _sync_io_locks(_idx: int = -1) -> void:
 ## 模式1 强制开启且不可关；开启的模式页禁用该页所有行的 LX/LY 键位（左摇杆已归底盘）。
 ## 带可选参数以兼容 toggled 信号（信号会传入开关状态）
 func _sync_chassis_switch(_pressed: bool = false) -> void:
-	for root in [ENGINEER]:
+	for root in [ENGINEER, ADV_ENGINEER]:
 		for mi in range(4):
 			var ck: Node = get_node_or_null(NodePath(
 				root + "/" + ENG_MODE_PAGES[mi] + "/Chassis/CheckButton"))
@@ -1734,6 +1706,7 @@ func _sync_chassis_switch(_pressed: bool = false) -> void:
 			_sync_row_axis_locks(root, ENG_MODE_PAGES[mi], ck.button_pressed)
 	# LX/LY 键位锁定后键位类型可能从摇杆轴回退成按键，控制方式下拉同步刷新
 	_update_engineer_placeholders()
+
 
 ## 选择「不使用」摩擦轮时，摩擦轮开关键及最大占空比均不再适用。
 ## 可见性须在用户切换、项目回填和首次实例化时同步。
@@ -1825,7 +1798,10 @@ func _run_check(_a = null, _b = null) -> void:
 	var issues: Array = []
 	match current_tab:
 		0:
-			issues = SC.check_infantry(_collect_config())
+			# 步兵模式检查（含高级设置里的共享多模式按键映射）
+			var inf_cfg: Dictionary = _collect_config()
+			inf_cfg.merge(_collect_engineer_config(), true)
+			issues = SC.check_infantry(inf_cfg)
 		1, 2:
 			# 工程多模式：工程页与逆解算页共同配置同一份固件。
 			# 未启用逆解算时只检查正解（按键映射）部分，逆解校验由检查器按 enabled 跳过。
@@ -1852,7 +1828,10 @@ func _run_check(_a = null, _b = null) -> void:
 			else:
 				cfg = _collect_engineer_config()
 		_:
-			cfg = _collect_config()
+			# 步兵：固定云台/发射配置 + 高级设置的共享多模式按键映射
+			var inf_gen_cfg: Dictionary = _collect_config()
+			inf_gen_cfg.merge(_collect_engineer_config(), true)
+			cfg = inf_gen_cfg
 	var code: String = _codegen.generate(cfg)
 	var code_edit: Node = get_node_or_null(P_CODE_EDIT)
 	if code_edit is CodeEdit:
@@ -1939,6 +1918,8 @@ func _collect_config() -> Dictionary:
 	# --- 云台参数 ---
 	cfg["booster_io"] = _get_option_text(P_BOOSTER_IO)
 	cfg["booster_dir"] = _get_option_text(P_BOOSTER_DIR)
+	cfg["friction_l_dir"] = _get_option_text(P_FRICTION_L_DIR)
+	cfg["friction_r_dir"] = _get_option_text(P_FRICTION_R_DIR)
 	cfg["yaw_drive"] = _get_option_text(P_YAW_DRIVE)
 	cfg["yaw_io"] = _get_option_text(P_YAW_IO)
 	cfg["yaw_dir"] = _get_option_text(P_YAW_DIR)
@@ -1956,7 +1937,6 @@ func _collect_config() -> Dictionary:
 	cfg["trigger_time"] = _get_line_text(P_TRIGGER_TIME).strip_edges()
 	cfg["friction_type"] = _get_option_text(P_FRICTION_TYPE)
 	cfg["booster_key"] = _get_option_text(P_BOOSTER_KEY)
-	cfg["friction_max_duty"] = _get_line_text(P_FRICTION_MAX_DUTY).strip_edges()
 	var zero_cb: Node = get_node_or_null(P_ZERO_CB)
 	cfg["zero_enabled"] = (zero_cb is BaseButton) and zero_cb.button_pressed
 	return cfg
@@ -1980,7 +1960,7 @@ func _collect_engineer_config() -> Dictionary:
 	cfg["sprint_speed"] = _get_line_text(P_SPRINT_SPEED).strip_edges()
 	var sprint_cb: Node = get_node_or_null(P_SPRINT_CB)
 	cfg["sprint_enabled"] = (sprint_cb is BaseButton) and sprint_cb.button_pressed
-	# --- IO 初始化区（工程页，含主控板口）---
+	# --- IO 初始化区（共享区：工程页 / 步兵高级设置，含主控板口）---
 	var root: String = _shared_cfg_root()
 	var io_init: Dictionary = {}
 	for pin in ENG_ALL_PINS:
@@ -2037,7 +2017,7 @@ func _ensure_eng_rows_from_config(cfg: Dictionary) -> void:
 	var zone: Node = get_node_or_null(P_EDIT_ZONE)
 	if zone == null:
 		return
-	for root in [ENGINEER]:
+	for root in [ENGINEER, ADV_ENGINEER]:
 		for page in ENG_MODE_PAGES:
 			var vb: Node = get_node_or_null(NodePath(
 				root + "/" + page + "/ScrollContainer/VBoxContainer"))
@@ -2123,10 +2103,8 @@ func _get_current_project_dst() -> String:
 ## 编译按钮回调：确认外部 Keil 目录 -> 写盘 -> 异步编译
 func _on_build_pressed() -> void:
 	if _build_controller == null or _build_controller.is_busy() \
-		or (_download_controller != null and _download_controller.is_busy()):
+			or (_download_controller != null and _download_controller.is_busy()):
 		return # 防重入
-	if _block_action_on_static_errors("编译"):
-		return
 	if _is_cloud_mode():
 		# 云端编译：先确保云端配置（Base URL + API Key）有效，再真正编译
 		CLOUD_GUIDE.ensure_cloud(self, _toolchain(), _do_build, _on_cloud_guide_cancel)
@@ -2160,10 +2138,8 @@ func _on_keil_guide_cancel() -> void:
 ## （复用 build_controller；成功回调见 _on_build_succeeded 的 pending 分支）
 func _on_hex_export_pressed() -> void:
 	if _build_controller == null or _build_controller.is_busy() \
-		or (_download_controller != null and _download_controller.is_busy()):
+			or (_download_controller != null and _download_controller.is_busy()):
 		return # 防重入
-	if _block_action_on_static_errors("生成 HEX"):
-		return
 	# 引导成功后在 _do_hex_export 内重跑原流程，_hex_export_pending 状态不丢
 	if _is_cloud_mode():
 		CLOUD_GUIDE.ensure_cloud(self, _toolchain(), _do_hex_export, _on_cloud_guide_cancel)
@@ -2212,7 +2188,7 @@ func _on_build_succeeded() -> void:
 		_set_upgrade_progress("求解器编译完成", 28.0, "正在连接主控板…")
 		if not _download_controller.start(TC.PROJECT_ENGINEER_SIM_DST):
 			_fail_upgrade_retry(true, "无法开始烧录",
-				"未检测到 USB-HID 设备。\n请确认板子已通过 USB 线连接，并处于 ISP 模式（拔下 USB 再插上）。\n请将主控板与扩展板彻底断开连接后再尝试烧录。")
+				"未检测到 USB-HID 设备。\n请确认板子已通过 USB 线连接，并处于 ISP 模式（拔下 USB 再插上）。")
 		return
 	if not _project.is_empty():
 		var workflow: Dictionary = _workflow()
@@ -2224,7 +2200,7 @@ func _on_build_succeeded() -> void:
 		_set_upgrade_progress("编译完成", 28.0, "正在连接主控板…")
 		if not _download_controller.start(_get_current_project_dst()):
 			_fail_upgrade_retry(false, "无法开始烧录",
-				"未检测到 USB-HID 设备。\n请确认板子已通过 USB 线连接，并处于 ISP 模式（拔下 USB 再插上）。\n请将主控板与扩展板彻底断开连接后再尝试烧录。")
+				"未检测到 USB-HID 设备。\n请确认板子已通过 USB 线连接，并处于 ISP 模式（拔下 USB 再插上）。")
 
 
 ## 编译成功后弹出保存对话框，让用户选择 hex 导出位置
@@ -2459,11 +2435,6 @@ func _on_solver_build_requested() -> void:
 		_append_output("[Error] 无法生成 MCU 求解器固件")
 		_show_solver_error_dialog("无法生成 MCU 求解器固件", ["生成器返回空代码，请检查配置。"])
 		return
-	# 首次烧录指引（求解器固件同样写入主控板，开关必须先断开），确认后再走 Keil 引导
-	FFG.ensure_guide(self, _continue_solver_build.bind(code))
-
-
-func _continue_solver_build(code: String) -> void:
 	# 确认外部 Keil 目录（引导成功）后再编译；状态置位在 _start_solver_build 内，取消不残留
 	KG.ensure_keil(self, _toolchain(), _start_solver_build.bind(code), _on_keil_guide_cancel)
 
@@ -2558,28 +2529,10 @@ func _clear_output() -> void:
 
 
 # ------------------------------------------------------------------ 下载/烧录
-## Debug 灯说明：弹模态覆盖层，关闭即销毁（无持久化，每次点击都弹）。
-func _on_debug_light_pressed() -> void:
-	var packed: PackedScene = load(DEBUG_LIGHT_GUIDE_SCENE) as PackedScene
-	if packed == null:
-		return
-	var guide: Control = packed.instantiate()
-	add_child(guide)
-	# 进度面板 / 仿真等更高层覆盖始终排在它之后
-	guide.move_to_front()
-
-
 func _on_download_pressed() -> void:
 	if _download_controller == null or _download_controller.is_busy() \
-		or (_build_controller != null and _build_controller.is_busy()):
+			or (_build_controller != null and _build_controller.is_busy()):
 		return
-	if _block_action_on_static_errors("烧录"):
-		return
-	# 首次烧录指引：确认板上开关已断开（可勾选「不再显示」）后再烧录
-	FFG.ensure_guide(self, _start_download)
-
-
-func _start_download() -> void:
 	_download_controller.start(_get_current_project_dst())
 
 
@@ -2641,15 +2594,8 @@ func _on_download_succeeded() -> void:
 
 func _on_upgrade_pressed() -> void:
 	if _upgrade_active or _build_controller == null or _build_controller.is_busy() \
-		or _download_controller == null or _download_controller.is_busy():
+			or _download_controller == null or _download_controller.is_busy():
 		return
-	if _block_action_on_static_errors("编译与烧录"):
-		return
-	# 首次烧录指引：确认板上开关已断开（可勾选「不再显示」）后再进入升级流程
-	FFG.ensure_guide(self, _continue_upgrade_pressed)
-
-
-func _continue_upgrade_pressed() -> void:
 	# 引导成功后才进入升级流程（_upgrade_active 在 _do_upgrade 内置位，取消不残留）
 	# 云端编译模式下不需要本机 Keil，只需确认云端配置
 	if _is_cloud_mode():
@@ -2809,7 +2755,7 @@ func _on_upgrade_retry_pressed() -> void:
 	_set_upgrade_button_busy(true)
 	if not _download_controller.start(dst):
 		_fail_upgrade_retry(is_solver, "无法开始烧录",
-			"未检测到 USB-HID 设备。\n请确认板子已通过 USB 线连接，并处于 ISP 模式（拔下 USB 再插上）。\n请将主控板与扩展板彻底断开连接后再尝试烧录。")
+			"未检测到 USB-HID 设备。\n请确认板子已通过 USB 线连接，并处于 ISP 模式（拔下 USB 再插上）。")
 
 
 func _set_upgrade_button_busy(is_busy: bool) -> void:
