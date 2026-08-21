@@ -196,7 +196,7 @@ mcp = MCPServer(
     version="0.1.0",
     instructions=(
         "此服务器把 Pie-Block 图形化代码生成器暴露为命令行工具。\n"
-        "支持的 kind: infantry（步兵）/ engineer（工程多模式控制）/ debug（调试）/ music（MIDI 旋律，可选四声部 5ms 时间片伪复音）。\n"
+        "支持的 kind: infantry（步兵）/ engineer（工程多模式控制）/ debug（调试）/ music（MIDI 旋律，可选四声部 1ms 最短时间片伪复音）。\n"
         "生成配置用 JSON 字符串传入。可用 get_schema(kind) 获取每种 kind 的完整字段定义。\n"
         "重要硬件约束（不可违反）：\n"
         "- 只向主控板烧录，绝不向机械扩展板烧录\n"

@@ -3,11 +3,11 @@ extends CodeGenBase
 
 ## MIDI 音乐代码生成器。
 ## 生成只使用主控板 P33 被动蜂鸣器的独立固件，不启动遥控器或拓展板通信。
-## 多声部是 5ms 时间片轮换的伪复音，不是真正的同时波形叠加。
+## 多声部按固件可控的最小 1ms 时间片轮换，是伪复音，不是真正的同时波形叠加。
 
 const BUZZER_PWM_CH: String = "PWMB_CH3_P33"
 const MAX_VOICES: int = 4
-const VOICE_SLICE_MS: int = 5
+const VOICE_SWITCH_MS: int = 1
 const DEFAULT_DURATION_MS: int = 1
 
 
@@ -29,7 +29,7 @@ func generate(cfg: Dictionary) -> String:
 	code += "#define MUSIC_DUTY_ON  5000\n"
 	code += "#define MUSIC_DUTY_OFF 0\n"
 	code += "#define MUSIC_MAX_VOICES %d\n" % MAX_VOICES
-	code += "#define MUSIC_VOICE_SLICE_MS %dUL\n\n" % VOICE_SLICE_MS
+	code += "#define MUSIC_VOICE_SWITCH_MS %dUL\n\n" % VOICE_SWITCH_MS
 	code += "typedef struct\n"
 	code += "{\n"
 	code += "    uint32_t duration_ms;\n"
@@ -97,11 +97,11 @@ func generate(cfg: Dictionary) -> String:
 	code += "        Music_Wait(remaining_ms);\n"
 	code += "        return;\n"
 	code += "    }\n"
-	code += "    // 伪复音：每个声部播放 5ms；最后不足 5ms 的时间片不延长节奏。\n"
+	code += "    // 伪复音：以最小 1ms 时间片轮换声部；最后不足 1ms 的时间片不延长节奏。\n"
 	code += "    while (remaining_ms > 0UL)\n"
 	code += "    {\n"
-	code += "        slice_ms = remaining_ms > MUSIC_VOICE_SLICE_MS\n"
-	code += "            ? MUSIC_VOICE_SLICE_MS : remaining_ms;\n"
+	code += "        slice_ms = remaining_ms > MUSIC_VOICE_SWITCH_MS\n"
+	code += "            ? MUSIC_VOICE_SWITCH_MS : remaining_ms;\n"
 	code += "        PWM_SET_Frequency(MUSIC_BUZZER_CH,\n"
 	code += "            musicFrequencies[segment->notes[voice]], MUSIC_DUTY_ON);\n"
 	code += "        Music_Wait(slice_ms);\n"
