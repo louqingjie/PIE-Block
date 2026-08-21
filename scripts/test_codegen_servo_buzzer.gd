@@ -7,6 +7,7 @@ extends SceneTree
 const Infantry = preload("res://scripts/codegen/codegen_infantry.gd")
 const Engineer = preload("res://scripts/codegen/codegen_engineer.gd")
 const EngineerIK = preload("res://scripts/codegen/codegen_engineer_ik.gd")
+const Debug = preload("res://scripts/codegen/codegen_debug.gd")
 
 var _fail: int = 0
 
@@ -25,6 +26,30 @@ func _helper(code: String) -> String:
 		return ""
 	var end: int = code.find("void main", start)
 	return code.substr(start, end - start if end >= 0 else code.length() - start)
+
+
+func _init_frequencies_are_valid(code: String) -> bool:
+	var marker: String = "ExpansionBoradControl(Init_Order,"
+	var cursor: int = 0
+	var found: bool = false
+	while true:
+		var start: int = code.find(marker, cursor)
+		if start < 0:
+			break
+		found = true
+		var body_start: int = start + marker.length()
+		var end: int = code.find(");", body_start)
+		if end < 0:
+			return false
+		var values: PackedStringArray = code.substr(body_start, end - body_start).replace("\n", "").split(",")
+		if values.size() != 8:
+			return false
+		for raw in values:
+			var value: String = raw.strip_edges()
+			if not value.is_valid_int() or not value.to_int() in [50, 10000]:
+				return false
+		cursor = end + 2
+	return found
 
 
 func _infantry_cfg(yaw: String = "舵机", pitch: String = "舵机",
@@ -70,6 +95,7 @@ func _ik_cfg() -> Dictionary:
 func _initialize() -> void:
 	var infantry = Infantry.new()
 	var infantry_code: String = infantry.generate(_infantry_cfg())
+	_check("步兵初始化频率不含 0", _init_frequencies_are_valid(infantry_code))
 	var infantry_helper: String = _helper(infantry_code)
 	_check("步兵生成舵机变化状态", infantry_helper.contains("lastServoBuzzerDuty[2]"))
 	_check("步兵使用实际整数 Duty 比较", infantry_helper.contains("currentDuty = (uint16_t)(dutyOfServo[0]);")
@@ -84,6 +110,7 @@ func _initialize() -> void:
 		and not infantry_no_servo.contains("lastServoBuzzerDuty"))
 
 	var engineer_code: String = Engineer.new().generate(_engineer_cfg())
+	_check("工程正解初始化频率不含 0", _init_frequencies_are_valid(engineer_code))
 	var engineer_helper: String = _helper(engineer_code)
 	_check("工程正解生成舵机反馈", engineer_helper.contains("lastServoBuzzerDuty[4]"))
 	var order: Array = [
@@ -101,6 +128,7 @@ func _initialize() -> void:
 		and not engineer_no_servo.contains("lastServoBuzzerDuty"))
 
 	var ik_code: String = EngineerIK.new().generate(_ik_cfg())
+	_check("工程逆解初始化频率不含 0", _init_frequencies_are_valid(ik_code))
 	var ik_helper: String = _helper(ik_code)
 	_check("工程逆解生成关节与夹爪反馈", ik_helper.contains("lastServoBuzzerDuty[3]")
 		and ik_helper.contains("dutyOfServo[0]") and ik_helper.contains("dutyOfServo[1]")
@@ -109,6 +137,12 @@ func _initialize() -> void:
 	_check("反馈函数不引入阻塞延时", not ik_helper.contains("Ms_Delay") and not engineer_helper.contains("Ms_Delay"))
 	_check("首周期只建立比较基准", ik_helper.contains("if (!servoBuzzerInitialized)")
 		and ik_helper.contains("changed = 0;"))
+
+	var debug_code: String = Debug.new().generate({
+		"debug_rows": [{"pin": "P60", "drive_type": "电机", "dir": 1,
+			"value": 1000, "enabled": true}],
+	})
+	_check("调试初始化频率不含 0", _init_frequencies_are_valid(debug_code))
 
 	print("\n=== 结果: %s ===" % ("全部通过 ✓" if _fail == 0 else "%d 项失败 ✗" % _fail))
 	quit(0 if _fail == 0 else 1)

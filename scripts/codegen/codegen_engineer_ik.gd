@@ -1960,8 +1960,11 @@ func _gen_all_init(joints: Array, jc: int, engineer_cfg: Dictionary = {},
 	# 工程正解模式辅助舵机的初始角（IO 初始化区填写，相对中位偏移角）
 	var io_mid: Dictionary = engineer_cfg.get("io_mid", {})
 	if exp_slots.size() > 0 or not chassis_slots.is_empty() or gripper_slot >= 0:
-		# 构建 Init_Order：舵机槽位频率 50，其余 0（维持原状）
-		var init_vals: Array = ["0", "0", "0", "0", "0", "0", "0", "0"]
+		# 构建 Init_Order：每个扩展板槽位都必须是有效 PWM 频率，不能传 0。
+		var init_vals: Array = []
+		var io_init: Dictionary = engineer_cfg.get("io_init", {})
+		for pin in EXP_PINS:
+			init_vals.append("10000" if str(io_init.get(pin, "舵机")) == "电机" else "50")
 		for slot in exp_slots.keys():
 			init_vals[slot] = "50"
 		for slot in aux_servo_slots:
@@ -1973,7 +1976,7 @@ func _gen_all_init(joints: Array, jc: int, engineer_cfg: Dictionary = {},
 			init_vals[slot] = "10000"
 		if gripper_slot >= 0:
 			init_vals[gripper_slot] = "50"
-		s += "    // 扩展板舵机初始化（频率 50Hz），未占用槽位传 0 表示维持原状\n"
+		s += "    // 扩展板初始化：所有槽位均使用有效 PWM 频率（舵机 50Hz / 电机 10000Hz）\n"
 		s += "    ExpansionBoradControl(Init_Order,\n"
 		s += "                          %s);\n" % _exp_args(init_vals)
 		s += "    Ms_Delay(20);\n"

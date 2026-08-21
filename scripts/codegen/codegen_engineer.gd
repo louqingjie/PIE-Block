@@ -284,8 +284,10 @@ func generate(cfg: Dictionary) -> String:
 	code += _gen_nrf_init_safe()
 	code += "    StepDone(3);\n"
 	code += "    StepBegin(4);\n"
-	# Init_Order 频率参数：舵机 50 / 电机 10000 / 未用 0（维持原状）
-	var init_vals: Array = ["0", "0", "0", "0", "0", "0", "0", "0"]
+	# Init_Order 频率参数：每个扩展板槽位都必须是有效 PWM 频率，不能传 0。
+	var init_vals: Array = []
+	for pin in EXP_PINS:
+		init_vals.append("10000" if str(io_init.get(pin, "舵机")) == "电机" else "50")
 	var duty_vals: Array = ["0", "0", "0", "0", "0", "0", "0", "0"]
 	for slot in aux_servo_slots:
 		init_vals[slot] = "50"

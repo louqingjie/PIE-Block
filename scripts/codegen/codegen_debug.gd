@@ -162,9 +162,9 @@ func generate(cfg: Dictionary) -> String:
 	code += "    PWM_Init(%s, BUZZER_FREQ_READY, 0); // 蜂鸣器 P33\n" % BUZZER_PWM_CH
 	code += "    StepDone(3);\n"
 	code += "    StepBegin(4);\n"
-	# 扩展板初始化（所有引脚先置零频率，后续按行重新初始化）
+	# 扩展板初始化：所有引脚使用有效 PWM 频率，不能传 0。
 	code += "    ExpansionBoradControl(Init_Order,\n"
-	code += "                          0, 0, 0, 0, 0, 0, 0, 0);\n"
+	code += "                          50, 50, 50, 50, 50, 50, 50, 50);\n"
 	code += "    Ms_Delay(20);\n"
 	code += "    StepDone(4);\n"
 	code += _gen_init_done("Buzzer_Play")
@@ -250,9 +250,9 @@ func _generate_friction_test(slot: int, _dir: int) -> String:
 	return code
 
 
-## 构建 Init_Order 参数字符串：仅指定 slot 的频率，其余为 0（维持原状）
+## 构建 Init_Order 参数字符串：目标 slot 使用指定频率，其余 slot 使用安全的 50Hz。
 func _slot_init_str(slot: int, freq: int) -> String:
-	var vals: Array = ["0", "0", "0", "0", "0", "0", "0", "0"]
+	var vals: Array = ["50", "50", "50", "50", "50", "50", "50", "50"]
 	if slot >= 0 and slot < 8:
 		vals[slot] = str(freq)
 	return "%s, %s,\n                          %s, %s,\n                          %s, %s,\n                          %s, %s" % [vals[0], vals[1], vals[2], vals[3], vals[4], vals[5], vals[6], vals[7]]
