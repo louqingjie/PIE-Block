@@ -922,7 +922,7 @@ func _music_schema() -> Dictionary:
 	return {
 		"music": {
 			"type": "object",
-			"description": "已从 MIDI 选定一条或多条轨道并解析出的播放数据；CLI 不读取原始 MIDI 文件。开启 polyphonic 后使用四声部 1ms 最短时间片伪复音",
+			"description": "已从 MIDI 选定一条或多条轨道并解析出的播放数据；CLI 不读取原始 MIDI 文件。开启 polyphonic 后使用四声部 1us 最短时间片伪复音",
 			"required": ["polyphonic", "track_indices", "track_count", "segments"],
 			"properties": {
 				"source_name": {"type": "string"},
@@ -965,7 +965,7 @@ func _kind_description(kind: String) -> String:
 		PF.KIND_DEBUG:
 			return "调试模式：逐行测试各引脚，每个命令持续3秒，蜂鸣器提示开始/结束。"
 		PF.KIND_MUSIC:
-			return "音乐模式：导入 MIDI 后选择一条或多条轨道；可选四声部 1ms 最短时间片伪复音，使用主控板 P33 蜂鸣器自动循环播放。"
+			return "音乐模式：导入 MIDI 后选择一条或多条轨道；可选四声部 1us 最短时间片伪复音，使用主控板 P33 蜂鸣器自动循环播放。"
 		_:
 			return ""
 

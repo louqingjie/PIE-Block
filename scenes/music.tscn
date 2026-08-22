@@ -15,7 +15,7 @@ theme_override_font_sizes/font_size = 24
 
 [node name="Hint" type="Label" parent="."]
 layout_mode = 2
-text = "导入 MIDI 文件，选择一条或多条轨道，生成主控板 P33 蜂鸣器自动循环播放的程序。伪复音以每声部 1ms 最短时间片轮换，并非真正同时发声。"
+text = "导入 MIDI 文件，选择一条或多条轨道，生成主控板 P33 蜂鸣器自动循环播放的程序。伪复音以每声部 1us 最短时间片轮换，并非真正同时发声。"
 autowrap_mode = 3
 
 [node name="Open" type="Button" parent="."]
@@ -44,7 +44,7 @@ size_flags_horizontal = 3
 [node name="Polyphonic" type="CheckButton" parent="."]
 custom_minimum_size = Vector2(0, 42)
 layout_mode = 2
-text = "启用四声部伪复音（每声部 1ms 最短轮换）"
+text = "启用四声部伪复音（每声部 1us 最短轮换）"
 
 [node name="Status" type="Label" parent="."]
 layout_mode = 2

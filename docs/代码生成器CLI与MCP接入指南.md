@@ -164,7 +164,7 @@ godot --headless --no-header --path . --script scripts/cli_codegen.gd -- check `
 }
 ```
 
-`track_indices` 是选中的 MIDI 轨道索引；`polyphonic` 默认关闭，开启后最多保留四个最高音符，并以每声部 1ms 的最短时间片轮换实现伪复音。`notes` 按音高降序排列，空数组表示休止；最多 8192 个片段，最长 20 分钟。
+`track_indices` 是选中的 MIDI 轨道索引；`polyphonic` 默认关闭，开启后最多保留四个最高音符，并以每声部 1us 的最短时间片轮换实现伪复音。`notes` 按音高降序排列，空数组表示休止；最多 8192 个片段，最长 20 分钟。
 休止不会调用频率 0，代码生成器会将 `Ms_Delay` 长参数拆成多个 16 位延时。
 
 ## 二、MCP Server

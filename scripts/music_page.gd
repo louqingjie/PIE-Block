@@ -2,7 +2,7 @@ class_name MusicPage
 extends VBoxContainer
 
 ## 音乐项目配置页：导入 MIDI、选择一条或多条轨道，并保存合并后的播放片段。
-## 多轨模式是明确开启的时间片伪复音：生成器以最短 1ms 轮换最多四个最高音符。
+## 多轨模式是明确开启的时间片伪复音：生成器以最短 1us 轮换最多四个最高音符。
 
 const MIDI = preload("res://scripts/midi_parser.gd")
 const WEB = preload("res://scripts/web_support.gd")
@@ -205,7 +205,7 @@ func _refresh_view() -> void:
 		else:
 			var selected_count: int = (_music.get("track_indices", []) as Array).size()
 			var mode: String = "四声部伪复音" if bool(_music.get("polyphonic", false)) else "单音"
-			status.text = "%s · 已选 %d 条轨道 · %d 个片段 · %s · 最多 4 声部，每声部 1ms 最短轮换" % [
+			status.text = "%s · 已选 %d 条轨道 · %d 个片段 · %s · 最多 4 声部，每声部 1us 最短轮换" % [
 				mode, selected_count, (_music.get("segments", []) as Array).size(),
 				_format_duration(int(_music.get("duration_ms", 0))),
 			]
