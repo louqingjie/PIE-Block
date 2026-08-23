@@ -1,0 +1,4 @@
+[submodule "sdcc-c251"]
+	path = sdcc-c251
+	url = https://github.com/louqingjie/sdcc-c251.git
+	branch = main
