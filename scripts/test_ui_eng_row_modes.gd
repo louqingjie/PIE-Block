@@ -11,7 +11,6 @@ extends SceneTree
 
 const UI_SCENE_PATH: String = "res://scenes/ui.tscn"
 const CHASSIS_L1: NodePath = "VBoxContainer/HBoxContainer/HSplitContainer/FirstRow/Chassis/L1/OptionButton"
-const SC = preload("res://scripts/static_checker.gd")
 
 var _fail: int = 0
 
@@ -85,6 +84,13 @@ func _pin_item_disabled(btn: OptionButton, pin: String) -> bool:
 	return true
 
 
+func _has_pin(btn: OptionButton, pin: String) -> bool:
+	for i in range(btn.item_count):
+		if btn.get_item_text(i).split(" ")[0] == pin:
+			return true
+	return false
+
+
 func _initialize() -> void:
 	print("=== 按键映射行控制方式过滤验证 ===")
 	# In --script mode autoload names are registered after this script's constants.
@@ -97,8 +103,8 @@ func _initialize() -> void:
 
 	ui._apply_kind_visibility("engineer", 1)
 	var engineer_l1: OptionButton = ui.get_node(CHASSIS_L1)
-	_check("工程构型底盘可使用 P64/P66",
-		not _pin_item_disabled(engineer_l1, "P64") and not _pin_item_disabled(engineer_l1, "P66"))
+	_check("工程构型底盘不提供 P64/P66",
+		not _has_pin(engineer_l1, "P64") and not _has_pin(engineer_l1, "P66"))
 	var engineer_p64_type: OptionButton = ui.get_node(NodePath(ui._eng_io_path("P64")))
 	var engineer_p66_type: OptionButton = ui.get_node(NodePath(ui._eng_io_path("P66")))
 	var engineer_p60_mid: LineEdit = ui.get_node(NodePath(ui._eng_io_mid_path("P60")))
@@ -213,30 +219,37 @@ func _initialize() -> void:
 	var friction_up: OptionButton = ui.get_node(ui.P_FRICTION_SPEED_UP_KEY)
 	var friction_down: OptionButton = ui.get_node(ui.P_FRICTION_SPEED_DOWN_KEY)
 	var friction_step: LineEdit = ui.get_node(ui.P_FRICTION_SPEED_STEP)
-	var infantry_port_selectors: Array = [
+	var infantry_motor_selectors: Array = [
 		ui.get_node(ui.P_L1_IO), ui.get_node(ui.P_L2_IO),
 		ui.get_node(ui.P_R1_IO), ui.get_node(ui.P_R2_IO),
-		ui.get_node(ui.P_BOOSTER_IO), ui.get_node(ui.P_YAW_IO), ui.get_node(ui.P_PITCH_IO),
+		ui.get_node(ui.P_BOOSTER_IO),
 	]
+	var unsupported_motor_pins_absent: bool = true
+	for port_btn in infantry_motor_selectors:
+		unsupported_motor_pins_absent = unsupported_motor_pins_absent \
+			and not _has_pin(port_btn, "P64") and not _has_pin(port_btn, "P66")
+	_check("步兵轮电机和拨弹电机不提供 P64/P66", unsupported_motor_pins_absent)
+	var infantry_gimbal_selectors: Array = [ui.get_node(ui.P_YAW_IO), ui.get_node(ui.P_PITCH_IO)]
 	var brushless_reserved: bool = true
-	for port_btn in infantry_port_selectors:
+	for port_btn in infantry_gimbal_selectors:
 		brushless_reserved = brushless_reserved \
 			and _pin_item_disabled(port_btn, "P64") and _pin_item_disabled(port_btn, "P66")
-	_check("默认无刷模式在普通角色下拉中保留 P64/P66", brushless_reserved)
+	_check("默认无刷模式锁定云台 P64/P66", brushless_reserved)
 	_pick(ui, friction_type, "不使用")
 	ui._sync_friction_type_ui()
 	var disabled_released: bool = true
-	for port_btn in infantry_port_selectors:
+	for port_btn in infantry_gimbal_selectors:
 		disabled_released = disabled_released \
 			and not _pin_item_disabled(port_btn, "P64") and not _pin_item_disabled(port_btn, "P66")
-	_check("不使用摩擦轮时释放 P64/P66 给底盘/拨弹/云台", disabled_released)
+	_check("不使用摩擦轮时释放云台 P64/P66", disabled_released)
 	_check("不使用摩擦轮时隐藏并禁用全部速度控件",
 		friction_key.disabled and not friction_duty.editable
 		and friction_up.disabled and friction_down.disabled and not friction_step.editable
 		and not ui.get_node(ui.P_FRICTION_SPEED_ROW).visible
 		and not ui.get_node(ui.P_FRICTION_SPEED_CONTROL_ROW).visible)
 	var friction_l1: OptionButton = ui.get_node(ui.P_L1_IO)
-	_pick(ui, friction_l1, "P64 P65")
+	_check("无刷模式下轮电机仍不提供 P64/P66",
+		not _has_pin(friction_l1, "P64") and not _has_pin(friction_l1, "P66"))
 	_pick(ui, friction_type, "无刷电调")
 	ui._sync_friction_type_ui()
 	var collected_friction: Dictionary = ui._collect_config()
@@ -247,14 +260,8 @@ func _initialize() -> void:
 		and collected_friction.has("friction_speed_step"))
 	ui._apply_config({"Infantry/KeySetting/Booster/MaxDuty": {"t": "700"}})
 	_check("旧 Booster/MaxDuty 配置可回填到新控件", friction_duty.text == "700")
-	_check("切回无刷时保留已选 P64 配置", ui._option_text(friction_l1) == "P64 P65")
-	var has_friction_conflict: bool = false
-	for issue in SC.check_infantry(ui._collect_config()):
-		if str(issue.get("msg", "")).contains("P64 已被摩擦轮固定占用"):
-			has_friction_conflict = true
-	_check("切回无刷后的 P64 冲突阻止生成", has_friction_conflict)
-	# 恢复默认底盘端口。
-	_pick(ui, friction_l1, "P74 P24")
+	_check("切回无刷后轮电机仍不提供 P64/P66",
+		not _has_pin(friction_l1, "P64") and not _has_pin(friction_l1, "P66"))
 
 	# ---- 底盘锁定：选中的引脚强制为电机，相关行选项同步刷新 ----
 	ui._apply_kind_visibility("engineer", 1)

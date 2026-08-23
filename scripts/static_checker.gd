@@ -11,7 +11,7 @@ extends RefCounted
 const ARROW_KEY_INDICES: Array = [1, 2, 3, 4]
 # 方向键文本（与 ARROW_KEY_INDICES 对应）
 const ARROW_KEY_TEXTS: Array = ["↑", "↓", "←", "->"]
-# 文档约束：P64/P66 固定用于两路摩擦轮
+# 文档约束：P64/P66 固定用于两路摩擦轮，不可分配给轮电机或拨弹电机
 const FRICTION_PINS: Array = ["P64", "P66"]
 # 扩展板引脚（通过 ExpansionBoradControl 控制）
 # 文档明确写: 电机所有端口都可以作为舵机使用，初始化频率 50=舵机，10000=电机
@@ -157,6 +157,11 @@ static func _check_function_io_pins(issues: Array, cfg: Dictionary, kind: String
 		if pin not in EXPANSION_PINS and pin not in MAIN_SERVO_PINS:
 			issues.append({"type": "Error",
 				"msg": "%s IO「%s」不是合法输出引脚" % [entry[1], value]})
+		elif pin in FRICTION_PINS and (entry[0].begins_with("l") \
+				or entry[0].begins_with("r") or entry[0] == "booster_io"):
+			issues.append({"type": "Error",
+				"msg": "%s IO「%s」不支持轮电机/拨弹电机，P64/P66 仅用于摩擦轮" \
+					% [entry[1], value]})
 
 
 static func _pwm_group_freq(cfg: Dictionary, group: String, kind: String) -> int:

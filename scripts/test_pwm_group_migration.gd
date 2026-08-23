@@ -90,6 +90,21 @@ func _initialize() -> void:
 	var infantry_pwmb_issues: Array = SC.check_infantry(invalid_infantry_pwmb)
 	_check("步兵 PWMB=50Hz 报 Error",
 		_has_issue(infantry_pwmb_issues, "Error", "PWMB 组固定为 10000Hz"))
+	var unsupported_motor_cfg: Dictionary = _infantry_cfg("10000Hz")
+	unsupported_motor_cfg["l1_io"] = "P64 P65"
+	var unsupported_motor_issues: Array = SC.check_infantry(unsupported_motor_cfg)
+	_check("步兵轮电机使用 P64 报 Error",
+		_has_issue(unsupported_motor_issues, "Error", "不支持轮电机/拨弹电机"))
+	unsupported_motor_cfg = _infantry_cfg("10000Hz")
+	unsupported_motor_cfg["booster_io"] = "P66 P67"
+	unsupported_motor_issues = SC.check_infantry(unsupported_motor_cfg)
+	_check("步兵拨弹电机使用 P66 报 Error",
+		_has_issue(unsupported_motor_issues, "Error", "不支持轮电机/拨弹电机"))
+	var engineer_unsupported_cfg: Dictionary = _engineer_cfg("50Hz", "10000Hz")
+	engineer_unsupported_cfg["l1_io"] = "P64 P65"
+	var engineer_unsupported_issues: Array = SC.check_engineer(engineer_unsupported_cfg)
+	_check("工程轮电机使用 P64 报 Error",
+		_has_issue(engineer_unsupported_issues, "Error", "不支持轮电机/拨弹电机"))
 	var slow_motor_issues: Array = SC.check_infantry(_infantry_cfg("10000Hz"))
 	_check("步兵平滑电机使用 50Hz 报 Warn",
 		_has_issue(slow_motor_issues, "Warn", "P60 为平滑电机"))

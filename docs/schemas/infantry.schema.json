@@ -22,7 +22,7 @@
     },
     "booster_io": {
       "default": "P60",
-      "description": "拨弹电机 IO（单引脚，扩展板）",
+      "description": "拨弹电机 IO（单引脚，扩展板；P64/P66 不可选）",
       "type": "string"
     },
     "booster_key": {
@@ -82,7 +82,7 @@
     },
     "l1_io": {
       "default": "P74 P24",
-      "description": "左前轮 IO（扩展板通信脚+方向脚，如 'P74 P24'）",
+      "description": "左前轮 IO（扩展板通信脚+方向脚，如 'P74 P24'；P64/P66 不可选）",
       "type": "string"
     },
     "l2_dir": {
@@ -95,7 +95,7 @@
     },
     "l2_io": {
       "default": "P75 P25",
-      "description": "左后轮 IO",
+      "description": "左后轮 IO（P64/P66 不可选）",
       "type": "string"
     },
     "normal_speed": {
@@ -138,7 +138,7 @@
     },
     "r1_io": {
       "default": "P76 P26",
-      "description": "右前轮 IO",
+      "description": "右前轮 IO（P64/P66 不可选）",
       "type": "string"
     },
     "r2_dir": {
@@ -151,7 +151,7 @@
     },
     "r2_io": {
       "default": "P77 P27",
-      "description": "右后轮 IO",
+      "description": "右后轮 IO（P64/P66 不可选）",
       "type": "string"
     },
     "sprint_enabled": {

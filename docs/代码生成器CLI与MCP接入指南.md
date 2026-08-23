@@ -270,8 +270,8 @@ godot --headless --no-header --path . --script scripts/cli_codegen.gd -- check `
 | 字段 | 说明 | 默认 |
 | --- | --- | --- |
 | `channel` | NRF24L01 通道号 0-125 | "36" |
-| `l1_io`…`r2_io` | 底盘四轮 IO（"通信脚 方向脚"，如 "P74 P24"） | P74-P77 |
-| `booster_io` | 拨弹电机 IO | "P60" |
+| `l1_io`…`r2_io` | 底盘四轮 IO（"通信脚 方向脚"，如 "P74 P24"；P64/P66 不可选） | P74-P77 |
+| `booster_io` | 拨弹电机 IO（P64/P66 不可选） | "P60" |
 | `yaw_drive` / `pitch_drive` | 云台驱动类型（舵机/电机） | 舵机 |
 | `yaw_io` / `pitch_io` | 云台 IO（扩展板 P60-P77 或主控板 MP74/MP03） | |
 | `pwm_group_init` | PWMA 固定 50Hz；PWMB 固定 10000Hz | `{"PWMA":"50Hz","PWMB":"10000Hz"}` |
@@ -317,7 +317,7 @@ godot --headless --no-header --path . --script scripts/cli_codegen.gd -- check `
 1. **只烧录主控板**，绝不向机械扩展板烧录程序
 2. **扩展板 IO（P60/P62/P64/P66/P74/P75/P76/P77）只能通过
    `ExpansionBoradControl` 控制，禁止用 `PWM_*` 函数**，且使用前必须初始化
-3. 步兵上 **P64/P66 固定用于两个摩擦轮**，不可改作他用
+3. 步兵上 **P64/P66 固定用于两个摩擦轮**，不可改作轮电机或拨弹电机
 4. 主控板 **MP74 / MP03 只能驱动舵机**，且与扩展板 P74 不是同一个 IO
 5. 舵机角度都是「相对中位的偏移角」，区间 **[-90, +90]**
 6. 工程模式切换键不能与模式内动作键冲突，模式选择键也不能重复（静态检查会报）
