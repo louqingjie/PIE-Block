@@ -40,7 +40,7 @@
       "type": "string"
     },
     "pwm_group_init": {
-      "description": "PWM 组初始化频率；步兵 PWMA 固定为 50Hz",
+      "description": "PWM 组初始化频率；步兵 PWMA 固定为 50Hz、PWMB 固定为 10000Hz",
       "properties": {
         "PWMA": {
           "const": "50Hz",
@@ -48,8 +48,8 @@
           "type": "string"
         },
         "PWMB": {
+          "const": "10000Hz",
           "default": "10000Hz",
-          "enum": ["50Hz", "10000Hz"],
           "type": "string"
         }
       },

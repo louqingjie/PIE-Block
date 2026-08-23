@@ -1567,7 +1567,7 @@ func _compute_io_desired(root: String) -> Dictionary:
 	return desired
 
 
-## 同步 PWM 组初始化选项。步兵高级设置的 PWMA 固定为 50Hz，
+## 同步 PWM 组初始化选项。步兵高级设置的 PWMA 固定为 50Hz、PWMB 固定为 10000Hz，
 ## 工程页和两页之间的配置彼此独立。
 func _sync_pwm_group_ui(_idx: int = -1) -> void:
 	for root in [ENGINEER, ADV_ENGINEER]:
@@ -1580,7 +1580,11 @@ func _sync_pwm_group_ui(_idx: int = -1) -> void:
 			else:
 				pwma.disabled = false
 		if pwmb is OptionButton:
-			pwmb.disabled = false
+			if root == ADV_ENGINEER:
+				pwmb.select(1)
+				pwmb.disabled = true
+			else:
+				pwmb.disabled = false
 
 
 ## 步兵 IO 初始化区自动同步：固定子系统（底盘 / 拨弹电机 / 摩擦轮 / Yaw / Pitch）
@@ -1922,8 +1926,8 @@ func _collect_engineer_config() -> Dictionary:
 		var group_freq: int = 50
 		if group_btn is OptionButton:
 			group_freq = 10000 if group_btn.selected == 1 else 50
-		if root == ADV_ENGINEER and group == "PWMA":
-			group_freq = 50
+		if root == ADV_ENGINEER:
+			group_freq = 50 if group == "PWMA" else 10000
 		pwm_group_init[group] = "%dHz" % group_freq
 	cfg["pwm_group_init"] = pwm_group_init
 	# --- 输出角色（共享区：工程页 / 步兵高级设置，含主控板口）---

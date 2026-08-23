@@ -512,12 +512,10 @@ func _flatten_infantry_config(config: Dictionary) -> Dictionary:
 	flat["r1_dir"] = str(_config_val(config, "FirstRow/Chassis/R1/OptionButton2"))
 	flat["r2_io"] = str(_config_val(config, "FirstRow/Chassis/R2/OptionButton"))
 	flat["r2_dir"] = str(_config_val(config, "FirstRow/Chassis/R2/OptionButton2"))
-	# 步兵高级设置：PWMA 固定 50Hz，PWMB 可选。
-	var advanced_root: String = "Infantry/Advanced/ScrollContainer/AdvancedAndEngineer"
+	# 步兵 PWM 组固定：PWMA=50Hz，PWMB=10000Hz。
 	flat["pwm_group_init"] = {
 		"PWMA": "50Hz",
-		"PWMB": _pwm_group_frequency_text(
-			_config_val(config, advanced_root + "/PWMGroups/PWMB/OptionButton"), "10000Hz"),
+		"PWMB": "10000Hz",
 	}
 	# 云台（EditZone 下）
 	var gimbal: String = "Infantry/GimbalSetting"
@@ -727,8 +725,7 @@ func _merge_defaults(flat: Dictionary, _kind: String) -> Dictionary:
 		if flat.get("pwm_group_init", {}) is Dictionary else {}
 	if _kind == "infantry":
 		pwm_group_init["PWMA"] = "50Hz"
-		if not pwm_group_init.has("PWMB"):
-			pwm_group_init["PWMB"] = "10000Hz"
+		pwm_group_init["PWMB"] = "10000Hz"
 	else:
 		if not pwm_group_init.has("PWMA"):
 			pwm_group_init["PWMA"] = "50Hz"
@@ -849,10 +846,10 @@ func _infantry_schema() -> Dictionary:
 		"sprint_speed": {"type": "string", "description": "冲刺速度 (0-10000)", "default": "8000"},
 		"sprint_enabled": {"type": "boolean", "description": "按下左摇杆冲刺", "default": false},
 		"pwm_group_init": {
-			"type": "object", "description": "PWM 组初始化频率；步兵 PWMA 固定 50Hz",
+			"type": "object", "description": "PWM 组初始化频率；步兵 PWMA 固定 50Hz、PWMB 固定 10000Hz",
 			"properties": {
 				"PWMA": {"type": "string", "const": "50Hz", "default": "50Hz"},
-				"PWMB": {"type": "string", "enum": ["50Hz", "10000Hz"], "default": "10000Hz"},
+				"PWMB": {"type": "string", "const": "10000Hz", "default": "10000Hz"},
 			},
 		},
 		"io_role": {

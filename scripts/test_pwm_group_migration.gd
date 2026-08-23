@@ -77,14 +77,19 @@ func _initialize() -> void:
 		not infantry_init.contains("10000, 10000,\n                          50, 50"))
 
 	var infantry_50: String = CodeGenInfantry.new().generate(_infantry_cfg("50Hz"))
-	_check("步兵 PWMB=50 时八路统一 50Hz",
-		infantry_50.contains("50, 50,\n                          50, 50,\n                          50, 50,\n                          50, 50"))
+	_check("步兵即使输入 PWMB=50 仍固定输出 10000Hz",
+		infantry_50.contains("50, 50,\n                          50, 50")
+		and infantry_50.contains("10000, 10000,\n                          10000, 10000"))
 
 	var invalid_infantry: Dictionary = _infantry_cfg("10000Hz")
 	invalid_infantry["pwm_group_init"]["PWMA"] = "10000Hz"
 	var infantry_issues: Array = SC.check_infantry(invalid_infantry)
 	_check("步兵 PWMA=10000Hz 报 Error",
 		_has_issue(infantry_issues, "Error", "PWMA 组禁止初始化为 10000Hz"))
+	var invalid_infantry_pwmb: Dictionary = _infantry_cfg("50Hz")
+	var infantry_pwmb_issues: Array = SC.check_infantry(invalid_infantry_pwmb)
+	_check("步兵 PWMB=50Hz 报 Error",
+		_has_issue(infantry_pwmb_issues, "Error", "PWMB 组固定为 10000Hz"))
 	var slow_motor_issues: Array = SC.check_infantry(_infantry_cfg("10000Hz"))
 	_check("步兵平滑电机使用 50Hz 报 Warn",
 		_has_issue(slow_motor_issues, "Warn", "P60 为平滑电机"))

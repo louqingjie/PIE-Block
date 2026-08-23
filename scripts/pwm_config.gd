@@ -59,9 +59,9 @@ static func parse_frequency(value: Variant, fallback: int = FREQ_LOW) -> int:
 
 
 static func group_frequency(cfg: Dictionary, group: String, fallback: int = FREQ_LOW,
-		force_infantry_pwma: bool = false) -> int:
-	if force_infantry_pwma and group == GROUP_PWMA:
-		return FREQ_LOW
+		force_infantry_groups: bool = false) -> int:
+	if force_infantry_groups and group in [GROUP_PWMA, GROUP_PWMB]:
+		return FREQ_LOW if group == GROUP_PWMA else FREQ_SMOOTH_MOTOR
 	var raw: Variant = cfg.get("pwm_group_init", {})
 	if raw is Dictionary:
 		return parse_frequency((raw as Dictionary).get(group, fallback), fallback)

@@ -102,11 +102,18 @@ static func _check_pwm_group_config(issues: Array, cfg: Dictionary, kind: String
 		if not text in ["50", "50Hz", "10000", "10000Hz"]:
 			issues.append({"type": "Error",
 				"msg": "%s 初始化频率「%s」无效，只支持 50Hz 或 10000Hz" % [group, text]})
-	if kind == "infantry" and groups.has("PWMA"):
-		var pwma_text: String = str(groups["PWMA"]).strip_edges()
-		if pwma_text in ["10000", "10000Hz"]:
-			issues.append({"type": "Error",
-				"msg": "步兵 PWMA 组禁止初始化为 10000Hz，必须使用 50Hz"})
+	if kind == "infantry":
+		if groups.has("PWMA"):
+			var pwma_text: String = str(groups["PWMA"]).strip_edges()
+			if pwma_text not in ["50", "50Hz"]:
+				var pwma_message: String = "步兵 PWMA 组禁止初始化为 10000Hz，必须使用 50Hz" \
+					if pwma_text in ["10000", "10000Hz"] \
+					else "步兵 PWMA 组固定为 50Hz"
+				issues.append({"type": "Error", "msg": pwma_message})
+		if groups.has("PWMB"):
+			var pwmb_text: String = str(groups["PWMB"]).strip_edges()
+			if pwmb_text not in ["10000", "10000Hz"]:
+				issues.append({"type": "Error", "msg": "步兵 PWMB 组固定为 10000Hz"})
 
 
 static func _check_pwm_role_config(issues: Array, cfg: Dictionary) -> void:

@@ -176,10 +176,11 @@ func generate(cfg: Dictionary) -> String:
 
 	# --- 槽位分配（角色决定控制语义，PWM 组决定初始化频率）---
 	# 槽位 0-7 依次对应 p60,p62,p64,p66,p74,p75,p76,p77
-	# 步兵 PWMA 固定 50Hz；PWMB 使用用户选择的组频率。
-	var pwm_b_freq: int = PwmConfig.group_frequency(cfg, PwmConfig.GROUP_PWMB,
-		PwmConfig.FREQ_SMOOTH_MOTOR)
-	var init_vals: Array = [50, 50, 50, 50, pwm_b_freq, pwm_b_freq, pwm_b_freq, pwm_b_freq]
+	# 步兵两组频率固定：PWMA=50Hz，PWMB=10000Hz。
+	# 不信任外部配置，确保生成代码不会输出非法的步兵 PWM 频率。
+	var init_vals: Array = [50, 50, 50, 50,
+		PwmConfig.FREQ_SMOOTH_MOTOR, PwmConfig.FREQ_SMOOTH_MOTOR,
+		PwmConfig.FREQ_SMOOTH_MOTOR, PwmConfig.FREQ_SMOOTH_MOTOR]
 	var dir_exprs: Array = ["1", "1", "1", "1", "1", "1", "1", "1"]
 	var duty_vals: Array = ["0", "0", "0", "0", "0", "0", "0", "0"]
 
