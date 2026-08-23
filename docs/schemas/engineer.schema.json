@@ -13,90 +13,28 @@
       "description": "摇杆死区 (0-2047)",
       "type": "string"
     },
-    "io_init": {
-      "description": "扩展板各引脚初始化类型",
+    "pwm_group_init": {
+      "description": "PWMA/PWMB 组初始化频率；同组四路必须同频",
       "properties": {
-        "P60": {
-          "default": "舵机",
-          "enum": [
-            "舵机",
-            "电机"
-          ],
+        "PWMA": {
+          "default": "50Hz",
+          "enum": ["50Hz", "10000Hz"],
           "type": "string"
         },
-        "P62": {
-          "default": "舵机",
-          "enum": [
-            "舵机",
-            "电机"
-          ],
-          "type": "string"
-        },
-        "P64": {
-          "default": "电机",
-          "enum": [
-            "舵机",
-            "电机"
-          ],
-          "type": "string"
-        },
-        "P66": {
-          "default": "电机",
-          "enum": [
-            "舵机",
-            "电机"
-          ],
-          "type": "string"
-        },
-        "P74": {
-          "default": "电机",
-          "enum": [
-            "舵机",
-            "电机"
-          ],
-          "type": "string"
-        },
-        "P75": {
-          "default": "电机",
-          "enum": [
-            "舵机",
-            "电机"
-          ],
-          "type": "string"
-        },
-        "P76": {
-          "default": "电机",
-          "enum": [
-            "舵机",
-            "电机"
-          ],
-          "type": "string"
-        },
-        "P77": {
-          "default": "电机",
-          "enum": [
-            "舵机",
-            "电机"
-          ],
-          "type": "string"
-        },
-        "MP03": {
-          "default": "舵机",
-          "enum": [
-            "舵机",
-            "电机"
-          ],
-          "type": "string"
-        },
-        "MP74": {
-          "default": "舵机",
-          "enum": [
-            "舵机",
-            "电机"
-          ],
+        "PWMB": {
+          "default": "10000Hz",
+          "enum": ["50Hz", "10000Hz"],
           "type": "string"
         }
       },
+      "type": "object"
+    },
+    "io_role": {
+      "additionalProperties": {
+        "enum": ["舵机", "摩擦轮", "抖动电机", "平滑电机"],
+        "type": "string"
+      },
+      "description": "各引脚输出角色，与 PWM 组频率独立",
       "type": "object"
     },
     "io_mid": {

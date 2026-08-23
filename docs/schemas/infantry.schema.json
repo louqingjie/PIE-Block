@@ -39,6 +39,30 @@
       "description": "摇杆死区 (0-2047)",
       "type": "string"
     },
+    "pwm_group_init": {
+      "description": "PWM 组初始化频率；步兵 PWMA 固定为 50Hz",
+      "properties": {
+        "PWMA": {
+          "const": "50Hz",
+          "default": "50Hz",
+          "type": "string"
+        },
+        "PWMB": {
+          "default": "10000Hz",
+          "enum": ["50Hz", "10000Hz"],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "io_role": {
+      "additionalProperties": {
+        "enum": ["舵机", "摩擦轮", "抖动电机", "平滑电机"],
+        "type": "string"
+      },
+      "description": "各引脚输出角色，与 PWM 组频率独立",
+      "type": "object"
+    },
     "feed_mode": {
       "default": "阻塞开环",
       "description": "拨弹模式：目视闭环=按住持续拨弹松开即停（不阻塞）；阻塞开环=按一下拨弹固定时长（阻塞主循环）",

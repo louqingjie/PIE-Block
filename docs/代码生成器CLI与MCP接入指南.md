@@ -274,6 +274,8 @@ godot --headless --no-header --path . --script scripts/cli_codegen.gd -- check `
 | `booster_io` | 拨弹电机 IO | "P60" |
 | `yaw_drive` / `pitch_drive` | 云台驱动类型（舵机/电机） | 舵机 |
 | `yaw_io` / `pitch_io` | 云台 IO（扩展板 P60-P77 或主控板 MP74/MP03） | |
+| `pwm_group_init` | PWMA 固定 50Hz；PWMB 可选 50Hz/10000Hz | `{"PWMA":"50Hz","PWMB":"10000Hz"}` |
+| `io_role` | 各引脚角色：舵机/摩擦轮/抖动电机/平滑电机 | 按功能自动确定 |
 | `feed_mode` | 拨弹模式：`目视闭环`=按住持续拨弹松开即停（不阻塞）；`阻塞开环`=按一下拨弹固定时长（阻塞主循环） | 阻塞开环 |
 | `trigger_key` / `booster_key` | 扳机键 / 摩擦轮开关键 | |
 
@@ -283,7 +285,8 @@ godot --headless --no-header --path . --script scripts/cli_codegen.gd -- check `
 {
   "channel": "36",
   "l1_io": "P74 P24", "...": "...",
-  "io_init": { "P60": "舵机", "P62": "电机", "P64": "电机", "...": "..." },
+  "pwm_group_init": { "PWMA": "50Hz", "PWMB": "10000Hz" },
+  "io_role": { "P60": "舵机", "P62": "平滑电机", "P64": "抖动电机", "...": "..." },
   "mode_count": 4,
   "switch_strategy": "单击切换",
   "mode_switch_key": "E",
@@ -318,10 +321,11 @@ godot --headless --no-header --path . --script scripts/cli_codegen.gd -- check `
 4. 主控板 **MP74 / MP03 只能驱动舵机**，且与扩展板 P74 不是同一个 IO
 5. 舵机角度都是「相对中位的偏移角」，区间 **[-90, +90]**
 6. 工程模式切换键不能与模式内动作键冲突，模式选择键也不能重复（静态检查会报）
+7. PWM 频率按 PWMA/PWMB 分组共享；步兵 PWMA 固定 50Hz，工程两组均可选择 50Hz 或 10000Hz
+8. 电机/舵机角色与组频率不匹配时只产生 Warn；步兵 PWMA 输入 10000Hz 属于 Error，CLI `generate` 不会生成该配置的代码
 
 ## 五、常见问题
 
 - **"找不到 godot"**：装 Godot 4.x 加入 PATH，或设 `PIEBLOCK_GODOT`。
 - **stdout 里第一个 `{` 之前有横幅**：属正常，解析时跳过即可（server 已处理）。
-- **旧 `.pieproj` 还原不全**：旧版本项目 config 用旧节点路径，`--project` 会回退
-  默认值并报检查错误。推荐用 `generate_code` 传结构化 JSON。
+- **旧 `.pieproj` 无法打开**：格式 11 起不再自动迁移旧项目；请新建项目后重新配置。

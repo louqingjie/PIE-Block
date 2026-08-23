@@ -28,7 +28,7 @@
 
 ```c
 // 命令码
-#define Init_Order        0xAA  // 初始化：参数为频率，50=舵机/摩擦轮，10000=电机
+#define Init_Order        0xAA  // 初始化：PWMA/PWMB 各组共享频率；50=低频输出，10000=平滑电机
 #define Duty_Change_Order 0xBB  // 修改占空比
 #define Freq_Change_Order 0xCC  // 修改频率
 #define Dir_Change_Order  0xDD  // 修改方向，1=正 0=负，设置一次即可
