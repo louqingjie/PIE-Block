@@ -34,7 +34,7 @@ func _check(label: String, ok: bool, detail: String = "") -> void:
 
 func _initialize() -> void:
 	print("=== 项目文件与配置序列化测试 ===\n")
-	_check("项目格式版本已升级到 10", PF.FORMAT_VERSION == 10)
+	_check("项目格式版本已升级到 11", PF.FORMAT_VERSION == 11)
 	DirAccess.make_dir_recursive_absolute(TMP_DIR)
 	_test_kind_mapping()
 	_test_roundtrip()
@@ -237,6 +237,13 @@ func _test_corrupt() -> void:
 		"kind": "infantry"}))
 	f3.close()
 	_check("格式版本过高返回 err", not PF.load_from(future_path)["ok"])
+	var old_path: String = TMP_DIR + "/old." + PF.EXT
+	var f4: FileAccess = FileAccess.open(old_path, FileAccess.WRITE)
+	f4.store_string(JSON.stringify({"format_version": PF.FORMAT_VERSION - 1,
+		"kind": "engineer"}))
+	f4.close()
+	_check("旧格式版本拒绝打开", not PF.load_from(old_path)["ok"]
+		and str(PF.load_from(old_path)["err"]).contains("停止支持"))
 	print("")
 
 
@@ -248,14 +255,15 @@ func _test_normalize() -> void:
 	f.store_string("{}")
 	f.close()
 	var r: Dictionary = PF.load_from(empty_path)
-	_check("空对象可读", r["ok"], str(r["err"]))
-	if r["ok"]:
-		var d: Dictionary = r["data"]
-		_check("缺 kind 回退步兵", d["kind"] == PF.KIND_INFANTRY)
-		_check("缺 stage 回退 1", int(d["stage"]) == 1)
-		_check("缺 config 回退空字典", (d["config"] as Dictionary).is_empty())
-		_check("新格式不包含废弃配置", not d.has("obsolete_config"))
-		_check("缺 main_c 回退空串", d["main_c_stage1"] == "" and d["main_c_ai"] == "")
+	_check("缺少格式版本的旧项目拒绝打开", not r["ok"]
+		and str(r["err"]).contains("停止支持"))
+	var normalized: Dictionary = PF.normalize({})
+	_check("normalize 缺 kind 回退步兵", normalized["kind"] == PF.KIND_INFANTRY)
+	_check("normalize 缺 stage 回退 1", int(normalized["stage"]) == 1)
+	_check("normalize 缺 config 回退空字典", (normalized["config"] as Dictionary).is_empty())
+	_check("normalize 新格式不包含废弃配置", not normalized.has("obsolete_config"))
+	_check("normalize 缺 main_c 回退空串",
+		normalized["main_c_stage1"] == "" and normalized["main_c_ai"] == "")
 
 	var weird: Dictionary = PF.normalize({
 		"kind": "spaceship", "stage": 99, "active_tab": 7,

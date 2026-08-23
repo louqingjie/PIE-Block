@@ -102,9 +102,23 @@ func _initialize() -> void:
 	var engineer_p64_type: OptionButton = ui.get_node(NodePath(ui._eng_io_path("P64")))
 	var engineer_p66_type: OptionButton = ui.get_node(NodePath(ui._eng_io_path("P66")))
 	var engineer_p60_mid: LineEdit = ui.get_node(NodePath(ui._eng_io_mid_path("P60")))
-	_check("工程 P64/P66 仍保持电机/舵机",
-		_mode_items(engineer_p64_type) == ["电机", "舵机"]
-		and _mode_items(engineer_p66_type) == ["电机", "舵机"])
+	_check("工程 P64/P66 提供四种输出角色",
+		_mode_items(engineer_p64_type) == ["舵机", "摩擦轮", "抖动电机", "平滑电机"]
+		and _mode_items(engineer_p66_type) == ["舵机", "摩擦轮", "抖动电机", "平滑电机"])
+	var engineer_pwma: OptionButton = ui.get_node(ui._eng_pwm_group_path(ui.ENGINEER, "PWMA"))
+	var engineer_pwmb: OptionButton = ui.get_node(ui._eng_pwm_group_path(ui.ENGINEER, "PWMB"))
+	_check("工程 PWMA/PWMB 提供 50Hz 与 10000Hz",
+		_mode_items(engineer_pwma) == ["50Hz（摩擦轮/舵机/抖动电机）", "10000Hz（平滑电机）"]
+		and _mode_items(engineer_pwmb) == _mode_items(engineer_pwma)
+		and not engineer_pwma.disabled and not engineer_pwmb.disabled)
+	engineer_pwma.select(1)
+	engineer_pwmb.select(0)
+	var collected_pwm: Dictionary = ui._collect_engineer_config()
+	_check("工程 PWM 组配置独立收集",
+		collected_pwm.get("pwm_group_init", {}).get("PWMA", "") == "10000Hz"
+		and collected_pwm.get("pwm_group_init", {}).get("PWMB", "") == "50Hz"
+		and collected_pwm.has("io_role")
+		and not collected_pwm.has("io_init"))
 	var eng_page: String = ui.ENGINEER + "/TabContainer/M1"
 	var vb: Node = ui.get_node(NodePath(eng_page + "/ScrollContainer/VBoxContainer"))
 	# 默认场景 0 真实行，先加两行
@@ -122,7 +136,7 @@ func _initialize() -> void:
 	# ---- IO 初始化区切成电机：按键行只剩 直接，原选中 增量 回退 ----
 	_pick(ui, row1.get_node("IO"), "P60")
 	_pick(ui, opt1, "增量")
-	_set_io_init(ui, "P60", "电机")
+	_set_io_init(ui, "P60", "平滑电机")
 	_check("P60 切电机+按键后行选项为 直接",
 		_mode_items(opt1) == ["直接"], str(_mode_items(opt1)))
 	_check("原选中 增量 自动回退到 直接",
@@ -157,7 +171,7 @@ func _initialize() -> void:
 
 	# ---- MP03 恒舵机，不受 IO 初始化区影响 ----
 	_pick(ui, row2.get_node("IO"), "MP03")
-	_set_io_init(ui, "MP03", "电机")
+	_set_io_init(ui, "MP03", "平滑电机")
 	var opt2: OptionButton = row2.get_node("Option")
 	_check("MP03 恒舵机+按键选项为 增量/直接（IO初始化区设为电机也不变）",
 		_mode_items(opt2) == ["增量", "直接"], str(_mode_items(opt2)))
@@ -168,7 +182,7 @@ func _initialize() -> void:
 
 	# ---- 新建行按当前目标 IO 过滤 ----
 	_pick(ui, row2.get_node("IO"), "P64")
-	_set_io_init(ui, "P64", "电机")
+	_set_io_init(ui, "P64", "平滑电机")
 	var row3: Node = ui._add_eng_row(vb)
 	_pick(ui, row3.get_node("IO"), "P64")
 	var opt3: OptionButton = row3.get_node("Option")
@@ -180,7 +194,7 @@ func _initialize() -> void:
 
 	# ---- 旧存档回填：配置里的行在 _apply_config 后按 IO 初始化区过滤 ----
 	var cfg: Dictionary = ui._snapshot_config()
-	_set_io_init(ui, "P62", "电机")
+	_set_io_init(ui, "P62", "平滑电机")
 	ui._apply_config(cfg)
 	_check("回填后行仍存在", _row_ios(ui, eng_page).size() >= 2)
 	var opt4: OptionButton = row1.get_node("Option")
@@ -251,8 +265,8 @@ func _initialize() -> void:
 	ui._sync_io_locks()
 	_check("底盘锁定 P60 后行选项刷新为 直接（电机）",
 		_mode_items(opt4) == ["直接"], str(_mode_items(opt4)))
-	_check("底盘锁定后 P60 在 IO 初始化区被强制为电机",
-		ui._option_text(ui.get_node(NodePath(ui._eng_io_path("P60")))) == "电机")
+	_check("底盘锁定后 P60 在输出角色区被强制为平滑电机",
+		ui._option_text(ui.get_node(NodePath(ui._eng_io_path("P60")))) == "平滑电机")
 
 	if _fail > 0:
 		print("失败 %d 项" % _fail)
