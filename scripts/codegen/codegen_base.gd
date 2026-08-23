@@ -435,7 +435,7 @@ func _row_axis(key_name: String) -> Dictionary:
 
 
 ## 生成一个模式的控制函数
-func _gen_mode_rows(rows: Array, io_init: Dictionary, mode_label: String) -> String:
+func _gen_mode_rows(rows: Array, io_role: Dictionary, mode_label: String) -> String:
 	var s: String = ""
 	s += "void Calculate_%s_Controls()\n{\n" % mode_label
 	for row in rows:
@@ -450,7 +450,7 @@ func _gen_mode_rows(rows: Array, io_init: Dictionary, mode_label: String) -> Str
 		var is_joystick: bool = not axis.is_empty()
 		var slot: int = _io_to_exp_slot(io)
 		var is_main: bool = io == "MP03" or io == "MP74"
-		var is_motor: bool = (not is_main and str(io_init.get(io, "舵机")) == "电机")
+		var is_motor: bool = not is_main and PwmConfig.is_motor_role(io_role.get(io, "舵机"))
 		# 目标变量
 		var tgt: String = ""
 		if is_main:

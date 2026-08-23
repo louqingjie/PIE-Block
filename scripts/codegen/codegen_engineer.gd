@@ -5,7 +5,8 @@ extends CodeGenBase
 ## 根据配置字典生成完整的工程机器人 main.c 代码。
 ## 新配置模型：
 ##   - FirstRow 共享参数（通道/死区/底盘/速度）不变
-##   - io_init / io_mid：全局 IO 初始化区（10 引脚的类型 + 舵机初始角）
+##   - pwm_group_init：PWMA/PWMB 组频率；步进角色由 io_role 单独决定
+##   - io_role / io_mid：全局 IO 输出角色与舵机初始角
 ##   - 模式配置：mode_count(1~4)、切换方式（单击切换 / 一一对应）、模式键
 ##   - modes[1..4]：每模式一组动态按键映射行
 ## 行模型：{key, dir, mode, param, io}
@@ -48,15 +49,11 @@ func generate(cfg: Dictionary) -> String:
 	var r1_dir: int = _dir_to_int(cfg.get("r1_dir", "正向"))
 	var r2_dir: int = _dir_to_int(cfg.get("r2_dir", "正向"))
 
-	# --- IO 初始化区（10 引脚全局配置）---
-	# io_init: {pin: "舵机"/"电机"}；底盘槽位必须按电机初始化
-	var io_init: Dictionary = {}
-	for pin in EXP_PINS + MAIN_PINS:
-		var t: String = str((cfg.get("io_init", {}) as Dictionary).get(pin, "舵机"))
-		io_init[pin] = "电机" if t == "电机" else "舵机"
+	# --- 输出角色（10 引脚全局配置）---
+	var io_role: Dictionary = PwmConfig.role_map_from_config(cfg, EXP_PINS + MAIN_PINS)
 	for cs in chassis_slots:
 		if cs >= 0:
-			io_init[EXP_PINS[cs]] = "电机"
+			io_role[EXP_PINS[cs]] = "平滑电机"
 	var io_mid: Dictionary = cfg.get("io_mid", {})
 
 	# --- 模式配置 ---
@@ -78,7 +75,7 @@ func generate(cfg: Dictionary) -> String:
 			if slot >= 0:
 				if slot in chassis_slots:
 					continue
-				if io_init.get(io, "舵机") == "电机":
+				if PwmConfig.is_motor_role(io_role.get(io, "舵机")):
 					if not slot in aux_motor_slots:
 						aux_motor_slots.append(slot)
 				elif not slot in aux_servo_slots:
@@ -127,7 +124,7 @@ func generate(cfg: Dictionary) -> String:
 	var mode_funcs: String = ""
 	for mi in range(mode_count):
 		var rows: Array = modes[mi].get("rows", []) if mi < modes.size() else []
-		mode_funcs += _gen_mode_rows(rows, io_init, "Mode%d" % (mi + 1))
+		mode_funcs += _gen_mode_rows(rows, io_role, "Mode%d" % (mi + 1))
 
 	# --- 限幅代码（主循环内）---
 	var limit_code: String = ""
@@ -282,19 +279,16 @@ func generate(cfg: Dictionary) -> String:
 	code += _gen_nrf_init_safe()
 	code += "    StepDone(3);\n"
 	code += "    StepBegin(4);\n"
-	# Init_Order 频率参数：每个扩展板槽位都必须是有效 PWM 频率，不能传 0。
-	var init_vals: Array = []
-	for pin in EXP_PINS:
-		init_vals.append("10000" if str(io_init.get(pin, "舵机")) == "电机" else "50")
+	# Init_Order 频率参数：每个 PWM 组共享频率，不能按单引脚覆盖。
+	var pwm_a_freq: int = PwmConfig.group_frequency(cfg, PwmConfig.GROUP_PWMA,
+		PwmConfig.FREQ_LOW)
+	var pwm_b_freq: int = PwmConfig.group_frequency(cfg, PwmConfig.GROUP_PWMB,
+		PwmConfig.FREQ_SMOOTH_MOTOR)
+	var init_vals: Array = [pwm_a_freq, pwm_a_freq, pwm_a_freq, pwm_a_freq,
+		pwm_b_freq, pwm_b_freq, pwm_b_freq, pwm_b_freq]
 	var duty_vals: Array = ["0", "0", "0", "0", "0", "0", "0", "0"]
 	for slot in aux_servo_slots:
-		init_vals[slot] = "50"
 		duty_vals[slot] = "%d" % servo_home[slot]
-	for i in range(4):
-		if chassis_slots[i] >= 0:
-			init_vals[chassis_slots[i]] = "10000"
-	for slot in aux_motor_slots:
-		init_vals[slot] = "10000"
 	code += "    ExpansionBoradControl(Init_Order,\n"
 	code += "                          %s); // p60,p62,p64,p66,p74,p75,p76,p77\n" % _exp_args(init_vals)
 	code += "    Ms_Delay(20);\n"

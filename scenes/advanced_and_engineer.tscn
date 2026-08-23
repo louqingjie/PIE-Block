@@ -18,10 +18,51 @@ layout_mode = 2
 [node name="Label" type="Label" parent="." unique_id=785385574]
 layout_mode = 2
 size_flags_horizontal = 4
-text = "IO初始化"
+text = "PWM组初始化与输出角色"
 
 [node name="HSeparator" type="HSeparator" parent="." unique_id=1305607401]
 layout_mode = 2
+
+[node name="PWMGroups" type="VBoxContainer" parent="." unique_id=2100000001]
+layout_mode = 2
+
+[node name="PWMA" type="HBoxContainer" parent="PWMGroups" unique_id=2100000002]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="PWMGroups/PWMA" unique_id=2100000003]
+layout_mode = 2
+text = "PWMA（P60/P62/P64/P66）"
+
+[node name="OptionButton" type="OptionButton" parent="PWMGroups/PWMA" unique_id=2100000004]
+layout_mode = 2
+size_flags_horizontal = 10
+selected = 0
+item_count = 2
+popup/item_0/text = "50Hz（摩擦轮/舵机/抖动电机）"
+popup/item_0/id = 0
+popup/item_1/text = "10000Hz（平滑电机）"
+popup/item_1/id = 1
+
+[node name="PWMB" type="HBoxContainer" parent="PWMGroups" unique_id=2100000005]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="PWMGroups/PWMB" unique_id=2100000006]
+layout_mode = 2
+text = "PWMB（P74/P75/P76/P77）"
+
+[node name="OptionButton" type="OptionButton" parent="PWMGroups/PWMB" unique_id=2100000007]
+layout_mode = 2
+size_flags_horizontal = 10
+selected = 1
+item_count = 2
+popup/item_0/text = "50Hz（摩擦轮/舵机/抖动电机）"
+popup/item_0/id = 0
+popup/item_1/text = "10000Hz（平滑电机）"
+popup/item_1/id = 1
+
+[node name="RoleLabel" type="Label" parent="." unique_id=2100000008]
+layout_mode = 2
+text = "各引脚输出角色（频率由上方 PWM 组决定）"
 
 [node name="IOs" type="HBoxContainer" parent="." unique_id=927776516]
 layout_mode = 2
@@ -40,12 +81,16 @@ text = "P60"
 [node name="OptionButton" type="OptionButton" parent="IOs/Row1/P60" unique_id=1342991526]
 layout_mode = 2
 size_flags_horizontal = 10
-selected = 1
-item_count = 2
-popup/item_0/text = "电机"
+selected = 0
+item_count = 4
+popup/item_0/text = "舵机"
 popup/item_0/id = 0
-popup/item_1/text = "舵机"
+popup/item_1/text = "摩擦轮"
 popup/item_1/id = 1
+popup/item_2/text = "抖动电机"
+popup/item_2/id = 2
+popup/item_3/text = "平滑电机"
+popup/item_3/id = 3
 
 [node name="MidDegree2" type="LineEdit" parent="IOs/Row1/P60" unique_id=481795048]
 layout_mode = 2
@@ -61,12 +106,16 @@ text = "P62"
 [node name="OptionButton" type="OptionButton" parent="IOs/Row1/P62" unique_id=1083340676]
 layout_mode = 2
 size_flags_horizontal = 10
-selected = 1
-item_count = 2
-popup/item_0/text = "电机"
+selected = 0
+item_count = 4
+popup/item_0/text = "舵机"
 popup/item_0/id = 0
-popup/item_1/text = "舵机"
+popup/item_1/text = "摩擦轮"
 popup/item_1/id = 1
+popup/item_2/text = "抖动电机"
+popup/item_2/id = 2
+popup/item_3/text = "平滑电机"
+popup/item_3/id = 3
 
 [node name="MidDegree2" type="LineEdit" parent="IOs/Row1/P62" unique_id=1058699953]
 layout_mode = 2
@@ -82,12 +131,16 @@ text = "P64"
 [node name="OptionButton" type="OptionButton" parent="IOs/Row1/P64" unique_id=1591782345]
 layout_mode = 2
 size_flags_horizontal = 10
-selected = 1
-item_count = 2
-popup/item_0/text = "电机"
+selected = 0
+item_count = 4
+popup/item_0/text = "舵机"
 popup/item_0/id = 0
-popup/item_1/text = "舵机"
+popup/item_1/text = "摩擦轮"
 popup/item_1/id = 1
+popup/item_2/text = "抖动电机"
+popup/item_2/id = 2
+popup/item_3/text = "平滑电机"
+popup/item_3/id = 3
 
 [node name="MidDegree2" type="LineEdit" parent="IOs/Row1/P64" unique_id=749668503]
 layout_mode = 2
@@ -103,12 +156,16 @@ text = "P66"
 [node name="OptionButton" type="OptionButton" parent="IOs/Row1/P66" unique_id=1995789509]
 layout_mode = 2
 size_flags_horizontal = 10
-selected = 1
-item_count = 2
-popup/item_0/text = "电机"
+selected = 0
+item_count = 4
+popup/item_0/text = "舵机"
 popup/item_0/id = 0
-popup/item_1/text = "舵机"
+popup/item_1/text = "摩擦轮"
 popup/item_1/id = 1
+popup/item_2/text = "抖动电机"
+popup/item_2/id = 2
+popup/item_3/text = "平滑电机"
+popup/item_3/id = 3
 
 [node name="MidDegree2" type="LineEdit" parent="IOs/Row1/P66" unique_id=1295606112]
 layout_mode = 2
@@ -124,12 +181,16 @@ text = "P74"
 [node name="OptionButton" type="OptionButton" parent="IOs/Row1/P74" unique_id=327543664]
 layout_mode = 2
 size_flags_horizontal = 10
-selected = 1
-item_count = 2
-popup/item_0/text = "电机"
+selected = 0
+item_count = 4
+popup/item_0/text = "舵机"
 popup/item_0/id = 0
-popup/item_1/text = "舵机"
+popup/item_1/text = "摩擦轮"
 popup/item_1/id = 1
+popup/item_2/text = "抖动电机"
+popup/item_2/id = 2
+popup/item_3/text = "平滑电机"
+popup/item_3/id = 3
 
 [node name="MidDegree2" type="LineEdit" parent="IOs/Row1/P74" unique_id=204450675]
 layout_mode = 2
@@ -152,12 +213,16 @@ text = "P75"
 [node name="OptionButton" type="OptionButton" parent="IOs/Row2/P75" unique_id=504833874]
 layout_mode = 2
 size_flags_horizontal = 10
-selected = 1
-item_count = 2
-popup/item_0/text = "电机"
+selected = 0
+item_count = 4
+popup/item_0/text = "舵机"
 popup/item_0/id = 0
-popup/item_1/text = "舵机"
+popup/item_1/text = "摩擦轮"
 popup/item_1/id = 1
+popup/item_2/text = "抖动电机"
+popup/item_2/id = 2
+popup/item_3/text = "平滑电机"
+popup/item_3/id = 3
 
 [node name="MidDegree2" type="LineEdit" parent="IOs/Row2/P75" unique_id=1663544672]
 layout_mode = 2
@@ -173,12 +238,16 @@ text = "P76"
 [node name="OptionButton" type="OptionButton" parent="IOs/Row2/P76" unique_id=1587980885]
 layout_mode = 2
 size_flags_horizontal = 10
-selected = 1
-item_count = 2
-popup/item_0/text = "电机"
+selected = 0
+item_count = 4
+popup/item_0/text = "舵机"
 popup/item_0/id = 0
-popup/item_1/text = "舵机"
+popup/item_1/text = "摩擦轮"
 popup/item_1/id = 1
+popup/item_2/text = "抖动电机"
+popup/item_2/id = 2
+popup/item_3/text = "平滑电机"
+popup/item_3/id = 3
 
 [node name="MidDegree2" type="LineEdit" parent="IOs/Row2/P76" unique_id=1977160940]
 layout_mode = 2
@@ -194,12 +263,16 @@ text = "P77"
 [node name="OptionButton" type="OptionButton" parent="IOs/Row2/P77" unique_id=1855163038]
 layout_mode = 2
 size_flags_horizontal = 10
-selected = 1
-item_count = 2
-popup/item_0/text = "电机"
+selected = 0
+item_count = 4
+popup/item_0/text = "舵机"
 popup/item_0/id = 0
-popup/item_1/text = "舵机"
+popup/item_1/text = "摩擦轮"
 popup/item_1/id = 1
+popup/item_2/text = "抖动电机"
+popup/item_2/id = 2
+popup/item_3/text = "平滑电机"
+popup/item_3/id = 3
 
 [node name="MidDegree2" type="LineEdit" parent="IOs/Row2/P77" unique_id=1130633104]
 layout_mode = 2
@@ -215,12 +288,16 @@ text = "MP03"
 [node name="OptionButton" type="OptionButton" parent="IOs/Row2/MP03" unique_id=1323413276]
 layout_mode = 2
 size_flags_horizontal = 10
-selected = 1
-item_count = 2
-popup/item_0/text = "电机"
+selected = 0
+item_count = 4
+popup/item_0/text = "舵机"
 popup/item_0/id = 0
-popup/item_1/text = "舵机"
+popup/item_1/text = "摩擦轮"
 popup/item_1/id = 1
+popup/item_2/text = "抖动电机"
+popup/item_2/id = 2
+popup/item_3/text = "平滑电机"
+popup/item_3/id = 3
 
 [node name="MidDegree2" type="LineEdit" parent="IOs/Row2/MP03" unique_id=584877394]
 layout_mode = 2
@@ -236,12 +313,16 @@ text = "MP74"
 [node name="OptionButton" type="OptionButton" parent="IOs/Row2/MP74" unique_id=1625387564]
 layout_mode = 2
 size_flags_horizontal = 10
-selected = 1
-item_count = 2
-popup/item_0/text = "电机"
+selected = 0
+item_count = 4
+popup/item_0/text = "舵机"
 popup/item_0/id = 0
-popup/item_1/text = "舵机"
+popup/item_1/text = "摩擦轮"
 popup/item_1/id = 1
+popup/item_2/text = "抖动电机"
+popup/item_2/id = 2
+popup/item_3/text = "平滑电机"
+popup/item_3/id = 3
 
 [node name="MidDegree2" type="LineEdit" parent="IOs/Row2/MP74" unique_id=1904692534]
 layout_mode = 2

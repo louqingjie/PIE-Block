@@ -92,8 +92,12 @@ const ADV_ENGINEER: String = INFANTRY_PAGE + "/Advanced/ScrollContainer/Advanced
 # 共享配置根：按当前构型返回 工程页 / 步兵高级设置
 func _shared_cfg_root() -> String:
 	return ADV_ENGINEER if _current_tab() == 0 else ENGINEER
-# 共享 IO 初始化区相对路径（工程页与步兵高级设置结构一致）。
-# 每个引脚一个 OptionButton(电机/舵机) + MidDegree2(初始角)。
+# 共享 PWM 组与输出角色区相对路径（工程页与步兵高级设置结构一致）。
+const ENG_PWM_GROUP_REL: Dictionary = {
+	"PWMA": "PWMGroups/PWMA/OptionButton",
+	"PWMB": "PWMGroups/PWMB/OptionButton",
+}
+# 每个引脚一个输出角色 OptionButton + MidDegree2(初始角)。
 const ENG_IO_REL: Dictionary = {
 	"P60": "IOs/Row1/P60/OptionButton",
 	"P62": "IOs/Row1/P62/OptionButton",
@@ -136,6 +140,10 @@ func _eng_io_path(pin: String) -> String:
 
 func _eng_io_mid_path(pin: String) -> String:
 	return _shared_cfg_root() + "/" + str(ENG_IO_MID_REL.get(pin, ""))
+
+
+func _eng_pwm_group_path(root: String, group: String) -> NodePath:
+	return NodePath(root + "/" + str(ENG_PWM_GROUP_REL.get(group, "")))
 
 
 # 输出
@@ -273,6 +281,7 @@ func _ready() -> void:
 	# 场景模板行保持隐藏（Example 仅作「+」新建行的原型），真实行命名为 RowNN
 	_normalize_eng_row_names()
 	# 固定子系统引脚在 IO 初始化区自动同步（须在默认快照之前，让默认配置自洽）
+	_sync_pwm_group_ui()
 	_sync_io_locks()
 	_sync_friction_switch_visibility()
 	# 左摇杆保留开关：模式1 强制开启（须在默认快照之前，让默认配置自洽）
@@ -425,6 +434,11 @@ func _connect_signals() -> void:
 		zero_cb.toggled.connect(_run_check)
 	# 工程师界面：共享 IO 初始化区（工程页 + 步兵高级设置，两份实例都接线）
 	for root in [ENGINEER, ADV_ENGINEER]:
+		for group in ["PWMA", "PWMB"]:
+			var pwm_btn: Node = get_node_or_null(_eng_pwm_group_path(root, group))
+			if pwm_btn is OptionButton:
+				pwm_btn.item_selected.connect(_sync_pwm_group_ui)
+				pwm_btn.item_selected.connect(_run_check)
 		for pin in ENG_ALL_PINS:
 			var eng_btn: Node = get_node_or_null(NodePath(root + "/" + str(ENG_IO_REL.get(pin, ""))))
 			if eng_btn is OptionButton:
@@ -596,6 +610,7 @@ func _apply_config(cfg: Dictionary) -> void:
 	_update_mode_page_visibility()
 	_sync_friction_type_ui()
 	# 固定子系统引脚锁定：旧存档把引脚存成错误类型时，这里自动纠正
+	_sync_pwm_group_ui()
 	_sync_io_locks()
 	# 左摇杆保留开关：模式1 强制开启，各模式 LX/LY 键位随开关禁用
 	_sync_chassis_switch()
@@ -1066,6 +1081,7 @@ func _apply_kind_visibility(kind: String, _want_tab: int) -> void:
 	if first_row is CanvasItem:
 		first_row.visible = kind != PF.KIND_MUSIC
 	_update_mode_page_visibility()
+	_sync_pwm_group_ui()
 	_sync_io_locks()
 	_update_sim_btn_visibility()
 
@@ -1266,7 +1282,7 @@ func _get_current_codegen() -> CodeGenBase:
 
 
 # ------------------------------------------------------------------ 调试界面占位提示
-## 根据调试界面各行驱动类型（电机/舵机/摩擦轮）更新输入框占位文本
+## 根据调试界面各行驱动类型更新输入框占位文本
 func _update_debug_placeholders(_idx: int = -1) -> void:
 	for row_name in DEBUG_ROWS:
 		var drive_btn: Node = get_node_or_null(NodePath(DEBUG +"/"+ row_name +"/OptionButton"))
@@ -1276,7 +1292,7 @@ func _update_debug_placeholders(_idx: int = -1) -> void:
 		var drive_type: String = _option_text(drive_btn)
 		var placeholder: String = ""
 		match drive_type:
-			"电机":
+			"电机", "平滑电机", "抖动电机":
 				placeholder = "速度 0~10000"
 			"舵机":
 				placeholder = "角度 0~90°，正/反控制方向"
@@ -1306,13 +1322,13 @@ func _update_engineer_placeholders(_idx: int = -1) -> void:
 
 ## 单个共享配置根（工程页 / 步兵高级设置）的过滤与占位提示
 func _update_engineer_root_placeholders(root: String) -> void:
-	var io_init: Dictionary = {}
+	var io_role: Dictionary = {}
 	for pin in ENG_ALL_PINS:
 		var io_text: String = _get_option_text(NodePath(root + "/" + str(ENG_IO_REL.get(pin, ""))))
-		io_init[pin] = io_text
+		io_role[pin] = PwmConfig.normalize_role(io_text)
 		var mid: Node = get_node_or_null(NodePath(root + "/" + str(ENG_IO_MID_REL.get(pin, ""))))
 		if mid is CanvasItem:
-			mid.visible = io_text == "舵机"
+			mid.visible = PwmConfig.is_servo_role(io_role[pin])
 	for page in ENG_MODE_PAGES:
 		var vb: Node = get_node_or_null(NodePath(root + "/" + page + "/ScrollContainer/VBoxContainer"))
 		if vb == null:
@@ -1329,8 +1345,9 @@ func _update_engineer_root_placeholders(root: String) -> void:
 				continue
 			var mode: String = _option_text(mode_btn)
 			var target: String = _option_text(io_btn)
-			# MP03/MP74 固定舵机；扩展板引脚看 IO 初始化区
-			var is_servo: bool = target.begins_with("MP") or io_init.get(target, "舵机") == "舵机"
+			# MP03/MP74 固定舵机；扩展板引脚看输出角色
+			var is_servo: bool = target.begins_with("MP") \
+				or PwmConfig.is_servo_role(io_role.get(target, "舵机"))
 			# 摇杆轴行（LX/LY/RX/RY）不能用「直接」，按键行不能用「速度/增速」
 			var is_axis: bool = _option_text(key_btn) in ["LX", "LY", "RX", "RY"]
 			var allowed_modes: Array
@@ -1517,7 +1534,7 @@ func _update_mode_page_visibility(_idx: int = -1) -> void:
 ## 期望类型与 static_checker._check_infantry_shared 保持一致。
 func _compute_io_desired(root: String) -> Dictionary:
 	var desired: Dictionary = {}
-	# 底盘四轮：恒为电机（两个根都适用）
+	# 底盘四轮：恒为平滑电机（两个根都适用）
 	var chassis_pins: Array = []
 	for p in [P_L1_IO, P_L2_IO, P_R1_IO, P_R2_IO]:
 		var pin: String = _get_option_text(p).split(" ")[0].strip_edges()
@@ -1525,29 +1542,45 @@ func _compute_io_desired(root: String) -> Dictionary:
 			chassis_pins.append(pin)
 	# 步兵固定子系统：仅步兵高级设置（ADV_ENGINEER）
 	if root == ADV_ENGINEER:
-		# Yaw / Pitch：跟随驱动类型（舵机 -> 舵机，电机 -> 电机），优先级最低
+		# Yaw / Pitch：跟随驱动类型，电机默认归为平滑电机，优先级最低
 		var yaw_drive: String = _get_option_text(P_YAW_DRIVE)
 		var yaw_pin: String = _get_option_text(P_YAW_IO).split(" ")[0].strip_edges()
 		if not yaw_pin.is_empty() and not yaw_pin.begins_with("MP") \
 				and (yaw_drive == "电机" or yaw_drive == "舵机"):
-			desired[yaw_pin] = yaw_drive
+			desired[yaw_pin] = "舵机" if yaw_drive == "舵机" else "平滑电机"
 		var pitch_drive: String = _get_option_text(P_PITCH_DRIVE)
 		var pitch_pin: String = _get_option_text(P_PITCH_IO).split(" ")[0].strip_edges()
 		if not pitch_pin.is_empty() and not pitch_pin.begins_with("MP") \
 				and (pitch_drive == "电机" or pitch_drive == "舵机"):
-			desired[pitch_pin] = pitch_drive
-		# 拨弹电机：恒为电机（10000Hz 初始化），优先级高于 Yaw/Pitch
+			desired[pitch_pin] = "舵机" if pitch_drive == "舵机" else "平滑电机"
+		# 拨弹电机：恒为平滑电机，频率由 PWM 组配置决定
 		var booster_pin: String = _get_option_text(P_BOOSTER_IO).split(" ")[0].strip_edges()
 		if not booster_pin.is_empty() and not booster_pin.begins_with("MP"):
-			desired[booster_pin] = "电机"
-	# 底盘四轮：恒为电机，优先级高于步兵子系统
+			desired[booster_pin] = "平滑电机"
+	# 底盘四轮：恒为平滑电机，优先级高于步兵子系统
 	for pin in chassis_pins:
-		desired[pin] = "电机"
-	# 摩擦轮固定占用 P64/P66，恒为舵机（50Hz 初始化，与舵机同频），优先级最高
+		desired[pin] = "平滑电机"
+	# 摩擦轮固定占用 P64/P66，恒为摩擦轮（50Hz 初始化），优先级最高
 	if root == ADV_ENGINEER:
 		for pin in ["P64", "P66"]:
-			desired[pin] = "舵机"
+			desired[pin] = "摩擦轮"
 	return desired
+
+
+## 同步 PWM 组初始化选项。步兵高级设置的 PWMA 固定为 50Hz，
+## 工程页和两页之间的配置彼此独立。
+func _sync_pwm_group_ui(_idx: int = -1) -> void:
+	for root in [ENGINEER, ADV_ENGINEER]:
+		var pwma: Node = get_node_or_null(_eng_pwm_group_path(root, "PWMA"))
+		var pwmb: Node = get_node_or_null(_eng_pwm_group_path(root, "PWMB"))
+		if pwma is OptionButton:
+			if root == ADV_ENGINEER:
+				pwma.select(0)
+				pwma.disabled = true
+			else:
+				pwma.disabled = false
+		if pwmb is OptionButton:
+			pwmb.disabled = false
 
 
 ## 步兵 IO 初始化区自动同步：固定子系统（底盘 / 拨弹电机 / 摩擦轮 / Yaw / Pitch）
@@ -1565,7 +1598,7 @@ func _sync_io_locks(_idx: int = -1) -> void:
 			var mid: Node = get_node_or_null(NodePath(root + "/" + str(ENG_IO_MID_REL.get(pin, ""))))
 			var want: String = str(desired.get(pin, ""))
 			if want.is_empty():
-				# 未占用：解锁，恢复两个选项
+				# 未占用：解锁，恢复全部输出角色选项
 				for i in range(btn.item_count):
 					btn.set_item_disabled(i, false)
 				if btn.selected < 0 or btn.is_item_disabled(btn.selected):
@@ -1577,20 +1610,14 @@ func _sync_io_locks(_idx: int = -1) -> void:
 				if mid is CanvasItem:
 					mid.visible = _option_text(btn) == "舵机"
 				continue
-			# 占用：选中期望类型并禁用另一项（IO 初始化区只有 电机/舵机 两项）
-			var other: String = "舵机" if want == "电机" else "电机"
+			# 占用：选中期望角色并禁用其他角色。
 			var want_idx: int = -1
-			var other_idx: int = -1
 			for i in range(btn.item_count):
-				match btn.get_item_text(i):
-					want:
-						want_idx = i
-					other:
-						other_idx = i
+				if btn.get_item_text(i) == want:
+					want_idx = i
+				btn.set_item_disabled(i, btn.get_item_text(i) != want)
 			if want_idx >= 0:
 				btn.selected = want_idx
-			if other_idx >= 0:
-				btn.set_item_disabled(other_idx, true)
 			if mid is CanvasItem:
 				mid.visible = _option_text(btn) == "舵机"
 	# 摩擦轮启用时，P64/P66 也必须从其他步兵角色下拉中释放出来，
@@ -1645,6 +1672,7 @@ func _sync_friction_type_ui(_idx: int = -1) -> void:
 			control.disabled = not enabled
 		elif control is LineEdit:
 			control.editable = enabled
+	_sync_pwm_group_ui()
 	_sync_io_locks()
 
 
@@ -1886,12 +1914,25 @@ func _collect_engineer_config() -> Dictionary:
 	cfg["sprint_speed"] = _get_line_text(P_SPRINT_SPEED).strip_edges()
 	var sprint_cb: Node = get_node_or_null(P_SPRINT_CB)
 	cfg["sprint_enabled"] = (sprint_cb is BaseButton) and sprint_cb.button_pressed
-	# --- IO 初始化区（共享区：工程页 / 步兵高级设置，含主控板口）---
+	# --- PWM 组初始化（共享区：工程页 / 步兵高级设置）---
 	var root: String = _shared_cfg_root()
-	var io_init: Dictionary = {}
+	var pwm_group_init: Dictionary = {}
+	for group in ["PWMA", "PWMB"]:
+		var group_btn: Node = get_node_or_null(_eng_pwm_group_path(root, group))
+		var group_freq: int = 50
+		if group_btn is OptionButton:
+			group_freq = 10000 if group_btn.selected == 1 else 50
+		if root == ADV_ENGINEER and group == "PWMA":
+			group_freq = 50
+		pwm_group_init[group] = "%dHz" % group_freq
+	cfg["pwm_group_init"] = pwm_group_init
+	# --- 输出角色（共享区：工程页 / 步兵高级设置，含主控板口）---
+	var io_role: Dictionary = {}
 	for pin in ENG_ALL_PINS:
-		io_init[pin] = _get_option_text(NodePath(root + "/" + str(ENG_IO_REL.get(pin, ""))))
-	cfg["io_init"] = io_init
+		var role: String = PwmConfig.normalize_role(
+			_get_option_text(NodePath(root + "/" + str(ENG_IO_REL.get(pin, "")))))
+		io_role[pin] = role
+	cfg["io_role"] = io_role
 	# --- 各引脚舵机初始角（相对中位偏移，仅舵机有效）---
 	var io_mid: Dictionary = {}
 	for pin in ENG_ALL_PINS:

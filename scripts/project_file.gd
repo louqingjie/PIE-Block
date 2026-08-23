@@ -15,7 +15,8 @@ extends RefCounted
 ## 文件扩展名（不含点）
 const EXT: String = "pieproj"
 ## 格式版本，将来迁移用
-const FORMAT_VERSION: int = 10
+const FORMAT_VERSION: int = 11
+const MIN_SUPPORTED_FORMAT_VERSION: int = 11
 const GUIDE_STEP_COUNT: int = 7
 const MUSIC_MAX_SEGMENTS: int = 8192
 const MUSIC_MAX_DURATION_MS: int = 20 * 60 * 1000
@@ -317,6 +318,10 @@ static func load_from(path: String) -> Dictionary:
 		return {"ok": false, "err": "文件内容不是合法的项目 JSON", "data": {}}
 	var raw: Dictionary = parsed
 	var ver: int = int(raw.get("format_version", 0))
+	if ver < MIN_SUPPORTED_FORMAT_VERSION:
+		return {"ok": false,
+			"err": "项目格式版本 %d 已停止支持，请新建项目" % ver,
+			"data": {}}
 	if ver > FORMAT_VERSION:
 		return {"ok": false,
 			"err": "项目格式版本 %d 高于本程序支持的 %d，请升级程序" % [ver, FORMAT_VERSION],

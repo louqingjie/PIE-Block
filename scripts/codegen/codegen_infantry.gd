@@ -174,18 +174,17 @@ func generate(cfg: Dictionary) -> String:
 	var yaw_servo_on_main: bool = yaw_is_servo and yaw_pin in MAIN_BOARD_SERVO_PINS
 	var pitch_servo_on_main: bool = pitch_is_servo and pitch_pin in MAIN_BOARD_SERVO_PINS
 
-	# --- 槽位分配（由步兵固定角色决定初始化）---
+	# --- 槽位分配（角色决定控制语义，PWM 组决定初始化频率）---
 	# 槽位 0-7 依次对应 p60,p62,p64,p66,p74,p75,p76,p77
-	# 未被固定角色使用的端口按 50Hz、0 占空比安全初始化。
-	var init_vals: Array = [50, 50, 50, 50, 50, 50, 50, 50]
+	# 步兵 PWMA 固定 50Hz；PWMB 使用用户选择的组频率。
+	var pwm_b_freq: int = PwmConfig.group_frequency(cfg, PwmConfig.GROUP_PWMB,
+		PwmConfig.FREQ_SMOOTH_MOTOR)
+	var init_vals: Array = [50, 50, 50, 50, pwm_b_freq, pwm_b_freq, pwm_b_freq, pwm_b_freq]
 	var dir_exprs: Array = ["1", "1", "1", "1", "1", "1", "1", "1"]
 	var duty_vals: Array = ["0", "0", "0", "0", "0", "0", "0", "0"]
 
 	# 启用无刷电调时固定占用 P64/P66；禁用时不写方向、占空比或所有权。
 	if friction_enabled:
-		# 固定按摩擦轮 50Hz 初始化，避免与其他角色的电机配置混用。
-		init_vals[friction_l_slot] = 50
-		init_vals[friction_r_slot] = 50
 		dir_exprs[friction_l_slot] = "0"
 		dir_exprs[friction_r_slot] = "0"
 		duty_vals[friction_l_slot] = "dutyOfBooster"
@@ -193,7 +192,6 @@ func generate(cfg: Dictionary) -> String:
 
 	# 拨弹电机 -> dutyOfMotor[4]
 	if feeder_slot >= 0:
-		init_vals[feeder_slot] = 10000
 		dir_exprs[feeder_slot] = str(booster_dir)
 		duty_vals[feeder_slot] = "dutyOfMotor[4]"
 
@@ -215,16 +213,13 @@ func generate(cfg: Dictionary) -> String:
 		if s in friction_slots:
 			push_warning("步兵代码生成：槽位 %d 已被摩擦轮占用，忽略电机分配" % s)
 			continue
-		init_vals[s] = 10000
 		dir_exprs[s] = "Get_Dir(dutyOfMotor[%d])" % pair[1]
 		duty_vals[s] = "(uint16_t)abs(dutyOfMotor[%d])" % pair[1]
 
 	# Yaw/Pitch 舵机在扩展板上时：50Hz + dutyOfServo
 	if yaw_is_servo and yaw_slot >= 0 and not yaw_slot in friction_slots:
-		init_vals[yaw_slot] = 50
 		duty_vals[yaw_slot] = "dutyOfServo[0]"
 	if pitch_is_servo and pitch_slot >= 0 and not pitch_slot in friction_slots:
-		init_vals[pitch_slot] = 50
 		duty_vals[pitch_slot] = "dutyOfServo[1]"
 
 	# dutyOfMotor 数组长度按实际用到的最大下标计算，避免越界写

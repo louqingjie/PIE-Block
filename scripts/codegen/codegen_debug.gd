@@ -20,6 +20,7 @@ const BUZZER_PWM_CH: String = "PWMA_CH4N_P33"
 const FREQ_MOTOR: int = 10000 # 电机模式频率
 const FREQ_SERVO: int = 50 # 舵机模式频率
 const FREQ_FRICTION: int = 50 # 摩擦轮模式频率
+const FREQ_JITTER_MOTOR: int = 50 # 抖动电机模式频率
 
 # 舵机归中占空比（50Hz 下中位值，等于基类 SERVO_DUTY_MID）
 # 舵机总行程 180°，占空比区间见 CodeGenBase.SERVO_DUTY_MIN/MID/MAX
@@ -123,7 +124,9 @@ func generate(cfg: Dictionary) -> String:
 			code += _generate_friction_test(slot, dir)
 		else:
 			# 扩展板电机/舵机
-			var freq: int = FREQ_MOTOR if drive_type == "电机" else FREQ_SERVO
+			var freq: int = FREQ_MOTOR
+			if drive_type in ["舵机", "摩擦轮", "抖动电机"]:
+				freq = FREQ_SERVO
 			var test_duty: int = value
 			if drive_type == "舵机":
 				var servo_angle: int = clampi(value, 0, SERVO_MAX_OFFSET_DEG)
@@ -259,11 +262,14 @@ func _generate_friction_test(slot: int, _dir: int) -> String:
 	return code
 
 
-## 构建 Init_Order 参数字符串：目标 slot 使用指定频率，其余 slot 使用安全的 50Hz。
+## 构建 Init_Order 参数字符串：目标 slot 所属 PWM 组使用指定频率，
+## 保证一次 Init_Order 中同组四路不会出现混合频率。
 func _slot_init_str(slot: int, freq: int) -> String:
 	var vals: Array = ["50", "50", "50", "50", "50", "50", "50", "50"]
 	if slot >= 0 and slot < 8:
-		vals[slot] = str(freq)
+		var group_start: int = 0 if slot < 4 else 4
+		for i in range(group_start, group_start + 4):
+			vals[i] = str(freq)
 	return "%s, %s,\n                          %s, %s,\n                          %s, %s,\n                          %s, %s" % [vals[0], vals[1], vals[2], vals[3], vals[4], vals[5], vals[6], vals[7]]
 
 

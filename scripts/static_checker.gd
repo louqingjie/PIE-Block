@@ -27,12 +27,17 @@ const MOTOR_SPEED_MAX: int = 10000
 const MUSIC_MAX_SEGMENTS: int = 8192
 const MUSIC_MAX_DURATION_MS: int = 20 * 60 * 1000
 const MUSIC_MAX_VOICES: int = 4
+const PWM_GROUPS: Array = ["PWMA", "PWMB"]
 
 
 # ------------------------------------------------------------------ 公开入口
 ## 步兵模式检查
 static func check_infantry(cfg: Dictionary) -> Array:
 	var issues: Array = []
+	_check_pwm_group_config(issues, cfg, "infantry")
+	_check_pwm_role_config(issues, cfg)
+	_check_pwm_role_frequency(issues, cfg, "infantry")
+	_check_function_io_pins(issues, cfg, "infantry")
 	_check_channel(issues, cfg)
 	_check_deadzone(issues, cfg)
 	_check_speeds(issues, cfg)
@@ -61,6 +66,10 @@ static func _check_friction_type(issues: Array, cfg: Dictionary) -> void:
 ## 工程多模式检查
 static func check_engineer(eng_cfg: Dictionary) -> Array:
 	var issues: Array = []
+	_check_pwm_group_config(issues, eng_cfg, "engineer")
+	_check_pwm_role_config(issues, eng_cfg)
+	_check_pwm_role_frequency(issues, eng_cfg, "engineer")
+	_check_function_io_pins(issues, eng_cfg, "engineer")
 	_check_channel(issues, eng_cfg)
 	_check_deadzone(issues, eng_cfg)
 	_check_speeds(issues, eng_cfg)
@@ -74,6 +83,124 @@ static func check_debug(debug_rows: Array) -> Array:
 	var issues: Array = []
 	_check_debug_params(issues, debug_rows)
 	return issues
+
+
+static func _check_pwm_group_config(issues: Array, cfg: Dictionary, kind: String) -> void:
+	var raw: Variant = cfg.get("pwm_group_init", {})
+	if raw != null and not raw is Dictionary:
+		issues.append({"type": "Error", "msg": "PWM 组初始化配置不是合法对象"})
+		return
+	var groups: Dictionary = raw if raw is Dictionary else {}
+	for key in groups.keys():
+		if str(key) not in PWM_GROUPS:
+			issues.append({"type": "Error",
+				"msg": "未知 PWM 组「%s」，只支持 PWMA 或 PWMB" % str(key)})
+	for group in PWM_GROUPS:
+		if not groups.has(group):
+			continue
+		var text: String = str(groups[group]).strip_edges()
+		if not text in ["50", "50Hz", "10000", "10000Hz"]:
+			issues.append({"type": "Error",
+				"msg": "%s 初始化频率「%s」无效，只支持 50Hz 或 10000Hz" % [group, text]})
+	if kind == "infantry" and groups.has("PWMA"):
+		var pwma_text: String = str(groups["PWMA"]).strip_edges()
+		if pwma_text in ["10000", "10000Hz"]:
+			issues.append({"type": "Error",
+				"msg": "步兵 PWMA 组禁止初始化为 10000Hz，必须使用 50Hz"})
+
+
+static func _check_pwm_role_config(issues: Array, cfg: Dictionary) -> void:
+	var role_fields: Array = ["io_role", "io_init"]
+	var valid_pins: Array = EXPANSION_PINS + MAIN_SERVO_PINS
+	for field in role_fields:
+		if not cfg.has(field):
+			continue
+		var raw: Variant = cfg[field]
+		if not raw is Dictionary:
+			issues.append({"type": "Error", "msg": "%s 配置不是合法对象" % field})
+			continue
+		for raw_pin in (raw as Dictionary).keys():
+			var pin: String = str(raw_pin)
+			if pin not in valid_pins:
+				issues.append({"type": "Error", "msg": "%s 使用了非法引脚「%s」" % [field, pin]})
+				continue
+			var role: String = str((raw as Dictionary)[raw_pin]).strip_edges()
+			var valid_role: bool = role in PwmConfig.ALL_ROLES
+			if field == "io_init":
+				valid_role = valid_role or role in ["电机", "舵机"]
+			if not valid_role:
+				issues.append({"type": "Error",
+					"msg": "%s %s 输出角色「%s」非法" % [field, pin, role]})
+
+
+static func _check_function_io_pins(issues: Array, cfg: Dictionary, kind: String) -> void:
+	var entries: Array = [
+		["l1_io", "底盘-左前轮"], ["l2_io", "底盘-左后轮"],
+		["r1_io", "底盘-右前轮"], ["r2_io", "底盘-右后轮"],
+	]
+	if kind == "infantry":
+		entries.append(["booster_io", "拨弹电机"])
+		entries.append(["yaw_io", "Yaw"])
+		entries.append(["pitch_io", "Pitch"])
+	for entry in entries:
+		var value: String = str(cfg.get(entry[0], "")).strip_edges()
+		if value.is_empty():
+			continue
+		var pin: String = normalize_pin(value)
+		if pin not in EXPANSION_PINS and pin not in MAIN_SERVO_PINS:
+			issues.append({"type": "Error",
+				"msg": "%s IO「%s」不是合法输出引脚" % [entry[1], value]})
+
+
+static func _pwm_group_freq(cfg: Dictionary, group: String, kind: String) -> int:
+	return PwmConfig.group_frequency(cfg, group,
+		PwmConfig.FREQ_SMOOTH_MOTOR if group == PwmConfig.GROUP_PWMB else PwmConfig.FREQ_LOW,
+		kind == "infantry")
+
+
+static func _infer_infantry_roles(cfg: Dictionary) -> Dictionary:
+	var roles: Dictionary = {}
+	for pin in EXPANSION_PINS:
+		roles[pin] = "舵机"
+	for path in ["l1_io", "l2_io", "r1_io", "r2_io"]:
+		var pin: String = normalize_pin(str(cfg.get(path, "")).split(" ")[0])
+		if pin in EXPANSION_PINS:
+			roles[pin] = "平滑电机"
+	var feeder: String = normalize_pin(str(cfg.get("booster_io", "")).split(" ")[0])
+	if feeder in EXPANSION_PINS:
+		roles[feeder] = "平滑电机"
+	for axis in ["yaw", "pitch"]:
+		var pin: String = normalize_pin(str(cfg.get(axis + "_io", "")).split(" ")[0])
+		if pin in EXPANSION_PINS:
+			roles[pin] = "舵机" if str(cfg.get(axis + "_drive", "舵机")) == "舵机" else "平滑电机"
+	if _friction_enabled(cfg):
+		roles["P64"] = "摩擦轮"
+		roles["P66"] = "摩擦轮"
+	return roles
+
+
+static func _check_pwm_role_frequency(issues: Array, cfg: Dictionary, kind: String) -> void:
+	var roles: Dictionary
+	if kind == "infantry":
+		roles = _infer_infantry_roles(cfg)
+	else:
+		roles = PwmConfig.role_map_from_config(cfg, EXPANSION_PINS)
+	for pin in EXPANSION_PINS:
+		var role: String = PwmConfig.normalize_role(roles.get(pin, "舵机"))
+		var group: String = PwmConfig.group_for_pin(pin)
+		var actual: int = _pwm_group_freq(cfg, group, kind)
+		var expected: int = PwmConfig.expected_frequency(role)
+		if actual == expected:
+			continue
+		var message: String
+		if role == "平滑电机" and actual == PwmConfig.FREQ_LOW:
+			var frequency_text: String = "步兵 PWMA 固定为 50Hz" \
+				if kind == "infantry" and group == PwmConfig.GROUP_PWMA \
+				else "%s 当前为 50Hz" % group
+			message = "%s 为平滑电机，但 %s，电机可能一卡一卡。" % [pin, frequency_text]
+		else:
+			message = "%s 为%s，但当前 PWM 组为 %dHz，输出可能异常。" % [pin, role, actual]
+		issues.append({"type": "Warn", "msg": message})
 
 
 ## 音乐模式检查。music.segments 使用 {notes: [1~127], duration_ms: >=1}。
@@ -370,7 +497,7 @@ static func _check_gimbal_pin_conflict(issues: Array, cfg: Dictionary) -> void:
 			continue
 		if pin in MAIN_SERVO_PINS:
 			# 主控板舵机口不能驱动电机
-			if drive == "电机":
+			if drive != "舵机":
 				issues.append({"type": "Error",
 					"msg": "%s 轴 IO 选用了主控板端口 %s，该端口只能驱动舵机，请改为「舵机」或换用拓展板引脚"
 						% [ax["name"], pin]})
@@ -394,28 +521,29 @@ static func _check_gimbal_pin_conflict(issues: Array, cfg: Dictionary) -> void:
 			- SERVO_MAX_ANGLE, SERVO_MAX_ANGLE)
 
 
-# ------------------------------------------------------------------ 规则：工程 IO 初始化区
-# IO 初始化区：10 个引脚各选 电机/舵机 + 初始角（相对舵机中位偏移 ±90°）。
-# 底盘引脚必须为电机；主控板 MP03/MP74 只能驱动舵机。
+# ------------------------------------------------------------------ 规则：工程输出角色
+# 输出角色与 PWM 组频率分离；底盘必须是电机角色，主控板 MP03/MP74 只能驱动舵机。
 static func _check_engineer_io(issues: Array, cfg: Dictionary) -> void:
-	var io_init: Dictionary = cfg.get("io_init", {})
+	var io_role: Dictionary = PwmConfig.role_map_from_config(cfg,
+		EXPANSION_PINS + MAIN_SERVO_PINS)
 	var io_mid: Dictionary = cfg.get("io_mid", {})
 	# 底盘引脚必须为电机（代码生成器强制以底盘为准，这里给出明确提示）
 	var chassis: Array = _chassis_pins(cfg)
 	for pin in chassis:
 		if pin.begins_with("MP"):
 			continue
-		var t: String = str(io_init.get(pin, ""))
+		var raw_role: String = str(io_role.get(pin, ""))
+		var t: String = "" if raw_role.is_empty() else PwmConfig.normalize_role(raw_role)
 		if t.is_empty():
 			issues.append({"type": "Error",
-				"msg": "工程 底盘使用了 %s，但该引脚不在 IO 初始化区（可选 P60-P77）" % pin})
-		elif t != "电机":
+				"msg": "工程 底盘使用了 %s，但该引脚没有配置输出角色" % pin})
+		elif not PwmConfig.is_motor_role(t):
 			issues.append({"type": "Error",
-				"msg": "工程 底盘使用了 %s，但 IO 初始化区将其设为「%s」（底盘电机必须为电机模式）"
+				"msg": "工程 底盘使用了 %s，但输出角色为「%s」（底盘必须为电机角色）"
 					% [pin, t]})
 	# 主控板舵机口只能驱动舵机（硬件限制）
 	for mp in ["MP03", "MP74"]:
-		if str(io_init.get(mp, "舵机")) == "电机":
+		if PwmConfig.is_motor_role(io_role.get(mp, "舵机")):
 			issues.append({"type": "Error",
 				"msg": "工程 %s 是主控板舵机口，只能驱动舵机，不能设为电机" % mp})
 	# 初始角校验（相对中位，仅舵机有效）
@@ -433,7 +561,7 @@ static func _check_engineer_io(issues: Array, cfg: Dictionary) -> void:
 			issues.append({"type": "Error",
 				"msg": "工程 %s 初始角 %d° 超出范围（有效范围 -%d~%d，相对中位）"
 					% [pin, int(angle), SERVO_MAX_ANGLE, SERVO_MAX_ANGLE]})
-		if str(io_init.get(pin, "舵机")) == "电机":
+		if PwmConfig.is_motor_role(io_role.get(pin, "舵机")):
 			issues.append({"type": "Warn",
 				"msg": "工程 %s 已设为电机，初始角不会生效" % pin})
 
@@ -527,11 +655,12 @@ static func _check_eng_row(issues: Array, row: Dictionary, mode_no: int, row_idx
 		issues.append({"type": "Error", "msg": "%s IO「%s」未知" % [label, io]})
 		return
 	var is_axis: bool = key in ["LX", "LY", "RX", "RY"]
-	var io_init: Dictionary = cfg.get("io_init", {})
-	# 目标 IO 类型：MP 固定舵机；扩展板看 IO 初始化区
-	var pin_type: String = "舵机" if io.begins_with("MP") else str(io_init.get(io, "舵机"))
-	if pin_type.is_empty():
-		pin_type = "舵机"
+	var io_role: Dictionary = PwmConfig.role_map_from_config(cfg,
+		EXPANSION_PINS + MAIN_SERVO_PINS)
+	# 目标 IO 类型：MP 固定舵机；扩展板看输出角色
+	var role: String = "舵机" if io.begins_with("MP") else PwmConfig.normalize_role(io_role.get(io, "舵机"))
+	var is_motor_role: bool = PwmConfig.is_motor_role(role)
+	var pin_type: String = "电机" if is_motor_role else "舵机"
 	# 与底盘冲突
 	for cpin in _chassis_pins(cfg):
 		if cpin == io:
@@ -540,7 +669,7 @@ static func _check_eng_row(issues: Array, row: Dictionary, mode_no: int, row_idx
 	# 控制方式与 IO 类型匹配
 	match mode:
 		"增量":
-			if pin_type != "舵机":
+			if is_motor_role:
 				issues.append({"type": "Error",
 					"msg": "%s 增量模式只能用于舵机，但 %s 是%s" % [label, io, pin_type]})
 		"直接":
@@ -548,7 +677,7 @@ static func _check_eng_row(issues: Array, row: Dictionary, mode_no: int, row_idx
 				issues.append({"type": "Error",
 					"msg": "%s 摇杆行不能用直接模式" % label})
 		"速度", "增速":
-			if pin_type != "电机":
+			if not is_motor_role:
 				issues.append({"type": "Error",
 					"msg": "%s %s模式只能用于电机，但 %s 是%s" % [label, mode, io, pin_type]})
 			if not is_axis:
@@ -577,7 +706,7 @@ static func _check_eng_row(issues: Array, row: Dictionary, mode_no: int, row_idx
 					"msg": "%s 单次增量 %d° 偏大，舵机会几乎瞬间到位，建议 1-%d°"
 						% [label, val, SERVO_STEP_WARN_DEG]})
 		"直接":
-			if pin_type == "舵机":
+			if not is_motor_role:
 				if val < 0 or val > SERVO_MAX_ANGLE:
 					issues.append({"type": "Error",
 						"msg": "%s 舵机角度参数 %d 超出范围（0-%d，正/反由方向选项决定）"
@@ -625,7 +754,7 @@ static func _check_debug_params(issues: Array, debug_rows: Array) -> void:
 				"msg": "调试 %s 参数「%s」不是合法整数" % [pin_name, text]})
 			continue
 		match drive_type:
-			"电机":
+			"电机", "平滑电机", "抖动电机":
 				if val < 0 or val > 10000:
 					issues.append({"type": "Error",
 						"msg": "调试 %s 电机速度 %d 超出范围（有效范围 0-10000）" % [pin_name, val]})

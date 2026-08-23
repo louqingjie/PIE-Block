@@ -121,12 +121,17 @@ func _cmd_generate(args: PackedStringArray) -> void:
 		quit(EXIT_ARG)
 		return
 
-	# 检查是否有 Error，有则仍然生成代码但标记
-	var has_error: bool = false
-	for issue in issues:
-		if str(issue.get("type", "")) == "Error":
-			has_error = true
-			break
+	# Error 配置禁止生成；Warn 允许继续并随结果返回。
+	var has_error: bool = _has_error(issues)
+	if has_error:
+		print(JSON.stringify({
+			"ok": false,
+			"kind": kind,
+			"has_error": true,
+			"issues": issues,
+		}, "\t"))
+		quit(EXIT_RUN)
+		return
 
 	# 生成代码
 	var code: String = _generate_code(kind, cfg)
@@ -220,7 +225,7 @@ func _cmd_check(args: PackedStringArray) -> void:
 		"warn_count": issues.filter(func(i): return str(i.get("type", "")) == "Warn").size(),
 	}
 	print(JSON.stringify(result, "\t"))
-	quit(EXIT_OK)
+	quit(EXIT_RUN if has_error else EXIT_OK)
 
 
 # ====================================================================
@@ -277,6 +282,7 @@ func _cmd_build(args: PackedStringArray) -> void:
 		return
 
 	var code: String = ""
+	var config_issues: Array = []
 	if parsed.has("--code"):
 		# 直接编译已有 C 代码文件
 		var f: FileAccess = FileAccess.open(parsed["--code"], FileAccess.READ)
@@ -294,6 +300,12 @@ func _cmd_build(args: PackedStringArray) -> void:
 			quit(EXIT_IO)
 			return
 		var cfg: Dictionary = _parse_config_json(config_text, kind)
+		config_issues = _run_check(kind, cfg)
+		if _has_error(config_issues):
+			print(JSON.stringify({"ok": false, "kind": kind, "has_error": true,
+				"issues": config_issues}, "\t"))
+			quit(EXIT_RUN)
+			return
 		code = _generate_code(kind, cfg)
 	elif parsed.has("--project"):
 		# 优先用项目里已保存的代码，其次重新生成
@@ -304,6 +316,12 @@ func _cmd_build(args: PackedStringArray) -> void:
 			return
 		var data: Dictionary = res["data"]
 		kind = data.get("kind", "infantry")
+		config_issues = _run_check(kind, _config_from_project(data, kind))
+		if _has_error(config_issues):
+			print(JSON.stringify({"ok": false, "kind": kind, "has_error": true,
+				"issues": config_issues}, "\t"))
+			quit(EXIT_RUN)
+			return
 		code = str(data.get("main_c_ai", ""))
 		if code.strip_edges().is_empty():
 			code = str(data.get("main_c_stage1", ""))
@@ -423,6 +441,13 @@ func _run_check(kind: String, cfg: Dictionary) -> Array:
 			return SC.check_infantry(cfg)
 
 
+func _has_error(issues: Array) -> bool:
+	for issue in issues:
+		if str(issue.get("type", "")) == "Error":
+			return true
+	return false
+
+
 # ====================================================================
 # 从 .pieproj 提取配置字典
 # ====================================================================
@@ -487,6 +512,13 @@ func _flatten_infantry_config(config: Dictionary) -> Dictionary:
 	flat["r1_dir"] = str(_config_val(config, "FirstRow/Chassis/R1/OptionButton2"))
 	flat["r2_io"] = str(_config_val(config, "FirstRow/Chassis/R2/OptionButton"))
 	flat["r2_dir"] = str(_config_val(config, "FirstRow/Chassis/R2/OptionButton2"))
+	# 步兵高级设置：PWMA 固定 50Hz，PWMB 可选。
+	var advanced_root: String = "Infantry/Advanced/ScrollContainer/AdvancedAndEngineer"
+	flat["pwm_group_init"] = {
+		"PWMA": "50Hz",
+		"PWMB": _pwm_group_frequency_text(
+			_config_val(config, advanced_root + "/PWMGroups/PWMB/OptionButton"), "10000Hz"),
+	}
 	# 云台（EditZone 下）
 	var gimbal: String = "Infantry/GimbalSetting"
 	flat["booster_io"] = str(_config_val(config, gimbal + "/Booster/OptionButton"))
@@ -520,6 +552,21 @@ func _flatten_infantry_config(config: Dictionary) -> Dictionary:
 	flat["friction_speed_step"] = str(_config_val(config,
 		keyset + "/BoosterSpeedControl/MaxDuty"))
 	flat["zero_enabled"] = bool(_config_val(config, keyset + "/Zero/CheckBox"))
+	var io_role: Dictionary = {}
+	for pin in PwmConfig.EXPANSION_PINS:
+		io_role[pin] = "舵机"
+	for field in ["l1_io", "l2_io", "r1_io", "r2_io", "booster_io"]:
+		var pin: String = _first_io_pin(str(flat.get(field, "")))
+		if pin in PwmConfig.EXPANSION_PINS:
+			io_role[pin] = "平滑电机"
+	for axis in ["yaw", "pitch"]:
+		var axis_pin: String = _first_io_pin(str(flat.get(axis + "_io", "")))
+		if axis_pin in PwmConfig.EXPANSION_PINS:
+			io_role[axis_pin] = "舵机" if str(flat.get(axis + "_drive", "舵机")) == "舵机" else "平滑电机"
+	if str(flat.get("friction_type", "无刷电调")) != "不使用":
+		io_role["P64"] = "摩擦轮"
+		io_role["P66"] = "摩擦轮"
+	flat["io_role"] = io_role
 	return _merge_defaults(flat, "infantry")
 
 
@@ -548,14 +595,22 @@ func _flatten_engineer_config(config: Dictionary) -> Dictionary:
 ## 工程 IO 初始化区 + 模式配置 + 每模式动态按键映射行
 func _flatten_shared_eng_config(config: Dictionary, root: String) -> Dictionary:
 	var flat: Dictionary = {}
-	# IO 初始化区（10 引脚：类型 + 初始角）
-	var io_init: Dictionary = {}
+	# PWM 组初始化：OptionButton 文本包含用途说明，只保留稳定的频率值。
+	flat["pwm_group_init"] = {
+		"PWMA": _pwm_group_frequency_text(
+			_config_val(config, root + "/PWMGroups/PWMA/OptionButton"), "50Hz"),
+		"PWMB": _pwm_group_frequency_text(
+			_config_val(config, root + "/PWMGroups/PWMB/OptionButton"), "10000Hz"),
+	}
+	# 输出角色（10 引脚：角色 + 初始角）
+	var io_role: Dictionary = {}
 	var io_mid: Dictionary = {}
 	var eng_pins: Array = ["P60", "P62", "P64", "P66", "P74", "P75", "P76", "P77", "MP03", "MP74"]
 	for pin in eng_pins:
-		io_init[pin] = str(_config_val(config, root + "/" + _eng_io_rel(pin)))
+		var role: String = str(_config_val(config, root + "/" + _eng_io_rel(pin)))
+		io_role[pin] = role
 		io_mid[pin] = str(_config_val(config, root + "/" + _eng_io_rel(pin).replace("/OptionButton", "/MidDegree2")))
-	flat["io_init"] = io_init
+	flat["io_role"] = io_role
 	flat["io_mid"] = io_mid
 	# 模式配置
 	flat["mode_count"] = str(_config_val(config, root + "/Mode/OptionButton"))
@@ -602,6 +657,16 @@ func _flatten_shared_eng_config(config: Dictionary, root: String) -> Dictionary:
 		modes.append({"rows": rows})
 	flat["modes"] = modes
 	return flat
+
+
+func _pwm_group_frequency_text(value: Variant, fallback: String) -> String:
+	var text: String = str(value).strip_edges()
+	return "10000Hz" if text.begins_with("10000") else ("50Hz" if text.begins_with("50") else fallback)
+
+
+func _first_io_pin(value: String) -> String:
+	var parts: PackedStringArray = value.strip_edges().split(" ", false)
+	return parts[0].strip_edges() if not parts.is_empty() else ""
 
 
 ## 工程 IO 引脚 -> 初始化区相对路径（与 ui.gd ENG_IO_REL 对应）
@@ -658,6 +723,18 @@ func _merge_defaults(flat: Dictionary, _kind: String) -> Dictionary:
 		flat["sprint_speed"] = "8000"
 	if not flat.has("sprint_enabled"):
 		flat["sprint_enabled"] = false
+	var pwm_group_init: Dictionary = flat.get("pwm_group_init", {}) \
+		if flat.get("pwm_group_init", {}) is Dictionary else {}
+	if _kind == "infantry":
+		pwm_group_init["PWMA"] = "50Hz"
+		if not pwm_group_init.has("PWMB"):
+			pwm_group_init["PWMB"] = "10000Hz"
+	else:
+		if not pwm_group_init.has("PWMA"):
+			pwm_group_init["PWMA"] = "50Hz"
+		if not pwm_group_init.has("PWMB"):
+			pwm_group_init["PWMB"] = "10000Hz"
+	flat["pwm_group_init"] = pwm_group_init
 	if _kind == "infantry" and (not flat.has("friction_type") \
 			or str(flat["friction_type"]) == "" or str(flat["friction_type"]) == "<null>"):
 		flat["friction_type"] = "无刷电调"
@@ -771,6 +848,18 @@ func _infantry_schema() -> Dictionary:
 		"normal_speed": {"type": "string", "description": "普通速度 (0-10000)", "default": "4000"},
 		"sprint_speed": {"type": "string", "description": "冲刺速度 (0-10000)", "default": "8000"},
 		"sprint_enabled": {"type": "boolean", "description": "按下左摇杆冲刺", "default": false},
+		"pwm_group_init": {
+			"type": "object", "description": "PWM 组初始化频率；步兵 PWMA 固定 50Hz",
+			"properties": {
+				"PWMA": {"type": "string", "const": "50Hz", "default": "50Hz"},
+				"PWMB": {"type": "string", "enum": ["50Hz", "10000Hz"], "default": "10000Hz"},
+			},
+		},
+		"io_role": {
+			"type": "object", "description": "各引脚输出角色",
+			"additionalProperties": {"type": "string",
+				"enum": ["舵机", "摩擦轮", "抖动电机", "平滑电机"]},
+		},
 		"l1_io": {"type": "string", "description": "左前轮 IO（扩展板通信脚+方向脚，如 'P74 P24'）", "default": "P74 P24"},
 		"l2_io": {"type": "string", "description": "左后轮 IO", "default": "P75 P25"},
 		"r1_io": {"type": "string", "description": "右前轮 IO", "default": "P76 P26"},
@@ -818,6 +907,18 @@ func _engineer_base_schema() -> Dictionary:
 		"normal_speed": {"type": "string", "description": "普通速度 (0-10000)", "default": "4000"},
 		"sprint_speed": {"type": "string", "description": "冲刺速度 (0-10000)", "default": "8000"},
 		"sprint_enabled": {"type": "boolean", "description": "按下左摇杆冲刺", "default": false},
+		"pwm_group_init": {
+			"type": "object", "description": "PWMA/PWMB 组初始化频率；同组四路保持一致",
+			"properties": {
+				"PWMA": {"type": "string", "enum": ["50Hz", "10000Hz"], "default": "50Hz"},
+				"PWMB": {"type": "string", "enum": ["50Hz", "10000Hz"], "default": "10000Hz"},
+			},
+		},
+		"io_role": {
+			"type": "object", "description": "各引脚输出角色；频率由 PWM 组配置决定",
+			"additionalProperties": {"type": "string",
+				"enum": ["舵机", "摩擦轮", "抖动电机", "平滑电机"]},
+		},
 		"l1_io": {"type": "string", "default": "P74 P24"},
 		"l2_io": {"type": "string", "default": "P75 P25"},
 		"r1_io": {"type": "string", "default": "P76 P26"},
@@ -826,22 +927,6 @@ func _engineer_base_schema() -> Dictionary:
 		"l2_dir": {"type": "string", "enum": ["正向", "反向"], "default": "正向"},
 		"r1_dir": {"type": "string", "enum": ["正向", "反向"], "default": "正向"},
 		"r2_dir": {"type": "string", "enum": ["正向", "反向"], "default": "正向"},
-		"io_init": {
-			"type": "object",
-			"description": "扩展板各引脚初始化类型",
-			"properties": {
-				"P60": {"type": "string", "enum": ["舵机", "电机"], "default": "舵机"},
-				"P62": {"type": "string", "enum": ["舵机", "电机"], "default": "舵机"},
-				"P64": {"type": "string", "enum": ["舵机", "电机"], "default": "舵机"},
-				"P66": {"type": "string", "enum": ["舵机", "电机"], "default": "舵机"},
-				"P74": {"type": "string", "enum": ["舵机", "电机"], "default": "舵机"},
-				"P75": {"type": "string", "enum": ["舵机", "电机"], "default": "舵机"},
-				"P76": {"type": "string", "enum": ["舵机", "电机"], "default": "舵机"},
-				"P77": {"type": "string", "enum": ["舵机", "电机"], "default": "舵机"},
-				"MP03": {"type": "string", "enum": ["舵机", "电机"], "default": "舵机"},
-				"MP74": {"type": "string", "enum": ["舵机", "电机"], "default": "舵机"},
-			},
-		},
 		"io_mid": {
 			"type": "object",
 			"description": "各引脚舵机初始角（相对中位偏移角，-90~90，仅舵机有效）",
