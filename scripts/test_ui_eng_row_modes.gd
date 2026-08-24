@@ -208,10 +208,12 @@ func _initialize() -> void:
 	_check("回填后按 IO 初始化区过滤",
 		_mode_items(opt4) == ["增量", "直接"], str(_mode_items(opt4)))
 
-	# ---- 步兵仅保留固定角色配置，不再提供工程高级设置 ----
+	# ---- 步兵高级设置仅提供独立选项，不恢复工程 IO/模式配置 ----
 	ui._apply_kind_visibility("infantry", 0)
-	_check("步兵页不再显示高级设置",
-		ui.get_node_or_null(NodePath(ui.INFANTRY_PAGE + "/Advanced")) == null)
+	_check("步兵页高级设置提供禁用蜂鸣器",
+		ui.get_node_or_null(NodePath(ui.ADV_ENGINEER + "/PWMGroups/Buzzer/CheckBox")) is CheckBox)
+	_check("步兵页不恢复工程 IO 设置",
+		ui.get_node_or_null(NodePath(ui.ADV_ENGINEER + "/IOs")) == null)
 	# ---- 摩擦轮类型：无刷保留 P64/P66；禁用后释放并关闭参数控件 ----
 	var friction_type: OptionButton = ui.get_node(ui.P_FRICTION_TYPE)
 	var friction_key: OptionButton = ui.get_node(ui.P_BOOSTER_KEY)

@@ -89,35 +89,50 @@ func _gen_nrf_poll() -> String:
 func _gen_led_diag_tools(led_port: String = "GPIO_P3",
 		led1: String = "GPIO_Pin_5", led2: String = "GPIO_Pin_6",
 		led3: String = "GPIO_Pin_7",
-		buzzer_ch: String = "PWMA_CH4N_P33") -> String:
+		buzzer_ch: String = "PWMA_CH4N_P33", buzzer_enabled: bool = true) -> String:
 	var code: String = ""
-	code += "// ==================== 初始化诊断：3 颗 LED + 蜂鸣器 ====================\n"
-	code += "// 3 颗 LED（低电平点亮）+ 蜂鸣器（PWM 驱动），把初始化拆成多步，\n"
-	code += "// 每步用 LED 编码 + 蜂鸣器音调双重定位：\n"
-	code += "//   - 进入某步前：LED 显示该步编码（3 bit 二进制，P35=bit0 P36=bit1 P37=bit2）\n"
-	code += "//   - 该步成功后：蜂鸣器响一声推进确认音（音调随步骤递增）\n"
-	code += "//   - 若某步阻塞：LED 停在编码、听不到后续确认音 -> 对照编码表定位\n"
+	if buzzer_enabled:
+		# 保持默认启用分支的既有生成文本完全不变。
+		code += "// ==================== 初始化诊断：3 颗 LED + 蜂鸣器 ====================\n"
+		code += "// 3 颗 LED（低电平点亮）+ 蜂鸣器（PWM 驱动），把初始化拆成多步，\n"
+		code += "// 每步用 LED 编码 + 蜂鸣器音调双重定位：\n"
+		code += "//   - 进入某步前：LED 显示该步编码（3 bit 二进制，P35=bit0 P36=bit1 P37=bit2）\n"
+		code += "//   - 该步成功后：蜂鸣器响一声推进确认音（音调随步骤递增）\n"
+		code += "//   - 若某步阻塞：LED 停在编码、听不到后续确认音 -> 对照编码表定位\n"
+	else:
+		code += "// ==================== 初始化诊断：3 颗 LED ====================\n"
+		code += "// 3 颗 LED（低电平点亮）把初始化拆成多步。\n"
+		code += "//   - 进入某步前：LED 显示该步编码（3 bit 二进制，P35=bit0 P36=bit1 P37=bit2）\n"
+		code += "//   - 若某步阻塞：LED 停在编码 -> 对照编码表定位\n"
 	code += "#define LED_PORT %s\n" % led_port
 	code += "#define LED1_PIN %s   // 编码 bit0\n" % led1
 	code += "#define LED2_PIN %s   // 编码 bit1\n" % led2
 	code += "#define LED3_PIN %s   // 编码 bit2\n" % led3
-	code += "#define BUZZER_CH %s  // 蜂鸣器（PWM 驱动）\n\n" % buzzer_ch
+	if buzzer_enabled:
+		code += "#define BUZZER_CH %s  // 蜂鸣器（PWM 驱动）\n" % buzzer_ch
+	code += "\n"
 	code += "// LED 显示步骤编码 0~7（低电平点亮：0=亮 1=灭）\n"
 	code += "static void LedShow(uint8_t show)\n{\n"
 	code += "    GPIO_Write_Bit(LED_PORT, LED1_PIN, (show & 0x01) ? 0 : 1);\n"
 	code += "    GPIO_Write_Bit(LED_PORT, LED2_PIN, (show & 0x02) ? 0 : 1);\n"
 	code += "    GPIO_Write_Bit(LED_PORT, LED3_PIN, (show & 0x04) ? 0 : 1);\n}\n\n"
-	code += "// 蜂鸣器响一声（PWM 驱动，freq 音调 / ms 时长）\n"
-	code += "static void Beep(uint16_t freq, uint16_t ms)\n{\n"
-	code += "    PWM_SET_Frequency(BUZZER_CH, freq, 5000);\n"
-	code += "    Ms_Delay(ms);\n"
-	code += "    PWM_SET_Frequency(BUZZER_CH, freq, 0);\n}\n\n"
+	if buzzer_enabled:
+		code += "// 蜂鸣器响一声（PWM 驱动，freq 音调 / ms 时长）\n"
+		code += "static void Beep(uint16_t freq, uint16_t ms)\n{\n"
+		code += "    PWM_SET_Frequency(BUZZER_CH, freq, 5000);\n"
+		code += "    Ms_Delay(ms);\n"
+		code += "    PWM_SET_Frequency(BUZZER_CH, freq, 0);\n}\n\n"
 	code += "// 进入某步：先显示编码（若该步阻塞，LED 就停在这里）\n"
 	code += "static void StepBegin(uint8_t step)\n{\n"
 	code += "    LedShow(step & 0x07);\n}\n\n"
-	code += "// 某步初始化成功：蜂鸣器推进确认音（音调随步骤递增，可听声定位）\n"
-	code += "static void StepDone(uint8_t step)\n{\n"
-	code += "    Beep(500 + (uint16_t)(step % 8) * 60, 60);\n}\n\n"
+	if buzzer_enabled:
+		code += "// 某步初始化成功：蜂鸣器推进确认音（音调随步骤递增，可听声定位）\n"
+		code += "static void StepDone(uint8_t step)\n{\n"
+		code += "    Beep(500 + (uint16_t)(step % 8) * 60, 60);\n}\n\n"
+	else:
+		code += "// 蜂鸣器已禁用；保留步骤调用但不增加等待。\n"
+		code += "static void StepDone(uint8_t step)\n{\n"
+		code += "    (void)step;\n}\n\n"
 	return code
 
 
@@ -147,14 +162,16 @@ func _gen_mode_switch_feedback() -> String:
 ## 同时初始化蜂鸣器 PWM 通道：PWM_SET_Frequency 只改周期/比较寄存器，
 ## 不会使能通道输出和启动定时器——没有这行 PWM_Init，Beep() 全程无声
 ## （多个生成器均曾漏掉，2026-08 实机发现）。
-func _gen_led_diag_init() -> String:
-	return ("    // 诊断 LED（P35/P36/P37）推挽输出，全亮自检后熄灭\n"
+func _gen_led_diag_init(buzzer_enabled: bool = true) -> String:
+	var code: String = ("    // 诊断 LED（P35/P36/P37）推挽输出，全亮自检后熄灭\n"
 		+"    GPIO_Init(LED_PORT, (GPIO_Pin_enum)(LED1_PIN | LED2_PIN | LED3_PIN), GPIO_OUT_PP);\n"
 		+"    LedShow(7);\n"
 		+"    Ms_Delay(200);\n"
-		+"    LedShow(0);\n"
-		+"    // 蜂鸣器通道必须 PWM_Init（使能输出+启动定时器），否则 Beep 无声\n"
-		+"    PWM_Init(BUZZER_CH, 500, 0);\n")
+		+"    LedShow(0);\n")
+	if buzzer_enabled:
+		code += "    // 蜂鸣器通道必须 PWM_Init（使能输出+启动定时器），否则 Beep 无声\n"
+		code += "    PWM_Init(BUZZER_CH, 500, 0);\n"
+	return code
 
 
 ## 生成串口初始化，**必须放在所有外设初始化之前**。
@@ -501,7 +518,7 @@ func _gen_mode_rows(rows: Array, io_role: Dictionary, mode_label: String) -> Str
 ## aux_motor_slots 非空时生成「切换模式 -> 辅助电机下电」逻辑：
 ## 新模式未映射的电机清零（摩擦轮与舵机保持原状）
 func _gen_update_mode(mode_count: int, strategy: String, switch_key: String,
-		mode_keys: Array, aux_motor_slots: Array = []) -> String:
+		mode_keys: Array, aux_motor_slots: Array = [], buzzer_enabled: bool = true) -> String:
 	var s: String = ""
 	s += "void UpdateMode()\n{\n"
 	if mode_count <= 1:
@@ -514,7 +531,8 @@ func _gen_update_mode(mode_count: int, strategy: String, switch_key: String,
 			s += "    if (%s && !modeKeyLast[%d])\n" % [_row_key_expr(key), i]
 			s += "    {\n"
 			s += "        currentMode = %d;\n" % (i + 1)
-			s += "        ModeSwitchFeedback(%d);\n" % (i + 1)
+			if buzzer_enabled:
+				s += "        ModeSwitchFeedback(%d);\n" % (i + 1)
 			s += "    }\n"
 		for i in range(mode_count):
 			var key2: String = str(mode_keys[i]) if i < mode_keys.size() else ""
@@ -527,7 +545,8 @@ func _gen_update_mode(mode_count: int, strategy: String, switch_key: String,
 		s += "    if (pressed && !modeKeyHeld)\n"
 		s += "    {\n"
 		s += "        currentMode = (currentMode %% %d) + 1;\n" % mode_count
-		s += "        ModeSwitchFeedback(currentMode);\n"
+		if buzzer_enabled:
+			s += "        ModeSwitchFeedback(currentMode);\n"
 		s += "    }\n"
 		s += "    modeKeyHeld = pressed;\n"
 	# 切换模式：新模式未映射的辅助电机下电（摩擦轮与舵机保持原状）

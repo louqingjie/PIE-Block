@@ -80,6 +80,8 @@ func generate(cfg: Dictionary) -> String:
 	# 缺失字段兼容旧项目；非法值由静态检查报错，生成器仍按无刷安全回退。
 	var friction_type: String = str(cfg.get("friction_type", "无刷电调"))
 	var friction_enabled: bool = friction_type != "不使用"
+	var buzzer_disabled_value: Variant = cfg.get("buzzer_disabled", false)
+	var buzzer_enabled: bool = not (buzzer_disabled_value is bool and buzzer_disabled_value == true)
 	var ch: String = _int_or_default(cfg.get("channel", ""), 36, 0, 125)
 	var dz: String = _int_or_default(cfg.get("deadzone", ""), 10, 0, 2047)
 	var normal_spd: String = _int_or_default(cfg.get("normal_speed", ""), 4000, 0, 10000)
@@ -160,9 +162,9 @@ func generate(cfg: Dictionary) -> String:
 	var yaw_is_servo: bool = str(cfg.get("yaw_drive", "舵机")) == "舵机"
 	var pitch_is_servo: bool = str(cfg.get("pitch_drive", "舵机")) == "舵机"
 	var servo_buzzer_exprs: Array = []
-	if yaw_is_servo:
+	if buzzer_enabled and yaw_is_servo:
 		servo_buzzer_exprs.append("dutyOfServo[0]")
-	if pitch_is_servo:
+	if buzzer_enabled and pitch_is_servo:
 		servo_buzzer_exprs.append("dutyOfServo[1]")
 	var yaw_pin: String = _parse_io_pair(cfg.get("yaw_io", "MP74"))
 	var pitch_pin: String = _parse_io_pair(cfg.get("pitch_io", "MP03"))
@@ -370,9 +372,11 @@ func generate(cfg: Dictionary) -> String:
 	code += CodeGenBase.REMOTE_CONTROL_INIT_CODE
 	# 初始化诊断工具（LED + 蜂鸣器）与 UART1 查询发送（修复 UART 死锁）。
 	# P33 改用 PWMA_CH4N，避免斜坡音调连续变频扰动主控舵机所在的 PWMB 时基。
-	code += _gen_led_diag_tools("GPIO_P3", "GPIO_Pin_5", "GPIO_Pin_6", "GPIO_Pin_7", "PWMA_CH4N_P33")
+	code += _gen_led_diag_tools("GPIO_P3", "GPIO_Pin_5", "GPIO_Pin_6", "GPIO_Pin_7",
+		"PWMA_CH4N_P33", buzzer_enabled)
 	code += CodeGenBase.UART_TX_QUERY_CODE
-	code += _gen_servo_buzzer_tools(servo_buzzer_exprs, friction_enabled)
+	if buzzer_enabled:
+		code += _gen_servo_buzzer_tools(servo_buzzer_exprs, friction_enabled)
 
 	# --- main() ---
 	code += "void main()\n{\n"
@@ -436,7 +440,7 @@ func generate(cfg: Dictionary) -> String:
 		code += "        lastTriggerKeyValue = triggerKeyValue;\n\n"
 	code += "        // 发送控制函数\n"
 	code += "        Main_Countrol(%s);\n" % main_control_args
-	if friction_enabled or not servo_buzzer_exprs.is_empty():
+	if buzzer_enabled and (friction_enabled or not servo_buzzer_exprs.is_empty()):
 		code += "        UpdateBuzzerFeedback();\n"
 	code += "        Ms_Delay(10);\n"
 	code += "    }\n}\n\n"
@@ -460,7 +464,7 @@ func generate(cfg: Dictionary) -> String:
 	code += _gen_uart_init_first()
 	code += "    StepDone(1);\n"
 	code += "    StepBegin(2);\n"
-	code += _gen_led_diag_init()
+	code += _gen_led_diag_init(buzzer_enabled)
 	code += "    StepDone(2);\n"
 	code += "    StepBegin(3);\n"
 	code += _gen_nrf_init_safe()
@@ -475,7 +479,8 @@ func generate(cfg: Dictionary) -> String:
 	code += "    StepBegin(5);\n"
 	code += pwm_init_lines
 	code += "    StepDone(5);\n"
-	code += _gen_init_done("Beep")
+	if buzzer_enabled:
+		code += _gen_init_done("Beep")
 	code += "}\n\n"
 
 	# --- ReadControllerInputs ---
@@ -579,13 +584,16 @@ func generate(cfg: Dictionary) -> String:
 		code += "        if (dutyOfBooster == targetDutyOfBooster)\n"
 		code += "        {\n"
 		code += "            frictionRampActive = 0;\n"
-		code += "            FrictionBuzzerOff();\n"
+		if buzzer_enabled:
+			code += "            FrictionBuzzerOff();\n"
 		code += "        }\n"
-		code += "        else\n"
-		code += "            FrictionBuzzerTrace(dutyOfBooster);\n"
+		if buzzer_enabled:
+			code += "        else\n"
+			code += "            FrictionBuzzerTrace(dutyOfBooster);\n"
 		code += "    }\n"
-		code += "    else\n"
-		code += "        FrictionBuzzerOff();\n"
+		if buzzer_enabled:
+			code += "    else\n"
+			code += "        FrictionBuzzerOff();\n"
 		code += "    lastBoosterKeyValue = boosterKeyValue;\n"
 		code += "    lastFrictionSpeedUpKeyValue = frictionSpeedUpKeyValue;\n"
 		code += "    lastFrictionSpeedDownKeyValue = frictionSpeedDownKeyValue;\n"

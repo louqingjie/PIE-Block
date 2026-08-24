@@ -417,3 +417,37 @@ layout_mode = 2
 size_flags_horizontal = 8
 tooltip_text = "校内赛安全硬上限：只允许 500、600、700、800"
 text = "100"
+
+[node name="Advanced" type="VBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="HSeparator" type="HSeparator" parent="Advanced"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Advanced"]
+layout_mode = 2
+size_flags_horizontal = 4
+text = "高级设置"
+
+[node name="ScrollContainer" type="ScrollContainer" parent="Advanced"]
+layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="AdvancedAndEngineer" type="VBoxContainer" parent="Advanced/ScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="PWMGroups" type="VBoxContainer" parent="Advanced/ScrollContainer/AdvancedAndEngineer"]
+layout_mode = 2
+
+[node name="Buzzer" type="HBoxContainer" parent="Advanced/ScrollContainer/AdvancedAndEngineer/PWMGroups"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Advanced/ScrollContainer/AdvancedAndEngineer/PWMGroups/Buzzer"]
+layout_mode = 2
+text = "禁用蜂鸣器"
+
+[node name="CheckBox" type="CheckBox" parent="Advanced/ScrollContainer/AdvancedAndEngineer/PWMGroups/Buzzer"]
+layout_mode = 2
+size_flags_horizontal = 10
+tooltip_text = "关闭初始化提示音、舵机反馈音和摩擦轮反馈音"

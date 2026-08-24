@@ -7,6 +7,7 @@ extends SceneTree
 const Infantry = preload("res://scripts/codegen/codegen_infantry.gd")
 const Engineer = preload("res://scripts/codegen/codegen_engineer.gd")
 const Debug = preload("res://scripts/codegen/codegen_debug.gd")
+const Music = preload("res://scripts/codegen/codegen_music.gd")
 
 var _fail: int = 0
 
@@ -111,6 +112,21 @@ func _initialize() -> void:
 	var infantry_no_servo: String = infantry.generate(_infantry_cfg("电机", "电机"))
 	_check("步兵无舵机且无摩擦轮时不生成反馈", not infantry_no_servo.contains("UpdateBuzzerFeedback")
 		and not infantry_no_servo.contains("lastServoBuzzerDuty"))
+	var infantry_disabled_cfg: Dictionary = _infantry_cfg("舵机", "舵机", "无刷电调")
+	infantry_disabled_cfg["buzzer_disabled"] = true
+	var infantry_disabled: String = infantry.generate(infantry_disabled_cfg)
+	_check("步兵禁用后不生成蜂鸣器定义和函数",
+		not infantry_disabled.contains("#define BUZZER_CH")
+		and not infantry_disabled.contains("void Beep(")
+		and not infantry_disabled.contains("UpdateBuzzerFeedback")
+		and not infantry_disabled.contains("FrictionBuzzer"))
+	_check("步兵禁用后保留 LED 诊断和摩擦轮斜坡",
+		infantry_disabled.contains("static void LedShow(uint8_t show)")
+		and infantry_disabled.contains("frictionRampActive = (dutyOfBooster != targetDutyOfBooster);")
+		and infantry_disabled.contains("dutyOfBooster += FRICTION_STEP_DUTY;"))
+	_check("步兵禁用后 P33 不产生 PWM",
+		not infantry_disabled.contains("PWMA_CH4N_P33")
+		and not infantry_disabled.contains("PWMB_CH3_P33"))
 
 	var engineer_code: String = Engineer.new().generate(_engineer_cfg())
 	_check("工程映射初始化频率不含 0", _init_frequencies_are_valid(engineer_code))
@@ -132,6 +148,32 @@ func _initialize() -> void:
 	var engineer_no_servo: String = Engineer.new().generate(_engineer_cfg(false))
 	_check("工程映射无配置舵机时不生成反馈", not engineer_no_servo.contains("UpdateBuzzerFeedback")
 		and not engineer_no_servo.contains("lastServoBuzzerDuty"))
+	var engineer_disabled_cfg: Dictionary = _engineer_cfg()
+	engineer_disabled_cfg["buzzer_disabled"] = true
+	var engineer_disabled: String = Engineer.new().generate(engineer_disabled_cfg)
+	_check("工程禁用后不生成蜂鸣器定义和反馈",
+		not engineer_disabled.contains("#define BUZZER_CH")
+		and not engineer_disabled.contains("void Beep(")
+		and not engineer_disabled.contains("UpdateBuzzerFeedback"))
+	_check("工程禁用后保留 LED 诊断和舵机控制",
+		engineer_disabled.contains("static void LedShow(uint8_t show)")
+		and engineer_disabled.contains("PWM_SET_Frequency(PWMB_CH4_P03, 50,")
+		and engineer_disabled.contains("PWM_SET_Frequency(PWMB_CH1_P74, 50,"))
+	_check("工程禁用后 P33 不产生 PWM",
+		not engineer_disabled.contains("PWMA_CH4N_P33")
+		and not engineer_disabled.contains("PWMB_CH3_P33"))
+	var engineer_mp03_only_cfg: Dictionary = _engineer_cfg(false)
+	engineer_mp03_only_cfg["buzzer_disabled"] = true
+	engineer_mp03_only_cfg["io_init"] = {"MP03": "舵机", "MP74": "舵机"}
+	engineer_mp03_only_cfg["modes"] = [{"rows": [{
+		"key": "A", "dir": "正", "mode": "增量", "param": "2", "io": "MP03",
+	}]}]
+	var engineer_mp03_only: String = Engineer.new().generate(engineer_mp03_only_cfg)
+	_check("工程禁用后仅配置 MP03 时输出 50Hz",
+		engineer_mp03_only.contains("PWM_Init(PWMB_CH4_P03, 50,"))
+	_check("工程未配置 MP74 时不启动其 PWM",
+		not engineer_mp03_only.contains("PWM_Init(PWMB_CH1_P74")
+		and not engineer_mp03_only.contains("PWM_SET_Frequency(PWMB_CH1_P74"))
 
 	_check("工程反馈函数不引入阻塞延时", not engineer_helper.contains("Ms_Delay"))
 	_check("工程首周期只建立比较基准", engineer_helper.contains("if (!servoBuzzerInitialized)")
@@ -172,6 +214,18 @@ func _initialize() -> void:
 		debug_servo_code.contains("ExpansionBoradControl(Duty_Change_Order, 583, 0"))
 	_check("调试舵机不发送硬件方向帧",
 		not _debug_row_section(debug_servo_code, "P60").contains("Dir_Change_Order"))
+	var debug_with_ignored_option: Dictionary = {
+		"buzzer_disabled": true,
+		"debug_rows": [{"pin": "P60", "drive_type": "舵机", "dir": 0,
+			"value": 30, "enabled": true}],
+	}
+	_check("调试生成器不读取禁用蜂鸣器选项",
+		Debug.new().generate(debug_with_ignored_option) == debug_servo_code)
+	var music_cfg: Dictionary = {"segments": [{"notes": [60], "duration_ms": 100}]}
+	var music_with_ignored_option: Dictionary = music_cfg.duplicate(true)
+	music_with_ignored_option["buzzer_disabled"] = true
+	_check("音乐生成器不读取禁用蜂鸣器选项",
+		Music.new().generate(music_with_ignored_option) == Music.new().generate(music_cfg))
 
 	print("\n=== 结果: %s ===" % ("全部通过 ✓" if _fail == 0 else "%d 项失败 ✗" % _fail))
 	quit(0 if _fail == 0 else 1)

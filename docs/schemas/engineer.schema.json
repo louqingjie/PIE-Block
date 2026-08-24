@@ -3,6 +3,11 @@
   "description": "工程机器人：底盘4电机、1～4个独立操作模式、两种切换策略和任意IO按键映射。支持舵机/电机混用。",
   "kind": "engineer",
   "properties": {
+    "buzzer_disabled": {
+      "default": false,
+      "description": "禁用全部硬件蜂鸣反馈",
+      "type": "boolean"
+    },
     "channel": {
       "default": "36",
       "description": "NRF24L01 通道号 (0-125)",

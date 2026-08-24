@@ -60,6 +60,18 @@ popup/item_0/id = 0
 popup/item_1/text = "10000Hz（平滑电机）"
 popup/item_1/id = 1
 
+[node name="Buzzer" type="HBoxContainer" parent="PWMGroups"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="PWMGroups/Buzzer"]
+layout_mode = 2
+text = "禁用蜂鸣器"
+
+[node name="CheckBox" type="CheckBox" parent="PWMGroups/Buzzer"]
+layout_mode = 2
+size_flags_horizontal = 10
+tooltip_text = "关闭初始化提示音、舵机反馈音、摩擦轮反馈音和模式切换音"
+
 [node name="RoleLabel" type="Label" parent="." unique_id=2100000008]
 layout_mode = 2
 text = "各引脚输出角色（频率由上方 PWM 组决定）"

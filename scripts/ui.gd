@@ -97,6 +97,7 @@ const ENG_PWM_GROUP_REL: Dictionary = {
 	"PWMA": "PWMGroups/PWMA/OptionButton",
 	"PWMB": "PWMGroups/PWMB/OptionButton",
 }
+const ENG_BUZZER_DISABLED_REL: String = "PWMGroups/Buzzer/CheckBox"
 # 每个引脚一个输出角色 OptionButton + MidDegree2(初始角)。
 const ENG_IO_REL: Dictionary = {
 	"P60": "IOs/Row1/P60/OptionButton",
@@ -628,7 +629,8 @@ func _apply_control_value(node: Node, value: Variant) -> void:
 	elif node is LineEdit:
 		node.text = str(v.get("t", ""))
 	elif node is BaseButton and node.toggle_mode:
-		node.button_pressed = bool(v.get("b", false))
+		var pressed: Variant = v.get("b", false)
+		node.button_pressed = pressed if pressed is bool else false
 
 
 ## 给配置区所有输入控件挂「改动」监听（脏标记 + 阶段二锁定）
@@ -1915,6 +1917,8 @@ func _collect_engineer_config() -> Dictionary:
 			group_freq = 50 if group == "PWMA" else 10000
 		pwm_group_init[group] = "%dHz" % group_freq
 	cfg["pwm_group_init"] = pwm_group_init
+	var buzzer_disabled: Node = get_node_or_null(NodePath(root + "/" + ENG_BUZZER_DISABLED_REL))
+	cfg["buzzer_disabled"] = (buzzer_disabled is BaseButton) and buzzer_disabled.button_pressed
 	# --- 输出角色（共享区：工程页 / 步兵高级设置，含主控板口）---
 	var io_role: Dictionary = {}
 	for pin in ENG_ALL_PINS:

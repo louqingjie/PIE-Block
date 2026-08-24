@@ -33,6 +33,8 @@ func generate(cfg: Dictionary) -> String:
 	var sprint_spd: String = _int_or_default(cfg.get("sprint_speed", ""), 8000, 0, MOTOR_SPEED_MAX)
 	var sprint_enabled: bool = cfg.get("sprint_enabled", false) is bool \
 		and cfg.get("sprint_enabled", false) == true
+	var buzzer_disabled_value: Variant = cfg.get("buzzer_disabled", false)
+	var buzzer_enabled: bool = not (buzzer_disabled_value is bool and buzzer_disabled_value == true)
 
 	# --- 底盘 IO 槽位 ---
 	var l1_pin: String = _parse_io_pair(cfg.get("l1_io", "P74 P24"))
@@ -88,13 +90,14 @@ func generate(cfg: Dictionary) -> String:
 	# 舵机蜂鸣反馈固定按物理通道顺序检查：扩展板 P60~P77，再检查 MP03、MP74。
 	# 只纳入实际被模式配置使用的舵机，避免生成无效数组访问。
 	var servo_buzzer_exprs: Array = []
-	for slot in range(EXP_PINS.size()):
-		if slot in aux_servo_slots:
-			servo_buzzer_exprs.append("(uint16_t)dutyOfAuxServo[%d]" % slot)
-	if use_main_servo[0]:
-		servo_buzzer_exprs.append("(uint16_t)dutyOfAuxMainServo[0]")
-	if use_main_servo[1]:
-		servo_buzzer_exprs.append("(uint16_t)dutyOfAuxMainServo[1]")
+	if buzzer_enabled:
+		for slot in range(EXP_PINS.size()):
+			if slot in aux_servo_slots:
+				servo_buzzer_exprs.append("(uint16_t)dutyOfAuxServo[%d]" % slot)
+		if use_main_servo[0]:
+			servo_buzzer_exprs.append("(uint16_t)dutyOfAuxMainServo[0]")
+		if use_main_servo[1]:
+			servo_buzzer_exprs.append("(uint16_t)dutyOfAuxMainServo[1]")
 
 	# --- 底盘电机公式 ---
 	var l1_formula: String = "-baseSpeed - turnSpeed" if l1_dir == 1 else "baseSpeed + turnSpeed"
@@ -215,11 +218,13 @@ func generate(cfg: Dictionary) -> String:
 
 	code += CodeGenBase.REMOTE_CONTROL_INIT_CODE
 	# 初始化诊断工具（LED + 蜂鸣器）与 UART1 查询发送（修复 UART 死锁）
-	code += _gen_led_diag_tools()
-	if mode_count > 1:
+	code += _gen_led_diag_tools("GPIO_P3", "GPIO_Pin_5", "GPIO_Pin_6", "GPIO_Pin_7",
+		"PWMA_CH4N_P33", buzzer_enabled)
+	if buzzer_enabled and mode_count > 1:
 		code += _gen_mode_switch_feedback()
 	code += CodeGenBase.UART_TX_QUERY_CODE
-	code += _gen_servo_buzzer_tools(servo_buzzer_exprs)
+	if buzzer_enabled:
+		code += _gen_servo_buzzer_tools(servo_buzzer_exprs)
 
 	# --- main() ---
 	code += "void main()\n"
@@ -273,7 +278,7 @@ func generate(cfg: Dictionary) -> String:
 	code += _gen_uart_init_first()
 	code += "    StepDone(1);\n"
 	code += "    StepBegin(2);\n"
-	code += _gen_led_diag_init()
+	code += _gen_led_diag_init(buzzer_enabled)
 	code += "    StepDone(2);\n"
 	code += "    StepBegin(3);\n"
 	code += _gen_nrf_init_safe()
@@ -304,7 +309,8 @@ func generate(cfg: Dictionary) -> String:
 		if use_main_servo[si]:
 			code += "    PWM_Init(%s, 50, %d); // %s 舵机初始角\n" % [main_chn[si], main_home[si], MAIN_PINS[si]]
 	code += "    StepDone(5);\n"
-	code += _gen_init_done("Beep")
+	if buzzer_enabled:
+		code += _gen_init_done("Beep")
 	code += "}\n\n"
 
 	# --- Read_Controller_Inputs ---
@@ -337,7 +343,8 @@ func generate(cfg: Dictionary) -> String:
 	code += "}\n\n"
 
 	# --- UpdateMode ---
-	code += _gen_update_mode(mode_count, switch_strategy, switch_key, mode_keys, aux_motor_slots)
+	code += _gen_update_mode(mode_count, switch_strategy, switch_key, mode_keys,
+		aux_motor_slots, buzzer_enabled)
 
 	# --- Calculate_Chassis_Control ---
 	code += "void Calculate_Chassis_Control()\n"

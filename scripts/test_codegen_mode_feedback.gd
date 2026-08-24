@@ -37,7 +37,7 @@ func _config(mode_count: int, strategy: String) -> Dictionary:
 
 
 func _update_mode_section(code: String) -> String:
-	var start: int = code.find("void UpdateMode()")
+	var start: int = code.find("void UpdateMode()\n{")
 	var end: int = code.find("void Calculate_Chassis_Control()\n", start)
 	return code.substr(start, end - start) if start >= 0 and end > start else ""
 
@@ -106,6 +106,17 @@ func _initialize() -> void:
 		not single_code.contains("ModeSwitchFeedback"))
 	_check("单模式不生成模式反馈长音",
 		not single_code.contains("Beep(523, 500);"))
+
+	var disabled_cfg: Dictionary = _config(4, "单击切换")
+	disabled_cfg["buzzer_disabled"] = true
+	var disabled_code: String = generator.generate(disabled_cfg)
+	var disabled_update: String = _update_mode_section(disabled_code)
+	_check("禁用蜂鸣器后不生成模式音",
+		not disabled_code.contains("ModeSwitchFeedback")
+		and not disabled_code.contains("Beep(523, 500);"))
+	_check("禁用蜂鸣器后仍立即切换模式",
+		disabled_update.contains("currentMode = (currentMode % 4) + 1;")
+		and not disabled_update.contains("Ms_Delay"))
 
 	if _fail > 0:
 		print("失败 %d 项" % _fail)

@@ -284,7 +284,7 @@ func _cmd_music_config(args: PackedStringArray) -> void:
 		quit(EXIT_ARG)
 		return
 	var parse_result: Dictionary = MIDI.parse_file(midi_path)
-	if not bool(parse_result.get("ok", false)):
+	if not _is_true(parse_result.get("ok", false)):
 		_print_error("MIDI 解析失败：%s" % str(parse_result.get("err", "未知错误")))
 		quit(EXIT_RUN)
 		return
@@ -310,7 +310,7 @@ func _cmd_music_config(args: PackedStringArray) -> void:
 		return
 
 	var merged: Dictionary = MIDI.merge_tracks(parse_result, [track_index], 1)
-	if not bool(merged.get("ok", false)):
+	if not _is_true(merged.get("ok", false)):
 		_print_error("MIDI 轨道合并失败：%s" % str(merged.get("err", "未知错误")))
 		quit(EXIT_RUN)
 		return
@@ -433,7 +433,7 @@ func _cmd_build(args: PackedStringArray) -> void:
 		var dst: String = _project_dst_for_kind(kind)
 		var result: Dictionary = tc.build_project(dst, code, compiler, kind)
 		out = {
-			"ok": bool(result.get("ok", false)),
+			"ok": _is_true(result.get("ok", false)),
 			"exit": result.get("exit", -1),
 			"kind": kind,
 			"compiler": compiler,
@@ -577,10 +577,14 @@ func _config_val(config: Dictionary, key: String) -> Variant:
 	if dd.has("s"):
 		return str(dd["s"])
 	if dd.has("b"):
-		return bool(dd["b"])
+		return dd["b"] if dd["b"] is bool else false
 	if dd.has("i"):
 		return int(dd["i"])
 	return ""
+
+
+func _is_true(value: Variant) -> bool:
+	return value is bool and value == true
 
 
 ## 步兵：还原 _collect_config() 的扁平字段
@@ -591,7 +595,7 @@ func _flatten_infantry_config(config: Dictionary) -> Dictionary:
 	flat["deadzone"] = str(_config_val(config, "FirstRow/RemoteSetting/DeadZone/LineEdit"))
 	flat["normal_speed"] = str(_config_val(config, "FirstRow/Chassis/Speed/LineEdit"))
 	flat["sprint_speed"] = str(_config_val(config, "FirstRow/Chassis/SprintSpeed/LineEdit"))
-	flat["sprint_enabled"] = bool(_config_val(config, "FirstRow/Chassis/Sprint/CheckBox"))
+	flat["sprint_enabled"] = _is_true(_config_val(config, "FirstRow/Chassis/Sprint/CheckBox"))
 	flat["l1_io"] = str(_config_val(config, "FirstRow/Chassis/L1/OptionButton"))
 	flat["l1_dir"] = str(_config_val(config, "FirstRow/Chassis/L1/OptionButton2"))
 	flat["l2_io"] = str(_config_val(config, "FirstRow/Chassis/L2/OptionButton"))
@@ -605,6 +609,8 @@ func _flatten_infantry_config(config: Dictionary) -> Dictionary:
 		"PWMA": "50Hz",
 		"PWMB": "10000Hz",
 	}
+	flat["buzzer_disabled"] = _is_true(_config_val(config,
+		"Infantry/Advanced/ScrollContainer/AdvancedAndEngineer/PWMGroups/Buzzer/CheckBox"))
 	# 云台（EditZone 下）
 	var gimbal: String = "Infantry/GimbalSetting"
 	flat["booster_io"] = str(_config_val(config, gimbal + "/Booster/OptionButton"))
@@ -637,7 +643,7 @@ func _flatten_infantry_config(config: Dictionary) -> Dictionary:
 		keyset + "/BoosterSpeedControl/OptionButton2"))
 	flat["friction_speed_step"] = str(_config_val(config,
 		keyset + "/BoosterSpeedControl/MaxDuty"))
-	flat["zero_enabled"] = bool(_config_val(config, keyset + "/Zero/CheckBox"))
+	flat["zero_enabled"] = _is_true(_config_val(config, keyset + "/Zero/CheckBox"))
 	var io_role: Dictionary = {}
 	for pin in PwmConfig.EXPANSION_PINS:
 		io_role[pin] = "舵机"
@@ -664,7 +670,7 @@ func _flatten_engineer_config(config: Dictionary) -> Dictionary:
 	flat["deadzone"] = str(_config_val(config, "FirstRow/RemoteSetting/DeadZone/LineEdit"))
 	flat["normal_speed"] = str(_config_val(config, "FirstRow/Chassis/Speed/LineEdit"))
 	flat["sprint_speed"] = str(_config_val(config, "FirstRow/Chassis/SprintSpeed/LineEdit"))
-	flat["sprint_enabled"] = bool(_config_val(config, "FirstRow/Chassis/Sprint/CheckBox"))
+	flat["sprint_enabled"] = _is_true(_config_val(config, "FirstRow/Chassis/Sprint/CheckBox"))
 	flat["l1_io"] = str(_config_val(config, "FirstRow/Chassis/L1/OptionButton"))
 	flat["l1_dir"] = str(_config_val(config, "FirstRow/Chassis/L1/OptionButton2"))
 	flat["l2_io"] = str(_config_val(config, "FirstRow/Chassis/L2/OptionButton"))
@@ -688,6 +694,8 @@ func _flatten_shared_eng_config(config: Dictionary, root: String) -> Dictionary:
 		"PWMB": _pwm_group_frequency_text(
 			_config_val(config, root + "/PWMGroups/PWMB/OptionButton"), "10000Hz"),
 	}
+	flat["buzzer_disabled"] = _is_true(_config_val(config,
+		root + "/PWMGroups/Buzzer/CheckBox"))
 	# 输出角色（10 引脚：角色 + 初始角）
 	var io_role: Dictionary = {}
 	var io_mid: Dictionary = {}
@@ -809,6 +817,8 @@ func _merge_defaults(flat: Dictionary, _kind: String) -> Dictionary:
 		flat["sprint_speed"] = "8000"
 	if not flat.has("sprint_enabled"):
 		flat["sprint_enabled"] = false
+	if not flat.has("buzzer_disabled") or not flat["buzzer_disabled"] is bool:
+		flat["buzzer_disabled"] = false
 	var pwm_group_init: Dictionary = flat.get("pwm_group_init", {}) \
 		if flat.get("pwm_group_init", {}) is Dictionary else {}
 	if _kind == "infantry":
@@ -933,6 +943,7 @@ func _infantry_schema() -> Dictionary:
 		"normal_speed": {"type": "string", "description": "普通速度 (0-10000)", "default": "4000"},
 		"sprint_speed": {"type": "string", "description": "冲刺速度 (0-10000)", "default": "8000"},
 		"sprint_enabled": {"type": "boolean", "description": "按下左摇杆冲刺", "default": false},
+		"buzzer_disabled": {"type": "boolean", "description": "禁用全部硬件蜂鸣反馈", "default": false},
 		"pwm_group_init": {
 			"type": "object", "description": "PWM 组初始化频率；步兵 PWMA 固定 50Hz、PWMB 固定 10000Hz",
 			"properties": {
@@ -992,6 +1003,7 @@ func _engineer_base_schema() -> Dictionary:
 		"normal_speed": {"type": "string", "description": "普通速度 (0-10000)", "default": "4000"},
 		"sprint_speed": {"type": "string", "description": "冲刺速度 (0-10000)", "default": "8000"},
 		"sprint_enabled": {"type": "boolean", "description": "按下左摇杆冲刺", "default": false},
+		"buzzer_disabled": {"type": "boolean", "description": "禁用全部硬件蜂鸣反馈", "default": false},
 		"pwm_group_init": {
 			"type": "object", "description": "PWMA/PWMB 组初始化频率；同组四路保持一致",
 			"properties": {

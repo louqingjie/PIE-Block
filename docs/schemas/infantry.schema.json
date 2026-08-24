@@ -29,6 +29,11 @@
       "description": "摩擦轮开关键",
       "type": "string"
     },
+    "buzzer_disabled": {
+      "default": false,
+      "description": "禁用全部硬件蜂鸣反馈",
+      "type": "boolean"
+    },
     "channel": {
       "default": "36",
       "description": "NRF24L01 通道号 (0-125)",
