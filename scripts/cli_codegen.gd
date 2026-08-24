@@ -610,7 +610,7 @@ func _flatten_infantry_config(config: Dictionary) -> Dictionary:
 		"PWMB": "10000Hz",
 	}
 	flat["buzzer_disabled"] = _is_true(_config_val(config,
-		"Infantry/Advanced/ScrollContainer/AdvancedAndEngineer/PWMGroups/Buzzer/CheckBox"))
+		"Infantry/Advanced/Buzzer/CheckBox"))
 	# 云台（EditZone 下）
 	var gimbal: String = "Infantry/GimbalSetting"
 	flat["booster_io"] = str(_config_val(config, gimbal + "/Booster/OptionButton"))

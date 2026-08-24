@@ -7,7 +7,7 @@ const ProjectFile = preload("res://scripts/project_file.gd")
 const CliCodegen = preload("res://scripts/cli_codegen.gd")
 
 const INFANTRY_CHECKBOX: NodePath = \
-	"VBoxContainer/HBoxContainer/HSplitContainer/EditZone/Infantry/Advanced/ScrollContainer/AdvancedAndEngineer/PWMGroups/Buzzer/CheckBox"
+	"VBoxContainer/HBoxContainer/HSplitContainer/EditZone/Infantry/Advanced/Buzzer/CheckBox"
 const ENGINEER_CHECKBOX: NodePath = \
 	"VBoxContainer/HBoxContainer/HSplitContainer/EditZone/Engineer/PWMGroups/Buzzer/CheckBox"
 
@@ -40,6 +40,11 @@ func _initialize() -> void:
 	_check("两个复选框默认均未勾选",
 		infantry_checkbox is CheckBox and not infantry_checkbox.button_pressed
 		and engineer_checkbox is CheckBox and not engineer_checkbox.button_pressed)
+	var edit_zone: Control = ui.get_node(ui.P_EDIT_ZONE) as Control
+	_check("步兵复选框位于可见配置区域",
+		infantry_checkbox is Control and infantry_checkbox.is_visible_in_tree()
+		and infantry_checkbox.size.y > 0.0
+		and edit_zone.get_global_rect().intersects(infantry_checkbox.get_global_rect()))
 
 	if infantry_checkbox is CheckBox and engineer_checkbox is CheckBox:
 		infantry_checkbox.button_pressed = true

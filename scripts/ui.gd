@@ -87,8 +87,8 @@ const ENGINEER: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/E
 const DEBUG_PAGE: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/Debug"
 const MUSIC_PAGE: String = "VBoxContainer/HBoxContainer/HSplitContainer/EditZone/Music"
 # 工程页已直接挂在 EditZone 下，不再经过外层 TabContainer。
-# 步兵页「高级设置」折叠区内的同一套 IO+模式+按键映射（与工程页共用同一份配置）
-const ADV_ENGINEER: String = INFANTRY_PAGE + "/Advanced/ScrollContainer/AdvancedAndEngineer"
+# 步兵页高级设置根；目前仅保留步兵专属开关，不恢复工程 IO/模式配置。
+const ADV_ENGINEER: String = INFANTRY_PAGE + "/Advanced"
 # 共享配置根：按当前构型返回 工程页 / 步兵高级设置
 func _shared_cfg_root() -> String:
 	return ADV_ENGINEER if _current_tab() == 0 else ENGINEER
@@ -1917,7 +1917,9 @@ func _collect_engineer_config() -> Dictionary:
 			group_freq = 50 if group == "PWMA" else 10000
 		pwm_group_init[group] = "%dHz" % group_freq
 	cfg["pwm_group_init"] = pwm_group_init
-	var buzzer_disabled: Node = get_node_or_null(NodePath(root + "/" + ENG_BUZZER_DISABLED_REL))
+	var buzzer_path: String = "Buzzer/CheckBox" if root == ADV_ENGINEER \
+		else ENG_BUZZER_DISABLED_REL
+	var buzzer_disabled: Node = get_node_or_null(NodePath(root + "/" + buzzer_path))
 	cfg["buzzer_disabled"] = (buzzer_disabled is BaseButton) and buzzer_disabled.button_pressed
 	# --- 输出角色（共享区：工程页 / 步兵高级设置，含主控板口）---
 	var io_role: Dictionary = {}

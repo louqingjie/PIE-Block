@@ -429,25 +429,14 @@ layout_mode = 2
 size_flags_horizontal = 4
 text = "高级设置"
 
-[node name="ScrollContainer" type="ScrollContainer" parent="Advanced"]
-layout_mode = 2
-horizontal_scroll_mode = 0
-
-[node name="AdvancedAndEngineer" type="VBoxContainer" parent="Advanced/ScrollContainer"]
-layout_mode = 2
-size_flags_horizontal = 3
-
-[node name="PWMGroups" type="VBoxContainer" parent="Advanced/ScrollContainer/AdvancedAndEngineer"]
+[node name="Buzzer" type="HBoxContainer" parent="Advanced"]
 layout_mode = 2
 
-[node name="Buzzer" type="HBoxContainer" parent="Advanced/ScrollContainer/AdvancedAndEngineer/PWMGroups"]
-layout_mode = 2
-
-[node name="Label" type="Label" parent="Advanced/ScrollContainer/AdvancedAndEngineer/PWMGroups/Buzzer"]
+[node name="Label" type="Label" parent="Advanced/Buzzer"]
 layout_mode = 2
 text = "禁用蜂鸣器"
 
-[node name="CheckBox" type="CheckBox" parent="Advanced/ScrollContainer/AdvancedAndEngineer/PWMGroups/Buzzer"]
+[node name="CheckBox" type="CheckBox" parent="Advanced/Buzzer"]
 layout_mode = 2
 size_flags_horizontal = 10
 tooltip_text = "关闭初始化提示音、舵机反馈音和摩擦轮反馈音"
