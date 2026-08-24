@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-[ValidateSet('0000.培训模板', '0001.JDY08设置密码', 'FRICTION_CALIBRATION', 'LCD_SPI_SMOKE', 'PWM_SMOKE', 'PWM_B_SMOKE', 'TIMER_IRQ_SMOKE', 'ROBOMASTER_ENGINEER', 'ROBOMASTER_INFANTRY', 'TEST')]
+[ValidateSet('0000.培训模板', '0001.JDY08设置密码', 'FRICTION_CALIBRATION', 'LCD_SPI_SMOKE', 'PWM_SMOKE', 'PWM_B_SMOKE', 'TIMER_IRQ_SMOKE', 'UART1_IRQ_SMOKE', 'ROBOMASTER_ENGINEER', 'ROBOMASTER_INFANTRY', 'TEST')]
     [string]$Project = 'TEST',
     [switch]$All,
     [switch]$SmokeTest,
@@ -20,6 +20,7 @@ $projectNames = @(
     'PWM_SMOKE',
     'PWM_B_SMOKE',
     'TIMER_IRQ_SMOKE',
+    'UART1_IRQ_SMOKE',
     'ROBOMASTER_ENGINEER',
     'ROBOMASTER_INFANTRY',
     'TEST'
@@ -97,6 +98,10 @@ $sourceTimerDrivers = @(
     'libraries\drivers\src\CNU_PIE_GPIO.c',
     'libraries\drivers\src\CNU_PIE_TIMER.c'
 )
+$sourceUartDrivers = @(
+    'libraries\drivers\src\CNU_PIE_GPIO.c',
+    'libraries\drivers\src\CNU_PIE_UART.c'
+)
 $sourceBoards = @(
     'libraries\boards\src\BMI088driver.c',
     'libraries\boards\src\BMI088Middleware.c',
@@ -118,6 +123,7 @@ $sourceMap = @{
     'PWM_SMOKE' = $sourceCommon + @('projects\PWM_SMOKE\src\isr.c', 'projects\PWM_SMOKE\src\main.c') + $sourcePwmDrivers
     'PWM_B_SMOKE' = $sourceCommon + @('projects\PWM_B_SMOKE\src\isr.c', 'projects\PWM_B_SMOKE\src\main.c') + $sourcePwmDrivers
     'TIMER_IRQ_SMOKE' = $sourceCommon + @('projects\TIMER_IRQ_SMOKE\src\isr.c', 'projects\TIMER_IRQ_SMOKE\src\main.c') + $sourceTimerDrivers
+    'UART1_IRQ_SMOKE' = $sourceCommon + @('projects\UART1_IRQ_SMOKE\src\isr.c', 'projects\UART1_IRQ_SMOKE\src\main.c') + $sourceUartDrivers
     'ROBOMASTER_ENGINEER' = $sourceCommon + @('projects\ROBOMASTER_ENGINEER\src\isr.c', 'projects\ROBOMASTER_ENGINEER\src\main.c') + $sourceBoardsWithRadio + $sourceDrivers
     'ROBOMASTER_INFANTRY' = $sourceCommon + @('projects\ROBOMASTER_INFANTRY\src\isr.c', 'projects\ROBOMASTER_INFANTRY\src\main.c') + $sourceBoardsWithRadio + $sourceDrivers
     'TEST' = $sourceCommon + @('projects\TEST\src\isr.c', 'projects\TEST\src\main.c') + $sourceBoardsWithRadio + $sourceDrivers
@@ -196,6 +202,8 @@ function Invoke-ProjectBuild([string]$Name) {
         $sourcePwmDrivers
     } elseif ($Name -eq 'TIMER_IRQ_SMOKE') {
         $sourceTimerDrivers
+    } elseif ($Name -eq 'UART1_IRQ_SMOKE') {
+        $sourceUartDrivers
     } else {
         $sourceBoardsWithRadio + $sourceDrivers
     }
