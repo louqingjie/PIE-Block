@@ -36,16 +36,6 @@ static void PWM_WriteA(uint32_t address, uint8_t value)
 	HSPWMA_ADR = ((uint8_t)address) & 0x7F;
 }
 
-static uint8_t PWM_ReadA(uint32_t address)
-{
-	uint8_t value;
-	while (HSPWMA_ADR & 0x80);
-	HSPWMA_ADR = (((uint8_t)address) & 0x7F) | 0x80;
-	while (HSPWMA_ADR & 0x80);
-	value = HSPWMA_DAT;
-	return value;
-}
-
 static void PWM_WriteB(uint32_t address, uint8_t value)
 {
 	while (HSPWMB_ADR & 0x80);
@@ -53,15 +43,17 @@ static void PWM_WriteB(uint32_t address, uint8_t value)
 	HSPWMB_ADR = ((uint8_t)address) & 0x7F;
 }
 
-static uint8_t PWM_ReadB(uint32_t address)
-{
-	uint8_t value;
-	while (HSPWMB_ADR & 0x80);
-	HSPWMB_ADR = (((uint8_t)address) & 0x7F) | 0x80;
-	while (HSPWMB_ADR & 0x80);
-	value = HSPWMB_DAT;
-	return value;
-}
+/* 避免依赖异步读操作的忙标志，记录本驱动已经写入的配置。 */
+static uint8_t pwm_a_eno_shadow;
+static uint8_t pwm_a_ps_shadow;
+static uint8_t pwm_a_ccer1_shadow;
+static uint8_t pwm_a_ccer2_shadow;
+static uint8_t pwm_b_eno_shadow;
+static uint8_t pwm_b_ps_shadow;
+static uint8_t pwm_b_ccer1_shadow;
+static uint8_t pwm_b_ccer2_shadow;
+static uint16_t pwm_a_period_shadow;
+static uint16_t pwm_b_period_shadow;
 
  /**************************************************************************************************************************
  * @brief  ��ʼ��PWM����IOģʽ
@@ -129,6 +121,7 @@ void PWM_Init(PWM_CHN_PIN_enum PWM_CHN_PIN , uint32_t frequency , uint32_t pwm_d
 	uint32_t period_temp;
 	uint16_t Frequency_Division = 0;//��Ƶϵ��
 	uint8_t register_value;
+	uint8_t channel_shift;
 	
 	P_SW2 |= 0x80;
 	
@@ -150,18 +143,28 @@ void PWM_Init(PWM_CHN_PIN_enum PWM_CHN_PIN , uint32_t frequency , uint32_t pwm_d
 	}
 	if(PWMB_CH1_P20 <= PWM_CHN_PIN)				//PWM5-8
 	{
+		HSPWMB_CFG = 0x03;
 		//ͨ��ѡ������ѡ��
-		register_value = PWM_ReadB((uint32_t)&PWMB_ENO);
-		register_value |= (1 << ((2 * ((PWM_CHN_PIN >> 4) - 4))));
-		PWM_WriteB((uint32_t)&PWMB_ENO, register_value);
-		register_value = PWM_ReadB((uint32_t)&PWMB_PS);
-		register_value |= ((PWM_CHN_PIN & 0x03) << ((2 * ((PWM_CHN_PIN >> 4) - 4))));
-		PWM_WriteB((uint32_t)&PWMB_PS, register_value);
+		channel_shift = (uint8_t)(2 * ((PWM_CHN_PIN >> 4) - 4));
+		register_value = (uint8_t)(1 << channel_shift);
+		pwm_b_eno_shadow |= register_value;
+		PWM_WriteB((uint32_t)&PWMB_ENO, pwm_b_eno_shadow);
+		pwm_b_ps_shadow &= (uint8_t)~(0x03 << channel_shift);
+		pwm_b_ps_shadow |= (uint8_t)((PWM_CHN_PIN & 0x03) << channel_shift);
+		PWM_WriteB((uint32_t)&PWMB_PS, pwm_b_ps_shadow);
 		
 		// ����ͨ�����ʹ�ܺͼ���	
-		register_value = PWM_ReadB(PWM_CCER_ADDR[PWM_CHN_PIN>>5]);
-		register_value |= (uint8_t)(1 << (((PWM_CHN_PIN >> 4) & 0x01) * 4));
-		PWM_WriteB(PWM_CCER_ADDR[PWM_CHN_PIN>>5], register_value);
+		register_value = (uint8_t)(1 << (((PWM_CHN_PIN >> 4) & 0x01) * 4));
+		if((PWM_CHN_PIN >> 5) == 2)
+		{
+			pwm_b_ccer1_shadow |= register_value;
+			PWM_WriteB(PWM_CCER_ADDR[PWM_CHN_PIN>>5], pwm_b_ccer1_shadow);
+		}
+		else
+		{
+			pwm_b_ccer2_shadow |= register_value;
+			PWM_WriteB(PWM_CCER_ADDR[PWM_CHN_PIN>>5], pwm_b_ccer2_shadow);
+		}
 		
 		//����Ԥ��Ƶ
 		PWM_WriteB((uint32_t)&PWMB_PSCRH, (uint8_t)(Frequency_Division>>8));
@@ -172,17 +175,28 @@ void PWM_Init(PWM_CHN_PIN_enum PWM_CHN_PIN , uint32_t frequency , uint32_t pwm_d
 	}
 	else
 	{
-		register_value = PWM_ReadA((uint32_t)&PWMA_ENO);
-		register_value |= (1 << (PWM_CHN_PIN & 0x01)) << ((PWM_CHN_PIN >> 4) * 2);
-		PWM_WriteA((uint32_t)&PWMA_ENO, register_value);
-		register_value = PWM_ReadA((uint32_t)&PWMA_PS);
-		register_value |= ((PWM_CHN_PIN & 0x07) >> 1) << ((PWM_CHN_PIN >> 4) * 2);
-		PWM_WriteA((uint32_t)&PWMA_PS, register_value);
+		HSPWMA_CFG = 0x03;
+		channel_shift = (uint8_t)((PWM_CHN_PIN >> 4) * 2);
+		register_value = (uint8_t)((1 << (PWM_CHN_PIN & 0x01)) << channel_shift);
+		pwm_a_eno_shadow |= register_value;
+		PWM_WriteA((uint32_t)&PWMA_ENO, pwm_a_eno_shadow);
+		register_value = (uint8_t)(((PWM_CHN_PIN & 0x07) >> 1) << channel_shift);
+		pwm_a_ps_shadow &= (uint8_t)~(0x03 << channel_shift);
+		pwm_a_ps_shadow |= register_value;
+		PWM_WriteA((uint32_t)&PWMA_PS, pwm_a_ps_shadow);
 		
 		// ����ͨ�����ʹ�ܺͼ���	
-		register_value = PWM_ReadA(PWM_CCER_ADDR[PWM_CHN_PIN>>5]);
-		register_value |= (1 << ((PWM_CHN_PIN & 0x01) * 2 + ((PWM_CHN_PIN >> 4) & 0x01) * 0x04));
-		PWM_WriteA(PWM_CCER_ADDR[PWM_CHN_PIN>>5], register_value);
+		register_value = (uint8_t)(1 << ((PWM_CHN_PIN & 0x01) * 2 + ((PWM_CHN_PIN >> 4) & 0x01) * 0x04));
+		if((PWM_CHN_PIN >> 5) == 0)
+		{
+			pwm_a_ccer1_shadow |= register_value;
+			PWM_WriteA(PWM_CCER_ADDR[PWM_CHN_PIN>>5], pwm_a_ccer1_shadow);
+		}
+		else
+		{
+			pwm_a_ccer2_shadow |= register_value;
+			PWM_WriteA(PWM_CCER_ADDR[PWM_CHN_PIN>>5], pwm_a_ccer2_shadow);
+		}
 
 		
 		//����Ԥ��Ƶ
@@ -196,11 +210,13 @@ void PWM_Init(PWM_CHN_PIN_enum PWM_CHN_PIN , uint32_t frequency , uint32_t pwm_d
 	//����
 	if(PWMB_CH1_P20 <= PWM_CHN_PIN)
 	{
+		pwm_b_period_shadow = (uint16_t)period_temp;
 		PWM_WriteB(PWM_ARR_ADDR[PWM_CHN_PIN>>6], (uint8_t)(period_temp>>8));
 		PWM_WriteB(PWM_ARR_ADDR[PWM_CHN_PIN>>6] + 1, (uint8_t)period_temp);
 	}
 	else
 	{
+		pwm_a_period_shadow = (uint16_t)period_temp;
 		PWM_WriteA(PWM_ARR_ADDR[PWM_CHN_PIN>>6], (uint8_t)(period_temp>>8));
 		PWM_WriteA(PWM_ARR_ADDR[PWM_CHN_PIN>>6] + 1, (uint8_t)period_temp);
 	}
@@ -218,15 +234,10 @@ void PWM_Init(PWM_CHN_PIN_enum PWM_CHN_PIN , uint32_t frequency , uint32_t pwm_d
 	}
 	
 	//��������
-	register_value = (PWMB_CH1_P20 <= PWM_CHN_PIN)
-		? PWM_ReadB(PWM_CCMR_ADDR[PWM_CHN_PIN>>4])
-		: PWM_ReadA(PWM_CCMR_ADDR[PWM_CHN_PIN>>4]);
-	register_value |= 0x06<<4;
-	register_value |= 1<<3;
 	if(PWMB_CH1_P20 <= PWM_CHN_PIN)
-		PWM_WriteB(PWM_CCMR_ADDR[PWM_CHN_PIN>>4], register_value);
+		PWM_WriteB(PWM_CCMR_ADDR[PWM_CHN_PIN>>4], 0x68);
 	else
-		PWM_WriteA(PWM_CCMR_ADDR[PWM_CHN_PIN>>4], register_value);
+		PWM_WriteA(PWM_CCMR_ADDR[PWM_CHN_PIN>>4], 0x68);
 }
  /**************************************************************************************************************************
  * @brief  PWM��������ռ�ձ�
@@ -247,14 +258,12 @@ void PWM_SET_Duty(PWM_CHN_PIN_enum PWM_CHN_PIN , uint32_t pwm_duty)
 	if(PWMB_CH1_P20 <= PWM_CHN_PIN)
 	{
 		HSPWMB_CFG = 0x03;
-		arrange = ((uint32_t)PWM_ReadB(PWM_ARR_ADDR[PWM_CHN_PIN>>6]) << 8)
-			| PWM_ReadB(PWM_ARR_ADDR[PWM_CHN_PIN>>6] + 1);
+		arrange = pwm_b_period_shadow;
 	}
 	else
 	{
 		HSPWMA_CFG = 0x03;
-		arrange = ((uint32_t)PWM_ReadA(PWM_ARR_ADDR[PWM_CHN_PIN>>6]) << 8)
-			| PWM_ReadA(PWM_ARR_ADDR[PWM_CHN_PIN>>6] + 1);
+		arrange = pwm_a_period_shadow;
 	}
 	
 	if(pwm_duty != PRECISION)
@@ -328,11 +337,13 @@ void PWM_SET_Frequency(PWM_CHN_PIN_enum PWM_CHN_PIN, uint32_t frequency, uint32_
 	//����
 	if(PWMB_CH1_P20 <= PWM_CHN_PIN)
 	{
+		pwm_b_period_shadow = (uint16_t)period_temp;
 		PWM_WriteB(PWM_ARR_ADDR[PWM_CHN_PIN>>6], (uint8_t)(period_temp>>8));
 		PWM_WriteB(PWM_ARR_ADDR[PWM_CHN_PIN>>6] + 1, (uint8_t)period_temp);
 	}
 	else
 	{
+		pwm_a_period_shadow = (uint16_t)period_temp;
 		PWM_WriteA(PWM_ARR_ADDR[PWM_CHN_PIN>>6], (uint8_t)(period_temp>>8));
 		PWM_WriteA(PWM_ARR_ADDR[PWM_CHN_PIN>>6] + 1, (uint8_t)period_temp);
 	}
