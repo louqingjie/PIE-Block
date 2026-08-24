@@ -29,6 +29,7 @@ public partial class TerminalControl : Control
     [Export] public string Command { get; set; } = "powershell.exe";
     [Export] public string[] Arguments { get; set; } = Array.Empty<string>();
     [Export] public string WorkingDirectory { get; set; } = "";
+    [Export] public Godot.Collections.Dictionary<string, string> EnvironmentOverrides { get; set; } = new();
     [Export] public int Columns { get; set; } = 80;
     [Export] public int Rows { get; set; } = 24;
     [Export] public int FontSize { get; set; } = 14;
@@ -79,6 +80,12 @@ public partial class TerminalControl : Control
             return;
         try
         {
+            var environment = new System.Collections.Generic.Dictionary<string, string>
+            {
+                { "TERM", "xterm-256color" }
+            };
+            foreach (var entry in EnvironmentOverrides)
+                environment[entry.Key] = entry.Value;
             var options = new PtyOptions
             {
                 App = Command,
@@ -86,10 +93,7 @@ public partial class TerminalControl : Control
                 Cwd = string.IsNullOrEmpty(WorkingDirectory) ? System.Environment.CurrentDirectory : WorkingDirectory,
                 Cols = Columns,
                 Rows = Rows,
-                Environment = new System.Collections.Generic.Dictionary<string, string>
-                {
-                    { "TERM", "xterm-256color" }
-                }
+                Environment = environment
             };
             _session = new TerminalSession(options, () => _dirty = true);
             _lastCols = -1;

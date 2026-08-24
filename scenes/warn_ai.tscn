@@ -57,7 +57,7 @@ label_settings = SubResource("LabelSettings_ynwaf")
 layout_mode = 2
 size_flags_vertical = 3
 text = "·AI编辑功能仅限于对基础功能不满足或你的机器人构型特殊的情况下启用
-·首次启用AI编辑功能会自动安装OpenCode，请学习相关教程后使用
+·OpenCode已随PIEBlock内置，首次启用时会解包到应用数据目录，无需另行安装
 ·初始有一定免费AI额度，用尽后需要接入API，会产生费用，未接入API前不会产生费用
 ·内置AI编辑功能是实验性的，组委会不对AI生成的代码负任何责任
 ·因使用内置AI编辑功能在校内赛中造成的失误无法申诉

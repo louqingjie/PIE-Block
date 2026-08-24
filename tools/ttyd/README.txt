@@ -2,7 +2,7 @@ ttyd 1.7.7 (win32) — https://github.com/tsl0922/ttyd
 MIT License, Copyright (c) 2016 Shuanglei Tao
 
 用途：把终端通过 WebSocket 暴露成网页（前端 xterm.js），
-供 Godot 侧的 WRY WebView 加载，从而在程序内嵌入真实终端跑 AI Agent 的 TUI。
+历史终端 POC 所用。当前 AI 编辑器已改用 XTerm.NET + ConPTY 原生渲染，不再加载此程序。
 
 为什么需要它：Godot 没有 PTY 能力，无法自行渲染 TUI（alternate screen /
 光标定位 / 真彩 ANSI）。ttyd 把 PTY 和终端模拟都放在浏览器侧，

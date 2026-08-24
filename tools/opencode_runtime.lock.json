@@ -1,0 +1,11 @@
+{
+  "version": "1.18.14",
+  "platform": "windows",
+  "architecture": "x86_64",
+  "asset_name": "opencode-windows-x64.zip",
+  "asset_url": "https://github.com/anomalyco/opencode/releases/download/v1.18.14/opencode-windows-x64.zip",
+  "archive_sha256": "437501f14cd35655e97b1c6bb5cb8f4128172eaeaaf8de55750537b0f1c989e0",
+  "executable_sha256": "f37cb2773654449b4e20dd5dcf47cfdd55fe569628cae9081f480baeea9a80dd",
+  "source_repository": "https://github.com/anomalyco/opencode",
+  "license": "MIT"
+}

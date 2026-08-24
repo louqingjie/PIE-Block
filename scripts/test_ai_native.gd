@@ -58,6 +58,13 @@ func _on_ready(is_ready: bool) -> void:
 		return
 	_check("AgentTerminal.is_ready()==true", _client.is_ready())
 	_check("TerminalControl.IsRunning==true", bool(_term.get("IsRunning")))
+	_check("使用内置 OpenCode 路径", _client.agent_path().replace("\\", "/").contains("/opencode/runtime/opencode.exe"))
+	var env: Dictionary = _term.get("EnvironmentOverrides")
+	_check("OpenCode 自动更新环境变量已关闭",
+		str(env.get("OPENCODE_DISABLE_AUTOUPDATE", "")) == "true")
+	_check("OpenCode 用户数据与系统安装隔离",
+		str(env.get("XDG_CONFIG_HOME", "")).replace("\\", "/").contains("/opencode/config")
+		and str(env.get("XDG_DATA_HOME", "")).replace("\\", "/").contains("/opencode/data"))
 
 
 ## 就绪后异步等 opencode 真正吐出 TUI 文本（ConPTY 子进程在后台线程拉起，
@@ -68,7 +75,7 @@ func _process(delta: float) -> bool:
 		return false
 	if not _ready_seen:
 		if _elapsed > 90.0:
-			print("[Error] 90s 内未就绪")
+			_check("90s 内终端就绪", false)
 			_client.stop()
 			_finish()
 		return false
@@ -78,7 +85,8 @@ func _process(delta: float) -> bool:
 		var nonblank: int = _count_nonblank()
 		if bytes < 1500 or nonblank <= 3:
 			if _elapsed > 90.0:
-				print("[Error] 90s 超时 bytes=%d nonblank=%d" % [bytes, nonblank])
+				_check("90s 内 OpenCode TUI 输出充足", false,
+					"bytes=%d nonblank=%d" % [bytes, nonblank])
 				_dump_screen()
 				_client.stop()
 				_finish()

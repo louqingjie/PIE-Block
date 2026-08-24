@@ -20,6 +20,8 @@ func _run() -> void:
 	var at: Node = AT.new()
 	root.add_child(at)
 	var ws: String = "user://_test_ai_ws"
+	var cleanup = preload("res://scripts/opencode_runtime.gd").new()
+	cleanup._remove_tree(ws)
 
 	# ---- 步兵构型 ----
 	_check("ensure_workspace(infantry) 成功", at.ensure_workspace(ws, "infantry"))
@@ -33,6 +35,10 @@ func _run() -> void:
 		ProjectSettings.globalize_path(ws).path_join(".gitignore"))
 	_check("步兵 gitignore 隐藏工程", gi.contains("Projects/ROBOMASTER_ENGINEER/"))
 	_check("步兵 gitignore 保留步兵项目", not gi.contains("Projects/ROBOMASTER_INFANTRY/"))
+	var config: Variant = JSON.parse_string(FileAccess.get_file_as_string(
+		ProjectSettings.globalize_path(ws).path_join("opencode.json")))
+	_check("OpenCode 工作区关闭自动更新", config is Dictionary
+		and (config as Dictionary).get("autoupdate", true) == false)
 
 	# ---- 工程构型 ----
 	_check("ensure_workspace(engineer) 成功", at.ensure_workspace(ws, "engineer"))
@@ -54,9 +60,7 @@ func _run() -> void:
 	_check("调试 AGENTS 指向步兵 main.c", agents.contains("Projects/ROBOMASTER_INFANTRY/USER/src/main.c"))
 
 	# 清理测试目录
-	var abs: String = ProjectSettings.globalize_path(ws)
-	if DirAccess.dir_exists_absolute(abs):
-		DirAccess.remove_absolute(abs)
+	cleanup._remove_tree(ws)
 
 	print("=== 结果：%d 项失败 ===" % _fail)
 	quit(1 if _fail > 0 else 0)

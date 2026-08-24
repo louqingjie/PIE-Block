@@ -58,7 +58,8 @@ node_modules/
 dist/
 release/
 
-# 发布时生成的内置编译器 staging（二进制不提交）
+# 发布时生成的内置运行时 / 编译器 staging（二进制不提交）
+vendor/opencode-runtime/
 vendor/keil-toolchain/
 vendor/sdcc-toolchain/
 /tmp/

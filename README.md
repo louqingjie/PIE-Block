@@ -120,12 +120,16 @@ flowchart LR
 
 ### AI 代码编辑（阶段二）
 
-- 内嵌 ttyd + WRY WebView，在程序窗口里跑 AI Agent 的原生 TUI（中文输入正常）
+- 通过 XTerm.NET + ConPTY 在程序窗口里运行原生 TUI（中文输入正常）
+- Windows x64 发布版内置固定版本 OpenCode，首次使用解包到应用数据目录，无需安装 Node、Bun、npm 或包管理器
+- OpenCode 自动更新和更新提示均关闭；兼容性验证后的版本随 PIEBlock 更新发布
 - 复用七步项目引导，可在 AI 编辑页直接编译、一键烧录，无需返回配置页
 - 工作区 = `user://stc32g/`，AI 能读到 `Libraries` 头文件；自动注入
   `assets/templates/AGENTS_hardware.md` 说明硬件约束
 - 磁盘 `main.c` 是唯一真相源：手工编辑打脏标记、发消息前落盘，AI 改完比对 mtime 回读
 - C 语法高亮（`scripts/c_highlighter.gd`），进程生命周期显式清理，退出无孤儿进程
+
+“零安装”仅指 OpenCode 运行时；选择模型、登录服务、配置 API 密钥以及实际推理仍可能需要联网。
 
 相关文件：`scripts/code_edit.gd`、`scripts/agent_terminal.gd`
 

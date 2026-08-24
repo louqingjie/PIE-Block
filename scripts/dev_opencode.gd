@@ -6,13 +6,26 @@ var term: Control
 var state := 0
 var elapsed := 0.0
 var pid := 0
-const OPENCODE := "C:/Users/louqi/AppData/Local/hermes/node/node_modules/opencode-ai/bin/opencode.exe"
+const RUNTIME = preload("res://scripts/opencode_runtime.gd")
 
 func _ready() -> void:
+	var ready: Dictionary = RUNTIME.new().ensure_deployed()
+	if not bool(ready.get("ok", false)):
+		push_error(str(ready.get("reason", "内置 OpenCode 不可用")))
+		get_tree().quit(1)
+		return
 	term = $Term
-	term.Command = OPENCODE
+	term.Command = str(ready.executable)
 	term.Arguments = []
 	term.WorkingDirectory = "C:/Users/louqi/Desktop/program/pie-block"
+	var runtime_home := ProjectSettings.globalize_path("user://opencode")
+	term.EnvironmentOverrides = {
+		"OPENCODE_DISABLE_AUTOUPDATE": "true",
+		"XDG_CONFIG_HOME": runtime_home.path_join("config"),
+		"XDG_DATA_HOME": runtime_home.path_join("data"),
+		"XDG_CACHE_HOME": runtime_home.path_join("cache"),
+		"XDG_STATE_HOME": runtime_home.path_join("state"),
+	}
 	term.Columns = 120
 	term.Rows = 40
 	term.Start()
