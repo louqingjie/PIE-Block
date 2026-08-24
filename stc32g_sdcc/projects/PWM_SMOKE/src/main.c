@@ -1,6 +1,6 @@
 #include "main.h"
 
-#define PWM_TEST_CHANNEL PWMB_CH3_P33
+#define PWM_TEST_CHANNEL PWMA_CH1P_P60
 
 #define LED_PORT GPIO_P3
 #define LED_P35  GPIO_Pin_5
@@ -21,7 +21,7 @@ void main(void)
     GPIO_Init(LED_PORT, (GPIO_Pin_enum)(LED_P35 | LED_P36 | LED_P37), GPIO_OUT_PP);
     Led_Set(0, 0, 0);
 
-    /* P33：1 kHz、50%占空比，先验证PWM初始化和输出使能。 */
+    /* P60：1 kHz、50%占空比，先验证PWM初始化和输出使能。 */
     PWM_Init(PWM_TEST_CHANNEL, 1000, 5000);
 
     while (1)
