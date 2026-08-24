@@ -1,0 +1,116 @@
+{
+  "version": "sdcc_runtime_v1",
+  "kind_projects": {
+    "infantry": "ROBOMASTER_INFANTRY",
+    "engineer": "ROBOMASTER_ENGINEER",
+    "debug": "TEST",
+    "music": "BUZZER_MUSIC_GENERATED"
+  },
+  "include_dirs": [
+    "include",
+    "startup",
+    "libraries/drivers/inc",
+    "libraries/boards/inc"
+  ],
+  "runtime_libraries": [
+    "mcs251.lib",
+    "libsdcc.lib",
+    "liblong.lib",
+    "libint.lib",
+    "libfloat.lib",
+    "liblonglong.lib"
+  ],
+  "compile_flags": [
+    "-mmcs251",
+    "--model-large",
+    "--stack-auto",
+    "--opt-code-size",
+    "--constseg",
+    "CSEG",
+    "-c"
+  ],
+  "link_flags": [
+    "-mmcs251",
+    "--model-large",
+    "--stack-auto",
+    "--constseg",
+    "CSEG",
+    "--nostdlib",
+    "--iram-size",
+    "0x1000",
+    "--xram-loc",
+    "0x010000",
+    "--xram-size",
+    "0x2000",
+    "--code-loc",
+    "0xff0000",
+    "-Wl-b GSINIT0=0xfe0000"
+  ],
+  "source_groups": {
+    "common": [
+      "startup/common.c",
+      "startup/stc32g12k128_startup.c"
+    ],
+    "drivers": [
+      "libraries/drivers/src/CNU_PIE_GPIO.c",
+      "libraries/drivers/src/CNU_PIE_TIMER.c",
+      "libraries/drivers/src/CNU_PIE_EXTI.c",
+      "libraries/drivers/src/CNU_PIE_ADC.c",
+      "libraries/drivers/src/CNU_PIE_I2C.c",
+      "libraries/drivers/src/CNU_PIE_SPI.c",
+      "libraries/drivers/src/CNU_PIE_PWM.c",
+      "libraries/drivers/src/CNU_PIE_WDog.c",
+      "libraries/drivers/src/CNU_PIE_UART.c",
+      "libraries/drivers/src/CNU_PIE_FIFO.c"
+    ],
+    "boards": [
+      "libraries/boards/src/BMI088driver.c",
+      "libraries/boards/src/BMI088Middleware.c",
+      "libraries/boards/src/Encoder.c",
+      "libraries/boards/src/OLED.c",
+      "libraries/boards/src/LCD.c",
+      "libraries/boards/src/Font.c"
+    ],
+    "radio": [
+      "libraries/boards/src/remote_control.c",
+      "libraries/boards/src/nrf24l01.c"
+    ],
+    "pwm": [
+      "libraries/drivers/src/CNU_PIE_GPIO.c",
+      "libraries/drivers/src/CNU_PIE_PWM.c"
+    ],
+    "timer": [
+      "libraries/drivers/src/CNU_PIE_GPIO.c",
+      "libraries/drivers/src/CNU_PIE_TIMER.c"
+    ],
+    "uart": [
+      "libraries/drivers/src/CNU_PIE_GPIO.c",
+      "libraries/drivers/src/CNU_PIE_UART.c"
+    ],
+    "lcd": [
+      "libraries/boards/src/LCD.c",
+      "libraries/boards/src/Font.c",
+      "libraries/drivers/src/CNU_PIE_GPIO.c"
+    ],
+    "gpio": [
+      "libraries/drivers/src/CNU_PIE_GPIO.c"
+    ]
+  },
+  "projects": {
+    "0000.培训模板": {"library_groups": ["boards", "radio", "drivers"]},
+    "0001.JDY08设置密码": {"library_groups": ["boards", "radio", "drivers"]},
+    "BUZZER_MUSIC_SMOKE": {"library_groups": ["pwm"]},
+    "BUZZER_MUSIC_SONG_SMOKE": {"library_groups": ["pwm"]},
+    "BUZZER_MUSIC_GENERATED": {"library_groups": ["pwm"]},
+    "DELAY_SMOKE": {"library_groups": ["gpio"]},
+    "FRICTION_CALIBRATION": {"library_groups": ["boards", "drivers"]},
+    "LCD_SPI_SMOKE": {"library_groups": ["lcd"]},
+    "PWM_SMOKE": {"library_groups": ["pwm"]},
+    "PWM_B_SMOKE": {"library_groups": ["pwm"]},
+    "TIMER_IRQ_SMOKE": {"library_groups": ["timer"]},
+    "UART1_IRQ_SMOKE": {"library_groups": ["uart"]},
+    "ROBOMASTER_ENGINEER": {"library_groups": ["boards", "radio", "drivers"]},
+    "ROBOMASTER_INFANTRY": {"library_groups": ["boards", "radio", "drivers"]},
+    "TEST": {"library_groups": ["boards", "radio", "drivers"]}
+  }
+}

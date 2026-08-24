@@ -67,24 +67,26 @@ godot --headless --no-header --path . --script scripts/cli_codegen.gd -- help
 
 ### 编译（build）说明
 
-`build` 复用 `scripts/toolchain.gd` 的 `Toolchain.build_project()`：校验外部 Keil
-目录 → 部署项目模板/库 → 写 `main.c` → 同步编译。成功判据 = Keil 日志含
-`0 Error(s)`。
+`build` 复用 `scripts/toolchain.gd` 的 `Toolchain.build_project()`。默认使用随
+Windows 程序内嵌的 SDCC C251，首次使用时离线部署到 `user://`，然后写入
+`main.c`、编译并校验 HEX/MAP 布局。
 
-> 编译**必须**指定一个外部 Keil C251 安装目录。headless 下没有图形引导，
-> 需在运行前指定路径，二选一：
+需要兼容验证时可加 `--compiler keil`。Keil 模式必须指定外部 Keil C251 安装
+目录；headless 下没有图形引导，需在运行前指定路径，二选一：
 >
 > 1. 环境变量：`$env:PIEBLOCK_KEIL="C:\Keil_v5"`
 > 2. 配置文件：往 `user://keil_settings.json` 写 `{"path": "C:\\Keil_v5"}`
 >    （GUI 编译时也会引导填写同一文件）
 
+- `--compiler sdcc|keil`，默认 `sdcc`
 - 编译通常 10~60 秒
 - 产物 hex 路径见返回 JSON 的 `hex` 字段
 - **云端编译（可选）**：`build` 增加 `--remote <编译服务地址>`（如
   `http://127.0.0.1:8000`），则本机**不装 Keil**，改为把工程打包上传到
   `keil_server` 编译服务，服务器端 Keil C251 编译后返回 hex。可用
   `PIEBLOCK_PYTHON` 指定 python 解释器（建议指向项目 `.venv`）。
-  不带 `--remote` 时仍是本地编译，行为不变。服务搭建见 `keil_server/README.md`
+  `--remote` 始终表示服务器端 Keil，与本地 `--compiler` 和 GUI 持久化选择无关。
+  服务搭建见 `keil_server/README.md`
 - 已修复的编译漏洞：
   - `build` 曾用 Keil `-b`（跳过重编译，连续编译不同配置会返回陈旧 hex），
     已改用 `-r`（rebuild）强制重编译
@@ -232,7 +234,7 @@ godot --headless --no-header --path . --script scripts/cli_codegen.gd -- check `
 | `generate_code(kind, config, out_path?, channel?)` | 生成 main.c + 静态检查 |
 | `check_config(kind, config, channel?)` | 只跑静态检查 |
 | `generate_from_project(project_path, out_path?)` | 从 `.pieproj` 生成 |
-| `build_code(kind, config, channel?)` | 生成代码并用 Keil C251 编译为 hex 固件 |
+| `build_code(kind, config, channel?)` | 生成代码并编译为 hex 固件（本地默认 SDCC） |
 | `build_project(project_path)` | 从 `.pieproj` 编译（优先用已保存代码） |
 
 `config` 是 **JSON 字符串**（不是对象）。`engineer` 直接接收扁平工程配置，

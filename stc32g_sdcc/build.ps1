@@ -69,72 +69,35 @@ if ([string]::IsNullOrWhiteSpace($LibDir)) {
 }
 $LibDir = Resolve-Directory $LibDir 'SDCC MCS-251 large-stack-auto 运行库目录'
 
-$includePaths = @(
-    $StdInclude,
-    (Join-Path $StdInclude 'mcs51'),
-    (Join-Path $PSScriptRoot 'include'),
-    (Join-Path $PSScriptRoot 'startup'),
-    (Join-Path $PSScriptRoot 'libraries\drivers\inc'),
-    (Join-Path $PSScriptRoot 'libraries\boards\inc')
-)
+$manifestPath = Join-Path $PSScriptRoot 'build_manifest.json'
+$manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+$includePaths = @($StdInclude, (Join-Path $StdInclude 'mcs51'))
+foreach ($relativeInclude in @($manifest.include_dirs)) {
+    $includePaths += Join-Path $PSScriptRoot $relativeInclude
+}
 
-$sourceCommon = @(
-    'startup\common.c',
-    'startup\stc32g12k128_startup.c'
-)
-$sourceDrivers = @(
-    'libraries\drivers\src\CNU_PIE_GPIO.c',
-    'libraries\drivers\src\CNU_PIE_TIMER.c',
-    'libraries\drivers\src\CNU_PIE_EXTI.c',
-    'libraries\drivers\src\CNU_PIE_ADC.c',
-    'libraries\drivers\src\CNU_PIE_I2C.c',
-    'libraries\drivers\src\CNU_PIE_SPI.c',
-    'libraries\drivers\src\CNU_PIE_PWM.c',
-    'libraries\drivers\src\CNU_PIE_WDog.c',
-    'libraries\drivers\src\CNU_PIE_UART.c',
-    'libraries\drivers\src\CNU_PIE_FIFO.c'
-)
-$sourcePwmDrivers = @(
-    'libraries\drivers\src\CNU_PIE_GPIO.c',
-    'libraries\drivers\src\CNU_PIE_PWM.c'
-)
-$sourceTimerDrivers = @(
-    'libraries\drivers\src\CNU_PIE_GPIO.c',
-    'libraries\drivers\src\CNU_PIE_TIMER.c'
-)
-$sourceUartDrivers = @(
-    'libraries\drivers\src\CNU_PIE_GPIO.c',
-    'libraries\drivers\src\CNU_PIE_UART.c'
-)
-$sourceBoards = @(
-    'libraries\boards\src\BMI088driver.c',
-    'libraries\boards\src\BMI088Middleware.c',
-    'libraries\boards\src\Encoder.c',
-    'libraries\boards\src\OLED.c',
-    'libraries\boards\src\LCD.c',
-    'libraries\boards\src\Font.c'
-)
-$sourceBoardsWithRadio = $sourceBoards + @(
-    'libraries\boards\src\remote_control.c',
-    'libraries\boards\src\nrf24l01.c'
-)
-
-$sourceMap = @{
-    '0000.培训模板' = $sourceCommon + @('projects\0000.培训模板\src\isr.c', 'projects\0000.培训模板\src\main.c') + $sourceBoardsWithRadio + $sourceDrivers
-    '0001.JDY08设置密码' = $sourceCommon + @('projects\0001.JDY08设置密码\src\isr.c', 'projects\0001.JDY08设置密码\src\main.c') + $sourceBoardsWithRadio + $sourceDrivers
-    'BUZZER_MUSIC_SMOKE' = $sourceCommon + @('projects\BUZZER_MUSIC_SMOKE\src\isr.c', 'projects\BUZZER_MUSIC_SMOKE\src\main.c') + $sourcePwmDrivers
-    'BUZZER_MUSIC_SONG_SMOKE' = $sourceCommon + @('projects\BUZZER_MUSIC_SONG_SMOKE\src\isr.c', 'projects\BUZZER_MUSIC_SONG_SMOKE\src\main.c') + $sourcePwmDrivers
-    'BUZZER_MUSIC_GENERATED' = $sourceCommon + @('projects\BUZZER_MUSIC_GENERATED\src\isr.c', 'projects\BUZZER_MUSIC_GENERATED\src\main.c') + $sourcePwmDrivers
-    'DELAY_SMOKE' = $sourceCommon + @('projects\DELAY_SMOKE\src\isr.c', 'projects\DELAY_SMOKE\src\main.c', 'libraries\drivers\src\CNU_PIE_GPIO.c')
-    'FRICTION_CALIBRATION' = $sourceCommon + @('projects\FRICTION_CALIBRATION\src\isr.c', 'projects\FRICTION_CALIBRATION\src\main.c') + $sourceBoards + $sourceDrivers
-    'LCD_SPI_SMOKE' = $sourceCommon + @('projects\LCD_SPI_SMOKE\src\isr.c', 'projects\LCD_SPI_SMOKE\src\main.c', 'libraries\boards\src\LCD.c', 'libraries\boards\src\Font.c', 'libraries\drivers\src\CNU_PIE_GPIO.c')
-    'PWM_SMOKE' = $sourceCommon + @('projects\PWM_SMOKE\src\isr.c', 'projects\PWM_SMOKE\src\main.c') + $sourcePwmDrivers
-    'PWM_B_SMOKE' = $sourceCommon + @('projects\PWM_B_SMOKE\src\isr.c', 'projects\PWM_B_SMOKE\src\main.c') + $sourcePwmDrivers
-    'TIMER_IRQ_SMOKE' = $sourceCommon + @('projects\TIMER_IRQ_SMOKE\src\isr.c', 'projects\TIMER_IRQ_SMOKE\src\main.c') + $sourceTimerDrivers
-    'UART1_IRQ_SMOKE' = $sourceCommon + @('projects\UART1_IRQ_SMOKE\src\isr.c', 'projects\UART1_IRQ_SMOKE\src\main.c') + $sourceUartDrivers
-    'ROBOMASTER_ENGINEER' = $sourceCommon + @('projects\ROBOMASTER_ENGINEER\src\isr.c', 'projects\ROBOMASTER_ENGINEER\src\main.c') + $sourceBoardsWithRadio + $sourceDrivers
-    'ROBOMASTER_INFANTRY' = $sourceCommon + @('projects\ROBOMASTER_INFANTRY\src\isr.c', 'projects\ROBOMASTER_INFANTRY\src\main.c') + $sourceBoardsWithRadio + $sourceDrivers
-    'TEST' = $sourceCommon + @('projects\TEST\src\isr.c', 'projects\TEST\src\main.c') + $sourceBoardsWithRadio + $sourceDrivers
+$sourceMap = @{}
+$librarySourceMap = @{}
+foreach ($name in $projectNames) {
+    $spec = $manifest.projects.$name
+    if ($null -eq $spec) {
+        throw "SDCC 构建清单缺少项目: $name"
+    }
+    $librarySources = @()
+    foreach ($groupName in @($spec.library_groups)) {
+        $group = @($manifest.source_groups.$groupName)
+        if ($group.Count -eq 0) {
+            throw "SDCC 构建清单中的源码组不存在或为空: $groupName"
+        }
+        $librarySources += $group
+    }
+    $librarySources = @($librarySources | Select-Object -Unique)
+    $directSources = @($manifest.source_groups.common) + @(
+        "projects\$name\src\isr.c",
+        "projects\$name\src\main.c"
+    )
+    $sourceMap[$name] = @($directSources + $librarySources | Select-Object -Unique)
+    $librarySourceMap[$name] = $librarySources
 }
 
 $includeArgs = @()
@@ -142,14 +105,7 @@ foreach ($path in $includePaths) {
     $includeArgs += '-I' + (Resolve-Directory $path '工程头文件目录')
 }
 
-$libraryNames = @(
-    'mcs251.lib',
-    'libsdcc.lib',
-    'liblong.lib',
-    'libint.lib',
-    'libfloat.lib',
-    'liblonglong.lib'
-)
+$libraryNames = @($manifest.runtime_libraries)
 foreach ($library in $libraryNames) {
     if (!(Test-Path -LiteralPath (Join-Path $LibDir $library) -PathType Leaf)) {
         throw "SDCC 运行库缺失: $(Join-Path $LibDir $library)"
@@ -195,6 +151,7 @@ function Invoke-ProjectBuild([string]$Name) {
         '#ifndef PIE_BLOCK_GENERATED_INTERRUPT_DECLARATIONS_H'
         '#define PIE_BLOCK_GENERATED_INTERRUPT_DECLARATIONS_H'
         '#include "STC32Gxx.h"'
+        '#include <stdlib.h>'
     ) + ($interruptDeclarations.GetEnumerator() |
         Sort-Object Name |
         ForEach-Object { $_.Value }) + @(
@@ -202,27 +159,7 @@ function Invoke-ProjectBuild([string]$Name) {
     )
     Set-Content -LiteralPath $generatedInterruptHeader -Value $interruptHeaderLines -Encoding ascii
 
-    $libraryRelativeSources = if ($Name -eq 'FRICTION_CALIBRATION') {
-        $sourceBoards + $sourceDrivers
-    } elseif ($Name -eq 'LCD_SPI_SMOKE') {
-        @('libraries\boards\src\LCD.c', 'libraries\boards\src\Font.c', 'libraries\drivers\src\CNU_PIE_GPIO.c')
-    } elseif ($Name -eq 'PWM_SMOKE') {
-        $sourcePwmDrivers
-    } elseif ($Name -eq 'TIMER_IRQ_SMOKE') {
-        $sourceTimerDrivers
-    } elseif ($Name -eq 'UART1_IRQ_SMOKE') {
-        $sourceUartDrivers
-    } elseif ($Name -eq 'BUZZER_MUSIC_SMOKE') {
-        $sourcePwmDrivers
-    } elseif ($Name -eq 'BUZZER_MUSIC_SONG_SMOKE') {
-        $sourcePwmDrivers
-    } elseif ($Name -eq 'BUZZER_MUSIC_GENERATED') {
-        $sourcePwmDrivers
-    } elseif ($Name -eq 'DELAY_SMOKE') {
-        @('libraries\drivers\src\CNU_PIE_GPIO.c')
-    } else {
-        $sourceBoardsWithRadio + $sourceDrivers
-    }
+    $libraryRelativeSources = @($librarySourceMap[$Name])
     $directObjects = @()
     $libraryObjects = @()
     foreach ($relativeSource in $sourceMap[$Name]) {
@@ -233,17 +170,10 @@ function Invoke-ProjectBuild([string]$Name) {
         $objectName = [IO.Path]::GetFileNameWithoutExtension($source) + '.rel'
         $object = Join-Path $output $objectName
         $compileExtraArgs = @()
-        if ([IO.Path]::GetFullPath($source) -eq [IO.Path]::GetFullPath((Join-Path $projectRoot 'src\main.c')) -and $interruptDeclarations.Count -gt 0) {
+        if ([IO.Path]::GetFullPath($source) -eq [IO.Path]::GetFullPath((Join-Path $projectRoot 'src\main.c'))) {
             $compileExtraArgs = @('--include', $generatedInterruptHeader)
         }
-        $compileArgs = @(
-            '-mmcs251',
-            '--model-large',
-            '--stack-auto',
-            '--opt-code-size',
-            '--constseg', 'CSEG',
-            '-c'
-        ) + $includeArgs + $projectIncludeArgs + $compileExtraArgs + @('-o', $object, $source)
+        $compileArgs = @($manifest.compile_flags) + $includeArgs + $projectIncludeArgs + $compileExtraArgs + @('-o', $object, $source)
         Invoke-Sdcc $compileArgs
         if ($libraryRelativeSources -contains $relativeSource) {
             $libraryObjects += $object
@@ -258,17 +188,7 @@ function Invoke-ProjectBuild([string]$Name) {
         [IO.Path]::GetFileNameWithoutExtension($_)
     }
     Set-Content -LiteralPath $sharedLibrary -Value $libraryEntries -Encoding ascii
-    $linkArgs = @(
-        '-mmcs251',
-        '--model-large',
-        '--stack-auto',
-        '--constseg', 'CSEG',
-        '--nostdlib',
-        '--iram-size', '0x1000',
-        '--xram-loc', '0x010000',
-        '--xram-size', '0x2000',
-        '--code-loc', '0xff0000',
-        '-Wl-b GSINIT0=0xfe0000',
+    $linkArgs = @($manifest.link_flags) + @(
         ('-L' + $output),
         ('-L' + $LibDir)
     ) + $includeArgs + $projectIncludeArgs + $directObjects + @('stc32g_shared.lib') + $libraryNames + @('-o', $hex)

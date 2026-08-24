@@ -24,6 +24,9 @@ class FakeToolchain extends RefCounted:
 	func build_sync(_uv4_abs: String, _project_dst: String) -> Dictionary:
 		return {"ok": true, "exit": 0, "log": "0 Error(s), 2 Warning(s)"}
 
+	func build_sdcc_sync(_kind: String, _code: String, _project_dst: String) -> Dictionary:
+		return {"ok": true, "exit": 0, "log": "[PASS] SDCC layout"}
+
 
 func _check(label: String, ok: bool) -> void:
 	if ok:
@@ -53,22 +56,22 @@ func _initialize() -> void:
 
 	toolchain.wrote = false
 	_lines.clear()
-	_check("写盘失败不启动", not controller.start("project", "code"))
+	_check("Keil 写盘失败不启动", not controller.start("project", "code", "infantry", "keil"))
 	_check("写盘失败给出提示", _contains("写入 main.c 失败"))
 	toolchain.wrote = true
 
 	toolchain.uv4 = ""
 	_lines.clear()
-	_check("缺编译器不启动", not controller.start("project", "code"))
+	_check("缺 Keil 编译器不启动", not controller.start("project", "code", "infantry", "keil"))
 	_check("缺编译器给出提示", _contains("未找到 uVision.com"))
 	toolchain.uv4 = "C:/fake/uVision.com"
 	_lines.clear()
 	var succeeded_count: Array[int] = [0]
 	controller.succeeded.connect(func() -> void: succeeded_count[0] += 1)
-	_check("假后台编译成功启动", controller.start("project", "code"))
+	_check("假 SDCC 后台编译成功启动", controller.start("project", "code", "infantry", "sdcc"))
 	await controller.finished
 	_check("成功结果发出 succeeded", succeeded_count[0] == 1)
-	_check("成功日志完整展示", _contains("编译成功") and _contains("0 Error(s)"))
+	_check("成功日志完整展示", _contains("编译成功") and _contains("SDCC layout"))
 
 	_lines.clear()
 	controller._on_worker_finished({"ok": false, "exit": 1, "log": "error C123"})

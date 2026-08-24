@@ -121,7 +121,8 @@ func _initialize() -> void:
 
 	# 10) build_project 未配置时报错并提示配置方式
 	tc.set_configured_keil_path("")
-	var bres: Dictionary = tc.build_project("user://stc32g/Projects/ROBOMASTER_INFANTRY")
+	var bres: Dictionary = tc.build_project("user://stc32g/Projects/ROBOMASTER_INFANTRY", "",
+		TC.COMPILER_KEIL, "infantry")
 	_check("build_project 未配置时返回失败", not bres.ok)
 	_check("build_project 报错提示配置 Keil 目录", str(bres.log).contains("Keil 目录"))
 

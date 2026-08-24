@@ -48,6 +48,9 @@ func _ready() -> void:
 ## 首次启动后台探测外部 Keil，不阻塞启动页的项目管理操作。
 func _start_keil_auto_scan() -> void:
 	var tc = TC.new()
+	# 默认使用内置 SDCC，不在首次启动时做无意义的全盘 Keil 扫描。
+	if tc.get_selected_compiler() != TC.COMPILER_KEIL:
+		return
 	if not tc.should_auto_scan_keil():
 		return
 	_keil_scan_active = true

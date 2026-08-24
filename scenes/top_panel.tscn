@@ -18,6 +18,7 @@ layout_mode = 2
 text = "保存"
 
 [node name="Settings" type="Button" parent="." unique_id=801049158]
+visible = false
 layout_mode = 2
 text = "设置"
 
@@ -55,15 +56,13 @@ size_flags_horizontal = 8
 text = "编译"
 
 [node name="BuildMode" type="OptionButton" parent="." unique_id=1075719196]
-visible = false
 layout_mode = 2
 size_flags_horizontal = 8
-disabled = true
 selected = 0
 item_count = 2
-popup/item_0/text = "本地编译"
+popup/item_0/text = "SDCC 编译"
 popup/item_0/id = 0
-popup/item_1/text = "云端编译"
+popup/item_1/text = "Keil 编译"
 popup/item_1/id = 1
 
 [node name="Download" type="Button" parent="." unique_id=641915480]

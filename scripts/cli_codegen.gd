@@ -349,15 +349,20 @@ func _cmd_music_config(args: PackedStringArray) -> void:
 # build -- 用 Keil C251 编译为 hex 固件
 # ====================================================================
 ## 复用 Toolchain.build_project()（作者已预留为 MCP 等非 UI 调用方设计）。
-## 先部署项目模板与库 -> 写 main.c -> 调用外置 Keil 同步编译。
-## 成功判据：Keil 日志含 "0 Error(s)"。编译通常耗时 10~60 秒（首次更久）。
+## 本地默认走内置 SDCC；--compiler keil 走外置 Keil；--remote 始终走服务器 Keil。
+## 编译通常耗时 10~60 秒（首次部署内置工具链会更久）。
 func _cmd_build(args: PackedStringArray) -> void:
-	var parsed: Dictionary = _parse_args(args, ["--kind", "--config", "--code", "--project", "--remote"])
+	var parsed: Dictionary = _parse_args(args, ["--kind", "--config", "--code", "--project", "--remote", "--compiler"])
 	if parsed.has("error"):
 		_print_error(parsed["error"])
 		quit(EXIT_ARG)
 		return
 	var kind: String = parsed.get("--kind", "infantry")
+	var compiler: String = str(parsed.get("--compiler", TC.COMPILER_SDCC))
+	if not compiler in [TC.COMPILER_SDCC, TC.COMPILER_KEIL]:
+		_print_error("未知编译器: %s（合法值: sdcc/keil）" % compiler)
+		quit(EXIT_ARG)
+		return
 	if not PF.is_valid_kind(kind):
 		_print_error("未知项目类型: %s（合法值: infantry/engineer/debug/music）" % kind)
 		quit(EXIT_ARG)
@@ -426,11 +431,12 @@ func _cmd_build(args: PackedStringArray) -> void:
 	else:
 		var tc = TC.new()
 		var dst: String = _project_dst_for_kind(kind)
-		var result: Dictionary = tc.build_project(dst, code)
+		var result: Dictionary = tc.build_project(dst, code, compiler, kind)
 		out = {
 			"ok": bool(result.get("ok", false)),
 			"exit": result.get("exit", -1),
 			"kind": kind,
+			"compiler": compiler,
 			"log": str(result.get("log", "")),
 			"hex": tc.get_hex_path(dst),
 			"hex_exists": tc.hex_exists(dst),
@@ -1166,7 +1172,7 @@ Pie-Block 代码生成器 CLI
 命令:
   generate    生成 main.c 代码
   check       运行静态检查
-  build       用 Keil C251 编译为 hex 固件
+  build       用 SDCC（默认）或 Keil C251 编译为 hex 固件
   music-config 将 MIDI 解析为音乐配置 JSON，供代码生成或 SDCC 构建使用
   schema      输出配置 JSON Schema
   profiles    列出所有项目类型
@@ -1188,6 +1194,7 @@ build 参数:
   --config <json文件>                配置 JSON 文件路径（先生成再编译）
   --code <c文件>                     直接编译已有的 C 代码文件
   --project <.pieproj文件>           从项目文件编译（优先用已保存的代码）
+  --compiler <sdcc|keil>             本地编译器（默认 sdcc）
   --remote <编译服务地址>            走云端编译（服务器端 Keil 编译，本机无需装 Keil）
                                      例如 --remote http://127.0.0.1:8000
                                      可用 PIEBLOCK_PYTHON 指定 python 解释器

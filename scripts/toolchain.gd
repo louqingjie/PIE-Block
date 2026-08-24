@@ -1,7 +1,9 @@
 class_name Toolchain
 extends RefCounted
 
-## Keil C251 工具链管理。
+const SDCC_TOOLCHAIN = preload("res://scripts/sdcc_toolchain.gd")
+
+## SDCC / Keil C251 统一工具链管理。
 ## 从 ui.gd 抽出，供图形化界面、AI 代码编辑器、以及后续编译 MCP 共用。
 ##
 ## 职责：
@@ -10,7 +12,7 @@ extends RefCounted
 ##   - 探测外部 Keil 的 uVision.com / UV4.exe
 ##   - 同步执行编译并返回日志
 ##
-## 编译只使用用户指定的外部 Keil 安装。
+## 默认使用内置 SDCC；选择 Keil 时使用用户指定的外部安装。
 ## 外部目录来源：环境变量 PIEBLOCK_KEIL > user://keil_settings.json。
 ##
 ## 日志通过构造时传入的 Callable 输出（一般接到 output.gd 的 append_line），
@@ -25,6 +27,10 @@ const KEIL_SETTINGS_PATH: String = "user://keil_settings.json"
 const KEIL_SCAN_STATE_PATH: String = "user://keil_scan_state.json"
 ## 指定外部 Keil 目录的环境变量（headless/CLI/CI 用，优先级高于配置文件）
 const KEIL_ENV_VAR: String = "PIEBLOCK_KEIL"
+## 编译器选择（GUI 全局设置）。首次启动或配置损坏时默认 SDCC。
+const COMPILER_SETTINGS_PATH: String = "user://compiler_settings.json"
+const COMPILER_SDCC: String = "sdcc"
+const COMPILER_KEIL: String = "keil"
 ## 云端编译服务器配置（user://，记录 Base URL 与 API Key）。
 ## JSON 格式 {"base_url": "https://build.pieblock.asia", "api_key": "..."}
 ## 用于"云端编译"：本机不装 Keil，把工程打包上传到编译服务器编译并取回 hex。
@@ -101,6 +107,35 @@ func _init(log_sink: Callable = Callable()) -> void:
 func _emit(line_text: String) -> void:
 	if _log.is_valid():
 		_log.call(line_text)
+
+
+## 读取 GUI 编译器选择。只接受稳定 ID，未知值按首次启动处理。
+func get_selected_compiler() -> String:
+	if not FileAccess.file_exists(COMPILER_SETTINGS_PATH):
+		return COMPILER_SDCC
+	var parser := JSON.new()
+	if parser.parse(FileAccess.get_file_as_string(COMPILER_SETTINGS_PATH)) != OK \
+			or not parser.data is Dictionary:
+		return COMPILER_SDCC
+	var parsed: Dictionary = parser.data
+	var compiler := str(parsed.get("compiler", COMPILER_SDCC))
+	return compiler if compiler in [COMPILER_SDCC, COMPILER_KEIL] else COMPILER_SDCC
+
+
+## 保存 GUI 编译器选择。非法值拒绝写入。
+func set_selected_compiler(compiler: String) -> bool:
+	if not compiler in [COMPILER_SDCC, COMPILER_KEIL]:
+		return false
+	var file := FileAccess.open(COMPILER_SETTINGS_PATH, FileAccess.WRITE)
+	if file == null:
+		return false
+	file.store_string(JSON.stringify({"compiler": compiler}, "\t"))
+	file.close()
+	return true
+
+
+func is_sdcc_supported_platform() -> bool:
+	return OS.get_name() == "Windows"
 
 
 # ------------------------------------------------------------------ 路径工具
@@ -852,10 +887,19 @@ func build_sync(uv4_abs: String, project_dst: String) -> Dictionary:
 	}
 
 
-## 一步到位的编译入口：校验外部 Keil -> 部署项目/库 -> 写盘 -> 编译。
+## 一步到位的统一编译入口。SDCC 默认内置，Keil 按需校验外部安装。
 ## 供 MCP 工具等非 UI 调用方使用（同步阻塞）。
 ## 返回 {exit, log, ok} 或 {ok: false, log: "<错误说明>"}
-func build_project(project_dst: String, code: String = "") -> Dictionary:
+func build_project(project_dst: String, code: String = "",
+		compiler: String = COMPILER_SDCC, kind: String = "infantry") -> Dictionary:
+	if compiler == COMPILER_SDCC:
+		if not ensure_deployed():
+			return {"ok": false, "exit": -1, "log": "项目部署失败"}
+		if code.is_empty():
+			code = read_main_c(project_dst)
+		return build_sdcc_sync(kind, code, project_dst)
+	if compiler != COMPILER_KEIL:
+		return {"ok": false, "exit": -1, "log": "未知编译器：%s" % compiler}
 	var keil_ready: Dictionary = ensure_external_keil_ready()
 	if not keil_ready.ok:
 		return {"ok": false, "exit": - 1, "log": keil_ready.reason
@@ -870,6 +914,16 @@ func build_project(project_dst: String, code: String = "") -> Dictionary:
 	if uv4_abs.is_empty():
 		return {"ok": false, "exit": - 1, "log": "未找到 uVision.com / UV4.exe"}
 	return build_sync(uv4_abs, project_dst)
+
+
+## 使用内置 SDCC 同步构建，并把成功产物放到现有统一 HEX 路径。
+func build_sdcc_sync(kind: String, code: String, project_dst: String) -> Dictionary:
+	var sdcc = SDCC_TOOLCHAIN.new(_log)
+	return sdcc.build(kind, code, get_hex_path(project_dst))
+
+
+func sdcc_project_for_kind(kind: String) -> String:
+	return SDCC_TOOLCHAIN.new().project_for_kind(kind)
 
 
 # ------------------------------------------------------------------ 烧录

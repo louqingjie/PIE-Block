@@ -1,6 +1,7 @@
 # STC32G 机器人固件开发约束
 
-本工作区是 RoboMaster 机器人的单片机固件工程，用 **Keil C251** 编译。
+本工作区是 RoboMaster 机器人的单片机固件工程，程序默认用内置 **SDCC C251**
+编译，也可在顶部下拉栏切换到 **Keil C251**。
 **当前构型：{{KIND_LABEL}}。**
 唯一需要修改的文件是 `{{MAIN_C_PATH}}`。
 
@@ -52,7 +53,7 @@ void ExpansionBoradControl(uint8_t control_cmd,
 
 ---
 
-## 2. Keil C251 编译器限制
+## 2. C251 编译器限制
 
 ### 2.1 C89 模式
 
@@ -178,13 +179,14 @@ Ms_Delay(1500);
 
 ## 7. 如何编译（改完代码务必自己验证）
 
-编译器不随本程序附带，需要用户安装外置 Keil C251。
-图形化程序通过 `PIEBLOCK_KEIL` 环境变量或 `user://keil_settings.json` 获取安装目录。
+Windows 程序已内置 SDCC C251，不需要用户安装编译器。优先在程序顶部选择
+“SDCC 编译”后点击“编译”。仅在用户明确要求 Keil 兼容验证时，才使用外置 Keil；
+程序通过 `PIEBLOCK_KEIL` 环境变量或 `user://keil_settings.json` 获取安装目录。
 
 从工作区根目录执行：
 
 ```powershell
-# 步兵构型（PIEBLOCK_KEIL 指向外置 Keil 根目录）
+# 以下命令仅用于明确要求的 Keil 兼容验证（PIEBLOCK_KEIL 指向外置 Keil 根目录）
 $keil = $env:PIEBLOCK_KEIL
 & "$keil/UV4/uVision.com" -r stc32g/Projects/ROBOMASTER_INFANTRY/MDK/Project_Template.uvproj -o build.log
 
@@ -214,7 +216,6 @@ Get-Content stc32g/Projects/ROBOMASTER_INFANTRY/MDK/build.log -Tail 10
   该文件由 Keil 安装程序维护。
 - 编译产物（`Objects/` `Listings/` `*.lst`）已在 `.gitignore` 里，不用管。
 
-如果上述外置 Keil 路径确实不存在，
-再告诉用户去点界面上的「编译」按钮，而不是让他们自己开 Keil。
+如果没有外置 Keil，直接让用户在顶部选择“SDCC 编译”并点击「编译」。
 本程序的用户是没有编程基础的学生，界面上只有一个「编译」按钮，
 **不要**指导他们「打开 µVision 按 F7」。

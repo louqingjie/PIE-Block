@@ -14,6 +14,7 @@
     "r2_dir": "正向",
     "booster_io": "P60",
     "booster_dir": "正向",
+    "friction_max_duty": "800",
     "yaw_drive": "舵机",
     "yaw_io": "MP74",
     "yaw_dir": "正向",
