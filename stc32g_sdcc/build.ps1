@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('0000.培训模板', '0001.JDY08设置密码', 'FRICTION_CALIBRATION', 'LCD_SPI_SMOKE', 'PWM_SMOKE', 'ROBOMASTER_ENGINEER', 'ROBOMASTER_INFANTRY', 'TEST')]
+[ValidateSet('0000.培训模板', '0001.JDY08设置密码', 'FRICTION_CALIBRATION', 'LCD_SPI_SMOKE', 'PWM_SMOKE', 'PWM_B_SMOKE', 'ROBOMASTER_ENGINEER', 'ROBOMASTER_INFANTRY', 'TEST')]
     [string]$Project = 'TEST',
     [switch]$All,
     [switch]$SmokeTest,
@@ -18,6 +18,7 @@ $projectNames = @(
     'FRICTION_CALIBRATION',
     'LCD_SPI_SMOKE',
     'PWM_SMOKE',
+    'PWM_B_SMOKE',
     'ROBOMASTER_ENGINEER',
     'ROBOMASTER_INFANTRY',
     'TEST'
@@ -110,6 +111,7 @@ $sourceMap = @{
     'FRICTION_CALIBRATION' = $sourceCommon + @('projects\FRICTION_CALIBRATION\src\isr.c', 'projects\FRICTION_CALIBRATION\src\main.c') + $sourceBoards + $sourceDrivers
     'LCD_SPI_SMOKE' = $sourceCommon + @('projects\LCD_SPI_SMOKE\src\isr.c', 'projects\LCD_SPI_SMOKE\src\main.c', 'libraries\boards\src\LCD.c', 'libraries\boards\src\Font.c', 'libraries\drivers\src\CNU_PIE_GPIO.c')
     'PWM_SMOKE' = $sourceCommon + @('projects\PWM_SMOKE\src\isr.c', 'projects\PWM_SMOKE\src\main.c') + $sourcePwmDrivers
+    'PWM_B_SMOKE' = $sourceCommon + @('projects\PWM_B_SMOKE\src\isr.c', 'projects\PWM_B_SMOKE\src\main.c') + $sourcePwmDrivers
     'ROBOMASTER_ENGINEER' = $sourceCommon + @('projects\ROBOMASTER_ENGINEER\src\isr.c', 'projects\ROBOMASTER_ENGINEER\src\main.c') + $sourceBoardsWithRadio + $sourceDrivers
     'ROBOMASTER_INFANTRY' = $sourceCommon + @('projects\ROBOMASTER_INFANTRY\src\isr.c', 'projects\ROBOMASTER_INFANTRY\src\main.c') + $sourceBoardsWithRadio + $sourceDrivers
     'TEST' = $sourceCommon + @('projects\TEST\src\isr.c', 'projects\TEST\src\main.c') + $sourceBoardsWithRadio + $sourceDrivers
