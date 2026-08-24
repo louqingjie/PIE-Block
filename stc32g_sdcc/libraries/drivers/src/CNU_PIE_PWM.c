@@ -90,19 +90,20 @@ void PWM_PIN_SET(PWM_CHN_PIN_enum PWM_CHN_PIN)
 		case PWMB_CH1_P20:  GPIO_Init(GPIO_P2,GPIO_Pin_0,GPIO_OUT_PP); break;
 		case PWMB_CH1_P17:  GPIO_Init(GPIO_P1,GPIO_Pin_7,GPIO_OUT_PP); break;
 		case PWMB_CH1_P00:  GPIO_Init(GPIO_P0,GPIO_Pin_0,GPIO_OUT_PP); break;
-		case PWMB_CH1_P74:  GPIO_Init(GPIO_P7,GPIO_Pin_4,GPIO_OUT_PP); break;
+		/* P7.4~P7.7 由 PWM 外设自动配置为推挽输出，GPIO 保持准双向。 */
+		case PWMB_CH1_P74:  GPIO_Init(GPIO_P7,GPIO_Pin_4,GPIO_PullUp); break;
 		case PWMB_CH2_P21:  GPIO_Init(GPIO_P2,GPIO_Pin_1,GPIO_OUT_PP); break;
 		case PWMB_CH2_P54:  GPIO_Init(GPIO_P5,GPIO_Pin_4,GPIO_OUT_PP); break;
 		case PWMB_CH2_P01:  GPIO_Init(GPIO_P0,GPIO_Pin_1,GPIO_OUT_PP); break;
-		case PWMB_CH2_P75:  GPIO_Init(GPIO_P7,GPIO_Pin_5,GPIO_OUT_PP); break;
+		case PWMB_CH2_P75:  GPIO_Init(GPIO_P7,GPIO_Pin_5,GPIO_PullUp); break;
 		case PWMB_CH3_P22:  GPIO_Init(GPIO_P2,GPIO_Pin_2,GPIO_OUT_PP); break;
 		case PWMB_CH3_P33:  GPIO_Init(GPIO_P3,GPIO_Pin_3,GPIO_OUT_PP); break;
 		case PWMB_CH3_P02:  GPIO_Init(GPIO_P0,GPIO_Pin_2,GPIO_OUT_PP); break;
-		case PWMB_CH3_P76:  GPIO_Init(GPIO_P7,GPIO_Pin_6,GPIO_OUT_PP); break;
+		case PWMB_CH3_P76:  GPIO_Init(GPIO_P7,GPIO_Pin_6,GPIO_PullUp); break;
 		case PWMB_CH4_P23:  GPIO_Init(GPIO_P2,GPIO_Pin_3,GPIO_OUT_PP); break;
 		case PWMB_CH4_P34:  GPIO_Init(GPIO_P3,GPIO_Pin_4,GPIO_OUT_PP); break;
 		case PWMB_CH4_P03:  GPIO_Init(GPIO_P0,GPIO_Pin_3,GPIO_OUT_PP); break;
-    case PWMB_CH4_P77:  GPIO_Init(GPIO_P7,GPIO_Pin_7,GPIO_OUT_PP); break;
+		case PWMB_CH4_P77:  GPIO_Init(GPIO_P7,GPIO_Pin_7,GPIO_PullUp); break;
 	}
 }
  /**************************************************************************************************************************
