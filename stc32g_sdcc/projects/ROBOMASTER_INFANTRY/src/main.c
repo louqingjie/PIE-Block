@@ -230,6 +230,8 @@ void All_Init()
     //   100 NRF遥控 101 拓展板 Init 110 PWM/舵机 111 完成
     StepBegin(0);
     Board_Init();
+    /* 蜂鸣器在第一步确认音之前就必须完成 PWM 初始化。 */
+    PWM_Init(BUZZER_CH, 500, 0);
     StepDone(0);
     StepBegin(1);
     // 串口必须最先初始化：UART1 是扩展板控制的唯一通道。
@@ -243,8 +245,6 @@ void All_Init()
     LedShow(7);
     Ms_Delay(200);
     LedShow(0);
-    // 蜂鸣器通道必须 PWM_Init（使能输出+启动定时器），否则 Beep 无声
-    PWM_Init(BUZZER_CH, 500, 0);
     StepDone(2);
     StepBegin(3);
     // NRF 遥控器初始化：全程关中断 + 初始化后关 P2.6 EXTI
