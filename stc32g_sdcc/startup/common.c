@@ -18,7 +18,21 @@
  ********************************************************************************************************************/
 #include "common.h"
 #include "intrins.h"
- #include "CNU_PIE_GPIO.h"
+#include "CNU_PIE_GPIO.h"
+
+/*
+ * Keil C251 与 SDCC MCS-251 为同一段 C 延时循环生成的指令数量不同。
+ * SDCC 的 while(--i) 包含字节判断、零判断和 EJMP，循环体明显更长；
+ * 继续沿用 Keil 的 /6000、/7000000 会让所有软件延时（尤其是音乐节拍）
+ * 变慢。SDCC 取约 2/3 的迭代次数，保持与 Keil 的实测节拍接近。
+ */
+#if defined(__SDCC)
+#define DELAY_MS_DIVISOR 9000UL
+#define DELAY_US_DIVISOR 10500000UL
+#else
+#define DELAY_MS_DIVISOR 6000UL
+#define DELAY_US_DIVISOR 7000000UL
+#endif
 volatile unsigned int DELAY_MS = 0;
 volatile unsigned int DELAY_US = 0;
 unsigned long system_clock;
@@ -66,7 +80,8 @@ uint32_t System_Clock_Set(void)
 ***************************************************************************************************************************/
 void Delay_Init(void)
 {
-	DELAY_MS = system_clock / 6000; DELAY_US = system_clock / 7000000;
+	DELAY_MS = system_clock / DELAY_MS_DIVISOR;
+	DELAY_US = system_clock / DELAY_US_DIVISOR;
 	if(system_clock <= 12000000) DELAY_US++;//����Ӧ��ʱ��
 }
  /**************************************************************************************************************************
