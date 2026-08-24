@@ -33,6 +33,7 @@
 *.build_log.htm
 **/pie_block_build.log
 **/build_test.log
+stc32g_sdcc/build/
 stc32g/Projects/**/MDK/*.log
 
 # Temporary and backup files
