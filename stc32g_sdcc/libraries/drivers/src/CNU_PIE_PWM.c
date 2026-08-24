@@ -28,6 +28,41 @@ const uint32_t PWM_CCR_ADDR[] = {0x7efed5, 0x7efed7, 0x7efed9, 0x7efedb, 0x7efef
 //���ƼĴ���,��8λ��ַ  ��8λ��ַ + 1����
 const uint32_t PWM_ARR_ADDR[] = {0x7efed2,0x7efef2};
 
+/* PWMA/PWMB高级PWM寄存器通过HSPWM异步窗口访问。 */
+static void PWM_WriteA(uint32_t address, uint8_t value)
+{
+	while (HSPWMA_ADR & 0x80);
+	HSPWMA_DAT = value;
+	HSPWMA_ADR = ((uint8_t)address) & 0x7F;
+}
+
+static uint8_t PWM_ReadA(uint32_t address)
+{
+	uint8_t value;
+	while (HSPWMA_ADR & 0x80);
+	HSPWMA_ADR = (((uint8_t)address) & 0x7F) | 0x80;
+	while (HSPWMA_ADR & 0x80);
+	value = HSPWMA_DAT;
+	return value;
+}
+
+static void PWM_WriteB(uint32_t address, uint8_t value)
+{
+	while (HSPWMB_ADR & 0x80);
+	HSPWMB_DAT = value;
+	HSPWMB_ADR = ((uint8_t)address) & 0x7F;
+}
+
+static uint8_t PWM_ReadB(uint32_t address)
+{
+	uint8_t value;
+	while (HSPWMB_ADR & 0x80);
+	HSPWMB_ADR = (((uint8_t)address) & 0x7F) | 0x80;
+	while (HSPWMB_ADR & 0x80);
+	value = HSPWMB_DAT;
+	return value;
+}
+
  /**************************************************************************************************************************
  * @brief  ��ʼ��PWM����IOģʽ
  * @brief  �ڲ����ã��������
@@ -93,6 +128,7 @@ void PWM_Init(PWM_CHN_PIN_enum PWM_CHN_PIN , uint32_t frequency , uint32_t pwm_d
 	uint32_t match_temp;
 	uint32_t period_temp;
 	uint16_t Frequency_Division = 0;//��Ƶϵ��
+	uint8_t register_value;
 	
 	P_SW2 |= 0x80;
 	
@@ -115,47 +151,82 @@ void PWM_Init(PWM_CHN_PIN_enum PWM_CHN_PIN , uint32_t frequency , uint32_t pwm_d
 	if(PWMB_CH1_P20 <= PWM_CHN_PIN)				//PWM5-8
 	{
 		//ͨ��ѡ������ѡ��
-		PWMB_ENO |= (1 << ((2 * ((PWM_CHN_PIN >> 4) - 4))));					//ʹ��ͨ��	
-		PWMB_PS |= ((PWM_CHN_PIN & 0x03) << ((2 * ((PWM_CHN_PIN >> 4) - 4))));		//�����ѡ��
+		register_value = PWM_ReadB((uint32_t)&PWMB_ENO);
+		register_value |= (1 << ((2 * ((PWM_CHN_PIN >> 4) - 4))));
+		PWM_WriteB((uint32_t)&PWMB_ENO, register_value);
+		register_value = PWM_ReadB((uint32_t)&PWMB_PS);
+		register_value |= ((PWM_CHN_PIN & 0x03) << ((2 * ((PWM_CHN_PIN >> 4) - 4))));
+		PWM_WriteB((uint32_t)&PWMB_PS, register_value);
 		
 		// ����ͨ�����ʹ�ܺͼ���	
-		(*(unsigned char volatile __xdata *) (PWM_CCER_ADDR[PWM_CHN_PIN>>5])) |= (uint8_t)(1 << (((PWM_CHN_PIN >> 4) & 0x01) * 4));
+		register_value = PWM_ReadB(PWM_CCER_ADDR[PWM_CHN_PIN>>5]);
+		register_value |= (uint8_t)(1 << (((PWM_CHN_PIN >> 4) & 0x01) * 4));
+		PWM_WriteB(PWM_CCER_ADDR[PWM_CHN_PIN>>5], register_value);
 		
 		//����Ԥ��Ƶ
-		PWMB_PSCRH = (uint8_t)(Frequency_Division>>8);
-		PWMB_PSCRL = (uint8_t)Frequency_Division;
+		PWM_WriteB((uint32_t)&PWMB_PSCRH, (uint8_t)(Frequency_Division>>8));
+		PWM_WriteB((uint32_t)&PWMB_PSCRL, (uint8_t)Frequency_Division);
 		
-		PWMB_BKR = 0x80; 	//�����ʹ�� �൱���ܿ���
-		PWMB_CR1 = 0x01;	//PWM��ʼ����
+		PWM_WriteB((uint32_t)&PWMB_BKR, 0x80);
+		PWM_WriteB((uint32_t)&PWMB_CR1, 0x01);
 	}
 	else
 	{
-		PWMA_ENO |= (1 << (PWM_CHN_PIN & 0x01)) << ((PWM_CHN_PIN >> 4) * 2);	//ʹ��ͨ��	
-		PWMA_PS  |= ((PWM_CHN_PIN & 0x07) >> 1) << ((PWM_CHN_PIN >> 4) * 2);    //�����ѡ��
+		register_value = PWM_ReadA((uint32_t)&PWMA_ENO);
+		register_value |= (1 << (PWM_CHN_PIN & 0x01)) << ((PWM_CHN_PIN >> 4) * 2);
+		PWM_WriteA((uint32_t)&PWMA_ENO, register_value);
+		register_value = PWM_ReadA((uint32_t)&PWMA_PS);
+		register_value |= ((PWM_CHN_PIN & 0x07) >> 1) << ((PWM_CHN_PIN >> 4) * 2);
+		PWM_WriteA((uint32_t)&PWMA_PS, register_value);
 		
 		// ����ͨ�����ʹ�ܺͼ���	
-		(*(unsigned char volatile __xdata *) (PWM_CCER_ADDR[PWM_CHN_PIN>>5])) |= (1 << ((PWM_CHN_PIN & 0x01) * 2 + ((PWM_CHN_PIN >> 4) & 0x01) * 0x04));
+		register_value = PWM_ReadA(PWM_CCER_ADDR[PWM_CHN_PIN>>5]);
+		register_value |= (1 << ((PWM_CHN_PIN & 0x01) * 2 + ((PWM_CHN_PIN >> 4) & 0x01) * 0x04));
+		PWM_WriteA(PWM_CCER_ADDR[PWM_CHN_PIN>>5], register_value);
 
 		
 		//����Ԥ��Ƶ
-		PWMA_PSCRH = (uint8_t)(Frequency_Division>>8);
-		PWMA_PSCRL = (uint8_t)Frequency_Division;
+		PWM_WriteA((uint32_t)&PWMA_PSCRH, (uint8_t)(Frequency_Division>>8));
+		PWM_WriteA((uint32_t)&PWMA_PSCRL, (uint8_t)Frequency_Division);
 
-		PWMA_BKR = 0x80; 	// �����ʹ�� �൱���ܿ���
-		PWMA_CR1 = 0x01;	//PWM��ʼ����
+		PWM_WriteA((uint32_t)&PWMA_BKR, 0x80);
+		PWM_WriteA((uint32_t)&PWMA_CR1, 0x01);
 	}
 	
 	//����
-	(*(unsigned char volatile __xdata *) (PWM_ARR_ADDR[PWM_CHN_PIN>>6])) = (uint8_t)(period_temp>>8);		//��8λ
-	(*(unsigned char volatile __xdata *) (PWM_ARR_ADDR[PWM_CHN_PIN>>6] + 1)) = (uint8_t)period_temp;		//��8λ
+	if(PWMB_CH1_P20 <= PWM_CHN_PIN)
+	{
+		PWM_WriteB(PWM_ARR_ADDR[PWM_CHN_PIN>>6], (uint8_t)(period_temp>>8));
+		PWM_WriteB(PWM_ARR_ADDR[PWM_CHN_PIN>>6] + 1, (uint8_t)period_temp);
+	}
+	else
+	{
+		PWM_WriteA(PWM_ARR_ADDR[PWM_CHN_PIN>>6], (uint8_t)(period_temp>>8));
+		PWM_WriteA(PWM_ARR_ADDR[PWM_CHN_PIN>>6] + 1, (uint8_t)period_temp);
+	}
 
 	//���ò���ֵ|�Ƚ�ֵ
-	(*(unsigned char volatile __xdata *) (PWM_CCR_ADDR[PWM_CHN_PIN>>4]))		= match_temp>>8;			//��8λ
-	(*(unsigned char volatile __xdata *) (PWM_CCR_ADDR[PWM_CHN_PIN>>4] + 1))  = (uint8_t)match_temp;		//��8λ
+	if(PWMB_CH1_P20 <= PWM_CHN_PIN)
+	{
+		PWM_WriteB(PWM_CCR_ADDR[PWM_CHN_PIN>>4], (uint8_t)(match_temp>>8));
+		PWM_WriteB(PWM_CCR_ADDR[PWM_CHN_PIN>>4] + 1, (uint8_t)match_temp);
+	}
+	else
+	{
+		PWM_WriteA(PWM_CCR_ADDR[PWM_CHN_PIN>>4], (uint8_t)(match_temp>>8));
+		PWM_WriteA(PWM_CCR_ADDR[PWM_CHN_PIN>>4] + 1, (uint8_t)match_temp);
+	}
 	
 	//��������
-	(*(unsigned char volatile __xdata *) (PWM_CCMR_ADDR[PWM_CHN_PIN>>4])) |= 0x06<<4;		//����ΪPWMģʽ1
-	(*(unsigned char volatile __xdata *) (PWM_CCMR_ADDR[PWM_CHN_PIN>>4])) |= 1<<3;		//����PWM�Ĵ�����Ԥװ�ع�
+	register_value = (PWMB_CH1_P20 <= PWM_CHN_PIN)
+		? PWM_ReadB(PWM_CCMR_ADDR[PWM_CHN_PIN>>4])
+		: PWM_ReadA(PWM_CCMR_ADDR[PWM_CHN_PIN>>4]);
+	register_value |= 0x06<<4;
+	register_value |= 1<<3;
+	if(PWMB_CH1_P20 <= PWM_CHN_PIN)
+		PWM_WriteB(PWM_CCMR_ADDR[PWM_CHN_PIN>>4], register_value);
+	else
+		PWM_WriteA(PWM_CCMR_ADDR[PWM_CHN_PIN>>4], register_value);
 }
  /**************************************************************************************************************************
  * @brief  PWM��������ռ�ձ�
@@ -168,9 +239,23 @@ void PWM_Init(PWM_CHN_PIN_enum PWM_CHN_PIN , uint32_t frequency , uint32_t pwm_d
 void PWM_SET_Duty(PWM_CHN_PIN_enum PWM_CHN_PIN , uint32_t pwm_duty)
 {
 	uint32_t match_temp;
-	uint32_t arrange = ((*(unsigned char volatile __xdata *) (PWM_ARR_ADDR[PWM_CHN_PIN>>6]))<<8) | (*(unsigned char volatile __xdata *) (PWM_ARR_ADDR[PWM_CHN_PIN>>6] + 1 ));
+	uint32_t arrange;
+	uint8_t register_value;
 	
 	P_SW2 |= 0x80;//ȷ��ʹ�ܷ���XFR
+
+	if(PWMB_CH1_P20 <= PWM_CHN_PIN)
+	{
+		HSPWMB_CFG = 0x03;
+		arrange = ((uint32_t)PWM_ReadB(PWM_ARR_ADDR[PWM_CHN_PIN>>6]) << 8)
+			| PWM_ReadB(PWM_ARR_ADDR[PWM_CHN_PIN>>6] + 1);
+	}
+	else
+	{
+		HSPWMA_CFG = 0x03;
+		arrange = ((uint32_t)PWM_ReadA(PWM_ARR_ADDR[PWM_CHN_PIN>>6]) << 8)
+			| PWM_ReadA(PWM_ARR_ADDR[PWM_CHN_PIN>>6] + 1);
+	}
 	
 	if(pwm_duty != PRECISION)
 	{
@@ -181,8 +266,17 @@ void PWM_SET_Duty(PWM_CHN_PIN_enum PWM_CHN_PIN , uint32_t pwm_duty)
 		match_temp = arrange + 1;
 	}
 	//���ò���ֵ|�Ƚ�ֵ
-	(*(unsigned char volatile __xdata *) (PWM_CCR_ADDR[PWM_CHN_PIN>>4]))		= match_temp>>8;			//��8λ
-	(*(unsigned char volatile __xdata *) (PWM_CCR_ADDR[PWM_CHN_PIN>>4] + 1))  = (uint8_t)match_temp;		//��8λ
+	register_value = (uint8_t)(match_temp >> 8);
+	if(PWMB_CH1_P20 <= PWM_CHN_PIN)
+	{
+		PWM_WriteB(PWM_CCR_ADDR[PWM_CHN_PIN>>4], register_value);
+		PWM_WriteB(PWM_CCR_ADDR[PWM_CHN_PIN>>4] + 1, (uint8_t)match_temp);
+	}
+	else
+	{
+		PWM_WriteA(PWM_CCR_ADDR[PWM_CHN_PIN>>4], register_value);
+		PWM_WriteA(PWM_CCR_ADDR[PWM_CHN_PIN>>4] + 1, (uint8_t)match_temp);
+	}
 	
 }
  /**************************************************************************************************************************
@@ -218,24 +312,42 @@ void PWM_SET_Frequency(PWM_CHN_PIN_enum PWM_CHN_PIN, uint32_t frequency, uint32_
 	
 	if(PWMB_CH1_P20 <= PWM_CHN_PIN)//PWMA
 	{
+		HSPWMB_CFG = 0x03;
 		//����Ԥ��Ƶ
-		PWMB_PSCRH = (uint8_t)(Frequency_Division>>8);
-		PWMB_PSCRL = (uint8_t)Frequency_Division;
+		PWM_WriteB((uint32_t)&PWMB_PSCRH, (uint8_t)(Frequency_Division>>8));
+		PWM_WriteB((uint32_t)&PWMB_PSCRL, (uint8_t)Frequency_Division);
 	}
 	else//PWMB
 	{
+		HSPWMA_CFG = 0x03;
 		//����Ԥ��Ƶ
-		PWMA_PSCRH = (uint8_t)(Frequency_Division>>8);
-		PWMA_PSCRL = (uint8_t)Frequency_Division;
+		PWM_WriteA((uint32_t)&PWMA_PSCRH, (uint8_t)(Frequency_Division>>8));
+		PWM_WriteA((uint32_t)&PWMA_PSCRL, (uint8_t)Frequency_Division);
 	}
 	
 	//����
-	(*(unsigned char volatile __xdata *) (PWM_ARR_ADDR[PWM_CHN_PIN>>6])) = (uint8_t)(period_temp>>8);		//��8λ
-	(*(unsigned char volatile __xdata *) (PWM_ARR_ADDR[PWM_CHN_PIN>>6] + 1)) = (uint8_t)period_temp;		//��8λ
+	if(PWMB_CH1_P20 <= PWM_CHN_PIN)
+	{
+		PWM_WriteB(PWM_ARR_ADDR[PWM_CHN_PIN>>6], (uint8_t)(period_temp>>8));
+		PWM_WriteB(PWM_ARR_ADDR[PWM_CHN_PIN>>6] + 1, (uint8_t)period_temp);
+	}
+	else
+	{
+		PWM_WriteA(PWM_ARR_ADDR[PWM_CHN_PIN>>6], (uint8_t)(period_temp>>8));
+		PWM_WriteA(PWM_ARR_ADDR[PWM_CHN_PIN>>6] + 1, (uint8_t)period_temp);
+	}
 
 	//���ò���ֵ|�Ƚ�ֵ
-	(*(unsigned char volatile __xdata *) (PWM_CCR_ADDR[PWM_CHN_PIN>>4]))		= match_temp>>8;			//��8λ
-	(*(unsigned char volatile __xdata *) (PWM_CCR_ADDR[PWM_CHN_PIN>>4] + 1))  = (uint8_t)match_temp;		//��8λ
+	if(PWMB_CH1_P20 <= PWM_CHN_PIN)
+	{
+		PWM_WriteB(PWM_CCR_ADDR[PWM_CHN_PIN>>4], (uint8_t)(match_temp >> 8));
+		PWM_WriteB(PWM_CCR_ADDR[PWM_CHN_PIN>>4] + 1, (uint8_t)match_temp);
+	}
+	else
+	{
+		PWM_WriteA(PWM_CCR_ADDR[PWM_CHN_PIN>>4], (uint8_t)(match_temp >> 8));
+		PWM_WriteA(PWM_CCR_ADDR[PWM_CHN_PIN>>4] + 1, (uint8_t)match_temp);
+	}
 }
 
 
