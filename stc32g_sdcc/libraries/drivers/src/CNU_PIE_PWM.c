@@ -151,7 +151,7 @@ void PWM_Init(PWM_CHN_PIN_enum PWM_CHN_PIN , uint32_t frequency , uint32_t pwm_d
 		PWM_WriteB((uint32_t)&PWMB_ENO, pwm_b_eno_shadow);
 		pwm_b_ps_shadow &= (uint8_t)~(0x03 << channel_shift);
 		pwm_b_ps_shadow |= (uint8_t)((PWM_CHN_PIN & 0x03) << channel_shift);
-		PWM_WriteB((uint32_t)&PWMB_PS, pwm_b_ps_shadow);
+		PWMB_PS = pwm_b_ps_shadow;
 		
 		// ����ͨ�����ʹ�ܺͼ���	
 		register_value = (uint8_t)(1 << (((PWM_CHN_PIN >> 4) & 0x01) * 4));
@@ -167,11 +167,8 @@ void PWM_Init(PWM_CHN_PIN_enum PWM_CHN_PIN , uint32_t frequency , uint32_t pwm_d
 		}
 		
 		//����Ԥ��Ƶ
-		PWM_WriteB((uint32_t)&PWMB_PSCRH, (uint8_t)(Frequency_Division>>8));
-		PWM_WriteB((uint32_t)&PWMB_PSCRL, (uint8_t)Frequency_Division);
-		
-		PWM_WriteB((uint32_t)&PWMB_BKR, 0x80);
-		PWM_WriteB((uint32_t)&PWMB_CR1, 0x01);
+		PWMB_PSCRH = (uint8_t)(Frequency_Division>>8);
+		PWMB_PSCRL = (uint8_t)Frequency_Division;
 	}
 	else
 	{
@@ -183,7 +180,7 @@ void PWM_Init(PWM_CHN_PIN_enum PWM_CHN_PIN , uint32_t frequency , uint32_t pwm_d
 		register_value = (uint8_t)(((PWM_CHN_PIN & 0x07) >> 1) << channel_shift);
 		pwm_a_ps_shadow &= (uint8_t)~(0x03 << channel_shift);
 		pwm_a_ps_shadow |= register_value;
-		PWM_WriteA((uint32_t)&PWMA_PS, pwm_a_ps_shadow);
+		PWMA_PS = pwm_a_ps_shadow;
 		
 		// ����ͨ�����ʹ�ܺͼ���	
 		register_value = (uint8_t)(1 << ((PWM_CHN_PIN & 0x01) * 2 + ((PWM_CHN_PIN >> 4) & 0x01) * 0x04));
@@ -200,11 +197,8 @@ void PWM_Init(PWM_CHN_PIN_enum PWM_CHN_PIN , uint32_t frequency , uint32_t pwm_d
 
 		
 		//����Ԥ��Ƶ
-		PWM_WriteA((uint32_t)&PWMA_PSCRH, (uint8_t)(Frequency_Division>>8));
-		PWM_WriteA((uint32_t)&PWMA_PSCRL, (uint8_t)Frequency_Division);
-
-		PWM_WriteA((uint32_t)&PWMA_BKR, 0x80);
-		PWM_WriteA((uint32_t)&PWMA_CR1, 0x01);
+		PWMA_PSCRH = (uint8_t)(Frequency_Division>>8);
+		PWMA_PSCRL = (uint8_t)Frequency_Division;
 	}
 	
 	//����
@@ -235,9 +229,21 @@ void PWM_Init(PWM_CHN_PIN_enum PWM_CHN_PIN , uint32_t frequency , uint32_t pwm_d
 	
 	//��������
 	if(PWMB_CH1_P20 <= PWM_CHN_PIN)
-		PWM_WriteB(PWM_CCMR_ADDR[PWM_CHN_PIN>>4], 0x68);
+		PWM_WriteB(PWM_CCMR_ADDR[PWM_CHN_PIN>>4], 0x60);
 	else
-		PWM_WriteA(PWM_CCMR_ADDR[PWM_CHN_PIN>>4], 0x68);
+		PWM_WriteA(PWM_CCMR_ADDR[PWM_CHN_PIN>>4], 0x60);
+
+	/* 所有周期、比较和模式寄存器就绪后再启动 PWM。 */
+	if(PWMB_CH1_P20 <= PWM_CHN_PIN)
+	{
+		PWM_WriteB((uint32_t)&PWMB_BKR, 0x80);
+		PWM_WriteB((uint32_t)&PWMB_CR1, 0x01);
+	}
+	else
+	{
+		PWM_WriteA((uint32_t)&PWMA_BKR, 0x80);
+		PWM_WriteA((uint32_t)&PWMA_CR1, 0x01);
+	}
 }
  /**************************************************************************************************************************
  * @brief  PWM��������ռ�ձ�
@@ -323,15 +329,15 @@ void PWM_SET_Frequency(PWM_CHN_PIN_enum PWM_CHN_PIN, uint32_t frequency, uint32_
 	{
 		HSPWMB_CFG = 0x03;
 		//����Ԥ��Ƶ
-		PWM_WriteB((uint32_t)&PWMB_PSCRH, (uint8_t)(Frequency_Division>>8));
-		PWM_WriteB((uint32_t)&PWMB_PSCRL, (uint8_t)Frequency_Division);
+		PWMB_PSCRH = (uint8_t)(Frequency_Division>>8);
+		PWMB_PSCRL = (uint8_t)Frequency_Division;
 	}
 	else//PWMB
 	{
 		HSPWMA_CFG = 0x03;
 		//����Ԥ��Ƶ
-		PWM_WriteA((uint32_t)&PWMA_PSCRH, (uint8_t)(Frequency_Division>>8));
-		PWM_WriteA((uint32_t)&PWMA_PSCRL, (uint8_t)Frequency_Division);
+		PWMA_PSCRH = (uint8_t)(Frequency_Division>>8);
+		PWMA_PSCRL = (uint8_t)Frequency_Division;
 	}
 	
 	//����
