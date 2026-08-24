@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-[ValidateSet('0000.培训模板', '0001.JDY08设置密码', 'BUZZER_MUSIC_SMOKE', 'BUZZER_MUSIC_SONG_SMOKE', 'BUZZER_MUSIC_GENERATED', 'FRICTION_CALIBRATION', 'LCD_SPI_SMOKE', 'PWM_SMOKE', 'PWM_B_SMOKE', 'TIMER_IRQ_SMOKE', 'UART1_IRQ_SMOKE', 'ROBOMASTER_ENGINEER', 'ROBOMASTER_INFANTRY', 'TEST')]
+[ValidateSet('0000.培训模板', '0001.JDY08设置密码', 'BUZZER_MUSIC_SMOKE', 'BUZZER_MUSIC_SONG_SMOKE', 'BUZZER_MUSIC_GENERATED', 'DELAY_SMOKE', 'FRICTION_CALIBRATION', 'LCD_SPI_SMOKE', 'PWM_SMOKE', 'PWM_B_SMOKE', 'TIMER_IRQ_SMOKE', 'UART1_IRQ_SMOKE', 'ROBOMASTER_ENGINEER', 'ROBOMASTER_INFANTRY', 'TEST')]
     [string]$Project = 'TEST',
     [switch]$All,
     [switch]$SmokeTest,
@@ -18,6 +18,7 @@ $projectNames = @(
     'BUZZER_MUSIC_SMOKE',
     'BUZZER_MUSIC_SONG_SMOKE',
     'BUZZER_MUSIC_GENERATED',
+    'DELAY_SMOKE',
     'FRICTION_CALIBRATION',
     'LCD_SPI_SMOKE',
     'PWM_SMOKE',
@@ -124,6 +125,7 @@ $sourceMap = @{
     'BUZZER_MUSIC_SMOKE' = $sourceCommon + @('projects\BUZZER_MUSIC_SMOKE\src\isr.c', 'projects\BUZZER_MUSIC_SMOKE\src\main.c') + $sourcePwmDrivers
     'BUZZER_MUSIC_SONG_SMOKE' = $sourceCommon + @('projects\BUZZER_MUSIC_SONG_SMOKE\src\isr.c', 'projects\BUZZER_MUSIC_SONG_SMOKE\src\main.c') + $sourcePwmDrivers
     'BUZZER_MUSIC_GENERATED' = $sourceCommon + @('projects\BUZZER_MUSIC_GENERATED\src\isr.c', 'projects\BUZZER_MUSIC_GENERATED\src\main.c') + $sourcePwmDrivers
+    'DELAY_SMOKE' = $sourceCommon + @('projects\DELAY_SMOKE\src\isr.c', 'projects\DELAY_SMOKE\src\main.c', 'libraries\drivers\src\CNU_PIE_GPIO.c')
     'FRICTION_CALIBRATION' = $sourceCommon + @('projects\FRICTION_CALIBRATION\src\isr.c', 'projects\FRICTION_CALIBRATION\src\main.c') + $sourceBoards + $sourceDrivers
     'LCD_SPI_SMOKE' = $sourceCommon + @('projects\LCD_SPI_SMOKE\src\isr.c', 'projects\LCD_SPI_SMOKE\src\main.c', 'libraries\boards\src\LCD.c', 'libraries\boards\src\Font.c', 'libraries\drivers\src\CNU_PIE_GPIO.c')
     'PWM_SMOKE' = $sourceCommon + @('projects\PWM_SMOKE\src\isr.c', 'projects\PWM_SMOKE\src\main.c') + $sourcePwmDrivers
@@ -216,6 +218,8 @@ function Invoke-ProjectBuild([string]$Name) {
         $sourcePwmDrivers
     } elseif ($Name -eq 'BUZZER_MUSIC_GENERATED') {
         $sourcePwmDrivers
+    } elseif ($Name -eq 'DELAY_SMOKE') {
+        @('libraries\drivers\src\CNU_PIE_GPIO.c')
     } else {
         $sourceBoardsWithRadio + $sourceDrivers
     }

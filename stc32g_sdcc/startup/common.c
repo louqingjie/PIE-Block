@@ -20,19 +20,6 @@
 #include "intrins.h"
 #include "CNU_PIE_GPIO.h"
 
-/*
- * Keil C251 与 SDCC MCS-251 为同一段 C 延时循环生成的指令数量不同。
- * SDCC 的 while(--i) 包含字节判断、零判断和 EJMP，循环体明显更长；
- * 继续沿用 Keil 的 /6000、/7000000 会让所有软件延时（尤其是音乐节拍）
- * 变慢。SDCC 取约 2/3 的迭代次数，保持与 Keil 的实测节拍接近。
- */
-#if defined(__SDCC)
-#define DELAY_MS_DIVISOR 9000UL
-#define DELAY_US_DIVISOR 10500000UL
-#else
-#define DELAY_MS_DIVISOR 6000UL
-#define DELAY_US_DIVISOR 7000000UL
-#endif
 volatile unsigned int DELAY_MS = 0;
 volatile unsigned int DELAY_US = 0;
 unsigned long system_clock;
@@ -80,8 +67,8 @@ uint32_t System_Clock_Set(void)
 ***************************************************************************************************************************/
 void Delay_Init(void)
 {
-	DELAY_MS = system_clock / DELAY_MS_DIVISOR;
-	DELAY_US = system_clock / DELAY_US_DIVISOR;
+	DELAY_MS = system_clock / 6000UL;
+	DELAY_US = system_clock / 7000000UL;
 	if(system_clock <= 12000000) DELAY_US++;//����Ӧ��ʱ��
 }
  /**************************************************************************************************************************
@@ -154,13 +141,57 @@ void Register_Set(void)
  * @param[in]  ��ʱʱ��
  * @retval     NULL
 ***************************************************************************************************************************/
+#if defined(__SDCC) && (FOSC == 33177600UL)
+/*
+ * Keil C251 在 33.1776 MHz 下对：
+ *
+ *     unsigned long edata i;
+ *     _nop_();
+ *     i = 8293UL;
+ *     while (i) i--;
+ *
+ * 生成 MOV DR4,#02065H / DEC DR4,#01H / JNE。SDCC 的 C 后端目前会把
+ * 同样的 32 位循环展开成逐字节判断，不能使用相同的计数值获得相同的
+ * 时间，因此这里保留 Keil 的两条指令循环作为明确的 SDCC 校准基准。
+ */
+static void Delay1000us_Reference(void)
+{
+	__asm
+		nop
+		mov dr4,#0x2065
+	00001$:
+		dec dr4,#0x01
+		jne 00001$
+	__endasm;
+}
+
+/* Keil 33.1776 MHz 的 Delay1us：计数值为 7。 */
+static void Delay1us_Reference(void)
+{
+	__asm
+		mov dr4,#0x0007
+	00002$:
+		dec dr4,#0x01
+		jne 00002$
+	__endasm;
+}
+#endif
+
 void Ms_Delay(uint16_t ms)
 {
+#if defined(__SDCC) && (FOSC == 33177600UL)
+	while (ms > 0)
+	{
+		ms--;
+		Delay1000us_Reference();
+	}
+#else
 	uint16_t i;
 	do{
 		i = DELAY_MS;
 		while(--i);
 	}while(--ms);
+#endif
 }
  /**************************************************************************************************************************
  * @brief  ΢�뼶��ʱ����
@@ -170,11 +201,19 @@ void Ms_Delay(uint16_t ms)
 ***************************************************************************************************************************/
 void Us_Delay(uint32_t us)
 {
+#if defined(__SDCC) && (FOSC == 33177600UL)
+	while (us > 0UL)
+	{
+		us--;
+		Delay1us_Reference();
+	}
+#else
 	uint16_t i;
 	do {
 			i = DELAY_US;
 			while(--i);
 	   }while(--us);
+#endif
 }
  /**************************************************************************************************************************
  * @brief  ����ȫ���ж�
