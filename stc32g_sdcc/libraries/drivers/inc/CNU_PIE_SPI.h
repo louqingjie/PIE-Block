@@ -41,6 +41,9 @@
 #define	SPI_MSB				0
 #define	SPI_LSB				1
 
+/* 外设未接或完成位异常时，SPI 轮询必须有限等待，不能锁死主循环。 */
+#define SPI_TRANSFER_TIMEOUT 2000U
+
 typedef enum
 {
 	SPI_1 = 0x00,
@@ -54,4 +57,5 @@ void SPI_SetMode(uint8_t SPI_Mode);
 void SPI_WriteByte(uint8_t dat);
 uint8_t SPI_ReadByte(void);
 uint8_t SPI_ReadWriteByte(uint8_t TxData);
+uint8_t SPI_ReadWriteByte_Timeout(uint8_t TxData, uint16_t timeout, uint8_t *RxData);
 #endif
