@@ -83,6 +83,11 @@ pwsh .\stc32g_sdcc\build.ps1 `
   -LibDir .\path\to\mcs251-large-stack-auto
 ```
 
+`BUZZER_MUSIC_SONG_SMOKE` 使用已有音乐项目中保存的 MIDI 解析结果，生成并播放
+“【何玉】大东北我的家乡 - 原琴.mid”。其配置保存在
+`projects/BUZZER_MUSIC_SONG_SMOKE/music.json`，构建命令只需将工程名改为
+`BUZZER_MUSIC_SONG_SMOKE`。
+
 ```powershell
 pwsh .\stc32g_sdcc\tests\run_qemu_smoke.ps1 `
   -Qemu C:\path\to\qemu-system-mcs251.exe
