@@ -40,6 +40,11 @@ void main(void)
     P36 = 1;
     P37 = 1;
 
+    /* 显式初始化测试状态，避免测试依赖外部 RAM 上电值。 */
+    uart1_rx_pending = 0;
+    uart1_rx_data = 0;
+    uart1_tx_busy = 0;
+
     /* UART1：P43=RX、P44=TX，8N1，115200 baud；使用手册示例的 Timer2。 */
     UART_Init(UART_1, UART1_RX_P43, UART1_TX_P44, 115200, TIM2);
     UART1_SendByte('U');

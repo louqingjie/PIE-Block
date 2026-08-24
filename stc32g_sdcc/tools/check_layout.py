@@ -83,12 +83,12 @@ def validate(hex_path: Path, map_path: Path) -> None:
         if name == "HOME":
             if start != VECTOR_BASE or end > VECTOR_LIMIT:
                 raise ValueError(f"HOME area outside vector region: 0x{start:08X}-0x{end:08X}")
-        elif name in {"GSINIT", "GSFINAL", "CSEG", "CONST", "XINIT", "XISEG"}:
+        elif name in {"GSINIT", "GSFINAL", "CSEG", "CONST", "XINIT"}:
             if length and not (APP_BASE <= start < VECTOR_BASE and end <= VECTOR_BASE):
                 raise ValueError(f"{name} area outside app code region: 0x{start:08X}-0x{end:08X}")
-        elif name == "XSEG":
+        elif name in {"XSEG", "XISEG"}:
             if length and not (XRAM_BASE <= start and end <= XRAM_LIMIT):
-                raise ValueError(f"XSEG outside STC32G XRAM: 0x{start:08X}-0x{end:08X}")
+                raise ValueError(f"{name} outside STC32G XRAM: 0x{start:08X}-0x{end:08X}")
         elif name in {"DSEG", "SSEG", "PSEG"}:
             if length and not (0 <= start and end <= IRAM_LIMIT):
                 raise ValueError(f"{name} outside STC32G EDATA: 0x{start:08X}-0x{end:08X}")

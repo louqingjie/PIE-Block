@@ -226,7 +226,6 @@ function Invoke-ProjectBuild([string]$Name) {
             '--stack-auto',
             '--opt-code-size',
             '--constseg', 'CSEG',
-            '--no-xinit-opt',
             '-c'
         ) + $includeArgs + $projectIncludeArgs + $compileExtraArgs + @('-o', $object, $source)
         Invoke-Sdcc $compileArgs
@@ -249,7 +248,6 @@ function Invoke-ProjectBuild([string]$Name) {
         '--stack-auto',
         '--constseg', 'CSEG',
         '--nostdlib',
-        '--no-xinit-opt',
         '--iram-size', '0x1000',
         '--xram-loc', '0x010000',
         '--xram-size', '0x2000',
