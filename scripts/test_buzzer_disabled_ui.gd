@@ -36,6 +36,10 @@ func _initialize() -> void:
 	var infantry_checkbox: Node = ui.get_node_or_null(INFANTRY_CHECKBOX)
 	var engineer_checkbox: Node = ui.get_node_or_null(ENGINEER_CHECKBOX)
 	_check("步兵高级设置提供禁用蜂鸣器复选框", infantry_checkbox is CheckBox)
+	_check("步兵高级设置标题与选项之间提供分隔线",
+		ui.get_node_or_null(
+			"VBoxContainer/HBoxContainer/HSplitContainer/EditZone/Infantry/Advanced/HSeparator2")
+			is HSeparator)
 	_check("工程设置提供禁用蜂鸣器复选框", engineer_checkbox is CheckBox)
 	_check("两个复选框默认均未勾选",
 		infantry_checkbox is CheckBox and not infantry_checkbox.button_pressed

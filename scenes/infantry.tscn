@@ -429,6 +429,9 @@ layout_mode = 2
 size_flags_horizontal = 4
 text = "高级设置"
 
+[node name="HSeparator2" type="HSeparator" parent="Advanced"]
+layout_mode = 2
+
 [node name="Buzzer" type="HBoxContainer" parent="Advanced"]
 layout_mode = 2
 
