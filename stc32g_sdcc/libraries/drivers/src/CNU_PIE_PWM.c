@@ -130,7 +130,7 @@ void PWM_Init(PWM_CHN_PIN_enum PWM_CHN_PIN , uint32_t frequency , uint32_t pwm_d
 	
 //	//��Ƶ���㣬���ڼ��㣬ռ�ձȼ���
 	Frequency_Division = ( system_clock / frequency ) >> 16;							//���ٷ�Ƶ
-	period_temp = system_clock / frequency ;			
+	period_temp = system_clock / frequency;
 	period_temp = period_temp / ( Frequency_Division +1 ) - 1;				//����
 
 	if(pwm_duty != PRECISION)
@@ -312,8 +312,8 @@ void PWM_SET_Frequency(PWM_CHN_PIN_enum PWM_CHN_PIN, uint32_t frequency, uint32_
 	P_SW2 |= 0x80;//ȷ��ʹ�ܷ���XFR
 	
 	//��Ƶ���㣬���ڼ��㣬ռ�ձȼ���
-	Frequency_Division = (FOSC / frequency) >> 16;							    //��Ƶ
-	period_temp = FOSC / frequency ;			
+	Frequency_Division = (system_clock / frequency) >> 16;							// 分频
+	period_temp = system_clock / frequency;
 	period_temp = period_temp / (Frequency_Division + 1) - 1;				//����
 
 	if(pwm_duty != PRECISION)//�ж�ռ�ձ��Ƿ���󾫶�

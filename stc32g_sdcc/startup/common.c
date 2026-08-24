@@ -118,7 +118,16 @@ void Register_Set(void)
 	
 	WTST = 0;
   P_SW2 |= 0x80;
-  CLKDIV = 0;				//24MHz��Ƶ����Ƶ����
+  CLKDIV = 0;				// SYSCLK = MCLK，不分频
+
+  /*
+   * STC32G 的 HSPWM/HSSPI 时钟独立于 CPU 时钟：
+   * HSCLK = HSIOCK / HSCLKDIV。
+   * HSCLKDIV 复位值为 2（实际二分频），而 PWM 库按 system_clock
+   * 计算周期，因此这里必须明确选择 MCLK 且关闭高速时钟分频。
+   */
+  CLKSEL &= (uint8_t)~0x40;	// HSPWM/HSSPI 使用 MCLK
+  HSCLKDIV = 0x00;				// HSPWM/HSSPI 不分频
 	
 	P0M0 = 0x00;P0M1 = 0x00;// P0
 	P1M0 = 0x00;P1M1 = 0x00;// P1
