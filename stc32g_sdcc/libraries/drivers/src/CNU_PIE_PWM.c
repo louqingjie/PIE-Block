@@ -166,9 +166,9 @@ void PWM_Init(PWM_CHN_PIN_enum PWM_CHN_PIN , uint32_t frequency , uint32_t pwm_d
 			PWM_WriteB(PWM_CCER_ADDR[PWM_CHN_PIN>>5], pwm_b_ccer2_shadow);
 		}
 		
-		//����Ԥ��Ƶ
-		PWMB_PSCRH = (uint8_t)(Frequency_Division>>8);
-		PWMB_PSCRL = (uint8_t)Frequency_Division;
+		/* PWMB 预分频寄存器属于高速 PWM 域，必须通过异步窗口写入。 */
+		PWM_WriteB((uint32_t)&PWMB_PSCRH, (uint8_t)(Frequency_Division>>8));
+		PWM_WriteB((uint32_t)&PWMB_PSCRL, (uint8_t)Frequency_Division);
 	}
 	else
 	{
@@ -196,9 +196,9 @@ void PWM_Init(PWM_CHN_PIN_enum PWM_CHN_PIN , uint32_t frequency , uint32_t pwm_d
 		}
 
 		
-		//����Ԥ��Ƶ
-		PWMA_PSCRH = (uint8_t)(Frequency_Division>>8);
-		PWMA_PSCRL = (uint8_t)Frequency_Division;
+		/* PWMA 预分频寄存器属于高速 PWM 域，必须通过异步窗口写入。 */
+		PWM_WriteA((uint32_t)&PWMA_PSCRH, (uint8_t)(Frequency_Division>>8));
+		PWM_WriteA((uint32_t)&PWMA_PSCRL, (uint8_t)Frequency_Division);
 	}
 	
 	//����
@@ -328,16 +328,16 @@ void PWM_SET_Frequency(PWM_CHN_PIN_enum PWM_CHN_PIN, uint32_t frequency, uint32_
 	if(PWMB_CH1_P20 <= PWM_CHN_PIN)//PWMA
 	{
 		HSPWMB_CFG = 0x03;
-		//����Ԥ��Ƶ
-		PWMB_PSCRH = (uint8_t)(Frequency_Division>>8);
-		PWMB_PSCRL = (uint8_t)Frequency_Division;
+		/* 更新频率时同样必须通过 PWMB 异步窗口写预分频。 */
+		PWM_WriteB((uint32_t)&PWMB_PSCRH, (uint8_t)(Frequency_Division>>8));
+		PWM_WriteB((uint32_t)&PWMB_PSCRL, (uint8_t)Frequency_Division);
 	}
 	else//PWMB
 	{
 		HSPWMA_CFG = 0x03;
-		//����Ԥ��Ƶ
-		PWMA_PSCRH = (uint8_t)(Frequency_Division>>8);
-		PWMA_PSCRL = (uint8_t)Frequency_Division;
+		/* 更新频率时同样必须通过 PWMA 异步窗口写预分频。 */
+		PWM_WriteA((uint32_t)&PWMA_PSCRH, (uint8_t)(Frequency_Division>>8));
+		PWM_WriteA((uint32_t)&PWMA_PSCRL, (uint8_t)Frequency_Division);
 	}
 	
 	//����

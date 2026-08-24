@@ -1,5 +1,5 @@
 {
-  "version": "sdcc_runtime_v2_sfr_masks",
+  "version": "sdcc_runtime_v3_hspwm_prescaler",
   "kind_projects": {
     "infantry": "ROBOMASTER_INFANTRY",
     "engineer": "ROBOMASTER_ENGINEER",

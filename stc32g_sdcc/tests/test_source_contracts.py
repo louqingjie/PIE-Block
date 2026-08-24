@@ -90,6 +90,34 @@ class FirmwareSafetyContractTests(unittest.TestCase):
         self.assertIn("for (retry = 0; retry < 20; retry++)", source)
         self.assertIn("SPI_ReadWriteByte", (ROOT / "libraries" / "boards" / "src" / "nrf24l01.c").read_text(encoding="utf-8"))
 
+    def test_hspwm_prescaler_uses_async_window(self) -> None:
+        source = (ROOT / "libraries" / "drivers" / "src" / "CNU_PIE_PWM.c").read_text(
+            encoding="utf-8"
+        )
+        for timer in ("A", "B"):
+            for byte in ("H", "L"):
+                register = f"PWM{timer}_PSCR{byte}"
+                self.assertGreaterEqual(
+                    source.count(f"PWM_Write{timer}((uint32_t)&{register}"),
+                    2,
+                    f"{register} must use the HSPWM async window in init and update",
+                )
+                self.assertIsNone(
+                    re.search(rf"\b{register}\s*=", source),
+                    f"direct writes to {register} leave the prescaler at reset value",
+                )
+
+    def test_servo_50hz_register_model(self) -> None:
+        system_clock = 33_177_600
+        requested_frequency = 50
+        timer_ticks = system_clock // requested_frequency
+        prescaler = timer_ticks >> 16
+        period = timer_ticks // (prescaler + 1) - 1
+        actual_frequency = system_clock / ((prescaler + 1) * (period + 1))
+        self.assertEqual(prescaler, 10)
+        self.assertEqual(period, 60_321)
+        self.assertAlmostEqual(actual_frequency, requested_frequency, delta=0.001)
+
 
 if __name__ == "__main__":
     unittest.main()
