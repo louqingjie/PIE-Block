@@ -1,0 +1,168 @@
+C251 COMPILER V5.60.0,  BMI088Middleware                                                   24/08/26  10:23:43  PAGE 1   
+
+
+C251 COMPILER V5.60.0, COMPILATION OF MODULE BMI088Middleware
+OBJECT MODULE PLACED IN .\Objects\ASM\BMI088Middleware.obj
+COMPILER INVOKED BY: C:\Keil_v5\C251\BIN\C251.EXE ..\..\..\Libraries\boards\src\BMI088Middleware.c XSMALL ROM(HUGE) BROW
+                    -SE INCDIR(..\..\..\Libraries\boards\inc;..\..\..\Libraries\startup\inc;..\USER\inc;..\..\..\Libraries\deivers\inc) INTVE
+                    -CTOR(0X1000) DEBUG CODE PRINT(.\ASM\BMI088Middleware.asm) TABS(2) OBJECT(.\Objects\ASM\BMI088Middleware.obj) 
+
+stmt  level    source
+
+    1          #include "BMI088Middleware.h"
+    2          #include "common.h"
+    3          
+    4          
+    5          void BMI088_GPIO_init(void)
+    6          {
+    7   1      
+    8   1      }
+    9          
+   10          void BMI088_com_init(void)
+   11          {
+   12   1      
+   13   1      
+   14   1      }
+   15          
+   16          void BMI088_delay_ms(uint16_t ms)
+   17          {
+   18   1      
+   19   1          Ms_Delay(ms);
+   20   1      }
+   21          
+   22          void BMI088_delay_us(uint16_t us)
+   23          {
+   24   1          Us_Delay(us);
+   25   1      }
+   26          void BMI088_ACCEL_NS_L(void)
+   27          {
+   28   1          P22 = 0;//根据硬件修改
+   29   1      }
+   30          void BMI088_ACCEL_NS_H(void)
+   31          {
+   32   1          P22 = 1;//根据硬件修改
+   33   1      }
+   34          void BMI088_GYRO_NS_L(void)
+   35          {
+   36   1          P27 = 0;//根据硬件修改
+   37   1      }
+   38          void BMI088_GYRO_NS_H(void)
+   39          {
+   40   1          P27 = 1;//根据硬件修改
+   41   1      }
+   42          
+   43          uint8_t BMI088_read_write_byte(uint8_t txdata)
+   44          {
+   45   1          SPDAT = txdata;               //DATA寄存器赋值
+   46   1          while (!(SPSTAT & 0x80));     //查询完成标志
+   47   1          SPSTAT = 0xc0;                //清中断标志
+   48   1          return SPDAT;
+   49   1      }
+   50          
+C251 COMPILER V5.60.0,  BMI088Middleware                                                   24/08/26  10:23:43  PAGE 2   
+
+ASSEMBLY LISTING OF GENERATED OBJECT CODE
+
+
+;       FUNCTION BMI088_GPIO_init? (BEGIN)
+                                                ; SOURCE LINE # 5
+                                                ; SOURCE LINE # 8
+000000 AA             ERET     
+;       FUNCTION BMI088_GPIO_init? (END)
+
+;       FUNCTION BMI088_com_init? (BEGIN)
+                                                ; SOURCE LINE # 10
+                                                ; SOURCE LINE # 14
+000001 AA             ERET     
+;       FUNCTION BMI088_com_init? (END)
+
+;       FUNCTION BMI088_delay_ms? (BEGIN)
+                                                ; SOURCE LINE # 16
+;---- Variable 'ms' assigned to Register 'WR6' ----
+                                                ; SOURCE LINE # 19
+000002 8A000000    E  EJMP     Ms_Delay?
+;       FUNCTION BMI088_delay_ms? (END)
+
+;       FUNCTION BMI088_delay_us? (BEGIN)
+                                                ; SOURCE LINE # 22
+;---- Variable 'us' assigned to Register 'WR6' ----
+                                                ; SOURCE LINE # 24
+000006 6D22           XRL      WR4,WR4
+000008 8A000000    E  EJMP     Us_Delay?
+;       FUNCTION BMI088_delay_us? (END)
+
+;       FUNCTION BMI088_ACCEL_NS_L? (BEGIN)
+                                                ; SOURCE LINE # 26
+                                                ; SOURCE LINE # 28
+00000C C2A2           CLR      P22
+                                                ; SOURCE LINE # 29
+00000E AA             ERET     
+;       FUNCTION BMI088_ACCEL_NS_L? (END)
+
+;       FUNCTION BMI088_ACCEL_NS_H? (BEGIN)
+                                                ; SOURCE LINE # 30
+                                                ; SOURCE LINE # 32
+00000F D2A2           SETB     P22
+                                                ; SOURCE LINE # 33
+000011 AA             ERET     
+;       FUNCTION BMI088_ACCEL_NS_H? (END)
+
+;       FUNCTION BMI088_GYRO_NS_L? (BEGIN)
+                                                ; SOURCE LINE # 34
+                                                ; SOURCE LINE # 36
+000012 C2A7           CLR      P27
+                                                ; SOURCE LINE # 37
+000014 AA             ERET     
+;       FUNCTION BMI088_GYRO_NS_L? (END)
+
+;       FUNCTION BMI088_GYRO_NS_H? (BEGIN)
+                                                ; SOURCE LINE # 38
+                                                ; SOURCE LINE # 40
+000015 D2A7           SETB     P27
+                                                ; SOURCE LINE # 41
+000017 AA             ERET     
+;       FUNCTION BMI088_GYRO_NS_H? (END)
+
+;       FUNCTION BMI088_read_write_byte? (BEGIN)
+                                                ; SOURCE LINE # 43
+;---- Variable 'txdata' assigned to Register 'R11' ----
+                                                ; SOURCE LINE # 45
+C251 COMPILER V5.60.0,  BMI088Middleware                                                   24/08/26  10:23:43  PAGE 3   
+
+000018 7AB1CF         MOV      SPDAT,R11        ; A=R11
+                                                ; SOURCE LINE # 46
+               ?C0001:
+00001B E5CD           MOV      A,SPSTAT         ; A=R11
+00001D 30E7FB         JNB      ACC.7,?C0001
+                                                ; SOURCE LINE # 47
+000020 75CDC0         MOV      SPSTAT,#0C0H
+                                                ; SOURCE LINE # 48
+000023 E5CF           MOV      A,SPDAT          ; A=R11
+                                                ; SOURCE LINE # 49
+000025 AA             ERET     
+;       FUNCTION BMI088_read_write_byte? (END)
+
+
+
+Module Information          Static   Overlayable
+------------------------------------------------
+  code size            =    ------     ------
+  ecode size           =        38     ------
+  data size            =    ------     ------
+  idata size           =    ------     ------
+  pdata size           =    ------     ------
+  xdata size           =    ------     ------
+  xdata-const size     =    ------     ------
+  edata size           =    ------     ------
+  bit size             =    ------     ------
+  ebit size            =    ------     ------
+  bitaddressable size  =    ------     ------
+  ebitaddressable size =    ------     ------
+  far data size        =    ------     ------
+  huge data size       =    ------     ------
+  const size           =    ------     ------
+  hconst size          =    ------     ------
+End of Module Information.
+
+
+C251 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)
