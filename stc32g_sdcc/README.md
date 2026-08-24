@@ -53,6 +53,19 @@ pwsh .\stc32g_sdcc\tests\build_minimal.ps1 -All `
 `spi_smoke` 验证 SPI 完成位未出现时不会无限阻塞。`qemu_smoke` 可交给
 `processmission/qemu` 的 `stc32g144k246`/`stc32g144k246-evb` 模型：
 
+LCD 软件 SPI 可使用独立工程构建，避免 PWM、UART、扩展板和 NRF24L01 干扰：
+
+```powershell
+pwsh .\stc32g_sdcc\build.ps1 `
+  -Project LCD_SPI_SMOKE `
+  -Sdcc .\path\to\sdcc.exe `
+  -LibDir .\path\to\mcs251-large-stack-auto
+```
+
+该程序使用 `LCD.c` 的 GPIO 模拟 SPI，在屏幕上显示 `LCD SPI OK` 和 `RUN`，
+并用 P35 做 250 ms 心跳、P36 表示 LCD 初始化完成。它验证的是 LCD 软件 SPI
+和初始化后的持续运行，不验证 `CNU_PIE_SPI.c` 的硬件 SPI。
+
 ```powershell
 pwsh .\stc32g_sdcc\tests\run_qemu_smoke.ps1 `
   -Qemu C:\path\to\qemu-system-mcs251.exe

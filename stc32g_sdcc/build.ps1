@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('0000.培训模板', '0001.JDY08设置密码', 'FRICTION_CALIBRATION', 'ROBOMASTER_ENGINEER', 'ROBOMASTER_INFANTRY', 'TEST')]
+    [ValidateSet('0000.培训模板', '0001.JDY08设置密码', 'FRICTION_CALIBRATION', 'LCD_SPI_SMOKE', 'ROBOMASTER_ENGINEER', 'ROBOMASTER_INFANTRY', 'TEST')]
     [string]$Project = 'TEST',
     [switch]$All,
     [switch]$SmokeTest,
@@ -16,6 +16,7 @@ $projectNames = @(
     '0000.培训模板',
     '0001.JDY08设置密码',
     'FRICTION_CALIBRATION',
+    'LCD_SPI_SMOKE',
     'ROBOMASTER_ENGINEER',
     'ROBOMASTER_INFANTRY',
     'TEST'
@@ -102,6 +103,7 @@ $sourceMap = @{
     '0000.培训模板' = $sourceCommon + @('projects\0000.培训模板\src\isr.c', 'projects\0000.培训模板\src\main.c') + $sourceBoardsWithRadio + $sourceDrivers
     '0001.JDY08设置密码' = $sourceCommon + @('projects\0001.JDY08设置密码\src\isr.c', 'projects\0001.JDY08设置密码\src\main.c') + $sourceBoardsWithRadio + $sourceDrivers
     'FRICTION_CALIBRATION' = $sourceCommon + @('projects\FRICTION_CALIBRATION\src\isr.c', 'projects\FRICTION_CALIBRATION\src\main.c') + $sourceBoards + $sourceDrivers
+    'LCD_SPI_SMOKE' = $sourceCommon + @('projects\LCD_SPI_SMOKE\src\isr.c', 'projects\LCD_SPI_SMOKE\src\main.c', 'libraries\boards\src\LCD.c', 'libraries\boards\src\Font.c', 'libraries\drivers\src\CNU_PIE_GPIO.c')
     'ROBOMASTER_ENGINEER' = $sourceCommon + @('projects\ROBOMASTER_ENGINEER\src\isr.c', 'projects\ROBOMASTER_ENGINEER\src\main.c') + $sourceBoardsWithRadio + $sourceDrivers
     'ROBOMASTER_INFANTRY' = $sourceCommon + @('projects\ROBOMASTER_INFANTRY\src\isr.c', 'projects\ROBOMASTER_INFANTRY\src\main.c') + $sourceBoardsWithRadio + $sourceDrivers
     'TEST' = $sourceCommon + @('projects\TEST\src\isr.c', 'projects\TEST\src\main.c') + $sourceBoardsWithRadio + $sourceDrivers
@@ -142,6 +144,8 @@ function Invoke-ProjectBuild([string]$Name) {
 
     $libraryRelativeSources = if ($Name -eq 'FRICTION_CALIBRATION') {
         $sourceBoards + $sourceDrivers
+    } elseif ($Name -eq 'LCD_SPI_SMOKE') {
+        @('libraries\boards\src\LCD.c', 'libraries\boards\src\Font.c', 'libraries\drivers\src\CNU_PIE_GPIO.c')
     } else {
         $sourceBoardsWithRadio + $sourceDrivers
     }
