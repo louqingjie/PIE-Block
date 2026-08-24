@@ -40,8 +40,8 @@ void main(void)
     P36 = 1;
     P37 = 1;
 
-    /* UART1：P43=RX、P44=TX，8N1，115200 baud。 */
-    UART_Init(UART_1, UART1_RX_P43, UART1_TX_P44, 115200, TIM1);
+    /* UART1：P43=RX、P44=TX，8N1，115200 baud；使用手册示例的 Timer2。 */
+    UART_Init(UART_1, UART1_RX_P43, UART1_TX_P44, 115200, TIM2);
     UART1_SendByte('U');
     UART1_SendByte('A');
     UART1_SendByte('R');
