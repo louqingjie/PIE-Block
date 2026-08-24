@@ -88,6 +88,29 @@ pwsh .\stc32g_sdcc\build.ps1 `
 `projects/BUZZER_MUSIC_SONG_SMOKE/music.json`，构建命令只需将工程名改为
 `BUZZER_MUSIC_SONG_SMOKE`。
 
+### 通过代码生成器直接构建 SDCC 音乐 HEX
+
+`build_music.ps1` 将 MIDI 解析、音乐 `main.c` 生成和 SDCC 构建串起来，默认使用
+独立工程 `BUZZER_MUSIC_GENERATED`，不会覆盖上面的固定回归样例。它既接受代码生成器
+配置 JSON，也可以直接接受 MIDI；MIDI 模式会自动选择第一条可播放轨道：
+
+```powershell
+$godot = 'C:\path\to\godot.exe'
+$sdcc = 'C:\path\to\sdcc.exe'
+$lib = 'C:\path\to\mcs251-large-stack-auto'
+
+pwsh .\stc32g_sdcc\build_music.ps1 `
+  -Midi .\song.mid `
+  -Godot $godot `
+  -Sdcc $sdcc `
+  -LibDir $lib `
+  -StdInclude .\sdcc-c251\device\include
+```
+
+输出 HEX 位于 `stc32g_sdcc/build/BUZZER_MUSIC_GENERATED/BUZZER_MUSIC_GENERATED.hex`。
+如果已经通过 GUI 或 `music-config` 保存了 JSON，也可以把 `-Midi` 换成
+`-Config .\music.json`。
+
 ```powershell
 pwsh .\stc32g_sdcc\tests\run_qemu_smoke.ps1 `
   -Qemu C:\path\to\qemu-system-mcs251.exe

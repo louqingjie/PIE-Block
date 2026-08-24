@@ -14,6 +14,7 @@ extends SceneTree
 ##   check     --kind <infantry|engineer|debug|music> --config <json文件或->
 ##   check     --project <.pieproj文件>
 ##   build     --kind <infantry|engineer|debug|music> --config <json文件或->
+##   music-config --midi <mid文件> [--track-index <索引>] [--out <json文件>]
 ##   build     --code <c文件>   （直接编译已有 C 代码，--kind 指定模板）
 ##   build     --project <.pieproj文件>
 ##   schema    --kind <infantry|engineer|debug|music>
@@ -28,6 +29,7 @@ const CG_INFANTRY = preload("res://scripts/codegen/codegen_infantry.gd")
 const CG_DEBUG = preload("res://scripts/codegen/codegen_debug.gd")
 const CG_ENGINEER = preload("res://scripts/codegen/codegen_engineer.gd")
 const CG_MUSIC = preload("res://scripts/codegen/codegen_music.gd")
+const MIDI = preload("res://scripts/midi_parser.gd")
 const SC = preload("res://scripts/static_checker.gd")
 const PF = preload("res://scripts/project_file.gd")
 const TC = preload("res://scripts/toolchain.gd")
@@ -59,6 +61,8 @@ func _initialize() -> void:
 			_cmd_check(rest)
 		"build":
 			_cmd_build(rest)
+		"music-config":
+			_cmd_music_config(rest)
 		"schema":
 			_cmd_schema(rest)
 		"profiles":
@@ -260,6 +264,84 @@ func _cmd_profiles(_args: PackedStringArray) -> void:
 			"description": _kind_description(kind),
 		})
 	print(JSON.stringify({"profiles": profiles}, "\t"))
+	quit(EXIT_OK)
+
+
+# ====================================================================
+# music-config -- 将原始 MIDI 转为音乐代码生成器配置
+# ====================================================================
+## GUI 音乐页导入 MIDI 后保存的就是同样的结构。这个命令把该流程开放给
+## SDCC 构建脚本，避免测试时必须先启动 GUI 或手工复制解析结果。
+func _cmd_music_config(args: PackedStringArray) -> void:
+	var parsed: Dictionary = _parse_args(args, ["--midi", "--track-index", "--out"])
+	if parsed.has("error"):
+		_print_error(parsed["error"])
+		quit(EXIT_ARG)
+		return
+	var midi_path: String = parsed.get("--midi", "")
+	if midi_path.is_empty():
+		_print_error("music-config 需要 --midi 指定 MIDI 文件")
+		quit(EXIT_ARG)
+		return
+	var parse_result: Dictionary = MIDI.parse_file(midi_path)
+	if not bool(parse_result.get("ok", false)):
+		_print_error("MIDI 解析失败：%s" % str(parse_result.get("err", "未知错误")))
+		quit(EXIT_RUN)
+		return
+
+	var track_index: int = int(parsed.get("--track-index", -1))
+	if track_index < 0:
+		for track in parse_result.get("tracks", []):
+			if str(track.get("error", "")).is_empty() \
+				and not (track.get("intervals", []) as Array).is_empty():
+				track_index = int(track.get("index", -1))
+				break
+	var tracks: Array = parse_result.get("tracks", [])
+	if track_index < 0 or track_index >= tracks.size():
+		_print_error("MIDI 中没有可播放轨道")
+		quit(EXIT_RUN)
+		return
+	var selected_track: Dictionary = tracks[track_index]
+	if not str(selected_track.get("error", "")).is_empty() \
+		or (selected_track.get("intervals", []) as Array).is_empty():
+		_print_error("轨道 %d 不可播放：%s" % [track_index + 1,
+			str(selected_track.get("error", "没有可播放音符"))])
+		quit(EXIT_RUN)
+		return
+
+	var merged: Dictionary = MIDI.merge_tracks(parse_result, [track_index], 1)
+	if not bool(merged.get("ok", false)):
+		_print_error("MIDI 轨道合并失败：%s" % str(merged.get("err", "未知错误")))
+		quit(EXIT_RUN)
+		return
+	var track_name: String = str(selected_track.get("name", ""))
+	var music: Dictionary = {
+		"source_name": str(parse_result.get("source_name", midi_path.get_file())),
+		"polyphonic": false,
+		"track_index": track_index,
+		"track_indices": [track_index],
+		"track_name": track_name,
+		"track_names": [track_name],
+		"track_count": int(parse_result.get("track_count", tracks.size())),
+		"duration_ms": int(merged.get("duration_ms", 0)),
+		"segments": merged.get("segments", []),
+	}
+	var config: Dictionary = {"music": music}
+	var out_path: String = parsed.get("--out", "")
+	if out_path.is_empty():
+		print(JSON.stringify({"ok": true, "config": config}, "\t"))
+	else:
+		var file: FileAccess = FileAccess.open(out_path, FileAccess.WRITE)
+		if file == null:
+			_print_error("无法写入音乐配置：%s" % out_path)
+			quit(EXIT_IO)
+			return
+		file.store_string(JSON.stringify(config, "\t"))
+		file.close()
+		print(JSON.stringify({"ok": true, "out": out_path,
+			"track_index": track_index,
+			"duration_ms": int(merged.get("duration_ms", 0)),
+			"segment_count": (merged.get("segments", []) as Array).size()}, "\t"))
 	quit(EXIT_OK)
 
 
@@ -1085,6 +1167,7 @@ Pie-Block 代码生成器 CLI
   generate    生成 main.c 代码
   check       运行静态检查
   build       用 Keil C251 编译为 hex 固件
+  music-config 将 MIDI 解析为音乐配置 JSON，供代码生成或 SDCC 构建使用
   schema      输出配置 JSON Schema
   profiles    列出所有项目类型
   help        显示此帮助
@@ -1109,6 +1192,11 @@ build 参数:
                                      例如 --remote http://127.0.0.1:8000
                                      可用 PIEBLOCK_PYTHON 指定 python 解释器
 
+music-config 参数:
+  --midi <mid文件>                   原始 MIDI 文件路径
+  --track-index <索引>               可选，默认选择第一条可播放轨道
+  --out <json文件>                   输出音乐配置 JSON，不指定则打印到 stdout
+
 schema 参数:
   --kind <infantry|engineer|debug|music>   项目类型
 
@@ -1121,6 +1209,9 @@ schema 参数:
 
   # 编译步兵配置为 hex 固件
   godot --headless --path . --script scripts/cli_codegen.gd -- build --kind infantry --config my_config.json
+
+  # 将 MIDI 转为配置（SDCC 音乐构建脚本会自动执行这一步）
+  godot --headless --path . --script scripts/cli_codegen.gd -- music-config --midi song.mid --out music.json
 
   # 输出步兵配置 Schema
   godot --headless --path . --script scripts/cli_codegen.gd -- schema --kind infantry

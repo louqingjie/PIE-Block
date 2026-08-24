@@ -1,0 +1,201 @@
+// MIDI 音乐代码（由 Pie-Block 配置生成器自动生成）
+#include "main.h"
+// 模板仍链接 nrf24l01.c，保留其所需的通道符号；音乐模式不启动遥控器。
+uint8_t Channal = 36;
+
+#define MUSIC_BUZZER_CH PWMB_CH3_P33
+#define MUSIC_DUTY_ON  5000
+#define MUSIC_DUTY_OFF 0
+#define MUSIC_MAX_VOICES 4
+#define MUSIC_VOICE_SWITCH_US 1UL
+
+typedef struct
+{
+    uint32_t duration_ms;
+    uint8_t voice_count;
+    uint8_t notes[MUSIC_MAX_VOICES];
+} MusicSegment;
+
+// MIDI 音符编号 -> PWM 整数频率，索引 0 仅作安全占位，不播放频率 0。
+static const uint16_t musicFrequencies[128] =
+{
+    1000, 9, 9, 10, 10, 11, 12, 12,
+    13, 14, 15, 15, 16, 17, 18, 19,
+    21, 22, 23, 24, 26, 28, 29, 31,
+    33, 35, 37, 39, 41, 44, 46, 49,
+    52, 55, 58, 62, 65, 69, 73, 78,
+    82, 87, 92, 98, 104, 110, 117, 123,
+    131, 139, 147, 156, 165, 175, 185, 196,
+    208, 220, 233, 247, 262, 277, 294, 311,
+    330, 349, 370, 392, 415, 440, 466, 494,
+    523, 554, 587, 622, 659, 698, 740, 784,
+    831, 880, 932, 988, 1047, 1109, 1175, 1245,
+    1319, 1397, 1480, 1568, 1661, 1760, 1865, 1976,
+    2093, 2217, 2349, 2489, 2637, 2794, 2960, 3136,
+    3322, 3520, 3729, 3951, 4186, 4435, 4699, 4978,
+    5274, 5588, 5920, 6272, 6645, 7040, 7459, 7902,
+    8372, 8870, 9397, 9956, 10548, 11175, 11840, 12544
+};
+
+static const MusicSegment musicSegments[83] =
+{
+    {602UL, 1, {60, 0, 0, 0}},
+    {30UL, 1, {52, 0, 0, 0}},
+    {602UL, 1, {60, 0, 0, 0}},
+    {30UL, 0, {0, 0, 0, 0}},
+    {602UL, 1, {67, 0, 0, 0}},
+    {30UL, 1, {60, 0, 0, 0}},
+    {602UL, 1, {67, 0, 0, 0}},
+    {30UL, 0, {0, 0, 0, 0}},
+    {602UL, 1, {69, 0, 0, 0}},
+    {30UL, 1, {60, 0, 0, 0}},
+    {602UL, 1, {69, 0, 0, 0}},
+    {30UL, 0, {0, 0, 0, 0}},
+    {1201UL, 1, {67, 0, 0, 0}},
+    {62UL, 0, {0, 0, 0, 0}},
+    {602UL, 1, {65, 0, 0, 0}},
+    {30UL, 1, {57, 0, 0, 0}},
+    {602UL, 1, {65, 0, 0, 0}},
+    {30UL, 0, {0, 0, 0, 0}},
+    {602UL, 1, {64, 0, 0, 0}},
+    {30UL, 1, {55, 0, 0, 0}},
+    {602UL, 1, {64, 0, 0, 0}},
+    {30UL, 0, {0, 0, 0, 0}},
+    {602UL, 1, {62, 0, 0, 0}},
+    {30UL, 1, {55, 0, 0, 0}},
+    {602UL, 1, {62, 0, 0, 0}},
+    {30UL, 0, {0, 0, 0, 0}},
+    {1201UL, 1, {60, 0, 0, 0}},
+    {62UL, 0, {0, 0, 0, 0}},
+    {602UL, 1, {67, 0, 0, 0}},
+    {30UL, 1, {60, 0, 0, 0}},
+    {602UL, 1, {67, 0, 0, 0}},
+    {30UL, 0, {0, 0, 0, 0}},
+    {602UL, 1, {65, 0, 0, 0}},
+    {30UL, 1, {57, 0, 0, 0}},
+    {602UL, 1, {65, 0, 0, 0}},
+    {30UL, 0, {0, 0, 0, 0}},
+    {602UL, 1, {64, 0, 0, 0}},
+    {30UL, 1, {55, 0, 0, 0}},
+    {602UL, 1, {64, 0, 0, 0}},
+    {30UL, 0, {0, 0, 0, 0}},
+    {1201UL, 1, {62, 0, 0, 0}},
+    {62UL, 0, {0, 0, 0, 0}},
+    {602UL, 1, {67, 0, 0, 0}},
+    {30UL, 1, {60, 0, 0, 0}},
+    {602UL, 1, {67, 0, 0, 0}},
+    {30UL, 0, {0, 0, 0, 0}},
+    {602UL, 1, {65, 0, 0, 0}},
+    {30UL, 1, {57, 0, 0, 0}},
+    {602UL, 1, {65, 0, 0, 0}},
+    {30UL, 0, {0, 0, 0, 0}},
+    {602UL, 1, {64, 0, 0, 0}},
+    {30UL, 1, {55, 0, 0, 0}},
+    {602UL, 1, {64, 0, 0, 0}},
+    {30UL, 0, {0, 0, 0, 0}},
+    {1201UL, 1, {62, 0, 0, 0}},
+    {62UL, 0, {0, 0, 0, 0}},
+    {602UL, 1, {60, 0, 0, 0}},
+    {30UL, 1, {52, 0, 0, 0}},
+    {602UL, 1, {60, 0, 0, 0}},
+    {30UL, 0, {0, 0, 0, 0}},
+    {602UL, 1, {67, 0, 0, 0}},
+    {30UL, 1, {60, 0, 0, 0}},
+    {602UL, 1, {67, 0, 0, 0}},
+    {30UL, 0, {0, 0, 0, 0}},
+    {602UL, 1, {69, 0, 0, 0}},
+    {30UL, 1, {60, 0, 0, 0}},
+    {602UL, 1, {69, 0, 0, 0}},
+    {30UL, 0, {0, 0, 0, 0}},
+    {1201UL, 1, {67, 0, 0, 0}},
+    {62UL, 0, {0, 0, 0, 0}},
+    {602UL, 1, {65, 0, 0, 0}},
+    {30UL, 1, {57, 0, 0, 0}},
+    {602UL, 1, {65, 0, 0, 0}},
+    {30UL, 0, {0, 0, 0, 0}},
+    {602UL, 1, {64, 0, 0, 0}},
+    {30UL, 1, {55, 0, 0, 0}},
+    {602UL, 1, {64, 0, 0, 0}},
+    {30UL, 0, {0, 0, 0, 0}},
+    {602UL, 1, {62, 0, 0, 0}},
+    {30UL, 1, {55, 0, 0, 0}},
+    {602UL, 1, {62, 0, 0, 0}},
+    {30UL, 0, {0, 0, 0, 0}},
+    {1201UL, 1, {60, 0, 0, 0}},
+};
+#define MUSIC_SEGMENT_COUNT 83
+
+// Ms_Delay 的参数是 uint16_t，长音符拆成多个安全延时。
+static void Music_Wait(uint32_t duration_ms)
+{
+    while (duration_ms > 65535UL)
+    {
+        Ms_Delay((uint16_t)65535);
+        duration_ms -= 65535UL;
+    }
+    if (duration_ms > 0UL)
+        Ms_Delay((uint16_t)duration_ms);
+}
+
+static void Music_Stop(void)
+{
+    // 关闭时仍传入有效频率，避免 PWM_SET_Frequency 除零。
+    PWM_SET_Frequency(MUSIC_BUZZER_CH, 1000, MUSIC_DUTY_OFF);
+}
+
+static void Music_PlaySegment(const MusicSegment *segment)
+{
+    uint32_t remaining_ms = segment->duration_ms;
+    uint32_t remaining_us = segment->duration_ms * 1000UL;
+    uint8_t voice = 0;
+    uint32_t switch_us;
+    if (segment->voice_count == 0)
+    {
+        Music_Stop();
+        Music_Wait(remaining_ms);
+        return;
+    }
+    if (segment->voice_count == 1)
+    {
+        PWM_SET_Frequency(MUSIC_BUZZER_CH,
+            musicFrequencies[segment->notes[0]], MUSIC_DUTY_ON);
+        Music_Wait(remaining_ms);
+        return;
+    }
+    // 伪复音：以 Us_Delay 的最小 1us 时间片轮换声部，不延长整体节奏。
+    while (remaining_us > 0UL)
+    {
+        switch_us = remaining_us > MUSIC_VOICE_SWITCH_US
+            ? MUSIC_VOICE_SWITCH_US : remaining_us;
+        PWM_SET_Frequency(MUSIC_BUZZER_CH,
+            musicFrequencies[segment->notes[voice]], MUSIC_DUTY_ON);
+        Us_Delay(switch_us);
+        remaining_us -= switch_us;
+        voice++;
+        if (voice >= segment->voice_count)
+            voice = 0;
+    }
+}
+
+static void Music_PlayOnce(void)
+{
+    uint16_t i;
+    for (i = 0; i < MUSIC_SEGMENT_COUNT; i++)
+        Music_PlaySegment(&musicSegments[i]);
+    Music_Stop();
+}
+
+static void All_Init(void)
+{
+    Board_Init();
+    // P33 蜂鸣器必须先 PWM_Init，再通过 PWM_SET_Frequency 改音高。
+    PWM_Init(MUSIC_BUZZER_CH, 1000, MUSIC_DUTY_OFF);
+    Music_Stop();
+}
+
+void main(void)
+{
+    All_Init();
+    while (1)
+        Music_PlayOnce();
+}
