@@ -87,14 +87,14 @@ text = "编码对照表（P37 P36 P35）"
 layout_mode = 2
 theme_override_colors/font_color = Color(0.72, 0.86, 0.82, 1)
 theme_override_font_sizes/font_size = 15
-text = "000  上电
-001  Board_Init 时钟初始化
-010  UART1 串口初始化
-011  LED 自检
-100  NRF 遥控初始化
-101  拓展板初始化
-110  PWM / 舵机初始化
-111  初始化完成"
+text = "000  Board_Init 时钟初始化
+001  UART1 串口初始化
+010  LED 自检
+011  NRF 遥控初始化
+100  拓展板初始化
+101  PWM / 舵机初始化
+110  保留
+111  保留"
 
 [node name="Hint" type="Label" parent="Dim/Center/Panel/Content"]
 layout_mode = 2

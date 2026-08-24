@@ -90,7 +90,7 @@ void UART_Init(UARTN_Enum UART_N, UART_PIN_Enum UART_Rx_Pin, UART_PIN_Enum UART_
 		else if ((UART2_RX_P46 == UART_Rx_Pin) && (UART2_TX_P47 == UART_Tx_Pin))
 			P_SW2 |= 0x01;
 		UART_BUSY[2] = 0;
-		ES2 = 1;
+		IE2 |= 0x01; /* ES2：IE2 不是普通可位寻址 SFR。 */
 		break;
 		break;
 	}
@@ -116,7 +116,7 @@ void UART_Init(UARTN_Enum UART_N, UART_PIN_Enum UART_Rx_Pin, UART_PIN_Enum UART_
 		else if ((UART3_RX_P50 == UART_Rx_Pin) && (UART3_TX_P51 == UART_Tx_Pin))
 			P_SW2 |= 0x02;
 		UART_BUSY[3] = 0;
-		ES3 = 1;
+		IE2 |= 0x08; /* ES3 */
 		break;
 	}
 	case UART_4:
@@ -145,7 +145,7 @@ void UART_Init(UARTN_Enum UART_N, UART_PIN_Enum UART_Rx_Pin, UART_PIN_Enum UART_
 			P_SW2 |= 0x04;
 		}
 		UART_BUSY[4] = 0;
-		ES4 = 1;
+		IE2 |= 0x10; /* ES4 */
 		break;
 	}
 	}

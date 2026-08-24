@@ -451,8 +451,8 @@ func generate(cfg: Dictionary) -> String:
 	# --- All_Init ---
 	code += "void All_Init()\n{\n"
 	code += "    // 初始化诊断分步：卡在哪步，LED 就停在对应编码（P37 P36 P35 二进制）\n"
-	code += "    //   000 上电   001 Board_Init   010 UART1   011 LED 自检\n"
-	code += "    //   100 NRF遥控 101 拓展板 Init 110 PWM/舵机 111 完成\n"
+	code += "    //   000 Board_Init   001 UART1   010 LED 自检   011 NRF遥控\n"
+	code += "    //   100 拓展板 Init 101 PWM/舵机（110/111 保留）\n"
 	code += "    StepBegin(0);\n"
 	code += "    Board_Init();\n"
 	code += "    StepDone(0);\n"

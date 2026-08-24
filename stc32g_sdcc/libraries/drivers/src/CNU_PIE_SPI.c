@@ -18,23 +18,23 @@ void SPI_Init(SPI_ENUM SPI_CHN, uint8_t SS_CFG, uint8_t FirstBit,
               uint8_t cpol, uint8_t cpha, uint8_t Clock_Div,
               uint8_t SPI_Mode, uint8_t SPI_EN)
 {
-    switch (SPI_CHN)
-    {
-    case SPI_1: P_SW1 |= (0x00 << 2); break;
-    case SPI_2: P_SW1 |= (0x01 << 2); break;
-    case SPI_3: P_SW1 |= (0x02 << 2); break;
-    case SPI_4: P_SW1 |= (0x03 << 2); break;
-    }
-    if (SS_CFG)
-        SSIG = 0;
-    else
-        SSIG = 1;
-    SPEN = SPI_EN;
-    DORD = FirstBit;
-    MSTR = SPI_Mode;
-    CPOL = cpol;
-    CPHA = cpha;
-    SPCTL = (SPCTL & ~0x03) | Clock_Div;
+    uint8_t control;
+
+    /*
+     * P_SW1/SPCTL 不是传统 8051 可位寻址 SFR。Keil C251 能为
+     * SPCTL^n 生成扩展位指令，但 SDCC 的普通 __sbit 会误落到 PSW
+     * 0xD0~0xD7，甚至切换寄存器组。这里必须整字节访问。
+     */
+    P_SW1 = (uint8_t)((P_SW1 & (uint8_t)~0x0C) |
+                      (((uint8_t)SPI_CHN & 0x03U) << 2));
+    control = (uint8_t)(Clock_Div & 0x03U);
+    if (!SS_CFG) control |= 0x80U;
+    if (SPI_EN) control |= 0x40U;
+    if (FirstBit) control |= 0x20U;
+    if (SPI_Mode) control |= 0x10U;
+    if (cpol) control |= 0x08U;
+    if (cpha) control |= 0x04U;
+    SPCTL = control;
     SPI_RxTimerOut = 0;
     B_SPI_Busy = 0;
 }
@@ -43,19 +43,17 @@ void SPI_SetMode(uint8_t SPI_Mode)
 {
     if (SPI_Mode == SPI_Mode_Slave)
     {
-        MSTR = 0;
-        SSIG = 0;
+        SPCTL &= (uint8_t)~0x90U;
     }
     else
     {
-        MSTR = 1;
-        SSIG = 1;
+        SPCTL |= 0x90U;
     }
 }
 
 void SPI_WriteByte(uint8_t dat)
 {
-    if (ESPI)
+    if (IE2 & 0x02U)
     {
         B_SPI_Busy = 1;
         SPDAT = dat;
@@ -64,22 +62,16 @@ void SPI_WriteByte(uint8_t dat)
     }
     else
     {
-        SPDAT = dat;
-        while (SPIF == 0)
-            ;
-        SPIF = 1;
-        WCOL = 1;
+        uint8_t ignored;
+        SPI_ReadWriteByte_Timeout(dat, SPI_TRANSFER_TIMEOUT, &ignored);
     }
 }
 
 uint8_t SPI_ReadByte(void)
 {
-    SPDAT = 0xFF;
-    while (SPIF == 0)
-        ;
-    SPIF = 1;
-    WCOL = 1;
-    return SPDAT;
+    uint8_t value = 0xFF;
+    SPI_ReadWriteByte_Timeout(0xFF, SPI_TRANSFER_TIMEOUT, &value);
+    return value;
 }
 
 /*

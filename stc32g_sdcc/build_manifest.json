@@ -1,5 +1,5 @@
 {
-  "version": "sdcc_runtime_v1",
+  "version": "sdcc_runtime_v2_sfr_masks",
   "kind_projects": {
     "infantry": "ROBOMASTER_INFANTRY",
     "engineer": "ROBOMASTER_ENGINEER",
