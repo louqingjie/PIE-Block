@@ -1,6 +1,6 @@
 # STC32G12K128 SDCC 工程
 
-此目录是六个正式 STC32G12K128 Keil 工程的 SDCC MCS-251 迁移副本。原始
+此目录包含正式 STC32G12K128 工程的 SDCC MCS-251 迁移副本，以及独立硬件测试工程。原始
 `stc32g` 工程和 `STC32G-SOFTWARE-LIB` 独立例程不在本目录的构建范围内。
 
 构建脚本不调用项目代码生成器。需要准备已经构建好的 SDCC MCS-251 工具链和
@@ -65,6 +65,23 @@ pwsh .\stc32g_sdcc\build.ps1 `
 该程序使用 `LCD.c` 的 GPIO 模拟 SPI，在屏幕上显示 `LCD SPI OK` 和 `RUN`，
 并用 P35 做 250 ms 心跳、P36 表示 LCD 初始化完成。它验证的是 LCD 软件 SPI
 和初始化后的持续运行，不验证 `CNU_PIE_SPI.c` 的硬件 SPI。
+
+蜂鸣器音乐测试工程 `BUZZER_MUSIC_SMOKE` 只使用主控板 P33 的 PWM，不启动 NRF
+和扩展板通信。测试源由项目音乐模式的代码生成器根据
+`projects/BUZZER_MUSIC_SMOKE/music.json` 生成，播放单音阶后循环：
+
+```powershell
+$godot = 'C:\path\to\godot.exe'
+& $godot --headless --no-header --path . --script scripts/cli_codegen.gd -- `
+  generate --kind music `
+  --config stc32g_sdcc/projects/BUZZER_MUSIC_SMOKE/music.json `
+  --out stc32g_sdcc/projects/BUZZER_MUSIC_SMOKE/src/main.c
+
+pwsh .\stc32g_sdcc\build.ps1 `
+  -Project BUZZER_MUSIC_SMOKE `
+  -Sdcc .\path\to\sdcc.exe `
+  -LibDir .\path\to\mcs251-large-stack-auto
+```
 
 ```powershell
 pwsh .\stc32g_sdcc\tests\run_qemu_smoke.ps1 `

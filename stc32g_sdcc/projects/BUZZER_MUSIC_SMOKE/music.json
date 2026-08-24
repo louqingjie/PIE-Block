@@ -1,0 +1,23 @@
+{
+  "music": {
+    "source_name": "buzzer_diagnostic_scale.mid",
+    "polyphonic": false,
+    "track_index": 0,
+    "track_indices": [0],
+    "track_name": "蜂鸣器单音阶诊断",
+    "track_names": ["蜂鸣器单音阶诊断"],
+    "track_count": 1,
+    "duration_ms": 2750,
+    "segments": [
+      {"notes": [60], "duration_ms": 300},
+      {"notes": [64], "duration_ms": 300},
+      {"notes": [67], "duration_ms": 300},
+      {"notes": [72], "duration_ms": 300},
+      {"notes": [], "duration_ms": 150},
+      {"notes": [72], "duration_ms": 300},
+      {"notes": [67], "duration_ms": 300},
+      {"notes": [64], "duration_ms": 300},
+      {"notes": [60], "duration_ms": 500}
+    ]
+  }
+}
