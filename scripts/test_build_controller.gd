@@ -24,8 +24,13 @@ class FakeToolchain extends RefCounted:
 	func build_sync(_uv4_abs: String, _project_dst: String) -> Dictionary:
 		return {"ok": true, "exit": 0, "log": "0 Error(s), 2 Warning(s)"}
 
-	func build_sdcc_sync(_kind: String, _code: String, _project_dst: String) -> Dictionary:
-		return {"ok": true, "exit": 0, "log": "[PASS] SDCC layout"}
+	func build_sdcc_sync(_kind: String, _code: String, _project_dst: String,
+			progress_sink: Callable = Callable()) -> Dictionary:
+		if progress_sink.is_valid():
+			progress_sink.call({"type": "info", "message": "[1/1] 编译 main.c"})
+			progress_sink.call({"type": "warning", "message": "main.c:1: 测试警告"})
+		return {"ok": true, "exit": 0, "log": "[PASS] SDCC layout",
+			"log_streamed": progress_sink.is_valid()}
 
 
 func _check(label: String, ok: bool) -> void:
@@ -71,7 +76,9 @@ func _initialize() -> void:
 	_check("假 SDCC 后台编译成功启动", controller.start("project", "code", "infantry", "sdcc"))
 	await controller.finished
 	_check("成功结果发出 succeeded", succeeded_count[0] == 1)
-	_check("成功日志完整展示", _contains("编译成功") and _contains("SDCC layout"))
+	_check("SDCC 进度实时进入输出区", _contains("[1/1] 编译 main.c"))
+	_check("SDCC 警告按级别进入输出区", _contains("[Warn] main.c:1: 测试警告"))
+	_check("成功结果完整展示", _contains("编译成功"))
 
 	_lines.clear()
 	controller._on_worker_finished({"ok": false, "exit": 1, "log": "error C123"})

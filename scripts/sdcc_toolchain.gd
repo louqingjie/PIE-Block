@@ -21,15 +21,34 @@ const XRAM_LIMIT := 0x012000
 const IRAM_LIMIT := 0x1000
 
 var _log: Callable
+var _event_sink: Callable
 
 
-func _init(log_sink: Callable = Callable()) -> void:
+func _init(log_sink: Callable = Callable(), event_sink: Callable = Callable()) -> void:
 	_log = log_sink
+	_event_sink = event_sink
 
 
 func _emit(text: String) -> void:
-	if _log.is_valid():
+	if _event_sink.is_valid():
+		_event_sink.call({"type": "info", "message": text})
+	elif _log.is_valid():
 		_log.call(text)
+
+
+func _publish(type: String, message: String, current: int = 0, total: int = 0) -> void:
+	if not _event_sink.is_valid():
+		return
+	var event := {"type": type, "message": message}
+	if total > 0:
+		event["current"] = current
+		event["total"] = total
+	_event_sink.call(event)
+
+
+func _failure(message: String, exit_code: int = -1) -> Dictionary:
+	_publish("error", message)
+	return {"ok": false, "exit": exit_code, "log": message}
 
 
 static func to_abs(path: String) -> String:
@@ -102,40 +121,43 @@ func ensure_deployed() -> Dictionary:
 
 
 func build(kind: String, code: String, canonical_hex: String) -> Dictionary:
+	var started_at := Time.get_ticks_msec()
 	# 无论部署、编译或校验在哪一步失败，都不能让烧录流程误用上次的产物。
 	_remove_file(canonical_hex)
 	var ready := ensure_deployed()
 	if not bool(ready.get("ok", false)):
-		return {"ok": false, "exit": -1, "log": str(ready.get("reason", "SDCC 未就绪"))}
+		return _failure(str(ready.get("reason", "SDCC 未就绪")))
 	var manifest := load_manifest()
 	var project := project_for_kind(kind)
 	if project.is_empty():
-		return {"ok": false, "exit": -1, "log": "SDCC 不支持项目类型：%s" % kind}
+		return _failure("SDCC 不支持项目类型：%s" % kind)
 	var projects: Dictionary = manifest.get("projects", {})
 	if not projects.has(project):
-		return {"ok": false, "exit": -1, "log": "SDCC 构建清单缺少项目：%s" % project}
+		return _failure("SDCC 构建清单缺少项目：%s" % project)
+	_publish("info", "项目：%s" % project)
 	var project_root := to_abs(FIRMWARE_DST).path_join("projects").path_join(project)
 	var main_path := project_root.path_join("src/main.c")
 	var main_file := FileAccess.open(main_path, FileAccess.WRITE)
 	if main_file == null:
-		return {"ok": false, "exit": -1, "log": "无法写入 SDCC main.c：%s" % main_path}
+		return _failure("无法写入 SDCC main.c：%s" % main_path)
 	main_file.store_string(code)
 	main_file.close()
 
 	var output := to_abs(FIRMWARE_DST).path_join("build").path_join(project)
 	_remove_tree(output)
 	if DirAccess.make_dir_recursive_absolute(output) != OK:
-		return {"ok": false, "exit": -1, "log": "无法创建 SDCC 输出目录：%s" % output}
+		return _failure("无法创建 SDCC 输出目录：%s" % output)
 
 	var source_info := _project_sources(manifest, project)
 	if not bool(source_info.get("ok", false)):
-		return {"ok": false, "exit": -1, "log": str(source_info.get("reason", "源码清单错误"))}
+		return _failure(str(source_info.get("reason", "源码清单错误")))
 	var sources: Array = source_info.sources
 	var library_sources: Array = source_info.library_sources
+	_publish("info", "源码：%d 个" % sources.size())
 	var interrupt_header := output.path_join("generated_interrupt_declarations.h")
 	var header_result := _write_interrupt_header(sources, interrupt_header)
 	if not bool(header_result.get("ok", false)):
-		return {"ok": false, "exit": -1, "log": str(header_result.get("reason", "中断声明生成失败"))}
+		return _failure(str(header_result.get("reason", "中断声明生成失败")))
 
 	var include_args: Array[String] = []
 	include_args.append("-I" + to_abs(TOOLCHAIN_DST).path_join("include"))
@@ -147,10 +169,15 @@ func build(kind: String, code: String, canonical_hex: String) -> Dictionary:
 	var direct_objects: Array[String] = []
 	var library_objects: Array[String] = []
 	var all_log: Array[String] = []
-	for relative_source in sources:
+	var warning_count := 0
+	var hidden_warning_count := 0
+	for source_index in range(sources.size()):
+		var relative_source: String = str(sources[source_index])
+		_publish("info", "[%d/%d] 编译 %s" % [source_index + 1, sources.size(), relative_source],
+			source_index + 1, sources.size())
 		var source_abs := to_abs(FIRMWARE_DST).path_join(str(relative_source))
 		if not FileAccess.file_exists(source_abs):
-			return {"ok": false, "exit": -1, "log": "SDCC 工程源文件缺失：%s" % source_abs}
+			return _failure("SDCC 工程源文件缺失：%s" % source_abs)
 		var object_path := output.path_join(source_abs.get_file().get_basename() + ".rel")
 		var args: Array[String] = []
 		for flag in manifest.get("compile_flags", []):
@@ -161,6 +188,9 @@ func build(kind: String, code: String, canonical_hex: String) -> Dictionary:
 		args.append_array(["-o", object_path, source_abs])
 		var run := _run_sdcc(args)
 		all_log.append(str(run.log))
+		var diagnostics := _publish_diagnostics(str(run.log), not bool(run.ok))
+		warning_count += int(diagnostics.total)
+		hidden_warning_count += int(diagnostics.hidden)
 		if not bool(run.ok):
 			return {"ok": false, "exit": int(run.exit), "log": "\n".join(all_log)}
 		if str(relative_source) in library_sources:
@@ -169,9 +199,10 @@ func build(kind: String, code: String, canonical_hex: String) -> Dictionary:
 			direct_objects.append(object_path)
 
 	var shared_library := output.path_join("stc32g_shared.lib")
+	_publish("info", "正在归档公共模块……")
 	var archive := FileAccess.open(shared_library, FileAccess.WRITE)
 	if archive == null:
-		return {"ok": false, "exit": -1, "log": "无法创建 SDCC 共享库清单"}
+		return _failure("无法创建 SDCC 共享库清单")
 	for object_path in library_objects:
 		archive.store_line(object_path.get_file().get_basename())
 	archive.close()
@@ -179,8 +210,9 @@ func build(kind: String, code: String, canonical_hex: String) -> Dictionary:
 	var lib_dir := to_abs(TOOLCHAIN_DST).path_join("lib/mcs251-large-stack-auto")
 	for library in manifest.get("runtime_libraries", []):
 		if not FileAccess.file_exists(lib_dir.path_join(str(library))):
-			return {"ok": false, "exit": -1, "log": "SDCC 运行库缺失：%s" % library}
+			return _failure("SDCC 运行库缺失：%s" % library)
 	var hex_path := output.path_join(project + ".hex")
+	_publish("info", "正在链接 %s.hex……" % project)
 	var link_args: Array[String] = []
 	for flag in manifest.get("link_flags", []):
 		link_args.append(str(flag))
@@ -193,17 +225,60 @@ func build(kind: String, code: String, canonical_hex: String) -> Dictionary:
 	link_args.append_array(["-o", hex_path])
 	var link := _run_sdcc(link_args)
 	all_log.append(str(link.log))
+	var link_diagnostics := _publish_diagnostics(str(link.log), not bool(link.ok))
+	warning_count += int(link_diagnostics.total)
+	hidden_warning_count += int(link_diagnostics.hidden)
 	if not bool(link.ok):
 		return {"ok": false, "exit": int(link.exit), "log": "\n".join(all_log)}
 	var map_path := hex_path.get_basename() + ".map"
+	_publish("info", "正在校验 HEX/MAP 布局……")
 	var layout := validate_layout(hex_path, map_path)
 	all_log.append(str(layout.get("log", "")))
 	if not bool(layout.get("ok", false)):
+		_publish("error", str(layout.get("log", "布局校验失败")))
 		return {"ok": false, "exit": -1, "log": "\n".join(all_log)}
+	_publish("info", str(layout.get("log", "")))
 	var copied := _atomic_copy(hex_path, canonical_hex)
 	if not copied:
-		return {"ok": false, "exit": -1, "log": "\n".join(all_log) + "\n无法保存统一 HEX 产物"}
+		return _failure("无法保存统一 HEX 产物")
+	var visible_warning_count := warning_count - hidden_warning_count
+	if visible_warning_count > 0:
+		_publish("warning", "SDCC 警告：%d 条；另隐藏 %d 条重复的编译器内部警告"
+			% [visible_warning_count, hidden_warning_count])
+	elif hidden_warning_count > 0:
+		_publish("info", "已隐藏 %d 条重复的编译器内部警告" % hidden_warning_count)
+	var elapsed := float(Time.get_ticks_msec() - started_at) / 1000.0
+	_publish("info", "耗时：%.1f 秒" % elapsed)
+	_publish("info", "HEX：%s" % canonical_hex)
 	return {"ok": true, "exit": 0, "log": "\n".join(all_log), "hex": canonical_hex}
+
+
+func _publish_diagnostics(log_text: String, include_context: bool) -> Dictionary:
+	var warning_count := 0
+	var hidden_count := 0
+	for raw_line in log_text.replace("\r", "").split("\n"):
+		var line := raw_line.strip_edges()
+		if line.is_empty():
+			continue
+		var lower := line.to_lower()
+		if lower.contains("warning"):
+			warning_count += 1
+			if _is_internal_warning(line):
+				hidden_count += 1
+			else:
+				_publish("warning", line)
+		elif lower.contains("error") or lower.contains("undefined global"):
+			_publish("error", line)
+		elif include_context and not line.begins_with("DPTR no-match"):
+			_publish("info", line)
+	return {"total": warning_count, "hidden": hidden_count}
+
+
+func _is_internal_warning(line: String) -> bool:
+	return line.contains("__has_builtin") \
+		or line.contains("__STDC_HOSTED__") \
+		or line.contains("warning 110:") \
+		or line.contains("warning 126:")
 
 
 func _project_sources(manifest: Dictionary, project: String) -> Dictionary:

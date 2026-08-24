@@ -50,6 +50,8 @@ func append_line(line_text: String) -> void:
 		text = line_text
 	else:
 		text += "\n" + line_text
+	# 构建日志持续追加时自动跟随最新一行。
+	scroll_vertical = get_line_count()
 
 
 func set_issues(issues: Array) -> void:

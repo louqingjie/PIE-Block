@@ -917,9 +917,12 @@ func build_project(project_dst: String, code: String = "",
 
 
 ## 使用内置 SDCC 同步构建，并把成功产物放到现有统一 HEX 路径。
-func build_sdcc_sync(kind: String, code: String, project_dst: String) -> Dictionary:
-	var sdcc = SDCC_TOOLCHAIN.new(_log)
-	return sdcc.build(kind, code, get_hex_path(project_dst))
+func build_sdcc_sync(kind: String, code: String, project_dst: String,
+		progress_sink: Callable = Callable()) -> Dictionary:
+	var sdcc = SDCC_TOOLCHAIN.new(_log, progress_sink)
+	var result: Dictionary = sdcc.build(kind, code, get_hex_path(project_dst))
+	result["log_streamed"] = progress_sink.is_valid()
+	return result
 
 
 func sdcc_project_for_kind(kind: String) -> String:

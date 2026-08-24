@@ -10,6 +10,16 @@ var _clear_output: Callable
 var _append_output: Callable
 var _thread: Thread = null
 var _busy: bool = false
+var _event_mutex := Mutex.new()
+var _pending_events: Array[Dictionary] = []
+
+
+func _ready() -> void:
+	set_process(false)
+
+
+func _process(_delta: float) -> void:
+	_flush_worker_events()
 
 
 func configure(toolchain, clear_output: Callable, append_output: Callable) -> void:
@@ -48,6 +58,7 @@ func start(project_dst: String, code: String, kind: String = "infantry",
 		_append("[Error] 未知编译器：%s" % compiler)
 		return false
 	_set_busy(true)
+	set_process(true)
 	_append("正在编译…（%s）" % ("内置 SDCC C251" if compiler == "sdcc" else "Keil C251"))
 	_thread = Thread.new()
 	var error: int = _thread.start(_worker.bind(compiler, kind, code, uv4_abs, project_dst))
@@ -75,7 +86,7 @@ func _worker(compiler: String, kind: String, code: String,
 		uv4_abs: String, project_dst: String) -> void:
 	var result: Dictionary
 	if compiler == "sdcc":
-		result = _toolchain.build_sdcc_sync(kind, code, project_dst)
+		result = _toolchain.build_sdcc_sync(kind, code, project_dst, _queue_worker_event)
 	else:
 		result = _toolchain.build_sync(uv4_abs, project_dst)
 	result["compiler"] = compiler
@@ -86,22 +97,29 @@ func _on_worker_finished(result: Dictionary) -> void:
 	if _thread:
 		_thread.wait_to_finish()
 	_thread = null
+	_flush_worker_events()
+	set_process(false)
 	_set_busy(false)
 
 	var log_text: String = str(result.get("log", ""))
 	var ok: bool = bool(result.get("ok", false))
+	var streamed: bool = bool(result.get("log_streamed", false))
 	if ok:
 		_append("✓ 编译成功")
 	else:
-		_append("✗ 编译失败（%s 退出码 %d，详见下方日志）"
-			% ["SDCC" if str(result.get("compiler", "")) == "sdcc" else "Keil",
-				int(result.get("exit", -1))])
-	_append("")
-	if log_text.is_empty():
-		_append("[Warn] 未读取到编译日志")
-	else:
-		for line in log_text.split("\n", false):
-			_append(line)
+		var compiler_name := "SDCC" if str(result.get("compiler", "")) == "sdcc" else "Keil"
+		if streamed:
+			_append("✗ 编译失败（%s 退出码 %d）" % [compiler_name, int(result.get("exit", -1))])
+		else:
+			_append("✗ 编译失败（%s 退出码 %d，详见下方日志）"
+				% [compiler_name, int(result.get("exit", -1))])
+	if not streamed:
+		_append("")
+		if log_text.is_empty():
+			_append("[Warn] 未读取到编译日志")
+		else:
+			for line in log_text.split("\n", false):
+				_append(line)
 	# succeeded 会触发下载流程（_clear 清空输出再追加烧录日志），
 	# 必须放在编译日志输出之后，否则编译日志的空行会混入烧录日志。
 	if ok:
@@ -122,3 +140,27 @@ func _clear() -> void:
 func _append(text: String) -> void:
 	if _append_output.is_valid():
 		_append_output.call(text)
+
+
+## 工作线程只写队列；所有 UI Callable 都在主线程的 _process 中执行。
+func _queue_worker_event(event: Dictionary) -> void:
+	_event_mutex.lock()
+	_pending_events.append(event.duplicate(true))
+	_event_mutex.unlock()
+
+
+func _flush_worker_events() -> void:
+	var events: Array[Dictionary] = []
+	_event_mutex.lock()
+	events.assign(_pending_events)
+	_pending_events.clear()
+	_event_mutex.unlock()
+	for event in events:
+		var message := str(event.get("message", ""))
+		match str(event.get("type", "info")):
+			"warning":
+				_append("[Warn] " + message)
+			"error":
+				_append("[Error] " + message)
+			_:
+				_append(message)
