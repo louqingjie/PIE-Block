@@ -58,8 +58,11 @@ node_modules/
 dist/
 release/
 
-# Bundled Keil toolchain (licensed binaries; prepare via script, do not commit)
+# 发布时生成的内置编译器 staging（二进制不提交）
 vendor/keil-toolchain/
+vendor/sdcc-toolchain/
+/tmp/
+/output/*.exe
 toolchain/
 
 # btctl (.NET 构建产物；源码 tools/btctl/*.cs / *.csproj 提交，产物不提交)
