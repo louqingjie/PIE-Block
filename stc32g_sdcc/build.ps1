@@ -156,6 +156,38 @@ function Invoke-ProjectBuild([string]$Name) {
     $output = Join-Path $OutputRoot $Name
     New-Item -ItemType Directory -Force -Path $output | Out-Null
 
+    # SDCC 的 MCS251 后端只会在包含 main() 的编译单元中生成中断向量表。
+    # 本项目把 ISR 放在独立的 isr.c/驱动源文件中，因此先收集所有实际的
+    # __interrupt() 定义，再预包含声明到 main.c，让向量表能引用这些入口。
+    $interruptDeclarations = @{}
+    $interruptPattern = '(?m)^\s*(?:static\s+)?void\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*void\s*\)\s*__interrupt\s*\(\s*([^)]*?)\s*\)'
+    foreach ($relativeSource in $sourceMap[$Name]) {
+        $source = Join-Path $PSScriptRoot $relativeSource
+        if (!(Test-Path -LiteralPath $source -PathType Leaf)) {
+            throw "工程源文件缺失: $source"
+        }
+        $sourceText = Get-Content -LiteralPath $source -Raw
+        $sourceText = [regex]::Replace($sourceText, '(?m)^\s*//.*$', '')
+        foreach ($match in [regex]::Matches($sourceText, $interruptPattern)) {
+            $handlerName = $match.Groups[1].Value
+            $vectorExpression = $match.Groups[2].Value.Trim()
+            $declaration = "void $handlerName(void) __interrupt ($vectorExpression);"
+            $key = $handlerName + '|' + $vectorExpression
+            $interruptDeclarations[$key] = $declaration
+        }
+    }
+    $generatedInterruptHeader = Join-Path $output 'generated_interrupt_declarations.h'
+    $interruptHeaderLines = @(
+        '#ifndef PIE_BLOCK_GENERATED_INTERRUPT_DECLARATIONS_H'
+        '#define PIE_BLOCK_GENERATED_INTERRUPT_DECLARATIONS_H'
+        '#include "STC32Gxx.h"'
+    ) + ($interruptDeclarations.GetEnumerator() |
+        Sort-Object Name |
+        ForEach-Object { $_.Value }) + @(
+        '#endif'
+    )
+    Set-Content -LiteralPath $generatedInterruptHeader -Value $interruptHeaderLines -Encoding ascii
+
     $libraryRelativeSources = if ($Name -eq 'FRICTION_CALIBRATION') {
         $sourceBoards + $sourceDrivers
     } elseif ($Name -eq 'LCD_SPI_SMOKE') {
@@ -176,6 +208,10 @@ function Invoke-ProjectBuild([string]$Name) {
         }
         $objectName = [IO.Path]::GetFileNameWithoutExtension($source) + '.rel'
         $object = Join-Path $output $objectName
+        $compileExtraArgs = @()
+        if ([IO.Path]::GetFullPath($source) -eq [IO.Path]::GetFullPath((Join-Path $projectRoot 'src\main.c')) -and $interruptDeclarations.Count -gt 0) {
+            $compileExtraArgs = @('--include', $generatedInterruptHeader)
+        }
         $compileArgs = @(
             '-mmcs251',
             '--model-large',
@@ -184,7 +220,7 @@ function Invoke-ProjectBuild([string]$Name) {
             '--constseg', 'CSEG',
             '--no-xinit-opt',
             '-c'
-        ) + $includeArgs + $projectIncludeArgs + @('-o', $object, $source)
+        ) + $includeArgs + $projectIncludeArgs + $compileExtraArgs + @('-o', $object, $source)
         Invoke-Sdcc $compileArgs
         if ($libraryRelativeSources -contains $relativeSource) {
             $libraryObjects += $object
