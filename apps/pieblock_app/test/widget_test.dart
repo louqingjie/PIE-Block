@@ -8,6 +8,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('新建机器人项目'), findsOneWidget);
     expect(find.text('打开已有项目'), findsOneWidget);
-    expect(find.text('PIE-Block'), findsOneWidget);
+    expect(find.text('RoboMaster机甲大师赛机器人图形化配置集成开发环境'), findsOneWidget);
+    expect(find.bySemanticsLabel('首都师范大学'), findsOneWidget);
   });
 }

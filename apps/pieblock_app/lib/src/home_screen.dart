@@ -177,20 +177,55 @@ class HomeScreen extends ConsumerWidget {
                           ),
                         ),
                         const SizedBox(width: 16),
-                        const Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'PIE-Block',
-                              style: TextStyle(
-                                fontSize: 30,
-                                fontWeight: FontWeight.w800,
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xfff5f9ff),
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(
+                                        color: _brandCyan.withValues(
+                                          alpha: .24,
+                                        ),
+                                      ),
+                                    ),
+                                    child: Image.asset(
+                                      'assets/images/cnu.png',
+                                      height: 34,
+                                      fit: BoxFit.contain,
+                                      filterQuality: FilterQuality.high,
+                                      semanticLabel: '首都师范大学',
+                                    ),
+                                  ),
+                                  const SizedBox(width: 14),
+                                  const Expanded(
+                                    child: Text(
+                                      'RoboMaster机甲大师赛机器人图形化配置集成开发环境',
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 23,
+                                        height: 1.25,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ),
-                            Text('用清晰的步骤配置机器人，生成可靠的控制代码'),
-                          ],
+                              const SizedBox(height: 5),
+                              const Text('用清晰的步骤配置机器人，生成可靠的控制代码'),
+                            ],
+                          ),
                         ),
-                        const Spacer(),
+                        const SizedBox(width: 18),
                         IconButton.filledTonal(
                           onPressed: ref
                               .read(appControllerProvider.notifier)
