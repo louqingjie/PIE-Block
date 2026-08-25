@@ -60,12 +60,6 @@ abstract final class IntelHexValidator {
         message: 'HEX 缺少完整的 0xFF0000 LJMP 复位向量',
       );
     }
-    if (image.bytes.keys.any((address) => address >= 0xff1000)) {
-      return const HexValidationResult(
-        ok: false,
-        message: 'HEX 向量区数据越过 0xFF1000',
-      );
-    }
     return HexValidationResult(
       ok: true,
       message: 'HEX 布局有效，共 ${image.bytes.length} 字节',

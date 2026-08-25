@@ -261,7 +261,7 @@ class FirmwareBuilder {
     final work = Directory(
       p.join(
         _workRoot,
-        '${fingerprintValue.value}.${DateTime.now().microsecondsSinceEpoch}',
+        '${fingerprintValue.value.substring(0, 16)}.${DateTime.now().microsecondsSinceEpoch}',
       ),
     );
     await work.create(recursive: true);
@@ -515,9 +515,17 @@ class FirmwareBuilder {
       Directory(p.join(assets.keil, 'Projects', projectName)),
       Directory(projectDir),
     );
+    final mdk = p.join(projectDir, 'MDK');
+    for (final generated in [
+      Directory(p.join(mdk, 'Objects')),
+      Directory(p.join(mdk, 'Listings')),
+    ]) {
+      if (await generated.exists()) await generated.delete(recursive: true);
+    }
+    final logFile = File(p.join(mdk, 'pie_block_build.log'));
+    if (await logFile.exists()) await logFile.delete();
     await File(p.join(projectDir, 'USER', 'src', 'main.c'))
         .writeAsString(request.sourceCode);
-    final mdk = p.join(projectDir, 'MDK');
     final projectFile = p.join(mdk, 'Project_Template.uvproj');
     final logPath = p.join(mdk, 'pie_block_build.log');
     emit(BuildStage.compiling, '正在调用 Keil C251 全量重建…');

@@ -12,6 +12,14 @@ const _validHex =
     ':03000000020000FB\n'
     ':00000001FF\n';
 
+const _keilHexWithHighApplicationData =
+    ':0200000400FEFC\n'
+    ':0100000001FE\n'
+    ':0200000400FFFB\n'
+    ':03000000020000FB\n'
+    ':01200000AA35\n'
+    ':00000001FF\n';
+
 void main() {
   test('应用 HEX 校验要求 FE 和 FF 两个区域', () async {
     final directory = await Directory.systemTemp.createTemp('pieblock-hex-');
@@ -60,6 +68,16 @@ void main() {
       )).ok,
       isFalse,
     );
+  });
+
+  test('Keil 允许在 0xFF1000 之后的应用区放置数据', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'pieblock-keil-hex-',
+    );
+    addTearDown(() => directory.delete(recursive: true));
+    final hex = File('${directory.path}/firmware.hex')
+      ..writeAsStringSync(_keilHexWithHighApplicationData);
+    expect((await IntelHexValidator.validateApplication(hex.path)).ok, isTrue);
   });
 
   test('构建指纹随源码、类型和编译器变化', () {
