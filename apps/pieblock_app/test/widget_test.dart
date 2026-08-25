@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -134,6 +136,11 @@ class _FakeDeployController extends DeployController {
 }
 
 class _FakeMusicPreview implements MusicPreviewService {
+  Completer<void>? playGate;
+  int _request = 0;
+  int? auditionPitch;
+  final auditionedPitches = <int>[];
+  int stopPitchCalls = 0;
   @override
   bool paused = false;
   @override
@@ -144,13 +151,32 @@ class _FakeMusicPreview implements MusicPreviewService {
   Future<void> dispose() async {}
   @override
   Future<void> play(MusicConfig config, {required bool looping}) async {
+    final request = ++_request;
+    await playGate?.future;
+    if (request != _request) return;
     playing = true;
   }
+
   @override
   Future<void> stop() async {
+    _request++;
     playing = false;
     position = Duration.zero;
+    await stopPitch();
   }
+
+  @override
+  Future<void> startPitch(int midiPitch) async {
+    auditionPitch = midiPitch;
+    auditionedPitches.add(midiPitch);
+  }
+
+  @override
+  Future<void> stopPitch() async {
+    auditionPitch = null;
+    stopPitchCalls++;
+  }
+
   @override
   Future<void> togglePause() async {
     paused = !paused;
@@ -246,6 +272,7 @@ ProjectDocument _musicDocument() {
           durationTicks: 480,
           primary: false,
         ),
+        MusicNote(id: 'later', pitch: 64, startTick: 5760, durationTicks: 480),
       ],
     ),
   );
@@ -333,6 +360,212 @@ void main() {
     await tester.tap(find.byTooltip('停止'));
     await tester.pump();
     expect(preview.playing, isFalse);
+  });
+
+  testWidgets('音乐卷帘冻结表头琴键、显示滚动条并默认定位 C4', (tester) async {
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1100, 800);
+    final preview = _FakeMusicPreview();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _StaticProjectController(_musicDocument(), 0),
+          ),
+        ],
+        child: MaterialApp(
+          home: Scaffold(body: MusicEditorPage(previewService: preview)),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final scrollbar = tester.widget<Scrollbar>(
+      find.byKey(const ValueKey('music-horizontal-scrollbar')),
+    );
+    expect(scrollbar.thumbVisibility, isTrue);
+    expect(scrollbar.trackVisibility, isTrue);
+    expect(find.text('逐页跟随'), findsOneWidget);
+
+    final scrollables = tester.widgetList<Scrollable>(find.byType(Scrollable));
+    final horizontal = scrollables.firstWhere(
+      (scrollable) => scrollable.axisDirection == AxisDirection.right,
+    );
+    final vertical = scrollables.firstWhere(
+      (scrollable) => scrollable.axisDirection == AxisDirection.down,
+    );
+    final horizontalState = tester.state<ScrollableState>(
+      find.byWidget(horizontal),
+    );
+    final verticalState = tester.state<ScrollableState>(
+      find.byWidget(vertical),
+    );
+    expect(verticalState.position.pixels, greaterThan(500));
+
+    final header = find.byKey(const ValueKey('music-header-lane'));
+    final piano = find.byKey(const ValueKey('music-piano-keys'));
+    final headerOrigin = tester.getTopLeft(header);
+    final pianoOrigin = tester.getTopLeft(piano);
+    horizontalState.position.jumpTo(300);
+    verticalState.position.jumpTo(verticalState.position.pixels + 100);
+    await tester.pump();
+    expect(tester.getTopLeft(header), headerOrigin);
+    expect(tester.getTopLeft(piano), pianoOrigin);
+  });
+
+  testWidgets('音乐卷帘在 360 宽度下保持冻结区域和跟随控件可用', (tester) async {
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(360, 640);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _StaticProjectController(_musicDocument(), 0),
+          ),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: MusicEditorPage(previewService: _FakeMusicPreview()),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('music-header-lane')), findsOneWidget);
+    expect(find.byKey(const ValueKey('music-piano-keys')), findsOneWidget);
+    expect(find.text('固定视窗'), findsOneWidget);
+    expect(find.text('逐页跟随'), findsOneWidget);
+    expect(find.text('固定跟随'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('钢琴按住发声、滑动换音并在松开时停止', (tester) async {
+    final preview = _FakeMusicPreview();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _StaticProjectController(_musicDocument(), 0),
+          ),
+        ],
+        child: MaterialApp(
+          home: Scaffold(body: MusicEditorPage(previewService: preview)),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final pianoRect = tester.getRect(
+      find.byKey(const ValueKey('music-piano-keys')),
+    );
+    final gesture = await tester.startGesture(pianoRect.center);
+    await tester.pump();
+    expect(preview.auditionedPitches.last, 60);
+    await gesture.moveBy(const Offset(0, -18));
+    await tester.pump();
+    expect(preview.auditionedPitches.last, 61);
+    await gesture.up();
+    await tester.pump();
+    expect(preview.auditionPitch, isNull);
+    expect(preview.stopPitchCalls, greaterThan(0));
+  });
+
+  testWidgets('加载中停止会作废播放请求', (tester) async {
+    final preview = _FakeMusicPreview()..playGate = Completer<void>();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _StaticProjectController(_musicDocument(), 0),
+          ),
+        ],
+        child: MaterialApp(
+          home: Scaffold(body: MusicEditorPage(previewService: preview)),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('播放'));
+    await tester.pump();
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    await tester.tap(find.byTooltip('停止'));
+    await tester.pump();
+    preview.playGate!.complete();
+    await tester.pumpAndSettle();
+    expect(preview.playing, isFalse);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+  });
+
+  testWidgets('播放视窗支持固定、逐页和当前播放头锚定跟随', (tester) async {
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1100, 800);
+    final preview = _FakeMusicPreview();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _StaticProjectController(_musicDocument(), 0),
+          ),
+        ],
+        child: MaterialApp(
+          home: Scaffold(body: MusicEditorPage(previewService: preview)),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final horizontal = tester
+        .widgetList<Scrollable>(find.byType(Scrollable))
+        .firstWhere(
+          (scrollable) => scrollable.axisDirection == AxisDirection.right,
+        );
+    final horizontalState = tester.state<ScrollableState>(
+      find.byWidget(horizontal),
+    );
+
+    await tester.tap(find.byTooltip('播放'));
+    await tester.pump();
+    preview.position = const Duration(seconds: 5);
+    await tester.pump(const Duration(milliseconds: 60));
+    expect(horizontalState.position.pixels, greaterThan(0));
+
+    await tester.tap(find.text('固定视窗'));
+    await tester.pump();
+    horizontalState.position.jumpTo(0);
+    preview.position = const Duration(seconds: 6);
+    await tester.pump(const Duration(milliseconds: 60));
+    expect(horizontalState.position.pixels, 0);
+
+    await tester.tap(find.text('固定跟随'));
+    await tester.pump();
+    final viewportCenter = horizontalState.position.viewportDimension / 2;
+    final playheadAtSixSeconds = 12 * 120.0;
+    expect(
+      playheadAtSixSeconds - horizontalState.position.pixels,
+      closeTo(viewportCenter, 1),
+    );
+    preview.position = const Duration(milliseconds: 5500);
+    await tester.pump(const Duration(milliseconds: 60));
+    final playheadAtFiveAndHalfSeconds = 11 * 120.0;
+    expect(
+      playheadAtFiveAndHalfSeconds - horizontalState.position.pixels,
+      closeTo(viewportCenter, 1),
+    );
+    await tester.tap(find.byTooltip('停止'));
+    await tester.pump();
   });
 
   testWidgets('新建项目可浏览保存位置', (tester) async {

@@ -19,6 +19,8 @@ const _midiTypes = XTypeGroup(
 
 enum _MusicTool { select, pencil, erase, pan }
 
+enum MusicViewportMode { fixed, paged, anchored }
+
 class MusicEditorPage extends ConsumerStatefulWidget {
   MusicEditorPage({super.key, MusicPreviewService? previewService})
     : previewService = previewService ?? SoloudMusicPreview();
@@ -31,6 +33,7 @@ class MusicEditorPage extends ConsumerStatefulWidget {
 class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
   static const _rowHeight = 18.0, _keysWidth = 72.0, _eventLane = 48.0;
   _MusicTool _tool = _MusicTool.select;
+  MusicViewportMode _viewportMode = MusicViewportMode.paged;
   int _snapDivisor = 4;
   double _zoom = 1;
   final _selected = <String>{};
@@ -43,6 +46,12 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
   MusicNote? _clipboard;
   Timer? _positionTimer;
   int _playheadTick = 0;
+  int _transportRequest = 0;
+  bool _isLoading = false, _isPlaying = false, _isPaused = false;
+  bool _initialPitchCentered = false;
+  double? _followAnchorX;
+  double? _lastViewportWidth;
+  int? _auditionPointer, _auditionPitch;
 
   MusicConfig get _config =>
       ref.read(appControllerProvider).document!.config as MusicConfig;
@@ -53,10 +62,11 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
 
   @override
   void dispose() {
+    _transportRequest++;
     _positionTimer?.cancel();
     _horizontalScroll.dispose();
     _verticalScroll.dispose();
-    widget.previewService.dispose();
+    unawaited(widget.previewService.dispose());
     super.dispose();
   }
 
@@ -91,8 +101,8 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
       _snapDivisor == 0 ? tick : (tick / _snapTicks).round() * _snapTicks;
 
   Rect _noteRect(MusicNote note) => Rect.fromLTWH(
-    _keysWidth + note.startTick / _config.ticksPerQuarter * _pixelsPerQuarter,
-    _eventLane + (127 - note.pitch) * _rowHeight + 1,
+    note.startTick / _config.ticksPerQuarter * _pixelsPerQuarter,
+    (127 - note.pitch) * _rowHeight + 1,
     math.max(
       8,
       note.durationTicks / _config.ticksPerQuarter * _pixelsPerQuarter,
@@ -106,6 +116,10 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
     }
     return null;
   }
+
+  double _tickX(int tick) => tick / _config.ticksPerQuarter * _pixelsPerQuarter;
+
+  int _pitchAtY(double y) => (127 - (y / _rowHeight).floor()).clamp(1, 127);
 
   bool _overlapsPrimary(MusicNote candidate) {
     return _config.notes.any(
@@ -147,7 +161,7 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
       }
       return;
     }
-    if (_tool != _MusicTool.pencil || details.localPosition.dx < _keysWidth) {
+    if (_tool != _MusicTool.pencil) {
       _selected.clear();
       setState(() {});
       return;
@@ -155,15 +169,11 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
     final tick = math.max(
       0,
       _snap(
-        ((details.localPosition.dx - _keysWidth) /
-                _pixelsPerQuarter *
-                _config.ticksPerQuarter)
+        (details.localPosition.dx / _pixelsPerQuarter * _config.ticksPerQuarter)
             .round(),
       ),
     );
-    final pitch =
-        (127 - ((details.localPosition.dy - _eventLane) / _rowHeight).floor())
-            .clamp(1, 127);
+    final pitch = _pitchAtY(details.localPosition.dy);
     final note = MusicNote(
       id: 'n${DateTime.now().microsecondsSinceEpoch}',
       pitch: pitch,
@@ -253,9 +263,7 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
       );
       next = original.copyWith(durationTicks: math.max(_snapTicks, duration));
     } else {
-      final pitch =
-          (127 - ((details.localPosition.dy - _eventLane) / _rowHeight).floor())
-              .clamp(1, 127);
+      final pitch = _pitchAtY(details.localPosition.dy);
       next = original.copyWith(
         startTick: math.max(0, original.startTick + tickDelta),
         pitch: pitch,
@@ -380,14 +388,51 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
           .showSnackBar(SnackBar(content: Text(errors.first.message)));
       return;
     }
+    final request = ++_transportRequest;
+    _positionTimer?.cancel();
+    setState(() {
+      _isLoading = true;
+      _isPlaying = false;
+      _isPaused = false;
+    });
+    if (_viewportMode == MusicViewportMode.anchored) {
+      _captureFollowAnchor();
+    }
     await widget.previewService.play(_config, looping: _loopPreview);
+    if (!mounted || request != _transportRequest) return;
+    if (!widget.previewService.playing) {
+      setState(() => _isLoading = false);
+      return;
+    }
+    setState(() {
+      _isLoading = false;
+      _isPlaying = true;
+      _isPaused = false;
+    });
     _positionTimer?.cancel();
     _positionTimer = Timer.periodic(const Duration(milliseconds: 50), (_) {
       if (!mounted) return;
+      if (!widget.previewService.playing) {
+        _positionTimer?.cancel();
+        setState(() {
+          _isPlaying = false;
+          _isPaused = false;
+        });
+        return;
+      }
       final micros = widget.previewService.position.inMicroseconds;
-      setState(() => _playheadTick = _tickAtMicros(micros));
+      final previous = _playheadTick;
+      final next = _tickAtMicros(micros);
+      setState(() => _playheadTick = next);
+      _followPlayhead(previousTick: previous);
     });
-    setState(() {});
+  }
+
+  Future<void> _togglePause() async {
+    if (!_isPlaying) return;
+    await widget.previewService.togglePause();
+    if (!mounted) return;
+    setState(() => _isPaused = widget.previewService.paused);
   }
 
   int _tickAtMicros(int micros) {
@@ -408,9 +453,264 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
   }
 
   Future<void> _stop() async {
+    _transportRequest++;
     _positionTimer?.cancel();
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+        _isPlaying = false;
+        _isPaused = false;
+        _playheadTick = 0;
+        _auditionPointer = null;
+        _auditionPitch = null;
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _followPlayhead(previousTick: null);
+      });
+    }
     await widget.previewService.stop();
-    setState(() => _playheadTick = 0);
+  }
+
+  void _setViewportMode(MusicViewportMode mode) {
+    setState(() {
+      _viewportMode = mode;
+      _followAnchorX = null;
+    });
+    if (mode == MusicViewportMode.anchored) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _captureFollowAnchor();
+      });
+    } else if (mode == MusicViewportMode.paged) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _followPlayhead(previousTick: null);
+      });
+    }
+  }
+
+  void _captureFollowAnchor() {
+    if (!_horizontalScroll.hasClients) return;
+    final position = _horizontalScroll.position;
+    final width = position.viewportDimension;
+    if (width <= 0) return;
+    final playheadX = _tickX(_playheadTick);
+    final visibleX = playheadX - position.pixels;
+    if (visibleX >= 0 && visibleX <= width) {
+      _followAnchorX = visibleX;
+      return;
+    }
+    _followAnchorX = width / 2;
+    _jumpHorizontal(playheadX - _followAnchorX!);
+  }
+
+  void _followPlayhead({required int? previousTick}) {
+    if (!_horizontalScroll.hasClients ||
+        _viewportMode == MusicViewportMode.fixed) {
+      return;
+    }
+    final position = _horizontalScroll.position;
+    final width = position.viewportDimension;
+    if (width <= 0) return;
+    final playheadX = _tickX(_playheadTick);
+    if (_viewportMode == MusicViewportMode.anchored) {
+      var anchor = _followAnchorX;
+      if (anchor == null || anchor < 0 || anchor > width) {
+        anchor = width / 2;
+        _followAnchorX = anchor;
+      }
+      _jumpHorizontal(playheadX - anchor);
+      return;
+    }
+    final looped = previousTick != null && _playheadTick < previousTick;
+    if (looped ||
+        playheadX < position.pixels ||
+        playheadX >= position.pixels + width) {
+      _jumpHorizontal((playheadX / width).floor() * width);
+    }
+  }
+
+  void _jumpHorizontal(double target) {
+    if (!_horizontalScroll.hasClients) return;
+    final position = _horizontalScroll.position;
+    _horizontalScroll.jumpTo(
+      target.clamp(position.minScrollExtent, position.maxScrollExtent),
+    );
+  }
+
+  void _centerInitialPitch() {
+    if (_initialPitchCentered || !_verticalScroll.hasClients) return;
+    final position = _verticalScroll.position;
+    if (position.viewportDimension <= 0) return;
+    final c4Center = (127 - 60 + .5) * _rowHeight;
+    _verticalScroll.jumpTo(
+      (c4Center - position.viewportDimension / 2).clamp(
+        position.minScrollExtent,
+        position.maxScrollExtent,
+      ),
+    );
+    _initialPitchCentered = true;
+  }
+
+  int _pitchAtPianoPosition(double localY) => _pitchAtY(
+    localY + (_verticalScroll.hasClients ? _verticalScroll.offset : 0),
+  );
+
+  void _pianoDown(PointerDownEvent event) {
+    _auditionPointer = event.pointer;
+    _auditionAt(event.localPosition.dy);
+  }
+
+  void _pianoMove(PointerMoveEvent event) {
+    if (_auditionPointer == event.pointer) _auditionAt(event.localPosition.dy);
+  }
+
+  void _auditionAt(double localY) {
+    final pitch = _pitchAtPianoPosition(localY);
+    if (pitch == _auditionPitch) return;
+    setState(() => _auditionPitch = pitch);
+    unawaited(widget.previewService.startPitch(pitch));
+  }
+
+  void _pianoUp(PointerEvent event) {
+    if (_auditionPointer != event.pointer) return;
+    setState(() {
+      _auditionPointer = null;
+      _auditionPitch = null;
+    });
+    unawaited(widget.previewService.stopPitch());
+  }
+
+  Widget _rollViewport(MusicConfig config, Size timelineSize) {
+    final repaint = Listenable.merge([_horizontalScroll, _verticalScroll]);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final viewportWidth = math.max(0.0, constraints.maxWidth - _keysWidth);
+        if (_lastViewportWidth != viewportWidth) {
+          _lastViewportWidth = viewportWidth;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted || _viewportMode != MusicViewportMode.anchored) return;
+            if (_followAnchorX == null || _followAnchorX! > viewportWidth) {
+              _followAnchorX = viewportWidth / 2;
+            }
+            _followPlayhead(previousTick: null);
+          });
+        }
+        return Column(
+          children: [
+            SizedBox(
+              height: _eventLane,
+              child: Row(
+                children: [
+                  SizedBox(
+                    key: const ValueKey('music-roll-corner'),
+                    width: _keysWidth,
+                    child: const _RollCorner(),
+                  ),
+                  Expanded(
+                    child: AnimatedBuilder(
+                      animation: repaint,
+                      builder: (context, child) => CustomPaint(
+                        key: const ValueKey('music-header-lane'),
+                        size: Size.infinite,
+                        painter: _EventLanePainter(
+                          config: config,
+                          pixelsPerQuarter: _pixelsPerQuarter,
+                          horizontalOffset: _horizontalScroll.hasClients
+                              ? _horizontalScroll.offset
+                              : 0,
+                          playheadTick: _playheadTick,
+                          contentWidth: timelineSize.width,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: _keysWidth,
+                    child: Listener(
+                      key: const ValueKey('music-piano-keys'),
+                      behavior: HitTestBehavior.opaque,
+                      onPointerDown: _pianoDown,
+                      onPointerMove: _pianoMove,
+                      onPointerUp: _pianoUp,
+                      onPointerCancel: _pianoUp,
+                      child: AnimatedBuilder(
+                        animation: repaint,
+                        builder: (context, child) => CustomPaint(
+                          size: Size.infinite,
+                          painter: _PianoKeysPainter(
+                            rowHeight: _rowHeight,
+                            verticalOffset: _verticalScroll.hasClients
+                                ? _verticalScroll.offset
+                                : 0,
+                            auditionPitch: _auditionPitch,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Scrollbar(
+                      key: const ValueKey('music-horizontal-scrollbar'),
+                      controller: _horizontalScroll,
+                      thumbVisibility: true,
+                      trackVisibility: true,
+                      interactive: true,
+                      scrollbarOrientation: ScrollbarOrientation.bottom,
+                      notificationPredicate: (notification) =>
+                          notification.metrics.axis == Axis.horizontal,
+                      child: SingleChildScrollView(
+                        controller: _horizontalScroll,
+                        scrollDirection: Axis.horizontal,
+                        child: Scrollbar(
+                          controller: _verticalScroll,
+                          thumbVisibility: true,
+                          notificationPredicate: (notification) =>
+                              notification.metrics.axis == Axis.vertical,
+                          child: SingleChildScrollView(
+                            controller: _verticalScroll,
+                            child: GestureDetector(
+                              key: const ValueKey('music-note-grid'),
+                              behavior: HitTestBehavior.opaque,
+                              onTapDown: _tap,
+                              onPanStart: _panStart,
+                              onPanUpdate: _panUpdate,
+                              onPanEnd: _panEnd,
+                              child: CustomPaint(
+                                size: timelineSize,
+                                painter: _PianoRollPainter(
+                                  config: config,
+                                  selected: Set.of(_selected),
+                                  pixelsPerQuarter: _pixelsPerQuarter,
+                                  rowHeight: _rowHeight,
+                                  playheadTick: _playheadTick,
+                                  marquee:
+                                      _marqueeStart == null ||
+                                          _marqueeEnd == null
+                                      ? null
+                                      : Rect.fromPoints(
+                                          _marqueeStart!,
+                                          _marqueeEnd!,
+                                        ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Future<void> _editTempo({TempoEvent? event}) async {
@@ -538,10 +838,13 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
       (value, note) =>
           math.max(value, note.endTick + config.ticksPerQuarter * 4),
     );
-    final canvasSize = Size(
-      _keysWidth + maxTick / config.ticksPerQuarter * _pixelsPerQuarter,
-      _eventLane + 127 * _rowHeight,
+    final timelineSize = Size(
+      maxTick / config.ticksPerQuarter * _pixelsPerQuarter,
+      127 * _rowHeight,
     );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _centerInitialPitch();
+    });
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.keyZ, control: true):
@@ -628,14 +931,17 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
                     IconButton(
                       onPressed: _play,
                       tooltip: '播放',
-                      icon: const Icon(Icons.play_arrow),
+                      icon: _isLoading
+                          ? const SizedBox.square(
+                              dimension: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.play_arrow),
                     ),
                     IconButton(
-                      onPressed: widget.previewService.playing
-                          ? widget.previewService.togglePause
-                          : null,
+                      onPressed: _isPlaying ? _togglePause : null,
                       tooltip: '暂停/继续',
-                      icon: const Icon(Icons.pause),
+                      icon: Icon(_isPaused ? Icons.play_arrow : Icons.pause),
                     ),
                     IconButton(
                       onPressed: _stop,
@@ -647,6 +953,28 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
                       selected: _loopPreview,
                       onSelected: (value) =>
                           setState(() => _loopPreview = value),
+                    ),
+                    SegmentedButton<MusicViewportMode>(
+                      segments: const [
+                        ButtonSegment(
+                          value: MusicViewportMode.fixed,
+                          icon: Icon(Icons.crop_free),
+                          label: Text('固定视窗'),
+                        ),
+                        ButtonSegment(
+                          value: MusicViewportMode.paged,
+                          icon: Icon(Icons.auto_stories_outlined),
+                          label: Text('逐页跟随'),
+                        ),
+                        ButtonSegment(
+                          value: MusicViewportMode.anchored,
+                          icon: Icon(Icons.vertical_align_center),
+                          label: Text('固定跟随'),
+                        ),
+                      ],
+                      selected: {_viewportMode},
+                      onSelectionChanged: (value) =>
+                          _setViewportMode(value.first),
                     ),
                     MenuAnchor(
                       menuChildren: [
@@ -702,47 +1030,21 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
                         max: 3,
                         divisions: 10,
                         label: '${(_zoom * 100).round()}%',
-                        onChanged: (value) => setState(() => _zoom = value),
+                        onChanged: (value) {
+                          setState(() => _zoom = value);
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (mounted) {
+                              _followPlayhead(previousTick: null);
+                            }
+                          });
+                        },
                       ),
                     ),
                   ],
                 ),
               ),
             ),
-            Expanded(
-              child: Scrollbar(
-                controller: _horizontalScroll,
-                child: SingleChildScrollView(
-                  controller: _horizontalScroll,
-                  scrollDirection: Axis.horizontal,
-                  child: SingleChildScrollView(
-                    controller: _verticalScroll,
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTapDown: _tap,
-                      onPanStart: _panStart,
-                      onPanUpdate: _panUpdate,
-                      onPanEnd: _panEnd,
-                      child: CustomPaint(
-                        size: canvasSize,
-                        painter: _PianoRollPainter(
-                          config: config,
-                          selected: Set.of(_selected),
-                          pixelsPerQuarter: _pixelsPerQuarter,
-                          rowHeight: _rowHeight,
-                          keysWidth: _keysWidth,
-                          eventLane: _eventLane,
-                          playheadTick: _playheadTick,
-                          marquee: _marqueeStart == null || _marqueeEnd == null
-                              ? null
-                              : Rect.fromPoints(_marqueeStart!, _marqueeEnd!),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
+            Expanded(child: _rollViewport(config, timelineSize)),
           ],
         ),
       ),
@@ -750,96 +1052,58 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
   }
 }
 
-class _PianoRollPainter extends CustomPainter {
-  const _PianoRollPainter({
+class _RollCorner extends StatelessWidget {
+  const _RollCorner();
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: const BoxDecoration(
+      color: Color(0xff171b20),
+      border: Border(
+        right: BorderSide(color: Colors.white24),
+        bottom: BorderSide(color: Colors.white24),
+      ),
+    ),
+    child: const Center(
+      child: Text(
+        'BPM / 拍号',
+        style: TextStyle(color: Colors.white70, fontSize: 10),
+      ),
+    ),
+  );
+}
+
+class _EventLanePainter extends CustomPainter {
+  const _EventLanePainter({
     required this.config,
-    required this.selected,
     required this.pixelsPerQuarter,
-    required this.rowHeight,
-    required this.keysWidth,
-    required this.eventLane,
+    required this.horizontalOffset,
     required this.playheadTick,
-    required this.marquee,
+    required this.contentWidth,
   });
+
   final MusicConfig config;
-  final Set<String> selected;
-  final double pixelsPerQuarter, rowHeight, keysWidth, eventLane;
+  final double pixelsPerQuarter, horizontalOffset, contentWidth;
   final int playheadTick;
-  final Rect? marquee;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final dark = const Color(0xff20252b), light = const Color(0xff2b3138);
-    canvas.drawRect(Offset.zero & size, Paint()..color = dark);
     canvas.drawRect(
-      Rect.fromLTWH(0, 0, size.width, eventLane),
+      Offset.zero & size,
       Paint()..color = const Color(0xff171b20),
     );
-    const black = {1, 3, 6, 8, 10};
-    for (var pitch = 1; pitch <= 127; pitch++) {
-      final y = eventLane + (127 - pitch) * rowHeight;
-      final pitchClass = pitch % 12;
-      canvas.drawRect(
-        Rect.fromLTWH(0, y, size.width, rowHeight),
-        Paint()..color = black.contains(pitchClass) ? dark : light,
-      );
-      canvas.drawLine(
-        Offset(0, y),
-        Offset(size.width, y),
-        Paint()..color = Colors.white10,
-      );
-      canvas.drawRect(
-        Rect.fromLTWH(0, y, keysWidth, rowHeight),
-        Paint()
-          ..color = black.contains(pitchClass)
-              ? const Color(0xff111418)
-              : const Color(0xffd7dce1),
-      );
-      if (pitchClass == 0) {
-        final painter = TextPainter(
-          text: TextSpan(
-            text: 'C${pitch ~/ 12 - 1}',
-            style: TextStyle(
-              fontSize: 10,
-              color: black.contains(pitchClass) ? Colors.white : Colors.black87,
-            ),
-          ),
-          textDirection: TextDirection.ltr,
-        )..layout();
-        painter.paint(canvas, Offset(6, y + 2));
-      }
-    }
-    final maxTick =
-        ((size.width - keysWidth) / pixelsPerQuarter * config.ticksPerQuarter)
-            .ceil();
-    final meters = config.timeSignatureEvents.isEmpty
-        ? const [TimeSignatureEvent(tick: 0, numerator: 4, denominator: 4)]
-        : config.timeSignatureEvents;
-    for (var meterIndex = 0; meterIndex < meters.length; meterIndex++) {
-      final meter = meters[meterIndex];
-      final segmentEnd = meterIndex + 1 < meters.length
-          ? meters[meterIndex + 1].tick
-          : maxTick;
-      final denominator = meter.denominator > 0 ? meter.denominator : 4;
-      final numerator = math.max(1, meter.numerator);
-      final beatTicks = config.ticksPerQuarter * 4 / denominator;
-      final barTicks = beatTicks * numerator;
-      for (
-        var tick = meter.tick.toDouble();
-        tick <= segmentEnd;
-        tick += beatTicks
-      ) {
-        final x = keysWidth + tick / config.ticksPerQuarter * pixelsPerQuarter;
-        final strong = ((tick - meter.tick) % barTicks).abs() < .01;
-        final gridPaint = Paint()
-          ..color = strong ? Colors.white38 : Colors.white12
-          ..strokeWidth = strong ? 1.5 : 1;
-        canvas.drawLine(Offset(x, 0), Offset(x, size.height), gridPaint);
-      }
-    }
+    canvas.save();
+    canvas.translate(-horizontalOffset, 0);
+    _paintTimeGrid(
+      canvas,
+      config,
+      pixelsPerQuarter,
+      contentWidth,
+      size.height,
+      header: true,
+    );
     for (final event in config.tempoEvents) {
-      final x =
-          keysWidth + event.tick / config.ticksPerQuarter * pixelsPerQuarter;
+      final x = event.tick / config.ticksPerQuarter * pixelsPerQuarter;
       final label = TextPainter(
         text: TextSpan(
           text: '${event.bpm.toStringAsFixed(0)} BPM',
@@ -850,8 +1114,7 @@ class _PianoRollPainter extends CustomPainter {
       label.paint(canvas, Offset(x + 3, 3));
     }
     for (final event in config.timeSignatureEvents) {
-      final x =
-          keysWidth + event.tick / config.ticksPerQuarter * pixelsPerQuarter;
+      final x = event.tick / config.ticksPerQuarter * pixelsPerQuarter;
       final label = TextPainter(
         text: TextSpan(
           text: '${event.numerator}/${event.denominator}',
@@ -861,6 +1124,172 @@ class _PianoRollPainter extends CustomPainter {
       )..layout();
       label.paint(canvas, Offset(x + 3, 24));
     }
+    final playheadX = playheadTick / config.ticksPerQuarter * pixelsPerQuarter;
+    canvas.drawLine(
+      Offset(playheadX, 0),
+      Offset(playheadX, size.height),
+      Paint()
+        ..color = const Color(0xffef685d)
+        ..strokeWidth = 2,
+    );
+    canvas.restore();
+    canvas.drawLine(
+      Offset(0, size.height - .5),
+      Offset(size.width, size.height - .5),
+      Paint()..color = Colors.white24,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _EventLanePainter oldDelegate) =>
+      oldDelegate.config != config ||
+      oldDelegate.pixelsPerQuarter != pixelsPerQuarter ||
+      oldDelegate.horizontalOffset != horizontalOffset ||
+      oldDelegate.playheadTick != playheadTick ||
+      oldDelegate.contentWidth != contentWidth;
+}
+
+class _PianoKeysPainter extends CustomPainter {
+  const _PianoKeysPainter({
+    required this.rowHeight,
+    required this.verticalOffset,
+    required this.auditionPitch,
+  });
+
+  final double rowHeight, verticalOffset;
+  final int? auditionPitch;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.drawRect(
+      Offset.zero & size,
+      Paint()..color = const Color(0xff111418),
+    );
+    canvas.save();
+    canvas.translate(0, -verticalOffset);
+    const black = {1, 3, 6, 8, 10};
+    for (var pitch = 1; pitch <= 127; pitch++) {
+      final y = (127 - pitch) * rowHeight;
+      final pitchClass = pitch % 12;
+      final active = pitch == auditionPitch;
+      canvas.drawRect(
+        Rect.fromLTWH(0, y, size.width, rowHeight),
+        Paint()
+          ..color = active
+              ? const Color(0xffffc857)
+              : black.contains(pitchClass)
+              ? const Color(0xff111418)
+              : const Color(0xffd7dce1),
+      );
+      canvas.drawLine(
+        Offset(0, y),
+        Offset(size.width, y),
+        Paint()..color = Colors.black38,
+      );
+      if (pitchClass == 0) {
+        final painter = TextPainter(
+          text: TextSpan(
+            text: 'C${pitch ~/ 12 - 1}',
+            style: TextStyle(
+              fontSize: 10,
+              color: active || !black.contains(pitchClass)
+                  ? Colors.black87
+                  : Colors.white,
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        painter.paint(canvas, Offset(6, y + 2));
+      }
+    }
+    canvas.restore();
+    canvas.drawLine(
+      Offset(size.width - .5, 0),
+      Offset(size.width - .5, size.height),
+      Paint()..color = Colors.white24,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _PianoKeysPainter oldDelegate) =>
+      oldDelegate.rowHeight != rowHeight ||
+      oldDelegate.verticalOffset != verticalOffset ||
+      oldDelegate.auditionPitch != auditionPitch;
+}
+
+void _paintTimeGrid(
+  Canvas canvas,
+  MusicConfig config,
+  double pixelsPerQuarter,
+  double contentWidth,
+  double height, {
+  bool header = false,
+}) {
+  final maxTick = (contentWidth / pixelsPerQuarter * config.ticksPerQuarter)
+      .ceil();
+  final meters = config.timeSignatureEvents.isEmpty
+      ? const [TimeSignatureEvent(tick: 0, numerator: 4, denominator: 4)]
+      : config.timeSignatureEvents;
+  for (var meterIndex = 0; meterIndex < meters.length; meterIndex++) {
+    final meter = meters[meterIndex];
+    final segmentEnd = meterIndex + 1 < meters.length
+        ? meters[meterIndex + 1].tick
+        : maxTick;
+    final denominator = meter.denominator > 0 ? meter.denominator : 4;
+    final numerator = math.max(1, meter.numerator);
+    final beatTicks = config.ticksPerQuarter * 4 / denominator;
+    final barTicks = beatTicks * numerator;
+    for (
+      var tick = meter.tick.toDouble();
+      tick <= segmentEnd;
+      tick += beatTicks
+    ) {
+      final x = tick / config.ticksPerQuarter * pixelsPerQuarter;
+      final strong = ((tick - meter.tick) % barTicks).abs() < .01;
+      final gridPaint = Paint()
+        ..color = strong
+            ? (header ? Colors.white30 : Colors.white38)
+            : Colors.white12
+        ..strokeWidth = strong ? 1.5 : 1;
+      canvas.drawLine(Offset(x, 0), Offset(x, height), gridPaint);
+    }
+  }
+}
+
+class _PianoRollPainter extends CustomPainter {
+  const _PianoRollPainter({
+    required this.config,
+    required this.selected,
+    required this.pixelsPerQuarter,
+    required this.rowHeight,
+    required this.playheadTick,
+    required this.marquee,
+  });
+  final MusicConfig config;
+  final Set<String> selected;
+  final double pixelsPerQuarter, rowHeight;
+  final int playheadTick;
+  final Rect? marquee;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final dark = const Color(0xff20252b), light = const Color(0xff2b3138);
+    canvas.drawRect(Offset.zero & size, Paint()..color = dark);
+    const black = {1, 3, 6, 8, 10};
+    for (var pitch = 1; pitch <= 127; pitch++) {
+      final y = (127 - pitch) * rowHeight;
+      final pitchClass = pitch % 12;
+      canvas.drawRect(
+        Rect.fromLTWH(0, y, size.width, rowHeight),
+        Paint()..color = black.contains(pitchClass) ? dark : light,
+      );
+      canvas.drawLine(
+        Offset(0, y),
+        Offset(size.width, y),
+        Paint()..color = Colors.white10,
+      );
+    }
+    _paintTimeGrid(canvas, config, pixelsPerQuarter, size.width, size.height);
     for (final note in config.notes.where((note) => !note.primary)) {
       _note(canvas, note, const Color(0x6657c7ff));
     }
@@ -873,8 +1302,7 @@ class _PianoRollPainter extends CustomPainter {
             : const Color(0xff02acc0),
       );
     }
-    final playheadX =
-        keysWidth + playheadTick / config.ticksPerQuarter * pixelsPerQuarter;
+    final playheadX = playheadTick / config.ticksPerQuarter * pixelsPerQuarter;
     canvas.drawLine(
       Offset(playheadX, 0),
       Offset(playheadX, size.height),
@@ -896,8 +1324,8 @@ class _PianoRollPainter extends CustomPainter {
   void _note(Canvas canvas, MusicNote note, Color color) {
     final rect = RRect.fromRectAndRadius(
       Rect.fromLTWH(
-        keysWidth + note.startTick / config.ticksPerQuarter * pixelsPerQuarter,
-        eventLane + (127 - note.pitch) * rowHeight + 1,
+        note.startTick / config.ticksPerQuarter * pixelsPerQuarter,
+        (127 - note.pitch) * rowHeight + 1,
         math.max(
           8,
           note.durationTicks / config.ticksPerQuarter * pixelsPerQuarter,
