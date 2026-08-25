@@ -15,6 +15,7 @@ var _fail: int = 0
 
 func _initialize() -> void:
 	print("=== Windows USB-HID 端口适配验证 ===")
+	_test_copy_from_pck()
 	_test_plugin_deploy()
 	_test_port_duck_interface()
 	print("\n=== 结果: %s ===" % ("全部通过 ✓" if _fail == 0 else "%d 项失败 ✗" % _fail))
@@ -29,7 +30,36 @@ func _check(label: String, ok: bool) -> void:
 		_fail += 1
 
 
-## 1. 插件部署：ensure_hid_plugin_loaded 应在 Windows 上把 dll 备到 user:// 并加载。
+## 1. 单文件导出模拟：资源只存在于 PCK 时，仍能流式部署到实体目录。
+func _test_copy_from_pck() -> void:
+	var tc = Toolchain.new()
+	var test_dir: String = ProjectSettings.globalize_path("user://hid_pck_copy_test")
+	_check("创建 PCK 复制测试目录", DirAccess.make_dir_recursive_absolute(test_dir) == OK)
+	var pck_path: String = test_dir.path_join("fixture.pck")
+	var dst_path: String = test_dir.path_join("deployed.dll")
+	var virtual_path: String = "res://__hid_pck_copy_test__/payload.dll"
+	var physical_virtual_path: String = ProjectSettings.globalize_path(virtual_path)
+	var source_path: String = ProjectSettings.globalize_path(
+		"res://addons/pieblock_usb/win/pieblock_hid.dll")
+
+	var packer := PCKPacker.new()
+	var packed: bool = packer.pck_start(pck_path) == OK
+	packed = packed and packer.add_file(virtual_path, source_path) == OK
+	packed = packed and packer.flush() == OK
+	_check("生成仅含虚拟资源的临时 PCK", packed)
+	if not packed:
+		return
+	_check("PCK 资源没有同名实体文件", not FileAccess.file_exists(physical_virtual_path))
+	_check("挂载临时 PCK", ProjectSettings.load_resource_pack(pck_path))
+	_check("可读取 PCK 内的 DLL", FileAccess.file_exists(virtual_path))
+	var copied: bool = tc._copy_file(virtual_path, dst_path)
+	_check("从 PCK 部署 DLL 成功", copied)
+	if copied:
+		_check("PCK 部署文件校验一致",
+			FileAccess.get_sha256(virtual_path) == FileAccess.get_sha256(dst_path))
+
+
+## 2. 插件部署：ensure_hid_plugin_loaded 应在 Windows 上把 dll 备到 user:// 并加载。
 func _test_plugin_deploy() -> void:
 	var log_lines: PackedStringArray = PackedStringArray()
 	var tc = Toolchain.new(func(line: String) -> void: log_lines.append(line))
@@ -45,7 +75,7 @@ func _test_plugin_deploy() -> void:
 		_check("非 Windows 平台不加载插件", not loaded)
 
 
-## 2. 鸭子接口：无设备时全部安全失败；有设备时 find_device 返回 bool。
+## 3. 鸭子接口：无设备时全部安全失败；有设备时 find_device 返回 bool。
 func _test_port_duck_interface() -> void:
 	var port = UsbPortWindows.new()
 	_check("is_available 与 singleton 一致",

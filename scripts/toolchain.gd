@@ -1103,7 +1103,9 @@ func ensure_hid_plugin_loaded() -> bool:
 	if OS.get_name() != "Windows":
 		return false
 
-	var dll_src: String = to_abs("res://addons/pieblock_usb/win/pieblock_hid.dll")
+	# 必须保留 res:// 虚拟路径。单文件导出后 DLL 位于内嵌 PCK，
+	# globalize_path/DirAccess.copy_absolute 只能处理实体文件，无法从 PCK 读取。
+	var dll_src: String = "res://addons/pieblock_usb/win/pieblock_hid.dll"
 	if not FileAccess.file_exists(dll_src):
 		_emit("[Warn] HID 插件 dll 缺失（%s），使用 Python 兜底路径" % dll_src)
 		return false
@@ -1116,9 +1118,12 @@ func ensure_hid_plugin_loaded() -> bool:
 			return false
 	# 每次都覆盖拷贝：dll 随版本更新，避免旧文件残留导致加载的是过期版本。
 	var dll_dst: String = dst_dir.path_join("pieblock_hid.dll")
-	var copy_err: int = DirAccess.copy_absolute(dll_src, dll_dst)
-	if copy_err != OK:
-		_emit("[Error] HID 插件 dll 部署失败（错误码 %d）" % copy_err)
+	if not _copy_file(dll_src, dll_dst):
+		_emit("[Error] HID 插件 dll 部署失败")
+		return false
+	# 防止磁盘空间不足等情况留下不完整 DLL，避免随后出现含糊的加载失败。
+	if FileAccess.get_sha256(dll_src) != FileAccess.get_sha256(dll_dst):
+		_emit("[Error] HID 插件 dll 部署失败（文件校验不一致，剩余空间%s）" % _space_hint())
 		return false
 
 	var gd_path: String = dst_dir.path_join("pieblock_hid.gdextension")
