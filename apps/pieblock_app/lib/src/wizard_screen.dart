@@ -2628,10 +2628,12 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _prepare());
-    _deviceTimer = Timer.periodic(
-      const Duration(seconds: 1),
-      (_) => ref.read(deployControllerProvider.notifier).refreshDevices(),
-    );
+    if (Platform.isWindows) {
+      _deviceTimer = Timer.periodic(
+        const Duration(seconds: 1),
+        (_) => ref.read(deployControllerProvider.notifier).refreshDevices(),
+      );
+    }
   }
 
   @override
@@ -2642,6 +2644,10 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
 
   Future<void> _prepare() async {
     var app = ref.read(appControllerProvider);
+    if (Platform.isAndroid && app.compiler != CompilerKind.sdcc) {
+      ref.read(appControllerProvider.notifier).setCompiler(CompilerKind.sdcc);
+      app = ref.read(appControllerProvider);
+    }
     if (app.compiler == CompilerKind.keil && app.keilPath == null) {
       final installation = await const ToolchainDiscovery().resolveKeil();
       if (installation != null && mounted) {
@@ -2787,6 +2793,10 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
   }
 
   Future<void> _exportHex() async {
+    if (Platform.isAndroid) {
+      await ref.read(deployControllerProvider.notifier).exportHexOnAndroid();
+      return;
+    }
     final location = await getSaveLocation(
       suggestedName: 'firmware.hex',
       acceptedTypeGroups: const [
@@ -2871,54 +2881,82 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
       _ => '检测到 ${deploy.deviceCount} 块主控板，请只保留一块',
     };
     return _PageFrame(
-      title: '编译与烧录',
-      subtitle: '将当前配置编译为 STC32G12K128 固件，并通过免驱 USB-HID 写入主控板。',
+      title: Platform.isAndroid ? '编译固件' : '编译与烧录',
+      subtitle: Platform.isAndroid
+          ? deploy.compilerAvailable
+                ? '使用内置 SDCC 离线编译 STC32G12K128 固件，并导出 Intel HEX。'
+                : '当前安装包未启用 Android 原生编译；项目配置与代码生成仍可正常使用。'
+          : '将当前配置编译为 STC32G12K128 固件，并通过免驱 USB-HID 写入主控板。',
       child: Column(
         children: [
           _Section(
             title: '编译器',
-            subtitle: '内置 SDCC 可完全离线使用；Keil 使用本机已安装的 C251。',
+            subtitle: Platform.isAndroid
+                ? deploy.compilerAvailable
+                      ? 'Android 使用随应用发布的原生 SDCC C251，不需要联网。'
+                      : '原生编译安全门禁尚未通过，编译入口已禁用。'
+                : '内置 SDCC 可完全离线使用；Keil 使用本机已安装的 C251。',
             children: [
-              _AdaptiveRow(
-                children: [
-                  Expanded(
-                    child: DropdownButtonFormField<CompilerKind>(
-                      initialValue: app.compiler,
-                      decoration: const InputDecoration(labelText: '本地编译器'),
-                      items: const [
-                        DropdownMenuItem(
-                          value: CompilerKind.sdcc,
-                          child: Text('内置 SDCC C251'),
-                        ),
-                        DropdownMenuItem(
-                          value: CompilerKind.keil,
-                          child: Text('本地 Keil C251'),
-                        ),
-                      ],
-                      onChanged: deploy.busy
-                          ? null
-                          : (value) async {
-                              if (value == null) return;
-                              ref
-                                  .read(appControllerProvider.notifier)
-                                  .setCompiler(value);
-                              await _prepare();
-                            },
-                    ),
+              if (Platform.isAndroid)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(
+                    deploy.compilerAvailable
+                        ? Icons.memory_outlined
+                        : Icons.warning_amber_rounded,
+                    color: deploy.compilerAvailable
+                        ? null
+                        : Theme.of(context).colorScheme.error,
                   ),
-                  if (app.compiler == CompilerKind.keil) ...[
-                    const SizedBox(width: 12),
-                    OutlinedButton.icon(
-                      onPressed: deploy.busy ? null : _chooseKeil,
-                      icon: const Icon(Icons.folder_open),
-                      label: const Text('选择 Keil 目录'),
+                  title: const Text('内置 SDCC C251'),
+                  subtitle: Text(
+                    deploy.compilerAvailable
+                        ? 'NDK 原生库 · arm64-v8a / x86_64'
+                        : '当前安装包未包含可用的原生编译流水线',
+                  ),
+                )
+              else ...[
+                _AdaptiveRow(
+                  children: [
+                    Expanded(
+                      child: DropdownButtonFormField<CompilerKind>(
+                        initialValue: app.compiler,
+                        decoration: const InputDecoration(labelText: '本地编译器'),
+                        items: const [
+                          DropdownMenuItem(
+                            value: CompilerKind.sdcc,
+                            child: Text('内置 SDCC C251'),
+                          ),
+                          DropdownMenuItem(
+                            value: CompilerKind.keil,
+                            child: Text('本地 Keil C251'),
+                          ),
+                        ],
+                        onChanged: deploy.busy
+                            ? null
+                            : (value) async {
+                                if (value == null) return;
+                                ref
+                                    .read(appControllerProvider.notifier)
+                                    .setCompiler(value);
+                                await _prepare();
+                              },
+                      ),
                     ),
+                    if (app.compiler == CompilerKind.keil) ...[
+                      const SizedBox(width: 12),
+                      OutlinedButton.icon(
+                        onPressed: deploy.busy ? null : _chooseKeil,
+                        icon: const Icon(Icons.folder_open),
+                        label: const Text('选择 Keil 目录'),
+                      ),
+                    ],
                   ],
+                ),
+                if (app.compiler == CompilerKind.keil) ...[
+                  const SizedBox(height: 10),
+                  Text(app.keilPath ?? '尚未指定 Keil 安装目录'),
                 ],
-              ),
-              if (app.compiler == CompilerKind.keil) ...[
-                const SizedBox(height: 10),
-                Text(app.keilPath ?? '尚未指定 Keil 安装目录'),
               ],
             ],
           ),
@@ -2951,17 +2989,24 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
                 spacing: 10,
                 runSpacing: 10,
                 children: [
-                  FilledButton.icon(
-                    onPressed: deploy.busy ? null : _primaryAction,
-                    icon: Icon(
-                      artifact == null
-                          ? Icons.rocket_launch_outlined
-                          : Icons.system_update_alt,
+                  if (Platform.isWindows)
+                    FilledButton.icon(
+                      onPressed: deploy.busy ? null : _primaryAction,
+                      icon: Icon(
+                        artifact == null
+                            ? Icons.rocket_launch_outlined
+                            : Icons.system_update_alt,
+                      ),
+                      label: Text(artifact == null ? '编译并烧录' : '烧录当前固件'),
                     ),
-                    label: Text(artifact == null ? '编译并烧录' : '烧录当前固件'),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: deploy.busy ? null : _build,
+                  (Platform.isAndroid
+                      ? FilledButton.icon
+                      : OutlinedButton.icon)(
+                    onPressed:
+                        deploy.busy ||
+                            (Platform.isAndroid && !deploy.compilerAvailable)
+                        ? null
+                        : _build,
                     icon: const Icon(Icons.build_outlined),
                     label: const Text('仅编译'),
                   ),
@@ -2980,7 +3025,7 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
                       icon: const Icon(Icons.stop_circle_outlined),
                       label: const Text('取消任务'),
                     ),
-                  if (deploy.licenseFailure)
+                  if (Platform.isWindows && deploy.licenseFailure)
                     TextButton.icon(
                       onPressed: _applyLicense,
                       icon: const Icon(Icons.key_outlined),
@@ -2990,39 +3035,41 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          _Section(
-            title: '主控板 USB-HID',
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    deploy.deviceCount == 1 ? Icons.usb : Icons.usb_off,
-                    color: deploy.deviceCount == 1
-                        ? Colors.green
-                        : deploy.deviceCount > 1
-                        ? Theme.of(context).colorScheme.error
-                        : null,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(child: Text('$deviceText（VID 34BF / PID 1001）')),
-                  IconButton(
-                    tooltip: '重新检测',
-                    onPressed: deploy.busy
-                        ? null
-                        : ref
-                              .read(deployControllerProvider.notifier)
-                              .refreshDevices,
-                    icon: const Icon(Icons.refresh),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              const _InfoBanner(
-                '未检测到时，请关闭四个供电开关，将主控板断电后重新连接 USB。烧录成功后 HID 设备自动消失是正常现象。',
-              ),
-            ],
-          ),
+          if (Platform.isWindows) ...[
+            const SizedBox(height: 16),
+            _Section(
+              title: '主控板 USB-HID',
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      deploy.deviceCount == 1 ? Icons.usb : Icons.usb_off,
+                      color: deploy.deviceCount == 1
+                          ? Colors.green
+                          : deploy.deviceCount > 1
+                          ? Theme.of(context).colorScheme.error
+                          : null,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(child: Text('$deviceText（VID 34BF / PID 1001）')),
+                    IconButton(
+                      tooltip: '重新检测',
+                      onPressed: deploy.busy
+                          ? null
+                          : ref
+                                .read(deployControllerProvider.notifier)
+                                .refreshDevices,
+                      icon: const Icon(Icons.refresh),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                const _InfoBanner(
+                  '未检测到时，请关闭四个供电开关，将主控板断电后重新连接 USB。烧录成功后 HID 设备自动消失是正常现象。',
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 16),
           _Section(
             title: '进度与日志',

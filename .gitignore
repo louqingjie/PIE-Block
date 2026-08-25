@@ -58,6 +58,8 @@ node_modules/
 
 # Flutter / Dart
 .dart_tool/
+.dart-test/
+.android-test/
 .flutter-plugins
 .flutter-plugins-dependencies
 **/build/

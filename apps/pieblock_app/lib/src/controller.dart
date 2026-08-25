@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pieblock_core/pieblock_core.dart';
 import 'package:pieblock_toolchain/pieblock_toolchain.dart';
+import 'package:path_provider/path_provider.dart';
 
 enum SaveStatus { idle, saving, saved, failed }
 
@@ -84,9 +85,15 @@ final appControllerProvider = NotifierProvider<AppController, AppState>(
 class AppController extends Notifier<AppState> {
   final _repository = const ProjectRepository();
   Timer? _saveTimer;
-  String get _settingsPath {
+  Future<File> get _settingsFile async {
+    if (Platform.isAndroid) {
+      final directory = await getApplicationSupportDirectory();
+      return File('${directory.path}${Platform.pathSeparator}settings.json');
+    }
     final base = Platform.environment['APPDATA'] ?? Directory.systemTemp.path;
-    return '$base${Platform.pathSeparator}PIE-Block${Platform.pathSeparator}settings.json';
+    return File(
+      '$base${Platform.pathSeparator}PIE-Block${Platform.pathSeparator}settings.json',
+    );
   }
 
   @override
@@ -98,7 +105,7 @@ class AppController extends Notifier<AppState> {
 
   Future<void> _loadSettings() async {
     try {
-      final file = File(_settingsPath);
+      final file = await _settingsFile;
       if (!await file.exists()) return;
       final json = jsonDecode(await file.readAsString()) as Map;
       final recent = (json['recent'] as List? ?? [])
@@ -109,11 +116,12 @@ class AppController extends Notifier<AppState> {
       final mode =
           ThemeMode.values.where((e) => e.name == json['theme']).firstOrNull ??
           ThemeMode.system;
-      final compiler =
+      final storedCompiler =
           CompilerKind.values
               .where((value) => value.name == json['compiler'])
               .firstOrNull ??
           CompilerKind.sdcc;
+      final compiler = Platform.isAndroid ? CompilerKind.sdcc : storedCompiler;
       state = state.copyWith(
         recentPaths: recent,
         themeMode: mode,
@@ -125,7 +133,7 @@ class AppController extends Notifier<AppState> {
   }
 
   Future<void> _saveSettings() async {
-    final file = File(_settingsPath);
+    final file = await _settingsFile;
     await file.parent.create(recursive: true);
     await file.writeAsString(
       jsonEncode({

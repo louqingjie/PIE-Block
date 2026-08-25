@@ -1,5 +1,5 @@
 name: pieblock_app
-description: PIE-Block Windows 分步式机器人代码生成器。
+description: PIE-Block 跨平台分步式机器人代码生成器。
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -41,8 +41,12 @@ dependencies:
     path: ../../packages/pieblock_core
   pieblock_toolchain:
     path: ../../packages/pieblock_toolchain
+  pieblock_sdcc_native:
+    path: ../../packages/pieblock_sdcc_native
   pieblock_hid:
     path: ../../packages/pieblock_hid
+  path: ^1.9.1
+  path_provider: ^2.1.5
 
 dev_dependencies:
   flutter_test:

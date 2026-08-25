@@ -1,9 +1,13 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:pieblock_core/pieblock_core.dart';
 import 'package:pieblock_hid/pieblock_hid.dart';
+import 'package:pieblock_sdcc_native/pieblock_sdcc_native.dart';
 import 'package:pieblock_toolchain/pieblock_toolchain.dart';
 
 enum DeployActivity { idle, preparing, building, flashing }
@@ -17,6 +21,7 @@ class DeployState {
     this.deviceCount = 0,
     this.progress,
     this.compilerFingerprint,
+    this.compilerAvailable = true,
     this.licenseFailure = false,
   });
 
@@ -27,6 +32,7 @@ class DeployState {
   final int deviceCount;
   final double? progress;
   final String? compilerFingerprint;
+  final bool compilerAvailable;
   final bool licenseFailure;
 
   bool get busy => activity != DeployActivity.idle;
@@ -42,6 +48,7 @@ class DeployState {
     double? progress,
     bool clearProgress = false,
     String? compilerFingerprint,
+    bool? compilerAvailable,
     bool? licenseFailure,
   }) => DeployState(
     activity: activity ?? this.activity,
@@ -51,6 +58,7 @@ class DeployState {
     deviceCount: deviceCount ?? this.deviceCount,
     progress: clearProgress ? null : progress ?? this.progress,
     compilerFingerprint: compilerFingerprint ?? this.compilerFingerprint,
+    compilerAvailable: compilerAvailable ?? this.compilerAvailable,
     licenseFailure: licenseFailure ?? this.licenseFailure,
   );
 }
@@ -59,7 +67,7 @@ final deployControllerProvider =
     NotifierProvider<DeployController, DeployState>(DeployController.new);
 
 class DeployController extends Notifier<DeployState> {
-  late final FirmwareBuilder _builder;
+  late final Future<FirmwareBuilder> _builderFuture;
   late final HidFlasher _flasher;
   BuildOperation? _buildOperation;
   FlashOperation? _flashOperation;
@@ -68,10 +76,42 @@ class DeployController extends Notifier<DeployState> {
 
   @override
   DeployState build() {
-    _builder = FirmwareBuilder();
+    _builderFuture = _createBuilder();
     _flasher = HidFlasher();
     ref.onDispose(cancelAll);
-    return const DeployState();
+    return DeployState(compilerAvailable: !Platform.isAndroid);
+  }
+
+  static Future<FirmwareBuilder> _createBuilder() async {
+    if (!Platform.isAndroid) return FirmwareBuilder();
+    final support = await getApplicationSupportDirectory();
+    final cache = await getTemporaryDirectory();
+    final runtime = Directory(p.join(support.path, 'runtime'));
+    await runtime.create(recursive: true);
+    final client = NativeSdccClient();
+    const platform = MethodChannel('cn.edu.cnu.pieblock/documents');
+    final nativeInfo = await platform.invokeMapMethod<String, String>(
+      'getSdccNativeInfo',
+    );
+    if (nativeInfo == null ||
+        nativeInfo['abi'] == null ||
+        nativeInfo['sha256'] == null) {
+      throw StateError('无法读取 Android SDCC 原生库信息');
+    }
+    final resourceRoot = client.isAvailable
+        ? await platform.invokeMethod<String>('prepareSdccResources')
+        : null;
+    return FirmwareBuilder(
+      artifacts: BuildArtifactRepository(root: p.join(support.path, 'builds')),
+      runtimeRoot: runtime.path,
+      workRoot: p.join(cache.path, 'builds'),
+      sdccBackend: NativeSdccBackend(
+        resourceRoot: resourceRoot ?? p.join(runtime.path, 'sdcc-unavailable'),
+        librarySha256: nativeInfo['sha256']!,
+        androidAbi: nativeInfo['abi']!,
+        client: client,
+      ),
+    );
   }
 
   Future<void> prepare(
@@ -86,8 +126,9 @@ class DeployController extends Notifier<DeployState> {
       clearMessage: true,
     );
     try {
+      final builder = await _builderFuture;
       final code = CodeGenerator.generate(config);
-      final compilerFingerprint = await _builder.resolveCompilerFingerprint(
+      final compilerFingerprint = await builder.resolveCompilerFingerprint(
         compiler,
         keilRoot: keilRoot,
       );
@@ -98,7 +139,7 @@ class DeployController extends Notifier<DeployState> {
         compilerFingerprint: compilerFingerprint,
         keilRoot: keilRoot,
       );
-      final artifact = await _builder.artifacts.findFresh(
+      final artifact = await builder.artifacts.findFresh(
         FirmwareBuilder.fingerprint(request),
       );
       if (generation != _prepareGeneration) return;
@@ -107,10 +148,11 @@ class DeployController extends Notifier<DeployState> {
         artifact: artifact,
         clearArtifact: artifact == null,
         compilerFingerprint: compilerFingerprint,
+        compilerAvailable: true,
       );
       unawaited(refreshDevices());
       unawaited(
-        _builder.artifacts.prune(
+        builder.artifacts.prune(
           protectedFingerprints: {if (artifact != null) artifact.fingerprint},
         ),
       );
@@ -120,6 +162,7 @@ class DeployController extends Notifier<DeployState> {
         activity: DeployActivity.idle,
         clearArtifact: true,
         message: '$error',
+        compilerAvailable: !Platform.isAndroid,
       );
     }
   }
@@ -138,7 +181,8 @@ class DeployController extends Notifier<DeployState> {
       licenseFailure: false,
     );
     try {
-      final fingerprint = await _builder.resolveCompilerFingerprint(
+      final builder = await _builderFuture;
+      final fingerprint = await builder.resolveCompilerFingerprint(
         compiler,
         keilRoot: keilRoot,
       );
@@ -149,12 +193,13 @@ class DeployController extends Notifier<DeployState> {
         compilerFingerprint: fingerprint,
         keilRoot: keilRoot,
       );
-      final operation = _builder.start(request);
+      final operation = builder.start(request);
       _buildOperation = operation;
       state = state.copyWith(
         activity: DeployActivity.building,
         clearArtifact: true,
         compilerFingerprint: fingerprint,
+        compilerAvailable: true,
       );
       _eventSubscription = operation.events.listen((event) {
         final progress =
@@ -190,6 +235,7 @@ class DeployController extends Notifier<DeployState> {
         activity: DeployActivity.idle,
         clearArtifact: true,
         message: '编译失败：$error',
+        compilerAvailable: !Platform.isAndroid,
         clearProgress: true,
       );
       return false;
@@ -223,7 +269,10 @@ class DeployController extends Notifier<DeployState> {
     await _eventSubscription?.cancel();
     _eventSubscription = null;
     _flashOperation = null;
-    if (result.success) await _builder.artifacts.markFlashed(artifact);
+    if (result.success) {
+      final builder = await _builderFuture;
+      await builder.artifacts.markFlashed(artifact);
+    }
     state = state.copyWith(
       activity: DeployActivity.idle,
       artifact: result.success
@@ -245,7 +294,8 @@ class DeployController extends Notifier<DeployState> {
   Future<bool> exportHex(String path) async {
     final artifact = state.artifact;
     if (artifact == null) return false;
-    final fresh = await _builder.artifacts.findFresh(
+    final builder = await _builderFuture;
+    final fresh = await builder.artifacts.findFresh(
       BuildFingerprint(
         value: artifact.fingerprint,
         sourceHash: artifact.sourceSha256,
@@ -270,6 +320,39 @@ class DeployController extends Notifier<DeployState> {
     return true;
   }
 
+  Future<bool> exportHexOnAndroid() async {
+    final artifact = state.artifact;
+    if (!Platform.isAndroid || artifact == null) return false;
+    final builder = await _builderFuture;
+    final fresh = await builder.artifacts.findFresh(
+      BuildFingerprint(
+        value: artifact.fingerprint,
+        sourceHash: artifact.sourceSha256,
+      ),
+    );
+    if (fresh == null) {
+      state = state.copyWith(
+        clearArtifact: true,
+        message: 'HEX 已丢失、被修改或布局无效，请重新编译',
+      );
+      return false;
+    }
+    try {
+      final saved = await const MethodChannel('cn.edu.cnu.pieblock/documents')
+          .invokeMethod<bool>('saveHex', {
+            'suggestedName': 'firmware.hex',
+            'bytes': await File(fresh.hexPath).readAsBytes(),
+          });
+      state = state.copyWith(message: saved == true ? 'HEX 已导出' : '已取消导出');
+      return saved == true;
+    } on PlatformException catch (error) {
+      state = state.copyWith(
+        message: 'HEX 导出失败：${error.message ?? error.code}',
+      );
+      return false;
+    }
+  }
+
   void cancelAll() {
     _buildOperation?.cancel();
     _flashOperation?.cancel();
@@ -277,6 +360,7 @@ class DeployController extends Notifier<DeployState> {
     _flashOperation = null;
     unawaited(_eventSubscription?.cancel());
     _eventSubscription = null;
+    unawaited(_builderFuture.then((builder) => builder.cancel()));
   }
 }
 
