@@ -13,7 +13,12 @@
 extern "C" {
 #endif
 
-#define PB_SDCC_API_VERSION 4u
+#define PB_SDCC_API_VERSION 5u
+
+typedef enum pb_sdcc_operation_kind {
+  PB_SDCC_OPERATION_COMPILE_UNIT = 1,
+  PB_SDCC_OPERATION_LINK = 2
+} pb_sdcc_operation_kind;
 
 typedef enum pb_sdcc_status {
   PB_SDCC_OK = 0,
@@ -48,15 +53,15 @@ typedef struct pb_sdcc_string_list {
 } pb_sdcc_string_list;
 
 typedef struct pb_sdcc_request {
+  int32_t operation_kind;
   const char *working_directory;
   const char *resource_directory;
   const char *project_kind;
-  const char *main_source_path;
-  const char *interrupt_header_path;
-  pb_sdcc_string_list source_paths;
-  pb_sdcc_string_list library_source_paths;
-  pb_sdcc_string_list compile_arguments;
-  pb_sdcc_string_list link_arguments;
+  const char *source_path;
+  const char *object_output_path;
+  pb_sdcc_string_list object_paths;
+  pb_sdcc_string_list library_object_paths;
+  pb_sdcc_string_list arguments;
   const char *hex_output_path;
   const char *map_output_path;
   const char *log_output_path;

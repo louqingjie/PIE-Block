@@ -14,7 +14,16 @@ typedef void (*pb_sdcc_pipeline_event_fn)(
     const char *file_name,
     const char *message);
 
-int pb_sdcc_pipeline_execute(
+int pb_sdcc_compile_unit(
+    const pb_sdcc_request *request,
+    const atomic_bool *cancel_requested,
+    pb_sdcc_pipeline_event_fn emit,
+    void *emit_context,
+    int *warning_count,
+    char *message,
+    unsigned long message_size);
+
+int pb_sdcc_link(
     const pb_sdcc_request *request,
     const atomic_bool *cancel_requested,
     pb_sdcc_pipeline_event_fn emit,

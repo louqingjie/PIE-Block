@@ -9,17 +9,17 @@ internal object SdccNativeBridge {
     external fun fingerprint(): String
     external fun isAvailable(): Boolean
     external fun start(
+        operationKind: Int,
         workingDirectory: String,
         resourceDirectory: String,
         projectKind: String,
-        mainSourcePath: String,
-        interruptHeaderPath: String,
-        sourcePaths: Array<String>,
-        librarySourcePaths: Array<String>,
-        compileArguments: Array<String>,
-        linkArguments: Array<String>,
-        hexOutputPath: String,
-        mapOutputPath: String,
+        sourcePath: String?,
+        objectOutputPath: String?,
+        objectPaths: Array<String>,
+        libraryObjectPaths: Array<String>,
+        arguments: Array<String>,
+        hexOutputPath: String?,
+        mapOutputPath: String?,
         logOutputPath: String,
     ): Long
     external fun poll(handle: Long): Array<String>?

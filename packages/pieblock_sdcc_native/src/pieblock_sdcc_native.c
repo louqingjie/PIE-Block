@@ -31,19 +31,18 @@
 #endif
 
 typedef struct pb_owned_request {
+  int32_t operation_kind;
   char *working_directory;
   char *resource_directory;
   char *project_kind;
-  char *main_source_path;
-  char *interrupt_header_path;
-  char **source_paths;
-  uint32_t source_count;
-  char **library_source_paths;
-  uint32_t library_source_count;
-  char **compile_arguments;
-  uint32_t compile_argument_count;
-  char **link_arguments;
-  uint32_t link_argument_count;
+  char *source_path;
+  char *object_output_path;
+  char **object_paths;
+  uint32_t object_count;
+  char **library_object_paths;
+  uint32_t library_object_count;
+  char **arguments;
+  uint32_t argument_count;
   char *hex_output_path;
   char *map_output_path;
   char *log_output_path;
@@ -118,14 +117,12 @@ static void pb_free_request(pb_owned_request *request) {
   free(request->working_directory);
   free(request->resource_directory);
   free(request->project_kind);
-  free(request->main_source_path);
-  free(request->interrupt_header_path);
-  pb_free_strings(request->source_paths, request->source_count);
-  pb_free_strings(request->library_source_paths,
-                  request->library_source_count);
-  pb_free_strings(request->compile_arguments,
-                  request->compile_argument_count);
-  pb_free_strings(request->link_arguments, request->link_argument_count);
+  free(request->source_path);
+  free(request->object_output_path);
+  pb_free_strings(request->object_paths, request->object_count);
+  pb_free_strings(request->library_object_paths,
+                  request->library_object_count);
+  pb_free_strings(request->arguments, request->argument_count);
   free(request->hex_output_path);
   free(request->map_output_path);
   free(request->log_output_path);
@@ -133,36 +130,37 @@ static void pb_free_request(pb_owned_request *request) {
 }
 
 static int pb_request_valid(const pb_sdcc_request *request) {
-  return request != NULL && request->working_directory != NULL &&
-         request->resource_directory != NULL && request->project_kind != NULL &&
-         request->main_source_path != NULL &&
-         request->interrupt_header_path != NULL &&
-         request->source_paths.count > 0 &&
-         request->hex_output_path != NULL &&
-         request->map_output_path != NULL && request->log_output_path != NULL &&
-         (request->source_paths.count == 0 ||
-          request->source_paths.items != NULL) &&
-         (request->library_source_paths.count == 0 ||
-          request->library_source_paths.items != NULL) &&
-         (request->compile_arguments.count == 0 ||
-          request->compile_arguments.items != NULL) &&
-         (request->link_arguments.count == 0 ||
-          request->link_arguments.items != NULL);
+  if (request == NULL || request->working_directory == NULL ||
+      request->resource_directory == NULL || request->project_kind == NULL ||
+      request->log_output_path == NULL) return 0;
+  if (request->arguments.count > 0 && request->arguments.items == NULL) return 0;
+  if (request->operation_kind == PB_SDCC_OPERATION_COMPILE_UNIT) {
+    return request->source_path != NULL && request->object_output_path != NULL &&
+           request->object_paths.count == 0 &&
+           request->library_object_paths.count == 0;
+  }
+  if (request->operation_kind == PB_SDCC_OPERATION_LINK) {
+    return request->source_path == NULL && request->object_output_path == NULL &&
+           request->hex_output_path != NULL && request->map_output_path != NULL &&
+           request->object_paths.count > 0 && request->object_paths.items != NULL &&
+           (request->library_object_paths.count == 0 ||
+            request->library_object_paths.items != NULL);
+  }
+  return 0;
 }
 
 static int pb_owned_request_valid(const pb_owned_request *request) {
-  return request != NULL && request->working_directory != NULL &&
-         request->resource_directory != NULL && request->project_kind != NULL &&
-         request->main_source_path != NULL &&
-         request->interrupt_header_path != NULL &&
-         request->hex_output_path != NULL &&
-         request->map_output_path != NULL && request->log_output_path != NULL &&
-         (request->source_count == 0 || request->source_paths != NULL) &&
-         (request->library_source_count == 0 ||
-          request->library_source_paths != NULL) &&
-         (request->compile_argument_count == 0 ||
-          request->compile_arguments != NULL) &&
-         (request->link_argument_count == 0 || request->link_arguments != NULL);
+  if (request == NULL || request->working_directory == NULL ||
+      request->resource_directory == NULL || request->project_kind == NULL ||
+      request->log_output_path == NULL) return 0;
+  if (request->argument_count > 0 && request->arguments == NULL) return 0;
+  if (request->operation_kind == PB_SDCC_OPERATION_COMPILE_UNIT)
+    return request->source_path != NULL && request->object_output_path != NULL;
+  if (request->operation_kind == PB_SDCC_OPERATION_LINK)
+    return request->source_path == NULL && request->object_output_path == NULL &&
+           request->hex_output_path != NULL && request->map_output_path != NULL &&
+           request->object_count > 0 && request->object_paths != NULL;
+  return 0;
 }
 
 static void pb_emit(void *context,
@@ -200,22 +198,19 @@ static void pb_emit(void *context,
 static void *pb_worker(void *context) {
   pb_sdcc_operation *operation = context;
   pb_sdcc_request request = {
+      .operation_kind = operation->request.operation_kind,
       .working_directory = operation->request.working_directory,
       .resource_directory = operation->request.resource_directory,
       .project_kind = operation->request.project_kind,
-      .main_source_path = operation->request.main_source_path,
-      .interrupt_header_path = operation->request.interrupt_header_path,
-      .source_paths = {(const char *const *)operation->request.source_paths,
-                       operation->request.source_count},
-      .library_source_paths = {
-          (const char *const *)operation->request.library_source_paths,
-          operation->request.library_source_count},
-      .compile_arguments = {
-          (const char *const *)operation->request.compile_arguments,
-          operation->request.compile_argument_count},
-      .link_arguments = {
-          (const char *const *)operation->request.link_arguments,
-          operation->request.link_argument_count},
+      .source_path = operation->request.source_path,
+      .object_output_path = operation->request.object_output_path,
+      .object_paths = {(const char *const *)operation->request.object_paths,
+                       operation->request.object_count},
+      .library_object_paths = {
+          (const char *const *)operation->request.library_object_paths,
+          operation->request.library_object_count},
+      .arguments = {(const char *const *)operation->request.arguments,
+                    operation->request.argument_count},
       .hex_output_path = operation->request.hex_output_path,
       .map_output_path = operation->request.map_output_path,
       .log_output_path = operation->request.log_output_path,
@@ -246,13 +241,21 @@ static void *pb_worker(void *context) {
 
   int warnings = 0;
   char message[PB_MESSAGE_CAPACITY] = {0};
-  int result = pb_sdcc_pipeline_execute(&request,
-                                        &operation->cancel_requested,
-                                        pb_emit,
-                                        operation,
-                                        &warnings,
-                                        message,
-                                        sizeof(message));
+  int result = request.operation_kind == PB_SDCC_OPERATION_COMPILE_UNIT
+                   ? pb_sdcc_compile_unit(&request,
+                                          &operation->cancel_requested,
+                                          pb_emit,
+                                          operation,
+                                          &warnings,
+                                          message,
+                                          sizeof(message))
+                   : pb_sdcc_link(&request,
+                                  &operation->cancel_requested,
+                                  pb_emit,
+                                  operation,
+                                  &warnings,
+                                  message,
+                                  sizeof(message));
   fflush(stdout);
   fflush(stderr);
   if (saved_stdout >= 0) {
@@ -267,8 +270,12 @@ static void *pb_worker(void *context) {
   if (atomic_load(&operation->cancel_requested)) {
     result = PB_SDCC_CANCELED;
     snprintf(message, sizeof(message), "%s", "Build canceled");
-    unlink(operation->request.hex_output_path);
-    unlink(operation->request.map_output_path);
+    if (operation->request.object_output_path != NULL)
+      unlink(operation->request.object_output_path);
+    if (operation->request.hex_output_path != NULL)
+      unlink(operation->request.hex_output_path);
+    if (operation->request.map_output_path != NULL)
+      unlink(operation->request.map_output_path);
   }
 
   pthread_mutex_lock(&operation->mutex);
@@ -296,7 +303,7 @@ static void *pb_worker(void *context) {
 uint32_t pb_sdcc_api_version(void) { return PB_SDCC_API_VERSION; }
 
 const char *pb_sdcc_build_fingerprint(void) {
-  return "sdcc-c251:912a589d4080c9cd5c5c1faf871c62dd5023580d;ffi:4;service:1;embedded-host:1;android-abi:"
+  return "sdcc-c251:912a589d4080c9cd5c5c1faf871c62dd5023580d;ffi:5;worker:1;single-phase:1;embedded-host:1;android-abi:"
          PB_SDCC_ANDROID_ABI ";stage-object:" PB_SDCC_STAGE_SHA256
          ";pipeline-enabled:"
 #if PB_SDCC_PIPELINE_ENABLED
@@ -337,22 +344,19 @@ pb_sdcc_status pb_sdcc_start(const pb_sdcc_request *request,
   pthread_mutex_init(&created->mutex, NULL);
   atomic_init(&created->cancel_requested, 0);
   created->status = PB_SDCC_RUNNING;
+  created->request.operation_kind = request->operation_kind;
   created->request.working_directory = pb_copy_string(request->working_directory);
   created->request.resource_directory = pb_copy_string(request->resource_directory);
   created->request.project_kind = pb_copy_string(request->project_kind);
-  created->request.main_source_path = pb_copy_string(request->main_source_path);
-  created->request.interrupt_header_path =
-      pb_copy_string(request->interrupt_header_path);
-  created->request.source_count = request->source_paths.count;
-  created->request.source_paths = pb_copy_strings(&request->source_paths);
-  created->request.library_source_count = request->library_source_paths.count;
-  created->request.library_source_paths =
-      pb_copy_strings(&request->library_source_paths);
-  created->request.compile_argument_count = request->compile_arguments.count;
-  created->request.compile_arguments =
-      pb_copy_strings(&request->compile_arguments);
-  created->request.link_argument_count = request->link_arguments.count;
-  created->request.link_arguments = pb_copy_strings(&request->link_arguments);
+  created->request.source_path = pb_copy_string(request->source_path);
+  created->request.object_output_path = pb_copy_string(request->object_output_path);
+  created->request.object_count = request->object_paths.count;
+  created->request.object_paths = pb_copy_strings(&request->object_paths);
+  created->request.library_object_count = request->library_object_paths.count;
+  created->request.library_object_paths =
+      pb_copy_strings(&request->library_object_paths);
+  created->request.argument_count = request->arguments.count;
+  created->request.arguments = pb_copy_strings(&request->arguments);
   created->request.hex_output_path = pb_copy_string(request->hex_output_path);
   created->request.map_output_path = pb_copy_string(request->map_output_path);
   created->request.log_output_path = pb_copy_string(request->log_output_path);

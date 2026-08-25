@@ -8,15 +8,16 @@ final class PbSdccStringList extends Struct {
 }
 
 final class PbSdccRequest extends Struct {
+  @Int32()
+  external int operationKind;
   external Pointer<Char> workingDirectory;
   external Pointer<Char> resourceDirectory;
   external Pointer<Char> projectKind;
-  external Pointer<Char> mainSourcePath;
-  external Pointer<Char> interruptHeaderPath;
-  external PbSdccStringList sourcePaths;
-  external PbSdccStringList librarySourcePaths;
-  external PbSdccStringList compileArguments;
-  external PbSdccStringList linkArguments;
+  external Pointer<Char> sourcePath;
+  external Pointer<Char> objectOutputPath;
+  external PbSdccStringList objectPaths;
+  external PbSdccStringList libraryObjectPaths;
+  external PbSdccStringList arguments;
   external Pointer<Char> hexOutputPath;
   external Pointer<Char> mapOutputPath;
   external Pointer<Char> logOutputPath;

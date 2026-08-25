@@ -33,6 +33,7 @@ target_compile_definitions(pieblock_sdcc_native PRIVATE
   PB_SDCC_ANDROID_ABI="${ANDROID_ABI}"
   PB_SDCC_STAGES_LINKED=${PB_SDCC_STAGES_LINKED}
   PB_SDCC_STAGE_SHA256="${PB_SDCC_STAGE_SHA256}"
+  $<$<CONFIG:Debug>:PB_SDCC_PIPELINE_ENABLED=1>
 )
 target_compile_options(pieblock_sdcc_native PRIVATE
   -Wall

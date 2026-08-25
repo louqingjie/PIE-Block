@@ -93,15 +93,15 @@ JNIEXPORT jlong JNICALL
 Java_cn_edu_cnu_pieblock_1app_SdccNativeBridge_start(
     JNIEnv *env,
     jobject self,
+    jint operation_kind,
     jstring working_directory,
     jstring resource_directory,
     jstring project_kind,
-    jstring main_source_path,
-    jstring interrupt_header_path,
-    jobjectArray source_paths,
-    jobjectArray library_source_paths,
-    jobjectArray compile_arguments,
-    jobjectArray link_arguments,
+    jstring source_path,
+    jstring object_output_path,
+    jobjectArray object_paths,
+    jobjectArray library_object_paths,
+    jobjectArray arguments,
     jstring hex_output_path,
     jstring map_output_path,
     jstring log_output_path) {
@@ -109,53 +109,61 @@ Java_cn_edu_cnu_pieblock_1app_SdccNativeBridge_start(
   const char *working = pb_get_string(env, working_directory);
   const char *resource = pb_get_string(env, resource_directory);
   const char *project = pb_get_string(env, project_kind);
-  const char *main_source = pb_get_string(env, main_source_path);
-  const char *interrupt = pb_get_string(env, interrupt_header_path);
+  const char *source = pb_get_string(env, source_path);
+  const char *object_output = pb_get_string(env, object_output_path);
   const char *hex = pb_get_string(env, hex_output_path);
   const char *map = pb_get_string(env, map_output_path);
   const char *log = pb_get_string(env, log_output_path);
-  pb_jni_strings sources = {0};
-  pb_jni_strings library_sources = {0};
-  pb_jni_strings compile = {0};
-  pb_jni_strings link = {0};
+  pb_jni_strings objects = {0};
+  pb_jni_strings library_objects = {0};
+  pb_jni_strings stage_arguments = {0};
   pb_sdcc_operation *operation = NULL;
   pb_sdcc_status status = PB_SDCC_INVALID_ARGUMENT;
-  if (working != NULL && resource != NULL && project != NULL &&
-      main_source != NULL && interrupt != NULL && hex != NULL && map != NULL &&
-      log != NULL && pb_get_strings(env, source_paths, &sources) &&
-      pb_get_strings(env, library_source_paths, &library_sources) &&
-      pb_get_strings(env, compile_arguments, &compile) &&
-      pb_get_strings(env, link_arguments, &link)) {
+  if (working != NULL && resource != NULL && project != NULL && log != NULL &&
+      pb_get_strings(env, object_paths, &objects) &&
+      pb_get_strings(env, library_object_paths, &library_objects) &&
+      pb_get_strings(env, arguments, &stage_arguments)) {
     const pb_sdcc_request request = {
+        .operation_kind = operation_kind,
         .working_directory = working,
         .resource_directory = resource,
         .project_kind = project,
-        .main_source_path = main_source,
-        .interrupt_header_path = interrupt,
-        .source_paths = {sources.values, sources.count},
-        .library_source_paths = {library_sources.values, library_sources.count},
-        .compile_arguments = {compile.values, compile.count},
-        .link_arguments = {link.values, link.count},
+        .source_path = source,
+        .object_output_path = object_output,
+        .object_paths = {objects.values, objects.count},
+        .library_object_paths = {library_objects.values, library_objects.count},
+        .arguments = {stage_arguments.values, stage_arguments.count},
         .hex_output_path = hex,
         .map_output_path = map,
         .log_output_path = log,
     };
     status = pb_sdcc_start(&request, &operation);
   }
-  pb_release_strings(env, &sources);
-  pb_release_strings(env, &library_sources);
-  pb_release_strings(env, &compile);
-  pb_release_strings(env, &link);
+  pb_release_strings(env, &objects);
+  pb_release_strings(env, &library_objects);
+  pb_release_strings(env, &stage_arguments);
   pb_release_string(env, working_directory, working);
   pb_release_string(env, resource_directory, resource);
   pb_release_string(env, project_kind, project);
-  pb_release_string(env, main_source_path, main_source);
-  pb_release_string(env, interrupt_header_path, interrupt);
+  pb_release_string(env, source_path, source);
+  pb_release_string(env, object_output_path, object_output);
   pb_release_string(env, hex_output_path, hex);
   pb_release_string(env, map_output_path, map);
   pb_release_string(env, log_output_path, log);
-  return status == PB_SDCC_OK ? (jlong)(intptr_t)operation
-                              : -(jlong)((int)status + 1);
+  if (status != PB_SDCC_OK) {
+    char message[96];
+    snprintf(message, sizeof(message), "Unable to start native SDCC phase (status %d)",
+             (int)status);
+    jclass exception = (*env)->FindClass(env, "java/lang/IllegalStateException");
+    if (exception != NULL) {
+      (*env)->ThrowNew(env, exception, message);
+      (*env)->DeleteLocalRef(env, exception);
+    }
+    return 0;
+  }
+  /* Android may tag userspace pointers in the high byte. Such a pointer is a
+   * negative Kotlin Long but remains a valid opaque bit pattern. */
+  return (jlong)(intptr_t)operation;
 }
 
 JNIEXPORT jobjectArray JNICALL
