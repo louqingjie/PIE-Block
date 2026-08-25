@@ -5,9 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pieblock_app/main.dart';
 import 'package:pieblock_app/src/controller.dart';
+import 'package:pieblock_app/src/deploy_controller.dart';
 import 'package:pieblock_app/src/home_screen.dart';
 import 'package:pieblock_app/src/wizard_screen.dart';
 import 'package:pieblock_core/pieblock_core.dart';
+import 'package:pieblock_toolchain/pieblock_toolchain.dart';
 import 'package:re_editor/re_editor.dart';
 
 class _FakeProjectFileDialogs extends ProjectFileDialogs {
@@ -83,6 +85,52 @@ class _GeneratedCodeController extends AppController {
   );
 }
 
+class _StaticProjectController extends AppController {
+  _StaticProjectController(this.document, this.step);
+
+  final ProjectDocument document;
+  final int step;
+
+  @override
+  AppState build() => AppState(
+    document: document,
+    step: step,
+    maxVisitedStep: step,
+    saveStatus: SaveStatus.saved,
+  );
+}
+
+class _FakeDeployController extends DeployController {
+  @override
+  DeployState build() => DeployState(
+    artifact: BuildArtifact(
+      hexPath: 'firmware.hex',
+      hexSha256: 'hex',
+      fingerprint: 'fingerprint',
+      sourceSha256: 'source',
+      compiler: CompilerKind.sdcc,
+      compilerFingerprint: 'sdcc-test',
+      templateVersion: 'test',
+      builtAt: DateTime(2026),
+      byteCount: 1024,
+      warningCount: 0,
+    ),
+  );
+
+  @override
+  Future<void> prepare(
+    RobotConfig config,
+    CompilerKind compiler, {
+    String? keilRoot,
+  }) async {}
+
+  @override
+  Future<void> refreshDevices() async {}
+
+  @override
+  void cancelAll() {}
+}
+
 ProjectDocument _infantryDocument() {
   final source = ProjectDocument.create('步兵测试', ProjectKind.infantry);
   return source.copyWith(
@@ -121,6 +169,23 @@ ProjectDocument _infantryDocument() {
   );
 }
 
+ProjectDocument _engineerDocument() {
+  final source = ProjectDocument.create('工程测试', ProjectKind.engineer);
+  return source.copyWith(
+    config: EngineerConfig(
+      pwm: PwmGroupConfig(
+        pwma: PwmFrequency.hz50,
+        pwmb: PwmFrequency.hz10000,
+        pinRoles: const {'P60': PinRole.motor},
+      ),
+      modeCount: 1,
+      modes: [
+        EngineerModeConfig(preserveChassis: true, actions: [ActionMapping()]),
+      ],
+    ),
+  );
+}
+
 void main() {
   testWidgets('启动页展示两个项目入口', (tester) async {
     await tester.pumpWidget(const ProviderScope(child: PieBlockApp()));
@@ -129,6 +194,25 @@ void main() {
     expect(find.text('打开已有项目'), findsOneWidget);
     expect(find.textContaining('RoboMaster'), findsOneWidget);
     expect(find.bySemanticsLabel('首都师范大学'), findsOneWidget);
+  });
+
+  testWidgets('首页和新建项目弹窗在 360 宽度下完整显示', (tester) async {
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(360, 640);
+    await tester.pumpWidget(const ProviderScope(child: PieBlockApp()));
+    await tester.pumpAndSettle();
+
+    expect(find.text('新建机器人项目'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.text('新建项目'));
+    await tester.pumpAndSettle();
+    expect(find.text('浏览'), findsOneWidget);
+    expect(find.text('创建项目'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('新建项目可浏览保存位置', (tester) async {
@@ -522,7 +606,7 @@ void main() {
     debugDefaultTargetPlatformOverride = null;
   });
 
-  testWidgets('代码预览在三种桌面尺寸和双主题下无布局异常', (tester) async {
+  testWidgets('代码预览在响应式尺寸和双主题下无布局异常', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
     addTearDown(() {
       debugDefaultTargetPlatformOverride = null;
@@ -532,8 +616,10 @@ void main() {
     tester.view.devicePixelRatio = 1;
     for (final size in const [
       Size(1600, 900),
-      Size(1280, 720),
       Size(1100, 700),
+      Size(600, 800),
+      Size(412, 915),
+      Size(360, 640),
     ]) {
       for (final brightness in Brightness.values) {
         tester.view.physicalSize = size;
@@ -556,7 +642,7 @@ void main() {
     debugDefaultTargetPlatformOverride = null;
   });
 
-  testWidgets('向导在三种桌面尺寸和双主题下无布局异常', (tester) async {
+  testWidgets('向导在响应式尺寸和双主题下无布局异常', (tester) async {
     addTearDown(() {
       tester.view.resetPhysicalSize();
       tester.view.resetDevicePixelRatio();
@@ -564,8 +650,10 @@ void main() {
     tester.view.devicePixelRatio = 1;
     for (final size in const [
       Size(1600, 900),
-      Size(1280, 720),
       Size(1100, 700),
+      Size(600, 800),
+      Size(412, 915),
+      Size(360, 640),
     ]) {
       for (final brightness in Brightness.values) {
         tester.view.physicalSize = size;
@@ -584,6 +672,58 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
+      }
+    }
+  });
+
+  testWidgets('窄屏覆盖工程 PWM、动作映射、检查和烧录页面', (tester) async {
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(360, 640);
+    final engineer = _engineerDocument();
+    final infantry = _infantryDocument();
+    final pages = [
+      (engineer, 1, 'PWM 与引脚角色'),
+      (engineer, 3, '动作映射'),
+      (infantry, 3, '检查与配置摘要'),
+      (infantry, 5, '编译与烧录'),
+    ];
+
+    for (final brightness in Brightness.values) {
+      for (final page in pages) {
+        await tester.pumpWidget(
+          ProviderScope(
+            key: ValueKey('${brightness.name}-${page.$2}-${page.$3}'),
+            overrides: [
+              appControllerProvider.overrideWith(
+                () => _StaticProjectController(page.$1, page.$2),
+              ),
+              deployControllerProvider.overrideWith(_FakeDeployController.new),
+            ],
+            child: MaterialApp(
+              theme: ThemeData(brightness: brightness, useMaterial3: true),
+              home: const WizardScreen(),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text(page.$3), findsWidgets);
+        expect(find.byType(DropdownButtonFormField<int>), findsWidgets);
+        expect(tester.takeException(), isNull);
+        if (page.$3 == '编译与烧录') {
+          final flash = find.text('烧录当前固件');
+          await tester.ensureVisible(flash);
+          await tester.tap(flash);
+          await tester.pumpAndSettle();
+          expect(find.text('烧录主控板前请确认'), findsOneWidget);
+          expect(find.byType(Image), findsNWidgets(2));
+          expect(tester.takeException(), isNull);
+          await tester.tap(find.text('取消'));
+          await tester.pumpAndSettle();
+        }
       }
     }
   });

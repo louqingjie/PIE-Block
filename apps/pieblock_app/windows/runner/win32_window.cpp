@@ -181,8 +181,8 @@ Win32Window::MessageHandler(HWND hwnd,
   switch (message) {
     case WM_GETMINMAXINFO: {
       auto min_max_info = reinterpret_cast<MINMAXINFO*>(lparam);
-      min_max_info->ptMinTrackSize.x = Scale(1100, FlutterDesktopGetDpiForHWND(hwnd) / 96.0);
-      min_max_info->ptMinTrackSize.y = Scale(700, FlutterDesktopGetDpiForHWND(hwnd) / 96.0);
+      min_max_info->ptMinTrackSize.x = Scale(360, FlutterDesktopGetDpiForHWND(hwnd) / 96.0);
+      min_max_info->ptMinTrackSize.y = Scale(640, FlutterDesktopGetDpiForHWND(hwnd) / 96.0);
       return 0;
     }
     case WM_DESTROY:

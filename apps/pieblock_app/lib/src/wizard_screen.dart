@@ -20,6 +20,43 @@ final _fieldFocusNodes = <String, FocusNode>{};
 final _highlightedField = ValueNotifier<String?>(null);
 Timer? _highlightTimer;
 
+const _compactBreakpoint = 600.0;
+const _wideBreakpoint = 1100.0;
+
+bool _isCompact(BuildContext context) =>
+    MediaQuery.sizeOf(context).width < _compactBreakpoint;
+
+List<Widget> _unflexChildren(List<Widget> children, {double spacing = 12}) {
+  final result = <Widget>[];
+  for (final child in children) {
+    if (child is SizedBox && child.width != null && child.height == null) {
+      continue;
+    }
+    if (result.isNotEmpty) result.add(SizedBox(height: spacing));
+    result.add(child is Expanded ? child.child : child);
+  }
+  return result;
+}
+
+class _AdaptiveRow extends StatelessWidget {
+  const _AdaptiveRow({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      if (constraints.maxWidth < _compactBreakpoint) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: _unflexChildren(children),
+        );
+      }
+      return Row(children: children);
+    },
+  );
+}
+
 Future<void> _confirmCancelOperation(
   BuildContext context,
   WidgetRef ref,
@@ -198,7 +235,7 @@ class _FormRow extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(children: children),
+        _AdaptiveRow(children: children),
         if (issues.isNotEmpty) ...[
           const SizedBox(height: 8),
           DecoratedBox(
@@ -356,9 +393,10 @@ class WizardScreen extends ConsumerWidget {
       });
     }
     final deploy = ref.watch(deployControllerProvider);
+    final compact = _isCompact(context);
     return Scaffold(
       appBar: AppBar(
-        titleSpacing: 20,
+        titleSpacing: compact ? 4 : 20,
         title: Row(
           children: [
             IconButton(
@@ -372,22 +410,29 @@ class WizardScreen extends ConsumerWidget {
               tooltip: '返回项目首页',
               icon: const Icon(Icons.arrow_back),
             ),
-            const SizedBox(width: 8),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  document.name,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-                Text(
-                  document.kind == ProjectKind.infantry ? '步兵项目' : '工程项目',
-                  style: Theme.of(context).textTheme.labelMedium,
-                ),
-              ],
+            SizedBox(width: compact ? 2 : 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    document.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  if (!compact)
+                    Text(
+                      document.kind == ProjectKind.infantry ? '步兵项目' : '工程项目',
+                      style: Theme.of(context).textTheme.labelMedium,
+                    ),
+                ],
+              ),
             ),
-            const Spacer(),
-            _SaveBadge(state.saveStatus),
+            if (compact)
+              _CompactSaveBadge(state.saveStatus)
+            else
+              _SaveBadge(state.saveStatus),
           ],
         ),
       ),
@@ -407,7 +452,8 @@ class WizardScreen extends ConsumerWidget {
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final wide = constraints.maxWidth >= 1100;
+                final wide = constraints.maxWidth >= _wideBreakpoint;
+                final compact = constraints.maxWidth < _compactBreakpoint;
                 final content = AnimatedSwitcher(
                   duration: const Duration(milliseconds: 180),
                   child: KeyedSubtree(key: ValueKey(state.step), child: page),
@@ -415,7 +461,13 @@ class WizardScreen extends ConsumerWidget {
                 if (!wide) {
                   return Column(
                     children: [
-                      _CompactSteps(steps: steps, selected: state.step),
+                      compact
+                          ? _CompactStepPicker(
+                              steps: steps,
+                              selected: state.step,
+                              busy: deploy.busy,
+                            )
+                          : _CompactSteps(steps: steps, selected: state.step),
                       Expanded(child: content),
                     ],
                   );
@@ -460,45 +512,75 @@ class WizardScreen extends ConsumerWidget {
               },
             ),
           ),
-          Container(
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
-              border: Border(
-                top: BorderSide(
-                  color: Theme.of(context).colorScheme.outlineVariant,
-                ),
-              ),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
-            child: Row(
-              children: [
-                OutlinedButton.icon(
-                  onPressed: state.step > 0 && !deploy.busy
-                      ? () => controller.goToStep(state.step - 1)
-                      : null,
-                  icon: const Icon(Icons.arrow_back),
-                  label: const Text('上一步'),
-                ),
-                const Spacer(),
-                Text(
-                  '${state.step + 1} / ${steps.length}',
-                  style: Theme.of(context).textTheme.labelLarge,
-                ),
-                const Spacer(),
-                FilledButton.icon(
-                  onPressed: state.step < steps.length - 1 && !deploy.busy
-                      ? () => controller.goToStep(state.step + 1)
-                      : null,
-                  icon: const Icon(Icons.arrow_forward),
-                  label: Text(
-                    state.step == controller.reviewStep(document.kind)
-                        ? '生成代码'
-                        : state.step == controller.codeStep(document.kind)
-                        ? '编译与烧录'
-                        : '下一步',
+          SafeArea(
+            top: false,
+            child: Container(
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                border: Border(
+                  top: BorderSide(
+                    color: Theme.of(context).colorScheme.outlineVariant,
                   ),
                 ),
-              ],
+              ),
+              padding: EdgeInsets.symmetric(
+                horizontal: compact ? 12 : 28,
+                vertical: compact ? 8 : 14,
+              ),
+              child: Row(
+                children: [
+                  compact
+                      ? IconButton.outlined(
+                          onPressed: state.step > 0 && !deploy.busy
+                              ? () => controller.goToStep(state.step - 1)
+                              : null,
+                          tooltip: '上一步',
+                          icon: const Icon(Icons.arrow_back),
+                        )
+                      : OutlinedButton.icon(
+                          onPressed: state.step > 0 && !deploy.busy
+                              ? () => controller.goToStep(state.step - 1)
+                              : null,
+                          icon: const Icon(Icons.arrow_back),
+                          label: const Text('上一步'),
+                        ),
+                  const Spacer(),
+                  Text(
+                    '${state.step + 1} / ${steps.length}',
+                    style: Theme.of(context).textTheme.labelLarge,
+                  ),
+                  const Spacer(),
+                  compact
+                      ? IconButton.filled(
+                          onPressed:
+                              state.step < steps.length - 1 && !deploy.busy
+                              ? () => controller.goToStep(state.step + 1)
+                              : null,
+                          tooltip:
+                              state.step == controller.reviewStep(document.kind)
+                              ? '生成代码'
+                              : state.step == controller.codeStep(document.kind)
+                              ? '编译与烧录'
+                              : '下一步',
+                          icon: const Icon(Icons.arrow_forward),
+                        )
+                      : FilledButton.icon(
+                          onPressed:
+                              state.step < steps.length - 1 && !deploy.busy
+                              ? () => controller.goToStep(state.step + 1)
+                              : null,
+                          icon: const Icon(Icons.arrow_forward),
+                          label: Text(
+                            state.step == controller.reviewStep(document.kind)
+                                ? '生成代码'
+                                : state.step ==
+                                      controller.codeStep(document.kind)
+                                ? '编译与烧录'
+                                : '下一步',
+                          ),
+                        ),
+                ],
+              ),
             ),
           ),
         ],
@@ -519,6 +601,25 @@ class _SaveBadge extends StatelessWidget {
       _ => (Icons.cloud_outlined, '等待保存'),
     };
     return Chip(avatar: Icon(icon, size: 17), label: Text(text));
+  }
+}
+
+class _CompactSaveBadge extends StatelessWidget {
+  const _CompactSaveBadge(this.status);
+  final SaveStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final (icon, text) = switch (status) {
+      SaveStatus.saving => (Icons.sync, '保存中'),
+      SaveStatus.saved => (Icons.cloud_done_outlined, '已保存'),
+      SaveStatus.failed => (Icons.cloud_off_outlined, '保存失败'),
+      _ => (Icons.cloud_outlined, '等待保存'),
+    };
+    return Semantics(
+      label: text,
+      child: Tooltip(message: text, child: Icon(icon, size: 22)),
+    );
   }
 }
 
@@ -576,6 +677,53 @@ class _CompactSteps extends ConsumerWidget {
   );
 }
 
+class _CompactStepPicker extends ConsumerWidget {
+  const _CompactStepPicker({
+    required this.steps,
+    required this.selected,
+    required this.busy,
+  });
+
+  final List<String> steps;
+  final int selected;
+  final bool busy;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final maxStep = ref.watch(appControllerProvider).maxVisitedStep + 1;
+    return Material(
+      color: Theme.of(context).colorScheme.surface,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+        child: DropdownButtonFormField<int>(
+          initialValue: selected,
+          isExpanded: true,
+          decoration: InputDecoration(
+            labelText: '当前步骤 · ${selected + 1} / ${steps.length}',
+            prefixIcon: const Icon(Icons.route_outlined),
+            isDense: true,
+          ),
+          items: [
+            for (var i = 0; i < steps.length; i++)
+              DropdownMenuItem(
+                value: i,
+                enabled: !busy && i <= maxStep,
+                child: Text('${i + 1}. ${steps[i]}'),
+              ),
+          ],
+          onChanged: busy
+              ? null
+              : (step) {
+                  if (step != null && step <= maxStep) {
+                    ref.read(appControllerProvider.notifier).goToStep(step);
+                  }
+                },
+        ),
+      ),
+    );
+  }
+}
+
 class _PageFrame extends ConsumerWidget {
   const _PageFrame({
     required this.title,
@@ -595,8 +743,14 @@ class _PageFrame extends ConsumerWidget {
               .visibleIssues
               .where((issue) => issue.stepId == stepId)
               .toList();
+    final compact = _isCompact(context);
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(32, 26, 32, 40),
+      padding: EdgeInsets.fromLTRB(
+        compact ? 16 : 32,
+        compact ? 18 : 26,
+        compact ? 16 : 32,
+        40 + MediaQuery.viewInsetsOf(context).bottom,
+      ),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 980),
@@ -679,7 +833,7 @@ class _Section extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Card(
     child: Padding(
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.all(_isCompact(context) ? 16 : 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -941,7 +1095,7 @@ class _PwmPage extends ConsumerWidget {
           _Section(
             title: '分组频率',
             children: [
-              Row(
+              _AdaptiveRow(
                 children: [
                   for (final item in [
                     ('PWMA · P60/P62/P64/P66', pwm.pwma, true),
@@ -994,75 +1148,79 @@ class _PwmPage extends ConsumerWidget {
           _Section(
             title: '引脚输出角色',
             children: [
-              Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                children: [
-                  for (final pin in [...expansionPins, ...mainServoPins])
-                    SizedBox(
-                      width: 280,
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: _FieldAnchor(
-                              path: 'pwm.pin_roles.$pin',
-                              child: DropdownButtonFormField<PinRole>(
-                                initialValue: mainServoPins.contains(pin)
-                                    ? PinRole.servo
-                                    : pwm.pinRoles[pin],
-                                decoration: _fieldDecoration(
-                                  ref,
-                                  'pwm.pin_roles.$pin',
-                                  pin,
+              LayoutBuilder(
+                builder: (context, constraints) => Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: [
+                    for (final pin in [...expansionPins, ...mainServoPins])
+                      SizedBox(
+                        width: constraints.maxWidth < _compactBreakpoint
+                            ? constraints.maxWidth
+                            : 280,
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: _FieldAnchor(
+                                path: 'pwm.pin_roles.$pin',
+                                child: DropdownButtonFormField<PinRole>(
+                                  initialValue: mainServoPins.contains(pin)
+                                      ? PinRole.servo
+                                      : pwm.pinRoles[pin],
+                                  decoration: _fieldDecoration(
+                                    ref,
+                                    'pwm.pin_roles.$pin',
+                                    pin,
+                                  ),
+                                  items:
+                                      (mainServoPins.contains(pin)
+                                              ? const [PinRole.servo]
+                                              : PinRole.values)
+                                          .map(
+                                            (r) => DropdownMenuItem(
+                                              value: r,
+                                              child: Text(_roleLabel(r)),
+                                            ),
+                                          )
+                                          .toList(),
+                                  onChanged: mainServoPins.contains(pin)
+                                      ? null
+                                      : (v) {
+                                          final roles = {
+                                            ...pwm.pinRoles,
+                                            pin: v!,
+                                          };
+                                          update(pwm.copyWith(pinRoles: roles));
+                                        },
                                 ),
-                                items:
-                                    (mainServoPins.contains(pin)
-                                            ? const [PinRole.servo]
-                                            : PinRole.values)
-                                        .map(
-                                          (r) => DropdownMenuItem(
-                                            value: r,
-                                            child: Text(_roleLabel(r)),
-                                          ),
-                                        )
-                                        .toList(),
-                                onChanged: mainServoPins.contains(pin)
-                                    ? null
-                                    : (v) {
-                                        final roles = {
-                                          ...pwm.pinRoles,
-                                          pin: v!,
-                                        };
-                                        update(pwm.copyWith(pinRoles: roles));
-                                      },
                               ),
                             ),
-                          ),
-                          if (mainServoPins.contains(pin) ||
-                              pwm.pinRoles[pin] == PinRole.servo) ...[
-                            const SizedBox(width: 8),
-                            SizedBox(
-                              width: 100,
-                              child: _NumberField(
-                                label: '中位°',
-                                fieldPath: 'pwm.servo_mids.$pin',
-                                value: pwm.servoMids[pin],
-                                onChanged: (v) {
-                                  final mids = {...pwm.servoMids};
-                                  if (v == null) {
-                                    mids.remove(pin);
-                                  } else {
-                                    mids[pin] = v;
-                                  }
-                                  update(pwm.copyWith(servoMids: mids));
-                                },
+                            if (mainServoPins.contains(pin) ||
+                                pwm.pinRoles[pin] == PinRole.servo) ...[
+                              const SizedBox(width: 8),
+                              SizedBox(
+                                width: 100,
+                                child: _NumberField(
+                                  label: '中位°',
+                                  fieldPath: 'pwm.servo_mids.$pin',
+                                  value: pwm.servoMids[pin],
+                                  onChanged: (v) {
+                                    final mids = {...pwm.servoMids};
+                                    if (v == null) {
+                                      mids.remove(pin);
+                                    } else {
+                                      mids[pin] = v;
+                                    }
+                                    update(pwm.copyWith(servoMids: mids));
+                                  },
+                                ),
                               ),
-                            ),
+                            ],
                           ],
-                        ],
+                        ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
             ],
           ),
@@ -1852,101 +2010,127 @@ class _ActionRow extends ConsumerWidget {
       ControlMode.direct => role == PinRole.servo ? '目标角度 °' : '占空比 duty',
       null => '参数',
     };
+    final fields = <Widget>[
+      Expanded(
+        child: _FieldAnchor(
+          path: '$fieldPath.key',
+          child: DropdownButtonFormField(
+            initialValue: action.key,
+            decoration: _fieldDecoration(ref, '$fieldPath.key', '按键'),
+            items: visibleInputs
+                .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                .toList(),
+            onChanged: (v) => onChanged(action.copyWith(key: v)),
+          ),
+        ),
+      ),
+      const SizedBox(width: 8),
+      Expanded(
+        child: _FieldAnchor(
+          path: '$fieldPath.direction',
+          child: DropdownButtonFormField(
+            initialValue: action.direction,
+            decoration: _fieldDecoration(ref, '$fieldPath.direction', '方向'),
+            items: Direction.values
+                .map(
+                  (e) => DropdownMenuItem(
+                    value: e,
+                    child: Text(e == Direction.forward ? '正' : '反'),
+                  ),
+                )
+                .toList(),
+            onChanged: (v) => onChanged(action.copyWith(direction: v)),
+          ),
+        ),
+      ),
+      const SizedBox(width: 8),
+      Expanded(
+        child: _FieldAnchor(
+          path: '$fieldPath.mode',
+          child: DropdownButtonFormField(
+            initialValue: action.mode,
+            decoration: _fieldDecoration(ref, '$fieldPath.mode', '控制方式'),
+            items: visibleModes
+                .map(
+                  (e) => DropdownMenuItem(
+                    value: e,
+                    child: Text(switch (e) {
+                      ControlMode.direct => '直接',
+                      ControlMode.incremental => '增量',
+                      ControlMode.speed => '速度',
+                      ControlMode.accelerate => '增速',
+                    }),
+                  ),
+                )
+                .toList(),
+            onChanged: (v) => onChanged(action.copyWith(mode: v)),
+          ),
+        ),
+      ),
+      const SizedBox(width: 8),
+      Expanded(
+        child: _NumberField(
+          label: parameterLabel,
+          fieldPath: '$fieldPath.parameter',
+          value: action.parameter,
+          onChanged: (v) => onChanged(action.copyWith(parameter: v)),
+        ),
+      ),
+      const SizedBox(width: 8),
+      Expanded(
+        child: _FieldAnchor(
+          path: '$fieldPath.pin',
+          child: DropdownButtonFormField(
+            initialValue: action.pin,
+            decoration: _fieldDecoration(ref, '$fieldPath.pin', 'IO'),
+            items: visiblePins
+                .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                .toList(),
+            onChanged: (v) => onChanged(action.copyWith(pin: v)),
+          ),
+        ),
+      ),
+    ];
     return Card(
       color: Theme.of(context).colorScheme.surfaceContainerLow,
       child: Padding(
         padding: const EdgeInsets.all(12),
-        child: Row(
-          children: [
-            Expanded(
-              child: _FieldAnchor(
-                path: '$fieldPath.key',
-                child: DropdownButtonFormField(
-                  initialValue: action.key,
-                  decoration: _fieldDecoration(ref, '$fieldPath.key', '按键'),
-                  items: visibleInputs
-                      .map((e) => DropdownMenuItem(value: e, child: Text(e)))
-                      .toList(),
-                  onChanged: (v) => onChanged(action.copyWith(key: v)),
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _FieldAnchor(
-                path: '$fieldPath.direction',
-                child: DropdownButtonFormField(
-                  initialValue: action.direction,
-                  decoration: _fieldDecoration(
-                    ref,
-                    '$fieldPath.direction',
-                    '方向',
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            if (constraints.maxWidth < _compactBreakpoint) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          '动作配置',
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: onRemove,
+                        tooltip: '删除动作',
+                        icon: const Icon(Icons.delete_outline),
+                      ),
+                    ],
                   ),
-                  items: Direction.values
-                      .map(
-                        (e) => DropdownMenuItem(
-                          value: e,
-                          child: Text(e == Direction.forward ? '正' : '反'),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (v) => onChanged(action.copyWith(direction: v)),
+                  ..._unflexChildren(fields, spacing: 10),
+                ],
+              );
+            }
+            return Row(
+              children: [
+                ...fields,
+                IconButton(
+                  onPressed: onRemove,
+                  tooltip: '删除动作',
+                  icon: const Icon(Icons.delete_outline),
                 ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _FieldAnchor(
-                path: '$fieldPath.mode',
-                child: DropdownButtonFormField(
-                  initialValue: action.mode,
-                  decoration: _fieldDecoration(ref, '$fieldPath.mode', '控制方式'),
-                  items: visibleModes
-                      .map(
-                        (e) => DropdownMenuItem(
-                          value: e,
-                          child: Text(switch (e) {
-                            ControlMode.direct => '直接',
-                            ControlMode.incremental => '增量',
-                            ControlMode.speed => '速度',
-                            ControlMode.accelerate => '增速',
-                          }),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (v) => onChanged(action.copyWith(mode: v)),
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _NumberField(
-                label: parameterLabel,
-                fieldPath: '$fieldPath.parameter',
-                value: action.parameter,
-                onChanged: (v) => onChanged(action.copyWith(parameter: v)),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _FieldAnchor(
-                path: '$fieldPath.pin',
-                child: DropdownButtonFormField(
-                  initialValue: action.pin,
-                  decoration: _fieldDecoration(ref, '$fieldPath.pin', 'IO'),
-                  items: visiblePins
-                      .map((e) => DropdownMenuItem(value: e, child: Text(e)))
-                      .toList(),
-                  onChanged: (v) => onChanged(action.copyWith(pin: v)),
-                ),
-              ),
-            ),
-            IconButton(
-              onPressed: onRemove,
-              tooltip: '删除动作',
-              icon: const Icon(Icons.delete_outline),
-            ),
-          ],
+              ],
+            );
+          },
         ),
       ),
     );
@@ -1977,7 +2161,9 @@ class _ReviewPage extends ConsumerWidget {
           _Section(
             title: '检查结果',
             children: [
-              Row(
+              Wrap(
+                spacing: 12,
+                runSpacing: 10,
                 children: [
                   _CountBadge(
                     icon: Icons.error_outline,
@@ -1985,7 +2171,6 @@ class _ReviewPage extends ConsumerWidget {
                     count: errors,
                     color: Theme.of(context).colorScheme.error,
                   ),
-                  const SizedBox(width: 12),
                   _CountBadge(
                     icon: Icons.warning_amber,
                     label: '警告',
@@ -2135,11 +2320,13 @@ class _CodePageState extends ConsumerState<_CodePage> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('导出 main.c'),
-        content: SizedBox(
-          width: 520,
-          child: TextField(
-            controller: path,
-            decoration: const InputDecoration(labelText: '完整文件路径'),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: SingleChildScrollView(
+            child: TextField(
+              controller: path,
+              decoration: const InputDecoration(labelText: '完整文件路径'),
+            ),
           ),
         ),
         actions: [
@@ -2301,72 +2488,85 @@ class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
       ...(dark ? atomOneDarkTheme : atomOneLightTheme),
       'root': TextStyle(color: foreground, backgroundColor: background),
     };
+    final compact = _isCompact(context);
+    final search = TextField(
+      key: const ValueKey('code-search-field'),
+      controller: _searchController,
+      focusNode: _searchFocusNode,
+      onChanged: _updateSearch,
+      decoration: const InputDecoration(
+        prefixIcon: Icon(Icons.search),
+        labelText: '在代码中搜索',
+      ),
+    );
+    final count = SizedBox(
+      width: 58,
+      child: Text(
+        '${_matchIndex < 0 ? 0 : _matchIndex + 1} / ${_matches.length}',
+        key: const ValueKey('code-search-count'),
+        textAlign: TextAlign.center,
+      ),
+    );
+    final previous = IconButton(
+      onPressed: _matches.isEmpty ? null : () => _selectMatch(_matchIndex - 1),
+      tooltip: '上一个匹配',
+      icon: const Icon(Icons.keyboard_arrow_up),
+    );
+    final next = IconButton(
+      onPressed: _matches.isEmpty ? null : () => _selectMatch(_matchIndex + 1),
+      tooltip: '下一个匹配',
+      icon: const Icon(Icons.keyboard_arrow_down),
+    );
+    final copy = IconButton.filledTonal(
+      onPressed: () {
+        Clipboard.setData(ClipboardData(text: widget.code));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('代码已复制')));
+      },
+      tooltip: '复制全部',
+      icon: const Icon(Icons.copy),
+    );
+    final export = compact
+        ? IconButton.filled(
+            onPressed: widget.onExport,
+            tooltip: '另存为 main.c',
+            icon: const Icon(Icons.save_alt),
+          )
+        : FilledButton.icon(
+            onPressed: widget.onExport,
+            icon: const Icon(Icons.save_alt),
+            label: const Text('另存为'),
+          );
 
     return Column(
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: TextField(
-                key: const ValueKey('code-search-field'),
-                controller: _searchController,
-                focusNode: _searchFocusNode,
-                onChanged: _updateSearch,
-                decoration: const InputDecoration(
-                  prefixIcon: Icon(Icons.search),
-                  labelText: '在代码中搜索',
-                ),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SizedBox(
-                  width: 58,
-                  child: Text(
-                    '${_matchIndex < 0 ? 0 : _matchIndex + 1} / ${_matches.length}',
-                    key: const ValueKey('code-search-count'),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-                IconButton(
-                  onPressed: _matches.isEmpty
-                      ? null
-                      : () => _selectMatch(_matchIndex - 1),
-                  tooltip: '上一个匹配',
-                  icon: const Icon(Icons.keyboard_arrow_up),
-                ),
-                IconButton(
-                  onPressed: _matches.isEmpty
-                      ? null
-                      : () => _selectMatch(_matchIndex + 1),
-                  tooltip: '下一个匹配',
-                  icon: const Icon(Icons.keyboard_arrow_down),
-                ),
-              ],
-            ),
-            const SizedBox(width: 4),
-            IconButton.filledTonal(
-              onPressed: () {
-                Clipboard.setData(ClipboardData(text: widget.code));
-                ScaffoldMessenger.of(context)
-                    .showSnackBar(const SnackBar(content: Text('代码已复制')));
-              },
-              tooltip: '复制全部',
-              icon: const Icon(Icons.copy),
-            ),
-            const SizedBox(width: 8),
-            FilledButton.icon(
-              onPressed: widget.onExport,
-              icon: const Icon(Icons.save_alt),
-              label: const Text('另存为'),
-            ),
-          ],
-        ),
+        if (compact) ...[
+          search,
+          const SizedBox(height: 8),
+          Wrap(
+            alignment: WrapAlignment.end,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 4,
+            runSpacing: 4,
+            children: [count, previous, next, copy, export],
+          ),
+        ] else
+          Row(
+            children: [
+              Expanded(child: search),
+              const SizedBox(width: 10),
+              count,
+              previous,
+              next,
+              const SizedBox(width: 4),
+              copy,
+              const SizedBox(width: 8),
+              export,
+            ],
+          ),
         const SizedBox(height: 16),
         SizedBox(
-          height: 560,
+          height: (MediaQuery.sizeOf(context).height * .55).clamp(280, 560),
           child: CodeEditor(
             key: const ValueKey('generated-code-editor'),
             controller: _editingController,
@@ -2532,8 +2732,8 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           title: const Text('烧录主控板前请确认'),
-          content: SizedBox(
-            width: 760,
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 760),
             child: SingleChildScrollView(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -2547,23 +2747,30 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: _SafetyImage(
-                          asset: 'assets/images/switch_main.png',
-                          caption: '主控板：关闭 SERVO、POWER',
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: _SafetyImage(
-                          asset: 'assets/images/switch_expend.png',
-                          caption: '扩展板：关闭 POWER、BOOSTER',
-                        ),
-                      ),
-                    ],
+                  Builder(
+                    builder: (context) {
+                      const main = _SafetyImage(
+                        asset: 'assets/images/switch_main.png',
+                        caption: '主控板：关闭 SERVO、POWER',
+                      );
+                      const expansion = _SafetyImage(
+                        asset: 'assets/images/switch_expend.png',
+                        caption: '扩展板：关闭 POWER、BOOSTER',
+                      );
+                      if (_isCompact(context)) {
+                        return const Column(
+                          children: [main, SizedBox(height: 16), expansion],
+                        );
+                      }
+                      return const Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(child: main),
+                          SizedBox(width: 16),
+                          Expanded(child: expansion),
+                        ],
+                      );
+                    },
                   ),
                   const SizedBox(height: 12),
                   const Text('主控板必须通过断电后重新上电进入 ISP。烧录完成会自动复位；再次烧录前需要重新断电上电。'),
@@ -2626,21 +2833,23 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('应用 Keil C251 许可证'),
-        content: SizedBox(
-          width: 560,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                '密钥只写入 Keil 的 TOOLS.INI，不会保存到 PIE-Block 设置或构建日志。写入前会创建 .pieblock.bak 备份。',
-              ),
-              const SizedBox(height: 14),
-              TextField(
-                controller: key,
-                decoration: const InputDecoration(labelText: 'C251 许可证密钥'),
-              ),
-            ],
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 560),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '密钥只写入 Keil 的 TOOLS.INI，不会保存到 PIE-Block 设置或构建日志。写入前会创建 .pieblock.bak 备份。',
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: key,
+                  decoration: const InputDecoration(labelText: 'C251 许可证密钥'),
+                ),
+              ],
+            ),
           ),
         ),
         actions: [
@@ -2700,7 +2909,7 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
             title: '编译器',
             subtitle: '内置 SDCC 可完全离线使用；Keil 使用本机已安装的 C251。',
             children: [
-              Row(
+              _AdaptiveRow(
                 children: [
                   Expanded(
                     child: DropdownButtonFormField<CompilerKind>(
