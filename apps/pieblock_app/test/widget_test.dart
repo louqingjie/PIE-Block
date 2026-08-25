@@ -181,6 +181,48 @@ void main() {
     await tester.pump(const Duration(milliseconds: 1500));
   });
 
+  testWidgets('所有数值输入框可连续输入且不会丢失焦点', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(_InfantryStartController.new),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    Future<void> enterOneCharacterAtATime(Finder field, String text) async {
+      await tester.ensureVisible(field);
+      await tester.tap(field);
+      for (var length = 1; length <= text.length; length += 1) {
+        tester.testTextInput.enterText(text.substring(0, length));
+        await tester.pump();
+        expect(tester.testTextInput.isVisible, isTrue);
+        expect(FocusManager.instance.primaryFocus?.hasFocus, isTrue);
+      }
+      expect(find.descendant(of: field, matching: find.text(text)), findsOne);
+    }
+
+    await enterOneCharacterAtATime(
+      find.byKey(const ValueKey('remote.channel')),
+      '36',
+    );
+    await enterOneCharacterAtATime(
+      find.byKey(const ValueKey('remote.deadzone')),
+      '100',
+    );
+    await enterOneCharacterAtATime(
+      find.byKey(const ValueKey('chassis.normal_speed')),
+      '4000',
+    );
+    await enterOneCharacterAtATime(
+      find.byKey(const ValueKey('chassis.sprint_speed')),
+      '8000',
+    );
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
   testWidgets('步兵控制键只有数字按键并包含 LC RC', (tester) async {
     await tester.pumpWidget(
       ProviderScope(

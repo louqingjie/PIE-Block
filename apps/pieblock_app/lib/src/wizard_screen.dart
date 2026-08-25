@@ -657,7 +657,7 @@ class _NumberField extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final field = TextFormField(
-      key: ValueKey('$label:$value'),
+      key: ValueKey(fieldPath ?? label),
       initialValue: value?.toString() ?? '',
       keyboardType: TextInputType.number,
       inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'-?\d*'))],
