@@ -18,7 +18,7 @@ PIE-Block 是面向 W.PIE RoboMaster 校内赛的 Windows 桌面集成开发环�
 - HEX 地址与校验和检查、按内容哈希复用构建结果、导出 HEX
 - STC32G ROM USB-HID 主控板烧录、进度、取消和失败提示
 
-暂不提供云端编译、串口/蓝牙烧录、AI 编辑、3D 仿真、Web、CLI 或 MCP。Android 可配置、编辑、预览和编译音乐项目，但仍不支持 USB-HID 烧录。
+暂不提供云端编译、串口/蓝牙烧录、AI 编辑、3D 仿真、Web、CLI 或 MCP。Android 可配置、编辑、预览和编译音乐项目；步兵/工程离线 SDCC 正在进行多进程真机黄金验证，Release 安全门通过前不对用户开放，且 Android 仍不支持 USB-HID 烧录。
 
 ## 项目结构
 
@@ -27,6 +27,7 @@ apps/pieblock_app/       Flutter Windows 桌面应用
 packages/pieblock_core/  纯 Dart 项目模型、校验器与 C 生成器
 packages/pieblock_toolchain/ Dart SDCC/Keil 构建、HEX 校验与产物缓存
 packages/pieblock_hid/   Dart 烧录协议与 Windows 原生 HID 传输
+packages/pieblock_sdcc_native/ Android C ABI 5 与多进程编译桥接
 stc32g/                  STC32G 固件和硬件参考代码
 stc32g_sdcc/             SDCC C251 支持库与离线测试
 keil_server/             独立云编译服务（不由当前应用调用）
@@ -51,6 +52,7 @@ flutter build windows --release
 三个 Dart 包可独立运行 `dart analyze` 与 `dart test`。Windows Release 产物位于 `apps/pieblock_app/build/windows/x64/runner/Release/`，发布时必须保留整个目录；`pieblock_hid.dll`、`data/pieblock_runtime` 和 `data/flutter_assets` 都是运行所必需的。
 
 编译与主控板接线、开关位置和故障排查见 [Flutter 编译与烧录指南](docs/Flutter编译与烧录指南.md)。
+Android 离线 SDCC 的架构、安全门和验收状态见 [Android SDCC 多进程移植](docs/android-sdcc-port.md)。
 
 ## 项目文件
 
