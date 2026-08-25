@@ -191,7 +191,7 @@ $relocatableArguments = @(
     '-o',
     $stageObject
 ) + @($cppLinkOrder | Where-Object { $_ -ne '-lz' }) +
-    $sdcc + $assembler + $linker + @($runtimeObject)
+    $sdcc + $assembler + $linker
 & $clang @relocatableArguments
 if ($LASTEXITCODE -ne 0) { throw '生成四阶段可重定位对象失败' }
 

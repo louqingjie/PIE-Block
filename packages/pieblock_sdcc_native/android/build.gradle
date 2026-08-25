@@ -20,6 +20,20 @@ rootProject.allprojects {
 
 apply plugin: "com.android.library"
 
+def repositoryRoot = project.projectDir.toPath().resolve("../../..").normalize().toFile()
+def stageRoot = new File(
+    System.getenv("LOCALAPPDATA") ?: System.getProperty("user.home"),
+    "PIE-Block/android-sdcc-stages"
+)
+def preparePieBlockSdccStages = tasks.register("preparePieBlockSdccStages", Exec) {
+    commandLine(
+        "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
+        "-File", new File(repositoryRoot, "tools/build_android_sdcc_stages.ps1"),
+        "-OutputRoot", stageRoot,
+        "-Abi", "all"
+    )
+}
+
 android {
     namespace = "cn.edu.cnu.pieblock_sdcc_native"
     compileSdk = 36
@@ -32,7 +46,7 @@ android {
         }
         externalNativeBuild {
             cmake {
-                arguments "-DANDROID_STL=c++_shared"
+                arguments "-DANDROID_STL=c++_shared", "-DPB_SDCC_STAGE_ROOT=${stageRoot.absolutePath}"
             }
         }
     }
@@ -47,5 +61,11 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+}
+
+tasks.configureEach { task ->
+    if (task.name.startsWith("configureCMake") || task.name.startsWith("buildCMake")) {
+        task.dependsOn(preparePieBlockSdccStages)
     }
 }
