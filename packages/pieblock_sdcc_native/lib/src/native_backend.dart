@@ -62,6 +62,7 @@ class NativeSdccBackend implements SdccCompilerBackend {
       mainSourcePath: mainSource.path,
       interruptHeaderPath: plan.interruptHeaderPath,
       sourcePaths: plan.sourcePaths,
+      librarySourcePaths: plan.librarySourcePaths,
       compileArguments: plan.compileArguments,
       linkArguments: plan.linkArguments,
       hexOutputPath: hexPath,

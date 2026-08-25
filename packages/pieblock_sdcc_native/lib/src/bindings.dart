@@ -14,6 +14,7 @@ final class PbSdccRequest extends Struct {
   external Pointer<Char> mainSourcePath;
   external Pointer<Char> interruptHeaderPath;
   external PbSdccStringList sourcePaths;
+  external PbSdccStringList librarySourcePaths;
   external PbSdccStringList compileArguments;
   external PbSdccStringList linkArguments;
   external Pointer<Char> hexOutputPath;

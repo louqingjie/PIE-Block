@@ -88,7 +88,6 @@ class DeployController extends Notifier<DeployState> {
     final cache = await getTemporaryDirectory();
     final runtime = Directory(p.join(support.path, 'runtime'));
     await runtime.create(recursive: true);
-    final client = NativeSdccClient();
     const platform = MethodChannel('cn.edu.cnu.pieblock/documents');
     final nativeInfo = await platform.invokeMapMethod<String, String>(
       'getSdccNativeInfo',
@@ -98,18 +97,18 @@ class DeployController extends Notifier<DeployState> {
         nativeInfo['sha256'] == null) {
       throw StateError('无法读取 Android SDCC 原生库信息');
     }
-    final resourceRoot = client.isAvailable
-        ? await platform.invokeMethod<String>('prepareSdccResources')
-        : null;
+    final resourceRoot = await platform.invokeMethod<String>(
+      'prepareSdccResources',
+    );
+    if (resourceRoot == null) throw StateError('无法部署 Android SDCC 资源');
     return FirmwareBuilder(
       artifacts: BuildArtifactRepository(root: p.join(support.path, 'builds')),
       runtimeRoot: runtime.path,
       workRoot: p.join(cache.path, 'builds'),
-      sdccBackend: NativeSdccBackend(
-        resourceRoot: resourceRoot ?? p.join(runtime.path, 'sdcc-unavailable'),
+      sdccBackend: AndroidSdccServiceBackend(
+        resourceRoot: resourceRoot,
         librarySha256: nativeInfo['sha256']!,
         androidAbi: nativeInfo['abi']!,
-        client: client,
       ),
     );
   }

@@ -83,8 +83,8 @@ class NativeSdccClient {
                 : throw UnsupportedError('原生 SDCC 仅支持 Android')),
       ) {
     final actual = _bindings.apiVersion();
-    if (actual != 3) {
-      throw StateError('不兼容的 SDCC FFI ABI：$actual（需要 3）');
+    if (actual != 4) {
+      throw StateError('不兼容的 SDCC FFI ABI：$actual（需要 4）');
     }
   }
 
@@ -102,6 +102,7 @@ class NativeSdccClient {
     required String mainSourcePath,
     required String interruptHeaderPath,
     List<String> sourcePaths = const [],
+    List<String> librarySourcePaths = const [],
     List<String> compileArguments = const [],
     List<String> linkArguments = const [],
     required String hexOutputPath,
@@ -116,6 +117,7 @@ class NativeSdccClient {
         'mainSourcePath': mainSourcePath,
         'interruptHeaderPath': interruptHeaderPath,
         'sourcePaths': sourcePaths,
+        'librarySourcePaths': librarySourcePaths,
         'compileArguments': compileArguments,
         'linkArguments': linkArguments,
         'hexOutputPath': hexOutputPath,
@@ -130,6 +132,7 @@ class NativeSdccClient {
       mainSourcePath: mainSourcePath,
       interruptHeaderPath: interruptHeaderPath,
       sourcePaths: sourcePaths,
+      librarySourcePaths: librarySourcePaths,
       compileArguments: compileArguments,
       linkArguments: linkArguments,
       hexOutputPath: hexOutputPath,
@@ -145,6 +148,7 @@ class NativeSdccClient {
     required String mainSourcePath,
     required String interruptHeaderPath,
     List<String> sourcePaths = const [],
+    List<String> librarySourcePaths = const [],
     List<String> compileArguments = const [],
     List<String> linkArguments = const [],
     required String hexOutputPath,
@@ -184,6 +188,9 @@ class NativeSdccClient {
       request.ref.sourcePaths
         ..items = strings(sourcePaths)
         ..count = sourcePaths.length;
+      request.ref.librarySourcePaths
+        ..items = strings(librarySourcePaths)
+        ..count = librarySourcePaths.length;
       request.ref.compileArguments
         ..items = strings(compileArguments)
         ..count = compileArguments.length;
@@ -407,12 +414,17 @@ Future<void> _nativeSdccWorker(List<Object> arguments) async {
         ..mapOutputPath = string(values['mapOutputPath']! as String)
         ..logOutputPath = string(values['logOutputPath']! as String);
       final sourcePaths = (values['sourcePaths']! as List).cast<String>();
+      final librarySourcePaths = (values['librarySourcePaths']! as List)
+          .cast<String>();
       final compileArguments = (values['compileArguments']! as List)
           .cast<String>();
       final linkArguments = (values['linkArguments']! as List).cast<String>();
       request.ref.sourcePaths
         ..items = strings(sourcePaths)
         ..count = sourcePaths.length;
+      request.ref.librarySourcePaths
+        ..items = strings(librarySourcePaths)
+        ..count = librarySourcePaths.length;
       request.ref.compileArguments
         ..items = strings(compileArguments)
         ..count = compileArguments.length;
