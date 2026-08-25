@@ -1,12 +1,15 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pieblock_core/pieblock_core.dart';
 import 'package:pieblock_toolchain/pieblock_toolchain.dart';
 import 'package:path_provider/path_provider.dart';
+
+import 'document_io.dart';
 
 enum SaveStatus { idle, saving, saved, failed }
 
@@ -84,6 +87,7 @@ final appControllerProvider = NotifierProvider<AppController, AppState>(
 
 class AppController extends Notifier<AppState> {
   final _repository = const ProjectRepository();
+  final _documentIo = const AppDocumentIo();
   Timer? _saveTimer;
   Future<File> get _settingsFile async {
     if (Platform.isAndroid) {
@@ -110,7 +114,11 @@ class AppController extends Notifier<AppState> {
       final json = jsonDecode(await file.readAsString()) as Map;
       final recent = (json['recent'] as List? ?? [])
           .map((e) => e.toString())
-          .where((p) => File(p).existsSync())
+          .where(
+            (p) =>
+                Platform.isAndroid && Uri.tryParse(p)?.scheme == 'content' ||
+                File(p).existsSync(),
+          )
           .take(8)
           .toList();
       final mode =
@@ -173,10 +181,16 @@ class AppController extends Notifier<AppState> {
 
   Future<bool> createProject(String path, String name, ProjectKind kind) async {
     try {
-      final normalized = path.toLowerCase().endsWith('.pieproj')
+      final isContentUri = Uri.tryParse(path)?.scheme == 'content';
+      final normalized = isContentUri || path.toLowerCase().endsWith('.pieproj')
           ? path
           : '$path.pieproj';
-      final document = await _repository.create(normalized, name.trim(), kind);
+      final document = ProjectDocument.create(name.trim(), kind);
+      if (isContentUri) {
+        await _documentIo.write(normalized, _encodeDocument(document));
+      } else {
+        await _repository.save(normalized, document);
+      }
       _adopt(document, normalized);
       return true;
     } catch (error) {
@@ -187,8 +201,11 @@ class AppController extends Notifier<AppState> {
 
   Future<bool> openProject(String path) async {
     try {
-      final document = await _repository.open(path.trim());
-      _adopt(document, path.trim());
+      final reference = path.trim();
+      final document = Uri.tryParse(reference)?.scheme == 'content'
+          ? _decodeDocument(await _documentIo.read(reference))
+          : await _repository.open(reference);
+      _adopt(document, reference);
       return true;
     } catch (error) {
       final recent = [...state.recentPaths]..remove(path);
@@ -250,7 +267,11 @@ class AppController extends Notifier<AppState> {
     if (document == null || path == null) return;
     state = state.copyWith(saveStatus: SaveStatus.saving);
     try {
-      await _repository.save(path, document);
+      if (Uri.tryParse(path)?.scheme == 'content') {
+        await _documentIo.write(path, _encodeDocument(document));
+      } else {
+        await _repository.save(path, document);
+      }
       state = state.copyWith(saveStatus: SaveStatus.saved);
     } catch (error) {
       state = state.copyWith(
@@ -258,6 +279,21 @@ class AppController extends Notifier<AppState> {
         message: '自动保存失败：$error',
       );
     }
+  }
+
+  Uint8List _encodeDocument(ProjectDocument document) {
+    final encoder = const JsonEncoder.withIndent('  ');
+    return Uint8List.fromList(
+      utf8.encode('${encoder.convert(document.toJson())}\n'),
+    );
+  }
+
+  ProjectDocument _decodeDocument(Uint8List bytes) {
+    final decoded = jsonDecode(utf8.decode(bytes));
+    if (decoded is! Map) {
+      throw const FormatException('项目文件不是有效的 JSON 对象');
+    }
+    return ProjectDocument.fromJson(Map<String, Object?>.from(decoded));
   }
 
   List<ValidationIssue> get issues => state.document == null

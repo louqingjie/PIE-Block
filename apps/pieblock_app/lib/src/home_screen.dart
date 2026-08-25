@@ -1,38 +1,43 @@
 import 'dart:io';
 
-import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pieblock_core/pieblock_core.dart';
 
 import 'controller.dart';
+import 'document_io.dart';
 
 const _brandCyan = Color(0xff02acc0);
 const _brandCoral = Color(0xffef685d);
-const _pieProjectType = XTypeGroup(
-  label: 'PIE-Block 项目',
-  extensions: ['pieproj'],
-);
 
 class ProjectFileDialogs {
-  const ProjectFileDialogs();
+  const ProjectFileDialogs({this.documentIo = const AppDocumentIo()});
+
+  final AppDocumentIo documentIo;
 
   Future<String?> chooseProjectToOpen() async {
-    final file = await openFile(acceptedTypeGroups: const [_pieProjectType]);
-    return file?.path;
+    final file = await documentIo.open(
+      label: 'PIE-Block 项目',
+      extensions: const ['pieproj'],
+      mimeTypes: const [
+        'application/json',
+        'application/octet-stream',
+        'text/plain',
+      ],
+    );
+    return file?.reference;
   }
 
   Future<String?> chooseProjectSavePath({
     required String suggestedName,
     String? initialDirectory,
   }) async {
-    final location = await getSaveLocation(
-      acceptedTypeGroups: const [_pieProjectType],
-      initialDirectory: initialDirectory,
+    return documentIo.create(
       suggestedName: suggestedName,
-      canCreateDirectories: true,
+      mimeType: 'application/json',
+      extensions: const ['pieproj'],
+      initialDirectory: initialDirectory,
     );
-    return location?.path;
   }
 }
 
@@ -41,13 +46,36 @@ class HomeScreen extends ConsumerWidget {
 
   final ProjectFileDialogs fileDialogs;
 
+  Future<String?> _chooseSavePath(
+    BuildContext context, {
+    required String suggestedName,
+    String? initialDirectory,
+  }) async {
+    try {
+      return await fileDialogs.chooseProjectSavePath(
+        suggestedName: suggestedName,
+        initialDirectory: initialDirectory,
+      );
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('无法打开文件选择器：$error')));
+      }
+      return null;
+    }
+  }
+
   Future<void> _create(BuildContext context, WidgetRef ref) async {
     final name = TextEditingController(text: '我的机器人');
-    final desktop =
-        '${Platform.environment['USERPROFILE'] ?? Directory.current.path}${Platform.pathSeparator}Desktop';
+    final desktop = Platform.isAndroid
+        ? null
+        : '${Platform.environment['USERPROFILE'] ?? Directory.current.path}${Platform.pathSeparator}Desktop';
     final path = TextEditingController(
-      text: '$desktop${Platform.pathSeparator}我的机器人.pieproj',
+      text: desktop == null
+          ? ''
+          : '$desktop${Platform.pathSeparator}我的机器人.pieproj',
     );
+    String? androidReference;
     var kind = ProjectKind.infantry;
     await showDialog<void>(
       context: context,
@@ -97,24 +125,35 @@ class HomeScreen extends ConsumerWidget {
                     builder: (context) {
                       final field = TextField(
                         controller: path,
-                        decoration: const InputDecoration(
+                        readOnly: Platform.isAndroid,
+                        decoration: InputDecoration(
                           labelText: '保存位置',
-                          helperText: '选择或输入完整的 .pieproj 文件路径',
-                          prefixIcon: Icon(Icons.folder_outlined),
+                          helperText: Platform.isAndroid
+                              ? '使用系统文档选择器保存，可在创建时选择'
+                              : '选择或输入完整的 .pieproj 文件路径',
+                          prefixIcon: const Icon(Icons.folder_outlined),
                         ),
                       );
                       final browse = OutlinedButton.icon(
                         onPressed: () async {
                           final currentPath = path.text.trim();
-                          final selected = await fileDialogs.chooseProjectSavePath(
+                          final selected = await _chooseSavePath(
+                            context,
                             suggestedName:
                                 '${name.text.trim().isEmpty ? '我的机器人' : name.text.trim()}.pieproj',
                             initialDirectory: currentPath.isEmpty
                                 ? desktop
+                                : Platform.isAndroid
+                                ? null
                                 : File(currentPath).parent.path,
                           );
                           if (selected != null && context.mounted) {
-                            path.text = selected;
+                            if (Platform.isAndroid) {
+                              androidReference = selected;
+                              path.text = AppDocumentIo.displayName(selected);
+                            } else {
+                              path.text = selected;
+                            }
                           }
                         },
                         icon: const Icon(Icons.folder_open_outlined),
@@ -150,12 +189,24 @@ class HomeScreen extends ConsumerWidget {
             ),
             FilledButton(
               onPressed: () async {
-                if (name.text.trim().isEmpty || path.text.trim().isEmpty) {
-                  return;
+                if (name.text.trim().isEmpty) return;
+                if (androidReference == null && Platform.isAndroid) {
+                  final selected = await _chooseSavePath(
+                    context,
+                    suggestedName: '${name.text.trim()}.pieproj',
+                  );
+                  if (selected == null || !context.mounted) return;
+                  androidReference = selected;
+                  path.text = AppDocumentIo.displayName(selected);
                 }
+                if (path.text.trim().isEmpty) return;
                 final ok = await ref
                     .read(appControllerProvider.notifier)
-                    .createProject(path.text, name.text, kind);
+                    .createProject(
+                      androidReference ?? path.text,
+                      name.text,
+                      kind,
+                    );
                 if (ok && context.mounted) Navigator.pop(context);
               },
               child: const Text('创建项目'),
@@ -168,10 +219,17 @@ class HomeScreen extends ConsumerWidget {
     path.dispose();
   }
 
-  Future<void> _open(WidgetRef ref) async {
-    final path = await fileDialogs.chooseProjectToOpen();
-    if (path == null || path.trim().isEmpty) return;
-    await ref.read(appControllerProvider.notifier).openProject(path);
+  Future<void> _open(BuildContext context, WidgetRef ref) async {
+    try {
+      final path = await fileDialogs.chooseProjectToOpen();
+      if (path == null || path.trim().isEmpty) return;
+      await ref.read(appControllerProvider.notifier).openProject(path);
+    } catch (error) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('无法打开文件选择器：$error')));
+      }
+    }
   }
 
   @override
@@ -241,7 +299,7 @@ class HomeScreen extends ConsumerWidget {
                               button: '打开项目',
                               accent: _brandCoral,
                               foreground: const Color(0xff3d0b08),
-                              onPressed: () => _open(ref),
+                              onPressed: () => _open(context, ref),
                             ),
                           ];
                           if (c.maxWidth < 600) {
@@ -306,7 +364,7 @@ class HomeScreen extends ConsumerWidget {
                                         Icons.description_outlined,
                                       ),
                                       title: Text(
-                                        path.split(Platform.pathSeparator).last,
+                                        AppDocumentIo.displayName(path),
                                       ),
                                       subtitle: Text(
                                         path,

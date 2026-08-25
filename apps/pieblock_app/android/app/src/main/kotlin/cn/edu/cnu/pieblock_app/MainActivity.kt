@@ -10,6 +10,7 @@ import android.os.Bundle
 import android.os.IBinder
 import android.os.Handler
 import android.os.Looper
+import android.provider.OpenableColumns
 import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
@@ -23,6 +24,8 @@ import io.flutter.plugin.common.EventChannel
 class MainActivity : FlutterActivity() {
     private var pendingExport: MethodChannel.Result? = null
     private var pendingBytes: ByteArray? = null
+    private var pendingDocument: MethodChannel.Result? = null
+    private var pendingDocumentBytes: ByteArray? = null
     private var compilerService: ISdccCompilerService? = null
     private var compilerEventSink: EventChannel.EventSink? = null
     private var pendingCompilerStart: Pair<MethodCall, MethodChannel.Result>? = null
@@ -205,6 +208,10 @@ class MainActivity : FlutterActivity() {
 
     private fun handleDocumentMethod(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
+            "openDocument" -> openDocument(call, result)
+            "createDocument" -> createDocument(call, result)
+            "readDocument" -> readDocument(call, result)
+            "writeDocument" -> writeDocument(call, result)
             "saveHex" -> saveHex(call, result)
             "prepareSdccResources" -> prepareSdccResources(result)
             "getSdccNativeInfo" -> getSdccNativeInfo(result)
@@ -213,8 +220,110 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    private fun openDocument(call: MethodCall, result: MethodChannel.Result) {
+        if (pendingDocument != null || pendingExport != null) {
+            result.error("document_busy", "另一个文件选择任务尚未结束", null)
+            return
+        }
+        pendingDocument = result
+        val mimeTypes = call.argument<List<String>>("mimeTypes").orEmpty()
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            if (mimeTypes.isNotEmpty()) {
+                putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes.toTypedArray())
+            }
+            addFlags(
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                    Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                    Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION,
+            )
+        }
+        startActivityForResult(intent, OPEN_DOCUMENT_REQUEST)
+    }
+
+    private fun createDocument(call: MethodCall, result: MethodChannel.Result) {
+        if (pendingDocument != null || pendingExport != null) {
+            result.error("document_busy", "另一个文件选择任务尚未结束", null)
+            return
+        }
+        pendingDocument = result
+        pendingDocumentBytes = call.argument<ByteArray>("bytes")
+        val suggestedName = call.argument<String>("suggestedName") ?: "document"
+        val mimeType = call.argument<String>("mimeType") ?: "application/octet-stream"
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = mimeType
+            putExtra(Intent.EXTRA_TITLE, suggestedName)
+            addFlags(
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                    Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                    Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION,
+            )
+        }
+        startActivityForResult(intent, CREATE_DOCUMENT_REQUEST)
+    }
+
+    private fun readDocument(call: MethodCall, result: MethodChannel.Result) {
+        val uri = call.argument<String>("uri")
+        if (uri == null) {
+            result.error("invalid_uri", "文档地址为空", null)
+            return
+        }
+        Thread {
+            try {
+                val bytes = contentResolver.openInputStream(android.net.Uri.parse(uri)).use {
+                    requireNotNull(it) { "无法打开文档" }.readBytes()
+                }
+                runOnUiThread { result.success(bytes) }
+            } catch (error: Exception) {
+                runOnUiThread { result.error("read_failed", error.message, null) }
+            }
+        }.start()
+    }
+
+    private fun writeDocument(call: MethodCall, result: MethodChannel.Result) {
+        val uri = call.argument<String>("uri")
+        val bytes = call.argument<ByteArray>("bytes")
+        if (uri == null || bytes == null) {
+            result.error("invalid_document", "文档地址或内容为空", null)
+            return
+        }
+        Thread {
+            try {
+                writeDocumentBytes(android.net.Uri.parse(uri), bytes)
+                runOnUiThread { result.success(null) }
+            } catch (error: Exception) {
+                runOnUiThread { result.error("write_failed", error.message, null) }
+            }
+        }.start()
+    }
+
+    private fun writeDocumentBytes(uri: android.net.Uri, bytes: ByteArray) {
+        val output = runCatching {
+            contentResolver.openOutputStream(uri, "rwt")
+        }.getOrNull() ?: contentResolver.openOutputStream(uri, "wt")
+        output.use { stream ->
+            requireNotNull(stream) { "无法打开目标文档" }
+            stream.write(bytes)
+            stream.flush()
+        }
+    }
+
+    private fun documentName(uri: android.net.Uri): String {
+        return contentResolver.query(
+            uri,
+            arrayOf(OpenableColumns.DISPLAY_NAME),
+            null,
+            null,
+            null,
+        )?.use { cursor ->
+            if (cursor.moveToFirst()) cursor.getString(0) else null
+        } ?: uri.lastPathSegment.orEmpty()
+    }
+
     private fun saveHex(call: MethodCall, result: MethodChannel.Result) {
-        if (pendingExport != null) {
+        if (pendingExport != null || pendingDocument != null) {
             result.error("export_busy", "另一个 HEX 导出任务尚未结束", null)
             return
         }
@@ -377,24 +486,70 @@ class MainActivity : FlutterActivity() {
     @Deprecated("Deprecated in Android, retained for FlutterActivity compatibility")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode != EXPORT_HEX_REQUEST) return
-        val result = pendingExport ?: return
-        val bytes = pendingBytes
-        pendingExport = null
-        pendingBytes = null
-        if (resultCode != Activity.RESULT_OK || data?.data == null) {
-            result.success(false)
-            return
-        }
-        try {
-            contentResolver.openOutputStream(data.data!!, "wt").use { stream ->
-                requireNotNull(stream) { "无法打开目标文档" }
-                stream.write(requireNotNull(bytes))
-                stream.flush()
+        when (requestCode) {
+            OPEN_DOCUMENT_REQUEST, CREATE_DOCUMENT_REQUEST -> {
+                val result = pendingDocument ?: return
+                val bytes = pendingDocumentBytes
+                pendingDocument = null
+                pendingDocumentBytes = null
+                val uri = data?.data
+                if (resultCode != Activity.RESULT_OK || uri == null) {
+                    result.success(null)
+                    return
+                }
+                val permissionFlags = data.flags and (
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                        Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                    )
+                runCatching {
+                    contentResolver.takePersistableUriPermission(uri, permissionFlags)
+                }
+                Thread {
+                    try {
+                        if (requestCode == CREATE_DOCUMENT_REQUEST) {
+                            if (bytes != null) writeDocumentBytes(uri, bytes)
+                            runOnUiThread {
+                                result.success(
+                                    mapOf("uri" to uri.toString(), "name" to documentName(uri)),
+                                )
+                            }
+                        } else {
+                            val contents = contentResolver.openInputStream(uri).use {
+                                requireNotNull(it) { "无法打开所选文档" }.readBytes()
+                            }
+                            runOnUiThread {
+                                result.success(
+                                    mapOf(
+                                        "uri" to uri.toString(),
+                                        "name" to documentName(uri),
+                                        "bytes" to contents,
+                                    ),
+                                )
+                            }
+                        }
+                    } catch (error: Exception) {
+                        runOnUiThread {
+                            result.error("document_access_failed", error.message, null)
+                        }
+                    }
+                }.start()
             }
-            result.success(true)
-        } catch (error: Exception) {
-            result.error("export_failed", error.message, null)
+            EXPORT_HEX_REQUEST -> {
+                val result = pendingExport ?: return
+                val bytes = pendingBytes
+                pendingExport = null
+                pendingBytes = null
+                if (resultCode != Activity.RESULT_OK || data?.data == null) {
+                    result.success(false)
+                    return
+                }
+                try {
+                    writeDocumentBytes(data.data!!, requireNotNull(bytes))
+                    result.success(true)
+                } catch (error: Exception) {
+                    result.error("export_failed", error.message, null)
+                }
+            }
         }
     }
 
@@ -403,5 +558,7 @@ class MainActivity : FlutterActivity() {
         private const val COMPILER_METHOD_CHANNEL = "cn.edu.cnu.pieblock/sdcc_compiler"
         private const val COMPILER_EVENT_CHANNEL = "cn.edu.cnu.pieblock/sdcc_compiler_events"
         private const val EXPORT_HEX_REQUEST = 0x5042
+        private const val OPEN_DOCUMENT_REQUEST = 0x5043
+        private const val CREATE_DOCUMENT_REQUEST = 0x5044
     }
 }

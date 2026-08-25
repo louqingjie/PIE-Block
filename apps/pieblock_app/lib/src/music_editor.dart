@@ -1,21 +1,14 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:math' as math;
 
-import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pieblock_core/pieblock_core.dart';
 
 import 'controller.dart';
+import 'document_io.dart';
 import 'music_preview.dart';
-
-const _midiTypes = XTypeGroup(
-  label: 'MIDI 文件',
-  extensions: ['mid', 'midi'],
-  mimeTypes: ['audio/midi', 'audio/x-midi'],
-);
 
 enum _MusicTool { select, pencil, erase, pan }
 
@@ -32,6 +25,7 @@ class MusicEditorPage extends ConsumerStatefulWidget {
 
 class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
   static const _rowHeight = 18.0, _keysWidth = 72.0, _eventLane = 48.0;
+  static const _documentIo = AppDocumentIo();
   _MusicTool _tool = _MusicTool.select;
   MusicViewportMode _viewportMode = MusicViewportMode.paged;
   int _snapDivisor = 4;
@@ -324,10 +318,14 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
   }
 
   Future<void> _importMidi() async {
-    final file = await openFile(acceptedTypeGroups: const [_midiTypes]);
+    final file = await _documentIo.open(
+      label: 'MIDI 文件',
+      extensions: const ['mid', 'midi'],
+      mimeTypes: const ['audio/midi', 'audio/x-midi', 'audio/mid'],
+    );
     if (file == null || !mounted) return;
     try {
-      final midi = MidiCodec.parse(await file.readAsBytes());
+      final midi = MidiCodec.parse(file.bytes);
       if (!mounted) return;
       final playable = midi.tracks.indexed
           .where((entry) => entry.$2.playable)
@@ -364,19 +362,26 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text(error.message.toString())));
       }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('MIDI 导入失败：$error')));
+      }
     }
   }
 
   Future<void> _exportMidi() async {
-    final location = await getSaveLocation(
-      acceptedTypeGroups: const [_midiTypes],
+    final location = await _documentIo.create(
       suggestedName: '${_config.trackName ?? 'pieblock_music'}.mid',
+      mimeType: 'audio/midi',
+      extensions: const ['mid', 'midi'],
+      bytes: Uint8List.fromList(MidiCodec.write(_config)),
     );
     if (location == null) return;
-    await File(location.path).writeAsBytes(MidiCodec.write(_config));
     if (mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('已导出 ${location.path}')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已导出 ${AppDocumentIo.displayName(location)}')),
+      );
     }
   }
 
