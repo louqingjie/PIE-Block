@@ -11,6 +11,7 @@ typedef void (*pb_sdcc_pipeline_event_fn)(
     pb_sdcc_level level,
     int current,
     int total,
+    const char *file_name,
     const char *message);
 
 int pb_sdcc_pipeline_execute(

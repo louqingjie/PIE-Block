@@ -11,6 +11,7 @@
 
 #define PB_EVENT_CAPACITY 128
 #define PB_MESSAGE_CAPACITY 1024
+#define PB_FILE_NAME_CAPACITY 512
 
 #ifndef PB_SDCC_ANDROID_ABI
 #define PB_SDCC_ANDROID_ABI "unknown"
@@ -21,8 +22,15 @@ typedef struct pb_owned_request {
   char *resource_directory;
   char *project_kind;
   char *main_source_path;
+  char **source_paths;
+  uint32_t source_count;
+  char **compile_arguments;
+  uint32_t compile_argument_count;
+  char **link_arguments;
+  uint32_t link_argument_count;
   char *hex_output_path;
   char *map_output_path;
+  char *log_output_path;
 } pb_owned_request;
 
 typedef struct pb_owned_event {
@@ -30,6 +38,7 @@ typedef struct pb_owned_event {
   int32_t level;
   int32_t current;
   int32_t total;
+  char file_name[PB_FILE_NAME_CAPACITY];
   char message[PB_MESSAGE_CAPACITY];
 } pb_owned_event;
 
@@ -42,13 +51,16 @@ struct pb_sdcc_operation {
   int complete;
   int32_t status;
   int32_t exit_code;
+  int32_t error_count;
   int32_t warning_count;
   pb_owned_request request;
   pb_owned_event events[PB_EVENT_CAPACITY];
   unsigned int event_head;
   unsigned int event_count;
   char last_event_message[PB_MESSAGE_CAPACITY];
+  char last_event_file_name[PB_FILE_NAME_CAPACITY];
   char result_message[PB_MESSAGE_CAPACITY];
+  char result_error_code[64];
 };
 
 static pthread_mutex_t g_build_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -62,13 +74,42 @@ static char *pb_copy_string(const char *value) {
   return copy;
 }
 
+static char **pb_copy_strings(const pb_sdcc_string_list *source) {
+  if (source->count == 0) return NULL;
+  if (source->items == NULL) return NULL;
+  char **copies = calloc(source->count, sizeof(*copies));
+  if (copies == NULL) return NULL;
+  for (uint32_t index = 0; index < source->count; index++) {
+    copies[index] = pb_copy_string(source->items[index]);
+    if (copies[index] == NULL) {
+      for (uint32_t previous = 0; previous < index; previous++) {
+        free(copies[previous]);
+      }
+      free(copies);
+      return NULL;
+    }
+  }
+  return copies;
+}
+
+static void pb_free_strings(char **values, uint32_t count) {
+  if (values == NULL) return;
+  for (uint32_t index = 0; index < count; index++) free(values[index]);
+  free(values);
+}
+
 static void pb_free_request(pb_owned_request *request) {
   free(request->working_directory);
   free(request->resource_directory);
   free(request->project_kind);
   free(request->main_source_path);
+  pb_free_strings(request->source_paths, request->source_count);
+  pb_free_strings(request->compile_arguments,
+                  request->compile_argument_count);
+  pb_free_strings(request->link_arguments, request->link_argument_count);
   free(request->hex_output_path);
   free(request->map_output_path);
+  free(request->log_output_path);
   memset(request, 0, sizeof(*request));
 }
 
@@ -76,14 +117,24 @@ static int pb_request_valid(const pb_sdcc_request *request) {
   return request != NULL && request->working_directory != NULL &&
          request->resource_directory != NULL && request->project_kind != NULL &&
          request->main_source_path != NULL && request->hex_output_path != NULL &&
-         request->map_output_path != NULL;
+         request->map_output_path != NULL && request->log_output_path != NULL &&
+         (request->source_paths.count == 0 ||
+          request->source_paths.items != NULL) &&
+         (request->compile_arguments.count == 0 ||
+          request->compile_arguments.items != NULL) &&
+         (request->link_arguments.count == 0 ||
+          request->link_arguments.items != NULL);
 }
 
 static int pb_owned_request_valid(const pb_owned_request *request) {
   return request != NULL && request->working_directory != NULL &&
          request->resource_directory != NULL && request->project_kind != NULL &&
          request->main_source_path != NULL && request->hex_output_path != NULL &&
-         request->map_output_path != NULL;
+         request->map_output_path != NULL && request->log_output_path != NULL &&
+         (request->source_count == 0 || request->source_paths != NULL) &&
+         (request->compile_argument_count == 0 ||
+          request->compile_arguments != NULL) &&
+         (request->link_argument_count == 0 || request->link_arguments != NULL);
 }
 
 static void pb_emit(void *context,
@@ -91,6 +142,7 @@ static void pb_emit(void *context,
                     pb_sdcc_level level,
                     int current,
                     int total,
+                    const char *file_name,
                     const char *message) {
   pb_sdcc_operation *operation = context;
   pthread_mutex_lock(&operation->mutex);
@@ -105,6 +157,10 @@ static void pb_emit(void *context,
   event->level = level;
   event->current = current;
   event->total = total;
+  snprintf(event->file_name,
+           sizeof(event->file_name),
+           "%s",
+           file_name == NULL ? "" : file_name);
   snprintf(event->message,
            sizeof(event->message),
            "%s",
@@ -116,18 +172,28 @@ static void pb_emit(void *context,
 static void *pb_worker(void *context) {
   pb_sdcc_operation *operation = context;
   pb_sdcc_request request = {
-      operation->request.working_directory,
-      operation->request.resource_directory,
-      operation->request.project_kind,
-      operation->request.main_source_path,
-      operation->request.hex_output_path,
-      operation->request.map_output_path,
+      .working_directory = operation->request.working_directory,
+      .resource_directory = operation->request.resource_directory,
+      .project_kind = operation->request.project_kind,
+      .main_source_path = operation->request.main_source_path,
+      .source_paths = {(const char *const *)operation->request.source_paths,
+                       operation->request.source_count},
+      .compile_arguments = {
+          (const char *const *)operation->request.compile_arguments,
+          operation->request.compile_argument_count},
+      .link_arguments = {
+          (const char *const *)operation->request.link_arguments,
+          operation->request.link_argument_count},
+      .hex_output_path = operation->request.hex_output_path,
+      .map_output_path = operation->request.map_output_path,
+      .log_output_path = operation->request.log_output_path,
   };
   pb_emit(operation,
           PB_SDCC_STAGE_PREPARING,
           PB_SDCC_LEVEL_INFO,
           0,
           0,
+          NULL,
           "Preparing in-process SDCC C251 build");
 
   int warnings = 0;
@@ -149,7 +215,12 @@ static void *pb_worker(void *context) {
   pthread_mutex_lock(&operation->mutex);
   operation->status = result;
   operation->exit_code = result == PB_SDCC_OK ? 0 : result;
+  operation->error_count = result == PB_SDCC_OK ? 0 : 1;
   operation->warning_count = warnings;
+  snprintf(operation->result_error_code,
+           sizeof(operation->result_error_code),
+           "%s",
+           result == PB_SDCC_OK ? "" : "native_pipeline_failed");
   operation->complete = 1;
   snprintf(operation->result_message,
            sizeof(operation->result_message),
@@ -166,7 +237,7 @@ static void *pb_worker(void *context) {
 uint32_t pb_sdcc_api_version(void) { return PB_SDCC_API_VERSION; }
 
 const char *pb_sdcc_build_fingerprint(void) {
-  return "sdcc-c251:912a589d4080c9cd5c5c1faf871c62dd5023580d;ffi:2;android-abi:"
+  return "sdcc-c251:912a589d4080c9cd5c5c1faf871c62dd5023580d;ffi:3;android-abi:"
          PB_SDCC_ANDROID_ABI ";pipeline:unavailable";
 }
 
@@ -194,8 +265,16 @@ pb_sdcc_status pb_sdcc_start(const pb_sdcc_request *request,
   created->request.resource_directory = pb_copy_string(request->resource_directory);
   created->request.project_kind = pb_copy_string(request->project_kind);
   created->request.main_source_path = pb_copy_string(request->main_source_path);
+  created->request.source_count = request->source_paths.count;
+  created->request.source_paths = pb_copy_strings(&request->source_paths);
+  created->request.compile_argument_count = request->compile_arguments.count;
+  created->request.compile_arguments =
+      pb_copy_strings(&request->compile_arguments);
+  created->request.link_argument_count = request->link_arguments.count;
+  created->request.link_arguments = pb_copy_strings(&request->link_arguments);
   created->request.hex_output_path = pb_copy_string(request->hex_output_path);
   created->request.map_output_path = pb_copy_string(request->map_output_path);
+  created->request.log_output_path = pb_copy_string(request->log_output_path);
   if (!pb_owned_request_valid(&created->request)) {
     pb_free_request(&created->request);
     pthread_mutex_destroy(&created->mutex);
@@ -234,10 +313,14 @@ pb_sdcc_status pb_sdcc_poll_event(pb_sdcc_operation *operation,
   memcpy(operation->last_event_message,
          source->message,
          sizeof(operation->last_event_message));
+  memcpy(operation->last_event_file_name,
+         source->file_name,
+         sizeof(operation->last_event_file_name));
   event->stage = source->stage;
   event->level = source->level;
   event->current = source->current;
   event->total = source->total;
+  event->file_name = operation->last_event_file_name;
   event->message = operation->last_event_message;
   pthread_mutex_unlock(&operation->mutex);
   return PB_SDCC_EVENT_AVAILABLE;
@@ -259,9 +342,12 @@ pb_sdcc_status pb_sdcc_get_result(pb_sdcc_operation *operation,
   }
   result->status = operation->status;
   result->exit_code = operation->exit_code;
+  result->error_count = operation->error_count;
   result->warning_count = operation->warning_count;
   result->hex_path = operation->request.hex_output_path;
   result->map_path = operation->request.map_output_path;
+  result->log_path = operation->request.log_output_path;
+  result->error_code = operation->result_error_code;
   result->message = operation->result_message;
   pthread_mutex_unlock(&operation->mutex);
   return PB_SDCC_COMPLETE;

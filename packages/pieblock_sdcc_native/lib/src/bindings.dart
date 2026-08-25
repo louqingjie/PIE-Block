@@ -1,12 +1,23 @@
 import 'dart:ffi';
 
+final class PbSdccStringList extends Struct {
+  external Pointer<Pointer<Char>> items;
+
+  @Uint32()
+  external int count;
+}
+
 final class PbSdccRequest extends Struct {
   external Pointer<Char> workingDirectory;
   external Pointer<Char> resourceDirectory;
   external Pointer<Char> projectKind;
   external Pointer<Char> mainSourcePath;
+  external PbSdccStringList sourcePaths;
+  external PbSdccStringList compileArguments;
+  external PbSdccStringList linkArguments;
   external Pointer<Char> hexOutputPath;
   external Pointer<Char> mapOutputPath;
+  external Pointer<Char> logOutputPath;
 }
 
 final class PbSdccEvent extends Struct {
@@ -18,6 +29,7 @@ final class PbSdccEvent extends Struct {
   external int current;
   @Int32()
   external int total;
+  external Pointer<Char> fileName;
   external Pointer<Char> message;
 }
 
@@ -27,9 +39,13 @@ final class PbSdccResult extends Struct {
   @Int32()
   external int exitCode;
   @Int32()
+  external int errorCount;
+  @Int32()
   external int warningCount;
   external Pointer<Char> hexPath;
   external Pointer<Char> mapPath;
+  external Pointer<Char> logPath;
+  external Pointer<Char> errorCode;
   external Pointer<Char> message;
 }
 
@@ -64,10 +80,9 @@ class PbSdccBindings {
       fingerprint = library.lookupFunction<_FingerprintNative, FingerprintDart>(
         'pb_sdcc_build_fingerprint',
       ),
-      isAvailable = library.lookupFunction<
-        _IsAvailableNative,
-        IsAvailableDart
-      >('pb_sdcc_is_available'),
+      isAvailable = library.lookupFunction<_IsAvailableNative, IsAvailableDart>(
+        'pb_sdcc_is_available',
+      ),
       start = library.lookupFunction<_StartNative, StartDart>('pb_sdcc_start'),
       poll = library.lookupFunction<_PollNative, PollDart>(
         'pb_sdcc_poll_event',

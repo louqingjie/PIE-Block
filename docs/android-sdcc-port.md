@@ -7,7 +7,7 @@
 - Android ABI：`arm64-v8a`、`x86_64`
 - Android NDK：28.2.13676358
 - SDCC fork：`912a589d4080c9cd5c5c1faf871c62dd5023580d`
-- 原生 C ABI：2
+- 原生 C ABI：3
 
 原计划指定 NDK 27.3.13750724，但 Flutter 3.47.1 当前解析出的 Android
 插件要求 NDK 28.2.13676358。应用和 FFI 插件统一提升到 28.2，避免由 Gradle
@@ -21,6 +21,10 @@ Android 包只允许包含 `libpieblock_sdcc_native.so` 和编译所需的只读
 
 资源部署、编译缓存和临时目录分别使用应用 support/cache 目录，不申请通用
 存储权限。HEX 通过 Android Storage Access Framework 导出。
+
+C ABI 3 的请求显式携带源码列表、编译参数、链接参数以及 HEX/MAP/日志输出
+位置；事件携带阶段、当前文件和进度，结果携带结构化错误码与错误/警告计数。
+所有字符串和数组在启动时由原生层深拷贝，不引用 Dart 临时内存。
 
 Gradle 在构建前从仓库的固定固件目录生成只读资源包，只收集 MCS251 头文件、
 运行库、构建清单及步兵/工程所需源码。资源清单记录每个文件的 SHA-256；应用

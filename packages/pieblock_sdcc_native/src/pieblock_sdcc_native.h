@@ -13,7 +13,7 @@
 extern "C" {
 #endif
 
-#define PB_SDCC_API_VERSION 2u
+#define PB_SDCC_API_VERSION 3u
 
 typedef enum pb_sdcc_status {
   PB_SDCC_OK = 0,
@@ -42,13 +42,22 @@ typedef enum pb_sdcc_level {
   PB_SDCC_LEVEL_ERROR = 2
 } pb_sdcc_level;
 
+typedef struct pb_sdcc_string_list {
+  const char *const *items;
+  uint32_t count;
+} pb_sdcc_string_list;
+
 typedef struct pb_sdcc_request {
   const char *working_directory;
   const char *resource_directory;
   const char *project_kind;
   const char *main_source_path;
+  pb_sdcc_string_list source_paths;
+  pb_sdcc_string_list compile_arguments;
+  pb_sdcc_string_list link_arguments;
   const char *hex_output_path;
   const char *map_output_path;
+  const char *log_output_path;
 } pb_sdcc_request;
 
 typedef struct pb_sdcc_event {
@@ -56,15 +65,19 @@ typedef struct pb_sdcc_event {
   int32_t level;
   int32_t current;
   int32_t total;
+  const char *file_name;
   const char *message;
 } pb_sdcc_event;
 
 typedef struct pb_sdcc_result {
   int32_t status;
   int32_t exit_code;
+  int32_t error_count;
   int32_t warning_count;
   const char *hex_path;
   const char *map_path;
+  const char *log_path;
+  const char *error_code;
   const char *message;
 } pb_sdcc_result;
 

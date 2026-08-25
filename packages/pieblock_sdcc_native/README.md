@@ -17,7 +17,7 @@ firmware compiler.
 ## Fixed baseline
 
 - SDCC fork commit: `912a589d4080c9cd5c5c1faf871c62dd5023580d`
-- FFI ABI: `1`
+- FFI ABI: `3`
 - Android API: `24`
 - NDK: `28.2.13676358` (Flutter 3.47.1's Android plugins require this newer
   NDK; it supersedes the originally proposed 27.3 pin)

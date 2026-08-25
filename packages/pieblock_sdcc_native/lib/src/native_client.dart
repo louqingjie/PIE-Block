@@ -13,11 +13,18 @@ const _running = 6;
 const _complete = 7;
 const _eventAvailable = 8;
 
+String? _optionalNativeString(Pointer<Char> pointer) {
+  if (pointer.address == 0) return null;
+  final value = pointer.cast<Utf8>().toDartString();
+  return value.isEmpty ? null : value;
+}
+
 class NativeSdccEvent {
   const NativeSdccEvent({
     required this.stage,
     required this.level,
     required this.message,
+    this.fileName,
     this.current,
     this.total,
   });
@@ -25,6 +32,7 @@ class NativeSdccEvent {
   final int stage;
   final int level;
   final String message;
+  final String? fileName;
   final int? current;
   final int? total;
 }
@@ -34,19 +42,25 @@ class NativeSdccResult {
     required this.success,
     required this.canceled,
     required this.exitCode,
+    required this.errorCount,
     required this.warningCount,
     required this.message,
     required this.hexPath,
     required this.mapPath,
+    required this.logPath,
+    required this.errorCode,
   });
 
   final bool success;
   final bool canceled;
   final int exitCode;
+  final int errorCount;
   final int warningCount;
   final String message;
   final String hexPath;
   final String mapPath;
+  final String logPath;
+  final String errorCode;
 }
 
 class NativeSdccOperation {
@@ -69,8 +83,8 @@ class NativeSdccClient {
                 : throw UnsupportedError('原生 SDCC 仅支持 Android')),
       ) {
     final actual = _bindings.apiVersion();
-    if (actual != 2) {
-      throw StateError('不兼容的 SDCC FFI ABI：$actual（需要 2）');
+    if (actual != 3) {
+      throw StateError('不兼容的 SDCC FFI ABI：$actual（需要 3）');
     }
   }
 
@@ -86,8 +100,12 @@ class NativeSdccClient {
     required String resourceDirectory,
     required String projectKind,
     required String mainSourcePath,
+    List<String> sourcePaths = const [],
+    List<String> compileArguments = const [],
+    List<String> linkArguments = const [],
     required String hexOutputPath,
     required String mapOutputPath,
+    required String logOutputPath,
   }) {
     if (!_usesInjectedLibrary && Platform.isAndroid) {
       return _startInIsolate({
@@ -95,8 +113,12 @@ class NativeSdccClient {
         'resourceDirectory': resourceDirectory,
         'projectKind': projectKind,
         'mainSourcePath': mainSourcePath,
+        'sourcePaths': sourcePaths,
+        'compileArguments': compileArguments,
+        'linkArguments': linkArguments,
         'hexOutputPath': hexOutputPath,
         'mapOutputPath': mapOutputPath,
+        'logOutputPath': logOutputPath,
       });
     }
     return _startDirect(
@@ -104,8 +126,12 @@ class NativeSdccClient {
       resourceDirectory: resourceDirectory,
       projectKind: projectKind,
       mainSourcePath: mainSourcePath,
+      sourcePaths: sourcePaths,
+      compileArguments: compileArguments,
+      linkArguments: linkArguments,
       hexOutputPath: hexOutputPath,
       mapOutputPath: mapOutputPath,
+      logOutputPath: logOutputPath,
     );
   }
 
@@ -114,16 +140,31 @@ class NativeSdccClient {
     required String resourceDirectory,
     required String projectKind,
     required String mainSourcePath,
+    List<String> sourcePaths = const [],
+    List<String> compileArguments = const [],
+    List<String> linkArguments = const [],
     required String hexOutputPath,
     required String mapOutputPath,
+    required String logOutputPath,
   }) {
     final request = calloc<PbSdccRequest>();
     final operationPointer = calloc<Pointer<Void>>();
     final allocated = <Pointer<Utf8>>[];
+    final allocatedArrays = <Pointer<Pointer<Char>>>[];
     Pointer<Char> string(String value) {
       final pointer = value.toNativeUtf8();
       allocated.add(pointer);
       return pointer.cast();
+    }
+
+    Pointer<Pointer<Char>> strings(List<String> values) {
+      if (values.isEmpty) return Pointer.fromAddress(0);
+      final pointers = calloc<Pointer<Char>>(values.length);
+      allocatedArrays.add(pointers);
+      for (var index = 0; index < values.length; index++) {
+        pointers[index] = string(values[index]);
+      }
+      return pointers;
     }
 
     try {
@@ -133,7 +174,17 @@ class NativeSdccClient {
         ..projectKind = string(projectKind)
         ..mainSourcePath = string(mainSourcePath)
         ..hexOutputPath = string(hexOutputPath)
-        ..mapOutputPath = string(mapOutputPath);
+        ..mapOutputPath = string(mapOutputPath)
+        ..logOutputPath = string(logOutputPath);
+      request.ref.sourcePaths
+        ..items = strings(sourcePaths)
+        ..count = sourcePaths.length;
+      request.ref.compileArguments
+        ..items = strings(compileArguments)
+        ..count = compileArguments.length;
+      request.ref.linkArguments
+        ..items = strings(linkArguments)
+        ..count = linkArguments.length;
       final status = _bindings.start(request, operationPointer);
       if (status != _ok) {
         throw StateError('无法启动 Android SDCC 构建（状态码 $status）');
@@ -141,6 +192,9 @@ class NativeSdccClient {
     } finally {
       for (final pointer in allocated) {
         calloc.free(pointer);
+      }
+      for (final pointers in allocatedArrays) {
+        calloc.free(pointers);
       }
       calloc.free(request);
     }
@@ -171,6 +225,7 @@ class NativeSdccClient {
                 stage: event.ref.stage,
                 level: event.ref.level,
                 message: event.ref.message.cast<Utf8>().toDartString(),
+                fileName: _optionalNativeString(event.ref.fileName),
                 current: event.ref.current <= 0 ? null : event.ref.current,
                 total: event.ref.total <= 0 ? null : event.ref.total,
               ),
@@ -190,10 +245,13 @@ class NativeSdccClient {
             success: nativeResult.ref.status == _ok,
             canceled: nativeResult.ref.status == _canceled,
             exitCode: nativeResult.ref.exitCode,
+            errorCount: nativeResult.ref.errorCount,
             warningCount: nativeResult.ref.warningCount,
             message: nativeResult.ref.message.cast<Utf8>().toDartString(),
             hexPath: nativeResult.ref.hexPath.cast<Utf8>().toDartString(),
             mapPath: nativeResult.ref.mapPath.cast<Utf8>().toDartString(),
+            logPath: nativeResult.ref.logPath.cast<Utf8>().toDartString(),
+            errorCode: nativeResult.ref.errorCode.cast<Utf8>().toDartString(),
           );
           timer?.cancel();
           await events.close();
@@ -222,7 +280,7 @@ class NativeSdccClient {
     });
   }
 
-  NativeSdccOperation _startInIsolate(Map<String, String> request) {
+  NativeSdccOperation _startInIsolate(Map<String, Object> request) {
     final events = StreamController<NativeSdccEvent>.broadcast();
     final completer = Completer<NativeSdccResult>();
     final messages = ReceivePort();
@@ -249,6 +307,7 @@ class NativeSdccClient {
               stage: message['stage'] as int,
               level: message['level'] as int,
               message: message['message'] as String,
+              fileName: message['fileName'] as String?,
               current: message['current'] as int?,
               total: message['total'] as int?,
             ),
@@ -258,10 +317,13 @@ class NativeSdccClient {
             success: message['success'] as bool,
             canceled: message['canceled'] as bool,
             exitCode: message['exitCode'] as int,
+            errorCount: message['errorCount'] as int,
             warningCount: message['warningCount'] as int,
             message: message['message'] as String,
             hexPath: message['hexPath'] as String,
             mapPath: message['mapPath'] as String,
+            logPath: message['logPath'] as String,
+            errorCode: message['errorCode'] as String,
           );
           if (!completer.isCompleted) completer.complete(result);
           unawaited(close());
@@ -273,11 +335,10 @@ class NativeSdccClient {
       }
     });
     unawaited(
-      Isolate.spawn(
-        _nativeSdccWorker,
-        <Object>[messages.sendPort, request],
-        debugName: 'PIE-Block SDCC',
-      ).then<void>(
+      Isolate.spawn(_nativeSdccWorker, <Object>[
+        messages.sendPort,
+        request,
+      ], debugName: 'PIE-Block SDCC').then<void>(
         (_) {},
         onError: (Object error, StackTrace stack) {
           if (!completer.isCompleted) completer.completeError(error, stack);
@@ -294,7 +355,7 @@ class NativeSdccClient {
 
 Future<void> _nativeSdccWorker(List<Object> arguments) async {
   final parent = arguments[0] as SendPort;
-  final values = (arguments[1] as Map).cast<String, String>();
+  final values = (arguments[1] as Map).cast<String, Object>();
   final control = ReceivePort();
   Pointer<Void>? operation;
   var canceled = false;
@@ -313,20 +374,45 @@ Future<void> _nativeSdccWorker(List<Object> arguments) async {
     final request = calloc<PbSdccRequest>();
     final operationPointer = calloc<Pointer<Void>>();
     final allocated = <Pointer<Utf8>>[];
+    final allocatedArrays = <Pointer<Pointer<Char>>>[];
     Pointer<Char> string(String value) {
       final pointer = value.toNativeUtf8();
       allocated.add(pointer);
       return pointer.cast();
     }
 
+    Pointer<Pointer<Char>> strings(List<String> values) {
+      if (values.isEmpty) return Pointer.fromAddress(0);
+      final pointers = calloc<Pointer<Char>>(values.length);
+      allocatedArrays.add(pointers);
+      for (var index = 0; index < values.length; index++) {
+        pointers[index] = string(values[index]);
+      }
+      return pointers;
+    }
+
     try {
       request.ref
-        ..workingDirectory = string(values['workingDirectory']!)
-        ..resourceDirectory = string(values['resourceDirectory']!)
-        ..projectKind = string(values['projectKind']!)
-        ..mainSourcePath = string(values['mainSourcePath']!)
-        ..hexOutputPath = string(values['hexOutputPath']!)
-        ..mapOutputPath = string(values['mapOutputPath']!);
+        ..workingDirectory = string(values['workingDirectory']! as String)
+        ..resourceDirectory = string(values['resourceDirectory']! as String)
+        ..projectKind = string(values['projectKind']! as String)
+        ..mainSourcePath = string(values['mainSourcePath']! as String)
+        ..hexOutputPath = string(values['hexOutputPath']! as String)
+        ..mapOutputPath = string(values['mapOutputPath']! as String)
+        ..logOutputPath = string(values['logOutputPath']! as String);
+      final sourcePaths = (values['sourcePaths']! as List).cast<String>();
+      final compileArguments = (values['compileArguments']! as List)
+          .cast<String>();
+      final linkArguments = (values['linkArguments']! as List).cast<String>();
+      request.ref.sourcePaths
+        ..items = strings(sourcePaths)
+        ..count = sourcePaths.length;
+      request.ref.compileArguments
+        ..items = strings(compileArguments)
+        ..count = compileArguments.length;
+      request.ref.linkArguments
+        ..items = strings(linkArguments)
+        ..count = linkArguments.length;
       final status = bindings.start(request, operationPointer);
       if (status != _ok) {
         throw StateError('无法启动 Android SDCC 构建（状态码 $status）');
@@ -336,6 +422,9 @@ Future<void> _nativeSdccWorker(List<Object> arguments) async {
     } finally {
       for (final pointer in allocated) {
         calloc.free(pointer);
+      }
+      for (final pointers in allocatedArrays) {
+        calloc.free(pointers);
       }
       calloc.free(request);
       calloc.free(operationPointer);
@@ -350,6 +439,7 @@ Future<void> _nativeSdccWorker(List<Object> arguments) async {
             'stage': event.ref.stage,
             'level': event.ref.level,
             'message': event.ref.message.cast<Utf8>().toDartString(),
+            'fileName': _optionalNativeString(event.ref.fileName),
             'current': event.ref.current <= 0 ? null : event.ref.current,
             'total': event.ref.total <= 0 ? null : event.ref.total,
           });
@@ -366,10 +456,13 @@ Future<void> _nativeSdccWorker(List<Object> arguments) async {
             'success': result.ref.status == _ok,
             'canceled': result.ref.status == _canceled,
             'exitCode': result.ref.exitCode,
+            'errorCount': result.ref.errorCount,
             'warningCount': result.ref.warningCount,
             'message': result.ref.message.cast<Utf8>().toDartString(),
             'hexPath': result.ref.hexPath.cast<Utf8>().toDartString(),
             'mapPath': result.ref.mapPath.cast<Utf8>().toDartString(),
+            'logPath': result.ref.logPath.cast<Utf8>().toDartString(),
+            'errorCode': result.ref.errorCode.cast<Utf8>().toDartString(),
           });
           return;
         }

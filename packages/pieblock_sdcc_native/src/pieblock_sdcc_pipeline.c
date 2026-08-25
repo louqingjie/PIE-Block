@@ -24,6 +24,7 @@ int pb_sdcc_pipeline_execute(
        PB_SDCC_LEVEL_ERROR,
        0,
        0,
+       NULL,
        "Android MCS-251 pipeline has not been linked into this build");
   snprintf(message,
            message_size,
