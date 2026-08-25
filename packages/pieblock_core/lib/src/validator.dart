@@ -73,16 +73,45 @@ abstract final class ProjectValidator {
       );
     }
 
-    final wheels = <(String, String, String)>[
-      ('chassis.left_front.pin', '左前轮', config.chassis.leftFront.pin),
-      ('chassis.left_rear.pin', '左后轮', config.chassis.leftRear.pin),
-      ('chassis.right_front.pin', '右前轮', config.chassis.rightFront.pin),
-      ('chassis.right_rear.pin', '右后轮', config.chassis.rightRear.pin),
+    final wheels = <(String, String, String, String, Direction)>[
+      (
+        'chassis.left_front.pin',
+        '左前轮',
+        config.chassis.leftFront.pin,
+        'left',
+        config.chassis.leftFront.direction,
+      ),
+      (
+        'chassis.left_rear.pin',
+        '左后轮',
+        config.chassis.leftRear.pin,
+        'left',
+        config.chassis.leftRear.direction,
+      ),
+      (
+        'chassis.right_front.pin',
+        '右前轮',
+        config.chassis.rightFront.pin,
+        'right',
+        config.chassis.rightFront.direction,
+      ),
+      (
+        'chassis.right_rear.pin',
+        '右后轮',
+        config.chassis.rightRear.pin,
+        'right',
+        config.chassis.rightRear.direction,
+      ),
     ];
-    final wheelPins = <String, List<(String, String)>>{};
+    final wheelPins = <String, List<(String, String, String, Direction)>>{};
     for (final field in wheels) {
       final pin = InfantryPinPlanner.normalizePin(field.$3);
-      wheelPins.putIfAbsent(pin, () => []).add((field.$1, field.$2));
+      wheelPins.putIfAbsent(pin, () => []).add((
+        field.$1,
+        field.$2,
+        field.$4,
+        field.$5,
+      ));
       if (!chassisPins.contains(field.$3)) {
         issue(IssueSeverity.error, field.$1, '${field.$2}使用了非法 IO', 'remote');
       }
@@ -90,9 +119,25 @@ abstract final class ProjectValidator {
     for (final duplicates in wheelPins.values.where(
       (items) => items.length > 1,
     )) {
+      final groups = duplicates.map((item) => item.$3).toSet();
+      if (groups.length == 1) {
+        final directions = duplicates.map((item) => item.$4).toSet();
+        if (directions.length > 1) {
+          final side = groups.single == 'left' ? '左' : '右';
+          for (final item in duplicates) {
+            issue(
+              IssueSeverity.warning,
+              item.$1,
+              '$side侧两轮共用 IO 但方向不同，实际以最后写入的方向为准',
+              'remote',
+            );
+          }
+        }
+        continue;
+      }
       final labels = duplicates.map((item) => item.$2).join('、');
       for (final item in duplicates) {
-        issue(IssueSeverity.error, item.$1, '$labels 不能重复使用同一 IO', 'remote');
+        issue(IssueSeverity.error, item.$1, '$labels 不能跨侧共用同一 IO', 'remote');
       }
     }
 
@@ -228,6 +273,9 @@ abstract final class ProjectValidator {
       }
     }
     for (final duplicates in byPin.values.where((items) => items.length > 1)) {
+      if (duplicates.every((item) => item.$1.startsWith('chassis.'))) {
+        continue;
+      }
       final labels = duplicates.map((item) => item.$2).join('、');
       for (final item in duplicates) {
         issue(

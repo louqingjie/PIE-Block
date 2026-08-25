@@ -57,15 +57,57 @@ void main() {
       final base = InfantryConfig();
       final bad = base.copyWith(
         remote: const RemoteConfig(channel: 126),
-        chassis: base.chassis.copyWith(leftRear: base.chassis.leftFront),
+        chassis: base.chassis.copyWith(rightFront: base.chassis.leftFront),
         triggerKey: 'A',
       );
       final messages = ProjectValidator.validate(bad)
           .map((i) => i.message)
           .join('\n');
       expect(messages, contains('通道号'));
-      expect(messages, contains('重复'));
+      expect(messages, contains('跨侧'));
       expect(messages, contains('按键'));
+    });
+    test('底盘同侧可共用 IO，方向不同时仅警告', () {
+      final base = InfantryConfig();
+      final shared = base.copyWith(
+        chassis: base.chassis.copyWith(
+          leftRear: base.chassis.leftFront,
+          rightRear: base.chassis.rightFront.copyWith(
+            direction: base.chassis.rightFront.direction == Direction.forward
+                ? Direction.reverse
+                : Direction.forward,
+          ),
+        ),
+      );
+      final issues = ProjectValidator.validate(shared);
+      expect(
+        issues.where(
+          (issue) =>
+              issue.severity == IssueSeverity.error &&
+              issue.fieldPath.startsWith('chassis.'),
+        ),
+        isEmpty,
+      );
+      expect(
+        issues.any(
+          (issue) =>
+              issue.severity == IssueSeverity.warning &&
+              issue.message.contains('右侧两轮共用 IO 但方向不同'),
+        ),
+        isTrue,
+      );
+      expect(
+        InfantryPinPlanner.allowedPins(shared, 'chassis.left_rear.pin'),
+        contains(base.chassis.leftFront.pin),
+      );
+      expect(
+        InfantryPinPlanner.occupiedBy(
+          shared,
+          base.chassis.leftFront.pin,
+          'chassis.left_rear.pin',
+        ),
+        isNull,
+      );
     });
     test('动作稳定 ID 可往返', () {
       final action = ActionMapping(key: 'A');

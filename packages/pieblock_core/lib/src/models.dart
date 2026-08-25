@@ -414,6 +414,17 @@ abstract final class InfantryPinPlanner {
 
   static String normalizePin(String value) => value.split(' ').first;
 
+  static String? _chassisSide(String fieldPath) => switch (fieldPath) {
+    'chassis.left_front.pin' || 'chassis.left_rear.pin' => 'left',
+    'chassis.right_front.pin' || 'chassis.right_rear.pin' => 'right',
+    _ => null,
+  };
+
+  static bool _canShare(String firstFieldPath, String secondFieldPath) {
+    final firstSide = _chassisSide(firstFieldPath);
+    return firstSide != null && firstSide == _chassisSide(secondFieldPath);
+  }
+
   static List<PinAssignment> _references(InfantryConfig config) => [
     PinAssignment(
       pin: normalizePin(config.chassis.leftFront.pin),
@@ -471,6 +482,17 @@ abstract final class InfantryPinPlanner {
   static Map<String, PinAssignment> derive(InfantryConfig config) {
     final result = <String, PinAssignment>{};
     for (final assignment in _references(config)) {
+      final previous = result[assignment.pin];
+      if (previous != null &&
+          _canShare(previous.ownerFieldPath, assignment.ownerFieldPath)) {
+        result[assignment.pin] = PinAssignment(
+          pin: assignment.pin,
+          role: assignment.role,
+          ownerFieldPath: previous.ownerFieldPath,
+          ownerLabel: '${previous.ownerLabel}、${assignment.ownerLabel}',
+        );
+        continue;
+      }
       result[assignment.pin] = assignment;
     }
     return Map.unmodifiable(result);
@@ -508,7 +530,11 @@ abstract final class InfantryPinPlanner {
       _ => '',
     };
     final occupied = _references(config)
-        .where((item) => item.ownerFieldPath != fieldPath)
+        .where(
+          (item) =>
+              item.ownerFieldPath != fieldPath &&
+              !_canShare(fieldPath, item.ownerFieldPath),
+        )
         .map((item) => item.pin)
         .toSet();
     return candidates
@@ -528,6 +554,7 @@ abstract final class InfantryPinPlanner {
     final normalized = normalizePin(pin);
     for (final assignment in _references(config)) {
       if (assignment.ownerFieldPath != excludingFieldPath &&
+          !_canShare(excludingFieldPath, assignment.ownerFieldPath) &&
           assignment.pin == normalized) {
         return assignment;
       }

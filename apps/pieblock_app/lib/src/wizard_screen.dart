@@ -582,7 +582,7 @@ class _RemotePage extends ConsumerWidget {
           const SizedBox(height: 18),
           _Section(
             title: '四轮底盘',
-            subtitle: 'IO 名称同时标明扩展板 PWM 与方向引脚。',
+            subtitle: 'IO 名称同时标明扩展板 PWM 与方向引脚；同侧前后轮可以共用一个 IO。',
             children: [
               wheel(
                 '左前轮',
