@@ -14,6 +14,7 @@ import 'package:re_highlight/styles/atom-one-light.dart';
 
 import 'controller.dart';
 import 'deploy_controller.dart';
+import 'music_editor.dart';
 
 final _fieldAnchors = <String, GlobalKey>{};
 final _fieldFocusNodes = <String, FocusNode>{};
@@ -88,7 +89,9 @@ GlobalKey _fieldAnchor(String path) =>
     _fieldAnchors.putIfAbsent(path, GlobalKey.new);
 
 void _scrollToField(String path) {
-  final context = _fieldAnchors[path]?.currentContext;
+  final context = (_fieldAnchors[path] ??
+          (path.startsWith('music.') ? _fieldAnchors['music.notes'] : null))
+      ?.currentContext;
   if (context != null) {
     Scrollable.ensureVisible(
       context,
@@ -168,6 +171,9 @@ String _fieldLabel(String path) {
     'modes.count': '模式数量',
     'modes.switch_strategy': '切换策略',
     'modes.switch_key': '切换按键',
+    'music.notes': '主旋律',
+    'music.tempo_events': '速度事件',
+    'music.time_signature_events': '拍号事件',
   };
   if (exact[path] case final label?) return label;
   if (path.endsWith('.direction')) return '方向';
@@ -360,6 +366,7 @@ class WizardScreen extends ConsumerWidget {
     '编译与烧录',
   ];
   static const debugSteps = ['测试序列', '检查与摘要', '生成代码', '编译与烧录'];
+  static const musicSteps = ['钢琴卷帘', '检查与摘要', '生成代码', '编译与烧录'];
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -370,6 +377,7 @@ class WizardScreen extends ConsumerWidget {
           ProjectKind.infantry => infantrySteps,
           ProjectKind.engineer => engineerSteps,
           ProjectKind.debug => debugSteps,
+          ProjectKind.music => musicSteps,
         };
     final page = switch (document.kind) {
       ProjectKind.infantry => switch (state.step) {
@@ -391,6 +399,12 @@ class WizardScreen extends ConsumerWidget {
       },
       ProjectKind.debug => switch (state.step) {
         0 => const _DebugTestsPage(),
+        1 => const _ReviewPage(),
+        2 => const _CodePage(),
+        _ => const _DeployPage(),
+      },
+      ProjectKind.music => switch (state.step) {
+        0 => _FieldAnchor(path: 'music.notes', child: MusicEditorPage()),
         1 => const _ReviewPage(),
         2 => const _CodePage(),
         _ => const _DeployPage(),
@@ -436,6 +450,7 @@ class WizardScreen extends ConsumerWidget {
                       ProjectKind.infantry => '步兵项目',
                       ProjectKind.engineer => '工程项目',
                       ProjectKind.debug => '调试项目',
+                      ProjectKind.music => '音乐项目',
                     }, style: Theme.of(context).textTheme.labelMedium),
                 ],
               ),
@@ -2480,6 +2495,28 @@ class _ReviewPage extends ConsumerWidget {
                       }}',
                     ),
                   ),
+              ],
+              if (config is MusicConfig) ...[
+                ListTile(
+                  leading: const Icon(Icons.piano),
+                  title: Text(
+                    '${config.notes.where((note) => note.primary).length} 个主旋律音符 · ${config.notes.where((note) => !note.primary).length} 个参考音符',
+                  ),
+                  subtitle: Text(
+                    '${config.ticksPerQuarter} PPQ · ${config.tempoEvents.length} 个速度事件 · ${config.timeSignatureEvents.length} 个拍号事件',
+                  ),
+                ),
+                if (config.sourceName != null)
+                  ListTile(
+                    leading: const Icon(Icons.audio_file_outlined),
+                    title: Text('来源：${config.sourceName}'),
+                    subtitle: Text('轨道：${config.trackName ?? '未命名'}'),
+                  ),
+                const ListTile(
+                  leading: Icon(Icons.volume_up_outlined),
+                  title: Text('P33 无源蜂鸣器单音播放'),
+                  subtitle: Text('参考音符只参与 MIDI 导出，固件播放完立即循环'),
+                ),
               ],
             ],
           ),

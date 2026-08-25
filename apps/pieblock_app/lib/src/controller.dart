@@ -373,6 +373,7 @@ class AppController extends Notifier<AppState> {
       'deploy',
     ],
     ProjectKind.debug => const ['tests', 'review', 'code', 'deploy'],
+    ProjectKind.music => const ['music', 'review', 'code', 'deploy'],
   };
 
   int reviewStep(ProjectKind kind) => stepIds(kind).indexOf('review');

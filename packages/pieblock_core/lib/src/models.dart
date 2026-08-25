@@ -1,4 +1,4 @@
-enum ProjectKind { infantry, engineer, debug }
+enum ProjectKind { infantry, engineer, debug, music }
 
 enum Direction { forward, reverse }
 
@@ -329,6 +329,180 @@ class DebugConfig extends ProjectConfig {
     }
     return DebugConfig(tests: tests);
   }
+}
+
+class MusicNote {
+  const MusicNote({
+    required this.id,
+    required this.pitch,
+    required this.startTick,
+    required this.durationTicks,
+    this.primary = true,
+  });
+
+  final String id;
+  final int pitch, startTick, durationTicks;
+  final bool primary;
+  int get endTick => startTick + durationTicks;
+
+  MusicNote copyWith({
+    String? id,
+    int? pitch,
+    int? startTick,
+    int? durationTicks,
+    bool? primary,
+  }) => MusicNote(
+    id: id ?? this.id,
+    pitch: pitch ?? this.pitch,
+    startTick: startTick ?? this.startTick,
+    durationTicks: durationTicks ?? this.durationTicks,
+    primary: primary ?? this.primary,
+  );
+
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'pitch': pitch,
+    'start_tick': startTick,
+    'duration_ticks': durationTicks,
+    'primary': primary,
+  };
+
+  factory MusicNote.fromJson(Map<String, Object?> json) => MusicNote(
+    id: json['id']?.toString() ?? '',
+    pitch: (json['pitch'] as num?)?.toInt() ?? 60,
+    startTick: (json['start_tick'] as num?)?.toInt() ?? 0,
+    durationTicks: (json['duration_ticks'] as num?)?.toInt() ?? 1,
+    primary: json['primary'] as bool? ?? true,
+  );
+}
+
+class TempoEvent {
+  const TempoEvent({required this.tick, required this.microsecondsPerQuarter});
+  final int tick, microsecondsPerQuarter;
+  double get bpm => 60000000 / microsecondsPerQuarter;
+  Map<String, Object?> toJson() => {
+    'tick': tick,
+    'microseconds_per_quarter': microsecondsPerQuarter,
+  };
+  factory TempoEvent.fromJson(Map<String, Object?> json) => TempoEvent(
+    tick: (json['tick'] as num?)?.toInt() ?? 0,
+    microsecondsPerQuarter:
+        (json['microseconds_per_quarter'] as num?)?.toInt() ?? 500000,
+  );
+}
+
+class TimeSignatureEvent {
+  const TimeSignatureEvent({
+    required this.tick,
+    required this.numerator,
+    required this.denominator,
+  });
+  final int tick, numerator, denominator;
+  Map<String, Object?> toJson() => {
+    'tick': tick,
+    'numerator': numerator,
+    'denominator': denominator,
+  };
+  factory TimeSignatureEvent.fromJson(Map<String, Object?> json) =>
+      TimeSignatureEvent(
+        tick: (json['tick'] as num?)?.toInt() ?? 0,
+        numerator: (json['numerator'] as num?)?.toInt() ?? 4,
+        denominator: (json['denominator'] as num?)?.toInt() ?? 4,
+      );
+}
+
+class MusicConfig extends ProjectConfig {
+  MusicConfig({
+    this.ticksPerQuarter = 480,
+    this.sourceName,
+    this.trackName,
+    List<MusicNote> notes = const [],
+    List<TempoEvent>? tempoEvents,
+    List<TimeSignatureEvent>? timeSignatureEvents,
+  }) : notes = List.unmodifiable(notes),
+       tempoEvents = List.unmodifiable(
+         tempoEvents ?? const [TempoEvent(tick: 0, microsecondsPerQuarter: 500000)],
+       ),
+       timeSignatureEvents = List.unmodifiable(
+         timeSignatureEvents ??
+             const [TimeSignatureEvent(tick: 0, numerator: 4, denominator: 4)],
+       );
+
+  final int ticksPerQuarter;
+  final String? sourceName, trackName;
+  final List<MusicNote> notes;
+  final List<TempoEvent> tempoEvents;
+  final List<TimeSignatureEvent> timeSignatureEvents;
+
+  @override
+  ProjectKind get kind => ProjectKind.music;
+
+  MusicConfig copyWith({
+    int? ticksPerQuarter,
+    Object? sourceName = _unset,
+    Object? trackName = _unset,
+    List<MusicNote>? notes,
+    List<TempoEvent>? tempoEvents,
+    List<TimeSignatureEvent>? timeSignatureEvents,
+  }) => MusicConfig(
+    ticksPerQuarter: ticksPerQuarter ?? this.ticksPerQuarter,
+    sourceName: identical(sourceName, _unset)
+        ? this.sourceName
+        : sourceName as String?,
+    trackName: identical(trackName, _unset)
+        ? this.trackName
+        : trackName as String?,
+    notes: notes ?? this.notes,
+    tempoEvents: tempoEvents ?? this.tempoEvents,
+    timeSignatureEvents: timeSignatureEvents ?? this.timeSignatureEvents,
+  );
+
+  MusicConfig promote(String noteId) {
+    MusicNote? target;
+    for (final note in notes) {
+      if (note.id == noteId) target = note;
+    }
+    if (target == null) return this;
+    return copyWith(
+      notes: [
+        for (final note in notes)
+          note.startTick == target.startTick
+              ? note.copyWith(primary: note.id == noteId)
+              : note,
+      ],
+    );
+  }
+
+  @override
+  Map<String, Object?> toJson() => {
+    'ticks_per_quarter': ticksPerQuarter,
+    'source_name': sourceName,
+    'track_name': trackName,
+    'notes': notes.map((note) => note.toJson()).toList(),
+    'tempo_events': tempoEvents.map((event) => event.toJson()).toList(),
+    'time_signature_events': timeSignatureEvents
+        .map((event) => event.toJson())
+        .toList(),
+  };
+
+  factory MusicConfig.fromJson(Map<String, Object?> json) => MusicConfig(
+    ticksPerQuarter: (json['ticks_per_quarter'] as num?)?.toInt() ?? 480,
+    sourceName: json['source_name']?.toString(),
+    trackName: json['track_name']?.toString(),
+    notes: [
+      for (final raw in json['notes'] as List? ?? const [])
+        if (raw is Map) MusicNote.fromJson(Map<String, Object?>.from(raw)),
+    ],
+    tempoEvents: [
+      for (final raw in json['tempo_events'] as List? ?? const [])
+        if (raw is Map) TempoEvent.fromJson(Map<String, Object?>.from(raw)),
+    ],
+    timeSignatureEvents: [
+      for (final raw in json['time_signature_events'] as List? ?? const [])
+        if (raw is Map)
+          TimeSignatureEvent.fromJson(Map<String, Object?>.from(raw)),
+    ],
+  );
 }
 
 class InfantryConfig extends RobotConfig {
@@ -926,7 +1100,11 @@ class GuideProgress {
   });
 
   factory GuideProgress.initial([ProjectKind kind = ProjectKind.infantry]) {
-    final first = kind == ProjectKind.debug ? 'tests' : 'remote';
+    final first = switch (kind) {
+      ProjectKind.debug => 'tests',
+      ProjectKind.music => 'music',
+      _ => 'remote',
+    };
     return GuideProgress(currentStepId: first, visitedStepIds: [first]);
   }
 
@@ -950,7 +1128,11 @@ class GuideProgress {
     Map<String, Object?> json, [
     ProjectKind kind = ProjectKind.infantry,
   ]) {
-    final first = kind == ProjectKind.debug ? 'tests' : 'remote';
+    final first = switch (kind) {
+      ProjectKind.debug => 'tests',
+      ProjectKind.music => 'music',
+      _ => 'remote',
+    };
     return GuideProgress(
       currentStepId: json['current_step_id']?.toString() ?? first,
       visitedStepIds: List.unmodifiable(
@@ -988,6 +1170,7 @@ class ProjectDocument {
         ProjectKind.infantry => InfantryConfig(),
         ProjectKind.engineer => EngineerConfig(),
         ProjectKind.debug => DebugConfig(),
+        ProjectKind.music => MusicConfig(),
       },
       guideProgress: GuideProgress.initial(kind),
     );
@@ -1037,6 +1220,7 @@ class ProjectDocument {
         ProjectKind.infantry => InfantryConfig.fromJson(config),
         ProjectKind.engineer => EngineerConfig.fromJson(config),
         ProjectKind.debug => DebugConfig.fromJson(config),
+        ProjectKind.music => MusicConfig.fromJson(config),
       },
     );
   }

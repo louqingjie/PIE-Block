@@ -6,7 +6,7 @@ import 'package:pieblock_toolchain/pieblock_toolchain.dart';
 Future<void> main(List<String> arguments) async {
   if (arguments.length < 2 || arguments.length > 3) {
     stderr.writeln(
-      '用法：dart run tool/build_smoke.dart <infantry|engineer|debug> <main.c> [Keil目录]',
+      '用法：dart run tool/build_smoke.dart <infantry|engineer|debug|music> <main.c> [Keil目录]',
     );
     exitCode = 64;
     return;

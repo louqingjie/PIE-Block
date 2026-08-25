@@ -132,6 +132,25 @@ void main() {
     );
   });
 
+  test('音乐和调试项目按编译器选择明确模板', () {
+    expect(
+      firmwareProjectFor(ProjectKind.music, CompilerKind.sdcc),
+      'BUZZER_MUSIC_GENERATED',
+    );
+    expect(
+      firmwareProjectFor(ProjectKind.music, CompilerKind.keil),
+      'ROBOMASTER_INFANTRY',
+    );
+    expect(
+      firmwareProjectFor(ProjectKind.debug, CompilerKind.sdcc),
+      'ROBOMASTER_INFANTRY',
+    );
+    expect(
+      firmwareProjectFor(ProjectKind.debug, CompilerKind.keil),
+      'ROBOMASTER_INFANTRY',
+    );
+  });
+
   test('构建缓存只复用哈希和布局均有效的 HEX', () async {
     final directory = await Directory.systemTemp.createTemp('pieblock-cache-');
     addTearDown(() => directory.delete(recursive: true));

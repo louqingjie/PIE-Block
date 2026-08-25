@@ -7,6 +7,8 @@ import 'package:pieblock_app/main.dart';
 import 'package:pieblock_app/src/controller.dart';
 import 'package:pieblock_app/src/deploy_controller.dart';
 import 'package:pieblock_app/src/home_screen.dart';
+import 'package:pieblock_app/src/music_editor.dart';
+import 'package:pieblock_app/src/music_preview.dart';
 import 'package:pieblock_app/src/wizard_screen.dart';
 import 'package:pieblock_core/pieblock_core.dart';
 import 'package:pieblock_toolchain/pieblock_toolchain.dart';
@@ -131,6 +133,30 @@ class _FakeDeployController extends DeployController {
   void cancelAll() {}
 }
 
+class _FakeMusicPreview implements MusicPreviewService {
+  @override
+  bool paused = false;
+  @override
+  bool playing = false;
+  @override
+  Duration position = Duration.zero;
+  @override
+  Future<void> dispose() async {}
+  @override
+  Future<void> play(MusicConfig config, {required bool looping}) async {
+    playing = true;
+  }
+  @override
+  Future<void> stop() async {
+    playing = false;
+    position = Duration.zero;
+  }
+  @override
+  Future<void> togglePause() async {
+    paused = !paused;
+  }
+}
+
 ProjectDocument _infantryDocument() {
   final source = ProjectDocument.create('步兵测试', ProjectKind.infantry);
   return source.copyWith(
@@ -205,6 +231,26 @@ ProjectDocument _debugDocument() {
   );
 }
 
+ProjectDocument _musicDocument() {
+  final source = ProjectDocument.create('音乐测试', ProjectKind.music);
+  return source.copyWith(
+    config: MusicConfig(
+      sourceName: 'test.mid',
+      trackName: 'Melody',
+      notes: const [
+        MusicNote(id: 'main', pitch: 60, startTick: 0, durationTicks: 480),
+        MusicNote(
+          id: 'reference',
+          pitch: 67,
+          startTick: 0,
+          durationTicks: 480,
+          primary: false,
+        ),
+      ],
+    ),
+  );
+}
+
 void main() {
   testWidgets('启动页展示两个项目入口', (tester) async {
     await tester.pumpWidget(const ProviderScope(child: PieBlockApp()));
@@ -231,6 +277,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('浏览'), findsOneWidget);
     expect(find.text('调试'), findsOneWidget);
+    expect(find.text('音乐'), findsOneWidget);
     expect(find.text('创建项目'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
@@ -256,6 +303,36 @@ void main() {
     expect(find.text('目标值'), findsOneWidget);
     expect(find.text('测试时长'), findsNothing);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('音乐向导展示原生钢琴卷帘和响应式编辑工具', (tester) async {
+    final preview = _FakeMusicPreview();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _StaticProjectController(_musicDocument(), 0),
+          ),
+        ],
+        child: MaterialApp(
+          theme: ThemeData(useMaterial3: true),
+          home: Scaffold(body: MusicEditorPage(previewService: preview)),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('导入 MIDI'), findsOneWidget);
+    expect(find.text('导出 MIDI'), findsOneWidget);
+    expect(find.text('画笔'), findsOneWidget);
+    expect(find.byType(CustomPaint), findsWidgets);
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(find.byTooltip('播放'));
+    await tester.pump();
+    expect(preview.playing, isTrue);
+    await tester.tap(find.byTooltip('停止'));
+    await tester.pump();
+    expect(preview.playing, isFalse);
   });
 
   testWidgets('新建项目可浏览保存位置', (tester) async {

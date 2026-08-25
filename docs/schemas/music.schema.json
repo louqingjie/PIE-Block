@@ -1,42 +1,57 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Pie-Block 音乐 配置",
-  "description": "从 MIDI 选定一条或多条轨道并解析出的播放数据；CLI 不读取原始 MIDI 文件。polyphonic 开启后为四声部 1us 最短时间片伪复音。",
+  "title": "PIE-Block Flutter 音乐配置",
+  "description": "单音主旋律钢琴卷帘及 MIDI 往返数据。相同 start_tick 必须且只能有一个 primary 音符。",
   "kind": "music",
   "type": "object",
   "properties": {
-    "music": {
-      "type": "object",
-      "properties": {
-        "source_name": {"type": "string"},
-        "polyphonic": {"type": "boolean", "default": false},
-        "track_index": {"type": "integer", "minimum": 0},
-        "track_indices": {"type": "array", "minItems": 1,
-          "items": {"type": "integer", "minimum": 0}},
-        "track_name": {"type": "string"},
-        "track_names": {"type": "array", "items": {"type": "string"}},
-        "track_count": {"type": "integer", "minimum": 1},
-        "duration_ms": {"type": "integer", "minimum": 1, "maximum": 1200000},
-        "segments": {
-          "type": "array",
-          "maxItems": 8192,
-          "items": {
-            "type": "object",
-            "properties": {
-              "notes": {
-                "type": "array",
-                "maxItems": 4,
-                "items": {"type": "integer", "minimum": 1, "maximum": 127},
-                "description": "按音高降序排列的 MIDI 音符；空数组表示休止"
-              },
-              "duration_ms": {"type": "integer", "minimum": 1}
-            },
-            "required": ["notes", "duration_ms"]
-          }
-        }
-      },
-      "required": ["polyphonic", "track_indices", "track_count", "segments"]
+    "ticks_per_quarter": {"type": "integer", "minimum": 1, "maximum": 32767},
+    "source_name": {"type": ["string", "null"]},
+    "track_name": {"type": ["string", "null"]},
+    "notes": {
+      "type": "array",
+      "maxItems": 32768,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "pitch": {"type": "integer", "minimum": 1, "maximum": 127},
+          "start_tick": {"type": "integer", "minimum": 0},
+          "duration_ticks": {"type": "integer", "minimum": 1},
+          "primary": {"type": "boolean"}
+        },
+        "required": ["id", "pitch", "start_tick", "duration_ticks", "primary"],
+        "additionalProperties": false
+      }
+    },
+    "tempo_events": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "properties": {
+          "tick": {"type": "integer", "minimum": 0},
+          "microseconds_per_quarter": {"type": "integer", "minimum": 1, "maximum": 16777215}
+        },
+        "required": ["tick", "microseconds_per_quarter"],
+        "additionalProperties": false
+      }
+    },
+    "time_signature_events": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "properties": {
+          "tick": {"type": "integer", "minimum": 0},
+          "numerator": {"type": "integer", "minimum": 1},
+          "denominator": {"enum": [1, 2, 4, 8, 16, 32, 64]}
+        },
+        "required": ["tick", "numerator", "denominator"],
+        "additionalProperties": false
+      }
     }
   },
-  "required": ["music"]
+  "required": ["ticks_per_quarter", "notes", "tempo_events", "time_signature_events"],
+  "additionalProperties": false
 }

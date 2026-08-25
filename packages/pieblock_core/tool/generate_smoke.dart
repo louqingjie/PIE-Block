@@ -81,6 +81,17 @@ DebugConfig debug() => DebugConfig(
   ],
 );
 
+MusicConfig music() => MusicConfig(
+  notes: const [
+    MusicNote(id: 'c4', pitch: 60, startTick: 0, durationTicks: 480),
+    MusicNote(id: 'e4', pitch: 64, startTick: 720, durationTicks: 480),
+  ],
+  tempoEvents: const [
+    TempoEvent(tick: 0, microsecondsPerQuarter: 500000),
+    TempoEvent(tick: 960, microsecondsPerQuarter: 400000),
+  ],
+);
+
 void main(List<String> arguments) {
   if (arguments.length != 1) {
     stderr.writeln('用法：dart run tool/generate_smoke.dart <输出目录>');
@@ -94,4 +105,6 @@ void main(List<String> arguments) {
       .writeAsStringSync(CodeGenerator.generate(engineer()));
   File('${directory.path}${Platform.pathSeparator}debug.c')
       .writeAsStringSync(CodeGenerator.generate(debug()));
+  File('${directory.path}${Platform.pathSeparator}music.c')
+      .writeAsStringSync(CodeGenerator.generate(music()));
 }

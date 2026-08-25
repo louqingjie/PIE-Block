@@ -1,4 +1,5 @@
 import 'models.dart';
+import 'music.dart';
 
 typedef _AddIssue = void Function(
   IssueSeverity severity,
@@ -39,6 +40,8 @@ abstract final class ProjectValidator {
         _engineer(value, issue);
       case DebugConfig value:
         _debug(value, issue);
+      case MusicConfig value:
+        _music(value, issue);
     }
     return issues;
   }
@@ -201,6 +204,107 @@ abstract final class ProjectValidator {
     }
     if (seen.length != debugPins.length || !seen.containsAll(debugPins)) {
       issue(IssueSeverity.error, 'tests', '调试序列必须包含全部十个固定引脚', 'tests');
+    }
+  }
+
+  static void _music(MusicConfig config, _AddIssue issue) {
+    if (config.ticksPerQuarter < 1 || config.ticksPerQuarter > 0x7fff) {
+      issue(IssueSeverity.error, 'music.ticks_per_quarter', 'MIDI PPQ 必须在 1–32767 之间', 'music');
+    }
+    if (config.notes.isEmpty || !config.notes.any((note) => note.primary)) {
+      issue(
+        IssueSeverity.error,
+        'music.notes',
+        '至少添加一个主旋律音符',
+        'music',
+        ValidationIssueKind.required,
+      );
+    }
+    if (config.notes.length > 32768) {
+      issue(IssueSeverity.error, 'music.notes', 'MIDI 音符总数不能超过 32768', 'music');
+    }
+    final ids = <String>{};
+    final groups = <int, List<MusicNote>>{};
+    for (var index = 0; index < config.notes.length; index++) {
+      final note = config.notes[index];
+      final path = 'music.notes.$index';
+      if (note.id.isEmpty || !ids.add(note.id)) {
+        issue(IssueSeverity.error, '$path.id', '音符 ID 不能为空或重复', 'music');
+      }
+      if (note.pitch < 1 || note.pitch > 127) {
+        issue(IssueSeverity.error, '$path.pitch', 'MIDI 音高必须在 1–127 之间', 'music');
+      }
+      if (note.startTick < 0) {
+        issue(IssueSeverity.error, '$path.start_tick', '音符起始 tick 不能为负数', 'music');
+      }
+      if (note.durationTicks <= 0) {
+        issue(IssueSeverity.error, '$path.duration_ticks', '音符时值必须大于 0', 'music');
+      }
+      groups.putIfAbsent(note.startTick, () => []).add(note);
+    }
+    for (final entry in groups.entries) {
+      if (entry.value.where((note) => note.primary).length != 1) {
+        issue(
+          IssueSeverity.error,
+          'music.notes',
+          '起始 tick ${entry.key} 必须且只能选择一个主旋律音符',
+          'music',
+        );
+      }
+    }
+    _orderedEvents(
+      config.tempoEvents.map((event) => event.tick).toList(),
+      'music.tempo_events',
+      '速度',
+      issue,
+    );
+    for (var index = 0; index < config.tempoEvents.length; index++) {
+      final event = config.tempoEvents[index];
+      if (event.microsecondsPerQuarter < 1 || event.microsecondsPerQuarter > 0xffffff) {
+        issue(IssueSeverity.error, 'music.tempo_events.$index', '速度事件超出标准 MIDI 范围', 'music');
+      }
+    }
+    _orderedEvents(
+      config.timeSignatureEvents.map((event) => event.tick).toList(),
+      'music.time_signature_events',
+      '拍号',
+      issue,
+    );
+    for (var index = 0; index < config.timeSignatureEvents.length; index++) {
+      final event = config.timeSignatureEvents[index];
+      final denominator = event.denominator;
+      if (event.numerator < 1 ||
+          denominator < 1 ||
+          denominator > 64 ||
+          (denominator & (denominator - 1)) != 0) {
+        issue(IssueSeverity.error, 'music.time_signature_events.$index', '拍号必须使用正分子和 1–64 的二次幂分母', 'music');
+      }
+    }
+    final segments = MusicTimeline.segments(config);
+    if (segments.length > 8192) {
+      issue(IssueSeverity.error, 'music.notes', '生成片段不能超过 8192 个', 'music');
+    }
+    final duration = segments.fold<int>(0, (total, segment) => total + segment.durationMs);
+    if (duration > 20 * 60 * 1000) {
+      issue(IssueSeverity.error, 'music.notes', '音乐总时长不能超过 20 分钟', 'music');
+    }
+  }
+
+  static void _orderedEvents(
+    List<int> ticks,
+    String path,
+    String label,
+    _AddIssue issue,
+  ) {
+    if (ticks.isEmpty || ticks.first != 0) {
+      issue(IssueSeverity.error, path, '$label事件必须从 tick 0 开始', 'music');
+      return;
+    }
+    for (var index = 0; index < ticks.length; index++) {
+      if (ticks[index] < 0 || index > 0 && ticks[index] <= ticks[index - 1]) {
+        issue(IssueSeverity.error, path, '$label事件必须按 tick 严格递增且不能重复', 'music');
+        return;
+      }
     }
   }
 
