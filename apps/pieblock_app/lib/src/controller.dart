@@ -17,6 +17,7 @@ class AppState {
     this.saveStatus = SaveStatus.idle,
     this.message,
     this.pendingFieldPath,
+    this.validationAttemptedStepIds = const {},
     this.themeMode = ThemeMode.system,
     this.recentPaths = const [],
   });
@@ -26,6 +27,7 @@ class AppState {
   final SaveStatus saveStatus;
   final String? message;
   final String? pendingFieldPath;
+  final Set<String> validationAttemptedStepIds;
   final ThemeMode themeMode;
   final List<String> recentPaths;
   AppState copyWith({
@@ -38,6 +40,8 @@ class AppState {
     bool clearMessage = false,
     String? pendingFieldPath,
     bool clearPendingField = false,
+    Set<String>? validationAttemptedStepIds,
+    bool clearValidationAttempts = false,
     ThemeMode? themeMode,
     List<String>? recentPaths,
     bool clearProject = false,
@@ -51,6 +55,9 @@ class AppState {
     pendingFieldPath: clearProject || clearPendingField
         ? null
         : pendingFieldPath ?? this.pendingFieldPath,
+    validationAttemptedStepIds: clearProject || clearValidationAttempts
+        ? const {}
+        : validationAttemptedStepIds ?? this.validationAttemptedStepIds,
     themeMode: themeMode ?? this.themeMode,
     recentPaths: recentPaths ?? this.recentPaths,
   );
@@ -157,6 +164,10 @@ class AppController extends Notifier<AppState> {
       saveStatus: SaveStatus.saved,
       clearMessage: true,
       clearPendingField: true,
+      validationAttemptedStepIds: {
+        for (var index = 0; index < current && index < ids.length; index += 1)
+          ids[index],
+      },
       recentPaths: recent,
     );
     unawaited(_saveSettings());
@@ -199,12 +210,33 @@ class AppController extends Notifier<AppState> {
       ? const []
       : ProjectValidator.validate(state.document!.config);
 
+  List<ValidationIssue> get visibleIssues {
+    final document = state.document;
+    if (document == null) return const [];
+    final all = issues;
+    if (state.step >= reviewStep(document.kind)) return all;
+    return all
+        .where(
+          (issue) =>
+              issue.kind != ValidationIssueKind.required ||
+              state.validationAttemptedStepIds.contains(issue.stepId),
+        )
+        .toList();
+  }
+
   bool goToStep(int target) {
     final document = state.document;
     if (document == null || target < 0 || target >= stepCount(document.kind)) {
       return false;
     }
     if (target > state.step) {
+      final ids = stepIds(document.kind);
+      state = state.copyWith(
+        validationAttemptedStepIds: {
+          ...state.validationAttemptedStepIds,
+          ids[state.step],
+        },
+      );
       final blocking = issues.where(
         (i) =>
             i.severity == IssueSeverity.error &&
@@ -291,6 +323,10 @@ class AppController extends Notifier<AppState> {
       step: _stepIndex(issue.stepId, document.kind),
       pendingFieldPath: issue.fieldPath,
       clearMessage: true,
+      validationAttemptedStepIds: {
+        ...state.validationAttemptedStepIds,
+        issue.stepId,
+      },
     );
     _persistProgress(_stepIndex(issue.stepId, document.kind));
   }

@@ -68,7 +68,7 @@ class _FieldAnchor extends StatelessWidget {
 ValidationIssue? _fieldIssue(WidgetRef ref, String path) {
   final issues = ref
       .read(appControllerProvider.notifier)
-      .issues
+      .visibleIssues
       .where((issue) => issue.fieldPath == path);
   if (issues.isEmpty) return null;
   return issues.firstWhere(
@@ -541,7 +541,7 @@ class _PageFrame extends ConsumerWidget {
         ? const <ValidationIssue>[]
         : ref
               .read(appControllerProvider.notifier)
-              .issues
+              .visibleIssues
               .where((issue) => issue.stepId == stepId)
               .toList();
     return SingleChildScrollView(

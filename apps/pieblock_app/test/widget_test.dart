@@ -64,6 +64,15 @@ class _ConfiguredMechanismController extends AppController {
   );
 }
 
+class _ConfiguredRemoteController extends AppController {
+  _ConfiguredRemoteController(this.document);
+  final ProjectDocument document;
+
+  @override
+  AppState build() =>
+      AppState(document: document, saveStatus: SaveStatus.saved);
+}
+
 class _GeneratedCodeController extends AppController {
   @override
   AppState build() => AppState(
@@ -170,6 +179,55 @@ void main() {
     expect(find.text('1 / 5'), findsOneWidget);
     expect(find.text('PWM 与引脚'), findsNothing);
     expect(find.byTooltip('切换主题'), findsNothing);
+  });
+
+  testWidgets('空白配置先不报错，点击下一步后显示未填项', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(_InfantryStartController.new),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('尚未填写'), findsNothing);
+    expect(find.textContaining('尚未选择'), findsNothing);
+    expect(find.textContaining('本页有'), findsNothing);
+
+    await tester.tap(find.text('下一步'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('尚未填写'), findsWidgets);
+    expect(find.textContaining('尚未选择'), findsWidgets);
+    expect(find.text('1 / 5'), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 1500));
+  });
+
+  testWidgets('已选配置产生冲突时立即报错', (tester) async {
+    final source = _infantryDocument();
+    final config = source.config as InfantryConfig;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _ConfiguredRemoteController(
+              source.copyWith(
+                config: config.copyWith(
+                  chassis: config.chassis.copyWith(
+                    rightFront: const WheelConfig('P74 P24', Direction.reverse),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('不能跨侧共用同一 IO'), findsWidgets);
   });
 
   testWidgets('错误显示在字段和问题栏并阻止下一步', (tester) async {

@@ -4,8 +4,9 @@ typedef _AddIssue = void Function(
   IssueSeverity severity,
   String path,
   String message,
-  String step,
-);
+  String step, [
+  ValidationIssueKind kind,
+]);
 
 abstract final class ProjectValidator {
   static List<ValidationIssue> validate(RobotConfig config) {
@@ -14,14 +15,16 @@ abstract final class ProjectValidator {
       IssueSeverity severity,
       String path,
       String message,
-      String step,
-    ) {
+      String step, [
+      ValidationIssueKind kind = ValidationIssueKind.invalid,
+    ]) {
       issues.add(
         ValidationIssue(
           severity: severity,
           fieldPath: path,
           message: message,
           stepId: step,
+          kind: kind,
         ),
       );
     }
@@ -94,7 +97,15 @@ abstract final class ProjectValidator {
     bool required = true,
   }) {
     if (value == null) {
-      if (required) issue(IssueSeverity.error, path, '$label尚未填写', step);
+      if (required) {
+        issue(
+          IssueSeverity.error,
+          path,
+          '$label尚未填写',
+          step,
+          ValidationIssueKind.required,
+        );
+      }
     } else if (value < min || value > max) {
       issue(IssueSeverity.error, path, '$label必须在 $min–$max 之间', step);
     }
@@ -108,7 +119,13 @@ abstract final class ProjectValidator {
     _AddIssue issue,
   ) {
     if (value == null || value is String && value.isEmpty) {
-      issue(IssueSeverity.error, path, '$label尚未选择', step);
+      issue(
+        IssueSeverity.error,
+        path,
+        '$label尚未选择',
+        step,
+        ValidationIssueKind.required,
+      );
     }
   }
 

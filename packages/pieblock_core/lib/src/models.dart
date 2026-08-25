@@ -20,6 +20,8 @@ enum ControlMode { direct, incremental, speed, accelerate }
 
 enum IssueSeverity { error, warning }
 
+enum ValidationIssueKind { required, invalid }
+
 const expansionPins = ['P60', 'P62', 'P64', 'P66', 'P74', 'P75', 'P76', 'P77'];
 const mainServoPins = ['MP03', 'MP74'];
 const chassisPins = [
@@ -932,7 +934,9 @@ class ValidationIssue {
     required this.fieldPath,
     required this.message,
     required this.stepId,
+    this.kind = ValidationIssueKind.invalid,
   });
   final IssueSeverity severity;
   final String fieldPath, message, stepId;
+  final ValidationIssueKind kind;
 }

@@ -182,6 +182,28 @@ void main() {
       expect(() => CodeGenerator.generate(config), throwsStateError);
     });
 
+    test('校验项区分未填必填项与已填非法值', () {
+      final blankIssues = ProjectValidator.validate(InfantryConfig());
+      expect(
+        blankIssues.where((issue) => issue.severity == IssueSeverity.error),
+        everyElement(
+          predicate<ValidationIssue>(
+            (issue) => issue.kind == ValidationIssueKind.required,
+          ),
+        ),
+      );
+
+      final invalidIssues = ProjectValidator.validate(
+        InfantryConfig(remote: const RemoteConfig(channel: 126)),
+      );
+      expect(
+        invalidIssues
+            .singleWhere((issue) => issue.fieldPath == 'remote.channel')
+            .kind,
+        ValidationIssueKind.invalid,
+      );
+    });
+
     test('仓库原子保存并打开', () async {
       final dir = await Directory.systemTemp.createTemp('pieblock-core-test-');
       addTearDown(() => dir.delete(recursive: true));
