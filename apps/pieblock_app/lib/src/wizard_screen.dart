@@ -5,6 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pieblock_core/pieblock_core.dart';
+import 'package:re_editor/re_editor.dart';
+import 'package:re_highlight/languages/c.dart';
+import 'package:re_highlight/styles/atom-one-dark.dart';
+import 'package:re_highlight/styles/atom-one-light.dart';
 
 import 'controller.dart';
 
@@ -2071,7 +2075,6 @@ class _CodePage extends ConsumerStatefulWidget {
 }
 
 class _CodePageState extends ConsumerState<_CodePage> {
-  String query = '';
   Future<void> _export(String code) async {
     final path = TextEditingController(
       text:
@@ -2111,8 +2114,7 @@ class _CodePageState extends ConsumerState<_CodePage> {
         config = ref.watch(appControllerProvider).document!.config,
         issues = ctrl.issues;
     final blocked = issues.any((i) => i.severity == IssueSeverity.error);
-    final code = blocked ? '' : CodeGenerator.generate(config),
-        lines = code.split('\n');
+    final code = blocked ? '' : CodeGenerator.generate(config);
     return _PageFrame(
       title: '生成代码',
       subtitle: blocked ? '仍有错误，返回检查页修正后才能生成。' : '代码根据项目配置实时生成，只读且不会写回项目文件。',
@@ -2132,79 +2134,261 @@ class _CodePageState extends ConsumerState<_CodePage> {
                 _Section(
                   title: 'main.c',
                   children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            onChanged: (v) => setState(() => query = v),
-                            decoration: const InputDecoration(
-                              prefixIcon: Icon(Icons.search),
-                              labelText: '在代码中搜索',
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        IconButton.filledTonal(
-                          onPressed: () {
-                            Clipboard.setData(ClipboardData(text: code));
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('代码已复制')),
-                            );
-                          },
-                          tooltip: '复制全部',
-                          icon: const Icon(Icons.copy),
-                        ),
-                        const SizedBox(width: 8),
-                        FilledButton.icon(
-                          onPressed: () => _export(code),
-                          icon: const Icon(Icons.save_alt),
-                          label: const Text('另存为'),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    Container(
-                      height: 560,
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).brightness == Brightness.dark
-                            ? const Color(0xff091012)
-                            : const Color(0xfff0f3f5),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: ListView.builder(
-                        padding: const EdgeInsets.all(14),
-                        itemCount: lines.length,
-                        itemBuilder: (context, i) {
-                          final line = lines[i],
-                              match =
-                                  query.isNotEmpty &&
-                                  line.toLowerCase().contains(
-                                    query.toLowerCase(),
-                                  );
-                          return Container(
-                            color: match
-                                ? Colors.yellow.withValues(alpha: .2)
-                                : null,
-                            child: SelectableText(
-                              '${(i + 1).toString().padLeft(4)}  $line',
-                              style: const TextStyle(
-                                fontFamily: 'Consolas',
-                                fontFamilyFallback: [
-                                  'PieBlockSans',
-                                  'Microsoft YaHei UI',
-                                ],
-                                fontSize: 13,
-                                height: 1.45,
-                              ),
-                            ),
-                          );
-                        },
-                      ),
+                    _GeneratedCodePreview(
+                      code: code,
+                      onExport: () => _export(code),
                     ),
                   ],
                 ),
               ],
             ),
+    );
+  }
+}
+
+class _GeneratedCodePreview extends StatefulWidget {
+  const _GeneratedCodePreview({required this.code, required this.onExport});
+
+  final String code;
+  final VoidCallback onExport;
+
+  @override
+  State<_GeneratedCodePreview> createState() => _GeneratedCodePreviewState();
+}
+
+class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
+  late final CodeLineEditingController _editingController;
+  late final TextEditingController _searchController;
+  late final FocusNode _searchFocusNode;
+  late final ScrollController _verticalScroller;
+  late final ScrollController _horizontalScroller;
+  late final CodeScrollController _scrollController;
+  late final FocusNode _editorFocusNode;
+  List<CodeLineSelection> _matches = const [];
+  int _matchIndex = -1;
+
+  @override
+  void initState() {
+    super.initState();
+    _editingController = CodeLineEditingController.fromText(widget.code);
+    _searchController = TextEditingController();
+    _searchFocusNode = FocusNode(debugLabel: 'code-search');
+    _verticalScroller = ScrollController();
+    _horizontalScroller = ScrollController();
+    _scrollController = CodeScrollController(
+      verticalScroller: _verticalScroller,
+      horizontalScroller: _horizontalScroller,
+    );
+    _editorFocusNode = FocusNode(debugLabel: 'generated-code-editor');
+  }
+
+  @override
+  void didUpdateWidget(covariant _GeneratedCodePreview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.code != widget.code) {
+      _editingController.text = widget.code;
+      _updateSearch(_searchController.text);
+    }
+  }
+
+  void _updateSearch(String query) {
+    final matches = <CodeLineSelection>[];
+    if (query.isNotEmpty) {
+      final pattern = RegExp(RegExp.escape(query), caseSensitive: false);
+      final lines = _editingController.text.split('\n');
+      for (var lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+        for (final match in pattern.allMatches(lines[lineIndex])) {
+          matches.add(
+            CodeLineSelection(
+              baseIndex: lineIndex,
+              baseOffset: match.start,
+              extentIndex: lineIndex,
+              extentOffset: match.end,
+            ),
+          );
+        }
+      }
+    }
+    setState(() {
+      _matches = matches;
+      _matchIndex = matches.isEmpty ? -1 : 0;
+    });
+    if (matches.isNotEmpty) {
+      _selectMatch(0, rebuild: false, focusEditor: false);
+    }
+  }
+
+  void _selectMatch(int index, {bool rebuild = true, bool focusEditor = true}) {
+    if (_matches.isEmpty) return;
+    final normalized =
+        (index % _matches.length + _matches.length) % _matches.length;
+    if (rebuild) setState(() => _matchIndex = normalized);
+    _editingController.selection = _matches[normalized];
+    _scrollController.makeCenterIfInvisible(_matches[normalized].start);
+    if (focusEditor) _editorFocusNode.requestFocus();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    _editingController.dispose();
+    _scrollController.dispose();
+    _verticalScroller.dispose();
+    _horizontalScroller.dispose();
+    _editorFocusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final background = dark ? const Color(0xff091012) : const Color(0xfff0f3f5);
+    final foreground = dark ? const Color(0xffd7e1e3) : const Color(0xff263238);
+    final gutter = dark ? const Color(0xff789094) : const Color(0xff60777b);
+    final syntaxTheme = <String, TextStyle>{
+      ...(dark ? atomOneDarkTheme : atomOneLightTheme),
+      'root': TextStyle(color: foreground, backgroundColor: background),
+    };
+
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                key: const ValueKey('code-search-field'),
+                controller: _searchController,
+                focusNode: _searchFocusNode,
+                onChanged: _updateSearch,
+                decoration: const InputDecoration(
+                  prefixIcon: Icon(Icons.search),
+                  labelText: '在代码中搜索',
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: 58,
+                  child: Text(
+                    '${_matchIndex < 0 ? 0 : _matchIndex + 1} / ${_matches.length}',
+                    key: const ValueKey('code-search-count'),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                IconButton(
+                  onPressed: _matches.isEmpty
+                      ? null
+                      : () => _selectMatch(_matchIndex - 1),
+                  tooltip: '上一个匹配',
+                  icon: const Icon(Icons.keyboard_arrow_up),
+                ),
+                IconButton(
+                  onPressed: _matches.isEmpty
+                      ? null
+                      : () => _selectMatch(_matchIndex + 1),
+                  tooltip: '下一个匹配',
+                  icon: const Icon(Icons.keyboard_arrow_down),
+                ),
+              ],
+            ),
+            const SizedBox(width: 4),
+            IconButton.filledTonal(
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: widget.code));
+                ScaffoldMessenger.of(context)
+                    .showSnackBar(const SnackBar(content: Text('代码已复制')));
+              },
+              tooltip: '复制全部',
+              icon: const Icon(Icons.copy),
+            ),
+            const SizedBox(width: 8),
+            FilledButton.icon(
+              onPressed: widget.onExport,
+              icon: const Icon(Icons.save_alt),
+              label: const Text('另存为'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        SizedBox(
+          height: 560,
+          child: CodeEditor(
+            key: const ValueKey('generated-code-editor'),
+            controller: _editingController,
+            scrollController: _scrollController,
+            focusNode: _editorFocusNode,
+            readOnly: true,
+            showCursorWhenReadOnly: true,
+            wordWrap: false,
+            chunkAnalyzer: const NonCodeChunkAnalyzer(),
+            shortcutOverrideActions: {
+              CodeShortcutFindIntent: CallbackAction<CodeShortcutFindIntent>(
+                onInvoke: (intent) {
+                  _searchFocusNode.requestFocus();
+                  _searchController.selection = TextSelection(
+                    baseOffset: 0,
+                    extentOffset: _searchController.text.length,
+                  );
+                  return null;
+                },
+              ),
+            },
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            borderRadius: BorderRadius.circular(12),
+            clipBehavior: Clip.antiAlias,
+            border: Border.all(
+              color: Theme.of(context).colorScheme.outlineVariant,
+            ),
+            leadingDivider: Container(
+              width: 1,
+              color: Theme.of(context).colorScheme.outlineVariant,
+            ),
+            indicatorBuilder:
+                (context, editingController, chunkController, notifier) =>
+                    Padding(
+                      padding: const EdgeInsets.only(left: 10, right: 8),
+                      child: DefaultCodeLineNumber(
+                        key: const ValueKey('generated-code-line-numbers'),
+                        controller: editingController,
+                        notifier: notifier,
+                        textStyle: TextStyle(
+                          color: gutter,
+                          fontFamily: 'Consolas',
+                          fontSize: 13,
+                          height: 1.45,
+                        ),
+                        focusedTextStyle: TextStyle(
+                          color: Theme.of(context).colorScheme.primary,
+                          fontFamily: 'Consolas',
+                          fontSize: 13,
+                          height: 1.45,
+                        ),
+                      ),
+                    ),
+            style: CodeEditorStyle(
+              fontFamily: 'Consolas',
+              fontFamilyFallback: const ['PieBlockSans', 'Microsoft YaHei UI'],
+              fontSize: 13,
+              fontHeight: 1.45,
+              textColor: foreground,
+              backgroundColor: background,
+              selectionColor: const Color(0xff02acc0).withValues(alpha: .34),
+              highlightColor: const Color(0xffef685d).withValues(alpha: .3),
+              cursorColor: Theme.of(context).colorScheme.primary,
+              cursorLineColor: Theme.of(context).colorScheme.primary
+                  .withValues(alpha: .07),
+              codeTheme: CodeHighlightTheme(
+                languages: {'c': CodeHighlightThemeMode(mode: langC)},
+                theme: syntaxTheme,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

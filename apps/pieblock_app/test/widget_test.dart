@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pieblock_app/main.dart';
@@ -6,6 +8,7 @@ import 'package:pieblock_app/src/controller.dart';
 import 'package:pieblock_app/src/home_screen.dart';
 import 'package:pieblock_app/src/wizard_screen.dart';
 import 'package:pieblock_core/pieblock_core.dart';
+import 'package:re_editor/re_editor.dart';
 
 class _FakeProjectFileDialogs extends ProjectFileDialogs {
   _FakeProjectFileDialogs({this.savePath});
@@ -57,6 +60,16 @@ class _ConfiguredMechanismController extends AppController {
     document: document,
     step: 1,
     maxVisitedStep: 1,
+    saveStatus: SaveStatus.saved,
+  );
+}
+
+class _GeneratedCodeController extends AppController {
+  @override
+  AppState build() => AppState(
+    document: _infantryDocument(),
+    step: 4,
+    maxVisitedStep: 4,
     saveStatus: SaveStatus.saved,
   );
 }
@@ -324,6 +337,165 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('最大占空比'), findsNothing);
     expect(find.text('每次调速步长'), findsNothing);
+  });
+
+  testWidgets('IDE 代码预览支持 C 高亮、行号和跨行选择', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    String? clipboardText;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          clipboardText = (call.arguments as Map)['text'] as String?;
+        }
+        if (call.method == 'Clipboard.getData') {
+          return <String, Object?>{'text': clipboardText};
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(_GeneratedCodeController.new),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final editorFinder = find.byKey(const ValueKey('generated-code-editor'));
+    final editor = tester.widget<CodeEditor>(editorFinder);
+    expect(editor.readOnly, isTrue);
+    expect(editor.wordWrap, isFalse);
+    expect(editor.chunkAnalyzer, isA<NonCodeChunkAnalyzer>());
+    expect(
+      find.byKey(const ValueKey('generated-code-line-numbers')),
+      findsOneWidget,
+    );
+
+    final syntax = editor.style!.codeTheme!;
+    expect(syntax.languages, contains('c'));
+    expect(syntax.theme['keyword'], isNot(syntax.theme['string']));
+    expect(syntax.theme['comment'], isNot(syntax.theme['number']));
+    expect(syntax.theme, contains('meta'));
+
+    final controller = editor.controller!;
+    final originalCode = controller.text;
+    controller.selection = const CodeLineSelection(
+      baseIndex: 0,
+      baseOffset: 0,
+      extentIndex: 2,
+      extentOffset: 4,
+    );
+    expect(controller.selectedText.split('\n'), hasLength(3));
+    expect(controller.selectedText, isNot(contains('   1  ')));
+
+    await tester.ensureVisible(editorFinder);
+    await tester.pumpAndSettle();
+    editor.focusNode!.requestFocus();
+    await tester.pump();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pump();
+    expect(clipboardText, controller.selectedText);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyA);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pump();
+    expect(clipboardText, originalCode);
+
+    clipboardText = '不应写入的内容';
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyV);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pump();
+    expect(controller.text, originalCode);
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  testWidgets('代码搜索显示匹配计数并支持 Ctrl+F', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(_GeneratedCodeController.new),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final search = find.byKey(const ValueKey('code-search-field'));
+    await tester.enterText(search, 'void');
+    await tester.pump();
+    final count = tester.widget<Text>(
+      find.byKey(const ValueKey('code-search-count')),
+    );
+    expect(count.data, matches(RegExp(r'\d+ / [1-9]\d*')));
+    expect(find.byTooltip('上一个匹配'), findsOneWidget);
+    expect(find.byTooltip('下一个匹配'), findsOneWidget);
+
+    final editor = find.byKey(const ValueKey('generated-code-editor'));
+    await tester.ensureVisible(editor);
+    await tester.pumpAndSettle();
+    tester.widget<CodeEditor>(editor).focusNode!.requestFocus();
+    await tester.pump();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pump();
+    expect(FocusManager.instance.primaryFocus?.hasFocus, isTrue);
+    expect(tester.testTextInput.isVisible, isTrue);
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  testWidgets('代码预览在三种桌面尺寸和双主题下无布局异常', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    addTearDown(() {
+      debugDefaultTargetPlatformOverride = null;
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    tester.view.devicePixelRatio = 1;
+    for (final size in const [
+      Size(1600, 900),
+      Size(1280, 720),
+      Size(1100, 700),
+    ]) {
+      for (final brightness in Brightness.values) {
+        tester.view.physicalSize = size;
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              appControllerProvider.overrideWith(_GeneratedCodeController.new),
+            ],
+            child: MaterialApp(
+              theme: ThemeData(brightness: brightness, useMaterial3: true),
+              home: const WizardScreen(),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byType(CodeEditor), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      }
+    }
+    debugDefaultTargetPlatformOverride = null;
   });
 
   testWidgets('向导在三种桌面尺寸和双主题下无布局异常', (tester) async {
