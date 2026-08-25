@@ -287,7 +287,8 @@ void main() {
       expect(code, contains('dutyOfMotor[0]'));
       expect(code, contains('FRICTION_START_DUTY 500'));
       expect(code, contains('retry < 20'));
-      expect(code, contains('Uart1TxQuery(control_frame_pack[i])'));
+      expect(code, contains('UART_PutChar(UART_1, control_frame_pack[i])'));
+      expect(code, isNot(contains('Uart1TxQuery')));
       expect(code, contains('P2INTE &= ~GPIO_Pin_6'));
       expect(code, contains('StepBegin(0)'));
       expect(code, contains('UpdateBuzzerFeedback'));
@@ -337,7 +338,18 @@ void main() {
       expect(cycleCode, contains('1000L / 180L'));
       expect(cycleCode, contains('/ 2047'));
       expect(cycleCode, contains('Dir_Change_Order'));
-      expect(cycleCode, contains('Uart1TxQuery(control_frame_pack[i])'));
+      expect(
+        cycleCode,
+        contains('UART_PutChar(UART_1, control_frame_pack[i])'),
+      );
+      expect(cycleCode, isNot(contains('Uart1TxQuery')));
+      expect(
+        cycleCode,
+        contains(
+          'ExpansionBoradControl(Init_Order, 50, 50, 50, 50, 10000, 10000, 10000, 10000);\n'
+          '    Ms_Delay(EXPANSION_FRAME_GAP_MS);',
+        ),
+      );
 
       final directCode = CodeGenerator.generate(
         advancedEngineer(strategy: SwitchStrategy.direct, buzzerDisabled: true),
