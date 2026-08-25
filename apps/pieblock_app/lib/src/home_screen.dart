@@ -6,6 +6,9 @@ import 'package:pieblock_core/pieblock_core.dart';
 
 import 'controller.dart';
 
+const _brandCyan = Color(0xff02acc0);
+const _brandCoral = Color(0xffef685d);
+
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
@@ -125,6 +128,7 @@ class HomeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(appControllerProvider);
     final colors = Theme.of(context).colorScheme;
+    final dark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
       body: Stack(
         children: [
@@ -135,9 +139,15 @@ class HomeScreen extends ConsumerWidget {
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [
-                    colors.primaryContainer.withValues(alpha: .45),
+                    Color.alphaBlend(
+                      _brandCyan.withValues(alpha: dark ? .20 : .14),
+                      colors.surface,
+                    ),
                     colors.surface,
-                    colors.tertiaryContainer.withValues(alpha: .25),
+                    Color.alphaBlend(
+                      _brandCoral.withValues(alpha: dark ? .16 : .11),
+                      colors.surface,
+                    ),
                   ],
                 ),
               ),
@@ -157,12 +167,12 @@ class HomeScreen extends ConsumerWidget {
                           width: 56,
                           height: 56,
                           decoration: BoxDecoration(
-                            color: colors.primary,
+                            color: _brandCyan,
                             borderRadius: BorderRadius.circular(16),
                           ),
-                          child: Icon(
+                          child: const Icon(
                             Icons.hub_outlined,
-                            color: colors.onPrimary,
+                            color: Color(0xff00363d),
                             size: 30,
                           ),
                         ),
@@ -206,6 +216,8 @@ class HomeScreen extends ConsumerWidget {
                               title: '新建机器人项目',
                               subtitle: '从步兵或工程模板开始分步配置',
                               button: '新建项目',
+                              accent: _brandCyan,
+                              foreground: const Color(0xff00363d),
                               onPressed: () => _create(context, ref),
                             ),
                           ),
@@ -216,6 +228,8 @@ class HomeScreen extends ConsumerWidget {
                               title: '打开已有项目',
                               subtitle: '仅支持新版格式 12 的 .pieproj',
                               button: '打开项目',
+                              accent: _brandCoral,
+                              foreground: const Color(0xff3d0b08),
                               onPressed: () => _open(context, ref),
                             ),
                           ),
@@ -297,19 +311,32 @@ class _ActionCard extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.button,
+    required this.accent,
+    required this.foreground,
     required this.onPressed,
   });
   final IconData icon;
   final String title, subtitle, button;
+  final Color accent, foreground;
   final VoidCallback onPressed;
   @override
   Widget build(BuildContext context) => Card(
+    color: Color.alphaBlend(
+      accent.withValues(
+        alpha: Theme.of(context).brightness == Brightness.dark ? .055 : .025,
+      ),
+      Theme.of(context).colorScheme.surface,
+    ),
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(18),
+      side: BorderSide(color: accent.withValues(alpha: .34)),
+    ),
     child: Padding(
       padding: const EdgeInsets.all(28),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 38, color: Theme.of(context).colorScheme.primary),
+          Icon(icon, size: 38, color: accent),
           const SizedBox(height: 24),
           Text(
             title,
@@ -321,6 +348,10 @@ class _ActionCard extends StatelessWidget {
           const SizedBox(height: 28),
           FilledButton.icon(
             onPressed: onPressed,
+            style: FilledButton.styleFrom(
+              backgroundColor: accent,
+              foregroundColor: foreground,
+            ),
             icon: const Icon(Icons.arrow_forward),
             label: Text(button),
           ),
