@@ -183,23 +183,19 @@ class HomeScreen extends ConsumerWidget {
                             children: [
                               Row(
                                 children: [
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 6,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xfff5f9ff),
-                                      borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(
-                                        color: _brandCyan.withValues(
-                                          alpha: .24,
-                                        ),
-                                      ),
-                                    ),
+                                  ColorFiltered(
+                                    colorFilter: dark
+                                        ? const ColorFilter.mode(
+                                            Colors.white,
+                                            BlendMode.srcIn,
+                                          )
+                                        : const ColorFilter.mode(
+                                            Colors.transparent,
+                                            BlendMode.dst,
+                                          ),
                                     child: Image.asset(
                                       'assets/images/cnu.png',
-                                      height: 34,
+                                      height: 42,
                                       fit: BoxFit.contain,
                                       filterQuality: FilterQuality.high,
                                       semanticLabel: '首都师范大学',
