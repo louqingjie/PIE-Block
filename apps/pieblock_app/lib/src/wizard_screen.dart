@@ -260,6 +260,14 @@ class _PinOption extends StatelessWidget {
   );
 }
 
+List<Widget> _selectedPinItems(List<String> pins) => [
+  for (final pin in pins)
+    Align(
+      alignment: Alignment.centerLeft,
+      child: Text(pin, maxLines: 1, overflow: TextOverflow.ellipsis),
+    ),
+];
+
 class WizardScreen extends ConsumerWidget {
   const WizardScreen({super.key});
 
@@ -685,6 +693,7 @@ class _RemotePage extends ConsumerWidget {
       String fieldPath,
     ) {
       final directionPath = fieldPath.replaceFirst('.pin', '.direction');
+      final pinChoices = _includeCurrent(chassisPins, wheel.pin);
       return _FormRow(
         fieldPaths: [fieldPath, directionPath],
         children: [
@@ -695,7 +704,8 @@ class _RemotePage extends ConsumerWidget {
                 isExpanded: true,
                 initialValue: wheel.pin,
                 decoration: _fieldDecoration(ref, fieldPath, '$label IO'),
-                items: _includeCurrent(chassisPins, wheel.pin).map((e) {
+                selectedItemBuilder: (_) => _selectedPinItems(pinChoices),
+                items: pinChoices.map((e) {
                   final enabled =
                       c is! InfantryConfig ||
                       InfantryPinPlanner.allowedPins(c, fieldPath).contains(e);
@@ -1023,6 +1033,10 @@ class _InfantryMechanismPage extends ConsumerWidget {
             ref.watch(appControllerProvider).document!.config as InfantryConfig,
         ctrl = ref.read(appControllerProvider.notifier);
     void update(InfantryConfig value) => ctrl.updateConfig(value);
+    final feederPins = _includeCurrent(
+      InfantryPinPlanner.motorPins,
+      c.feederPin,
+    );
     Widget axis(String name, bool yaw) {
       final drive = yaw ? c.yawDrive : c.pitchDrive,
           pin = yaw ? c.yawPin : c.pitchPin,
@@ -1089,6 +1103,7 @@ class _InfantryMechanismPage extends ConsumerWidget {
                     isExpanded: true,
                     initialValue: pin,
                     decoration: _fieldDecoration(ref, pinPath, 'IO'),
+                    selectedItemBuilder: (_) => _selectedPinItems(visiblePins),
                     items: visiblePins.map((e) {
                       final enabled = allowedPins.contains(e);
                       final owner = InfantryPinPlanner.occupiedBy(
@@ -1185,32 +1200,30 @@ class _InfantryMechanismPage extends ConsumerWidget {
                           'mechanism.feeder_pin',
                           '扩展板 IO',
                         ),
-                        items:
-                            _includeCurrent(
-                              InfantryPinPlanner.motorPins,
-                              c.feederPin,
-                            ).map((e) {
-                              final enabled = InfantryPinPlanner.allowedPins(
-                                c,
-                                'mechanism.feeder_pin',
-                              ).contains(e);
-                              final owner = InfantryPinPlanner.occupiedBy(
-                                c,
-                                e,
-                                'mechanism.feeder_pin',
-                              );
-                              return DropdownMenuItem(
-                                value: e,
-                                enabled: enabled,
-                                child: _PinOption(
-                                  e,
-                                  enabled: enabled,
-                                  owner: enabled || owner == null
-                                      ? null
-                                      : '${owner.ownerLabel}占用',
-                                ),
-                              );
-                            }).toList(),
+                        selectedItemBuilder: (_) =>
+                            _selectedPinItems(feederPins),
+                        items: feederPins.map((e) {
+                          final enabled = InfantryPinPlanner.allowedPins(
+                            c,
+                            'mechanism.feeder_pin',
+                          ).contains(e);
+                          final owner = InfantryPinPlanner.occupiedBy(
+                            c,
+                            e,
+                            'mechanism.feeder_pin',
+                          );
+                          return DropdownMenuItem(
+                            value: e,
+                            enabled: enabled,
+                            child: _PinOption(
+                              e,
+                              enabled: enabled,
+                              owner: enabled || owner == null
+                                  ? null
+                                  : '${owner.ownerLabel}占用',
+                            ),
+                          );
+                        }).toList(),
                         onChanged: (v) => update(c.copyWith(feederPin: v)),
                       ),
                     ),
