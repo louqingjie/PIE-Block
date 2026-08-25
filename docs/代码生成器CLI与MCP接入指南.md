@@ -1,6 +1,6 @@
 # 代码生成器 CLI 与 MCP 接入指南（旧版归档）
 
-> 本文仅记录 Godot 旧版接口。Flutter 格式 13 首版不提供 CLI/MCP，且这些接口不能读取新版 `.pieproj`；请勿用于新项目。
+> 本文仅记录 Godot 旧版接口。Flutter 格式 14 首版不提供 CLI/MCP，且这些接口不能读取新版 `.pieproj`；请勿用于新项目。
 
 把 Pie-Block 图形化代码生成器做成**命令行工具**（Godot headless CLI），再包一层
 **MCP Server**，让任何 AI Agent（Claude、GitHub Copilot、opencode 等）都能直接
