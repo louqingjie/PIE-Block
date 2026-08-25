@@ -147,9 +147,6 @@ class ToolchainDiscovery {
 }
 
 class FirmwareBuilder {
-  // A public parameter is required because the injected field is intentionally
-  // private to the toolchain implementation.
-  // ignore: prefer_initializing_formals
   FirmwareBuilder({
     BuildArtifactRepository? artifacts,
     String? runtimeRoot,
@@ -158,6 +155,8 @@ class FirmwareBuilder {
   }) : artifacts = artifacts ?? BuildArtifactRepository(),
        _runtimeRoot = runtimeRoot ?? _defaultRuntimeRoot(),
        _workRoot = workRoot ?? _defaultWorkRoot(),
+       // A public parameter is required because the injected field is private.
+       // ignore: prefer_initializing_formals
        _sdccBackend = sdccBackend;
 
   final BuildArtifactRepository artifacts;
