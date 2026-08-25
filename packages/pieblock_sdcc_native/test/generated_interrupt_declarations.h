@@ -1,0 +1,5 @@
+#ifndef PIE_BLOCK_GENERATED_INTERRUPT_DECLARATIONS_H
+#define PIE_BLOCK_GENERATED_INTERRUPT_DECLARATIONS_H
+#include "STC32Gxx.h"
+#include <stdlib.h>
+#endif
