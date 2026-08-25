@@ -60,7 +60,8 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/images/cnu.png
+    - assets/images/cnu-blue.png
+    - assets/images/cnu-white.png
 
   fonts:
     - family: PieBlockSans

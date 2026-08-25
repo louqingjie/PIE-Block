@@ -183,23 +183,14 @@ class HomeScreen extends ConsumerWidget {
                             children: [
                               Row(
                                 children: [
-                                  ColorFiltered(
-                                    colorFilter: dark
-                                        ? const ColorFilter.mode(
-                                            Colors.white,
-                                            BlendMode.srcIn,
-                                          )
-                                        : const ColorFilter.mode(
-                                            Colors.transparent,
-                                            BlendMode.dst,
-                                          ),
-                                    child: Image.asset(
-                                      'assets/images/cnu.png',
-                                      height: 42,
-                                      fit: BoxFit.contain,
-                                      filterQuality: FilterQuality.high,
-                                      semanticLabel: '首都师范大学',
-                                    ),
+                                  Image.asset(
+                                    dark
+                                        ? 'assets/images/cnu-white.png'
+                                        : 'assets/images/cnu-blue.png',
+                                    height: 42,
+                                    fit: BoxFit.contain,
+                                    filterQuality: FilterQuality.high,
+                                    semanticLabel: '首都师范大学',
                                   ),
                                   const SizedBox(width: 14),
                                   const Expanded(
