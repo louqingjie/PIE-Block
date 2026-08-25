@@ -1,28 +1,29 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "调试模式：逐行测试各引脚，每个命令持续3秒，蜂鸣器提示开始/结束。",
-  "kind": "debug",
+  "description": "Flutter 调试项目配置：按 tests 数组顺序逐项测试固定引脚。",
   "properties": {
-    "debug_rows": {
-      "description": "调试引脚配置，逐行执行测试命令",
+    "tests": {
+      "description": "固定十路引脚的可排序测试序列",
+      "minItems": 10,
+      "maxItems": 10,
       "items": {
         "properties": {
-          "dir": {
-            "description": "1=正向 0=反向",
+          "direction": {
             "enum": [
-              0,
-              1
+              "forward",
+              "reverse",
+              null
             ],
-            "type": "integer"
+            "type": ["string", "null"]
           },
           "drive_type": {
             "enum": [
-              "舵机",
-              "电机",
-              "摩擦轮",
-              "不使用"
+              "motor",
+              "servo",
+              "friction",
+              null
             ],
-            "type": "string"
+            "type": ["string", "null"]
           },
           "enabled": {
             "description": "是否启用该行",
@@ -44,15 +45,23 @@
             "type": "string"
           },
           "value": {
-            "description": "占空比/角度值",
+            "description": "电机速度、舵机角度或摩擦轮目标值",
+            "type": ["integer", "null"]
+          },
+          "duration_ms": {
+            "description": "电机/舵机测试时长；摩擦轮不保存",
+            "minimum": 1000,
+            "maximum": 30000,
             "type": "integer"
           }
         },
+        "required": ["pin", "enabled", "drive_type", "direction", "value"],
         "type": "object"
       },
       "type": "array"
     }
   },
+  "required": ["tests"],
   "title": "Pie-Block 调试 配置",
   "type": "object"
 }

@@ -119,7 +119,7 @@ class _FakeDeployController extends DeployController {
 
   @override
   Future<void> prepare(
-    RobotConfig config,
+    ProjectConfig config,
     CompilerKind compiler, {
     String? keilRoot,
   }) async {}
@@ -186,6 +186,25 @@ ProjectDocument _engineerDocument() {
   );
 }
 
+ProjectDocument _debugDocument() {
+  final source = ProjectDocument.create('调试测试', ProjectKind.debug);
+  return source.copyWith(
+    config: DebugConfig(
+      tests: [
+        const DebugTestItem(
+          pin: 'P64',
+          enabled: true,
+          driveType: DebugDriveType.friction,
+          direction: Direction.forward,
+          value: 750,
+        ),
+        for (final pin in debugPins.where((pin) => pin != 'P64'))
+          DebugTestItem(pin: pin),
+      ],
+    ),
+  );
+}
+
 void main() {
   testWidgets('启动页展示两个项目入口', (tester) async {
     await tester.pumpWidget(const ProviderScope(child: PieBlockApp()));
@@ -211,7 +230,31 @@ void main() {
     await tester.tap(find.text('新建项目'));
     await tester.pumpAndSettle();
     expect(find.text('浏览'), findsOneWidget);
+    expect(find.text('调试'), findsOneWidget);
     expect(find.text('创建项目'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('调试向导展示可排序十路测试和动态摩擦轮字段', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _StaticProjectController(_debugDocument(), 0),
+          ),
+          deployControllerProvider.overrideWith(_FakeDeployController.new),
+        ],
+        child: MaterialApp(
+          theme: ThemeData(useMaterial3: true),
+          home: const WizardScreen(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('调试测试序列'), findsOneWidget);
+    expect(find.byIcon(Icons.drag_indicator), findsNWidgets(10));
+    expect(find.text('目标值'), findsOneWidget);
+    expect(find.text('测试时长'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

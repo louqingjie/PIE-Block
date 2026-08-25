@@ -115,7 +115,7 @@ class DeployController extends Notifier<DeployState> {
   }
 
   Future<void> prepare(
-    RobotConfig config,
+    ProjectConfig config,
     CompilerKind compiler, {
     String? keilRoot,
   }) async {
@@ -168,7 +168,7 @@ class DeployController extends Notifier<DeployState> {
   }
 
   Future<bool> buildFirmware(
-    RobotConfig config,
+    ProjectConfig config,
     CompilerKind compiler, {
     String? keilRoot,
   }) async {

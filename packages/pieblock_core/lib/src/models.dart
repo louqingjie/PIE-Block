@@ -1,8 +1,10 @@
-enum ProjectKind { infantry, engineer }
+enum ProjectKind { infantry, engineer, debug }
 
 enum Direction { forward, reverse }
 
 enum DriveType { servo, motor }
+
+enum DebugDriveType { motor, servo, friction }
 
 enum ArrowBehavior { move, sprint, other }
 
@@ -222,12 +224,111 @@ class PwmGroupConfig {
   }
 }
 
-sealed class RobotConfig {
+sealed class ProjectConfig {
+  const ProjectConfig();
+  ProjectKind get kind;
+  Map<String, Object?> toJson();
+}
+
+sealed class RobotConfig extends ProjectConfig {
   const RobotConfig({required this.remote, required this.chassis});
   final RemoteConfig remote;
   final ChassisConfig chassis;
-  ProjectKind get kind;
-  Map<String, Object?> toJson();
+}
+
+const debugPins = [
+  'P60',
+  'P62',
+  'P64',
+  'P66',
+  'P74',
+  'P75',
+  'P76',
+  'P77',
+  'MP03',
+  'MP74',
+];
+
+class DebugTestItem {
+  const DebugTestItem({
+    required this.pin,
+    this.enabled = false,
+    this.driveType,
+    this.direction,
+    this.value,
+    this.durationMs = 3000,
+  });
+  final String pin;
+  final bool enabled;
+  final DebugDriveType? driveType;
+  final Direction? direction;
+  final int? value;
+  final int durationMs;
+
+  DebugTestItem copyWith({
+    bool? enabled,
+    Object? driveType = _unset,
+    Object? direction = _unset,
+    Object? value = _unset,
+    int? durationMs,
+  }) => DebugTestItem(
+    pin: pin,
+    enabled: enabled ?? this.enabled,
+    driveType: identical(driveType, _unset)
+        ? this.driveType
+        : driveType as DebugDriveType?,
+    direction: identical(direction, _unset)
+        ? this.direction
+        : direction as Direction?,
+    value: identical(value, _unset) ? this.value : value as int?,
+    durationMs: durationMs ?? this.durationMs,
+  );
+
+  Map<String, Object?> toJson() => {
+    'pin': pin,
+    'enabled': enabled,
+    'drive_type': driveType?.name,
+    'direction': direction?.name,
+    'value': value,
+    if (driveType != DebugDriveType.friction) 'duration_ms': durationMs,
+  };
+
+  factory DebugTestItem.fromJson(Map<String, Object?> json) => DebugTestItem(
+    pin: json['pin']?.toString() ?? '',
+    enabled: json['enabled'] as bool? ?? false,
+    driveType: nullableEnumValue(DebugDriveType.values, json['drive_type']),
+    direction: nullableEnumValue(Direction.values, json['direction']),
+    value: (json['value'] as num?)?.toInt(),
+    durationMs: (json['duration_ms'] as num?)?.toInt() ?? 3000,
+  );
+}
+
+class DebugConfig extends ProjectConfig {
+  DebugConfig({List<DebugTestItem>? tests})
+    : tests = List.unmodifiable(
+        tests ?? [for (final pin in debugPins) DebugTestItem(pin: pin)],
+      );
+  final List<DebugTestItem> tests;
+  @override
+  ProjectKind get kind => ProjectKind.debug;
+  DebugConfig copyWith({List<DebugTestItem>? tests}) =>
+      DebugConfig(tests: tests ?? this.tests);
+  @override
+  Map<String, Object?> toJson() => {
+    'tests': tests.map((item) => item.toJson()).toList(),
+  };
+  factory DebugConfig.fromJson(Map<String, Object?> json) {
+    final tests = <DebugTestItem>[], seen = <String>{};
+    for (final raw in json['tests'] as List? ?? const []) {
+      if (raw is! Map) continue;
+      final item = DebugTestItem.fromJson(Map<String, Object?>.from(raw));
+      if (debugPins.contains(item.pin) && seen.add(item.pin)) tests.add(item);
+    }
+    for (final pin in debugPins) {
+      if (seen.add(pin)) tests.add(DebugTestItem(pin: pin));
+    }
+    return DebugConfig(tests: tests);
+  }
 }
 
 class InfantryConfig extends RobotConfig {
@@ -824,8 +925,10 @@ class GuideProgress {
     required this.visitedStepIds,
   });
 
-  factory GuideProgress.initial() =>
-      const GuideProgress(currentStepId: 'remote', visitedStepIds: ['remote']);
+  factory GuideProgress.initial([ProjectKind kind = ProjectKind.infantry]) {
+    final first = kind == ProjectKind.debug ? 'tests' : 'remote';
+    return GuideProgress(currentStepId: first, visitedStepIds: [first]);
+  }
 
   final String currentStepId;
   final List<String> visitedStepIds;
@@ -843,14 +946,20 @@ class GuideProgress {
     'visited_step_ids': visitedStepIds,
   };
 
-  factory GuideProgress.fromJson(Map<String, Object?> json) => GuideProgress(
-    currentStepId: json['current_step_id']?.toString() ?? 'remote',
-    visitedStepIds: List.unmodifiable(
-      (json['visited_step_ids'] as List? ?? const ['remote']).map(
-        (item) => item.toString(),
+  factory GuideProgress.fromJson(
+    Map<String, Object?> json, [
+    ProjectKind kind = ProjectKind.infantry,
+  ]) {
+    final first = kind == ProjectKind.debug ? 'tests' : 'remote';
+    return GuideProgress(
+      currentStepId: json['current_step_id']?.toString() ?? first,
+      visitedStepIds: List.unmodifiable(
+        (json['visited_step_ids'] as List? ?? [first]).map(
+          (item) => item.toString(),
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class ProjectDocument {
@@ -866,7 +975,7 @@ class ProjectDocument {
   final String name;
   final ProjectKind kind;
   final DateTime createdAt, updatedAt;
-  final RobotConfig config;
+  final ProjectConfig config;
   final GuideProgress guideProgress;
   factory ProjectDocument.create(String name, ProjectKind kind) {
     final now = DateTime.now().toUtc();
@@ -875,15 +984,17 @@ class ProjectDocument {
       kind: kind,
       createdAt: now,
       updatedAt: now,
-      config: kind == ProjectKind.infantry
-          ? InfantryConfig()
-          : EngineerConfig(),
-      guideProgress: GuideProgress.initial(),
+      config: switch (kind) {
+        ProjectKind.infantry => InfantryConfig(),
+        ProjectKind.engineer => EngineerConfig(),
+        ProjectKind.debug => DebugConfig(),
+      },
+      guideProgress: GuideProgress.initial(kind),
     );
   }
   ProjectDocument copyWith({
     String? name,
-    RobotConfig? config,
+    ProjectConfig? config,
     GuideProgress? guideProgress,
   }) => ProjectDocument(
     name: name ?? this.name,
@@ -920,10 +1031,13 @@ class ProjectDocument {
       updatedAt: DateTime.tryParse(j['updated_at']?.toString() ?? '') ?? now,
       guideProgress: GuideProgress.fromJson(
         Map<String, Object?>.from(j['guide_progress'] as Map? ?? {}),
+        kind,
       ),
-      config: kind == ProjectKind.infantry
-          ? InfantryConfig.fromJson(config)
-          : EngineerConfig.fromJson(config),
+      config: switch (kind) {
+        ProjectKind.infantry => InfantryConfig.fromJson(config),
+        ProjectKind.engineer => EngineerConfig.fromJson(config),
+        ProjectKind.debug => DebugConfig.fromJson(config),
+      },
     );
   }
 }

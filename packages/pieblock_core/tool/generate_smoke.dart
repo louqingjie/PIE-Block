@@ -50,6 +50,37 @@ EngineerConfig engineer() => EngineerConfig(
   modes: [EngineerModeConfig(preserveChassis: true)],
 );
 
+DebugConfig debug() => DebugConfig(
+  tests: [
+    const DebugTestItem(
+      pin: 'P60',
+      enabled: true,
+      driveType: DebugDriveType.motor,
+      direction: Direction.forward,
+      value: 2000,
+      durationMs: 3000,
+    ),
+    const DebugTestItem(
+      pin: 'P64',
+      enabled: true,
+      driveType: DebugDriveType.friction,
+      direction: Direction.forward,
+      value: 750,
+    ),
+    const DebugTestItem(
+      pin: 'MP03',
+      enabled: true,
+      driveType: DebugDriveType.servo,
+      direction: Direction.reverse,
+      value: 30,
+    ),
+    for (final pin in debugPins.where(
+      (pin) => pin != 'P60' && pin != 'P64' && pin != 'MP03',
+    ))
+      DebugTestItem(pin: pin),
+  ],
+);
+
 void main(List<String> arguments) {
   if (arguments.length != 1) {
     stderr.writeln('用法：dart run tool/generate_smoke.dart <输出目录>');
@@ -61,4 +92,6 @@ void main(List<String> arguments) {
       .writeAsStringSync(CodeGenerator.generate(infantry()));
   File('${directory.path}${Platform.pathSeparator}engineer.c')
       .writeAsStringSync(CodeGenerator.generate(engineer()));
+  File('${directory.path}${Platform.pathSeparator}debug.c')
+      .writeAsStringSync(CodeGenerator.generate(debug()));
 }

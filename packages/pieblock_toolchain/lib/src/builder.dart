@@ -13,6 +13,11 @@ import 'models.dart';
 
 const _buildSchemaVersion = 'flutter_build_v1';
 
+String _firmwareProject(ProjectKind kind) => switch (kind) {
+  ProjectKind.infantry || ProjectKind.debug => 'ROBOMASTER_INFANTRY',
+  ProjectKind.engineer => 'ROBOMASTER_ENGINEER',
+};
+
 class KeilInstallation {
   const KeilInstallation({
     required this.root,
@@ -411,9 +416,7 @@ class FirmwareBuilder {
       await File(p.join(deployed.firmware, 'build_manifest.json'))
           .readAsString(),
     ) as Map).cast<String, Object?>();
-    final project = request.projectKind == ProjectKind.infantry
-        ? 'ROBOMASTER_INFANTRY'
-        : 'ROBOMASTER_ENGINEER';
+    final project = _firmwareProject(request.projectKind);
     final sources = _sourcesFor(manifest, project);
     final output = Directory(p.join(work, 'output'))
       ..createSync(recursive: true);
@@ -559,9 +562,7 @@ class FirmwareBuilder {
       return const _RawBuildResult(false);
     }
     final assets = await _locateAssets();
-    final projectName = request.projectKind == ProjectKind.infantry
-        ? 'ROBOMASTER_INFANTRY'
-        : 'ROBOMASTER_ENGINEER';
+    final projectName = _firmwareProject(request.projectKind);
     final workspace = p.join(work, 'stc32g');
     await _copyDirectory(
       Directory(p.join(assets.keil, 'Libraries')),

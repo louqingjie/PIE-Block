@@ -359,33 +359,43 @@ class WizardScreen extends ConsumerWidget {
     '生成代码',
     '编译与烧录',
   ];
+  static const debugSteps = ['测试序列', '检查与摘要', '生成代码', '编译与烧录'];
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(appControllerProvider),
         controller = ref.read(appControllerProvider.notifier);
     final document = state.document!,
-        steps = document.kind == ProjectKind.infantry
-            ? infantrySteps
-            : engineerSteps;
-    final page = document.kind == ProjectKind.infantry
-        ? switch (state.step) {
-            0 => const _RemotePage(),
-            1 => const _InfantryMechanismPage(),
-            2 => const _InfantryControlsPage(),
-            3 => const _ReviewPage(),
-            4 => const _CodePage(),
-            _ => const _DeployPage(),
-          }
-        : switch (state.step) {
-            0 => const _RemotePage(),
-            1 => const _PwmPage(),
-            2 => const _EngineerStrategyPage(),
-            3 => const _EngineerMappingsPage(),
-            4 => const _ReviewPage(),
-            5 => const _CodePage(),
-            _ => const _DeployPage(),
-          };
+        steps = switch (document.kind) {
+          ProjectKind.infantry => infantrySteps,
+          ProjectKind.engineer => engineerSteps,
+          ProjectKind.debug => debugSteps,
+        };
+    final page = switch (document.kind) {
+      ProjectKind.infantry => switch (state.step) {
+        0 => const _RemotePage(),
+        1 => const _InfantryMechanismPage(),
+        2 => const _InfantryControlsPage(),
+        3 => const _ReviewPage(),
+        4 => const _CodePage(),
+        _ => const _DeployPage(),
+      },
+      ProjectKind.engineer => switch (state.step) {
+        0 => const _RemotePage(),
+        1 => const _PwmPage(),
+        2 => const _EngineerStrategyPage(),
+        3 => const _EngineerMappingsPage(),
+        4 => const _ReviewPage(),
+        5 => const _CodePage(),
+        _ => const _DeployPage(),
+      },
+      ProjectKind.debug => switch (state.step) {
+        0 => const _DebugTestsPage(),
+        1 => const _ReviewPage(),
+        2 => const _CodePage(),
+        _ => const _DeployPage(),
+      },
+    };
     if (state.pendingFieldPath != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _scrollToField(state.pendingFieldPath!);
@@ -422,10 +432,11 @@ class WizardScreen extends ConsumerWidget {
                     style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
                   if (!compact)
-                    Text(
-                      document.kind == ProjectKind.infantry ? '步兵项目' : '工程项目',
-                      style: Theme.of(context).textTheme.labelMedium,
-                    ),
+                    Text(switch (document.kind) {
+                      ProjectKind.infantry => '步兵项目',
+                      ProjectKind.engineer => '工程项目',
+                      ProjectKind.debug => '调试项目',
+                    }, style: Theme.of(context).textTheme.labelMedium),
                 ],
               ),
             ),
@@ -855,7 +866,7 @@ class _RemotePage extends ConsumerWidget {
   const _RemotePage();
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final c = ref.watch(appControllerProvider).document!.config,
+    final c = ref.watch(appControllerProvider).document!.config as RobotConfig,
         ctrl = ref.read(appControllerProvider.notifier);
     void updateRemote(RemoteConfig remote) => ctrl.updateConfig(switch (c) {
       InfantryConfig v => v.copyWith(remote: remote),
@@ -2107,6 +2118,209 @@ class _ActionRow extends ConsumerWidget {
   }
 }
 
+class _DebugTestsPage extends ConsumerWidget {
+  const _DebugTestsPage();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final config =
+        ref.watch(appControllerProvider).document!.config as DebugConfig;
+    final controller = ref.read(appControllerProvider.notifier);
+    void replace(int index, DebugTestItem item) {
+      final tests = [...config.tests]..[index] = item;
+      controller.updateConfig(config.copyWith(tests: tests));
+    }
+
+    return _PageFrame(
+      title: '调试测试序列',
+      subtitle: '启用需要测试的引脚并拖动排序。固件会按此顺序逐项执行，完成后保持停机。',
+      stepId: 'tests',
+      child: Column(
+        children: [
+          const _InfoBanner('机械装车前请先完成舵机归中。摩擦轮采用 500 至目标值的固定安全渐变，每档 1.5 秒。'),
+          const SizedBox(height: 18),
+          _FieldAnchor(
+            path: 'tests',
+            child: ReorderableListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              buildDefaultDragHandles: false,
+              itemCount: config.tests.length,
+              onReorderItem: (oldIndex, newIndex) {
+                final tests = [...config.tests];
+                final item = tests.removeAt(oldIndex);
+                tests.insert(newIndex, item);
+                controller.updateConfig(config.copyWith(tests: tests));
+              },
+              itemBuilder: (context, index) {
+                final item = config.tests[index];
+                final base = 'tests.$index';
+                final mainServo = mainServoPins.contains(item.pin);
+                final driveChoices = mainServo
+                    ? const [DebugDriveType.servo]
+                    : <DebugDriveType>[
+                        DebugDriveType.motor,
+                        DebugDriveType.servo,
+                        if (const {'P64', 'P66'}.contains(item.pin))
+                          DebugDriveType.friction,
+                      ];
+                String driveLabel(DebugDriveType value) => switch (value) {
+                  DebugDriveType.motor => '电机',
+                  DebugDriveType.servo => '舵机',
+                  DebugDriveType.friction => '摩擦轮',
+                };
+                final valueLabel = switch (item.driveType) {
+                  DebugDriveType.servo => '角度',
+                  DebugDriveType.friction => '目标值',
+                  _ => '速度',
+                };
+                return Card(
+                  key: ValueKey(item.pin),
+                  margin: const EdgeInsets.only(bottom: 12),
+                  child: Padding(
+                    padding: EdgeInsets.all(_isCompact(context) ? 14 : 18),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            ReorderableDragStartListener(
+                              index: index,
+                              child: const Padding(
+                                padding: EdgeInsets.all(8),
+                                child: Icon(Icons.drag_indicator),
+                              ),
+                            ),
+                            Expanded(
+                              child: Text(
+                                '${index + 1}. ${item.pin}',
+                                style: Theme.of(context).textTheme.titleMedium
+                                    ?.copyWith(fontWeight: FontWeight.w700),
+                              ),
+                            ),
+                            Switch(
+                              value: item.enabled,
+                              onChanged: (value) =>
+                                  replace(index, item.copyWith(enabled: value)),
+                            ),
+                          ],
+                        ),
+                        if (item.enabled) ...[
+                          const SizedBox(height: 12),
+                          _FormRow(
+                            fieldPaths: [
+                              '$base.drive_type',
+                              '$base.direction',
+                              '$base.value',
+                              if (item.driveType != DebugDriveType.friction)
+                                '$base.duration_ms',
+                            ],
+                            children: [
+                              Expanded(
+                                child: _FieldAnchor(
+                                  path: '$base.drive_type',
+                                  child:
+                                      DropdownButtonFormField<DebugDriveType>(
+                                        key: ValueKey(
+                                          '${item.pin}-drive-${item.driveType}',
+                                        ),
+                                        initialValue: item.driveType,
+                                        decoration: _fieldDecoration(
+                                          ref,
+                                          '$base.drive_type',
+                                          '驱动类型',
+                                        ),
+                                        items: [
+                                          for (final value in driveChoices)
+                                            DropdownMenuItem(
+                                              value: value,
+                                              child: Text(driveLabel(value)),
+                                            ),
+                                        ],
+                                        onChanged: (value) => replace(
+                                          index,
+                                          item.copyWith(driveType: value),
+                                        ),
+                                      ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: _FieldAnchor(
+                                  path: '$base.direction',
+                                  child: DropdownButtonFormField<Direction>(
+                                    initialValue: item.direction,
+                                    decoration: _fieldDecoration(
+                                      ref,
+                                      '$base.direction',
+                                      '方向',
+                                    ),
+                                    items: Direction.values
+                                        .map(
+                                          (value) => DropdownMenuItem(
+                                            value: value,
+                                            child: Text(
+                                              value == Direction.forward
+                                                  ? '正向'
+                                                  : '反向',
+                                            ),
+                                          ),
+                                        )
+                                        .toList(),
+                                    onChanged: (value) => replace(
+                                      index,
+                                      item.copyWith(direction: value),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: _NumberField(
+                                  label: valueLabel,
+                                  value: item.value,
+                                  fieldPath: '$base.value',
+                                  onChanged: (value) => replace(
+                                    index,
+                                    item.copyWith(value: value),
+                                  ),
+                                ),
+                              ),
+                              if (item.driveType !=
+                                  DebugDriveType.friction) ...[
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: _NumberField(
+                                    label: '测试时长',
+                                    value: item.durationMs,
+                                    suffix: 'ms',
+                                    fieldPath: '$base.duration_ms',
+                                    onChanged: (value) {
+                                      if (value != null) {
+                                        replace(
+                                          index,
+                                          item.copyWith(durationMs: value),
+                                        );
+                                      }
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ReviewPage extends ConsumerWidget {
   const _ReviewPage();
   @override
@@ -2179,18 +2393,20 @@ class _ReviewPage extends ConsumerWidget {
           _Section(
             title: '配置概览',
             children: [
-              ListTile(
-                leading: const Icon(Icons.sports_esports),
-                title: Text(
-                  '遥控器通道 ${config.remote.channel ?? '未填写'} · 死区 ${config.remote.deadzone ?? '未填写'}',
+              if (config is RobotConfig) ...[
+                ListTile(
+                  leading: const Icon(Icons.sports_esports),
+                  title: Text(
+                    '遥控器通道 ${config.remote.channel ?? '未填写'} · 死区 ${config.remote.deadzone ?? '未填写'}',
+                  ),
                 ),
-              ),
-              ListTile(
-                leading: const Icon(Icons.speed),
-                title: Text(
-                  '普通速度 ${config.chassis.normalSpeed ?? '未填写'} · 冲刺速度 ${config.chassis.sprintSpeed ?? '未填写'}',
+                ListTile(
+                  leading: const Icon(Icons.speed),
+                  title: Text(
+                    '普通速度 ${config.chassis.normalSpeed ?? '未填写'} · 冲刺速度 ${config.chassis.sprintSpeed ?? '未填写'}',
+                  ),
                 ),
-              ),
+              ],
               ListTile(
                 leading: const Icon(Icons.route),
                 title: Text(
@@ -2238,6 +2454,33 @@ class _ReviewPage extends ConsumerWidget {
                           }}',
                   ),
                 ),
+              if (config is DebugConfig) ...[
+                ListTile(
+                  leading: const Icon(Icons.science_outlined),
+                  title: Text(
+                    '已启用 ${config.tests.where((item) => item.enabled).length} / ${config.tests.length} 项测试',
+                  ),
+                  subtitle: const Text('全部完成后输出归零，并周期鸣响完成提示'),
+                ),
+                for (final entry in config.tests.indexed.where(
+                  (entry) => entry.$2.enabled,
+                ))
+                  ListTile(
+                    dense: true,
+                    leading: CircleAvatar(
+                      radius: 13,
+                      child: Text('${entry.$1 + 1}'),
+                    ),
+                    title: Text(
+                      '${entry.$2.pin} · ${switch (entry.$2.driveType) {
+                        DebugDriveType.motor => '电机 ${entry.$2.value ?? '未填写'}',
+                        DebugDriveType.servo => '舵机 ${entry.$2.value ?? '未填写'}°',
+                        DebugDriveType.friction => '摩擦轮至 ${entry.$2.value ?? '未填写'}',
+                        null => '未选择驱动',
+                      }}',
+                    ),
+                  ),
+              ],
             ],
           ),
         ],

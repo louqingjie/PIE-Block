@@ -227,7 +227,7 @@ class AppController extends Notifier<AppState> {
     unawaited(_saveSettings());
   }
 
-  void updateConfig(RobotConfig config) {
+  void updateConfig(ProjectConfig config) {
     final document = state.document;
     if (document == null) return;
     state = state.copyWith(
@@ -352,25 +352,34 @@ class AppController extends Notifier<AppState> {
     return index < 0 ? reviewStep(kind) : index;
   }
 
-  int stepCount(ProjectKind kind) => kind == ProjectKind.infantry ? 6 : 7;
+  int stepCount(ProjectKind kind) => stepIds(kind).length;
 
-  List<String> stepIds(ProjectKind kind) => kind == ProjectKind.infantry
-      ? const ['remote', 'mechanism', 'controls', 'review', 'code', 'deploy']
-      : const [
-          'remote',
-          'pwm',
-          'strategy',
-          'mappings',
-          'review',
-          'code',
-          'deploy',
-        ];
+  List<String> stepIds(ProjectKind kind) => switch (kind) {
+    ProjectKind.infantry => const [
+      'remote',
+      'mechanism',
+      'controls',
+      'review',
+      'code',
+      'deploy',
+    ],
+    ProjectKind.engineer => const [
+      'remote',
+      'pwm',
+      'strategy',
+      'mappings',
+      'review',
+      'code',
+      'deploy',
+    ],
+    ProjectKind.debug => const ['tests', 'review', 'code', 'deploy'],
+  };
 
-  int reviewStep(ProjectKind kind) => kind == ProjectKind.infantry ? 3 : 4;
+  int reviewStep(ProjectKind kind) => stepIds(kind).indexOf('review');
 
-  int codeStep(ProjectKind kind) => kind == ProjectKind.infantry ? 4 : 5;
+  int codeStep(ProjectKind kind) => stepIds(kind).indexOf('code');
 
-  int deployStep(ProjectKind kind) => kind == ProjectKind.infantry ? 5 : 6;
+  int deployStep(ProjectKind kind) => stepIds(kind).indexOf('deploy');
 
   void goToIssue(ValidationIssue issue) {
     final document = state.document;

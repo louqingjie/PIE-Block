@@ -9,7 +9,7 @@ typedef _AddIssue = void Function(
 ]);
 
 abstract final class ProjectValidator {
-  static List<ValidationIssue> validate(RobotConfig config) {
+  static List<ValidationIssue> validate(ProjectConfig config) {
     final issues = <ValidationIssue>[];
     void issue(
       IssueSeverity severity,
@@ -29,6 +29,21 @@ abstract final class ProjectValidator {
       );
     }
 
+    if (config case RobotConfig robot) {
+      _robot(robot, issue);
+    }
+    switch (config) {
+      case InfantryConfig value:
+        _infantry(value, issue);
+      case EngineerConfig value:
+        _engineer(value, issue);
+      case DebugConfig value:
+        _debug(value, issue);
+    }
+    return issues;
+  }
+
+  static void _robot(RobotConfig config, _AddIssue issue) {
     _range(
       config.remote.channel,
       0,
@@ -77,13 +92,116 @@ abstract final class ProjectValidator {
       );
     }
     _chassis(config.chassis, issue);
-    switch (config) {
-      case InfantryConfig value:
-        _infantry(value, issue);
-      case EngineerConfig value:
-        _engineer(value, issue);
+  }
+
+  static void _debug(DebugConfig config, _AddIssue issue) {
+    if (config.tests.isEmpty || !config.tests.any((item) => item.enabled)) {
+      issue(
+        IssueSeverity.error,
+        'tests',
+        '至少启用一个调试项目',
+        'tests',
+        ValidationIssueKind.required,
+      );
     }
-    return issues;
+    final seen = <String>{};
+    for (var index = 0; index < config.tests.length; index++) {
+      final item = config.tests[index];
+      final base = 'tests.$index';
+      if (!debugPins.contains(item.pin) || !seen.add(item.pin)) {
+        issue(IssueSeverity.error, '$base.pin', '调试引脚无效或重复', 'tests');
+      }
+      if (!item.enabled) continue;
+      _choice(
+        item.driveType,
+        '$base.drive_type',
+        '${item.pin} 驱动类型',
+        'tests',
+        issue,
+      );
+      _choice(
+        item.direction,
+        '$base.direction',
+        '${item.pin} 方向',
+        'tests',
+        issue,
+      );
+      final drive = item.driveType;
+      if (mainServoPins.contains(item.pin) &&
+          drive != null &&
+          drive != DebugDriveType.servo) {
+        issue(
+          IssueSeverity.error,
+          '$base.drive_type',
+          '${item.pin} 仅支持舵机',
+          'tests',
+        );
+      }
+      if (drive == DebugDriveType.friction &&
+          !const {'P64', 'P66'}.contains(item.pin)) {
+        issue(
+          IssueSeverity.error,
+          '$base.drive_type',
+          '只有 P64/P66 支持摩擦轮',
+          'tests',
+        );
+      }
+      switch (drive) {
+        case DebugDriveType.motor:
+          _range(
+            item.value,
+            0,
+            10000,
+            '$base.value',
+            '${item.pin} 电机速度',
+            'tests',
+            issue,
+          );
+          _range(
+            item.durationMs,
+            1000,
+            30000,
+            '$base.duration_ms',
+            '${item.pin} 测试时长',
+            'tests',
+            issue,
+          );
+        case DebugDriveType.servo:
+          _range(
+            item.value,
+            0,
+            90,
+            '$base.value',
+            '${item.pin} 舵机角度',
+            'tests',
+            issue,
+          );
+          _range(
+            item.durationMs,
+            1000,
+            30000,
+            '$base.duration_ms',
+            '${item.pin} 测试时长',
+            'tests',
+            issue,
+          );
+        case DebugDriveType.friction:
+          _range(
+            item.value,
+            500,
+            800,
+            '$base.value',
+            '${item.pin} 摩擦轮目标值',
+            'tests',
+            issue,
+          );
+        case null:
+          break;
+      }
+    }
+    if (seen.length != debugPins.length || !seen.containsAll(debugPins)) {
+      issue(IssueSeverity.error, 'tests', '调试序列必须包含全部十个固定引脚', 'tests');
+    }
   }
 
   static void _range(

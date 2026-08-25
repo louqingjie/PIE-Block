@@ -2,7 +2,7 @@ import 'models.dart';
 import 'validator.dart';
 
 abstract final class CodeGenerator {
-  static String generate(RobotConfig config) {
+  static String generate(ProjectConfig config) {
     final errors = ProjectValidator.validate(config)
         .where((issue) => issue.severity == IssueSeverity.error);
     if (errors.isNotEmpty) {
@@ -11,6 +11,7 @@ abstract final class CodeGenerator {
     return switch (config) {
       InfantryConfig value => _infantry(value),
       EngineerConfig value => _engineer(value),
+      DebugConfig value => _debug(value),
     };
   }
 
@@ -619,6 +620,153 @@ ${usedPins.contains('MP03') ? '        PWM_SET_Frequency(PWMB_CH4_P03, 50, mainS
 ${usedPins.contains('MP74') ? '        PWM_SET_Frequency(PWMB_CH1_P74, 50, mainServoDuty[1]);' : ''}
 ${engineerFeedback.isEmpty ? '' : '        UpdateServoFeedback();'}
         Ms_Delay(10);
+    }
+}
+''';
+  }
+
+  static String _debug(DebugConfig config) {
+    String values(int slot, int value) => List.generate(
+      8,
+      (index) => index == slot ? value.toString() : '0',
+    ).join(', ');
+
+    String initValues(int slot, int frequency) {
+      final result = List.filled(8, 50);
+      final start = slot < 4 ? 0 : 4;
+      for (var index = start; index < start + 4; index++) {
+        result[index] = frequency;
+      }
+      return result.join(', ');
+    }
+
+    final commands = <String>[];
+    final active = config.tests.where((item) => item.enabled).toList();
+    for (var index = 0; index < active.length; index++) {
+      final item = active[index];
+      final direction = item.direction == Direction.forward ? 1 : 0;
+      final slot = expansionPins.indexOf(item.pin);
+      final lines = <String>[
+        '    /* ${index + 1}. ${item.pin} ${item.driveType!.name} */',
+        '    Beep(BUZZER_FREQ_READY, 200);',
+        '    Ms_Delay(200);',
+      ];
+      if (slot < 0) {
+        final channel = item.pin == 'MP74' ? 'PWMB_CH1_P74' : 'PWMB_CH4_P03';
+        final angle = direction == 1 ? item.value! : -item.value!;
+        lines
+          ..add('    PWM_Init($channel, 50, ${_servoDuty(angle)});')
+          ..add('    Ms_Delay(${item.durationMs});')
+          ..add('    PWM_SET_Frequency($channel, 50, 0);');
+      } else if (item.driveType == DebugDriveType.friction) {
+        final up = <int>[500];
+        while (up.last < item.value!) {
+          up.add((up.last + 100).clamp(500, item.value!));
+        }
+        final curve = <int>[...up, ...up.reversed.skip(1), 0];
+        lines
+          ..add(
+            '    ExpansionBoradControl(Init_Order, ${initValues(slot, 50)});',
+          )
+          ..add('    Ms_Delay(1000);');
+        for (final duty in curve) {
+          lines
+            ..add(
+              '    ExpansionBoradControl(Duty_Change_Order, ${values(slot, duty)});',
+            )
+            ..add('    Ms_Delay(FRICTION_STEP_MS);');
+        }
+      } else {
+        final servo = item.driveType == DebugDriveType.servo;
+        final duty = servo
+            ? _servoDuty(direction == 1 ? item.value! : -item.value!)
+            : item.value!;
+        lines
+          ..add(
+            '    ExpansionBoradControl(Init_Order, ${initValues(slot, servo ? 50 : 10000)});',
+          )
+          ..add('    Ms_Delay(20);');
+        if (!servo) {
+          lines
+            ..add(
+              '    ExpansionBoradControl(Dir_Change_Order, ${values(slot, direction)});',
+            )
+            ..add('    Ms_Delay(5);');
+        }
+        lines
+          ..add(
+            '    ExpansionBoradControl(Duty_Change_Order, ${values(slot, duty)});',
+          )
+          ..add('    Ms_Delay(${item.durationMs});')
+          ..add(
+            '    ExpansionBoradControl(Duty_Change_Order, ${values(slot, 0)});',
+          );
+      }
+      lines.add('    Beep(BUZZER_FREQ_DONE, 200);');
+      if (index < active.length - 1) lines.add('    Ms_Delay(TEST_GAP_MS);');
+      commands.add(lines.join('\n'));
+    }
+
+    return '''// 调试测试代码（由 PIE-Block Flutter 配置器自动生成）
+#include "main.h"
+
+uint8_t Channal = 36;
+#define BUZZER_CH PWMA_CH4N_P33
+#define BUZZER_FREQ_READY 500
+#define BUZZER_FREQ_DONE 700
+#define TEST_GAP_MS 1000
+#define FRICTION_STEP_MS 1500
+#define COMM_HEADER_1 0xAB
+#define COMM_HEADER_2 0xBC
+#define COMM_END_1 0xCD
+#define COMM_END_2 0xDE
+#define Init_Order 0xAA
+#define Duty_Change_Order 0xBB
+#define Dir_Change_Order 0xDD
+
+static uint8_t control_frame_pack[21];
+
+static void Beep(uint16_t frequency, uint16_t duration)
+{
+    PWM_SET_Frequency(BUZZER_CH, frequency, 5000);
+    Ms_Delay(duration);
+    PWM_SET_Frequency(BUZZER_CH, frequency, 0);
+}
+
+static void ExpansionBoradControl(uint8_t command,
+    uint16_t p60, uint16_t p62, uint16_t p64, uint16_t p66,
+    uint16_t p74, uint16_t p75, uint16_t p76, uint16_t p77)
+{
+    uint8_t i;
+    uint16_t values[8];
+    values[0] = p60; values[1] = p62; values[2] = p64; values[3] = p66;
+    values[4] = p74; values[5] = p75; values[6] = p76; values[7] = p77;
+    control_frame_pack[0] = COMM_HEADER_1;
+    control_frame_pack[1] = COMM_HEADER_2;
+    control_frame_pack[2] = command;
+    for (i = 0; i < 8; i++) {
+        control_frame_pack[3 + i * 2] = (uint8_t)(values[i] >> 8);
+        control_frame_pack[4 + i * 2] = (uint8_t)(values[i] & 0xff);
+    }
+    control_frame_pack[19] = COMM_END_1;
+    control_frame_pack[20] = COMM_END_2;
+    for (i = 0; i < 21; i++) UART_PutChar(UART_1, control_frame_pack[i]);
+}
+
+void main(void)
+{
+    Board_Init();
+    UART_Init(UART_1, UART1_RX_P30, UART1_TX_P31, 230400, TIM1);
+    PWM_Init(BUZZER_CH, BUZZER_FREQ_READY, 0);
+    ExpansionBoradControl(Init_Order, 50, 50, 50, 50, 50, 50, 50, 50);
+    Ms_Delay(20);
+
+${commands.join('\n\n')}
+
+    ExpansionBoradControl(Duty_Change_Order, 0, 0, 0, 0, 0, 0, 0, 0);
+    while (1) {
+        Beep(BUZZER_FREQ_DONE, 500);
+        Ms_Delay(2000);
     }
 }
 ''';

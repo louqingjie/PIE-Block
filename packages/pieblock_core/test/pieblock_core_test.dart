@@ -56,6 +56,28 @@ EngineerConfig completeEngineer() => EngineerConfig(
   modes: [EngineerModeConfig(preserveChassis: true)],
 );
 
+DebugConfig completeDebug() => DebugConfig(
+  tests: [
+    const DebugTestItem(
+      pin: 'P64',
+      enabled: true,
+      driveType: DebugDriveType.friction,
+      direction: Direction.forward,
+      value: 750,
+    ),
+    const DebugTestItem(
+      pin: 'MP03',
+      enabled: true,
+      driveType: DebugDriveType.servo,
+      direction: Direction.reverse,
+      value: 30,
+      durationMs: 4200,
+    ),
+    for (final pin in debugPins.where((pin) => pin != 'P64' && pin != 'MP03'))
+      DebugTestItem(pin: pin),
+  ],
+);
+
 EngineerConfig advancedEngineer({
   SwitchStrategy strategy = SwitchStrategy.cycle,
   bool buzzerDisabled = false,
@@ -157,6 +179,24 @@ void main() {
       );
     });
 
+    test('调试项目顺序与配置可往返', () {
+      final source = ProjectDocument.create(
+        '调试测试',
+        ProjectKind.debug,
+      ).copyWith(config: completeDebug());
+      final restored = ProjectDocument.fromJson(
+        Map<String, Object?>.from(
+          jsonDecode(jsonEncode(source.toJson())) as Map,
+        ),
+      );
+      expect(restored.kind, ProjectKind.debug);
+      expect(restored.guideProgress.currentStepId, 'tests');
+      final config = restored.config as DebugConfig;
+      expect(config.tests.first.pin, 'P64');
+      expect(config.tests[1].durationMs, 4200);
+      expect(config.tests.first.toJson(), isNot(contains('duration_ms')));
+    });
+
     test('新项目必填项为空且不能生成', () {
       final config =
           ProjectDocument.create('空白', ProjectKind.infantry).config
@@ -212,6 +252,40 @@ void main() {
       await repository.create(path, '工程测试', ProjectKind.engineer);
       expect((await repository.open(path)).kind, ProjectKind.engineer);
       expect(File('$path.tmp').existsSync(), isFalse);
+    });
+  });
+
+  group('调试项目', () {
+    test('空序列、非法引脚能力和值会阻止生成', () {
+      expect(ProjectValidator.validate(DebugConfig()), isNotEmpty);
+      final invalid = DebugConfig(
+        tests: [
+          const DebugTestItem(
+            pin: 'MP03',
+            enabled: true,
+            driveType: DebugDriveType.motor,
+            direction: Direction.forward,
+            value: 100,
+          ),
+          for (final pin in debugPins.where((pin) => pin != 'MP03'))
+            DebugTestItem(pin: pin),
+        ],
+      );
+      expect(
+        ProjectValidator.validate(invalid).map((issue) => issue.message),
+        contains(contains('仅支持舵机')),
+      );
+      expect(() => CodeGenerator.generate(invalid), throwsStateError);
+    });
+
+    test('生成混合测试、非整百摩擦轮曲线和安全完成循环', () {
+      final code = CodeGenerator.generate(completeDebug());
+      expect(code.indexOf('1. P64'), lessThan(code.indexOf('2. MP03')));
+      expect(code, contains('Duty_Change_Order, 0, 0, 750'));
+      expect(code, contains('Duty_Change_Order, 0, 0, 700'));
+      expect(code, contains('Ms_Delay(4200);'));
+      expect(code, contains('PWM_SET_Frequency(PWMB_CH4_P03, 50, 0);'));
+      expect(code, contains('Ms_Delay(2000);'));
     });
   });
 

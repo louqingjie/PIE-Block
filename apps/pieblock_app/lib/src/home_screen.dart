@@ -72,6 +72,11 @@ class HomeScreen extends ConsumerWidget {
                         icon: Icon(Icons.precision_manufacturing),
                         label: Text('工程'),
                       ),
+                      ButtonSegment(
+                        value: ProjectKind.debug,
+                        icon: Icon(Icons.science_outlined),
+                        label: Text('调试'),
+                      ),
                     ],
                     selected: {kind},
                     onSelectionChanged: (v) => setState(() => kind = v.first),
@@ -218,7 +223,7 @@ class HomeScreen extends ConsumerWidget {
                             _ActionCard(
                               icon: Icons.add_circle_outline,
                               title: '新建机器人项目',
-                              subtitle: '从步兵或工程模板开始分步配置',
+                              subtitle: '从步兵、工程或调试模板开始分步配置',
                               button: '新建项目',
                               accent: _brandCyan,
                               foreground: const Color(0xff00363d),
