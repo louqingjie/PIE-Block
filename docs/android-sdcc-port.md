@@ -67,7 +67,7 @@ SDCC 驱动中的 `system`/`popen`/`pclose` 被重定向为固定返回 `ENOSYS`
 “不得退出应用、不得启动子进程”，仍需连续构建测试证明错误跳转后的状态可
 完整复位。
 
-当前 Android Release AAB 可成功构建（39.6 MB）。APK/AAB 都只包含
+当前 Android Release AAB 可成功构建（39.7 MB）。APK/AAB 都只包含
 `arm64-v8a`、`x86_64` 两套 PIE-Block 原生库；构建后应执行：
 
 ```powershell
@@ -77,6 +77,24 @@ tools/verify_android_package.ps1 `
 
 这些文件只是源码可移植性探针，不进入仓库和安装包。APK 检查目前仅有两个
 目标 ABI 的 `libpieblock_sdcc_native.so`，未包含上述工具文件。
+
+## ARM64 真机基线
+
+已在 Android 16（API 36）、`arm64-v8a` 真机上完成自动化冒烟测试：应用可
+冷启动且进程保持存活，Dart FFI 可加载 `libpieblock_sdcc_native.so` 并读取
+C ABI 3 指纹。测试同时覆盖 APK 直接加载原生库、204 个资源的逐文件哈希
+校验、首次原子部署以及第二次复用既有资源目录。
+
+Android 可能直接从 APK 加载未解压的原生库，因此原生库指纹读取同时支持
+`nativeLibraryDir` 文件和 base/split APK 内的 ZIP 条目。对应测试为
+`apps/pieblock_app/integration_test/android_sdcc_smoke_test.dart`，执行方式：
+
+```powershell
+flutter test integration_test/android_sdcc_smoke_test.dart -d <device-id>
+```
+
+本项只证明 ABI、加载和资源部署链路可用；由于安全门仍关闭，不代表真机已经
+能够生成固件。
 
 ## 尚未解除的发布门槛
 
