@@ -17,7 +17,8 @@ class AndroidSdccServiceBackend implements SdccCompilerBackend {
 
   static const _methodChannelName = 'cn.edu.cnu.pieblock/sdcc_compiler';
   static const _eventChannelName = 'cn.edu.cnu.pieblock/sdcc_compiler_events';
-  static const protocolVersion = 1;
+  static const protocolVersion = 2;
+  static const workerProtocolVersion = 1;
 
   final String resourceRoot;
   final String librarySha256;
@@ -37,7 +38,13 @@ class AndroidSdccServiceBackend implements SdccCompilerBackend {
         '不兼容的 Android 编译服务协议：$actualProtocol（需要 $protocolVersion）',
       );
     }
-    if (capabilities?['apiVersion'] != 4 ||
+    if (capabilities?['workerProtocolVersion'] != workerProtocolVersion) {
+      throw StateError(
+        '不兼容的 Android Worker 协议：${capabilities?['workerProtocolVersion']}'
+        '（需要 $workerProtocolVersion）',
+      );
+    }
+    if (capabilities?['apiVersion'] != 5 ||
         capabilities?['available'] != true) {
       throw UnsupportedError('Android SDCC 流水线尚未通过安全门自检');
     }
@@ -45,7 +52,8 @@ class AndroidSdccServiceBackend implements SdccCompilerBackend {
     if (nativeFingerprint == null || nativeFingerprint.isEmpty) {
       throw StateError('Android SDCC 原生指纹为空');
     }
-    return '$nativeFingerprint;service:$protocolVersion;library:$librarySha256;'
+    return '$nativeFingerprint;service:$protocolVersion;worker:$workerProtocolVersion;'
+        'library:$librarySha256;'
         'resource:${p.basename(resourceRoot)};runtime-abi:$androidAbi';
   }
 

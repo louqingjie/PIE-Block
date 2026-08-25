@@ -32,7 +32,11 @@
             android:name=".SdccCompilerService"
             android:exported="false"
             android:foregroundServiceType="dataSync"
-            android:process=":compiler" />
+            android:process=":compiler_coordinator" />
+        <service
+            android:name=".SdccCompilerWorkerService"
+            android:exported="false"
+            android:process=":compiler_worker" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
