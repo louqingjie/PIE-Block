@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pieblock_core/pieblock_core.dart';
+import 'package:pieblock_toolchain/pieblock_toolchain.dart';
 
 enum SaveStatus { idle, saving, saved, failed }
 
@@ -20,6 +21,9 @@ class AppState {
     this.validationAttemptedStepIds = const {},
     this.themeMode = ThemeMode.system,
     this.recentPaths = const [],
+    this.compiler = CompilerKind.sdcc,
+    this.keilPath,
+    this.suppressFlashGuide = false,
   });
   final ProjectDocument? document;
   final String? path;
@@ -30,6 +34,9 @@ class AppState {
   final Set<String> validationAttemptedStepIds;
   final ThemeMode themeMode;
   final List<String> recentPaths;
+  final CompilerKind compiler;
+  final String? keilPath;
+  final bool suppressFlashGuide;
   AppState copyWith({
     ProjectDocument? document,
     String? path,
@@ -44,6 +51,10 @@ class AppState {
     bool clearValidationAttempts = false,
     ThemeMode? themeMode,
     List<String>? recentPaths,
+    CompilerKind? compiler,
+    String? keilPath,
+    bool clearKeilPath = false,
+    bool? suppressFlashGuide,
     bool clearProject = false,
   }) => AppState(
     document: clearProject ? null : document ?? this.document,
@@ -60,6 +71,9 @@ class AppState {
         : validationAttemptedStepIds ?? this.validationAttemptedStepIds,
     themeMode: themeMode ?? this.themeMode,
     recentPaths: recentPaths ?? this.recentPaths,
+    compiler: compiler ?? this.compiler,
+    keilPath: clearKeilPath ? null : keilPath ?? this.keilPath,
+    suppressFlashGuide: suppressFlashGuide ?? this.suppressFlashGuide,
   );
 }
 
@@ -95,7 +109,18 @@ class AppController extends Notifier<AppState> {
       final mode =
           ThemeMode.values.where((e) => e.name == json['theme']).firstOrNull ??
           ThemeMode.system;
-      state = state.copyWith(recentPaths: recent, themeMode: mode);
+      final compiler =
+          CompilerKind.values
+              .where((value) => value.name == json['compiler'])
+              .firstOrNull ??
+          CompilerKind.sdcc;
+      state = state.copyWith(
+        recentPaths: recent,
+        themeMode: mode,
+        compiler: compiler,
+        keilPath: json['keil_path']?.toString(),
+        suppressFlashGuide: json['suppress_flash_guide'] == true,
+      );
     } catch (_) {}
   }
 
@@ -103,7 +128,13 @@ class AppController extends Notifier<AppState> {
     final file = File(_settingsPath);
     await file.parent.create(recursive: true);
     await file.writeAsString(
-      jsonEncode({'theme': state.themeMode.name, 'recent': state.recentPaths}),
+      jsonEncode({
+        'theme': state.themeMode.name,
+        'recent': state.recentPaths,
+        'compiler': state.compiler.name,
+        if (state.keilPath != null) 'keil_path': state.keilPath,
+        'suppress_flash_guide': state.suppressFlashGuide,
+      }),
     );
   }
 
@@ -114,6 +145,21 @@ class AppController extends Notifier<AppState> {
       ThemeMode.dark => ThemeMode.system,
     };
     state = state.copyWith(themeMode: next);
+    unawaited(_saveSettings());
+  }
+
+  void setCompiler(CompilerKind compiler) {
+    state = state.copyWith(compiler: compiler);
+    unawaited(_saveSettings());
+  }
+
+  void setKeilPath(String path) {
+    state = state.copyWith(keilPath: path, compiler: CompilerKind.keil);
+    unawaited(_saveSettings());
+  }
+
+  void suppressFlashGuide() {
+    state = state.copyWith(suppressFlashGuide: true);
     unawaited(_saveSettings());
   }
 
@@ -294,27 +340,29 @@ class AppController extends Notifier<AppState> {
   }
 
   int _stepIndex(String id, ProjectKind kind) {
-    if (id == 'remote') return 0;
-    if (kind == ProjectKind.infantry) {
-      if (id == 'mechanism') return 1;
-      if (id == 'controls') return 2;
-      return 3;
-    }
-    if (id == 'pwm') return 1;
-    if (id == 'strategy') return 2;
-    if (id == 'mappings') return 3;
-    return 4;
+    final index = stepIds(kind).indexOf(id);
+    return index < 0 ? reviewStep(kind) : index;
   }
 
-  int stepCount(ProjectKind kind) => kind == ProjectKind.infantry ? 5 : 6;
+  int stepCount(ProjectKind kind) => kind == ProjectKind.infantry ? 6 : 7;
 
   List<String> stepIds(ProjectKind kind) => kind == ProjectKind.infantry
-      ? const ['remote', 'mechanism', 'controls', 'review', 'code']
-      : const ['remote', 'pwm', 'strategy', 'mappings', 'review', 'code'];
+      ? const ['remote', 'mechanism', 'controls', 'review', 'code', 'deploy']
+      : const [
+          'remote',
+          'pwm',
+          'strategy',
+          'mappings',
+          'review',
+          'code',
+          'deploy',
+        ];
 
   int reviewStep(ProjectKind kind) => kind == ProjectKind.infantry ? 3 : 4;
 
   int codeStep(ProjectKind kind) => kind == ProjectKind.infantry ? 4 : 5;
+
+  int deployStep(ProjectKind kind) => kind == ProjectKind.infantry ? 5 : 6;
 
   void goToIssue(ValidationIssue issue) {
     final document = state.document;

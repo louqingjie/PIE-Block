@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'src/controller.dart';
+import 'src/deploy_controller.dart';
 import 'src/home_screen.dart';
 import 'src/wizard_screen.dart';
 
@@ -24,6 +25,7 @@ class _PieBlockAppState extends ConsumerState<PieBlockApp> {
     super.initState();
     _lifecycle = AppLifecycleListener(
       onExitRequested: () async {
+        ref.read(deployControllerProvider.notifier).cancelAll();
         await ref.read(appControllerProvider.notifier).saveNow();
         return AppExitResponse.exit;
       },

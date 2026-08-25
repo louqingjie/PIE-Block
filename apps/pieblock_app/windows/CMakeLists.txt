@@ -52,6 +52,15 @@ add_subdirectory(${FLUTTER_MANAGED_DIR})
 # Application build; see runner/CMakeLists.txt.
 add_subdirectory("runner")
 
+# PIE-Block's Windows-only USB-HID transport. The protocol remains in Dart;
+# this DLL only owns the blocking Win32 HID handle and overlapped I/O.
+add_library(pieblock_hid SHARED
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../../packages/pieblock_hid/src/pieblock_hid.cpp"
+)
+apply_standard_settings(pieblock_hid)
+target_compile_definitions(pieblock_hid PRIVATE "NOMINMAX")
+target_link_libraries(pieblock_hid PRIVATE hid.lib setupapi.lib)
+
 
 # Generated plugin build rules, which manage building the plugins and adding
 # them to the application.
@@ -74,6 +83,28 @@ set(INSTALL_BUNDLE_LIB_DIR "${CMAKE_INSTALL_PREFIX}")
 
 install(TARGETS ${BINARY_NAME} RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}"
   COMPONENT Runtime)
+install(TARGETS pieblock_hid RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}"
+  COMPONENT Runtime)
+
+# Keep compiler resources outside flutter_assets so executables can be copied
+# and launched without relying on AssetBundle extraction semantics.
+set(PIEBLOCK_REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../..")
+set(PIEBLOCK_RUNTIME_DIR "${INSTALL_BUNDLE_DATA_DIR}/pieblock_runtime")
+if(EXISTS "${PIEBLOCK_REPO_ROOT}/vendor/sdcc-toolchain")
+  install(DIRECTORY "${PIEBLOCK_REPO_ROOT}/vendor/sdcc-toolchain"
+    DESTINATION "${PIEBLOCK_RUNTIME_DIR}" COMPONENT Runtime)
+endif()
+install(DIRECTORY "${PIEBLOCK_REPO_ROOT}/stc32g_sdcc"
+  DESTINATION "${PIEBLOCK_RUNTIME_DIR}" COMPONENT Runtime
+  PATTERN "build" EXCLUDE)
+install(DIRECTORY "${PIEBLOCK_REPO_ROOT}/stc32g/Libraries"
+  DESTINATION "${PIEBLOCK_RUNTIME_DIR}/stc32g" COMPONENT Runtime)
+install(DIRECTORY
+  "${PIEBLOCK_REPO_ROOT}/stc32g/Projects/ROBOMASTER_INFANTRY"
+  "${PIEBLOCK_REPO_ROOT}/stc32g/Projects/ROBOMASTER_ENGINEER"
+  DESTINATION "${PIEBLOCK_RUNTIME_DIR}/stc32g/Projects" COMPONENT Runtime
+  PATTERN "Objects" EXCLUDE PATTERN "Listings" EXCLUDE
+  PATTERN "*.hex" EXCLUDE PATTERN "*.log" EXCLUDE)
 
 install(FILES "${FLUTTER_ICU_DATA_FILE}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
   COMPONENT Runtime)

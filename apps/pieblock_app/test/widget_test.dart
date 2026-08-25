@@ -165,7 +165,7 @@ void main() {
     expect(find.byType(AlertDialog), findsNothing);
   });
 
-  testWidgets('步兵向导为五步且配置页不显示主题按钮', (tester) async {
+  testWidgets('步兵向导含编译烧录步骤且配置页不显示主题按钮', (tester) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -176,7 +176,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('1 / 5'), findsOneWidget);
+    expect(find.text('1 / 6'), findsOneWidget);
     expect(find.text('PWM 与引脚'), findsNothing);
     expect(find.byTooltip('切换主题'), findsNothing);
   });
@@ -200,7 +200,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('尚未填写'), findsWidgets);
     expect(find.textContaining('尚未选择'), findsWidgets);
-    expect(find.text('1 / 5'), findsOneWidget);
+    expect(find.text('1 / 6'), findsOneWidget);
     await tester.pump(const Duration(milliseconds: 1500));
   });
 
@@ -247,7 +247,7 @@ void main() {
 
     await tester.tap(find.text('下一步'));
     await tester.pumpAndSettle();
-    expect(find.text('1 / 5'), findsOneWidget);
+    expect(find.text('1 / 6'), findsOneWidget);
     expect(find.textContaining('请修正标红的配置'), findsOneWidget);
     await tester.pump(const Duration(milliseconds: 1500));
   });

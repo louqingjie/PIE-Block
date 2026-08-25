@@ -39,6 +39,10 @@ dependencies:
   re_highlight: ^0.0.3
   pieblock_core:
     path: ../../packages/pieblock_core
+  pieblock_toolchain:
+    path: ../../packages/pieblock_toolchain
+  pieblock_hid:
+    path: ../../packages/pieblock_hid
 
 dev_dependencies:
   flutter_test:
@@ -65,6 +69,8 @@ flutter:
   assets:
     - assets/images/cnu-blue.png
     - assets/images/cnu-white.png
+    - assets/images/switch_main.png
+    - assets/images/switch_expend.png
 
   fonts:
     - family: PieBlockSans

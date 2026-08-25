@@ -4,18 +4,48 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:file_selector/file_selector.dart';
 import 'package:pieblock_core/pieblock_core.dart';
+import 'package:pieblock_toolchain/pieblock_toolchain.dart';
 import 'package:re_editor/re_editor.dart';
 import 'package:re_highlight/languages/c.dart';
 import 'package:re_highlight/styles/atom-one-dark.dart';
 import 'package:re_highlight/styles/atom-one-light.dart';
 
 import 'controller.dart';
+import 'deploy_controller.dart';
 
 final _fieldAnchors = <String, GlobalKey>{};
 final _fieldFocusNodes = <String, FocusNode>{};
 final _highlightedField = ValueNotifier<String?>(null);
 Timer? _highlightTimer;
+
+Future<void> _confirmCancelOperation(
+  BuildContext context,
+  WidgetRef ref,
+  Future<void> Function() action,
+) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('取消当前任务？'),
+      content: const Text('编译或烧录尚未结束。烧录中取消可能需要重新断电上电后再试。'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('继续等待'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text('取消任务并返回'),
+        ),
+      ],
+    ),
+  );
+  if (confirmed != true) return;
+  ref.read(deployControllerProvider.notifier).cancelAll();
+  await action();
+}
 
 GlobalKey _fieldAnchor(String path) =>
     _fieldAnchors.putIfAbsent(path, GlobalKey.new);
@@ -275,7 +305,14 @@ List<Widget> _selectedPinItems(List<String> pins) => [
 class WizardScreen extends ConsumerWidget {
   const WizardScreen({super.key});
 
-  static const infantrySteps = ['遥控器与底盘', '云台与拨弹', '控制与摩擦轮', '检查与摘要', '生成代码'];
+  static const infantrySteps = [
+    '遥控器与底盘',
+    '云台与拨弹',
+    '控制与摩擦轮',
+    '检查与摘要',
+    '生成代码',
+    '编译与烧录',
+  ];
   static const engineerSteps = [
     '遥控器与底盘',
     'PWM 与引脚',
@@ -283,6 +320,7 @@ class WizardScreen extends ConsumerWidget {
     '动作映射',
     '检查与摘要',
     '生成代码',
+    '编译与烧录',
   ];
 
   @override
@@ -299,7 +337,8 @@ class WizardScreen extends ConsumerWidget {
             1 => const _InfantryMechanismPage(),
             2 => const _InfantryControlsPage(),
             3 => const _ReviewPage(),
-            _ => const _CodePage(),
+            4 => const _CodePage(),
+            _ => const _DeployPage(),
           }
         : switch (state.step) {
             0 => const _RemotePage(),
@@ -307,7 +346,8 @@ class WizardScreen extends ConsumerWidget {
             2 => const _EngineerStrategyPage(),
             3 => const _EngineerMappingsPage(),
             4 => const _ReviewPage(),
-            _ => const _CodePage(),
+            5 => const _CodePage(),
+            _ => const _DeployPage(),
           };
     if (state.pendingFieldPath != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -315,13 +355,20 @@ class WizardScreen extends ConsumerWidget {
         controller.clearPendingField();
       });
     }
+    final deploy = ref.watch(deployControllerProvider);
     return Scaffold(
       appBar: AppBar(
         titleSpacing: 20,
         title: Row(
           children: [
             IconButton(
-              onPressed: controller.closeProject,
+              onPressed: deploy.busy
+                  ? () => _confirmCancelOperation(
+                      context,
+                      ref,
+                      controller.closeProject,
+                    )
+                  : controller.closeProject,
               tooltip: '返回项目首页',
               icon: const Icon(Icons.arrow_back),
             ),
@@ -398,7 +445,9 @@ class WizardScreen extends ConsumerWidget {
                                   title: steps[i],
                                   selected: i == state.step,
                                   enabled: i <= state.maxVisitedStep + 1,
-                                  onTap: () => controller.goToStep(i),
+                                  onTap: deploy.busy
+                                      ? () {}
+                                      : () => controller.goToStep(i),
                                 ),
                             ],
                           ),
@@ -424,7 +473,7 @@ class WizardScreen extends ConsumerWidget {
             child: Row(
               children: [
                 OutlinedButton.icon(
-                  onPressed: state.step > 0
+                  onPressed: state.step > 0 && !deploy.busy
                       ? () => controller.goToStep(state.step - 1)
                       : null,
                   icon: const Icon(Icons.arrow_back),
@@ -437,13 +486,15 @@ class WizardScreen extends ConsumerWidget {
                 ),
                 const Spacer(),
                 FilledButton.icon(
-                  onPressed: state.step < steps.length - 1
+                  onPressed: state.step < steps.length - 1 && !deploy.busy
                       ? () => controller.goToStep(state.step + 1)
                       : null,
                   icon: const Icon(Icons.arrow_forward),
                   label: Text(
                     state.step == controller.reviewStep(document.kind)
                         ? '生成代码'
+                        : state.step == controller.codeStep(document.kind)
+                        ? '编译与烧录'
                         : '下一步',
                   ),
                 ),
@@ -2391,4 +2442,475 @@ class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
       ],
     );
   }
+}
+
+class _DeployPage extends ConsumerStatefulWidget {
+  const _DeployPage();
+
+  @override
+  ConsumerState<_DeployPage> createState() => _DeployPageState();
+}
+
+class _DeployPageState extends ConsumerState<_DeployPage> {
+  Timer? _deviceTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _prepare());
+    _deviceTimer = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => ref.read(deployControllerProvider.notifier).refreshDevices(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _deviceTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _prepare() async {
+    var app = ref.read(appControllerProvider);
+    if (app.compiler == CompilerKind.keil && app.keilPath == null) {
+      final installation = await const ToolchainDiscovery().resolveKeil();
+      if (installation != null && mounted) {
+        ref.read(appControllerProvider.notifier).setKeilPath(installation.root);
+        app = ref.read(appControllerProvider);
+      }
+    }
+    await ref
+        .read(deployControllerProvider.notifier)
+        .prepare(app.document!.config, app.compiler, keilRoot: app.keilPath);
+  }
+
+  Future<void> _chooseKeil() async {
+    final selected = await getDirectoryPath(confirmButtonText: '选择 Keil 目录');
+    if (selected == null) return;
+    final installation = await const ToolchainDiscovery().validateKeil(
+      selected,
+    );
+    if (!mounted) return;
+    if (installation == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('所选目录缺少 UV4/uVision.com 或 C251/BIN/C251.EXE'),
+        ),
+      );
+      return;
+    }
+    ref.read(appControllerProvider.notifier).setKeilPath(installation.root);
+    await _prepare();
+  }
+
+  Future<bool> _build() async {
+    final appController = ref.read(appControllerProvider.notifier);
+    await appController.saveNow();
+    final app = ref.read(appControllerProvider);
+    if (app.saveStatus == SaveStatus.failed) return false;
+    if (app.compiler == CompilerKind.keil && app.keilPath == null) {
+      await _chooseKeil();
+      if (ref.read(appControllerProvider).keilPath == null) return false;
+    }
+    final current = ref.read(appControllerProvider);
+    return ref
+        .read(deployControllerProvider.notifier)
+        .buildFirmware(
+          current.document!.config,
+          current.compiler,
+          keilRoot: current.keilPath,
+        );
+  }
+
+  Future<bool> _confirmFlashSafety() async {
+    final app = ref.read(appControllerProvider);
+    if (app.suppressFlashGuide) return true;
+    var suppress = false;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('烧录主控板前请确认'),
+          content: SizedBox(
+            width: 760,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '只能烧录主控板，绝不能向机械扩展板烧录程序。烧录前请关闭以下四个开关，避免无法识别或电流倒灌。',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: _SafetyImage(
+                          asset: 'assets/images/switch_main.png',
+                          caption: '主控板：关闭 SERVO、POWER',
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: _SafetyImage(
+                          asset: 'assets/images/switch_expend.png',
+                          caption: '扩展板：关闭 POWER、BOOSTER',
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  const Text('主控板必须通过断电后重新上电进入 ISP。烧录完成会自动复位；再次烧录前需要重新断电上电。'),
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: suppress,
+                    onChanged: (value) =>
+                        setDialogState(() => suppress = value ?? false),
+                    title: const Text('以后不再显示此提示'),
+                    controlAffinity: ListTileControlAffinity.leading,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('已关闭开关，继续烧录'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed == true && suppress) {
+      ref.read(appControllerProvider.notifier).suppressFlashGuide();
+    }
+    return confirmed == true;
+  }
+
+  Future<void> _primaryAction() async {
+    var artifact = ref.read(deployControllerProvider).artifact;
+    if (artifact == null) {
+      if (!await _build()) return;
+      artifact = ref.read(deployControllerProvider).artifact;
+      if (artifact == null) return;
+    }
+    if (!await _confirmFlashSafety()) return;
+    await ref.read(deployControllerProvider.notifier).flashFirmware();
+  }
+
+  Future<void> _exportHex() async {
+    final location = await getSaveLocation(
+      suggestedName: 'firmware.hex',
+      acceptedTypeGroups: const [
+        XTypeGroup(label: 'HEX 固件', extensions: ['hex']),
+      ],
+    );
+    if (location == null) return;
+    await ref.read(deployControllerProvider.notifier).exportHex(location.path);
+  }
+
+  Future<void> _applyLicense() async {
+    final key = TextEditingController();
+    final submitted = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('应用 Keil C251 许可证'),
+        content: SizedBox(
+          width: 560,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '密钥只写入 Keil 的 TOOLS.INI，不会保存到 PIE-Block 设置或构建日志。写入前会创建 .pieblock.bak 备份。',
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: key,
+                decoration: const InputDecoration(labelText: 'C251 许可证密钥'),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, key.text.trim()),
+            child: const Text('应用许可证'),
+          ),
+        ],
+      ),
+    );
+    if (submitted == null || submitted.isEmpty) return;
+    final path = ref.read(appControllerProvider).keilPath;
+    final installation = await const ToolchainDiscovery().validateKeil(
+      path ?? '',
+    );
+    if (installation == null) return;
+    try {
+      await const ToolchainDiscovery().applyKeilLicense(
+        installation,
+        submitted,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('许可证已应用，请重新编译')));
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('写入许可证失败：$error。请改用 Keil License Management。'),
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final app = ref.watch(appControllerProvider);
+    final deploy = ref.watch(deployControllerProvider);
+    final artifact = deploy.artifact;
+    final deviceText = switch (deploy.deviceCount) {
+      0 => '未检测到 ISP 主控板',
+      1 => '已检测到 1 块 ISP 主控板',
+      _ => '检测到 ${deploy.deviceCount} 块主控板，请只保留一块',
+    };
+    return _PageFrame(
+      title: '编译与烧录',
+      subtitle: '将当前配置编译为 STC32G12K128 固件，并通过免驱 USB-HID 写入主控板。',
+      child: Column(
+        children: [
+          _Section(
+            title: '编译器',
+            subtitle: '内置 SDCC 可完全离线使用；Keil 使用本机已安装的 C251。',
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: DropdownButtonFormField<CompilerKind>(
+                      initialValue: app.compiler,
+                      decoration: const InputDecoration(labelText: '本地编译器'),
+                      items: const [
+                        DropdownMenuItem(
+                          value: CompilerKind.sdcc,
+                          child: Text('内置 SDCC C251'),
+                        ),
+                        DropdownMenuItem(
+                          value: CompilerKind.keil,
+                          child: Text('本地 Keil C251'),
+                        ),
+                      ],
+                      onChanged: deploy.busy
+                          ? null
+                          : (value) async {
+                              if (value == null) return;
+                              ref
+                                  .read(appControllerProvider.notifier)
+                                  .setCompiler(value);
+                              await _prepare();
+                            },
+                    ),
+                  ),
+                  if (app.compiler == CompilerKind.keil) ...[
+                    const SizedBox(width: 12),
+                    OutlinedButton.icon(
+                      onPressed: deploy.busy ? null : _chooseKeil,
+                      icon: const Icon(Icons.folder_open),
+                      label: const Text('选择 Keil 目录'),
+                    ),
+                  ],
+                ],
+              ),
+              if (app.compiler == CompilerKind.keil) ...[
+                const SizedBox(height: 10),
+                Text(app.keilPath ?? '尚未指定 Keil 安装目录'),
+              ],
+            ],
+          ),
+          const SizedBox(height: 16),
+          _Section(
+            title: '构建产物',
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    artifact == null
+                        ? Icons.pending_outlined
+                        : Icons.verified_outlined,
+                    color: artifact == null
+                        ? Theme.of(context).colorScheme.onSurfaceVariant
+                        : Colors.green,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      artifact == null
+                          ? '当前编译器没有与配置完全匹配的固件'
+                          : '${artifact.byteCount} 字节 · ${artifact.warningCount} 条警告 · ${artifact.builtAt.toLocal()}',
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  FilledButton.icon(
+                    onPressed: deploy.busy ? null : _primaryAction,
+                    icon: Icon(
+                      artifact == null
+                          ? Icons.rocket_launch_outlined
+                          : Icons.system_update_alt,
+                    ),
+                    label: Text(artifact == null ? '编译并烧录' : '烧录当前固件'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: deploy.busy ? null : _build,
+                    icon: const Icon(Icons.build_outlined),
+                    label: const Text('仅编译'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: deploy.busy || artifact == null
+                        ? null
+                        : _exportHex,
+                    icon: const Icon(Icons.save_alt),
+                    label: const Text('导出 HEX'),
+                  ),
+                  if (deploy.busy)
+                    TextButton.icon(
+                      onPressed: ref
+                          .read(deployControllerProvider.notifier)
+                          .cancelAll,
+                      icon: const Icon(Icons.stop_circle_outlined),
+                      label: const Text('取消任务'),
+                    ),
+                  if (deploy.licenseFailure)
+                    TextButton.icon(
+                      onPressed: _applyLicense,
+                      icon: const Icon(Icons.key_outlined),
+                      label: const Text('应用 Keil 许可证'),
+                    ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          _Section(
+            title: '主控板 USB-HID',
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    deploy.deviceCount == 1 ? Icons.usb : Icons.usb_off,
+                    color: deploy.deviceCount == 1
+                        ? Colors.green
+                        : deploy.deviceCount > 1
+                        ? Theme.of(context).colorScheme.error
+                        : null,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(child: Text('$deviceText（VID 34BF / PID 1001）')),
+                  IconButton(
+                    tooltip: '重新检测',
+                    onPressed: deploy.busy
+                        ? null
+                        : ref
+                              .read(deployControllerProvider.notifier)
+                              .refreshDevices,
+                    icon: const Icon(Icons.refresh),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              const _InfoBanner(
+                '未检测到时，请关闭四个供电开关，将主控板断电后重新连接 USB。烧录成功后 HID 设备自动消失是正常现象。',
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          _Section(
+            title: '进度与日志',
+            children: [
+              if (deploy.progress != null) ...[
+                LinearProgressIndicator(value: deploy.progress),
+                const SizedBox(height: 12),
+              ] else if (deploy.busy) ...[
+                const LinearProgressIndicator(),
+                const SizedBox(height: 12),
+              ],
+              if (deploy.message != null) ...[
+                Text(
+                  deploy.message!,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 10),
+              ],
+              Container(
+                width: double.infinity,
+                constraints: const BoxConstraints(
+                  minHeight: 120,
+                  maxHeight: 360,
+                ),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: SingleChildScrollView(
+                  child: SelectableText(
+                    deploy.events.isEmpty ? '等待操作…' : deploy.events.join('\n'),
+                    style: const TextStyle(
+                      fontFamily: 'Consolas',
+                      fontSize: 12.5,
+                      height: 1.45,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SafetyImage extends StatelessWidget {
+  const _SafetyImage({required this.asset, required this.caption});
+  final String asset;
+  final String caption;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    children: [
+      ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Image.asset(
+          asset,
+          height: 190,
+          width: double.infinity,
+          fit: BoxFit.contain,
+        ),
+      ),
+      const SizedBox(height: 6),
+      Text(caption, textAlign: TextAlign.center),
+    ],
+  );
 }
