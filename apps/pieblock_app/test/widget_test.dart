@@ -265,6 +265,31 @@ void main() {
     expect(find.byTooltip('切换主题'), findsNothing);
   });
 
+  testWidgets('非宽屏向导统一使用步骤下拉栏', (tester) async {
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    tester.view.devicePixelRatio = 1;
+    for (final width in const [360.0, 600.0, 1099.0]) {
+      tester.view.physicalSize = Size(width, 700);
+      await tester.pumpWidget(
+        ProviderScope(
+          key: ValueKey(width),
+          overrides: [
+            appControllerProvider.overrideWith(_InfantryStartController.new),
+          ],
+          child: const MaterialApp(home: WizardScreen()),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(ChoiceChip), findsNothing);
+      expect(find.byType(DropdownButtonFormField<int>), findsOneWidget);
+      expect(find.text('当前步骤 · 1 / 6'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    }
+  });
+
   testWidgets('空白配置先不报错，点击下一步后显示未填项', (tester) async {
     await tester.pumpWidget(
       ProviderScope(

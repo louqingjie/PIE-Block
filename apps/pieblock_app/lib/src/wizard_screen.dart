@@ -453,7 +453,6 @@ class WizardScreen extends ConsumerWidget {
             child: LayoutBuilder(
               builder: (context, constraints) {
                 final wide = constraints.maxWidth >= _wideBreakpoint;
-                final compact = constraints.maxWidth < _compactBreakpoint;
                 final content = AnimatedSwitcher(
                   duration: const Duration(milliseconds: 180),
                   child: KeyedSubtree(key: ValueKey(state.step), child: page),
@@ -461,13 +460,11 @@ class WizardScreen extends ConsumerWidget {
                 if (!wide) {
                   return Column(
                     children: [
-                      compact
-                          ? _CompactStepPicker(
-                              steps: steps,
-                              selected: state.step,
-                              busy: deploy.busy,
-                            )
-                          : _CompactSteps(steps: steps, selected: state.step),
+                      _CompactStepPicker(
+                        steps: steps,
+                        selected: state.step,
+                        busy: deploy.busy,
+                      ),
                       Expanded(child: content),
                     ],
                   );
@@ -646,33 +643,6 @@ class _StepTile extends StatelessWidget {
       leading: CircleAvatar(radius: 15, child: Text('${index + 1}')),
       title: Text(title),
       onTap: enabled ? onTap : null,
-    ),
-  );
-}
-
-class _CompactSteps extends ConsumerWidget {
-  const _CompactSteps({required this.steps, required this.selected});
-  final List<String> steps;
-  final int selected;
-  @override
-  Widget build(BuildContext context, WidgetRef ref) => SingleChildScrollView(
-    scrollDirection: Axis.horizontal,
-    padding: const EdgeInsets.all(10),
-    child: Row(
-      children: [
-        for (var i = 0; i < steps.length; i++)
-          Padding(
-            padding: const EdgeInsets.only(right: 6),
-            child: ChoiceChip(
-              label: Text('${i + 1}. ${steps[i]}'),
-              selected: i == selected,
-              onSelected:
-                  i <= ref.read(appControllerProvider).maxVisitedStep + 1
-                  ? (_) => ref.read(appControllerProvider.notifier).goToStep(i)
-                  : null,
-            ),
-          ),
-      ],
     ),
   );
 }
