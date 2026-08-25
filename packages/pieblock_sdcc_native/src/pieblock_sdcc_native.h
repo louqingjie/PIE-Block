@@ -13,7 +13,7 @@
 extern "C" {
 #endif
 
-#define PB_SDCC_API_VERSION 3u
+#define PB_SDCC_API_VERSION 4u
 
 typedef enum pb_sdcc_status {
   PB_SDCC_OK = 0,
@@ -54,6 +54,7 @@ typedef struct pb_sdcc_request {
   const char *main_source_path;
   const char *interrupt_header_path;
   pb_sdcc_string_list source_paths;
+  pb_sdcc_string_list library_source_paths;
   pb_sdcc_string_list compile_arguments;
   pb_sdcc_string_list link_arguments;
   const char *hex_output_path;

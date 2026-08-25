@@ -8,6 +8,7 @@
 #include <unistd.h>
 
 #include "pieblock_sdcc_pipeline.h"
+#include "pieblock_sdcc_stage_runtime.h"
 
 #define PB_EVENT_CAPACITY 128
 #define PB_MESSAGE_CAPACITY 1024
@@ -15,6 +16,18 @@
 
 #ifndef PB_SDCC_ANDROID_ABI
 #define PB_SDCC_ANDROID_ABI "unknown"
+#endif
+
+#ifndef PB_SDCC_PIPELINE_ENABLED
+#define PB_SDCC_PIPELINE_ENABLED 0
+#endif
+
+#ifndef PB_SDCC_STAGES_LINKED
+#define PB_SDCC_STAGES_LINKED 0
+#endif
+
+#ifndef PB_SDCC_STAGE_SHA256
+#define PB_SDCC_STAGE_SHA256 "unavailable"
 #endif
 
 typedef struct pb_owned_request {
@@ -25,6 +38,8 @@ typedef struct pb_owned_request {
   char *interrupt_header_path;
   char **source_paths;
   uint32_t source_count;
+  char **library_source_paths;
+  uint32_t library_source_count;
   char **compile_arguments;
   uint32_t compile_argument_count;
   char **link_arguments;
@@ -106,6 +121,8 @@ static void pb_free_request(pb_owned_request *request) {
   free(request->main_source_path);
   free(request->interrupt_header_path);
   pb_free_strings(request->source_paths, request->source_count);
+  pb_free_strings(request->library_source_paths,
+                  request->library_source_count);
   pb_free_strings(request->compile_arguments,
                   request->compile_argument_count);
   pb_free_strings(request->link_arguments, request->link_argument_count);
@@ -120,10 +137,13 @@ static int pb_request_valid(const pb_sdcc_request *request) {
          request->resource_directory != NULL && request->project_kind != NULL &&
          request->main_source_path != NULL &&
          request->interrupt_header_path != NULL &&
+         request->source_paths.count > 0 &&
          request->hex_output_path != NULL &&
          request->map_output_path != NULL && request->log_output_path != NULL &&
          (request->source_paths.count == 0 ||
           request->source_paths.items != NULL) &&
+         (request->library_source_paths.count == 0 ||
+          request->library_source_paths.items != NULL) &&
          (request->compile_arguments.count == 0 ||
           request->compile_arguments.items != NULL) &&
          (request->link_arguments.count == 0 ||
@@ -138,6 +158,8 @@ static int pb_owned_request_valid(const pb_owned_request *request) {
          request->hex_output_path != NULL &&
          request->map_output_path != NULL && request->log_output_path != NULL &&
          (request->source_count == 0 || request->source_paths != NULL) &&
+         (request->library_source_count == 0 ||
+          request->library_source_paths != NULL) &&
          (request->compile_argument_count == 0 ||
           request->compile_arguments != NULL) &&
          (request->link_argument_count == 0 || request->link_arguments != NULL);
@@ -185,6 +207,9 @@ static void *pb_worker(void *context) {
       .interrupt_header_path = operation->request.interrupt_header_path,
       .source_paths = {(const char *const *)operation->request.source_paths,
                        operation->request.source_count},
+      .library_source_paths = {
+          (const char *const *)operation->request.library_source_paths,
+          operation->request.library_source_count},
       .compile_arguments = {
           (const char *const *)operation->request.compile_arguments,
           operation->request.compile_argument_count},
@@ -203,6 +228,22 @@ static void *pb_worker(void *context) {
           NULL,
           "Preparing in-process SDCC C251 build");
 
+  FILE *log_stream = fopen(operation->request.log_output_path, "w");
+  int saved_stdout = -1;
+  int saved_stderr = -1;
+  if (log_stream != NULL) {
+    fflush(stdout);
+    fflush(stderr);
+    saved_stdout = dup(STDOUT_FILENO);
+    saved_stderr = dup(STDERR_FILENO);
+    if (saved_stdout >= 0 && saved_stderr >= 0) {
+      (void)dup2(fileno(log_stream), STDOUT_FILENO);
+      (void)dup2(fileno(log_stream), STDERR_FILENO);
+      setvbuf(stdout, NULL, _IOLBF, 0);
+      setvbuf(stderr, NULL, _IOLBF, 0);
+    }
+  }
+
   int warnings = 0;
   char message[PB_MESSAGE_CAPACITY] = {0};
   int result = pb_sdcc_pipeline_execute(&request,
@@ -212,6 +253,17 @@ static void *pb_worker(void *context) {
                                         &warnings,
                                         message,
                                         sizeof(message));
+  fflush(stdout);
+  fflush(stderr);
+  if (saved_stdout >= 0) {
+    (void)dup2(saved_stdout, STDOUT_FILENO);
+    close(saved_stdout);
+  }
+  if (saved_stderr >= 0) {
+    (void)dup2(saved_stderr, STDERR_FILENO);
+    close(saved_stderr);
+  }
+  if (log_stream != NULL) fclose(log_stream);
   if (atomic_load(&operation->cancel_requested)) {
     result = PB_SDCC_CANCELED;
     snprintf(message, sizeof(message), "%s", "Build canceled");
@@ -244,17 +296,34 @@ static void *pb_worker(void *context) {
 uint32_t pb_sdcc_api_version(void) { return PB_SDCC_API_VERSION; }
 
 const char *pb_sdcc_build_fingerprint(void) {
-  return "sdcc-c251:912a589d4080c9cd5c5c1faf871c62dd5023580d;ffi:3;android-abi:"
-         PB_SDCC_ANDROID_ABI ";pipeline:unavailable";
+  return "sdcc-c251:912a589d4080c9cd5c5c1faf871c62dd5023580d;ffi:4;service:1;embedded-host:1;android-abi:"
+         PB_SDCC_ANDROID_ABI ";stage-object:" PB_SDCC_STAGE_SHA256
+         ";pipeline-enabled:"
+#if PB_SDCC_PIPELINE_ENABLED
+         "1"
+#else
+         "0"
+#endif
+         ";stages-linked:"
+#if PB_SDCC_STAGES_LINKED
+         "1";
+#else
+         "0";
+#endif
 }
 
-int32_t pb_sdcc_is_available(void) { return 0; }
+int32_t pb_sdcc_is_available(void) {
+  return PB_SDCC_PIPELINE_ENABLED && PB_SDCC_STAGES_LINKED &&
+         pb_sdcc_stage_entries_available() &&
+         pb_sdcc_embedded_host_self_test();
+}
 
 pb_sdcc_status pb_sdcc_start(const pb_sdcc_request *request,
                              pb_sdcc_operation **operation) {
   if (!pb_request_valid(request) || operation == NULL) {
     return PB_SDCC_INVALID_ARGUMENT;
   }
+  if (!pb_sdcc_is_available()) return PB_SDCC_UNAVAILABLE;
   pthread_mutex_lock(&g_build_mutex);
   if (g_build_active) {
     pthread_mutex_unlock(&g_build_mutex);
@@ -276,6 +345,9 @@ pb_sdcc_status pb_sdcc_start(const pb_sdcc_request *request,
       pb_copy_string(request->interrupt_header_path);
   created->request.source_count = request->source_paths.count;
   created->request.source_paths = pb_copy_strings(&request->source_paths);
+  created->request.library_source_count = request->library_source_paths.count;
+  created->request.library_source_paths =
+      pb_copy_strings(&request->library_source_paths);
   created->request.compile_argument_count = request->compile_arguments.count;
   created->request.compile_arguments =
       pb_copy_strings(&request->compile_arguments);

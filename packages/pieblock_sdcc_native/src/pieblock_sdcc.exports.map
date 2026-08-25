@@ -1,0 +1,14 @@
+PIEBLOCK_SDCC_4 {
+  global:
+    pb_sdcc_api_version;
+    pb_sdcc_build_fingerprint;
+    pb_sdcc_is_available;
+    pb_sdcc_start;
+    pb_sdcc_poll_event;
+    pb_sdcc_cancel;
+    pb_sdcc_get_result;
+    pb_sdcc_destroy;
+    Java_cn_edu_cnu_pieblock_1app_SdccNativeBridge_*;
+  local:
+    *;
+};
