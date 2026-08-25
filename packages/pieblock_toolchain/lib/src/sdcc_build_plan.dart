@@ -36,8 +36,15 @@ class SdccBuildPlan {
         .cast<String, Object?>();
     final groups = (manifest['source_groups']! as Map).cast<String, Object?>();
     final projects = (manifest['projects']! as Map).cast<String, Object?>();
-    final spec = (projects[projectName] as Map?)?.cast<String, Object?>();
-    if (spec == null) throw StateError('SDCC 构建清单缺少项目：$projectName');
+    final kindProjects = (manifest['kind_projects'] as Map?)
+        ?.cast<String, Object?>();
+    final resolvedProject = projects.containsKey(projectName)
+        ? projectName
+        : kindProjects?[projectName] as String?;
+    final spec = (projects[resolvedProject] as Map?)?.cast<String, Object?>();
+    if (spec == null || resolvedProject == null) {
+      throw StateError('SDCC 构建清单缺少项目：$projectName');
+    }
 
     final relativeSources = <String>[];
     final relativeLibraries = <String>[];
@@ -48,8 +55,8 @@ class SdccBuildPlan {
     for (final value in groups['common']! as List) {
       addSource('$value');
     }
-    addSource('projects/$projectName/src/isr.c');
-    addSource('projects/$projectName/src/main.c');
+    addSource('projects/$resolvedProject/src/isr.c');
+    addSource('projects/$resolvedProject/src/main.c');
     for (final groupName in spec['library_groups']! as List) {
       final group = groups['$groupName'] as List?;
       if (group == null) throw StateError('SDCC 构建清单缺少源码组：$groupName');
@@ -83,7 +90,7 @@ class SdccBuildPlan {
       '-I${p.join(toolchain, 'include', 'mcs51')}',
       for (final directory in manifest['include_dirs']! as List)
         '-I${p.join(firmware, '$directory')}',
-      '-I${p.join(firmware, 'projects', projectName, 'inc')}',
+      '-I${p.join(firmware, 'projects', resolvedProject, 'inc')}',
     ];
     final compileArguments = <String>[
       for (final flag in manifest['compile_flags']! as List) '$flag',
@@ -96,7 +103,7 @@ class SdccBuildPlan {
       for (final library in manifest['runtime_libraries']! as List) '$library',
     ];
     return SdccBuildPlan(
-      projectName: projectName,
+      projectName: resolvedProject,
       sourcePaths: sources,
       librarySourcePaths: relativeLibraries
           .map(resolveSource)

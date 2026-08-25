@@ -31,8 +31,26 @@ try {
 
     foreach ($abi in @('arm64-v8a', 'x86_64')) {
         $library = "${prefix}lib/$abi/libpieblock_sdcc_native.so"
-        if ($library -notin $names) {
+        $libraryEntry = $archive.GetEntry($library)
+        if ($null -eq $libraryEntry) {
             throw "Android 包缺少 $library"
+        }
+        $memory = [System.IO.MemoryStream]::new()
+        try {
+            $stream = $libraryEntry.Open()
+            try {
+                $stream.CopyTo($memory)
+            } finally {
+                $stream.Dispose()
+            }
+            $nativeText = [System.Text.Encoding]::ASCII.GetString($memory.ToArray())
+            foreach ($marker in @('ffi:5', 'worker:1', 'pipeline-enabled:0')) {
+                if (-not $nativeText.Contains($marker)) {
+                    throw "$library 缺少 Release 安全门标记：$marker"
+                }
+            }
+        } finally {
+            $memory.Dispose()
         }
     }
 
