@@ -6,6 +6,7 @@ import android.os.Build
 import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
+import java.util.zip.ZipFile
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
@@ -55,17 +56,41 @@ class MainActivity : FlutterActivity() {
 
     private fun getSdccNativeInfo(result: MethodChannel.Result) {
         try {
-            val library = File(applicationInfo.nativeLibraryDir, "libpieblock_sdcc_native.so")
-            require(library.isFile) { "安装包缺少 Android SDCC 原生库" }
+            val (abi, hash) = findSdccNativeLibrary()
             result.success(
                 mapOf(
-                    "abi" to Build.SUPPORTED_ABIS.firstOrNull().orEmpty(),
-                    "sha256" to sha256(library),
+                    "abi" to abi,
+                    "sha256" to hash,
                 ),
             )
         } catch (error: Exception) {
             result.error("sdcc_native_error", error.message, null)
         }
+    }
+
+    private fun findSdccNativeLibrary(): Pair<String, String> {
+        val extracted = File(
+            applicationInfo.nativeLibraryDir,
+            "libpieblock_sdcc_native.so",
+        )
+        if (extracted.isFile) {
+            return Build.SUPPORTED_ABIS.firstOrNull().orEmpty() to sha256(extracted)
+        }
+
+        val apkPaths = buildList {
+            add(applicationInfo.sourceDir)
+            applicationInfo.splitSourceDirs?.let(::addAll)
+        }
+        for (apkPath in apkPaths) {
+            ZipFile(apkPath).use { apk ->
+                for (abi in Build.SUPPORTED_ABIS) {
+                    val entry = apk.getEntry("lib/$abi/libpieblock_sdcc_native.so")
+                        ?: continue
+                    return abi to apk.getInputStream(entry).use(::sha256)
+                }
+            }
+        }
+        error("安装包缺少 Android SDCC 原生库")
     }
 
     private fun prepareSdccResources(result: MethodChannel.Result) {
@@ -136,11 +161,15 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun sha256(file: File): String {
+        return file.inputStream().use(::sha256)
+    }
+
+    private fun sha256(input: java.io.InputStream): String {
         val digest = MessageDigest.getInstance("SHA-256")
-        file.inputStream().use { input ->
+        input.use {
             val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
             while (true) {
-                val count = input.read(buffer)
+                val count = it.read(buffer)
                 if (count < 0) break
                 digest.update(buffer, 0, count)
             }
