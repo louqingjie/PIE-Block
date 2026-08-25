@@ -1,0 +1,28 @@
+name: pieblock_sdcc_native
+description: PIE-Block Android in-process SDCC C251 FFI backend.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.13.1
+  flutter: '>=3.47.0'
+
+dependencies:
+  ffi: ^2.1.4
+  flutter:
+    sdk: flutter
+  path: ^1.9.1
+  pieblock_core:
+    path: ../pieblock_core
+  pieblock_toolchain:
+    path: ../pieblock_toolchain
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+  test: ^1.28.0
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        ffiPlugin: true
