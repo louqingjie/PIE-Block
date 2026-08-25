@@ -17,7 +17,7 @@ PIE-Block 是面向 W.PIE RoboMaster 校内赛的 Windows 桌面集成开发环�
 - HEX 地址与校验和检查、按内容哈希复用构建结果、导出 HEX
 - STC32G ROM USB-HID 主控板烧录、进度、取消和失败提示
 
-暂不提供音乐项目、云端编译、串口/蓝牙烧录、AI 编辑、3D 仿真、Android、Web、CLI 或 MCP。
+暂不提供音乐项目、云端编译、串口/蓝牙烧录、AI 编辑、3D 仿真、Web、CLI 或 MCP。Android 适配正在开发：配置、调试工程与 HEX 导出界面已接入，离线 SDCC 在真机黄金测试完成前保持安全门关闭，Android 暂不支持 USB-HID 烧录。
 
 ## 项目结构
 

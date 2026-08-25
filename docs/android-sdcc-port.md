@@ -7,7 +7,8 @@
 - Android ABI：`arm64-v8a`、`x86_64`
 - Android NDK：28.2.13676358
 - SDCC fork：`912a589d4080c9cd5c5c1faf871c62dd5023580d`
-- 原生 C ABI：3
+- 原生 C ABI：4
+- AIDL 编译服务协议：1
 
 原计划指定 NDK 27.3.13750724，但 Flutter 3.47.1 当前解析出的 Android
 插件要求 NDK 28.2.13676358。应用和 FFI 插件统一提升到 28.2，避免由 Gradle
@@ -22,7 +23,7 @@ Android 包只允许包含 `libpieblock_sdcc_native.so` 和编译所需的只读
 资源部署、编译缓存和临时目录分别使用应用 support/cache 目录，不申请通用
 存储权限。HEX 通过 Android Storage Access Framework 导出。
 
-C ABI 3 的请求显式携带源码列表、编译参数、链接参数以及 HEX/MAP/日志输出
+C ABI 4 的请求显式携带源码列表、库源码列表、编译参数、链接参数以及 HEX/MAP/日志输出
 位置；事件携带阶段、当前文件和进度，结果携带结构化错误码与错误/警告计数。
 所有字符串和数组在启动时由原生层深拷贝，不引用 Dart 临时内存。
 
@@ -61,11 +62,10 @@ APK/AAB。脚本还会输出不依赖 Android 可执行文件的可重定位阶�
 同一脚本已在 x86_64/API 24 基线上通过：共享库为 18,177,864 字节，阶段
 对象为 31,035,584 字节；两个 ABI 均导出完整四入口。
 
-阶段对象中的 `exit`/`abort` 已重定向到线程局部 `setjmp/longjmp` 保护边界；
-SDCC 驱动中的 `system`/`popen`/`pclose` 被重定向为固定返回 `ENOSYS` 的禁用
-实现。ARM64 与 x86_64 合并库均确认不再导入这些危险符号。该保护只解决
-“不得退出应用、不得启动子进程”，仍需连续构建测试证明错误跳转后的状态可
-完整复位。
+阶段对象中的 `exit`/`abort` 已重定向到线程局部 `setjmp/longjmp` 保护边界。
+SDCC 驱动中的 `system`/`popen`/`pclose` 由 Android embedded-host 接管，只能
+分派到内嵌 `sdcpp`、`sdas251` 和 `sdld`，不会调用 shell 或创建子进程。
+生产阶段对象不再包含 host 运行时，确保 CMake 总是链接仓库中的当前受控实现。
 
 当前 Android Release AAB 可成功构建（39.7 MB）。APK/AAB 都只包含
 `arm64-v8a`、`x86_64` 两套 PIE-Block 原生库；构建后应执行：
@@ -81,8 +81,9 @@ tools/verify_android_package.ps1 `
 ## ARM64 真机基线
 
 已在 Android 16（API 36）、`arm64-v8a` 真机上完成自动化冒烟测试：应用可
-冷启动且进程保持存活，Dart FFI 可加载 `libpieblock_sdcc_native.so` 并读取
-C ABI 3 指纹。测试同时覆盖 APK 直接加载原生库、204 个资源的逐文件哈希
+冷启动且进程保持存活，私有 `:compiler` 进程可加载原生库并读取 C ABI 4
+能力信息。Flutter 主进程不直接加载 SDCC。测试同时覆盖 APK 直接读取原生库
+哈希、204 个资源的逐文件哈希
 校验、首次原子部署以及第二次复用既有资源目录。
 
 Android 可能直接从 APK 加载未解压的原生库，因此原生库指纹读取同时支持
@@ -98,17 +99,20 @@ flutter test integration_test/android_sdcc_smoke_test.dart -d <device-id>
 
 ## 尚未解除的发布门槛
 
-`sdcpp`、SDCC、ASxxxx 仍以进程入口、`exit()` 和进程级全局状态为生命周期
-边界。把它们简单链接进 Flutter 进程会导致错误路径终止应用，连续构建也可能
-污染状态。因此在完成以下项目之前，原生管线必须返回
-`PB_SDCC_UNAVAILABLE`，且 `pb_sdcc_is_available()` 必须返回 0，不能生成或
+编译现在运行于非导出的前台 Service，进程名为 `:compiler`；Binder 断开、
+取消、崩溃和未确认结果都有独立清理路径。真机最小测试已证明第一个翻译单元
+能够完成“预处理 → MCS251 编译 → 汇编”且生成 `.rel`。构建副本已让 GCC
+`toplev.finalize()` 在每次预处理后执行，并补齐裁剪版 `dump_manager` 的安全
+析构；第二个翻译单元因此可以开始，但再次进入 `sdcpp` 后仍会持续占用 CPU，
+说明上游 GCC/SDCC 仍有未复位的全局状态。安全门继续返回不可用，不能生成或
 缓存 HEX：
 
-1. 四个入口改为显式上下文和返回码，错误路径不终止应用。
-2. 移除 `system`、`popen` 和对子工具路径的查找，按阶段直接调用。
-3. 日志、进度和取消统一接入 C ABI 事件队列。
-4. 同一进程连续构建 100 次，并通过异常输入与内存增长测试。
-5. ARM64 真机和 x86_64 模拟器产物与 Windows 黄金 HEX 字节级一致。
+1. 完成 `pb_cpp_reset()`、`pb_sdcc_reset()`、`pb_sdas251_reset()`、
+   `pb_sdld_reset()`，同一编译进程可连续处理完整源码集合。
+2. 同一进程连续构建 100 次，并通过取消、崩溃、Binder 断开和内存增长测试。
+3. ARM64 真机和 x86_64 模拟器产物与 Windows 黄金 HEX 字节级一致。
 
 这是一项安全门槛，不允许用“能交叉编译出 Android 可执行文件”替代真正的
-库级可重入移植。
+库级可重入移植。如果后续确认无法可靠补齐这些复位函数，安全替代方案是让
+每个翻译单元及最终链接运行于新的私有编译进程；这会改变当前“一次构建一个
+编译进程”的既定架构，实施前需要单独确认。
