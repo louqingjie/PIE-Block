@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pieblock_core/pieblock_core.dart';
@@ -8,9 +9,37 @@ import 'controller.dart';
 
 const _brandCyan = Color(0xff02acc0);
 const _brandCoral = Color(0xffef685d);
+const _pieProjectType = XTypeGroup(
+  label: 'PIE-Block 项目',
+  extensions: ['pieproj'],
+);
+
+class ProjectFileDialogs {
+  const ProjectFileDialogs();
+
+  Future<String?> chooseProjectToOpen() async {
+    final file = await openFile(acceptedTypeGroups: const [_pieProjectType]);
+    return file?.path;
+  }
+
+  Future<String?> chooseProjectSavePath({
+    required String suggestedName,
+    String? initialDirectory,
+  }) async {
+    final location = await getSaveLocation(
+      acceptedTypeGroups: const [_pieProjectType],
+      initialDirectory: initialDirectory,
+      suggestedName: suggestedName,
+      canCreateDirectories: true,
+    );
+    return location?.path;
+  }
+}
 
 class HomeScreen extends ConsumerWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({super.key, this.fileDialogs = const ProjectFileDialogs()});
+
+  final ProjectFileDialogs fileDialogs;
 
   Future<void> _create(BuildContext context, WidgetRef ref) async {
     final name = TextEditingController(text: '我的机器人');
@@ -53,13 +82,41 @@ class HomeScreen extends ConsumerWidget {
                   decoration: const InputDecoration(labelText: '项目名称'),
                 ),
                 const SizedBox(height: 12),
-                TextField(
-                  controller: path,
-                  decoration: const InputDecoration(
-                    labelText: '保存位置',
-                    helperText: '输入完整的 .pieproj 文件路径',
-                    prefixIcon: Icon(Icons.folder_outlined),
-                  ),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: path,
+                        decoration: const InputDecoration(
+                          labelText: '保存位置',
+                          helperText: '选择或输入完整的 .pieproj 文件路径',
+                          prefixIcon: Icon(Icons.folder_outlined),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          final currentPath = path.text.trim();
+                          final selected = await fileDialogs.chooseProjectSavePath(
+                            suggestedName:
+                                '${name.text.trim().isEmpty ? '我的机器人' : name.text.trim()}.pieproj',
+                            initialDirectory: currentPath.isEmpty
+                                ? desktop
+                                : File(currentPath).parent.path,
+                          );
+                          if (selected != null && context.mounted) {
+                            path.text = selected;
+                          }
+                        },
+                        icon: const Icon(Icons.folder_open_outlined),
+                        label: const Text('浏览'),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -85,43 +142,14 @@ class HomeScreen extends ConsumerWidget {
         ),
       ),
     );
+    name.dispose();
+    path.dispose();
   }
 
-  Future<void> _open(BuildContext context, WidgetRef ref) async {
-    final path = TextEditingController();
-    await showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('打开项目'),
-        content: SizedBox(
-          width: 520,
-          child: TextField(
-            controller: path,
-            autofocus: true,
-            decoration: const InputDecoration(
-              labelText: '.pieproj 文件路径',
-              prefixIcon: Icon(Icons.folder_open),
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              if (path.text.trim().isEmpty) return;
-              final ok = await ref
-                  .read(appControllerProvider.notifier)
-                  .openProject(path.text);
-              if (ok && context.mounted) Navigator.pop(context);
-            },
-            child: const Text('打开'),
-          ),
-        ],
-      ),
-    );
+  Future<void> _open(WidgetRef ref) async {
+    final path = await fileDialogs.chooseProjectToOpen();
+    if (path == null || path.trim().isEmpty) return;
+    await ref.read(appControllerProvider.notifier).openProject(path);
   }
 
   @override
@@ -252,7 +280,7 @@ class HomeScreen extends ConsumerWidget {
                               button: '打开项目',
                               accent: _brandCoral,
                               foreground: const Color(0xff3d0b08),
-                              onPressed: () => _open(context, ref),
+                              onPressed: () => _open(ref),
                             ),
                           ),
                         ],
