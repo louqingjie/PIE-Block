@@ -24,8 +24,9 @@ class ProjectRepository {
   }
 
   Future<void> save(String path, ProjectDocument document) async {
-    if (!path.toLowerCase().endsWith('.pieproj'))
+    if (!path.toLowerCase().endsWith('.pieproj')) {
       throw const FormatException('项目文件必须使用 .pieproj 扩展名');
+    }
     final target = File(path), temporary = File('$path.tmp');
     await target.parent.create(recursive: true);
     final encoder = const JsonEncoder.withIndent('  ');

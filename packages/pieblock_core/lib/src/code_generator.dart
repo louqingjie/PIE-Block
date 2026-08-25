@@ -11,8 +11,14 @@ abstract final class CodeGenerator {
       value == PwmFrequency.hz50 ? 50 : 10000;
   static int _servoDuty(int? degrees) =>
       (750 + ((degrees ?? 0) * 1000 / 180)).round().clamp(250, 1250);
-  static String _key(String key) =>
-      'KEY_OFFSET_${key.replaceAll('UP', 'UP').replaceAll('DOWN', 'DOWN').replaceAll('LEFT', 'LEFT').replaceAll('RIGHT', 'RIGHT')}';
+  static String _key(String key) => switch (key) {
+    'E' => 'KEY_OFFSET_1',
+    'LC' => 'KEY_OFFSET_Rocker11',
+    'RC' => 'KEY_OFFSET_Rocker21',
+    _ => 'KEY_OFFSET_$key',
+  };
+  static int _slot(String pin) =>
+      expansionPins.indexOf(InfantryPinPlanner.normalizePin(pin));
 
   static String _header(RobotConfig c, String title) =>
       '''// $title（由 PIE-Block Flutter 配置器自动生成）
@@ -81,10 +87,10 @@ void CalculateChassis(void)
     int turnSpeed;$sprint
     baseSpeed = (int)((float)valueOfRoker[0][1] * speed / 2047);
     turnSpeed = (int)((float)valueOfRoker[0][0] * speed / 2047);
-    dutyOfMotor[4] = ${_dir(c.leftFront.direction) == 1 ? '' : '-'}baseSpeed ${_dir(c.leftFront.direction) == 1 ? '-' : '+'} turnSpeed;
-    dutyOfMotor[5] = ${_dir(c.leftRear.direction) == 1 ? '' : '-'}baseSpeed ${_dir(c.leftRear.direction) == 1 ? '-' : '+'} turnSpeed;
-    dutyOfMotor[6] = ${_dir(c.rightFront.direction) == 1 ? '-' : ''}baseSpeed ${_dir(c.rightFront.direction) == 1 ? '-' : '+'} turnSpeed;
-    dutyOfMotor[7] = ${_dir(c.rightRear.direction) == 1 ? '-' : ''}baseSpeed ${_dir(c.rightRear.direction) == 1 ? '-' : '+'} turnSpeed;
+    dutyOfMotor[${_slot(c.leftFront.pin)}] = ${_dir(c.leftFront.direction) == 1 ? '' : '-'}baseSpeed ${_dir(c.leftFront.direction) == 1 ? '-' : '+'} turnSpeed;
+    dutyOfMotor[${_slot(c.leftRear.pin)}] = ${_dir(c.leftRear.direction) == 1 ? '' : '-'}baseSpeed ${_dir(c.leftRear.direction) == 1 ? '-' : '+'} turnSpeed;
+    dutyOfMotor[${_slot(c.rightFront.pin)}] = ${_dir(c.rightFront.direction) == 1 ? '-' : ''}baseSpeed ${_dir(c.rightFront.direction) == 1 ? '-' : '+'} turnSpeed;
+    dutyOfMotor[${_slot(c.rightRear.pin)}] = ${_dir(c.rightRear.direction) == 1 ? '-' : ''}baseSpeed ${_dir(c.rightRear.direction) == 1 ? '-' : '+'} turnSpeed;
 }
 ''';
   }
@@ -103,7 +109,61 @@ void CalculateChassis(void)
 
   static String _infantry(InfantryConfig c) {
     final yawDuty = _servoDuty(c.yawMidOffset),
-        pitchDuty = _servoDuty(c.pitchMidOffset);
+        pitchDuty = _servoDuty(c.pitchMidOffset),
+        feederSlot = _slot(c.feederPin);
+    String axisUpdate({required bool yaw}) {
+      final drive = yaw ? c.yawDrive : c.pitchDrive,
+          pin = yaw ? c.yawPin : c.pitchPin,
+          direction = yaw ? c.yawDirection : c.pitchDirection,
+          rocker = yaw ? 'valueOfRoker[1][0]' : 'valueOfRoker[1][1]',
+          variable = yaw ? 'yawDuty' : 'pitchDuty';
+      if (drive == DriveType.servo) {
+        return '''    $variable += (int)((float)$rocker * 2.0f / 2047.0f * 5.555556f);
+    if ($variable < 250) $variable = 250; if ($variable > 1250) $variable = 1250;''';
+      }
+      final sign = direction == Direction.forward ? '' : '-';
+      return '    dutyOfMotor[${_slot(pin)}] = $sign(int)((float)$rocker * 10000.0f / 2047.0f);';
+    }
+
+    String dutyValue(int index) {
+      if (index == 2 || index == 3) return 'frictionDuty';
+      if (c.yawDrive == DriveType.servo && _slot(c.yawPin) == index) {
+        return 'yawDuty';
+      }
+      if (c.pitchDrive == DriveType.servo && _slot(c.pitchPin) == index) {
+        return 'pitchDuty';
+      }
+      return 'abs(dutyOfMotor[$index])';
+    }
+
+    String directionValue(int index) {
+      if (index == 2 ||
+          index == 3 ||
+          c.yawDrive == DriveType.servo && _slot(c.yawPin) == index ||
+          c.pitchDrive == DriveType.servo && _slot(c.pitchPin) == index) {
+        return '1';
+      }
+      return 'dutyOfMotor[$index]>=0';
+    }
+
+    final dutyArgs = List.generate(8, dutyValue).join(','),
+        directionArgs = List.generate(8, directionValue).join(','),
+        mainServoInit = <String>[],
+        mainServoUpdates = <String>[];
+    if (c.yawDrive == DriveType.servo && mainServoPins.contains(c.yawPin)) {
+      final channel = c.yawPin == 'MP74' ? '1_P74' : '4_P03';
+      mainServoInit.add('    PWM_Init(PWMB_CH$channel, 50, $yawDuty);');
+      mainServoUpdates.add(
+        '        PWM_SET_Frequency(PWMB_CH$channel, 50, yawDuty);',
+      );
+    }
+    if (c.pitchDrive == DriveType.servo && mainServoPins.contains(c.pitchPin)) {
+      final channel = c.pitchPin == 'MP74' ? '1_P74' : '4_P03';
+      mainServoInit.add('    PWM_Init(PWMB_CH$channel, 50, $pitchDuty);');
+      mainServoUpdates.add(
+        '        PWM_SET_Frequency(PWMB_CH$channel, 50, pitchDuty);',
+      );
+    }
     return '''${_header(c, '步兵机器人控制代码')}
 #define FRICTION_START_DUTY 500
 #define FRICTION_MAX_DUTY ${c.frictionMaxDuty ?? 800}
@@ -119,16 +179,15 @@ void All_Init(void)
     Board_Init();
     UART_Init(UART_1, UART1_RX_P30, UART1_TX_P31, 230400, TIM1);
     NRF24L01_Init();
-${_pwmInit(c.pwm)}
+    ExpansionBoradControl(Init_Order, 50, 50, 50, 50, 10000, 10000, 10000, 10000);
+${mainServoInit.join('\n')}
     Ms_Delay(1000);
 }
 
 void UpdateGimbal(void)
 {
-    yawDuty += (int)((float)valueOfRoker[1][0] * 2.0f / 2047.0f * 5.555556f);
-    pitchDuty += (int)((float)valueOfRoker[1][1] * 2.0f / 2047.0f * 5.555556f);
-    if (yawDuty < 250) yawDuty = 250; if (yawDuty > 1250) yawDuty = 1250;
-    if (pitchDuty < 250) pitchDuty = 250; if (pitchDuty > 1250) pitchDuty = 1250;
+${axisUpdate(yaw: true)}
+${axisUpdate(yaw: false)}
     ${c.zeroEnabled ? 'if (RcKeyValueRead(KEY_OFFSET_Rocker21)) { yawDuty = $yawDuty; pitchDuty = $pitchDuty; }' : ''}
 }
 
@@ -142,10 +201,10 @@ void UpdateWeapons(void)
     if (frictionEnabled && frictionDuty < FRICTION_MAX_DUTY) frictionDuty++;
     if (!frictionEnabled && frictionDuty > 0) frictionDuty--;
     if (trigger && !lastTrigger) {
-        dutyOfMotor[0] = ${_dir(c.feederDirection) == 1 ? '' : '-'}${c.triggerSpeed ?? 6000};
-        ExpansionBoradControl(Duty_Change_Order, abs(dutyOfMotor[0]), 0, frictionDuty, frictionDuty, 0,0,0,0);
+        dutyOfMotor[$feederSlot] = ${_dir(c.feederDirection) == 1 ? '' : '-'}${c.triggerSpeed ?? 6000};
+        ExpansionBoradControl(Duty_Change_Order, $dutyArgs);
         Ms_Delay(${c.triggerTimeMs ?? 100});
-        dutyOfMotor[0] = 0;
+        dutyOfMotor[$feederSlot] = 0;
     }
     lastFriction = friction;
     lastTrigger = trigger;
@@ -160,11 +219,10 @@ void main(void)
         CalculateChassis();
         UpdateGimbal();
         UpdateWeapons();
-        ExpansionBoradControl(Dir_Change_Order, 1,1,1,1, dutyOfMotor[4]>=0, dutyOfMotor[5]>=0, dutyOfMotor[6]>=0, dutyOfMotor[7]>=0);
+        ExpansionBoradControl(Dir_Change_Order, $directionArgs);
         Ms_Delay(EXPANSION_FRAME_GAP_MS);
-        ExpansionBoradControl(Duty_Change_Order, abs(dutyOfMotor[0]),0,frictionDuty,frictionDuty,abs(dutyOfMotor[4]),abs(dutyOfMotor[5]),abs(dutyOfMotor[6]),abs(dutyOfMotor[7]));
-        PWM_SET_Frequency(PWMB_CH1_P74, 50, yawDuty);
-        PWM_SET_Frequency(PWMB_CH4_P03, 50, pitchDuty);
+        ExpansionBoradControl(Duty_Change_Order, $dutyArgs);
+${mainServoUpdates.join('\n')}
         Ms_Delay(10);
     }
 }

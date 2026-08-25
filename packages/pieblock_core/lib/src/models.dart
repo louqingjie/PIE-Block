@@ -16,8 +16,16 @@ enum IssueSeverity { error, warning }
 
 const expansionPins = ['P60', 'P62', 'P64', 'P66', 'P74', 'P75', 'P76', 'P77'];
 const mainServoPins = ['MP03', 'MP74'];
-const chassisPins = ['P74 P24', 'P75 P25', 'P76 P26', 'P77 P27'];
-const remoteKeys = [
+const chassisPins = [
+  'P60 P61',
+  'P62 P63',
+  'P74 P24',
+  'P75 P25',
+  'P76 P26',
+  'P77 P27',
+];
+const digitalRemoteKeys = [
+  'E',
   'UP',
   'DOWN',
   'LEFT',
@@ -26,13 +34,11 @@ const remoteKeys = [
   'B',
   'C',
   'D',
-  'L',
-  'R',
-  'LX',
-  'LY',
-  'RX',
-  'RY',
+  'LC',
+  'RC',
 ];
+const axisRemoteInputs = ['LX', 'LY', 'RX', 'RY'];
+const remoteKeys = [...digitalRemoteKeys, ...axisRemoteInputs];
 
 T enumValue<T extends Enum>(List<T> values, Object? raw, T fallback) {
   for (final value in values) {
@@ -201,14 +207,9 @@ class PwmGroupConfig {
 }
 
 sealed class RobotConfig {
-  const RobotConfig({
-    required this.remote,
-    required this.chassis,
-    required this.pwm,
-  });
+  const RobotConfig({required this.remote, required this.chassis});
   final RemoteConfig remote;
   final ChassisConfig chassis;
-  final PwmGroupConfig pwm;
   ProjectKind get kind;
   Map<String, Object?> toJson();
 }
@@ -217,7 +218,6 @@ class InfantryConfig extends RobotConfig {
   InfantryConfig({
     super.remote = const RemoteConfig(),
     ChassisConfig? chassis,
-    PwmGroupConfig? pwm,
     this.feederPin = 'P60',
     this.feederDirection = Direction.forward,
     this.yawDrive = DriveType.servo,
@@ -230,7 +230,7 @@ class InfantryConfig extends RobotConfig {
     this.pitchMidOffset = 0,
     this.arrowBehavior = 'move',
     this.feedMode = 'closed_loop',
-    this.triggerKey = 'R',
+    this.triggerKey = 'E',
     this.triggerSpeed = 6000,
     this.triggerTimeMs = 100,
     this.frictionKey = 'A',
@@ -239,10 +239,8 @@ class InfantryConfig extends RobotConfig {
     this.frictionMaxDuty = 800,
     this.frictionStep = 100,
     this.zeroEnabled = false,
-  }) : super(
-         chassis: chassis ?? ChassisConfig.defaults(),
-         pwm: pwm ?? PwmGroupConfig(),
-       );
+    this.buzzerDisabled = false,
+  }) : super(chassis: chassis ?? ChassisConfig.defaults());
   @override
   ProjectKind get kind => ProjectKind.infantry;
   final String feederPin,
@@ -262,11 +260,10 @@ class InfantryConfig extends RobotConfig {
       triggerTimeMs,
       frictionMaxDuty,
       frictionStep;
-  final bool zeroEnabled;
+  final bool zeroEnabled, buzzerDisabled;
   InfantryConfig copyWith({
     RemoteConfig? remote,
     ChassisConfig? chassis,
-    PwmGroupConfig? pwm,
     String? feederPin,
     Direction? feederDirection,
     DriveType? yawDrive,
@@ -288,10 +285,10 @@ class InfantryConfig extends RobotConfig {
     int? frictionMaxDuty,
     int? frictionStep,
     bool? zeroEnabled,
+    bool? buzzerDisabled,
   }) => InfantryConfig(
     remote: remote ?? this.remote,
     chassis: chassis ?? this.chassis,
-    pwm: pwm ?? this.pwm,
     feederPin: feederPin ?? this.feederPin,
     feederDirection: feederDirection ?? this.feederDirection,
     yawDrive: yawDrive ?? this.yawDrive,
@@ -313,12 +310,12 @@ class InfantryConfig extends RobotConfig {
     frictionMaxDuty: frictionMaxDuty ?? this.frictionMaxDuty,
     frictionStep: frictionStep ?? this.frictionStep,
     zeroEnabled: zeroEnabled ?? this.zeroEnabled,
+    buzzerDisabled: buzzerDisabled ?? this.buzzerDisabled,
   );
   @override
   Map<String, Object?> toJson() => {
     'remote': remote.toJson(),
     'chassis': chassis.toJson(),
-    'pwm': pwm.toJson(),
     'feeder_pin': feederPin,
     'feeder_direction': feederDirection.name,
     'yaw': {
@@ -344,6 +341,7 @@ class InfantryConfig extends RobotConfig {
     'friction_max_duty': frictionMaxDuty,
     'friction_step': frictionStep,
     'zero_enabled': zeroEnabled,
+    'buzzer_disabled': buzzerDisabled,
   };
   factory InfantryConfig.fromJson(Map<String, Object?> j) {
     final y = Map<String, Object?>.from(j['yaw'] as Map? ?? {}),
@@ -354,9 +352,6 @@ class InfantryConfig extends RobotConfig {
       ),
       chassis: ChassisConfig.fromJson(
         Map<String, Object?>.from(j['chassis'] as Map? ?? {}),
-      ),
-      pwm: PwmGroupConfig.fromJson(
-        Map<String, Object?>.from(j['pwm'] as Map? ?? {}),
       ),
       feederPin: j['feeder_pin']?.toString() ?? 'P60',
       feederDirection: enumValue(
@@ -382,7 +377,7 @@ class InfantryConfig extends RobotConfig {
       pitchMidOffset: (p['mid_offset'] as num?)?.toInt(),
       arrowBehavior: j['arrow_behavior']?.toString() ?? 'move',
       feedMode: j['feed_mode']?.toString() ?? 'closed_loop',
-      triggerKey: j['trigger_key']?.toString() ?? 'R',
+      triggerKey: j['trigger_key']?.toString() ?? 'E',
       triggerSpeed: (j['trigger_speed'] as num?)?.toInt(),
       triggerTimeMs: (j['trigger_time_ms'] as num?)?.toInt(),
       frictionKey: j['friction_key']?.toString() ?? 'A',
@@ -391,7 +386,153 @@ class InfantryConfig extends RobotConfig {
       frictionMaxDuty: (j['friction_max_duty'] as num?)?.toInt(),
       frictionStep: (j['friction_step'] as num?)?.toInt(),
       zeroEnabled: j['zero_enabled'] as bool? ?? false,
+      buzzerDisabled: j['buzzer_disabled'] as bool? ?? false,
     );
+  }
+}
+
+class PinAssignment {
+  const PinAssignment({
+    required this.pin,
+    required this.role,
+    required this.ownerFieldPath,
+    required this.ownerLabel,
+  });
+
+  final String pin;
+  final PinRole role;
+  final String ownerFieldPath;
+  final String ownerLabel;
+}
+
+abstract final class InfantryPinPlanner {
+  static const pwmaFrequency = PwmFrequency.hz50;
+  static const pwmbFrequency = PwmFrequency.hz10000;
+  static const frictionPins = ['P64', 'P66'];
+  static const motorPins = ['P60', 'P62', 'P74', 'P75', 'P76', 'P77'];
+  static const servoPins = ['P60', 'P62', 'MP03', 'MP74'];
+
+  static String normalizePin(String value) => value.split(' ').first;
+
+  static List<PinAssignment> _references(InfantryConfig config) => [
+    PinAssignment(
+      pin: normalizePin(config.chassis.leftFront.pin),
+      role: PinRole.motor,
+      ownerFieldPath: 'chassis.left_front.pin',
+      ownerLabel: '左前轮',
+    ),
+    PinAssignment(
+      pin: normalizePin(config.chassis.leftRear.pin),
+      role: PinRole.motor,
+      ownerFieldPath: 'chassis.left_rear.pin',
+      ownerLabel: '左后轮',
+    ),
+    PinAssignment(
+      pin: normalizePin(config.chassis.rightFront.pin),
+      role: PinRole.motor,
+      ownerFieldPath: 'chassis.right_front.pin',
+      ownerLabel: '右前轮',
+    ),
+    PinAssignment(
+      pin: normalizePin(config.chassis.rightRear.pin),
+      role: PinRole.motor,
+      ownerFieldPath: 'chassis.right_rear.pin',
+      ownerLabel: '右后轮',
+    ),
+    PinAssignment(
+      pin: config.feederPin,
+      role: PinRole.motor,
+      ownerFieldPath: 'mechanism.feeder_pin',
+      ownerLabel: '拨弹电机',
+    ),
+    PinAssignment(
+      pin: config.yawPin,
+      role: config.yawDrive == DriveType.servo ? PinRole.servo : PinRole.motor,
+      ownerFieldPath: 'gimbal.yaw.pin',
+      ownerLabel: 'Yaw 轴',
+    ),
+    PinAssignment(
+      pin: config.pitchPin,
+      role: config.pitchDrive == DriveType.servo
+          ? PinRole.servo
+          : PinRole.motor,
+      ownerFieldPath: 'gimbal.pitch.pin',
+      ownerLabel: 'Pitch 轴',
+    ),
+    for (final pin in frictionPins)
+      PinAssignment(
+        pin: pin,
+        role: PinRole.friction,
+        ownerFieldPath: 'friction.$pin',
+        ownerLabel: '摩擦轮（固定）',
+      ),
+  ];
+
+  static Map<String, PinAssignment> derive(InfantryConfig config) {
+    final result = <String, PinAssignment>{};
+    for (final assignment in _references(config)) {
+      result[assignment.pin] = assignment;
+    }
+    return Map.unmodifiable(result);
+  }
+
+  static List<String> allowedPins(
+    InfantryConfig config,
+    String fieldPath, {
+    DriveType? driveType,
+  }) {
+    final candidates = switch (fieldPath) {
+      'chassis.left_front.pin' ||
+      'chassis.left_rear.pin' ||
+      'chassis.right_front.pin' ||
+      'chassis.right_rear.pin' => chassisPins,
+      'mechanism.feeder_pin' => motorPins,
+      'gimbal.yaw.pin' || 'gimbal.pitch.pin' =>
+        (driveType ??
+                    (fieldPath == 'gimbal.yaw.pin'
+                        ? config.yawDrive
+                        : config.pitchDrive)) ==
+                DriveType.servo
+            ? servoPins
+            : motorPins,
+      _ => const <String>[],
+    };
+    final current = switch (fieldPath) {
+      'chassis.left_front.pin' => config.chassis.leftFront.pin,
+      'chassis.left_rear.pin' => config.chassis.leftRear.pin,
+      'chassis.right_front.pin' => config.chassis.rightFront.pin,
+      'chassis.right_rear.pin' => config.chassis.rightRear.pin,
+      'mechanism.feeder_pin' => config.feederPin,
+      'gimbal.yaw.pin' => config.yawPin,
+      'gimbal.pitch.pin' => config.pitchPin,
+      _ => '',
+    };
+    final occupied = _references(config)
+        .where((item) => item.ownerFieldPath != fieldPath)
+        .map((item) => item.pin)
+        .toSet();
+    return candidates
+        .where(
+          (candidate) =>
+              !occupied.contains(normalizePin(candidate)) ||
+              normalizePin(candidate) == normalizePin(current),
+        )
+        .toList(growable: false);
+  }
+
+  static PinAssignment? occupiedBy(
+    InfantryConfig config,
+    String pin,
+    String excludingFieldPath,
+  ) {
+    final normalized = normalizePin(pin);
+    for (final assignment in _references(config)) {
+      if (assignment.ownerFieldPath != excludingFieldPath &&
+          assignment.pin == normalized) {
+        return assignment;
+      }
+    }
+    return null;
   }
 }
 
@@ -490,10 +631,8 @@ class EngineerConfig extends RobotConfig {
        modes = List.unmodifiable(
          modes ?? [EngineerModeConfig(preserveChassis: true)],
        ),
-       super(
-         chassis: chassis ?? ChassisConfig.defaults(),
-         pwm: pwm ?? PwmGroupConfig(),
-       );
+       pwm = pwm ?? PwmGroupConfig(),
+       super(chassis: chassis ?? ChassisConfig.defaults());
   @override
   ProjectKind get kind => ProjectKind.engineer;
   final int modeCount;
@@ -501,6 +640,7 @@ class EngineerConfig extends RobotConfig {
   final String modeSwitchKey;
   final List<String> modeKeys;
   final List<EngineerModeConfig> modes;
+  final PwmGroupConfig pwm;
   EngineerConfig copyWith({
     RemoteConfig? remote,
     ChassisConfig? chassis,
@@ -568,7 +708,7 @@ class ProjectDocument {
     required this.updatedAt,
     required this.config,
   });
-  static const formatVersion = 12;
+  static const formatVersion = 13;
   final String name;
   final ProjectKind kind;
   final DateTime createdAt, updatedAt;
@@ -602,8 +742,9 @@ class ProjectDocument {
     'config': config.toJson(),
   };
   factory ProjectDocument.fromJson(Map<String, Object?> j) {
-    if ((j['format_version'] as num?)?.toInt() != formatVersion)
+    if ((j['format_version'] as num?)?.toInt() != formatVersion) {
       throw const FormatException('不受支持的项目格式，请在对应旧版 PIE-Block 中打开');
+    }
     final kind = enumValue(
           ProjectKind.values,
           j['project_kind'],
