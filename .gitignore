@@ -54,6 +54,14 @@ probe_*.txt
 
 # Dependencies
 node_modules/
+.tooling/
+
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+**/build/
+**/.packages
 
 dist/
 release/
