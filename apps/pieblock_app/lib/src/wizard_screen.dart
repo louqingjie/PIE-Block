@@ -105,13 +105,14 @@ class WizardScreen extends ConsumerWidget {
                   duration: const Duration(milliseconds: 180),
                   child: KeyedSubtree(key: ValueKey(state.step), child: page),
                 );
-                if (!wide)
+                if (!wide) {
                   return Column(
                     children: [
                       _CompactSteps(steps: steps, selected: state.step),
                       Expanded(child: content),
                     ],
                   );
+                }
                 return Row(
                   children: [
                     Container(
@@ -362,7 +363,7 @@ class _RemotePage extends ConsumerWidget {
       children: [
         Expanded(
           child: DropdownButtonFormField(
-            value: wheel.pin,
+            initialValue: wheel.pin,
             decoration: InputDecoration(labelText: '$label IO'),
             items: chassisPins
                 .map((e) => DropdownMenuItem(value: e, child: Text(e)))
@@ -373,7 +374,7 @@ class _RemotePage extends ConsumerWidget {
         const SizedBox(width: 12),
         Expanded(
           child: DropdownButtonFormField(
-            value: wheel.direction,
+            initialValue: wheel.direction,
             decoration: const InputDecoration(labelText: '方向'),
             items: Direction.values
                 .map(
@@ -517,7 +518,7 @@ class _PwmPage extends ConsumerWidget {
                       child: Padding(
                         padding: const EdgeInsets.only(right: 12),
                         child: DropdownButtonFormField(
-                          value: item.$2,
+                          initialValue: item.$2,
                           decoration: InputDecoration(labelText: item.$1),
                           items: PwmFrequency.values
                               .map(
@@ -564,7 +565,7 @@ class _PwmPage extends ConsumerWidget {
                         children: [
                           Expanded(
                             child: DropdownButtonFormField<PinRole>(
-                              value: pwm.pinRoles[pin] ?? PinRole.motor,
+                              initialValue: pwm.pinRoles[pin] ?? PinRole.motor,
                               decoration: InputDecoration(labelText: pin),
                               items: PinRole.values
                                   .map(
@@ -638,7 +639,7 @@ class _InfantryMechanismPage extends ConsumerWidget {
             children: [
               Expanded(
                 child: DropdownButtonFormField(
-                  value: drive,
+                  initialValue: drive,
                   decoration: const InputDecoration(labelText: '驱动类型'),
                   items: DriveType.values
                       .map(
@@ -656,7 +657,7 @@ class _InfantryMechanismPage extends ConsumerWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: DropdownButtonFormField(
-                  value: pin,
+                  initialValue: pin,
                   decoration: const InputDecoration(labelText: 'IO'),
                   items: [...expansionPins, ...mainServoPins]
                       .map((e) => DropdownMenuItem(value: e, child: Text(e)))
@@ -669,7 +670,7 @@ class _InfantryMechanismPage extends ConsumerWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: DropdownButtonFormField(
-                  value: direction,
+                  initialValue: direction,
                   decoration: const InputDecoration(labelText: '方向'),
                   items: Direction.values
                       .map(
@@ -719,7 +720,7 @@ class _InfantryMechanismPage extends ConsumerWidget {
                 children: [
                   Expanded(
                     child: DropdownButtonFormField(
-                      value: c.feederPin,
+                      initialValue: c.feederPin,
                       decoration: const InputDecoration(labelText: '扩展板 IO'),
                       items: expansionPins
                           .map(
@@ -732,7 +733,7 @@ class _InfantryMechanismPage extends ConsumerWidget {
                   const SizedBox(width: 12),
                   Expanded(
                     child: DropdownButtonFormField(
-                      value: c.feederDirection,
+                      initialValue: c.feederDirection,
                       decoration: const InputDecoration(labelText: '方向'),
                       items: Direction.values
                           .map(
@@ -772,7 +773,7 @@ class _InfantryControlsPage extends ConsumerWidget {
       String value,
       ValueChanged<String?> changed,
     ) => DropdownButtonFormField(
-      value: value,
+      initialValue: value,
       decoration: InputDecoration(labelText: label),
       items: remoteKeys
           .map((e) => DropdownMenuItem(value: e, child: Text(e)))
@@ -909,7 +910,7 @@ class _EngineerStrategyPage extends ConsumerWidget {
         title: '模式策略',
         children: [
           DropdownButtonFormField(
-            value: c.modeCount,
+            initialValue: c.modeCount,
             decoration: const InputDecoration(labelText: '模式数量'),
             items: [1, 2, 3, 4]
                 .map((e) => DropdownMenuItem(value: e, child: Text('$e 个模式')))
@@ -929,7 +930,7 @@ class _EngineerStrategyPage extends ConsumerWidget {
           const SizedBox(height: 16),
           if (c.switchStrategy == SwitchStrategy.cycle)
             DropdownButtonFormField(
-              value: c.modeSwitchKey,
+              initialValue: c.modeSwitchKey,
               decoration: const InputDecoration(labelText: '切换按键'),
               items: remoteKeys
                   .map((e) => DropdownMenuItem(value: e, child: Text(e)))
@@ -945,7 +946,7 @@ class _EngineerStrategyPage extends ConsumerWidget {
                   SizedBox(
                     width: 190,
                     child: DropdownButtonFormField(
-                      value: c.modeKeys[i],
+                      initialValue: c.modeKeys[i],
                       decoration: InputDecoration(labelText: '模式 ${i + 1} 按键'),
                       items: remoteKeys
                           .map(
@@ -1063,7 +1064,7 @@ class _ActionRow extends StatelessWidget {
         children: [
           Expanded(
             child: DropdownButtonFormField(
-              value: action.key,
+              initialValue: action.key,
               decoration: const InputDecoration(labelText: '按键'),
               items: remoteKeys
                   .map((e) => DropdownMenuItem(value: e, child: Text(e)))
@@ -1074,7 +1075,7 @@ class _ActionRow extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: DropdownButtonFormField(
-              value: action.direction,
+              initialValue: action.direction,
               decoration: const InputDecoration(labelText: '方向'),
               items: Direction.values
                   .map(
@@ -1090,7 +1091,7 @@ class _ActionRow extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: DropdownButtonFormField(
-              value: action.mode,
+              initialValue: action.mode,
               decoration: const InputDecoration(labelText: '控制方式'),
               items: ControlMode.values
                   .map(
@@ -1119,7 +1120,7 @@ class _ActionRow extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: DropdownButtonFormField(
-              value: action.pin,
+              initialValue: action.pin,
               decoration: const InputDecoration(labelText: 'IO'),
               items: [
                 ...expansionPins,
@@ -1399,6 +1400,10 @@ class _CodePageState extends ConsumerState<_CodePage> {
                               '${(i + 1).toString().padLeft(4)}  $line',
                               style: const TextStyle(
                                 fontFamily: 'Consolas',
+                                fontFamilyFallback: [
+                                  'PieBlockSans',
+                                  'Microsoft YaHei UI',
+                                ],
                                 fontSize: 13,
                                 height: 1.45,
                               ),

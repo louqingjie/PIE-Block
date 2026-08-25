@@ -46,6 +46,13 @@ class _PieBlockAppState extends ConsumerState<PieBlockApp> {
       useMaterial3: true,
       brightness: brightness,
       colorScheme: scheme,
+      fontFamily: 'PieBlockSans',
+      fontFamilyFallback: const [
+        'Microsoft YaHei UI',
+        'Segoe UI',
+        'Segoe UI Symbol',
+        'Segoe UI Emoji',
+      ],
       scaffoldBackgroundColor: brightness == Brightness.light
           ? const Color(0xfff6f8fa)
           : const Color(0xff101416),

@@ -206,11 +206,13 @@ class AppController extends Notifier<AppState> {
     if (id == 'remote') return 0;
     if (id == 'pwm') return 1;
     if (kind == ProjectKind.infantry && id == 'mechanism' ||
-        kind == ProjectKind.engineer && id == 'strategy')
+        kind == ProjectKind.engineer && id == 'strategy') {
       return 2;
+    }
     if (kind == ProjectKind.infantry && id == 'controls' ||
-        kind == ProjectKind.engineer && id == 'mappings')
+        kind == ProjectKind.engineer && id == 'mappings') {
       return 3;
+    }
     return 4;
   }
 

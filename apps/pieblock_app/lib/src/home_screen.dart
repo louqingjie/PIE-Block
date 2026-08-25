@@ -68,8 +68,9 @@ class HomeScreen extends ConsumerWidget {
             ),
             FilledButton(
               onPressed: () async {
-                if (name.text.trim().isEmpty || path.text.trim().isEmpty)
+                if (name.text.trim().isEmpty || path.text.trim().isEmpty) {
                   return;
+                }
                 final ok = await ref
                     .read(appControllerProvider.notifier)
                     .createProject(path.text, name.text, kind);
