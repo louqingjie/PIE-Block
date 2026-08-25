@@ -120,7 +120,8 @@ abstract final class MidiCodec {
     final meters = <TimeSignatureEvent>[];
     for (var trackIndex = 0; trackIndex < trackCount; trackIndex++) {
       if (reader.ascii(4) != 'MTrk') throw const FormatException('MIDI 轨道块损坏');
-      final end = reader.position + reader.u32();
+      final trackLength = reader.u32();
+      final end = reader.position + trackLength;
       if (end > reader.length) throw const FormatException('MIDI 轨道长度越界');
       var tick = 0, runningStatus = 0;
       var name = '轨道 ${trackIndex + 1}';
@@ -130,8 +131,9 @@ abstract final class MidiCodec {
         tick += reader.vlq();
         var status = reader.u8();
         if (status < 0x80) {
-          if (runningStatus == 0)
+          if (runningStatus == 0) {
             throw const FormatException('无效的 running status');
+          }
           reader.position--;
           status = runningStatus;
         } else if (status < 0xf0) {
@@ -339,8 +341,9 @@ class _Reader {
   String ascii(int count) => asciiDecode(take(count));
   String asciiDecode(List<int> value) => String.fromCharCodes(value);
   Uint8List take(int count) {
-    if (count < 0 || position + count > length)
+    if (count < 0 || position + count > length) {
       throw const FormatException('MIDI 数据长度越界');
+    }
     final value = bytes.sublist(position, position + count);
     position += count;
     return value;

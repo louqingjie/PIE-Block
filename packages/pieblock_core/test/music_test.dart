@@ -78,6 +78,62 @@ void main() {
       );
     });
 
+    test('Format 1 多轨文件按轨道长度连续解析', () {
+      final midi = MidiCodec.parse([
+        0x4d,
+        0x54,
+        0x68,
+        0x64,
+        0,
+        0,
+        0,
+        6,
+        0,
+        1,
+        0,
+        2,
+        1,
+        0xe0,
+        0x4d,
+        0x54,
+        0x72,
+        0x6b,
+        0,
+        0,
+        0,
+        4,
+        0,
+        0xff,
+        0x2f,
+        0,
+        0x4d,
+        0x54,
+        0x72,
+        0x6b,
+        0,
+        0,
+        0,
+        12,
+        0,
+        0x90,
+        60,
+        100,
+        0x83,
+        0x60,
+        0x80,
+        60,
+        0,
+        0,
+        0xff,
+        0x2f,
+        0,
+      ]);
+
+      expect(midi.format, 1);
+      expect(midi.tracks, hasLength(2));
+      expect(midi.tracks[1].notes.single.durationTicks, 480);
+    });
+
     test('最近音高选择平局时选择较高音', () {
       final source = MusicConfig(
         notes: const [
