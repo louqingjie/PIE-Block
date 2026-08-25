@@ -4,6 +4,7 @@ project(pieblock_sdcc_native VERSION 0.1.0 LANGUAGES C)
 add_library(pieblock_sdcc_native SHARED
   pieblock_sdcc_native.c
   pieblock_sdcc_pipeline.c
+  pieblock_sdcc_stage_runtime.c
 )
 
 target_compile_features(pieblock_sdcc_native PRIVATE c_std_17)

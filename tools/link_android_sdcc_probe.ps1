@@ -25,11 +25,12 @@ $toolDirectory = Join-Path $resolvedNdk 'toolchains\llvm\prebuilt\windows-x86_64
 $nm = Join-Path $toolDirectory 'llvm-nm.exe'
 $objcopy = Join-Path $toolDirectory 'llvm-objcopy.exe'
 $clang = Join-Path $toolDirectory 'clang++.exe'
+$clangC = Join-Path $toolDirectory 'clang.exe'
 $target = switch ($Abi) {
     'arm64-v8a' { 'aarch64-linux-android24' }
     'x86_64' { 'x86_64-linux-android24' }
 }
-foreach ($tool in @($nm, $objcopy, $clang)) {
+foreach ($tool in @($nm, $objcopy, $clang, $clangC)) {
     if (-not (Test-Path -LiteralPath $tool -PathType Leaf)) {
         throw "缺少 NDK 工具：$tool"
     }
@@ -83,6 +84,19 @@ function Copy-NamespaceGroup {
     foreach ($file in $copies) {
         & $objcopy "--redefine-syms=$map" $file
         if ($LASTEXITCODE -ne 0) { throw "隔离 $Name 符号失败：$file" }
+        & $objcopy `
+            --redefine-sym "exit=pb_${Name}_exit" `
+            --redefine-sym "abort=pb_${Name}_abort" `
+            $file
+        if ($LASTEXITCODE -ne 0) { throw "接管 $Name 退出路径失败：$file" }
+        if ($Name -eq 'sdcc') {
+            & $objcopy `
+                --redefine-sym 'system=pb_sdcc_system' `
+                --redefine-sym 'popen=pb_sdcc_popen' `
+                --redefine-sym 'pclose=pb_sdcc_pclose' `
+                $file
+            if ($LASTEXITCODE -ne 0) { throw "禁用 SDCC 子进程调用失败：$file" }
+        }
     }
     Write-Host "$Name：已隔离 $($symbols.Count) 个全局符号"
     return ,$copies
@@ -137,6 +151,20 @@ $sdcc = Copy-NamespaceGroup sdcc $sdccFiles 'SDCCmain.o' 'pb_sdcc_main'
 $assembler = Copy-NamespaceGroup as $assemblerFiles 'asmain.o' 'pb_sdas251_main'
 $linker = Copy-NamespaceGroup ld $linkerFiles 'lkmain.o' 'pb_sdld_main'
 
+$runtimeSource = Join-Path $PSScriptRoot (
+    '..\packages\pieblock_sdcc_native\src\pieblock_sdcc_stage_runtime.c'
+)
+$runtimeObject = Join-Path $output 'pieblock_sdcc_stage_runtime.o'
+& $clangC `
+    "--target=$target" `
+    '-std=gnu17' `
+    '-fPIC' `
+    '-c' `
+    $runtimeSource `
+    '-o' `
+    $runtimeObject
+if ($LASTEXITCODE -ne 0) { throw '编译受控阶段运行时失败' }
+
 # GCC/libcpp archives are repeated to preserve the upstream circular-resolution
 # order. The first 15 entries are direct cc1 objects; the final six are archives.
 $cppLinkOrder = @($cpp[0..14]) + @(
@@ -150,7 +178,7 @@ $arguments = @(
     '-Wl,-soname,libpieblock_sdcc_probe.so',
     '-o',
     $library
-) + $cppLinkOrder + $sdcc + $assembler + $linker + @('-lm')
+) + $cppLinkOrder + $sdcc + $assembler + $linker + @($runtimeObject, '-lm')
 & $clang @arguments
 if ($LASTEXITCODE -ne 0) { throw '合并四阶段共享库失败' }
 
@@ -163,7 +191,7 @@ $relocatableArguments = @(
     '-o',
     $stageObject
 ) + @($cppLinkOrder | Where-Object { $_ -ne '-lz' }) +
-    $sdcc + $assembler + $linker
+    $sdcc + $assembler + $linker + @($runtimeObject)
 & $clang @relocatableArguments
 if ($LASTEXITCODE -ne 0) { throw '生成四阶段可重定位对象失败' }
 
