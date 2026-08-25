@@ -22,6 +22,7 @@ typedef struct pb_owned_request {
   char *resource_directory;
   char *project_kind;
   char *main_source_path;
+  char *interrupt_header_path;
   char **source_paths;
   uint32_t source_count;
   char **compile_arguments;
@@ -103,6 +104,7 @@ static void pb_free_request(pb_owned_request *request) {
   free(request->resource_directory);
   free(request->project_kind);
   free(request->main_source_path);
+  free(request->interrupt_header_path);
   pb_free_strings(request->source_paths, request->source_count);
   pb_free_strings(request->compile_arguments,
                   request->compile_argument_count);
@@ -116,7 +118,9 @@ static void pb_free_request(pb_owned_request *request) {
 static int pb_request_valid(const pb_sdcc_request *request) {
   return request != NULL && request->working_directory != NULL &&
          request->resource_directory != NULL && request->project_kind != NULL &&
-         request->main_source_path != NULL && request->hex_output_path != NULL &&
+         request->main_source_path != NULL &&
+         request->interrupt_header_path != NULL &&
+         request->hex_output_path != NULL &&
          request->map_output_path != NULL && request->log_output_path != NULL &&
          (request->source_paths.count == 0 ||
           request->source_paths.items != NULL) &&
@@ -129,7 +133,9 @@ static int pb_request_valid(const pb_sdcc_request *request) {
 static int pb_owned_request_valid(const pb_owned_request *request) {
   return request != NULL && request->working_directory != NULL &&
          request->resource_directory != NULL && request->project_kind != NULL &&
-         request->main_source_path != NULL && request->hex_output_path != NULL &&
+         request->main_source_path != NULL &&
+         request->interrupt_header_path != NULL &&
+         request->hex_output_path != NULL &&
          request->map_output_path != NULL && request->log_output_path != NULL &&
          (request->source_count == 0 || request->source_paths != NULL) &&
          (request->compile_argument_count == 0 ||
@@ -176,6 +182,7 @@ static void *pb_worker(void *context) {
       .resource_directory = operation->request.resource_directory,
       .project_kind = operation->request.project_kind,
       .main_source_path = operation->request.main_source_path,
+      .interrupt_header_path = operation->request.interrupt_header_path,
       .source_paths = {(const char *const *)operation->request.source_paths,
                        operation->request.source_count},
       .compile_arguments = {
@@ -265,6 +272,8 @@ pb_sdcc_status pb_sdcc_start(const pb_sdcc_request *request,
   created->request.resource_directory = pb_copy_string(request->resource_directory);
   created->request.project_kind = pb_copy_string(request->project_kind);
   created->request.main_source_path = pb_copy_string(request->main_source_path);
+  created->request.interrupt_header_path =
+      pb_copy_string(request->interrupt_header_path);
   created->request.source_count = request->source_paths.count;
   created->request.source_paths = pb_copy_strings(&request->source_paths);
   created->request.compile_argument_count = request->compile_arguments.count;

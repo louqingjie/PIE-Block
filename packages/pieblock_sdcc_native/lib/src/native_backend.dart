@@ -49,12 +49,21 @@ class NativeSdccBackend implements SdccCompilerBackend {
     final hexPath = p.join(output.path, '$project.hex');
     final mapPath = p.join(output.path, '$project.map');
     final logPath = p.join(output.path, '$project.log');
+    final plan = await SdccBuildPlan.prepare(
+      resourceRoot: resourceRoot,
+      projectName: project,
+      mainSourcePath: mainSource.path,
+      outputDirectory: output.path,
+    );
     final operation = _client.start(
       workingDirectory: workDirectory,
       resourceDirectory: resourceRoot,
       projectKind: project,
       mainSourcePath: mainSource.path,
-      sourcePaths: [mainSource.path],
+      interruptHeaderPath: plan.interruptHeaderPath,
+      sourcePaths: plan.sourcePaths,
+      compileArguments: plan.compileArguments,
+      linkArguments: plan.linkArguments,
       hexOutputPath: hexPath,
       mapOutputPath: mapPath,
       logOutputPath: logPath,

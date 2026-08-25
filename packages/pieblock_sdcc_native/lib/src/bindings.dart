@@ -12,6 +12,7 @@ final class PbSdccRequest extends Struct {
   external Pointer<Char> resourceDirectory;
   external Pointer<Char> projectKind;
   external Pointer<Char> mainSourcePath;
+  external Pointer<Char> interruptHeaderPath;
   external PbSdccStringList sourcePaths;
   external PbSdccStringList compileArguments;
   external PbSdccStringList linkArguments;

@@ -29,7 +29,9 @@ val preparePieBlockSdccAssets by tasks.registering(Sync::class) {
         include("startup/**")
         include("libraries/**")
         include("projects/ROBOMASTER_INFANTRY/inc/**")
+        include("projects/ROBOMASTER_INFANTRY/src/isr.c")
         include("projects/ROBOMASTER_ENGINEER/inc/**")
+        include("projects/ROBOMASTER_ENGINEER/src/isr.c")
         exclude("**/*.exe", "**/*.dll", "**/*.hex", "**/*.map", "**/*.rel")
     }
     from(toolchainRoot) {

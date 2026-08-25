@@ -100,6 +100,7 @@ class NativeSdccClient {
     required String resourceDirectory,
     required String projectKind,
     required String mainSourcePath,
+    required String interruptHeaderPath,
     List<String> sourcePaths = const [],
     List<String> compileArguments = const [],
     List<String> linkArguments = const [],
@@ -113,6 +114,7 @@ class NativeSdccClient {
         'resourceDirectory': resourceDirectory,
         'projectKind': projectKind,
         'mainSourcePath': mainSourcePath,
+        'interruptHeaderPath': interruptHeaderPath,
         'sourcePaths': sourcePaths,
         'compileArguments': compileArguments,
         'linkArguments': linkArguments,
@@ -126,6 +128,7 @@ class NativeSdccClient {
       resourceDirectory: resourceDirectory,
       projectKind: projectKind,
       mainSourcePath: mainSourcePath,
+      interruptHeaderPath: interruptHeaderPath,
       sourcePaths: sourcePaths,
       compileArguments: compileArguments,
       linkArguments: linkArguments,
@@ -140,6 +143,7 @@ class NativeSdccClient {
     required String resourceDirectory,
     required String projectKind,
     required String mainSourcePath,
+    required String interruptHeaderPath,
     List<String> sourcePaths = const [],
     List<String> compileArguments = const [],
     List<String> linkArguments = const [],
@@ -173,6 +177,7 @@ class NativeSdccClient {
         ..resourceDirectory = string(resourceDirectory)
         ..projectKind = string(projectKind)
         ..mainSourcePath = string(mainSourcePath)
+        ..interruptHeaderPath = string(interruptHeaderPath)
         ..hexOutputPath = string(hexOutputPath)
         ..mapOutputPath = string(mapOutputPath)
         ..logOutputPath = string(logOutputPath);
@@ -397,6 +402,7 @@ Future<void> _nativeSdccWorker(List<Object> arguments) async {
         ..resourceDirectory = string(values['resourceDirectory']! as String)
         ..projectKind = string(values['projectKind']! as String)
         ..mainSourcePath = string(values['mainSourcePath']! as String)
+        ..interruptHeaderPath = string(values['interruptHeaderPath']! as String)
         ..hexOutputPath = string(values['hexOutputPath']! as String)
         ..mapOutputPath = string(values['mapOutputPath']! as String)
         ..logOutputPath = string(values['logOutputPath']! as String);

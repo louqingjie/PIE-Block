@@ -52,6 +52,7 @@ typedef struct pb_sdcc_request {
   const char *resource_directory;
   const char *project_kind;
   const char *main_source_path;
+  const char *interrupt_header_path;
   pb_sdcc_string_list source_paths;
   pb_sdcc_string_list compile_arguments;
   pb_sdcc_string_list link_arguments;

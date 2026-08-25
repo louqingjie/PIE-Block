@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:path/path.dart' as p;
 import 'package:pieblock_core/pieblock_core.dart';
 import 'package:pieblock_toolchain/pieblock_toolchain.dart';
 import 'package:test/test.dart';
@@ -228,6 +230,70 @@ void main() {
     expect(backend.buildCount, 1);
     builder.cancel();
     expect(backend.canceled, isTrue);
+  });
+
+  test('Android SDCC 构建计划保持源码顺序并生成中断声明', () async {
+    final directory = await Directory.systemTemp.createTemp('pieblock-plan-');
+    addTearDown(() => directory.delete(recursive: true));
+    final resource = Directory('${directory.path}/resource');
+    final firmware = Directory('${resource.path}/firmware');
+    final toolchain = Directory('${resource.path}/toolchain');
+    for (final path in [
+      '${firmware.path}/startup/common.c',
+      '${firmware.path}/projects/PROJECT/src/isr.c',
+      '${firmware.path}/libraries/driver.c',
+      '${firmware.path}/include/.keep',
+      '${firmware.path}/projects/PROJECT/inc/.keep',
+      '${toolchain.path}/include/.keep',
+      '${toolchain.path}/include/mcs51/.keep',
+      '${toolchain.path}/lib/mcs251-large-stack-auto/.keep',
+    ]) {
+      await File(path).create(recursive: true);
+    }
+    await File('${firmware.path}/startup/common.c')
+        .writeAsString('void timer(void) __interrupt (2) {}');
+    await File('${firmware.path}/projects/PROJECT/src/isr.c')
+        .writeAsString('void uart(void) __interrupt (4) {}');
+    await File('${firmware.path}/libraries/driver.c')
+        .writeAsString('void driver(void) {}');
+    final mainSource = File('${directory.path}/main.c')
+      ..writeAsStringSync('void main(void) {}');
+    await File('${firmware.path}/build_manifest.json').writeAsString(
+      jsonEncode({
+        'include_dirs': ['include'],
+        'compile_flags': ['-mmcs251', '-c'],
+        'link_flags': ['-mmcs251', '--nostdlib'],
+        'runtime_libraries': ['mcs251.lib'],
+        'source_groups': {
+          'common': ['startup/common.c'],
+          'drivers': ['libraries/driver.c'],
+        },
+        'projects': {
+          'PROJECT': {
+            'library_groups': ['drivers'],
+          },
+        },
+      }),
+    );
+
+    final plan = await SdccBuildPlan.prepare(
+      resourceRoot: resource.path,
+      projectName: 'PROJECT',
+      mainSourcePath: mainSource.path,
+      outputDirectory: '${directory.path}/output',
+    );
+    final plannedFirmware = p.join(resource.path, 'firmware');
+    expect(plan.sourcePaths, [
+      p.join(plannedFirmware, 'startup', 'common.c'),
+      p.join(plannedFirmware, 'projects', 'PROJECT', 'src', 'isr.c'),
+      mainSource.path,
+      p.join(plannedFirmware, 'libraries', 'driver.c'),
+    ]);
+    expect(plan.compileArguments, containsAllInOrder(['-mmcs251', '-c']));
+    expect(plan.linkArguments, containsAll(['--nostdlib', 'mcs251.lib']));
+    final header = await File(plan.interruptHeaderPath).readAsString();
+    expect(header, contains('void timer(void) __interrupt (2);'));
+    expect(header, contains('void uart(void) __interrupt (4);'));
   });
 }
 
