@@ -1,10 +1,18 @@
 import 'models.dart';
+import 'validator.dart';
 
 abstract final class CodeGenerator {
-  static String generate(RobotConfig config) => switch (config) {
-    InfantryConfig value => _infantry(value),
-    EngineerConfig value => _engineer(value),
-  };
+  static String generate(RobotConfig config) {
+    final errors = ProjectValidator.validate(config)
+        .where((issue) => issue.severity == IssueSeverity.error);
+    if (errors.isNotEmpty) {
+      throw StateError('配置尚未完成，不能生成代码：${errors.first.message}');
+    }
+    return switch (config) {
+      InfantryConfig value => _infantry(value),
+      EngineerConfig value => _engineer(value),
+    };
+  }
 
   static int _dir(Direction value) => value == Direction.forward ? 1 : 0;
   static int _frequency(PwmFrequency value) =>
@@ -17,19 +25,63 @@ abstract final class CodeGenerator {
     'RC' => 'KEY_OFFSET_Rocker21',
     _ => 'KEY_OFFSET_$key',
   };
-  static int _slot(String pin) =>
+  static int _slot(String? pin) =>
       expansionPins.indexOf(InfantryPinPlanner.normalizePin(pin));
 
-  static String _header(RobotConfig c, String title) =>
+  static String _runtimeSafety(bool buzzerEnabled) =>
+      '''
+static void remoteControlInitWithTimeout(void)
+{
+    uint8_t retry;
+    for (retry = 0; retry < 20; retry++) {
+        if (NRF24L01_Init()) { Ms_Delay(200); return; }
+        Ms_Delay(10);
+    }
+}
+
+static void Uart1TxQuery(uint8_t dat)
+{
+    uint8_t uart1InterruptEnabled = ES;
+    ES = 0;
+    TI = 0;
+    SBUF = dat;
+    while (!TI) ;
+    TI = 0;
+    ES = uart1InterruptEnabled;
+}
+
+#define LED_PORT GPIO_P3
+#define LED1_PIN GPIO_Pin_5
+#define LED2_PIN GPIO_Pin_6
+#define LED3_PIN GPIO_Pin_7
+${buzzerEnabled ? '#define BUZZER_CH PWMA_CH4N_P33' : ''}
+static void LedShow(uint8_t show)
+{
+    GPIO_Write_Bit(LED_PORT, LED1_PIN, (show & 0x01) ? 0 : 1);
+    GPIO_Write_Bit(LED_PORT, LED2_PIN, (show & 0x02) ? 0 : 1);
+    GPIO_Write_Bit(LED_PORT, LED3_PIN, (show & 0x04) ? 0 : 1);
+}
+static void StepBegin(uint8_t step) { LedShow(step & 0x07); }
+${buzzerEnabled ? '''static void Beep(uint16_t freq, uint16_t ms)
+{
+    PWM_SET_Frequency(BUZZER_CH, freq, 5000);
+    Ms_Delay(ms);
+    PWM_SET_Frequency(BUZZER_CH, freq, 0);
+}
+static void StepDone(uint8_t step) { Beep(500 + (uint16_t)(step % 8) * 60, 60); }
+''' : 'static void StepDone(uint8_t step) { (void)step; }'}
+''';
+
+  static String _header(RobotConfig c, String title, bool buzzerDisabled) =>
       '''// $title（由 PIE-Block Flutter 配置器自动生成）
 #include "main.h"
 #include "MATH.H"
 
-uint8_t Channal = ${c.remote.channel ?? 36};
-uint16_t maxSpeed = ${c.chassis.normalSpeed ?? 4000};
-uint16_t ultraSpeed = ${c.chassis.sprintSpeed ?? 8000};
-uint16_t deadBandOfLeft = ${c.remote.deadzone ?? 10};
-uint16_t deadBandOfRight = ${c.remote.deadzone ?? 10};
+uint8_t Channal = ${c.remote.channel!};
+uint16_t maxSpeed = ${c.chassis.normalSpeed!};
+uint16_t ultraSpeed = ${c.chassis.sprintSpeed ?? c.chassis.normalSpeed!};
+uint16_t deadBandOfLeft = ${c.remote.deadzone!};
+uint16_t deadBandOfRight = ${c.remote.deadzone!};
 
 #define COMM_HEADER_1 0xAB
 #define COMM_HEADER_2 0xBC
@@ -46,6 +98,8 @@ int valueOfRoker[2][2];
 int dutyOfMotor[8];
 uint8_t control_frame_pack[21];
 
+${_runtimeSafety(!buzzerDisabled)}
+
 void ExpansionBoradControl(uint8_t command,
     uint16_t p60, uint16_t p62, uint16_t p64, uint16_t p66,
     uint16_t p74, uint16_t p75, uint16_t p76, uint16_t p77)
@@ -61,7 +115,7 @@ void ExpansionBoradControl(uint8_t command,
     }
     control_frame_pack[19] = COMM_END_1;
     control_frame_pack[20] = COMM_END_2;
-    for (i = 0; i < 21; i++) UART_PutChar(UART_1, control_frame_pack[i]);
+    for (i = 0; i < 21; i++) Uart1TxQuery(control_frame_pack[i]);
 }
 
 void ReadControllerInputs(void)
@@ -70,6 +124,10 @@ void ReadControllerInputs(void)
     valueOfRoker[0][1] = RcRockerValueRead(ROCKER_LEFT_VERTICAL);
     valueOfRoker[1][0] = RcRockerValueRead(ROCKER_RIGHT_HORIZONTAL);
     valueOfRoker[1][1] = RcRockerValueRead(ROCKER_RIGHT_VERTICAL);
+    if (abs(valueOfRoker[0][0]) <= deadBandOfLeft) valueOfRoker[0][0] = 0;
+    if (abs(valueOfRoker[0][1]) <= deadBandOfLeft) valueOfRoker[0][1] = 0;
+    if (abs(valueOfRoker[1][0]) <= deadBandOfRight) valueOfRoker[1][0] = 0;
+    if (abs(valueOfRoker[1][1]) <= deadBandOfRight) valueOfRoker[1][1] = 0;
 }
 ''';
 
@@ -87,19 +145,20 @@ void CalculateChassis(void)
     int turnSpeed;$sprint
     baseSpeed = (int)((float)valueOfRoker[0][1] * speed / 2047);
     turnSpeed = (int)((float)valueOfRoker[0][0] * speed / 2047);
-    dutyOfMotor[${_slot(c.leftFront.pin)}] = ${_dir(c.leftFront.direction) == 1 ? '' : '-'}baseSpeed ${_dir(c.leftFront.direction) == 1 ? '-' : '+'} turnSpeed;
-    dutyOfMotor[${_slot(c.leftRear.pin)}] = ${_dir(c.leftRear.direction) == 1 ? '' : '-'}baseSpeed ${_dir(c.leftRear.direction) == 1 ? '-' : '+'} turnSpeed;
-    dutyOfMotor[${_slot(c.rightFront.pin)}] = ${_dir(c.rightFront.direction) == 1 ? '-' : ''}baseSpeed ${_dir(c.rightFront.direction) == 1 ? '-' : '+'} turnSpeed;
-    dutyOfMotor[${_slot(c.rightRear.pin)}] = ${_dir(c.rightRear.direction) == 1 ? '-' : ''}baseSpeed ${_dir(c.rightRear.direction) == 1 ? '-' : '+'} turnSpeed;
+    dutyOfMotor[${_slot(c.leftFront.pin)}] = ${_dir(c.leftFront.direction!) == 1 ? '' : '-'}baseSpeed ${_dir(c.leftFront.direction!) == 1 ? '-' : '+'} turnSpeed;
+    dutyOfMotor[${_slot(c.leftRear.pin)}] = ${_dir(c.leftRear.direction!) == 1 ? '' : '-'}baseSpeed ${_dir(c.leftRear.direction!) == 1 ? '-' : '+'} turnSpeed;
+    dutyOfMotor[${_slot(c.rightFront.pin)}] = ${_dir(c.rightFront.direction!) == 1 ? '-' : ''}baseSpeed ${_dir(c.rightFront.direction!) == 1 ? '-' : '+'} turnSpeed;
+    dutyOfMotor[${_slot(c.rightRear.pin)}] = ${_dir(c.rightRear.direction!) == 1 ? '-' : ''}baseSpeed ${_dir(c.rightRear.direction!) == 1 ? '-' : '+'} turnSpeed;
 }
 ''';
   }
 
-  static String _pwmInit(PwmGroupConfig pwm) {
+  static String _pwmInit(PwmGroupConfig pwm, Set<String> usedPins) {
     final lines = <String>[
-      '    ExpansionBoradControl(Init_Order, ${List.filled(4, _frequency(pwm.pwma)).join(', ')}, ${List.filled(4, _frequency(pwm.pwmb)).join(', ')});',
+      '    ExpansionBoradControl(Init_Order, ${List.filled(4, _frequency(pwm.pwma!)).join(', ')}, ${List.filled(4, _frequency(pwm.pwmb!)).join(', ')});',
     ];
     for (final pin in mainServoPins) {
+      if (!usedPins.contains(pin)) continue;
       lines.add(
         '    PWM_Init(PWMB_CH${pin == 'MP74' ? '1_P74' : '4_P03'}, 50, ${_servoDuty(pwm.servoMids[pin])});',
       );
@@ -108,6 +167,7 @@ void CalculateChassis(void)
   }
 
   static String _infantry(InfantryConfig c) {
+    final frictionEnabled = c.frictionMode == FrictionMode.brushlessEsc;
     final yawDuty = _servoDuty(c.yawMidOffset),
         pitchDuty = _servoDuty(c.pitchMidOffset),
         feederSlot = _slot(c.feederPin);
@@ -118,15 +178,20 @@ void CalculateChassis(void)
           rocker = yaw ? 'valueOfRoker[1][0]' : 'valueOfRoker[1][1]',
           variable = yaw ? 'yawDuty' : 'pitchDuty';
       if (drive == DriveType.servo) {
+        final home = yaw ? yawDuty : pitchDuty;
+        final low = (home - 333).clamp(250, 1250);
+        final high = (home + 333).clamp(250, 1250);
         return '''    $variable += (int)((float)$rocker * 2.0f / 2047.0f * 5.555556f);
-    if ($variable < 250) $variable = 250; if ($variable > 1250) $variable = 1250;''';
+    if ($variable < $low) $variable = $low; if ($variable > $high) $variable = $high;''';
       }
       final sign = direction == Direction.forward ? '' : '-';
       return '    dutyOfMotor[${_slot(pin)}] = $sign(int)((float)$rocker * 10000.0f / 2047.0f);';
     }
 
     String dutyValue(int index) {
-      if (index == 2 || index == 3) return 'frictionDuty';
+      if (frictionEnabled && (index == 2 || index == 3)) {
+        return 'frictionDuty';
+      }
       if (c.yawDrive == DriveType.servo && _slot(c.yawPin) == index) {
         return 'yawDuty';
       }
@@ -137,8 +202,7 @@ void CalculateChassis(void)
     }
 
     String directionValue(int index) {
-      if (index == 2 ||
-          index == 3 ||
+      if (frictionEnabled && (index == 2 || index == 3) ||
           c.yawDrive == DriveType.servo && _slot(c.yawPin) == index ||
           c.pitchDrive == DriveType.servo && _slot(c.pitchPin) == index) {
         return '1';
@@ -164,24 +228,137 @@ void CalculateChassis(void)
         '        PWM_SET_Frequency(PWMB_CH$channel, 50, pitchDuty);',
       );
     }
-    return '''${_header(c, '步兵机器人控制代码')}
-#define FRICTION_START_DUTY 500
-#define FRICTION_MAX_DUTY ${c.frictionMaxDuty ?? 800}
-#define FRICTION_SPEED_STEP ${c.frictionStep ?? 100}
+    final frictionDefines = frictionEnabled
+        ? '''#define FRICTION_START_DUTY 500
+#define FRICTION_STEP_DUTY 1
+#define FRICTION_MAX_DUTY ${c.frictionMaxDuty!}
+#define FRICTION_SPEED_STEP ${c.frictionStep!}
+'''
+        : '';
+    final frictionGlobals = frictionEnabled
+        ? '''uint16_t frictionDuty = 0;
+uint16_t frictionTargetDuty = 0;
+uint8_t frictionEnabled = 0;
+'''
+        : '';
+    final frictionUpdate = frictionEnabled
+        ? '''    static uint8_t lastFriction = 0;
+    static uint8_t lastFrictionUp = 0;
+    static uint8_t lastFrictionDown = 0;
+    uint8_t friction = RcKeyValueRead(${_key(c.frictionKey!)});
+    uint8_t frictionUp = RcKeyValueRead(${_key(c.frictionUpKey!)});
+    uint8_t frictionDown = RcKeyValueRead(${_key(c.frictionDownKey!)});
+    uint8_t frictionStartedThisCycle = 0;
+    if (friction && !lastFriction) {
+        frictionEnabled = !frictionEnabled;
+        frictionTargetDuty = frictionEnabled ? FRICTION_MAX_DUTY : 0;
+        if (frictionEnabled && frictionDuty == 0) {
+            frictionDuty = FRICTION_START_DUTY;
+            frictionStartedThisCycle = 1;
+        }
+    }
+    if (frictionEnabled && frictionUp && !lastFrictionUp && !frictionDown) {
+        frictionTargetDuty += FRICTION_SPEED_STEP;
+        if (frictionTargetDuty > FRICTION_MAX_DUTY) frictionTargetDuty = FRICTION_MAX_DUTY;
+    }
+    if (frictionEnabled && frictionDown && !lastFrictionDown && !frictionUp) {
+        if (frictionTargetDuty > FRICTION_START_DUTY + FRICTION_SPEED_STEP)
+            frictionTargetDuty -= FRICTION_SPEED_STEP;
+        else frictionTargetDuty = FRICTION_START_DUTY;
+    }
+    if (!frictionStartedThisCycle && frictionDuty < frictionTargetDuty) frictionDuty += FRICTION_STEP_DUTY;
+    else if (!frictionStartedThisCycle && frictionDuty > frictionTargetDuty) frictionDuty -= FRICTION_STEP_DUTY;
+    lastFriction = friction;
+    lastFrictionUp = frictionUp;
+    lastFrictionDown = frictionDown;
+'''
+        : '';
+    final feedUpdate = c.feedMode == FeedMode.visualClosedLoop
+        ? '''    dutyOfMotor[$feederSlot] = trigger ? ${_dir(c.feederDirection!) == 1 ? '' : '-'}${c.triggerSpeed!} : 0;
+'''
+        : '''    if (trigger && !lastTrigger) {
+        dutyOfMotor[$feederSlot] = ${_dir(c.feederDirection!) == 1 ? '' : '-'}${c.triggerSpeed!};
+        ExpansionBoradControl(Duty_Change_Order, $dutyArgs);
+        Ms_Delay(${c.triggerTimeMs!});
+        dutyOfMotor[$feederSlot] = 0;
+    }
+''';
+    final arrowUpdate = switch (c.arrowBehavior) {
+      ArrowBehavior.move =>
+        '''        if (RcKeyValueRead(KEY_OFFSET_UP)) valueOfRoker[0][1] = 2047;
+        if (RcKeyValueRead(KEY_OFFSET_DOWN)) valueOfRoker[0][1] = -2047;
+        if (RcKeyValueRead(KEY_OFFSET_LEFT)) valueOfRoker[0][0] = -2047;
+        if (RcKeyValueRead(KEY_OFFSET_RIGHT)) valueOfRoker[0][0] = 2047;
+''',
+      ArrowBehavior.sprint =>
+        '''        maxSpeed = ${c.chassis.normalSpeed!};
+        if (RcKeyValueRead(KEY_OFFSET_UP)) { valueOfRoker[0][1] = 2047; maxSpeed = ultraSpeed; }
+        if (RcKeyValueRead(KEY_OFFSET_DOWN)) { valueOfRoker[0][1] = -2047; maxSpeed = ultraSpeed; }
+        if (RcKeyValueRead(KEY_OFFSET_LEFT)) { valueOfRoker[0][0] = -2047; maxSpeed = ultraSpeed; }
+        if (RcKeyValueRead(KEY_OFFSET_RIGHT)) { valueOfRoker[0][0] = 2047; maxSpeed = ultraSpeed; }
+''',
+      ArrowBehavior.other => '',
+      null => '',
+    };
+    final servoDuties = <String>[
+      if (c.yawDrive == DriveType.servo) 'yawDuty',
+      if (c.pitchDrive == DriveType.servo) 'pitchDuty',
+    ];
+    final feedbackChecks = <String>[];
+    for (var index = 0; index < servoDuties.length; index++) {
+      final duty = servoDuties[index];
+      feedbackChecks.add(
+        '    if (feedbackInitialized && $duty != lastFeedbackDuty[$index]) { changed = 1; feedbackDuty = $duty; }\n'
+        '    lastFeedbackDuty[$index] = $duty;',
+      );
+    }
+    final buzzerFeedback =
+        c.buzzerDisabled || (servoDuties.isEmpty && !frictionEnabled)
+        ? ''
+        : '''static uint8_t feedbackInitialized = 0;
+static uint16_t lastFeedbackDuty[${servoDuties.isEmpty ? 1 : servoDuties.length}] = {0};
+static void UpdateBuzzerFeedback(void)
+{
+    uint8_t changed = 0;
+    uint16_t feedbackDuty = 0;
+${feedbackChecks.join('\n')}
+    if (!feedbackInitialized) { feedbackInitialized = 1; changed = 0; }
+    if (changed) PWM_SET_Frequency(BUZZER_CH, feedbackDuty, 5000);
+${frictionEnabled ? '    else if (frictionDuty != frictionTargetDuty) PWM_SET_Frequency(BUZZER_CH, frictionDuty, 5000);' : ''}
+    else PWM_SET_Frequency(BUZZER_CH, 500, 0);
+}
+''';
+    return '''${_header(c, '步兵机器人控制代码', c.buzzerDisabled)}
+$frictionDefines
 uint16_t yawDuty = $yawDuty;
 uint16_t pitchDuty = $pitchDuty;
-uint16_t frictionDuty = 0;
-uint8_t frictionEnabled = 0;
+$frictionGlobals
+$buzzerFeedback
 
 ${_chassis(c.chassis)}
 void All_Init(void)
 {
+    StepBegin(0);
     Board_Init();
+    StepDone(0);
+    StepBegin(1);
     UART_Init(UART_1, UART1_RX_P30, UART1_TX_P31, 230400, TIM1);
-    NRF24L01_Init();
+    StepDone(1);
+    GPIO_Init(LED_PORT, (GPIO_Pin_enum)(LED1_PIN | LED2_PIN | LED3_PIN), GPIO_OUT_PP);
+${c.buzzerDisabled ? '' : '    PWM_Init(BUZZER_CH, 500, 0);'}
+    StepBegin(3);
+    EA = 0;
+    remoteControlInitWithTimeout();
+    P2INTE &= ~GPIO_Pin_6;
+    EA = 1;
+    StepDone(3);
     ExpansionBoradControl(Init_Order, 50, 50, 50, 50, 10000, 10000, 10000, 10000);
 ${mainServoInit.join('\n')}
     Ms_Delay(1000);
+${c.buzzerDisabled ? '' : '''    Beep(523, 120);
+    Beep(659, 120);
+    Beep(784, 120);
+    Beep(1047, 240);'''}
 }
 
 void UpdateGimbal(void)
@@ -193,20 +370,9 @@ ${axisUpdate(yaw: false)}
 
 void UpdateWeapons(void)
 {
-    static uint8_t lastFriction = 0;
     static uint8_t lastTrigger = 0;
-    uint8_t friction = RcKeyValueRead(${_key(c.frictionKey)});
-    uint8_t trigger = RcKeyValueRead(${_key(c.triggerKey)});
-    if (friction && !lastFriction) frictionEnabled = !frictionEnabled;
-    if (frictionEnabled && frictionDuty < FRICTION_MAX_DUTY) frictionDuty++;
-    if (!frictionEnabled && frictionDuty > 0) frictionDuty--;
-    if (trigger && !lastTrigger) {
-        dutyOfMotor[$feederSlot] = ${_dir(c.feederDirection) == 1 ? '' : '-'}${c.triggerSpeed ?? 6000};
-        ExpansionBoradControl(Duty_Change_Order, $dutyArgs);
-        Ms_Delay(${c.triggerTimeMs ?? 100});
-        dutyOfMotor[$feederSlot] = 0;
-    }
-    lastFriction = friction;
+    uint8_t trigger = RcKeyValueRead(${_key(c.triggerKey!)});
+$frictionUpdate$feedUpdate
     lastTrigger = trigger;
 }
 
@@ -214,15 +380,18 @@ void main(void)
 {
     All_Init();
     while (1) {
-        nrf_handler();
+        nrf_handler(); // 轮询 NRF 接收（P2.6 中断已关）
         ReadControllerInputs();
+$arrowUpdate
         CalculateChassis();
         UpdateGimbal();
         UpdateWeapons();
         ExpansionBoradControl(Dir_Change_Order, $directionArgs);
         Ms_Delay(EXPANSION_FRAME_GAP_MS);
         ExpansionBoradControl(Duty_Change_Order, $dutyArgs);
+        Ms_Delay(EXPANSION_FRAME_GAP_MS);
 ${mainServoUpdates.join('\n')}
+${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
         Ms_Delay(10);
     }
 }
@@ -231,69 +400,231 @@ ${mainServoUpdates.join('\n')}
 
   static String _engineer(EngineerConfig c) {
     final modeFunctions = <String>[], cases = <String>[];
-    for (var i = 0; i < c.modeCount; i++) {
+    final usedPins = <String>{
+      for (final mode in c.modes.take(c.modeCount!))
+        for (final action in mode.actions)
+          if (action.pin != null) action.pin!,
+    };
+    for (var i = 0; i < c.modeCount!; i++) {
       final mode = c.modes[i], body = <String>[];
       if (mode.preserveChassis) body.add('    CalculateChassis();');
       for (final a in mode.actions) {
         final sign = a.direction == Direction.forward ? '' : '-';
-        final read = a.key.endsWith('X') || a.key.endsWith('Y')
-            ? 'valueOfRoker[${a.key.startsWith('L') ? 0 : 1}][${a.key.endsWith('X') ? 0 : 1}]'
-            : 'RcKeyValueRead(${_key(a.key)})';
-        final slot = expansionPins.indexOf(a.pin);
+        final isAxis = a.key!.endsWith('X') || a.key!.endsWith('Y');
+        final read = isAxis
+            ? 'valueOfRoker[${a.key!.startsWith('L') ? 0 : 1}][${a.key!.endsWith('X') ? 0 : 1}]'
+            : 'RcKeyValueRead(${_key(a.key!)})';
+        final slot = expansionPins.indexOf(a.pin!);
+        final role = slot >= 0 ? c.pwm.pinRoles[a.pin!] : PinRole.servo;
         if (slot >= 0) {
-          final expression = switch (a.mode) {
-            ControlMode.direct => '$sign${a.parameter ?? 0}',
-            ControlMode.incremental =>
-              'dutyOfMotor[$slot] + $sign${a.parameter ?? 0}',
-            ControlMode.speed =>
-              '(int)((float)$read * ${a.parameter ?? 0} / 2047)',
-            ControlMode.accelerate =>
-              'dutyOfMotor[$slot] + (int)((float)$read * ${a.parameter ?? 0} / 2047)',
-          };
-          body.add('    if ($read) dutyOfMotor[$slot] = $expression;');
+          if (role == PinRole.servo) {
+            final home = _servoDuty(c.pwm.servoMids[a.pin!]);
+            final delta = isAxis
+                ? '$sign(int)((float)$read * ${a.parameter!} * 1000.0f / 180.0f / 2047.0f)'
+                : '$sign(int)(${a.parameter!} * 1000L / 180L)';
+            if (a.mode == ControlMode.direct) {
+              body.add(
+                isAxis
+                    ? '    dutyOfMotor[$slot] = $home + $delta;'
+                    : '    if ($read) dutyOfMotor[$slot] = $home + $delta;',
+              );
+            } else {
+              body.add(
+                isAxis
+                    ? '    dutyOfMotor[$slot] += $delta;'
+                    : '    if ($read) dutyOfMotor[$slot] += $delta;',
+              );
+            }
+            body.add(
+              '    if (dutyOfMotor[$slot] < 250) dutyOfMotor[$slot] = 250; else if (dutyOfMotor[$slot] > 1250) dutyOfMotor[$slot] = 1250;',
+            );
+          } else if (a.mode == ControlMode.direct) {
+            body.add(
+              '    dutyOfMotor[$slot] = $read ? $sign${a.parameter!} : 0;',
+            );
+          } else if (a.mode == ControlMode.speed) {
+            body.add(
+              '    dutyOfMotor[$slot] = (int)((float)$read * ${a.parameter!} / 2047);',
+            );
+          } else {
+            body.add(
+              '    dutyOfMotor[$slot] += (int)((float)$read * ${a.parameter!} / 2047);',
+            );
+          }
         } else {
+          final mainIndex = a.pin == 'MP74' ? 1 : 0;
+          final home = _servoDuty(c.pwm.servoMids[a.pin!]);
+          final delta = isAxis
+              ? '$sign(int)((float)$read * ${a.parameter!} * 1000.0f / 180.0f / 2047.0f)'
+              : '$sign(int)(${a.parameter!} * 1000L / 180L)';
+          if (a.mode == ControlMode.direct) {
+            body.add(
+              isAxis
+                  ? '    mainServoDuty[$mainIndex] = $home + $delta;'
+                  : '    if ($read) mainServoDuty[$mainIndex] = $home + $delta;',
+            );
+          } else {
+            body.add(
+              isAxis
+                  ? '    mainServoDuty[$mainIndex] += $delta;'
+                  : '    if ($read) mainServoDuty[$mainIndex] += $delta;',
+            );
+          }
           body.add(
-            '    if ($read) PWM_SET_Frequency(PWMB_CH${a.pin == 'MP74' ? '1_P74' : '4_P03'}, 50, ${_servoDuty(c.pwm.servoMids[a.pin])} + $sign${a.parameter ?? 0});',
+            '    if (mainServoDuty[$mainIndex] < 250) mainServoDuty[$mainIndex] = 250; else if (mainServoDuty[$mainIndex] > 1250) mainServoDuty[$mainIndex] = 1250;',
           );
         }
       }
       modeFunctions.add('void RunMode${i + 1}(void)\n{\n${body.join('\n')}\n}');
       cases.add('        case ${i + 1}: RunMode${i + 1}(); break;');
     }
-    final switchLogic = c.switchStrategy == SwitchStrategy.cycle
-        ? '''if (RcKeyValueRead(${_key(c.modeSwitchKey)}) && !lastSwitch) { currentMode++; if (currentMode > ${c.modeCount}) currentMode = 1; }
-        lastSwitch = RcKeyValueRead(${_key(c.modeSwitchKey)});'''
+    final feedbackEnabled = c.modeCount! > 1 && !c.pwm.buzzerDisabled;
+    final chassisSlots = {
+      _slot(c.chassis.leftFront.pin),
+      _slot(c.chassis.leftRear.pin),
+      _slot(c.chassis.rightFront.pin),
+      _slot(c.chassis.rightRear.pin),
+    };
+    final prepareCases = <String>[];
+    for (var i = 0; i < c.modeCount!; i++) {
+      final mapped = c.modes[i].actions
+          .map((action) => expansionPins.indexOf(action.pin ?? ''))
+          .where((slot) => slot >= 0)
+          .toSet();
+      final lines = <String>[];
+      for (var slot = 0; slot < expansionPins.length; slot++) {
+        if (!chassisSlots.contains(slot) &&
+            !mapped.contains(slot) &&
+            (c.pwm.pinRoles[expansionPins[slot]] == PinRole.motor ||
+                c.pwm.pinRoles[expansionPins[slot]] == PinRole.friction ||
+                c.pwm.pinRoles[expansionPins[slot]] == PinRole.jitterMotor)) {
+          lines.add('            dutyOfMotor[$slot] = 0;');
+        }
+      }
+      prepareCases.add(
+        '        case ${i + 1}:\n${lines.join('\n')}\n            break;',
+      );
+    }
+    final prepareMode =
+        '''static void PrepareMode(uint8_t mode)
+{
+    switch (mode) {
+${prepareCases.join('\n')}
+    }
+}
+''';
+    final feedback = feedbackEnabled
+        ? '''static void ModeSwitchFeedback(uint8_t mode)
+{
+    Beep(523, 500);
+    Ms_Delay(200);
+    if (mode >= 1) { Beep(659, 200); if (mode > 1) Ms_Delay(200); }
+    if (mode >= 2) { Beep(784, 200); if (mode > 2) Ms_Delay(200); }
+    if (mode >= 3) { Beep(1047, 200); if (mode > 3) Ms_Delay(200); }
+    if (mode >= 4) Beep(1319, 200);
+}
+'''
+        : '';
+    final servoExpressions = <String>[
+      for (final pin in usedPins)
+        if (expansionPins.contains(pin) && c.pwm.pinRoles[pin] == PinRole.servo)
+          'dutyOfMotor[${expansionPins.indexOf(pin)}]',
+      if (usedPins.contains('MP03')) 'mainServoDuty[0]',
+      if (usedPins.contains('MP74')) 'mainServoDuty[1]',
+    ];
+    final engineerFeedbackChecks = <String>[];
+    for (var index = 0; index < servoExpressions.length; index++) {
+      final expression = servoExpressions[index];
+      engineerFeedbackChecks.add(
+        '    if (servoFeedbackInitialized && $expression != lastServoFeedback[$index]) { changed = 1; feedbackDuty = $expression; }\n'
+        '    lastServoFeedback[$index] = $expression;',
+      );
+    }
+    final engineerFeedback = c.pwm.buzzerDisabled || servoExpressions.isEmpty
+        ? ''
+        : '''static uint8_t servoFeedbackInitialized = 0;
+static uint16_t lastServoFeedback[${servoExpressions.length}] = {0};
+static void UpdateServoFeedback(void)
+{
+    uint8_t changed = 0;
+    uint16_t feedbackDuty = 0;
+${engineerFeedbackChecks.join('\n')}
+    if (!servoFeedbackInitialized) { servoFeedbackInitialized = 1; changed = 0; }
+    if (changed) PWM_SET_Frequency(BUZZER_CH, feedbackDuty, 5000);
+    else PWM_SET_Frequency(BUZZER_CH, 500, 0);
+}
+''';
+    final transitionCall =
+        ' PrepareMode(currentMode);${feedbackEnabled ? ' ModeSwitchFeedback(currentMode);' : ''}';
+    final switchLogic = c.modeCount == 1
+        ? '// 单模式，无需切换'
+        : c.switchStrategy == SwitchStrategy.cycle
+        ? '''if (RcKeyValueRead(${_key(c.modeSwitchKey!)}) && !lastSwitch) { currentMode++; if (currentMode > ${c.modeCount}) currentMode = 1;$transitionCall }
+        lastSwitch = RcKeyValueRead(${_key(c.modeSwitchKey!)});'''
         : List.generate(
-            c.modeCount,
+            c.modeCount!,
             (i) =>
-                'if (RcKeyValueRead(${_key(c.modeKeys[i])})) currentMode = ${i + 1};',
+                '''if (RcKeyValueRead(${_key(c.modeKeys[i]!)}) && !modeKeyLast[$i]) { currentMode = ${i + 1};$transitionCall }
+        modeKeyLast[$i] = RcKeyValueRead(${_key(c.modeKeys[i]!)});''',
           ).join('\n        ');
-    return '''${_header(c, '工程机器人控制代码')}
+    final directionArgs = List.generate(8, (slot) {
+      final role = c.pwm.pinRoles[expansionPins[slot]];
+      return role == PinRole.servo ? '1' : 'dutyOfMotor[$slot]>=0';
+    }).join(',');
+    return '''${_header(c, '工程机器人控制代码', c.pwm.buzzerDisabled)}
 uint8_t currentMode = 1;
 uint8_t lastSwitch = 0;
+uint8_t modeKeyLast[4] = {0};
+uint16_t mainServoDuty[2] = {${_servoDuty(c.pwm.servoMids['MP03'])}, ${_servoDuty(c.pwm.servoMids['MP74'])}};
+$feedback
+$prepareMode
+$engineerFeedback
 
 ${_chassis(c.chassis)}
 ${modeFunctions.join('\n\n')}
 
 void All_Init(void)
 {
+    StepBegin(0);
     Board_Init();
+    StepDone(0);
+    StepBegin(1);
     UART_Init(UART_1, UART1_RX_P30, UART1_TX_P31, 230400, TIM1);
-    NRF24L01_Init();
-${_pwmInit(c.pwm)}
+    StepDone(1);
+    GPIO_Init(LED_PORT, (GPIO_Pin_enum)(LED1_PIN | LED2_PIN | LED3_PIN), GPIO_OUT_PP);
+${c.pwm.buzzerDisabled ? '' : '    PWM_Init(BUZZER_CH, 500, 0);'}
+    StepBegin(3);
+    EA = 0;
+    remoteControlInitWithTimeout();
+    P2INTE &= ~GPIO_Pin_6;
+    EA = 1;
+    StepDone(3);
+${_pwmInit(c.pwm, usedPins)}
+${usedPins.where(expansionPins.contains).where((pin) => c.pwm.pinRoles[pin] == PinRole.servo).map((pin) => '    dutyOfMotor[${expansionPins.indexOf(pin)}] = ${_servoDuty(c.pwm.servoMids[pin])};').join('\n')}
+    PrepareMode(1);
+${c.pwm.buzzerDisabled ? '' : '''    Beep(523, 120);
+    Beep(659, 120);
+    Beep(784, 120);
+    Beep(1047, 240);'''}
 }
 
 void main(void)
 {
     All_Init();
     while (1) {
-        nrf_handler();
+        nrf_handler(); // 轮询 NRF 接收（P2.6 中断已关）
         ReadControllerInputs();
         $switchLogic
         switch (currentMode) {
 ${cases.join('\n')}
         }
+        ExpansionBoradControl(Dir_Change_Order, $directionArgs);
+        Ms_Delay(EXPANSION_FRAME_GAP_MS);
         ExpansionBoradControl(Duty_Change_Order, abs(dutyOfMotor[0]),abs(dutyOfMotor[1]),abs(dutyOfMotor[2]),abs(dutyOfMotor[3]),abs(dutyOfMotor[4]),abs(dutyOfMotor[5]),abs(dutyOfMotor[6]),abs(dutyOfMotor[7]));
+        Ms_Delay(EXPANSION_FRAME_GAP_MS);
+${usedPins.contains('MP03') ? '        PWM_SET_Frequency(PWMB_CH4_P03, 50, mainServoDuty[0]);' : ''}
+${usedPins.contains('MP74') ? '        PWM_SET_Frequency(PWMB_CH1_P74, 50, mainServoDuty[1]);' : ''}
+${engineerFeedback.isEmpty ? '' : '        UpdateServoFeedback();'}
         Ms_Delay(10);
     }
 }
