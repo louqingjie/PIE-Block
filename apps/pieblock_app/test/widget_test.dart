@@ -41,20 +41,61 @@ class _InfantryStartController extends AppController {
 class _InfantryControlsController extends AppController {
   @override
   AppState build() => AppState(
-    document: ProjectDocument.create('步兵测试', ProjectKind.infantry),
+    document: _infantryDocument(),
     step: 2,
     maxVisitedStep: 2,
     saveStatus: SaveStatus.saved,
   );
 }
 
-class _InfantryMechanismController extends AppController {
+class _ConfiguredMechanismController extends AppController {
+  _ConfiguredMechanismController(this.document);
+  final ProjectDocument document;
+
   @override
   AppState build() => AppState(
-    document: ProjectDocument.create('步兵测试', ProjectKind.infantry),
+    document: document,
     step: 1,
     maxVisitedStep: 1,
     saveStatus: SaveStatus.saved,
+  );
+}
+
+ProjectDocument _infantryDocument() {
+  final source = ProjectDocument.create('步兵测试', ProjectKind.infantry);
+  return source.copyWith(
+    config: InfantryConfig(
+      remote: const RemoteConfig(channel: 36, deadzone: 100),
+      chassis: const ChassisConfig(
+        leftFront: WheelConfig('P74 P24', Direction.forward),
+        leftRear: WheelConfig('P75 P25', Direction.forward),
+        rightFront: WheelConfig('P76 P26', Direction.reverse),
+        rightRear: WheelConfig('P77 P27', Direction.reverse),
+        normalSpeed: 4000,
+        sprintSpeed: 8000,
+      ),
+      feederPin: 'P60',
+      feederDirection: Direction.forward,
+      yawDrive: DriveType.servo,
+      yawPin: 'MP74',
+      yawDirection: Direction.forward,
+      yawMidOffset: 0,
+      pitchDrive: DriveType.servo,
+      pitchPin: 'MP03',
+      pitchDirection: Direction.forward,
+      pitchMidOffset: 0,
+      arrowBehavior: ArrowBehavior.other,
+      feedMode: FeedMode.blockingOpenLoop,
+      triggerKey: 'E',
+      triggerSpeed: 6000,
+      triggerTimeMs: 250,
+      frictionMode: FrictionMode.brushlessEsc,
+      frictionKey: 'A',
+      frictionUpKey: 'B',
+      frictionDownKey: 'C',
+      frictionMaxDuty: 800,
+      frictionStep: 100,
+    ),
   );
 }
 
@@ -137,6 +178,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('1 / 5'), findsOneWidget);
     expect(find.textContaining('请修正标红的配置'), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 1500));
   });
 
   testWidgets('步兵控制键只有数字按键并包含 LC RC', (tester) async {
@@ -166,11 +208,19 @@ void main() {
     expect((maxDutyTop - stepTop).abs(), lessThan(1));
   });
 
-  testWidgets('步兵拨弹引脚菜单排除固定摩擦轮口', (tester) async {
+  testWidgets('摩擦轮禁用后拨弹引脚菜单释放 P64/P66', (tester) async {
+    final source = _infantryDocument();
+    final config = source.config as InfantryConfig;
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          appControllerProvider.overrideWith(_InfantryMechanismController.new),
+          appControllerProvider.overrideWith(
+            () => _ConfiguredMechanismController(
+              source.copyWith(
+                config: config.copyWith(frictionMode: FrictionMode.disabled),
+              ),
+            ),
+          ),
         ],
         child: const MaterialApp(home: WizardScreen()),
       ),
@@ -181,8 +231,57 @@ void main() {
     await tester.ensureVisible(feeder);
     await tester.tap(feeder);
     await tester.pumpAndSettle();
-    expect(find.text('P64'), findsNothing);
-    expect(find.text('P66'), findsNothing);
+    expect(find.text('P64'), findsOneWidget);
+    expect(find.text('P66'), findsOneWidget);
+  });
+
+  testWidgets('被摩擦轮占用的 IO 使用锁定视觉', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _ConfiguredMechanismController(_infantryDocument()),
+          ),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final feeder = find.byType(DropdownButtonFormField<String>).first;
+    await tester.ensureVisible(feeder);
+    await tester.tap(feeder);
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.lock_outline), findsWidgets);
+    expect(find.textContaining('摩擦轮（固定）占用'), findsWidgets);
+  });
+
+  testWidgets('拨弹与摩擦轮条件字段按模式显隐', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(_InfantryControlsController.new),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('单发时长'), findsOneWidget);
+    expect(find.text('最大占空比'), findsOneWidget);
+
+    await tester.tap(find.text('阻塞开环单发'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('目视闭环连续拨弹').last);
+    await tester.pumpAndSettle();
+    expect(find.text('单发时长'), findsNothing);
+
+    await tester.ensureVisible(find.text('无刷电调'));
+    await tester.tap(find.text('无刷电调'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('不使用').last);
+    await tester.pumpAndSettle();
+    expect(find.text('最大占空比'), findsNothing);
+    expect(find.text('每次调速步长'), findsNothing);
   });
 
   testWidgets('向导在三种桌面尺寸和双主题下无布局异常', (tester) async {

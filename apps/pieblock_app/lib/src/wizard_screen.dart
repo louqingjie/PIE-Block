@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -8,6 +9,9 @@ import 'package:pieblock_core/pieblock_core.dart';
 import 'controller.dart';
 
 final _fieldAnchors = <String, GlobalKey>{};
+final _fieldFocusNodes = <String, FocusNode>{};
+final _highlightedField = ValueNotifier<String?>(null);
+Timer? _highlightTimer;
 
 GlobalKey _fieldAnchor(String path) =>
     _fieldAnchors.putIfAbsent(path, GlobalKey.new);
@@ -20,7 +24,41 @@ void _scrollToField(String path) {
       duration: const Duration(milliseconds: 280),
       alignment: .28,
     );
+    _fieldFocusNodes[path]?.requestFocus();
+    _highlightedField.value = path;
+    _highlightTimer?.cancel();
+    _highlightTimer = Timer(
+      const Duration(milliseconds: 1400),
+      () => _highlightedField.value = null,
+    );
   }
+}
+
+class _FieldAnchor extends StatelessWidget {
+  const _FieldAnchor({required this.path, required this.child});
+  final String path;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Focus(
+    focusNode: _fieldFocusNodes.putIfAbsent(path, FocusNode.new),
+    child: ValueListenableBuilder<String?>(
+      valueListenable: _highlightedField,
+      builder: (context, highlighted, child) => AnimatedContainer(
+        key: _fieldAnchor(path),
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.all(2),
+        decoration: BoxDecoration(
+          color: highlighted == path
+              ? Theme.of(context).colorScheme.tertiaryContainer
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: child,
+      ),
+      child: child,
+    ),
+  );
 }
 
 ValidationIssue? _fieldIssue(WidgetRef ref, String path) {
@@ -35,8 +73,45 @@ ValidationIssue? _fieldIssue(WidgetRef ref, String path) {
   );
 }
 
-List<String> _includeCurrent(List<String> choices, String current) => [
-  if (!choices.contains(current)) current,
+String _fieldLabel(String path) {
+  const exact = {
+    'remote.channel': '遥控器通道号',
+    'remote.deadzone': '摇杆死区',
+    'chassis.normal_speed': '普通速度',
+    'chassis.sprint_speed': '冲刺速度',
+    'mechanism.feeder_pin': '拨弹电机 IO',
+    'mechanism.feeder_direction': '拨弹电机方向',
+    'controls.arrow_behavior': '方向键用途',
+    'controls.feed_mode': '拨弹模式',
+    'controls.trigger_key': '扳机键',
+    'controls.trigger_speed': '拨弹速度',
+    'controls.trigger_time_ms': '单发时长',
+    'controls.friction_mode': '摩擦轮类型',
+    'controls.friction_key': '摩擦轮开关键',
+    'controls.friction_up_key': '摩擦轮增速键',
+    'controls.friction_down_key': '摩擦轮减速键',
+    'controls.friction_max_duty': '最大占空比',
+    'controls.friction_step': '调速步长',
+    'pwm.pwma': 'PWMA 频率',
+    'pwm.pwmb': 'PWMB 频率',
+    'modes.count': '模式数量',
+    'modes.switch_strategy': '切换策略',
+    'modes.switch_key': '切换按键',
+  };
+  if (exact[path] case final label?) return label;
+  if (path.endsWith('.direction')) return '方向';
+  if (path.endsWith('.drive')) return '驱动类型';
+  if (path.endsWith('.pin')) return 'IO';
+  if (path.endsWith('.mode')) return '控制方式';
+  if (path.endsWith('.parameter')) return '参数';
+  if (path.endsWith('.key')) return '按键';
+  if (path.contains('servo_mids')) return '舵机中位';
+  if (path.contains('pin_roles')) return '输出角色';
+  return path;
+}
+
+List<String> _includeCurrent(List<String> choices, String? current) => [
+  if (current != null && !choices.contains(current)) current,
   ...choices,
 ];
 
@@ -44,20 +119,144 @@ InputDecoration _fieldDecoration(
   WidgetRef ref,
   String path,
   String label, {
-  String? helper,
   String? suffix,
 }) {
   final issue = _fieldIssue(ref, path);
+  final color = issue == null
+      ? null
+      : issue.severity == IssueSeverity.error
+      ? Theme.of(ref.context).colorScheme.error
+      : Colors.orange;
   return InputDecoration(
     labelText: label,
     suffixText: suffix,
-    helperText: issue?.severity == IssueSeverity.warning
-        ? issue!.message
-        : helper ?? ' ',
-    errorText: issue?.severity == IssueSeverity.error ? issue!.message : null,
-    helperStyle: issue?.severity == IssueSeverity.warning
-        ? const TextStyle(color: Colors.orange)
-        : null,
+    suffixIcon: issue == null
+        ? null
+        : Tooltip(
+            message: issue.message,
+            child: Icon(
+              issue.severity == IssueSeverity.error
+                  ? Icons.error_outline
+                  : Icons.warning_amber,
+              color: color,
+            ),
+          ),
+    enabledBorder: color == null
+        ? null
+        : OutlineInputBorder(borderSide: BorderSide(color: color, width: 1.5)),
+    focusedBorder: color == null
+        ? null
+        : OutlineInputBorder(borderSide: BorderSide(color: color, width: 2)),
+  );
+}
+
+class _FormRow extends ConsumerWidget {
+  const _FormRow({required this.fieldPaths, required this.children});
+  final List<String> fieldPaths;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final issues = [
+      for (final path in fieldPaths)
+        if (_fieldIssue(ref, path) case final issue?) (path, issue),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(children: children),
+        if (issues.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Wrap(
+                spacing: 18,
+                runSpacing: 6,
+                children: [
+                  for (final item in issues)
+                    Text(
+                      '${_fieldLabel(item.$1)}：${item.$2.message}',
+                      style: TextStyle(
+                        color: item.$2.severity == IssueSeverity.error
+                            ? Theme.of(context).colorScheme.error
+                            : Colors.orange,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _InfoBanner extends StatelessWidget {
+  const _InfoBanner(this.text);
+  final String text;
+  @override
+  Widget build(BuildContext context) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+    decoration: BoxDecoration(
+      color: Theme.of(context).colorScheme.secondaryContainer
+          .withValues(alpha: .55),
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Row(
+      children: [
+        const Icon(Icons.info_outline, size: 18),
+        const SizedBox(width: 10),
+        Expanded(child: Text(text)),
+      ],
+    ),
+  );
+}
+
+class _PinOption extends StatelessWidget {
+  const _PinOption(this.pin, {this.owner, this.enabled = true});
+  final String pin;
+  final String? owner;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+    decoration: BoxDecoration(
+      color: enabled
+          ? Colors.transparent
+          : Theme.of(context).colorScheme.surfaceContainerHighest,
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: Row(
+      children: [
+        if (!enabled) ...[
+          Icon(
+            Icons.lock_outline,
+            size: 16,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 6),
+        ],
+        Expanded(
+          child: Text(
+            owner == null ? pin : '$pin · $owner',
+            overflow: TextOverflow.ellipsis,
+            style: enabled
+                ? null
+                : TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+          ),
+        ),
+      ],
+    ),
   );
 }
 
@@ -441,13 +640,12 @@ class _NumberField extends ConsumerWidget {
     required this.value,
     required this.onChanged,
     this.suffix,
-    this.helper,
     this.fieldPath,
   });
   final String label;
   final int? value;
   final ValueChanged<int?> onChanged;
-  final String? suffix, helper, fieldPath;
+  final String? suffix, fieldPath;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final field = TextFormField(
@@ -456,23 +654,13 @@ class _NumberField extends ConsumerWidget {
       keyboardType: TextInputType.number,
       inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'-?\d*'))],
       decoration: fieldPath == null
-          ? InputDecoration(
-              labelText: label,
-              suffixText: suffix,
-              helperText: helper ?? ' ',
-            )
-          : _fieldDecoration(
-              ref,
-              fieldPath!,
-              label,
-              suffix: suffix,
-              helper: helper,
-            ),
+          ? InputDecoration(labelText: label, suffixText: suffix)
+          : _fieldDecoration(ref, fieldPath!, label, suffix: suffix),
       onChanged: (text) => onChanged(int.tryParse(text)),
     );
     return fieldPath == null
         ? field
-        : KeyedSubtree(key: _fieldAnchor(fieldPath!), child: field);
+        : _FieldAnchor(path: fieldPath!, child: field);
   }
 }
 
@@ -495,53 +683,64 @@ class _RemotePage extends ConsumerWidget {
       WheelConfig wheel,
       ValueChanged<WheelConfig> update,
       String fieldPath,
-    ) => Row(
-      children: [
-        Expanded(
-          child: KeyedSubtree(
-            key: _fieldAnchor(fieldPath),
-            child: DropdownButtonFormField(
-              isExpanded: true,
-              initialValue: wheel.pin,
-              decoration: _fieldDecoration(ref, fieldPath, '$label IO'),
-              items: _includeCurrent(chassisPins, wheel.pin).map((e) {
-                final enabled =
-                    c is! InfantryConfig ||
-                    InfantryPinPlanner.allowedPins(c, fieldPath).contains(e);
-                final owner = c is InfantryConfig
-                    ? InfantryPinPlanner.occupiedBy(c, e, fieldPath)
-                    : null;
-                return DropdownMenuItem(
-                  value: e,
-                  enabled: enabled,
-                  child: Text(
-                    enabled || owner == null ? e : '$e（${owner.ownerLabel}占用）',
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                );
-              }).toList(),
-              onChanged: (v) => update(wheel.copyWith(pin: v)),
+    ) {
+      final directionPath = fieldPath.replaceFirst('.pin', '.direction');
+      return _FormRow(
+        fieldPaths: [fieldPath, directionPath],
+        children: [
+          Expanded(
+            child: _FieldAnchor(
+              path: fieldPath,
+              child: DropdownButtonFormField(
+                isExpanded: true,
+                initialValue: wheel.pin,
+                decoration: _fieldDecoration(ref, fieldPath, '$label IO'),
+                items: _includeCurrent(chassisPins, wheel.pin).map((e) {
+                  final enabled =
+                      c is! InfantryConfig ||
+                      InfantryPinPlanner.allowedPins(c, fieldPath).contains(e);
+                  final owner = c is InfantryConfig
+                      ? InfantryPinPlanner.occupiedBy(c, e, fieldPath)
+                      : null;
+                  return DropdownMenuItem(
+                    value: e,
+                    enabled: enabled,
+                    child: _PinOption(
+                      e,
+                      enabled: enabled,
+                      owner: enabled || owner == null
+                          ? null
+                          : '${owner.ownerLabel}占用',
+                    ),
+                  );
+                }).toList(),
+                onChanged: (v) => update(wheel.copyWith(pin: v)),
+              ),
             ),
           ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: DropdownButtonFormField(
-            initialValue: wheel.direction,
-            decoration: const InputDecoration(labelText: '方向'),
-            items: Direction.values
-                .map(
-                  (e) => DropdownMenuItem(
-                    value: e,
-                    child: Text(e == Direction.forward ? '正向' : '反向'),
-                  ),
-                )
-                .toList(),
-            onChanged: (v) => update(wheel.copyWith(direction: v)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: _FieldAnchor(
+              path: directionPath,
+              child: DropdownButtonFormField(
+                initialValue: wheel.direction,
+                decoration: _fieldDecoration(ref, directionPath, '方向'),
+                items: Direction.values
+                    .map(
+                      (e) => DropdownMenuItem(
+                        value: e,
+                        child: Text(e == Direction.forward ? '正向' : '反向'),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (v) => update(wheel.copyWith(direction: v)),
+              ),
+            ),
           ),
-        ),
-      ],
-    );
+        ],
+      );
+    }
+
     final ch = c.chassis;
     return _PageFrame(
       title: '遥控器与底盘',
@@ -552,14 +751,14 @@ class _RemotePage extends ConsumerWidget {
           _Section(
             title: '遥控器',
             children: [
-              Row(
+              _FormRow(
+                fieldPaths: const ['remote.channel', 'remote.deadzone'],
                 children: [
                   Expanded(
                     child: _NumberField(
                       label: '通道号',
                       fieldPath: 'remote.channel',
                       value: c.remote.channel,
-                      helper: '0–125，与遥控器保持一致',
                       onChanged: (v) =>
                           updateRemote(c.remote.copyWith(channel: v)),
                     ),
@@ -570,13 +769,14 @@ class _RemotePage extends ConsumerWidget {
                       label: '摇杆死区',
                       fieldPath: 'remote.deadzone',
                       value: c.remote.deadzone,
-                      helper: '0–2047',
                       onChanged: (v) =>
                           updateRemote(c.remote.copyWith(deadzone: v)),
                     ),
                   ),
                 ],
               ),
+              const SizedBox(height: 10),
+              const _InfoBanner('通道号范围 0–125，必须与遥控器一致；摇杆死区范围 0–2047。'),
             ],
           ),
           const SizedBox(height: 18),
@@ -612,7 +812,11 @@ class _RemotePage extends ConsumerWidget {
                 'chassis.right_rear.pin',
               ),
               const SizedBox(height: 18),
-              Row(
+              _FormRow(
+                fieldPaths: const [
+                  'chassis.normal_speed',
+                  'chassis.sprint_speed',
+                ],
                 children: [
                   Expanded(
                     child: _NumberField(
@@ -637,6 +841,8 @@ class _RemotePage extends ConsumerWidget {
                   ),
                 ],
               ),
+              const SizedBox(height: 10),
+              const _InfoBanner('速度单位为 duty，范围 0–10000；未启用冲刺时冲刺速度不会参与控制。'),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('按下左摇杆启用冲刺'),
@@ -679,25 +885,32 @@ class _PwmPage extends ConsumerWidget {
                     Expanded(
                       child: Padding(
                         padding: const EdgeInsets.only(right: 12),
-                        child: DropdownButtonFormField(
-                          initialValue: item.$2,
-                          decoration: InputDecoration(labelText: item.$1),
-                          items: PwmFrequency.values
-                              .map(
-                                (f) => DropdownMenuItem(
-                                  value: f,
-                                  child: Text(
-                                    f == PwmFrequency.hz50
-                                        ? '50 Hz · 舵机/摩擦轮'
-                                        : '10000 Hz · 电机',
+                        child: _FieldAnchor(
+                          path: item.$3 ? 'pwm.pwma' : 'pwm.pwmb',
+                          child: DropdownButtonFormField(
+                            initialValue: item.$2,
+                            decoration: _fieldDecoration(
+                              ref,
+                              item.$3 ? 'pwm.pwma' : 'pwm.pwmb',
+                              item.$1,
+                            ),
+                            items: PwmFrequency.values
+                                .map(
+                                  (f) => DropdownMenuItem(
+                                    value: f,
+                                    child: Text(
+                                      f == PwmFrequency.hz50
+                                          ? '50 Hz · 舵机/摩擦轮'
+                                          : '10000 Hz · 电机',
+                                    ),
                                   ),
-                                ),
-                              )
-                              .toList(),
-                          onChanged: (v) => update(
-                            item.$3
-                                ? pwm.copyWith(pwma: v)
-                                : pwm.copyWith(pwmb: v),
+                                )
+                                .toList(),
+                            onChanged: (v) => update(
+                              item.$3
+                                  ? pwm.copyWith(pwma: v)
+                                  : pwm.copyWith(pwmb: v),
+                            ),
                           ),
                         ),
                       ),
@@ -726,24 +939,28 @@ class _PwmPage extends ConsumerWidget {
                       child: Row(
                         children: [
                           Expanded(
-                            child: KeyedSubtree(
-                              key: _fieldAnchor('pwm.pin_roles.$pin'),
+                            child: _FieldAnchor(
+                              path: 'pwm.pin_roles.$pin',
                               child: DropdownButtonFormField<PinRole>(
-                                initialValue:
-                                    pwm.pinRoles[pin] ?? PinRole.motor,
+                                initialValue: mainServoPins.contains(pin)
+                                    ? PinRole.servo
+                                    : pwm.pinRoles[pin],
                                 decoration: _fieldDecoration(
                                   ref,
                                   'pwm.pin_roles.$pin',
                                   pin,
                                 ),
-                                items: PinRole.values
-                                    .map(
-                                      (r) => DropdownMenuItem(
-                                        value: r,
-                                        child: Text(_roleLabel(r)),
-                                      ),
-                                    )
-                                    .toList(),
+                                items:
+                                    (mainServoPins.contains(pin)
+                                            ? const [PinRole.servo]
+                                            : PinRole.values)
+                                        .map(
+                                          (r) => DropdownMenuItem(
+                                            value: r,
+                                            child: Text(_roleLabel(r)),
+                                          ),
+                                        )
+                                        .toList(),
                                 onChanged: mainServoPins.contains(pin)
                                     ? null
                                     : (v) {
@@ -756,8 +973,8 @@ class _PwmPage extends ConsumerWidget {
                               ),
                             ),
                           ),
-                          if ((pwm.pinRoles[pin] ?? PinRole.motor) ==
-                              PinRole.servo) ...[
+                          if (mainServoPins.contains(pin) ||
+                              pwm.pinRoles[pin] == PinRole.servo) ...[
                             const SizedBox(width: 8),
                             SizedBox(
                               width: 100,
@@ -766,7 +983,12 @@ class _PwmPage extends ConsumerWidget {
                                 fieldPath: 'pwm.servo_mids.$pin',
                                 value: pwm.servoMids[pin],
                                 onChanged: (v) {
-                                  final mids = {...pwm.servoMids, pin: v ?? 0};
+                                  final mids = {...pwm.servoMids};
+                                  if (v == null) {
+                                    mids.remove(pin);
+                                  } else {
+                                    mids[pin] = v;
+                                  }
                                   update(pwm.copyWith(servoMids: mids));
                                 },
                               ),
@@ -785,7 +1007,7 @@ class _PwmPage extends ConsumerWidget {
   }
 
   static String _roleLabel(PinRole role) => switch (role) {
-    PinRole.motor => '电机',
+    PinRole.motor => '平滑电机',
     PinRole.servo => '舵机',
     PinRole.friction => '摩擦轮',
     PinRole.jitterMotor => '抖动电机',
@@ -807,55 +1029,62 @@ class _InfantryMechanismPage extends ConsumerWidget {
           direction = yaw ? c.yawDirection : c.pitchDirection,
           mid = yaw ? c.yawMidOffset : c.pitchMidOffset,
           pinPath = yaw ? 'gimbal.yaw.pin' : 'gimbal.pitch.pin',
+          drivePath = yaw ? 'gimbal.yaw.drive' : 'gimbal.pitch.drive',
+          directionPath = yaw
+              ? 'gimbal.yaw.direction'
+              : 'gimbal.pitch.direction',
           midPath = yaw ? 'gimbal.yaw.mid_offset' : 'gimbal.pitch.mid_offset';
       final allowedPins = InfantryPinPlanner.allowedPins(
         c,
         pinPath,
         driveType: drive,
       );
-      final candidates = drive == DriveType.servo
-          ? InfantryPinPlanner.servoPins
-          : InfantryPinPlanner.motorPins;
+      final candidates = switch (drive) {
+        DriveType.servo => InfantryPinPlanner.servoPins,
+        DriveType.motor => InfantryPinPlanner.motorPins,
+        null => const <String>[],
+      };
       final visiblePins = _includeCurrent(candidates, pin);
       return _Section(
         title: '$name 轴',
         children: [
-          Row(
+          _FormRow(
+            fieldPaths: [
+              drivePath,
+              pinPath,
+              directionPath,
+              if (drive == DriveType.servo) midPath,
+            ],
             children: [
               Expanded(
-                child: DropdownButtonFormField(
-                  initialValue: drive,
-                  decoration: const InputDecoration(labelText: '驱动类型'),
-                  items: DriveType.values
-                      .map(
-                        (e) => DropdownMenuItem(
-                          value: e,
-                          child: Text(e == DriveType.servo ? '舵机' : '电机'),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (v) {
-                    if (v == null) return;
-                    final nextPins = InfantryPinPlanner.allowedPins(
-                      c,
-                      pinPath,
-                      driveType: v,
-                    );
-                    final nextPin = nextPins.contains(pin) || nextPins.isEmpty
-                        ? pin
-                        : nextPins.first;
-                    update(
-                      yaw
-                          ? c.copyWith(yawDrive: v, yawPin: nextPin)
-                          : c.copyWith(pitchDrive: v, pitchPin: nextPin),
-                    );
-                  },
+                child: _FieldAnchor(
+                  path: drivePath,
+                  child: DropdownButtonFormField(
+                    initialValue: drive,
+                    decoration: _fieldDecoration(ref, drivePath, '驱动类型'),
+                    items: DriveType.values
+                        .map(
+                          (e) => DropdownMenuItem(
+                            value: e,
+                            child: Text(e == DriveType.servo ? '舵机' : '电机'),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (v) {
+                      if (v == null) return;
+                      update(
+                        yaw
+                            ? c.copyWith(yawDrive: v)
+                            : c.copyWith(pitchDrive: v),
+                      );
+                    },
+                  ),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: KeyedSubtree(
-                  key: _fieldAnchor(pinPath),
+                child: _FieldAnchor(
+                  path: pinPath,
                   child: DropdownButtonFormField(
                     isExpanded: true,
                     initialValue: pin,
@@ -870,9 +1099,12 @@ class _InfantryMechanismPage extends ConsumerWidget {
                       return DropdownMenuItem(
                         value: e,
                         enabled: enabled,
-                        child: Text(
-                          enabled ? e : '$e（${owner?.ownerLabel ?? '硬件不支持'}）',
-                          overflow: TextOverflow.ellipsis,
+                        child: _PinOption(
+                          e,
+                          enabled: enabled,
+                          owner: enabled
+                              ? null
+                              : owner?.ownerLabel ?? '当前驱动类型不支持',
                         ),
                       );
                     }).toList(),
@@ -884,21 +1116,24 @@ class _InfantryMechanismPage extends ConsumerWidget {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: DropdownButtonFormField(
-                  initialValue: direction,
-                  decoration: const InputDecoration(labelText: '方向'),
-                  items: Direction.values
-                      .map(
-                        (e) => DropdownMenuItem(
-                          value: e,
-                          child: Text(e == Direction.forward ? '正向' : '反向'),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (v) => update(
-                    yaw
-                        ? c.copyWith(yawDirection: v)
-                        : c.copyWith(pitchDirection: v),
+                child: _FieldAnchor(
+                  path: directionPath,
+                  child: DropdownButtonFormField(
+                    initialValue: direction,
+                    decoration: _fieldDecoration(ref, directionPath, '方向'),
+                    items: Direction.values
+                        .map(
+                          (e) => DropdownMenuItem(
+                            value: e,
+                            child: Text(e == Direction.forward ? '正向' : '反向'),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (v) => update(
+                      yaw
+                          ? c.copyWith(yawDirection: v)
+                          : c.copyWith(pitchDirection: v),
+                    ),
                   ),
                 ),
               ),
@@ -933,11 +1168,15 @@ class _InfantryMechanismPage extends ConsumerWidget {
           _Section(
             title: '拨弹电机',
             children: [
-              Row(
+              _FormRow(
+                fieldPaths: const [
+                  'mechanism.feeder_pin',
+                  'mechanism.feeder_direction',
+                ],
                 children: [
                   Expanded(
-                    child: KeyedSubtree(
-                      key: _fieldAnchor('mechanism.feeder_pin'),
+                    child: _FieldAnchor(
+                      path: 'mechanism.feeder_pin',
                       child: DropdownButtonFormField(
                         isExpanded: true,
                         initialValue: c.feederPin,
@@ -963,11 +1202,12 @@ class _InfantryMechanismPage extends ConsumerWidget {
                               return DropdownMenuItem(
                                 value: e,
                                 enabled: enabled,
-                                child: Text(
-                                  enabled || owner == null
-                                      ? e
-                                      : '$e（${owner.ownerLabel}占用）',
-                                  overflow: TextOverflow.ellipsis,
+                                child: _PinOption(
+                                  e,
+                                  enabled: enabled,
+                                  owner: enabled || owner == null
+                                      ? null
+                                      : '${owner.ownerLabel}占用',
                                 ),
                               );
                             }).toList(),
@@ -977,18 +1217,28 @@ class _InfantryMechanismPage extends ConsumerWidget {
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: DropdownButtonFormField(
-                      initialValue: c.feederDirection,
-                      decoration: const InputDecoration(labelText: '方向'),
-                      items: Direction.values
-                          .map(
-                            (e) => DropdownMenuItem(
-                              value: e,
-                              child: Text(e == Direction.forward ? '正向' : '反向'),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (v) => update(c.copyWith(feederDirection: v)),
+                    child: _FieldAnchor(
+                      path: 'mechanism.feeder_direction',
+                      child: DropdownButtonFormField(
+                        initialValue: c.feederDirection,
+                        decoration: _fieldDecoration(
+                          ref,
+                          'mechanism.feeder_direction',
+                          '方向',
+                        ),
+                        items: Direction.values
+                            .map(
+                              (e) => DropdownMenuItem(
+                                value: e,
+                                child: Text(
+                                  e == Direction.forward ? '正向' : '反向',
+                                ),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (v) =>
+                            update(c.copyWith(feederDirection: v)),
+                      ),
                     ),
                   ),
                 ],
@@ -1016,10 +1266,10 @@ class _InfantryControlsPage extends ConsumerWidget {
     Widget keyField(
       String label,
       String fieldPath,
-      String value,
+      String? value,
       ValueChanged<String?> changed,
-    ) => KeyedSubtree(
-      key: _fieldAnchor(fieldPath),
+    ) => _FieldAnchor(
+      path: fieldPath,
       child: DropdownButtonFormField(
         initialValue: value,
         decoration: _fieldDecoration(ref, fieldPath, label),
@@ -1038,7 +1288,75 @@ class _InfantryControlsPage extends ConsumerWidget {
           _Section(
             title: '拨弹控制',
             children: [
-              Row(
+              _FormRow(
+                fieldPaths: const [
+                  'controls.arrow_behavior',
+                  'controls.feed_mode',
+                ],
+                children: [
+                  Expanded(
+                    child: _FieldAnchor(
+                      path: 'controls.arrow_behavior',
+                      child: DropdownButtonFormField<ArrowBehavior>(
+                        initialValue: c.arrowBehavior,
+                        decoration: _fieldDecoration(
+                          ref,
+                          'controls.arrow_behavior',
+                          '方向键用途',
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: ArrowBehavior.move,
+                            child: Text('移动'),
+                          ),
+                          DropdownMenuItem(
+                            value: ArrowBehavior.sprint,
+                            child: Text('冲刺'),
+                          ),
+                          DropdownMenuItem(
+                            value: ArrowBehavior.other,
+                            child: Text('其他'),
+                          ),
+                        ],
+                        onChanged: (v) => update(c.copyWith(arrowBehavior: v)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _FieldAnchor(
+                      path: 'controls.feed_mode',
+                      child: DropdownButtonFormField<FeedMode>(
+                        initialValue: c.feedMode,
+                        decoration: _fieldDecoration(
+                          ref,
+                          'controls.feed_mode',
+                          '拨弹模式',
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: FeedMode.blockingOpenLoop,
+                            child: Text('阻塞开环单发'),
+                          ),
+                          DropdownMenuItem(
+                            value: FeedMode.visualClosedLoop,
+                            child: Text('目视闭环连续拨弹'),
+                          ),
+                        ],
+                        onChanged: (v) => update(c.copyWith(feedMode: v)),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              _FormRow(
+                fieldPaths: [
+                  'controls.trigger_key',
+                  'controls.trigger_speed',
+                  if (c.feedMode == FeedMode.blockingOpenLoop)
+                    'controls.trigger_time_ms',
+                ],
                 children: [
                   Expanded(
                     child: keyField(
@@ -1058,79 +1376,121 @@ class _InfantryControlsPage extends ConsumerWidget {
                       onChanged: (v) => update(c.copyWith(triggerSpeed: v)),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _NumberField(
-                      label: '单发时长',
-                      fieldPath: 'controls.trigger_time_ms',
-                      suffix: 'ms',
-                      value: c.triggerTimeMs,
-                      onChanged: (v) => update(c.copyWith(triggerTimeMs: v)),
+                  if (c.feedMode == FeedMode.blockingOpenLoop) ...[
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _NumberField(
+                        label: '单发时长',
+                        fieldPath: 'controls.trigger_time_ms',
+                        suffix: 'ms',
+                        value: c.triggerTimeMs,
+                        onChanged: (v) => update(c.copyWith(triggerTimeMs: v)),
+                      ),
                     ),
-                  ),
+                  ],
                 ],
               ),
+              const SizedBox(height: 10),
+              const _InfoBanner('拨弹速度范围 0–10000；阻塞开环模式需要单发时长，闭环模式按住扳机持续拨弹。'),
             ],
           ),
           const SizedBox(height: 18),
           _Section(
             title: '摩擦轮',
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: keyField(
-                      '开关键',
-                      'controls.friction_key',
-                      c.frictionKey,
-                      (v) => update(c.copyWith(frictionKey: v)),
-                    ),
+              _FieldAnchor(
+                path: 'controls.friction_mode',
+                child: DropdownButtonFormField<FrictionMode>(
+                  initialValue: c.frictionMode,
+                  decoration: _fieldDecoration(
+                    ref,
+                    'controls.friction_mode',
+                    '摩擦轮类型',
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: keyField(
-                      '增加速度',
-                      'controls.friction_up_key',
-                      c.frictionUpKey,
-                      (v) => update(c.copyWith(frictionUpKey: v)),
+                  items: const [
+                    DropdownMenuItem(
+                      value: FrictionMode.brushlessEsc,
+                      child: Text('无刷电调'),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: keyField(
-                      '减少速度',
-                      'controls.friction_down_key',
-                      c.frictionDownKey,
-                      (v) => update(c.copyWith(frictionDownKey: v)),
+                    DropdownMenuItem(
+                      value: FrictionMode.disabled,
+                      child: Text('不使用'),
                     ),
-                  ),
-                ],
+                  ],
+                  onChanged: (v) => update(c.copyWith(frictionMode: v)),
+                ),
               ),
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  Expanded(
-                    child: _NumberField(
-                      label: '最大占空比',
-                      fieldPath: 'controls.friction_max_duty',
-                      suffix: 'duty',
-                      helper: '安全范围 500–800',
-                      value: c.frictionMaxDuty,
-                      onChanged: (v) => update(c.copyWith(frictionMaxDuty: v)),
+              if (c.frictionMode == FrictionMode.brushlessEsc) ...[
+                const SizedBox(height: 14),
+                _FormRow(
+                  fieldPaths: const [
+                    'controls.friction_key',
+                    'controls.friction_up_key',
+                    'controls.friction_down_key',
+                  ],
+                  children: [
+                    Expanded(
+                      child: keyField(
+                        '开关键',
+                        'controls.friction_key',
+                        c.frictionKey,
+                        (v) => update(c.copyWith(frictionKey: v)),
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _NumberField(
-                      label: '每次调速步长',
-                      fieldPath: 'controls.friction_step',
-                      suffix: 'duty',
-                      value: c.frictionStep,
-                      onChanged: (v) => update(c.copyWith(frictionStep: v)),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: keyField(
+                        '增加速度',
+                        'controls.friction_up_key',
+                        c.frictionUpKey,
+                        (v) => update(c.copyWith(frictionUpKey: v)),
+                      ),
                     ),
-                  ),
-                ],
-              ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: keyField(
+                        '减少速度',
+                        'controls.friction_down_key',
+                        c.frictionDownKey,
+                        (v) => update(c.copyWith(frictionDownKey: v)),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                _FormRow(
+                  fieldPaths: const [
+                    'controls.friction_max_duty',
+                    'controls.friction_step',
+                  ],
+                  children: [
+                    Expanded(
+                      child: _NumberField(
+                        label: '最大占空比',
+                        fieldPath: 'controls.friction_max_duty',
+                        suffix: 'duty',
+                        value: c.frictionMaxDuty,
+                        onChanged: (v) =>
+                            update(c.copyWith(frictionMaxDuty: v)),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _NumberField(
+                        label: '每次调速步长',
+                        fieldPath: 'controls.friction_step',
+                        suffix: 'duty',
+                        value: c.frictionStep,
+                        onChanged: (v) => update(c.copyWith(frictionStep: v)),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                const _InfoBanner(
+                  '无刷电调固定占用 P64/P66；500 duty 起步，最大占空比须为 500–800 的整百值，输出逐周期 ±1 平滑变化。',
+                ),
+              ],
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('按下右摇杆让云台归中'),
@@ -1181,31 +1541,49 @@ class _EngineerStrategyPage extends ConsumerWidget {
       child: _Section(
         title: '模式策略',
         children: [
-          KeyedSubtree(
-            key: _fieldAnchor('modes.count'),
+          _FieldAnchor(
+            path: 'modes.count',
             child: DropdownButtonFormField(
               initialValue: c.modeCount,
               decoration: _fieldDecoration(ref, 'modes.count', '模式数量'),
               items: [1, 2, 3, 4]
                   .map((e) => DropdownMenuItem(value: e, child: Text('$e 个模式')))
                   .toList(),
-              onChanged: (v) => countChanged(v!),
+              onChanged: (v) {
+                if (v != null) countChanged(v);
+              },
             ),
           ),
+          if ((c.modeCount ?? 0) > 1) ...[
+            const SizedBox(height: 16),
+            _FieldAnchor(
+              path: 'modes.switch_strategy',
+              child: DropdownButtonFormField<SwitchStrategy>(
+                initialValue: c.switchStrategy,
+                decoration: _fieldDecoration(
+                  ref,
+                  'modes.switch_strategy',
+                  '切换策略',
+                ),
+                items: const [
+                  DropdownMenuItem(
+                    value: SwitchStrategy.cycle,
+                    child: Text('单击轮换'),
+                  ),
+                  DropdownMenuItem(
+                    value: SwitchStrategy.direct,
+                    child: Text('一一对应'),
+                  ),
+                ],
+                onChanged: (v) => update(c.copyWith(switchStrategy: v)),
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
-          SegmentedButton<SwitchStrategy>(
-            segments: const [
-              ButtonSegment(value: SwitchStrategy.cycle, label: Text('单击轮换')),
-              ButtonSegment(value: SwitchStrategy.direct, label: Text('一一对应')),
-            ],
-            selected: {c.switchStrategy},
-            onSelectionChanged: (v) =>
-                update(c.copyWith(switchStrategy: v.first)),
-          ),
-          const SizedBox(height: 16),
-          if (c.switchStrategy == SwitchStrategy.cycle)
-            KeyedSubtree(
-              key: _fieldAnchor('modes.switch_key'),
+          if ((c.modeCount ?? 0) > 1 &&
+              c.switchStrategy == SwitchStrategy.cycle)
+            _FieldAnchor(
+              path: 'modes.switch_key',
               child: DropdownButtonFormField(
                 initialValue: c.modeSwitchKey,
                 decoration: _fieldDecoration(ref, 'modes.switch_key', '切换按键'),
@@ -1215,16 +1593,17 @@ class _EngineerStrategyPage extends ConsumerWidget {
                 onChanged: (v) => update(c.copyWith(modeSwitchKey: v)),
               ),
             )
-          else
+          else if ((c.modeCount ?? 0) > 1 &&
+              c.switchStrategy == SwitchStrategy.direct)
             Wrap(
               spacing: 12,
               runSpacing: 12,
               children: [
-                for (var i = 0; i < c.modeCount; i++)
+                for (var i = 0; i < (c.modeCount ?? 0); i++)
                   SizedBox(
                     width: 190,
-                    child: KeyedSubtree(
-                      key: _fieldAnchor('modes.keys.$i'),
+                    child: _FieldAnchor(
+                      path: 'modes.keys.$i',
                       child: DropdownButtonFormField(
                         initialValue: c.modeKeys[i],
                         decoration: _fieldDecoration(
@@ -1239,7 +1618,7 @@ class _EngineerStrategyPage extends ConsumerWidget {
                             .toList(),
                         onChanged: (v) {
                           final keys = [...c.modeKeys];
-                          keys[i] = v!;
+                          keys[i] = v;
                           update(c.copyWith(modeKeys: keys));
                         },
                       ),
@@ -1266,7 +1645,19 @@ class _EngineerMappingsPageState extends ConsumerState<_EngineerMappingsPage> {
   Widget build(BuildContext context) {
     final c =
         ref.watch(appControllerProvider).document!.config as EngineerConfig;
-    if (selected >= c.modeCount) selected = 0;
+    final modeCount = c.modeCount ?? 0;
+    final availableModeCount = modeCount < c.modes.length
+        ? modeCount
+        : c.modes.length;
+    if (selected >= availableModeCount) selected = 0;
+    if (availableModeCount == 0) {
+      return const _PageFrame(
+        title: '动作映射',
+        stepId: 'mappings',
+        subtitle: '请先完成模式数量配置。',
+        child: _InfoBanner('当前没有可编辑的模式，请返回“模式切换”页面。'),
+      );
+    }
     void updateMode(EngineerModeConfig mode) {
       final modes = [...c.modes];
       modes[selected] = mode;
@@ -1276,6 +1667,7 @@ class _EngineerMappingsPageState extends ConsumerState<_EngineerMappingsPage> {
     }
 
     final mode = c.modes[selected];
+    final preserveChassis = selected == 0 || mode.preserveChassis;
     return _PageFrame(
       title: '动作映射',
       stepId: 'mappings',
@@ -1284,7 +1676,7 @@ class _EngineerMappingsPageState extends ConsumerState<_EngineerMappingsPage> {
         children: [
           SegmentedButton<int>(
             segments: [
-              for (var i = 0; i < c.modeCount; i++)
+              for (var i = 0; i < availableModeCount; i++)
                 ButtonSegment(value: i, label: Text('模式 ${i + 1}')),
             ],
             selected: {selected},
@@ -1297,14 +1689,20 @@ class _EngineerMappingsPageState extends ConsumerState<_EngineerMappingsPage> {
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('保留左摇杆底盘控制'),
-                value: mode.preserveChassis,
-                onChanged: (v) => updateMode(mode.copyWith(preserveChassis: v)),
+                value: preserveChassis,
+                onChanged: selected == 0
+                    ? null
+                    : (v) => updateMode(mode.copyWith(preserveChassis: v)),
               ),
+              if (selected == 0)
+                const _InfoBanner('模式 1 固定保留底盘控制；因此该模式动作不能使用 LX/LY。'),
               for (var i = 0; i < mode.actions.length; i++)
                 Padding(
                   padding: const EdgeInsets.only(top: 12),
                   child: _ActionRow(
                     action: mode.actions[i],
+                    preserveChassis: preserveChassis,
+                    pinRoles: c.pwm.pinRoles,
                     fieldPath: 'modes.$selected.actions.$i',
                     onChanged: (a) {
                       final actions = [...mode.actions];
@@ -1336,106 +1734,155 @@ class _EngineerMappingsPageState extends ConsumerState<_EngineerMappingsPage> {
 class _ActionRow extends ConsumerWidget {
   const _ActionRow({
     required this.action,
+    required this.preserveChassis,
+    required this.pinRoles,
     required this.fieldPath,
     required this.onChanged,
     required this.onRemove,
   });
   final ActionMapping action;
+  final bool preserveChassis;
+  final Map<String, PinRole> pinRoles;
   final String fieldPath;
   final ValueChanged<ActionMapping> onChanged;
   final VoidCallback onRemove;
   @override
-  Widget build(BuildContext context, WidgetRef ref) => Card(
-    color: Theme.of(context).colorScheme.surfaceContainerLow,
-    child: Padding(
-      padding: const EdgeInsets.all(12),
-      child: Row(
-        children: [
-          Expanded(
-            child: KeyedSubtree(
-              key: _fieldAnchor('$fieldPath.key'),
-              child: DropdownButtonFormField(
-                initialValue: action.key,
-                decoration: _fieldDecoration(ref, '$fieldPath.key', '按键'),
-                items: remoteKeys
-                    .map((e) => DropdownMenuItem(value: e, child: Text(e)))
-                    .toList(),
-                onChanged: (v) => onChanged(action.copyWith(key: v)),
+  Widget build(BuildContext context, WidgetRef ref) {
+    final availableInputs = preserveChassis
+        ? remoteKeys.where((key) => key != 'LX' && key != 'LY').toList()
+        : remoteKeys;
+    final visibleInputs = _includeCurrent(availableInputs, action.key);
+    final role = action.pin == null
+        ? null
+        : mainServoPins.contains(action.pin)
+        ? PinRole.servo
+        : pinRoles[action.pin];
+    final isAxis = axisRemoteInputs.contains(action.key);
+    final isMotorRole =
+        role != null && role != PinRole.servo && role != PinRole.unused;
+    final modes = role == PinRole.servo
+        ? const [ControlMode.direct, ControlMode.incremental]
+        : isMotorRole
+        ? (isAxis
+              ? const [ControlMode.speed, ControlMode.accelerate]
+              : const [ControlMode.direct])
+        : const <ControlMode>[];
+    final visibleModes = <ControlMode>[
+      if (action.mode != null && !modes.contains(action.mode)) action.mode!,
+      ...modes,
+    ];
+    final usablePins = <String>[
+      for (final pin in expansionPins)
+        if (pinRoles[pin] != null && pinRoles[pin] != PinRole.unused) pin,
+      ...mainServoPins,
+    ];
+    final visiblePins = _includeCurrent(usablePins, action.pin);
+    final parameterLabel = switch (action.mode) {
+      ControlMode.incremental => '步进角度 °',
+      ControlMode.speed => '最大速度 duty',
+      ControlMode.accelerate => '加速度 duty/周期',
+      ControlMode.direct => role == PinRole.servo ? '目标角度 °' : '占空比 duty',
+      null => '参数',
+    };
+    return Card(
+      color: Theme.of(context).colorScheme.surfaceContainerLow,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            Expanded(
+              child: _FieldAnchor(
+                path: '$fieldPath.key',
+                child: DropdownButtonFormField(
+                  initialValue: action.key,
+                  decoration: _fieldDecoration(ref, '$fieldPath.key', '按键'),
+                  items: visibleInputs
+                      .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                      .toList(),
+                  onChanged: (v) => onChanged(action.copyWith(key: v)),
+                ),
               ),
             ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: DropdownButtonFormField(
-              initialValue: action.direction,
-              decoration: const InputDecoration(labelText: '方向'),
-              items: Direction.values
-                  .map(
-                    (e) => DropdownMenuItem(
-                      value: e,
-                      child: Text(e == Direction.forward ? '正' : '反'),
-                    ),
-                  )
-                  .toList(),
-              onChanged: (v) => onChanged(action.copyWith(direction: v)),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: KeyedSubtree(
-              key: _fieldAnchor('$fieldPath.mode'),
-              child: DropdownButtonFormField(
-                initialValue: action.mode,
-                decoration: _fieldDecoration(ref, '$fieldPath.mode', '控制方式'),
-                items: ControlMode.values
-                    .map(
-                      (e) => DropdownMenuItem(
-                        value: e,
-                        child: Text(switch (e) {
-                          ControlMode.direct => '直接',
-                          ControlMode.incremental => '增量',
-                          ControlMode.speed => '速度',
-                          ControlMode.accelerate => '增速',
-                        }),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (v) => onChanged(action.copyWith(mode: v)),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _FieldAnchor(
+                path: '$fieldPath.direction',
+                child: DropdownButtonFormField(
+                  initialValue: action.direction,
+                  decoration: _fieldDecoration(
+                    ref,
+                    '$fieldPath.direction',
+                    '方向',
+                  ),
+                  items: Direction.values
+                      .map(
+                        (e) => DropdownMenuItem(
+                          value: e,
+                          child: Text(e == Direction.forward ? '正' : '反'),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (v) => onChanged(action.copyWith(direction: v)),
+                ),
               ),
             ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: _NumberField(
-              label: '参数',
-              fieldPath: '$fieldPath.parameter',
-              value: action.parameter,
-              onChanged: (v) => onChanged(action.copyWith(parameter: v)),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: KeyedSubtree(
-              key: _fieldAnchor('$fieldPath.pin'),
-              child: DropdownButtonFormField(
-                initialValue: action.pin,
-                decoration: _fieldDecoration(ref, '$fieldPath.pin', 'IO'),
-                items: [...expansionPins, ...mainServoPins]
-                    .map((e) => DropdownMenuItem(value: e, child: Text(e)))
-                    .toList(),
-                onChanged: (v) => onChanged(action.copyWith(pin: v)),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _FieldAnchor(
+                path: '$fieldPath.mode',
+                child: DropdownButtonFormField(
+                  initialValue: action.mode,
+                  decoration: _fieldDecoration(ref, '$fieldPath.mode', '控制方式'),
+                  items: visibleModes
+                      .map(
+                        (e) => DropdownMenuItem(
+                          value: e,
+                          child: Text(switch (e) {
+                            ControlMode.direct => '直接',
+                            ControlMode.incremental => '增量',
+                            ControlMode.speed => '速度',
+                            ControlMode.accelerate => '增速',
+                          }),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (v) => onChanged(action.copyWith(mode: v)),
+                ),
               ),
             ),
-          ),
-          IconButton(
-            onPressed: onRemove,
-            tooltip: '删除动作',
-            icon: const Icon(Icons.delete_outline),
-          ),
-        ],
+            const SizedBox(width: 8),
+            Expanded(
+              child: _NumberField(
+                label: parameterLabel,
+                fieldPath: '$fieldPath.parameter',
+                value: action.parameter,
+                onChanged: (v) => onChanged(action.copyWith(parameter: v)),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _FieldAnchor(
+                path: '$fieldPath.pin',
+                child: DropdownButtonFormField(
+                  initialValue: action.pin,
+                  decoration: _fieldDecoration(ref, '$fieldPath.pin', 'IO'),
+                  items: visiblePins
+                      .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                      .toList(),
+                  onChanged: (v) => onChanged(action.copyWith(pin: v)),
+                ),
+              ),
+            ),
+            IconButton(
+              onPressed: onRemove,
+              tooltip: '删除动作',
+              icon: const Icon(Icons.delete_outline),
+            ),
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class _ReviewPage extends ConsumerWidget {
@@ -1449,6 +1896,11 @@ class _ReviewPage extends ConsumerWidget {
             .where((i) => i.severity == IssueSeverity.error)
             .length,
         warnings = issues.length - errors;
+    String frequency(PwmFrequency? value) => switch (value) {
+      PwmFrequency.hz50 => '50',
+      PwmFrequency.hz10000 => '10000',
+      null => '未选择',
+    };
     return _PageFrame(
       title: '检查与配置摘要',
       subtitle: '生成前完成跨页面检查。点击问题可返回对应步骤。',
@@ -1516,10 +1968,26 @@ class _ReviewPage extends ConsumerWidget {
                   '普通速度 ${config.chassis.normalSpeed ?? '未填写'} · 冲刺速度 ${config.chassis.sprintSpeed ?? '未填写'}',
                 ),
               ),
+              ListTile(
+                leading: const Icon(Icons.route),
+                title: Text(
+                  '向导进度 ${state.document!.guideProgress.visitedStepIds.length} / ${ref.read(appControllerProvider.notifier).stepIds(config.kind).length} · 当前 ${state.document!.guideProgress.currentStepId}',
+                ),
+              ),
               if (config is InfantryConfig) ...[
                 const ListTile(
                   leading: Icon(Icons.memory),
                   title: Text('PWMA 50 Hz · PWMB 10000 Hz（硬件固定）'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.rotate_right),
+                  title: Text(
+                    config.frictionMode == FrictionMode.brushlessEsc
+                        ? '摩擦轮：无刷电调，固定占用 P64/P66'
+                        : config.frictionMode == FrictionMode.disabled
+                        ? '摩擦轮：不使用，P64/P66 已释放'
+                        : '摩擦轮：未选择',
+                  ),
                 ),
                 for (final assignment in InfantryPinPlanner.derive(
                   config,
@@ -1533,14 +2001,18 @@ class _ReviewPage extends ConsumerWidget {
                 ListTile(
                   leading: const Icon(Icons.memory),
                   title: Text(
-                    'PWMA ${config.pwm.pwma == PwmFrequency.hz50 ? '50' : '10000'} Hz · PWMB ${config.pwm.pwmb == PwmFrequency.hz50 ? '50' : '10000'} Hz',
+                    'PWMA ${frequency(config.pwm.pwma)} Hz · PWMB ${frequency(config.pwm.pwmb)} Hz',
                   ),
                 ),
               if (config is EngineerConfig)
                 ListTile(
                   leading: const Icon(Icons.layers),
                   title: Text(
-                    '${config.modeCount} 个工程模式 · ${config.switchStrategy == SwitchStrategy.cycle ? '单击轮换' : '一一对应'}',
+                    '${config.modeCount?.toString() ?? '未选择'} 个工程模式 · ${config.modeCount == 1 ? '单模式无需切换' : switch (config.switchStrategy) {
+                            SwitchStrategy.cycle => '单击轮换',
+                            SwitchStrategy.direct => '一一对应',
+                            null => '未选择切换策略',
+                          }}',
                   ),
                 ),
             ],

@@ -138,6 +138,11 @@ class AppController extends Notifier<AppState> {
   }
 
   void _adopt(ProjectDocument document, String path) {
+    final ids = stepIds(document.kind);
+    final current = ids.indexOf(document.guideProgress.currentStepId);
+    final visited = document.guideProgress.visitedStepIds
+        .map(ids.indexOf)
+        .where((index) => index >= 0);
     final recent = [
       path,
       ...state.recentPaths.where((item) => item != path),
@@ -145,8 +150,10 @@ class AppController extends Notifier<AppState> {
     state = state.copyWith(
       document: document,
       path: path,
-      step: 0,
-      maxVisitedStep: 0,
+      step: current < 0 ? 0 : current,
+      maxVisitedStep: visited.isEmpty
+          ? 0
+          : visited.reduce((a, b) => a > b ? a : b),
       saveStatus: SaveStatus.saved,
       clearMessage: true,
       clearPendingField: true,
@@ -164,6 +171,10 @@ class AppController extends Notifier<AppState> {
       clearMessage: true,
       clearPendingField: true,
     );
+    _scheduleSave();
+  }
+
+  void _scheduleSave() {
     _saveTimer?.cancel();
     _saveTimer = Timer(const Duration(milliseconds: 500), saveNow);
   }
@@ -206,6 +217,7 @@ class AppController extends Notifier<AppState> {
           message: '发现 ${blocking.length} 项错误，请修正标红的配置',
           pendingFieldPath: first.fieldPath,
         );
+        _persistProgress(_stepIndex(first.stepId, document.kind));
         return false;
       }
     }
@@ -217,7 +229,36 @@ class AppController extends Notifier<AppState> {
       clearMessage: true,
       clearPendingField: true,
     );
+    _persistProgress(target);
     return true;
+  }
+
+  void _persistProgress(int currentStep) {
+    final document = state.document;
+    if (document == null) return;
+    final ids = stepIds(document.kind);
+    final visited = <String>{
+      ...document.guideProgress.visitedStepIds.where(ids.contains),
+      for (
+        var index = 0;
+        index <= state.maxVisitedStep && index < ids.length;
+        index++
+      )
+        ids[index],
+    };
+    state = state.copyWith(
+      document: document.copyWith(
+        guideProgress: GuideProgress(
+          currentStepId: ids[currentStep],
+          visitedStepIds: [
+            for (final id in ids)
+              if (visited.contains(id)) id,
+          ],
+        ),
+      ),
+      saveStatus: SaveStatus.saving,
+    );
+    _scheduleSave();
   }
 
   int _stepIndex(String id, ProjectKind kind) {
@@ -235,6 +276,10 @@ class AppController extends Notifier<AppState> {
 
   int stepCount(ProjectKind kind) => kind == ProjectKind.infantry ? 5 : 6;
 
+  List<String> stepIds(ProjectKind kind) => kind == ProjectKind.infantry
+      ? const ['remote', 'mechanism', 'controls', 'review', 'code']
+      : const ['remote', 'pwm', 'strategy', 'mappings', 'review', 'code'];
+
   int reviewStep(ProjectKind kind) => kind == ProjectKind.infantry ? 3 : 4;
 
   int codeStep(ProjectKind kind) => kind == ProjectKind.infantry ? 4 : 5;
@@ -247,6 +292,7 @@ class AppController extends Notifier<AppState> {
       pendingFieldPath: issue.fieldPath,
       clearMessage: true,
     );
+    _persistProgress(_stepIndex(issue.stepId, document.kind));
   }
 
   void clearPendingField() => state = state.copyWith(clearPendingField: true);
