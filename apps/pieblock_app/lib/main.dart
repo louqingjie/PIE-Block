@@ -81,7 +81,7 @@ class _PieBlockAppState extends ConsumerState<PieBlockApp> {
     final state = ref.watch(appControllerProvider);
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Pie-Block',
+      title: 'PIE-Block',
       theme: _theme(Brightness.light),
       darkTheme: _theme(Brightness.dark),
       themeMode: state.themeMode,

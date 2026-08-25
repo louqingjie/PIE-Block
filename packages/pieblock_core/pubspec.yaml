@@ -1,5 +1,5 @@
 name: pieblock_core
-description: Pie-Block 的项目模型、静态检查与 C 代码生成核心。
+description: PIE-Block 的项目模型、静态检查与 C 代码生成核心。
 version: 1.0.0
 # repository: https://github.com/my_org/my_repo
 

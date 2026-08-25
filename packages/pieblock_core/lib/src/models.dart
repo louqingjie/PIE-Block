@@ -603,7 +603,7 @@ class ProjectDocument {
   };
   factory ProjectDocument.fromJson(Map<String, Object?> j) {
     if ((j['format_version'] as num?)?.toInt() != formatVersion)
-      throw const FormatException('不受支持的项目格式，请在对应旧版 Pie-Block 中打开');
+      throw const FormatException('不受支持的项目格式，请在对应旧版 PIE-Block 中打开');
     final kind = enumValue(
           ProjectKind.values,
           j['project_kind'],

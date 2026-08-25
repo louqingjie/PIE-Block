@@ -8,6 +8,6 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('新建机器人项目'), findsOneWidget);
     expect(find.text('打开已有项目'), findsOneWidget);
-    expect(find.text('Pie-Block'), findsOneWidget);
+    expect(find.text('PIE-Block'), findsOneWidget);
   });
 }

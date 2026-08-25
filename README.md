@@ -1,6 +1,6 @@
-# Pie-Block
+# PIE-Block
 
-Pie-Block 是面向 W.PIE RoboMaster 校内赛的 Windows 桌面代码生成器。新版使用 Flutter 构建，通过分步向导帮助没有编程经验的同学完成机器人配置，并生成 STC32G `main.c`。
+PIE-Block 是面向 W.PIE RoboMaster 校内赛的 Windows 桌面代码生成器。新版使用 Flutter 构建，通过分步向导帮助没有编程经验的同学完成机器人配置，并生成 STC32G `main.c`。
 
 ## 当前版本
 

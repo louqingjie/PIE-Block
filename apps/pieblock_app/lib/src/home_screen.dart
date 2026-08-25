@@ -171,7 +171,7 @@ class HomeScreen extends ConsumerWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Pie-Block',
+                              'PIE-Block',
                               style: TextStyle(
                                 fontSize: 30,
                                 fontWeight: FontWeight.w800,

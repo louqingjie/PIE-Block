@@ -15,7 +15,7 @@ abstract final class CodeGenerator {
       'KEY_OFFSET_${key.replaceAll('UP', 'UP').replaceAll('DOWN', 'DOWN').replaceAll('LEFT', 'LEFT').replaceAll('RIGHT', 'RIGHT')}';
 
   static String _header(RobotConfig c, String title) =>
-      '''// $title（由 Pie-Block Flutter 配置器自动生成）
+      '''// $title（由 PIE-Block Flutter 配置器自动生成）
 #include "main.h"
 #include "MATH.H"
 

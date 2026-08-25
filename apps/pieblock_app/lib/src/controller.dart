@@ -58,7 +58,7 @@ class AppController extends Notifier<AppState> {
   Timer? _saveTimer;
   String get _settingsPath {
     final base = Platform.environment['APPDATA'] ?? Directory.systemTemp.path;
-    return '$base${Platform.pathSeparator}PieBlock${Platform.pathSeparator}settings.json';
+    return '$base${Platform.pathSeparator}PIE-Block${Platform.pathSeparator}settings.json';
   }
 
   @override
