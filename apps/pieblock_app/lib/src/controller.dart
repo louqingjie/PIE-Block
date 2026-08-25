@@ -16,6 +16,7 @@ class AppState {
     this.maxVisitedStep = 0,
     this.saveStatus = SaveStatus.idle,
     this.message,
+    this.pendingFieldPath,
     this.themeMode = ThemeMode.system,
     this.recentPaths = const [],
   });
@@ -24,6 +25,7 @@ class AppState {
   final int step, maxVisitedStep;
   final SaveStatus saveStatus;
   final String? message;
+  final String? pendingFieldPath;
   final ThemeMode themeMode;
   final List<String> recentPaths;
   AppState copyWith({
@@ -34,6 +36,8 @@ class AppState {
     SaveStatus? saveStatus,
     String? message,
     bool clearMessage = false,
+    String? pendingFieldPath,
+    bool clearPendingField = false,
     ThemeMode? themeMode,
     List<String>? recentPaths,
     bool clearProject = false,
@@ -44,6 +48,9 @@ class AppState {
     maxVisitedStep: clearProject ? 0 : maxVisitedStep ?? this.maxVisitedStep,
     saveStatus: clearProject ? SaveStatus.idle : saveStatus ?? this.saveStatus,
     message: clearMessage ? null : message ?? this.message,
+    pendingFieldPath: clearProject || clearPendingField
+        ? null
+        : pendingFieldPath ?? this.pendingFieldPath,
     themeMode: themeMode ?? this.themeMode,
     recentPaths: recentPaths ?? this.recentPaths,
   );
@@ -142,6 +149,7 @@ class AppController extends Notifier<AppState> {
       maxVisitedStep: 0,
       saveStatus: SaveStatus.saved,
       clearMessage: true,
+      clearPendingField: true,
       recentPaths: recent,
     );
     unawaited(_saveSettings());
@@ -154,6 +162,7 @@ class AppController extends Notifier<AppState> {
       document: document.copyWith(config: config),
       saveStatus: SaveStatus.saving,
       clearMessage: true,
+      clearPendingField: true,
     );
     _saveTimer?.cancel();
     _saveTimer = Timer(const Duration(milliseconds: 500), saveNow);
@@ -180,15 +189,23 @@ class AppController extends Notifier<AppState> {
       : ProjectValidator.validate(state.document!.config);
 
   bool goToStep(int target) {
-    if (target < 0 || target > 5 || state.document == null) return false;
+    final document = state.document;
+    if (document == null || target < 0 || target >= stepCount(document.kind)) {
+      return false;
+    }
     if (target > state.step) {
-      final blocking = issues.any(
+      final blocking = issues.where(
         (i) =>
             i.severity == IssueSeverity.error &&
-            _stepIndex(i.stepId, state.document!.kind) <= state.step,
+            _stepIndex(i.stepId, document.kind) <= state.step,
       );
-      if (blocking) {
-        state = state.copyWith(message: '请先修正当前步骤中的错误');
+      if (blocking.isNotEmpty) {
+        final first = blocking.first;
+        state = state.copyWith(
+          step: _stepIndex(first.stepId, document.kind),
+          message: '发现 ${blocking.length} 项错误，请修正标红的配置',
+          pendingFieldPath: first.fieldPath,
+        );
         return false;
       }
     }
@@ -198,23 +215,41 @@ class AppController extends Notifier<AppState> {
           ? target
           : state.maxVisitedStep,
       clearMessage: true,
+      clearPendingField: true,
     );
     return true;
   }
 
   int _stepIndex(String id, ProjectKind kind) {
     if (id == 'remote') return 0;
-    if (id == 'pwm') return 1;
-    if (kind == ProjectKind.infantry && id == 'mechanism' ||
-        kind == ProjectKind.engineer && id == 'strategy') {
-      return 2;
-    }
-    if (kind == ProjectKind.infantry && id == 'controls' ||
-        kind == ProjectKind.engineer && id == 'mappings') {
+    if (kind == ProjectKind.infantry) {
+      if (id == 'mechanism') return 1;
+      if (id == 'controls') return 2;
       return 3;
     }
+    if (id == 'pwm') return 1;
+    if (id == 'strategy') return 2;
+    if (id == 'mappings') return 3;
     return 4;
   }
+
+  int stepCount(ProjectKind kind) => kind == ProjectKind.infantry ? 5 : 6;
+
+  int reviewStep(ProjectKind kind) => kind == ProjectKind.infantry ? 3 : 4;
+
+  int codeStep(ProjectKind kind) => kind == ProjectKind.infantry ? 4 : 5;
+
+  void goToIssue(ValidationIssue issue) {
+    final document = state.document;
+    if (document == null) return;
+    state = state.copyWith(
+      step: _stepIndex(issue.stepId, document.kind),
+      pendingFieldPath: issue.fieldPath,
+      clearMessage: true,
+    );
+  }
+
+  void clearPendingField() => state = state.copyWith(clearPendingField: true);
 
   void clearMessage() => state = state.copyWith(clearMessage: true);
   Future<void> closeProject() async {

@@ -276,7 +276,7 @@ class HomeScreen extends ConsumerWidget {
                             child: _ActionCard(
                               icon: Icons.folder_open,
                               title: '打开已有项目',
-                              subtitle: '仅支持新版格式 12 的 .pieproj',
+                              subtitle: '仅支持新版格式 13 的 .pieproj',
                               button: '打开项目',
                               accent: _brandCoral,
                               foreground: const Color(0xff3d0b08),
