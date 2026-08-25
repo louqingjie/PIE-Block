@@ -105,7 +105,9 @@ void ExpansionBoradControl(uint8_t command,
     uint16_t p74, uint16_t p75, uint16_t p76, uint16_t p77)
 {
     uint8_t i;
-    uint16_t values[8] = {p60,p62,p64,p66,p74,p75,p76,p77};
+    uint16_t values[8];
+    values[0] = p60; values[1] = p62; values[2] = p64; values[3] = p66;
+    values[4] = p74; values[5] = p75; values[6] = p76; values[7] = p77;
     control_frame_pack[0] = COMM_HEADER_1;
     control_frame_pack[1] = COMM_HEADER_2;
     control_frame_pack[2] = command;

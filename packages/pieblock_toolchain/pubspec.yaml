@@ -1,0 +1,17 @@
+name: pieblock_toolchain
+description: PIE-Block Windows C251 firmware build services.
+version: 1.0.0
+publish_to: none
+
+environment:
+  sdk: ^3.13.1
+
+dependencies:
+  crypto: ^3.0.7
+  path: ^1.9.1
+  pieblock_core:
+    path: ../pieblock_core
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.25.6
