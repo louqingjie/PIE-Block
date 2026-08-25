@@ -197,4 +197,77 @@ void main() {
       hasLength(sha256.convert([]).toString().length),
     );
   });
+
+  test('可注入的 SDCC 后端保持公共构建接口和布局校验', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'pieblock-backend-',
+    );
+    addTearDown(() => directory.delete(recursive: true));
+    final backend = _FakeSdccBackend();
+    final builder = FirmwareBuilder(
+      sdccBackend: backend,
+      runtimeRoot: '${directory.path}/runtime',
+      workRoot: '${directory.path}/work',
+      artifacts: BuildArtifactRepository(root: '${directory.path}/artifacts'),
+    );
+    expect(
+      await builder.resolveCompilerFingerprint(CompilerKind.sdcc),
+      'native-test',
+    );
+    final operation = builder.start(
+      const BuildRequest(
+        projectKind: ProjectKind.infantry,
+        sourceCode: 'void main(void) {}',
+        compiler: CompilerKind.sdcc,
+        compilerFingerprint: 'native-test',
+      ),
+    );
+    final result = await operation.result;
+    expect(result.success, isTrue);
+    expect(result.artifact, isNotNull);
+    expect(backend.buildCount, 1);
+    builder.cancel();
+    expect(backend.canceled, isTrue);
+  });
+}
+
+class _FakeSdccBackend implements SdccCompilerBackend {
+  int buildCount = 0;
+  bool canceled = false;
+
+  @override
+  Future<String> resolveFingerprint() async => 'native-test';
+
+  @override
+  Future<CompilerBackendResult> build(
+    BuildRequest request,
+    String workDirectory,
+    BuildEventSink emit,
+  ) async {
+    buildCount++;
+    final output = Directory('$workDirectory/output')
+      ..createSync(recursive: true);
+    final hex = File('${output.path}/firmware.hex')
+      ..writeAsStringSync(_validHex);
+    final map = File('${output.path}/firmware.map')
+      ..writeAsStringSync(
+        ' HOME     00FF0000 00000003 =\n'
+        ' CSEG     00FE0000 00000001 =\n'
+        ' XSEG     00010000 00000010 =\n'
+        ' DSEG     00000000 00000010 =\n'
+        '__sdcc_mcs251_reset_trampoline\n'
+        '__sdcc_gsinit_startup\n'
+        '_Default_Isr\n',
+      );
+    emit(BuildStage.compiling, 'fake native compile');
+    return CompilerBackendResult(
+      success: true,
+      exitCode: 0,
+      hexPath: hex.path,
+      mapPath: map.path,
+    );
+  }
+
+  @override
+  void cancel() => canceled = true;
 }

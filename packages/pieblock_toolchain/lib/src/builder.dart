@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'package:pieblock_core/pieblock_core.dart';
 
 import 'artifact_repository.dart';
+import 'compiler_backend.dart';
 import 'hex_validator.dart';
 import 'models.dart';
 
@@ -146,17 +147,23 @@ class ToolchainDiscovery {
 }
 
 class FirmwareBuilder {
+  // A public parameter is required because the injected field is intentionally
+  // private to the toolchain implementation.
+  // ignore: prefer_initializing_formals
   FirmwareBuilder({
     BuildArtifactRepository? artifacts,
     String? runtimeRoot,
     String? workRoot,
+    SdccCompilerBackend? sdccBackend,
   }) : artifacts = artifacts ?? BuildArtifactRepository(),
        _runtimeRoot = runtimeRoot ?? _defaultRuntimeRoot(),
-       _workRoot = workRoot ?? _defaultWorkRoot();
+       _workRoot = workRoot ?? _defaultWorkRoot(),
+       _sdccBackend = sdccBackend;
 
   final BuildArtifactRepository artifacts;
   final String _runtimeRoot;
   final String _workRoot;
+  final SdccCompilerBackend? _sdccBackend;
   Process? _process;
   bool _canceled = false;
 
@@ -204,6 +211,8 @@ class FirmwareBuilder {
       if (installation == null) throw StateError('Keil 目录无效或缺少 C251');
       return const ToolchainDiscovery().keilFingerprint(installation);
     }
+    final backend = _sdccBackend;
+    if (backend != null) return backend.resolveFingerprint();
     final assets = await _locateAssets();
     final bundle = await File(
       p.join(assets.sdccToolchain, 'bundle_manifest.json'),
@@ -223,6 +232,7 @@ class FirmwareBuilder {
 
   void cancel() {
     _canceled = true;
+    _sdccBackend?.cancel();
     final process = _process;
     if (process == null) return;
     process.kill();
@@ -271,7 +281,7 @@ class FirmwareBuilder {
         '正在准备 ${request.compiler == CompilerKind.sdcc ? 'SDCC' : 'Keil'} 构建环境…',
       );
       final raw = request.compiler == CompilerKind.sdcc
-          ? await _buildSdcc(request, work.path, emit)
+          ? await _buildSelectedSdcc(request, work.path, emit)
           : await _buildKeil(request, work.path, emit);
       if (_canceled) {
         return BuildResult(
@@ -334,6 +344,54 @@ class FirmwareBuilder {
         } catch (_) {}
       }
     }
+  }
+
+  Future<_RawBuildResult> _buildSelectedSdcc(
+    BuildRequest request,
+    String work,
+    BuildEventSink emit,
+  ) async {
+    final backend = _sdccBackend;
+    if (backend == null) return _buildSdcc(request, work, emit);
+    final result = await backend.build(request, work, emit);
+    var success = result.success;
+    if (success && result.hexPath != null && result.mapPath != null) {
+      final layout = await IntelHexValidator.validateSdccLayout(
+        hexPath: result.hexPath!,
+        mapPath: result.mapPath!,
+      );
+      emit(
+        BuildStage.validating,
+        layout.message,
+        level: layout.ok ? BuildEventLevel.info : BuildEventLevel.error,
+      );
+      success = layout.ok;
+    } else if (success) {
+      emit(
+        BuildStage.validating,
+        'Android SDCC 未返回完整的 HEX/MAP 产物',
+        level: BuildEventLevel.error,
+      );
+      success = false;
+    }
+    if ((result.message ?? '').isNotEmpty) {
+      emit(
+        BuildStage.done,
+        result.message!,
+        level: success
+            ? BuildEventLevel.info
+            : result.canceled
+            ? BuildEventLevel.warning
+            : BuildEventLevel.error,
+      );
+    }
+    if (result.canceled) _canceled = true;
+    return _RawBuildResult(
+      success,
+      exitCode: result.exitCode,
+      hexPath: result.hexPath,
+      warningCount: result.warningCount,
+    );
   }
 
   Future<_RawBuildResult> _buildSdcc(
