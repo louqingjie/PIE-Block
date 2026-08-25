@@ -1,0 +1,17 @@
+name: pieblock_hid
+description: PIE-Block Windows USB-HID ISP transport and Dart flashing protocol.
+version: 1.0.0
+publish_to: none
+
+environment:
+  sdk: ^3.13.1
+
+dependencies:
+  crypto: ^3.0.7
+  ffi: ^2.1.4
+  pieblock_toolchain:
+    path: ../pieblock_toolchain
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.25.6
