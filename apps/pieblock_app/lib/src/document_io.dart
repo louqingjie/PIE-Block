@@ -123,7 +123,9 @@ class AppDocumentIo {
     }
     final uri = Uri.tryParse(reference);
     if (uri == null || uri.pathSegments.isEmpty) return reference;
-    final decoded = Uri.decodeComponent(uri.pathSegments.last);
+    // `pathSegments` are already percent-decoded by `Uri`. Decoding the
+    // segment again breaks filenames that contain a literal `%`.
+    final decoded = uri.pathSegments.last;
     final separator = decoded.lastIndexOf(':');
     final name = separator < 0 ? decoded : decoded.substring(separator + 1);
     return name.split('/').last;
