@@ -83,6 +83,15 @@ Release 安全门仍保持关闭，直到以下项目全部完成：
 4. 代表性 Android HEX 经 Windows USB-HID 烧录并完成硬件功能验证；
 5. Release AAB、包内容、许可证和可复现构建检查通过。
 
+## Android USB-HID 烧录（已实现，待硬件验收）
+
+Android 端已接入与 Windows 相同的 STC32G USB-HID ISP 烧录协议（`pieblock_hid`）：
+
+- 传输层：`UsbHidBridge.kt`（`UsbManager` + 中断端点 `bulkTransfer`，无公开 `HidDevice` API），通道 `cn.edu.cnu.pieblock/hid`；
+- Dart 侧：`AndroidHidTransport` 复用现有 `HidFlasher`/`HidProtocol`，与 Windows 帧、块、ACK 完全一致；
+- 交互：“编译与烧录”页对 Android 开放，首次烧录请求 USB 权限；仅剩下述硬件项待完成——OTG 连接真机、冷启动 ISP、授权、烧录成功复位运行、二次烧录重上电。
+- 已知差异：Android 中断端点发送 64 字节报告本体（去除 hidapi 前导 `0x00` 报告 ID）。
+
 ## 验证命令
 
 ```powershell
