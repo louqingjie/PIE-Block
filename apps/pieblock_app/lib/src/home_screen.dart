@@ -200,14 +200,19 @@ class HomeScreen extends ConsumerWidget {
                   path.text = AppDocumentIo.displayName(selected);
                 }
                 if (path.text.trim().isEmpty) return;
-                final ok = await ref
-                    .read(appControllerProvider.notifier)
-                    .createProject(
-                      androidReference ?? path.text,
-                      name.text,
-                      kind,
-                    );
-                if (ok && context.mounted) Navigator.pop(context);
+                // 先关闭新建弹窗，再切换根页面；否则根页面重建会在弹窗
+                // 仍挂载时卸载其 InheritedElement，Android 上会触发
+                // framework.dart 的 `_dependents.isEmpty` 断言。
+                final controller = ref.read(appControllerProvider.notifier);
+                final projectPath = androidReference ?? path.text;
+                final projectName = name.text;
+                final projectKind = kind;
+                Navigator.pop(context);
+                await controller.createProject(
+                  projectPath,
+                  projectName,
+                  projectKind,
+                );
               },
               child: const Text('创建项目'),
             ),
