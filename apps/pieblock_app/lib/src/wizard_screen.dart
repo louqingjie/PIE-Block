@@ -89,9 +89,10 @@ GlobalKey _fieldAnchor(String path) =>
     _fieldAnchors.putIfAbsent(path, GlobalKey.new);
 
 void _scrollToField(String path) {
-  final context = (_fieldAnchors[path] ??
-          (path.startsWith('music.') ? _fieldAnchors['music.notes'] : null))
-      ?.currentContext;
+  final context =
+      (_fieldAnchors[path] ??
+              (path.startsWith('music.') ? _fieldAnchors['music.notes'] : null))
+          ?.currentContext;
   if (context != null) {
     Scrollable.ensureVisible(
       context,
@@ -3161,10 +3162,10 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
       _ => '检测到 ${deploy.deviceCount} 块主控板，请只保留一块',
     };
     return _PageFrame(
-      title: Platform.isAndroid ? '编译固件' : '编译与烧录',
+      title: '编译与烧录',
       subtitle: Platform.isAndroid
           ? deploy.compilerAvailable
-                ? '使用内置 SDCC 离线编译 STC32G12K128 固件，并导出 Intel HEX。'
+                ? '使用内置 SDCC 离线编译 STC32G12K128 固件，并通过 OTG USB-HID 写入主控板。'
                 : '当前安装包未启用 Android 原生编译；项目配置与代码生成仍可正常使用。'
           : '将当前配置编译为 STC32G12K128 固件，并通过免驱 USB-HID 写入主控板。',
       child: Column(
@@ -3269,7 +3270,7 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
                 spacing: 10,
                 runSpacing: 10,
                 children: [
-                  if (Platform.isWindows)
+                  if (Platform.isWindows || Platform.isAndroid)
                     FilledButton.icon(
                       onPressed: deploy.busy ? null : _primaryAction,
                       icon: Icon(
@@ -3315,7 +3316,7 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
               ),
             ],
           ),
-          if (Platform.isWindows) ...[
+          if (Platform.isWindows || Platform.isAndroid) ...[
             const SizedBox(height: 16),
             _Section(
               title: '主控板 USB-HID',
@@ -3344,8 +3345,10 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
                   ],
                 ),
                 const SizedBox(height: 10),
-                const _InfoBanner(
-                  '未检测到时，请关闭四个供电开关，将主控板断电后重新连接 USB。烧录成功后 HID 设备自动消失是正常现象。',
+                _InfoBanner(
+                  Platform.isAndroid
+                      ? '通过 OTG 转接线连接主控板；首次烧录会请求 USB 权限。请先将主控板断电再重新上电进入 ISP 模式；烧录成功后 HID 设备自动消失是正常现象。'
+                      : '未检测到时，请关闭四个供电开关，将主控板断电后重新连接 USB。烧录成功后 HID 设备自动消失是正常现象。',
                 ),
               ],
             ),

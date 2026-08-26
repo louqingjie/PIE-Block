@@ -4,12 +4,14 @@ import android.app.Activity
 import android.content.Intent
 import android.content.ComponentName
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import android.content.ServiceConnection
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import android.os.Handler
 import android.os.Looper
+import android.os.Debug
 import android.provider.OpenableColumns
 import org.json.JSONObject
 import java.io.File
@@ -31,6 +33,7 @@ class MainActivity : FlutterActivity() {
     private var pendingCompilerStart: Pair<MethodCall, MethodChannel.Result>? = null
     private var pendingCompilerProbe: MethodChannel.Result? = null
     private var activeCompilerOperationId: String? = null
+    private var usbHidBridge: UsbHidBridge? = null
     private val compilerConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             compilerService = ISdccCompilerService.Stub.asInterface(binder)
@@ -68,6 +71,12 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    override fun onDestroy() {
+        usbHidBridge?.dispose()
+        usbHidBridge = null
+        super.onDestroy()
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(
@@ -90,6 +99,14 @@ class MainActivity : FlutterActivity() {
                 compilerEventSink = null
             }
         })
+        usbHidBridge = UsbHidBridge(this)
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            HID_METHOD_CHANNEL,
+        ).setMethodCallHandler { call, result ->
+            usbHidBridge?.handle(call, result)
+                ?: result.error("hid_unavailable", "USB-HID 桥未初始化", null)
+        }
     }
 
     private fun handleCompilerMethod(call: MethodCall, result: MethodChannel.Result) {
@@ -177,6 +194,14 @@ class MainActivity : FlutterActivity() {
                 putString("hexOutputPath", text("hexOutputPath"))
                 putString("mapOutputPath", text("mapOutputPath"))
                 putString("logOutputPath", text("logOutputPath"))
+                if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+                    (arguments["testFault"] as? String)?.let {
+                        putString("testFault", it)
+                    }
+                    (arguments["testFaultPhase"] as? Int)?.let {
+                        putInt("testFaultPhase", it)
+                    }
+                }
             }
             val callback = object : ISdccCompilerCallback.Stub() {
                 override fun onEvent(event: Bundle) {
@@ -216,6 +241,20 @@ class MainActivity : FlutterActivity() {
             "prepareSdccResources" -> prepareSdccResources(result)
             "getSdccNativeInfo" -> getSdccNativeInfo(result)
             "getProcessId" -> result.success(android.os.Process.myPid())
+            "getProcessMetrics" -> result.success(
+                mapOf(
+                    "pid" to android.os.Process.myPid(),
+                    "pssKb" to Debug.getPss(),
+                    "openFdCount" to (File("/proc/self/fd").list()?.size ?: -1),
+                ),
+            )
+            "debugMoveTaskToBackground" -> {
+                if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) {
+                    result.error("debug_only", "仅可调试构建支持后台测试", null)
+                } else {
+                    result.success(moveTaskToBack(true))
+                }
+            }
             else -> result.notImplemented()
         }
     }
@@ -557,6 +596,7 @@ class MainActivity : FlutterActivity() {
         private const val DOCUMENT_CHANNEL = "cn.edu.cnu.pieblock/documents"
         private const val COMPILER_METHOD_CHANNEL = "cn.edu.cnu.pieblock/sdcc_compiler"
         private const val COMPILER_EVENT_CHANNEL = "cn.edu.cnu.pieblock/sdcc_compiler_events"
+        private const val HID_METHOD_CHANNEL = "cn.edu.cnu.pieblock/hid"
         private const val EXPORT_HEX_REQUEST = 0x5042
         private const val OPEN_DOCUMENT_REQUEST = 0x5043
         private const val CREATE_DOCUMENT_REQUEST = 0x5044

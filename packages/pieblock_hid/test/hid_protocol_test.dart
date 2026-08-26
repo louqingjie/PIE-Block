@@ -12,22 +12,23 @@ class _FakeTransport implements HidTransport {
   final responses = <Uint8List>[];
 
   @override
-  void cancel() {}
+  Future<void> cancel() async {}
 
   @override
-  void close() => closed = true;
+  Future<void> close() async => closed = true;
 
   @override
-  int countDevices() => devices;
+  Future<int> countDevices() async => devices;
 
   @override
-  bool open() => opened = true;
+  Future<bool> open() async => opened = true;
 
   @override
-  Uint8List read(int timeoutMilliseconds) => responses.removeAt(0);
+  Future<Uint8List> read(int timeoutMilliseconds) async =>
+      responses.removeAt(0);
 
   @override
-  bool write(Uint8List report) {
+  Future<bool> write(Uint8List report) async {
     writes.add(report);
     return true;
   }

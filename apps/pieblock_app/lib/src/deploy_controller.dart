@@ -10,6 +10,8 @@ import 'package:pieblock_hid/pieblock_hid.dart';
 import 'package:pieblock_sdcc_native/pieblock_sdcc_native.dart';
 import 'package:pieblock_toolchain/pieblock_toolchain.dart';
 
+import 'hid/android_hid_transport.dart';
+
 enum DeployActivity { idle, preparing, building, flashing }
 
 class DeployState {
@@ -77,7 +79,10 @@ class DeployController extends Notifier<DeployState> {
   @override
   DeployState build() {
     _builderFuture = _createBuilder();
-    _flasher = HidFlasher();
+    _flasher = HidFlasher(
+      transport: Platform.isAndroid ? () => AndroidHidTransport() : null,
+      useIsolate: !Platform.isAndroid,
+    );
     ref.onDispose(cancelAll);
     return DeployState(compilerAvailable: !Platform.isAndroid);
   }

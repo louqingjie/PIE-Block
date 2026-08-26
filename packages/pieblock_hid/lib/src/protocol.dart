@@ -90,19 +90,21 @@ abstract final class HidProtocol {
     return blocks;
   }
 
-  static Uint8List expectAck(
+  static Future<Uint8List> expectAck(
     HidTransport transport,
     List<int> payload,
     String label, {
     int commandOffset = 0,
     required int command,
     int timeoutMilliseconds = 3000,
-  }) {
+  }) async {
     final packet = buildPacket(payload);
     for (final report in splitReports(packet)) {
-      if (!transport.write(report)) throw StateError('$label：写入报告失败');
+      if (!await transport.write(report)) {
+        throw StateError('$label：写入报告失败');
+      }
     }
-    final response = transport.read(timeoutMilliseconds);
+    final response = await transport.read(timeoutMilliseconds);
     if (response.isEmpty) throw StateError('$label：设备无响应');
     if (response.length < 6 ||
         response[0] != 0x46 ||

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:isolate';
 import 'dart:io';
 
@@ -48,10 +49,16 @@ class FlashOperation {
 }
 
 class HidFlasher {
+  HidFlasher({HidTransport Function()? transport, this.useIsolate = true})
+    : _transportFactory = transport ?? WindowsHidTransport.new;
+
+  final HidTransport Function() _transportFactory;
+  final bool useIsolate;
+  HidTransport? _activeTransport;
+
   Future<int> detectDeviceCount() async {
-    if (!Platform.isWindows) return 0;
     try {
-      return WindowsHidTransport().countDevices();
+      return await _transportFactory().countDevices();
     } catch (_) {
       return 0;
     }
@@ -61,6 +68,11 @@ class HidFlasher {
     required String hexPath,
     required String expectedSha256,
   }) {
+    if (useIsolate) return _startInIsolate(hexPath, expectedSha256);
+    return _startInMainIsolate(hexPath, expectedSha256);
+  }
+
+  FlashOperation _startInIsolate(String hexPath, String expectedSha256) {
     final events = StreamController<FlashEvent>.broadcast();
     final result = Completer<FlashResult>();
     Isolate? worker;
@@ -145,6 +157,104 @@ class HidFlasher {
     });
   }
 
+  FlashOperation _startInMainIsolate(String hexPath, String expectedSha256) {
+    final events = StreamController<FlashEvent>.broadcast();
+    final result = Completer<FlashResult>();
+    var completed = false;
+    final transport = _transportFactory();
+    _activeTransport = transport;
+    void emit(FlashStage stage, String message, {int? current, int? total}) {
+      if (completed) return;
+      events.add(FlashEvent(stage, message, current: current, total: total));
+    }
+
+    unawaited(() async {
+      FlashResult value;
+      try {
+        value = await _runFlash(hexPath, expectedSha256, transport, emit);
+      } catch (error) {
+        value = FlashResult(
+          success: false,
+          stage: FlashStage.preparing,
+          message: '$error',
+        );
+      } finally {
+        await transport.close();
+      }
+      if (!completed) {
+        completed = true;
+        result.complete(value);
+        unawaited(events.close());
+      }
+    }());
+
+    void finishCanceled(String message) {
+      if (completed) return;
+      completed = true;
+      _cancelActive();
+      result.complete(
+        FlashResult(
+          success: false,
+          stage: FlashStage.canceled,
+          message: message,
+          canceled: true,
+        ),
+      );
+      unawaited(events.close());
+    }
+
+    final timeout = Timer(const Duration(seconds: 90), () {
+      finishCanceled('烧录超过 90 秒，已自动取消');
+    });
+    result.future.whenComplete(timeout.cancel);
+    return FlashOperation(events.stream, result.future, () {
+      finishCanceled('已取消烧录');
+    });
+  }
+
+  void _cancelActive() {
+    final transport = _activeTransport;
+    if (transport != null) {
+      unawaited(
+        transport.cancel().then<void>((_) => transport.close()).catchError((
+          Object _,
+        ) {
+          try {
+            transport.close();
+          } catch (_) {}
+        }),
+      );
+      return;
+    }
+    _cancelNative();
+  }
+
+  static Future<FlashResult> _runFlash(
+    String path,
+    String expected,
+    HidTransport transport,
+    void Function(FlashStage, String, {int? current, int? total}) emit,
+  ) async {
+    final file = File(path);
+    emit(FlashStage.preparing, '正在校验待烧录固件…');
+    if (!await file.exists() || await _normalizedHexSha(file) != expected) {
+      throw StateError('HEX 已丢失或内容发生变化，请重新编译');
+    }
+    final validation = await IntelHexValidator.validateApplication(path);
+    if (!validation.ok) throw StateError(validation.message);
+    return flashWithTransport(validation.image!, transport, emit);
+  }
+
+  /// 黄金哈希采用 LF 规范化内容（与 pieblock_toolchain 的 BuildArtifact
+  /// 定义一致）：Intel HEX 为纯文本，Windows 以 CRLF 写出、Android 以 LF
+  /// 写出，统一去除 CRLF 后计算 SHA-256。
+  static Future<String> _normalizedHexSha(File file) async {
+    final text = utf8.decode(await file.readAsBytes(), allowMalformed: true);
+    return sha256
+        .convert(utf8.encode(text.replaceAll('\r\n', '\n')))
+        .toString();
+  }
+
   static void _cancelNative() {
     if (!Platform.isWindows) return;
     try {
@@ -168,19 +278,7 @@ class HidFlasher {
         });
     FlashResult result;
     try {
-      final file = File(path);
-      event(FlashStage.preparing, '正在校验待烧录固件…');
-      if (!await file.exists() ||
-          sha256.convert(await file.readAsBytes()).toString() != expected) {
-        throw StateError('HEX 已丢失或内容发生变化，请重新编译');
-      }
-      final validation = await IntelHexValidator.validateApplication(path);
-      if (!validation.ok) throw StateError(validation.message);
-      result = await flashWithTransport(
-        validation.image!,
-        WindowsHidTransport(),
-        event,
-      );
+      result = await _runFlash(path, expected, WindowsHidTransport(), event);
     } catch (error) {
       result = FlashResult(
         success: false,
@@ -202,7 +300,7 @@ class HidFlasher {
     HidTransport transport,
     void Function(FlashStage, String, {int? current, int? total}) onEvent,
   ) async {
-    final deviceCount = transport.countDevices();
+    final deviceCount = await transport.countDevices();
     if (deviceCount != 1) {
       return FlashResult(
         success: false,
@@ -210,7 +308,7 @@ class HidFlasher {
         message: deviceCount == 0 ? '未找到处于 ISP 模式的主控板' : '检测到多块主控板，请只连接一块',
       );
     }
-    if (!transport.open()) {
+    if (!await transport.open()) {
       return const FlashResult(
         success: false,
         stage: FlashStage.connecting,
@@ -220,13 +318,13 @@ class HidFlasher {
     var activeStage = FlashStage.connecting;
     try {
       onEvent(FlashStage.connecting, '正在连接主控板引导程序…');
-      HidProtocol.expectAck(
+      await HidProtocol.expectAck(
         transport,
         const [0x01, 0, 0, 0, 0, 0, 0, 0x80, 0],
         'info',
         command: 0x01,
       );
-      HidProtocol.expectAck(
+      await HidProtocol.expectAck(
         transport,
         const [0x05, 0, 0, 0x5a, 0xa5],
         'unlock',
@@ -234,7 +332,7 @@ class HidFlasher {
       );
       activeStage = FlashStage.erasing;
       onEvent(activeStage, '正在擦除主控板程序区…');
-      HidProtocol.expectAck(
+      await HidProtocol.expectAck(
         transport,
         const [0x03, 0, 0, 0x5a, 0xa5],
         'erase',
@@ -244,7 +342,7 @@ class HidFlasher {
       activeStage = FlashStage.programming;
       for (var index = 0; index < blocks.length; index++) {
         final block = blocks[index];
-        final response = HidProtocol.expectAck(
+        final response = await HidProtocol.expectAck(
           transport,
           [
             block.command,
@@ -272,7 +370,7 @@ class HidFlasher {
       for (final report in HidProtocol.splitReports(
         HidProtocol.buildPacket(const [0xff]),
       )) {
-        transport.write(report);
+        await transport.write(report);
       }
       await Future<void>.delayed(const Duration(milliseconds: 200));
       onEvent(FlashStage.done, '烧录完成，主控板已运行新程序');
@@ -284,7 +382,7 @@ class HidFlasher {
     } catch (error) {
       return FlashResult(success: false, stage: activeStage, message: '$error');
     } finally {
-      transport.close();
+      await transport.close();
     }
   }
 }

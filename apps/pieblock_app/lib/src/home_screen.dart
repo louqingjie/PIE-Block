@@ -437,7 +437,7 @@ class _HomeHeader extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         const Text(
-          'RoboMaster机甲大师赛机器人图形化配置集成开发环境',
+          'RoboMaster 机甲大师赛机器人图形化配置集成开发环境',
           style: TextStyle(
             fontSize: 21,
             height: 1.3,
@@ -451,7 +451,7 @@ class _HomeHeader extends StatelessWidget {
               dark
                   ? 'assets/images/cnu-white.png'
                   : 'assets/images/cnu-blue.png',
-              height: 42,
+              height: 36,
               fit: BoxFit.contain,
               filterQuality: FilterQuality.high,
               semanticLabel: '首都师范大学',
@@ -459,7 +459,7 @@ class _HomeHeader extends StatelessWidget {
             const SizedBox(width: 14),
             const Expanded(
               child: Text(
-                'RoboMaster机甲大师赛机器人图形化配置集成开发环境',
+                'RoboMaster 机甲大师赛机器人图形化配置集成开发环境',
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(

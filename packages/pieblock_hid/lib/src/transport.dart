@@ -5,12 +5,12 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 
 abstract interface class HidTransport {
-  int countDevices();
-  bool open();
-  bool write(Uint8List report);
-  Uint8List read(int timeoutMilliseconds);
-  void cancel();
-  void close();
+  Future<int> countDevices();
+  Future<bool> open();
+  Future<bool> write(Uint8List report);
+  Future<Uint8List> read(int timeoutMilliseconds);
+  Future<void> cancel();
+  Future<void> close();
 }
 
 class WindowsHidTransport implements HidTransport {
@@ -19,13 +19,13 @@ class WindowsHidTransport implements HidTransport {
   final _HidBindings _bindings;
 
   @override
-  int countDevices() => _bindings.count();
+  Future<int> countDevices() async => _bindings.count();
 
   @override
-  bool open() => _bindings.open() == 1;
+  Future<bool> open() async => _bindings.open() == 1;
 
   @override
-  bool write(Uint8List report) {
+  Future<bool> write(Uint8List report) async {
     final buffer = calloc<Uint8>(report.length);
     try {
       buffer.asTypedList(report.length).setAll(0, report);
@@ -36,7 +36,7 @@ class WindowsHidTransport implements HidTransport {
   }
 
   @override
-  Uint8List read(int timeoutMilliseconds) {
+  Future<Uint8List> read(int timeoutMilliseconds) async {
     final buffer = calloc<Uint8>(256);
     try {
       final length = _bindings.read(buffer, 256, timeoutMilliseconds);
@@ -49,10 +49,10 @@ class WindowsHidTransport implements HidTransport {
   }
 
   @override
-  void cancel() => _bindings.cancel();
+  Future<void> cancel() async => _bindings.cancel();
 
   @override
-  void close() => _bindings.close();
+  Future<void> close() async => _bindings.close();
 }
 
 typedef _CountNative = Int32 Function();
