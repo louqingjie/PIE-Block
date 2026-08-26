@@ -411,11 +411,10 @@ void main() {
     expect(find.byKey(const ValueKey('music-header-clip')), findsOneWidget);
     expect(find.byKey(const ValueKey('music-piano-clip')), findsOneWidget);
     final editorRect = tester.getRect(find.byType(MusicEditorPage));
-    final pianoRect = tester.getRect(piano);
     final toolbarRect = tester.getRect(
       find.byKey(const ValueKey('music-toolbar-panel')),
     );
-    expect(toolbarRect.left, pianoRect.right);
+    expect(toolbarRect.left, editorRect.left);
     expect(toolbarRect.right, editorRect.right);
     final headerOrigin = tester.getTopLeft(header);
     final pianoOrigin = tester.getTopLeft(piano);
@@ -473,7 +472,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('音乐工具栏按时间轴 599 和 600 宽度切换图标模式', (tester) async {
+  testWidgets('音乐工具栏按完整宽度 599 和 600 切换图标模式', (tester) async {
     addTearDown(() {
       tester.view.resetPhysicalSize();
       tester.view.resetDevicePixelRatio();
@@ -499,7 +498,7 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    await pumpAt(671);
+    await pumpAt(599);
     expect(
       tester.getSize(find.byKey(const ValueKey('music-toolbar-panel'))).width,
       599,
@@ -507,7 +506,7 @@ void main() {
     expect(find.text('导入 MIDI'), findsNothing);
     expect(find.byTooltip('导入 MIDI'), findsOneWidget);
 
-    await pumpAt(672);
+    await pumpAt(600);
     expect(
       tester.getSize(find.byKey(const ValueKey('music-toolbar-panel'))).width,
       600,
@@ -517,7 +516,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('宽屏向导裁剪音乐事件栏并将工具栏对齐时间轴', (tester) async {
+  testWidgets('宽屏向导裁剪音乐事件栏并将工具栏扩展到钢琴上方', (tester) async {
     addTearDown(() {
       tester.view.resetPhysicalSize();
       tester.view.resetDevicePixelRatio();
@@ -559,7 +558,7 @@ void main() {
     );
     expect(editorRect.left, 260);
     expect(headerClipRect.left, pianoRect.right);
-    expect(toolbarRect.left, pianoRect.right);
+    expect(toolbarRect.left, editorRect.left);
     expect(toolbarRect.right, editorRect.right);
 
     final horizontal = tester
