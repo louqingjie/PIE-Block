@@ -6,18 +6,16 @@ import 'package:integration_test/integration_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:pieblock_core/pieblock_core.dart';
 import 'package:pieblock_toolchain/pieblock_toolchain.dart';
+import '../../../packages/pieblock_toolchain/test/support/android_sdcc_golden_matrix.dart';
 
 const _selectedKind = String.fromEnvironment(
   'PIEBLOCK_GOLDEN_KIND',
   defaultValue: 'all',
 );
-const _windowsGoldenHashes = <ProjectKind, String>{
-  ProjectKind.infantry:
-      '2a877e2d2a2c56039ad095e17bf8b4b6c01e9f691fecd87b4d3c964459367ce3',
-  ProjectKind.engineer:
-      'e44e99c589eaf33914d91ae4bb5877fef9f439ea28a9270eb82eed6d453816a8',
-};
-
+const _repetitions = int.fromEnvironment(
+  'PIEBLOCK_GOLDEN_REPETITIONS',
+  defaultValue: 1,
+);
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -32,121 +30,74 @@ void main() {
     expect(resourceRoot, isNotNull);
     final stream = events.receiveBroadcastStream();
 
-    final configurations = <ProjectKind, ProjectConfig>{
-      ProjectKind.infantry: _completeInfantry(),
-      ProjectKind.engineer: _completeEngineer(),
-    };
-    for (final entry in configurations.entries.where(
-      (entry) => _selectedKind == 'all' || entry.key.name == _selectedKind,
+    for (final golden in sdccGoldenCases.where(
+      (item) =>
+          _selectedKind == 'all' ||
+          item.kind.name == _selectedKind ||
+          item.id == _selectedKind,
     )) {
-      final validation = ProjectValidator.validate(entry.value)
+      final validation = ProjectValidator.validate(golden.config)
           .where((issue) => issue.severity == IssueSeverity.error);
       expect(validation, isEmpty, reason: '$validation');
-      final stopwatch = Stopwatch()..start();
-      final result = await _buildFirmware(
-        compiler: compiler,
-        eventStream: stream,
-        resourceRoot: resourceRoot!,
-        kind: entry.key,
-        source: CodeGenerator.generate(entry.value),
-      );
-      stopwatch.stop();
-      expect(result['success'], isTrue, reason: '${entry.key}: $result');
-      expect(File(result['hexPath'] as String).lengthSync(), greaterThan(0));
-      expect(File(result['mapPath'] as String).lengthSync(), greaterThan(0));
-      expect(result['hexSha256'], matches(RegExp(r'^[0-9a-f]{64}$')));
-      expect(result['hexSha256'], _windowsGoldenHashes[entry.key]);
-      expect(result['warningCount'], greaterThan(0));
-      final workerPids = (result['workerPids'] as List).cast<int>();
-      final workerNonces = (result['workerNonces'] as List).cast<String>();
-      expect(workerPids, hasLength(result['expectedWorkerCount'] as int));
-      expect(workerPids.toSet(), hasLength(workerPids.length));
-      expect(workerNonces.toSet(), hasLength(workerNonces.length));
-      expect(stopwatch.elapsed, lessThan(const Duration(seconds: 120)));
-      tester.printToConsole(
-        '${entry.key.name}: sha256=${result['hexSha256']}, '
-        'elapsed=${stopwatch.elapsedMilliseconds}ms, '
-        'warnings=${result['warningCount']}',
-      );
-      final intermediateExtensions = <String>{
-        '.rel',
-        '.asm',
-        '.lst',
-        '.sym',
-        '.rst',
-        '.lk',
-        '.mem',
-      };
-      expect(
-        Directory(File(result['hexPath'] as String).parent.path)
-            .listSync()
-            .whereType<File>()
-            .where((file) => intermediateExtensions.any(file.path.endsWith)),
-        isEmpty,
-      );
+      final allNonces = <String>[];
+      for (var repetition = 0; repetition < _repetitions; repetition++) {
+        final stopwatch = Stopwatch()..start();
+        final result = await _buildFirmware(
+          compiler: compiler,
+          eventStream: stream,
+          resourceRoot: resourceRoot!,
+          kind: golden.kind,
+          caseId: golden.id,
+          repetition: repetition,
+          source: CodeGenerator.generate(golden.config),
+        );
+        stopwatch.stop();
+        expect(result['success'], isTrue, reason: '${golden.id}: $result');
+        expect(File(result['hexPath'] as String).lengthSync(), greaterThan(0));
+        expect(File(result['mapPath'] as String).lengthSync(), greaterThan(0));
+        expect(result['hexSha256'], golden.expectedHexSha256);
+        expect(result['warningCount'], greaterThan(0));
+        final workerPids = (result['workerPids'] as List).cast<int>();
+        final workerNonces = (result['workerNonces'] as List).cast<String>();
+        expect(workerPids, hasLength(result['expectedWorkerCount'] as int));
+        expect(workerPids.toSet(), hasLength(workerPids.length));
+        expect(workerNonces.toSet(), hasLength(workerNonces.length));
+        allNonces.addAll(workerNonces);
+        expect(stopwatch.elapsed, lessThan(const Duration(seconds: 120)));
+        tester.printToConsole(
+          '${golden.id}#$repetition: sha256=${result['hexSha256']}, '
+          'elapsed=${stopwatch.elapsedMilliseconds}ms, '
+          'warnings=${result['warningCount']}',
+        );
+        final intermediateExtensions = <String>{
+          '.rel', '.asm', '.lst', '.sym', '.rst', '.lk', '.mem',
+        };
+        expect(
+          Directory(File(result['hexPath'] as String).parent.path)
+              .listSync()
+              .whereType<File>()
+              .where((file) => intermediateExtensions.any(file.path.endsWith)),
+          isEmpty,
+        );
+      }
+      expect(allNonces.toSet(), hasLength(allNonces.length));
     }
   });
 }
-
-ChassisConfig _completeChassis() => const ChassisConfig(
-  leftFront: WheelConfig('P74 P24', Direction.forward),
-  leftRear: WheelConfig('P75 P25', Direction.forward),
-  rightFront: WheelConfig('P76 P26', Direction.reverse),
-  rightRear: WheelConfig('P77 P27', Direction.reverse),
-  normalSpeed: 4000,
-  sprintSpeed: 8000,
-);
-
-InfantryConfig _completeInfantry() => InfantryConfig(
-  remote: const RemoteConfig(channel: 36, deadzone: 100),
-  chassis: _completeChassis(),
-  feederPin: 'P60',
-  feederDirection: Direction.forward,
-  yawDrive: DriveType.servo,
-  yawPin: 'MP74',
-  yawDirection: Direction.forward,
-  yawMidOffset: 0,
-  pitchDrive: DriveType.servo,
-  pitchPin: 'MP03',
-  pitchDirection: Direction.forward,
-  pitchMidOffset: 0,
-  arrowBehavior: ArrowBehavior.other,
-  feedMode: FeedMode.blockingOpenLoop,
-  triggerKey: 'E',
-  triggerSpeed: 6000,
-  triggerTimeMs: 250,
-  frictionMode: FrictionMode.brushlessEsc,
-  frictionKey: 'A',
-  frictionUpKey: 'B',
-  frictionDownKey: 'C',
-  frictionMaxDuty: 800,
-  frictionStep: 100,
-);
-
-EngineerConfig _completeEngineer() => EngineerConfig(
-  remote: const RemoteConfig(channel: 36, deadzone: 100),
-  chassis: _completeChassis(),
-  pwm: PwmGroupConfig(
-    pwma: PwmFrequency.hz10000,
-    pwmb: PwmFrequency.hz10000,
-    pinRoles: {for (final pin in expansionPins) pin: PinRole.motor},
-    servoMids: const {'MP03': 0, 'MP74': 0},
-  ),
-  modeCount: 1,
-  modes: [EngineerModeConfig(preserveChassis: true)],
-);
 
 Future<Map<Object?, Object?>> _buildFirmware({
   required MethodChannel compiler,
   required Stream<Object?> eventStream,
   required String resourceRoot,
   required ProjectKind kind,
+  required String caseId,
+  required int repetition,
   required String source,
 }) async {
   final work = Directory(
     p.join(
       Directory(resourceRoot).parent.parent.path,
-      'sdcc_full_${kind.name}',
+      'sdcc_full_${caseId}_$repetition',
     ),
   );
   if (work.existsSync()) work.deleteSync(recursive: true);
@@ -161,9 +112,9 @@ Future<Map<Object?, Object?>> _buildFirmware({
     mainSourcePath: mainSource.path,
     outputDirectory: output.path,
   );
-  final hex = p.join(output.path, '${kind.name}.hex');
-  final map = p.join(output.path, '${kind.name}.map');
-  final log = p.join(output.path, '${kind.name}.log');
+  final hex = p.join(output.path, '$caseId.hex');
+  final map = p.join(output.path, '$caseId.map');
+  final log = p.join(output.path, '$caseId.log');
   final resultFuture = eventStream.firstWhere(
     (event) => event is Map && event['type'] == 'result',
   );

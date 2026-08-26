@@ -72,7 +72,7 @@ function Build-StageObject([string]$TargetAbi) {
     $destination = [IO.Path]::GetFullPath((Join-Path $OutputRoot $TargetAbi))
     $manifestPath = Join-Path $destination 'stage_manifest.json'
     $stagePath = Join-Path $destination 'pieblock_sdcc_stages.o'
-    $cacheKey = "$expectedCommit|$TargetAbi|android24|ndk-28.2.13676358|ffi-4|stage-layout-4"
+    $cacheKey = "$expectedCommit|$TargetAbi|android24|ndk-28.2.13676358|ffi-5|stage-layout-5"
     if ((Test-Path -LiteralPath $manifestPath) -and (Test-Path -LiteralPath $stagePath)) {
         $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
         $actualHash = Get-Sha256 $stagePath

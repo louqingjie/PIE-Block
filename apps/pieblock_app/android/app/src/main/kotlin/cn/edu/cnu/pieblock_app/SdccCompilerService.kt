@@ -6,12 +6,15 @@ import android.app.Service
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.ServiceConnection
 import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.Process
+import android.os.Debug
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import java.io.File
 import java.security.MessageDigest
@@ -19,6 +22,8 @@ import java.util.UUID
 import java.util.concurrent.atomic.AtomicReference
 
 class SdccCompilerService : Service() {
+    private val coordinatorNonce = UUID.randomUUID().toString()
+
     private data class Phase(
         val kind: Int,
         val index: Int,
@@ -35,6 +40,8 @@ class SdccCompilerService : Service() {
         val objects: List<String>,
         val libraryObjects: List<String>,
         val generatedFiles: List<String>,
+        val testFault: String? = null,
+        val testFaultPhase: Int = -1,
         @Volatile var phaseIndex: Int = 0,
         @Volatile var warningCount: Int = 0,
         @Volatile var canceled: Boolean = false,
@@ -63,6 +70,9 @@ class SdccCompilerService : Service() {
             putInt("apiVersion", SdccNativeBridge.apiVersion())
             putBoolean("available", SdccNativeBridge.isAvailable())
             putString("fingerprint", serviceFingerprint())
+            putString("coordinatorNonce", coordinatorNonce)
+            putLong("coordinatorPssKb", Debug.getPss())
+            putInt("coordinatorOpenFdCount", File("/proc/self/fd").list()?.size ?: -1)
             putInt("compilerPid", Process.myPid())
         }
 
@@ -71,7 +81,11 @@ class SdccCompilerService : Service() {
             check(active.compareAndSet(null, build)) { "已有编译任务正在运行" }
             callback.asBinder().linkToDeath({ cancelAndTerminate(build) }, 0)
             startForeground(NOTIFICATION_ID, notification("正在准备多进程固件编译…"))
-            bindNextWorker(build)
+            if (build.testFault == TEST_FAULT_COORDINATOR_CRASH) {
+                mainHandler.postDelayed({ Process.killProcess(Process.myPid()) }, 150)
+            } else {
+                bindNextWorker(build)
+            }
             return build.id
         }
 
@@ -164,6 +178,18 @@ class SdccCompilerService : Service() {
         File(values.getValue("map")).delete()
         File(values.getValue("log")).delete()
         File(values.getValue("working"), ".in_progress").writeText("${Process.myPid()}")
+        val testFault = request.getString("testFault")
+        val testFaultPhase = request.getInt("testFaultPhase", -1)
+        if (testFault != null) {
+            require(applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+                "故障注入只允许在可调试构建中使用"
+            }
+            require(testFault in TEST_FAULTS) { "未知故障注入类型" }
+            require(
+                testFault == TEST_FAULT_COORDINATOR_CRASH ||
+                    testFaultPhase in phases.indices,
+            ) { "故障注入阶段无效" }
+        }
         return ActiveBuild(
             id = UUID.randomUUID().toString(),
             callback = callback,
@@ -172,6 +198,8 @@ class SdccCompilerService : Service() {
             objects = regularObjects,
             libraryObjects = libraryObjects,
             generatedFiles = listOf(androidMain.path),
+            testFault = testFault,
+            testFaultPhase = testFaultPhase,
         )
     }
 
@@ -208,6 +236,7 @@ class SdccCompilerService : Service() {
                     build.workerNonce = nonce
                     build.workerPids.add(pid)
                     build.workerNonces.add(nonce)
+                    Log.d(LOG_TAG, "connected phase=${phase.index} pid=$pid nonce=$nonce")
                     startWorkerPhase(build, phase)
                 } catch (error: Throwable) {
                     val failedWorker = worker
@@ -321,6 +350,11 @@ class SdccCompilerService : Service() {
                         )
                     }
                 }
+                Log.d(
+                    LOG_TAG,
+                    "phase=${phase.index} finished success=$success " +
+                        "pid=$completedWorkerPid nonce=$completedWorkerNonce",
+                )
                 releaseCompletedWorker(
                     build,
                     requireNotNull(completedWorkerNonce),
@@ -345,6 +379,10 @@ class SdccCompilerService : Service() {
     }
 
     private fun releaseCompletedWorker(build: ActiveBuild, nonce: String, pid: Int) {
+        Log.d(
+            LOG_TAG,
+            "release worker nonce=$nonce pid=$pid opId=${build.workerOperationId}",
+        )
         val completedWorker = worker
         val completedConnection = workerConnection
         val completedBinder = completedWorker?.asBinder()
@@ -353,28 +391,52 @@ class SdccCompilerService : Service() {
         requireNotNull(completedBinder)
 
         val deathRecipient = IBinder.DeathRecipient {
-            mainHandler.post { finishExpectedWorkerExit(build, nonce, pid) }
+            mainHandler.post {
+                Log.d(LOG_TAG, "deathRecipient nonce=$nonce pid=$pid")
+                finishExpectedWorkerExit(build, nonce, pid)
+            }
         }
         val deathWatchInstalled = runCatching {
             completedBinder.linkToDeath(deathRecipient, 0)
         }.isSuccess
+        Log.d(LOG_TAG, "linkToDeath=$deathWatchInstalled nonce=$nonce pid=$pid")
 
         // 先解除 BIND_AUTO_CREATE，避免杀死阶段进程后 Android 为仍存活的
         // 连接自动拉起一个没有新请求的幽灵 Worker。
         workerConnection = null
         worker = null
         runCatching { unbindService(completedConnection) }
-        runCatching { completedWorker.acknowledge(requireNotNull(build.workerOperationId)) }
+        val ackOk = runCatching {
+            completedWorker.acknowledge(requireNotNull(build.workerOperationId))
+        }.isSuccess
+        Log.d(LOG_TAG, "ack=$ackOk nonce=$nonce pid=$pid")
         if (!deathWatchInstalled) {
             finishExpectedWorkerExit(build, nonce, pid)
             return
         }
+
+        // 兜底检测：Binder 死亡通知在 MIUI 个别场景可能延迟或丢失（真机
+        // 曾出现 terminate 后 deathRecipient 不再触发），增加 /proc/<pid>
+        // 轮询，进程消失即推进，不依赖单一信号。
+        val exitPoller = object : Runnable {
+            override fun run() {
+                if (build.completed || build.workerPid != pid || build.workerNonce != nonce) return
+                if (!File("/proc/$pid").exists()) {
+                    Log.d(LOG_TAG, "poll /proc exit nonce=$nonce pid=$pid")
+                    finishExpectedWorkerExit(build, nonce, pid)
+                    return
+                }
+                mainHandler.postDelayed(this, WORKER_EXIT_POLL_MS)
+            }
+        }
+        mainHandler.post(exitPoller)
 
         mainHandler.postDelayed({
             if (!build.completed &&
                 build.workerPid == pid &&
                 build.workerNonce == nonce
             ) {
+                Log.e(LOG_TAG, "force kill pid=$pid nonce=$nonce")
                 Process.killProcess(pid)
             }
         }, WORKER_EXIT_GRACE_MS)
@@ -383,6 +445,7 @@ class SdccCompilerService : Service() {
                 build.workerPid == pid &&
                 build.workerNonce == nonce
             ) {
+                Log.e(LOG_TAG, "worker_exit_timeout pid=$pid nonce=$nonce")
                 actionAfterWorkerDeath = null
                 finish(
                     build,
@@ -430,6 +493,9 @@ class SdccCompilerService : Service() {
         putString("hexOutputPath", build.request.getString("canonicalHex").takeIf { phase.kind == OP_LINK })
         putString("mapOutputPath", build.request.getString("canonicalMap").takeIf { phase.kind == OP_LINK })
         putString("logOutputPath", phase.logPath)
+        if (phase.index == build.testFaultPhase) {
+            putString("testFault", build.testFault)
+        }
     }
 
     private fun phaseOutputExists(build: ActiveBuild, phase: Phase): Boolean =
@@ -550,6 +616,7 @@ class SdccCompilerService : Service() {
             putString("errorCode", errorCode)
             putString("message", message)
             putInt("compilerPid", Process.myPid())
+            putString("coordinatorNonce", coordinatorNonce)
             putIntegerArrayList("workerPids", build.workerPids)
             putStringArrayList("workerNonces", build.workerNonces)
             putString("fingerprint", serviceFingerprint())
@@ -674,6 +741,7 @@ class SdccCompilerService : Service() {
 
     companion object {
         const val PROTOCOL_VERSION = 2
+        private const val LOG_TAG = "PieBlockCoord"
         private const val OP_COMPILE = 1
         private const val OP_LINK = 2
         private const val CHANNEL_ID = "pieblock_firmware_build"
@@ -682,8 +750,16 @@ class SdccCompilerService : Service() {
         private const val WORKER_STAGE_TIMEOUT_MS = 90_000L
         private const val WORKER_EXIT_GRACE_MS = 3_000L
         private const val WORKER_EXIT_TIMEOUT_MS = 10_000L
+        private const val WORKER_EXIT_POLL_MS = 200L
         private const val SCHEDULER_VERSION = 1
         private const val SOURCE_NORMALIZATION_VERSION = 1
+        private const val TEST_FAULT_COORDINATOR_CRASH = "coordinator_crash"
+        private val TEST_FAULTS = setOf(
+            TEST_FAULT_COORDINATOR_CRASH,
+            "worker_crash",
+            "worker_disconnect",
+            "worker_no_space",
+        )
         private const val APPLICATION_BASE = 0xfe0000
         private const val VECTOR_BASE = 0xff0000
         private const val VECTOR_LIMIT = 0xff1000

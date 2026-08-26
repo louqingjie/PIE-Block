@@ -5,7 +5,9 @@ import android.content.Intent
 import android.os.Bundle
 import android.os.IBinder
 import android.os.Process
+import android.util.Log
 import java.io.File
+import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicReference
@@ -49,6 +51,11 @@ class SdccCompilerWorkerService : Service() {
 
         override fun acknowledge(operationId: String) {
             val operation = active.get() ?: return
+            Log.d(
+                LOG_TAG,
+                "acknowledge op=$operationId active=${operation.id} " +
+                    "completed=${operation.completed} pid=${Process.myPid()}",
+            )
             if (operation.id == operationId && operation.completed) terminate(0)
         }
 
@@ -65,6 +72,17 @@ class SdccCompilerWorkerService : Service() {
 
     private fun execute(operation: ActiveOperation, request: Bundle) {
         try {
+            when (request.getString("testFault")) {
+                "worker_crash" -> {
+                    Process.killProcess(Process.myPid())
+                    return
+                }
+                "worker_disconnect" -> {
+                    terminate(0)
+                    return
+                }
+                "worker_no_space" -> throw IOException("No space left on device")
+            }
             require(SdccNativeBridge.apiVersion() == 5) { "SDCC C ABI 版本不匹配" }
             require(SdccNativeBridge.isAvailable()) { "单阶段 SDCC Worker 未通过自检" }
             val values = validateRequest(request)
@@ -124,6 +142,7 @@ class SdccCompilerWorkerService : Service() {
                 }
                 SdccNativeBridge.result(handle)?.let { result ->
                     operation.completed = true
+                    Log.d(LOG_TAG, "native finished pid=${Process.myPid()}")
                     operation.callback.onFinished(resultBundle(result, observedWarnings))
                 }
                 if (!operation.completed) Thread.sleep(20)
@@ -255,14 +274,19 @@ class SdccCompilerWorkerService : Service() {
     }
 
     private fun terminate(delayMillis: Long) {
+        Log.d(LOG_TAG, "terminate delay=$delayMillis pid=${Process.myPid()}")
         Thread {
             if (delayMillis > 0) Thread.sleep(delayMillis)
-            stopSelf()
+            runCatching { stopSelf() }
+            // killProcess 发送 SIGKILL；MIUI 个别场景下对自身进程的
+            // kill 可能延迟生效，halt(0) 直接终止 JVM 作为强制兜底。
             Process.killProcess(Process.myPid())
+            Runtime.getRuntime().halt(0)
         }.start()
     }
 
     companion object {
         const val PROTOCOL_VERSION = 1
+        private const val LOG_TAG = "PieBlockWorker"
     }
 }

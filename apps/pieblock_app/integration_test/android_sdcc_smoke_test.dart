@@ -4,6 +4,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+const _stabilityIterations = int.fromEnvironment(
+  'PIEBLOCK_STABILITY_ITERATIONS',
+  defaultValue: 2,
+);
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -58,6 +63,9 @@ void main() {
     expect(capabilities?['fingerprint'], contains('scheduler:1'));
 
     final flutterPid = await documents.invokeMethod<int>('getProcessId');
+    final initialMetrics = await documents.invokeMapMethod<Object?, Object?>(
+      'getProcessMetrics',
+    );
     final eventStream = compilerEvents.receiveBroadcastStream();
     final canceled = await _buildMinimal(
       compiler: compiler,
@@ -70,18 +78,84 @@ void main() {
     expect(canceled.result['success'], isFalse);
     expect(canceled.result['canceled'], isTrue);
     expect(canceled.hexBytes, isEmpty);
-    final first = await _buildMinimal(
+    final canceledDuringCompile = await _buildMinimal(
       compiler: compiler,
       eventStream: eventStream,
       resourceRoot: root.path,
       runIndex: 1,
+      cancelAtStage: 2,
     );
-    final second = await _buildMinimal(
+    expect(canceledDuringCompile.result['canceled'], isTrue);
+    expect(canceledDuringCompile.hexBytes, isEmpty);
+    final canceledDuringLink = await _buildMinimal(
       compiler: compiler,
       eventStream: eventStream,
       resourceRoot: root.path,
       runIndex: 2,
+      cancelAtStage: 4,
     );
+    expect(canceledDuringLink.result['canceled'], isTrue);
+    expect(canceledDuringLink.hexBytes, isEmpty);
+
+    for (final fault in <({String name, int phase})>[
+      (name: 'worker_crash', phase: 0),
+      (name: 'worker_disconnect', phase: 3),
+      (name: 'worker_no_space', phase: 1),
+    ]) {
+      final failed = await _buildMinimal(
+        compiler: compiler,
+        eventStream: eventStream,
+        resourceRoot: root.path,
+        runIndex: 10 + fault.phase,
+        testFault: fault.name,
+        testFaultPhase: fault.phase,
+      );
+      expect(failed.result['success'], isFalse);
+      expect(
+        failed.result['errorCode'],
+        fault.name == 'worker_no_space' ? 'worker_failed' : 'worker_disconnected',
+      );
+      expect(failed.hexBytes, isEmpty);
+    }
+
+    final coordinatorCrash = await _buildMinimal(
+      compiler: compiler,
+      eventStream: eventStream,
+      resourceRoot: root.path,
+      runIndex: 20,
+      testFault: 'coordinator_crash',
+    );
+    expect(coordinatorCrash.result['success'], isFalse);
+    expect(coordinatorCrash.result['errorCode'], 'compiler_process_exited');
+    expect(coordinatorCrash.hexBytes, isEmpty);
+    await compiler.invokeMethod<Object?>('probe');
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    expect(File('${coordinatorCrash.workPath}${Platform.pathSeparator}.in_progress').existsSync(), isFalse);
+
+    final backgroundBuild = await _buildMinimal(
+      compiler: compiler,
+      documents: documents,
+      eventStream: eventStream,
+      resourceRoot: root.path,
+      runIndex: 30,
+      backgroundAtStage: 2,
+    );
+    expect(backgroundBuild.result['success'], isTrue);
+
+    final stableBuilds = <_BuildResult>[];
+    for (var index = 0; index < _stabilityIterations; index++) {
+      stableBuilds.add(
+        await _buildMinimal(
+          compiler: compiler,
+          eventStream: eventStream,
+          resourceRoot: root.path,
+          runIndex: 100 + index,
+        ),
+      );
+    }
+    expect(stableBuilds, isNotEmpty);
+    final first = stableBuilds.first;
+    final second = stableBuilds.last;
 
     expect(first.result['success'], isTrue, reason: '${first.result}');
     expect(second.result['success'], isTrue, reason: '${second.result}');
@@ -99,6 +173,27 @@ void main() {
     expect(first.hexBytes, isNotEmpty);
     expect(second.hexBytes, first.hexBytes);
     expect(first.result['hexSha256'], second.result['hexSha256']);
+    final allNonces = stableBuilds.expand((build) => build.workerNonces).toList();
+    expect(allNonces.toSet(), hasLength(allNonces.length));
+    final coordinatorNonces = stableBuilds
+        .map((build) => build.result['coordinatorNonce'])
+        .toList();
+    expect(coordinatorNonces, everyElement(isNotNull));
+    expect(coordinatorNonces.toSet(), hasLength(coordinatorNonces.length));
+    final finalMetrics = await documents.invokeMapMethod<Object?, Object?>(
+      'getProcessMetrics',
+    );
+    expect(finalMetrics, isNotNull);
+    expect(initialMetrics, isNotNull);
+    expect(
+      (finalMetrics!['pssKb'] as int) - (initialMetrics!['pssKb'] as int),
+      lessThan(96 * 1024),
+    );
+    expect(
+      (finalMetrics['openFdCount'] as int) -
+          (initialMetrics['openFdCount'] as int),
+      lessThan(64),
+    );
   });
 }
 
@@ -108,12 +203,14 @@ class _BuildResult {
     required this.workerPids,
     required this.workerNonces,
     required this.hexBytes,
+    required this.workPath,
   });
 
   final Map<Object?, Object?> result;
   final List<int> workerPids;
   final List<String> workerNonces;
   final List<int> hexBytes;
+  final String workPath;
 }
 
 Future<_BuildResult> _buildMinimal({
@@ -121,8 +218,13 @@ Future<_BuildResult> _buildMinimal({
   required Stream<Object?> eventStream,
   required String resourceRoot,
   required int runIndex,
+  MethodChannel? documents,
   bool cancelImmediately = false,
   bool assertConcurrentRejection = false,
+  int? cancelAtStage,
+  String? testFault,
+  int? testFaultPhase,
+  int? backgroundAtStage,
 }) async {
   final separator = Platform.pathSeparator;
   final supportRoot = Directory(resourceRoot).parent.parent;
@@ -163,6 +265,22 @@ Future<_BuildResult> _buildMinimal({
   final resultFuture = eventStream.firstWhere(
     (event) => event is Map && event['type'] == 'result',
   );
+  final cancelFuture = cancelAtStage == null
+      ? null
+      : eventStream.firstWhere(
+          (event) =>
+              event is Map &&
+              event['type'] == 'event' &&
+              event['stage'] == cancelAtStage,
+        );
+  final backgroundFuture = backgroundAtStage == null
+      ? null
+      : eventStream.firstWhere(
+          (event) =>
+              event is Map &&
+              event['type'] == 'event' &&
+              event['stage'] == backgroundAtStage,
+        );
   final request = <String, Object>{
     'workingDirectory': work.path,
     'resourceDirectory': resourceRoot,
@@ -210,6 +328,8 @@ Future<_BuildResult> _buildMinimal({
     'mapOutputPath': map,
     'logOutputPath': log,
   };
+  if (testFault != null) request['testFault'] = testFault;
+  if (testFaultPhase != null) request['testFaultPhase'] = testFaultPhase;
   final operationId = await compiler.invokeMethod<String>('start', request);
   expect(operationId, isNotEmpty);
   if (assertConcurrentRejection) {
@@ -221,7 +341,32 @@ Future<_BuildResult> _buildMinimal({
   if (cancelImmediately) {
     await compiler.invokeMethod<void>('cancel', {'operationId': operationId});
   }
-  final result = (await resultFuture as Map).cast<Object?, Object?>();
+  if (cancelFuture != null) {
+    await cancelFuture;
+    await compiler.invokeMethod<void>('cancel', {'operationId': operationId});
+  }
+  if (backgroundFuture != null) {
+    await backgroundFuture;
+    expect(documents, isNotNull);
+    expect(
+      await documents!.invokeMethod<bool>('debugMoveTaskToBackground'),
+      isTrue,
+    );
+  }
+  Map<Object?, Object?> result;
+  try {
+    result = (await resultFuture as Map).cast<Object?, Object?>();
+  } on PlatformException catch (error) {
+    if (testFault != 'coordinator_crash') rethrow;
+    result = <Object?, Object?>{
+      'success': false,
+      'canceled': false,
+      'errorCode': error.code,
+      'message': error.message,
+      'workerPids': <int>[],
+      'workerNonces': <String>[],
+    };
+  }
   final intermediateExtensions = <String>{
     '.rel',
     '.asm',
@@ -237,13 +382,16 @@ Future<_BuildResult> _buildMinimal({
     ),
     isEmpty,
   );
-  await compiler.invokeMethod<void>('acknowledge', {
-    'operationId': operationId,
-  });
+  if (testFault != 'coordinator_crash') {
+    await compiler.invokeMethod<void>('acknowledge', {
+      'operationId': operationId,
+    });
+  }
   return _BuildResult(
     result: result,
     workerPids: (result['workerPids'] as List).cast<int>(),
     workerNonces: (result['workerNonces'] as List).cast<String>(),
     hexBytes: File(hex).existsSync() ? File(hex).readAsBytesSync() : const [],
+    workPath: work.path,
   );
 }

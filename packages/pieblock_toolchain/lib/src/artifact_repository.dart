@@ -125,8 +125,15 @@ class BuildArtifactRepository {
     }
   }
 
-  static Future<String> _shaFile(File file) async =>
-      sha256.convert(await file.readAsBytes()).toString();
+  /// 黄金哈希采用 LF 规范化内容：Intel HEX 是纯文本，Windows 工具链以
+  /// CRLF 写出、Android 嵌入式宿主以 LF 写出。统一定义为去掉 CRLF 后的
+  /// SHA-256，保证两端固件字节级一致。
+  static Future<String> _shaFile(File file) async {
+    final text = utf8.decode(await file.readAsBytes(), allowMalformed: true);
+    return sha256
+        .convert(utf8.encode(text.replaceAll('\r\n', '\n')))
+        .toString();
+  }
 
   static Future<void> _atomicCopy(File source, File destination) async {
     final temporary = File('${destination.path}.tmp');

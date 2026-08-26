@@ -1,10 +1,16 @@
-param(
+﻿param(
     [Parameter(Mandatory = $true)]
-    [string]$PackagePath
+    [string]$PackagePath,
+
+    [ValidateSet(0, 1)]
+    [int]$ExpectedPipelineEnabled = 0
 )
 
 $ErrorActionPreference = "Stop"
 $resolvedPackage = (Resolve-Path -LiteralPath $PackagePath).Path
+$baseline = Get-Content -Raw -LiteralPath (
+    Join-Path $PSScriptRoot 'android_sdcc_baseline.json'
+) | ConvertFrom-Json
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $archive = [System.IO.Compression.ZipFile]::OpenRead($resolvedPackage)
 try {
@@ -44,10 +50,20 @@ try {
                 $stream.Dispose()
             }
             $nativeText = [System.Text.Encoding]::ASCII.GetString($memory.ToArray())
-            foreach ($marker in @('ffi:5', 'worker:1', 'pipeline-enabled:0')) {
+            foreach ($marker in @(
+                'ffi:5',
+                'worker:1',
+                "pipeline-enabled:$ExpectedPipelineEnabled",
+                'stages-linked:1'
+            )) {
                 if (-not $nativeText.Contains($marker)) {
                     throw "$library 缺少 Release 安全门标记：$marker"
                 }
+            }
+            $expectedStageHash = $baseline.stage_object_sha256.$abi
+            if (!$expectedStageHash -or
+                !$nativeText.Contains("stage-object:$expectedStageHash")) {
+                throw "$library 的阶段对象哈希不符合固定基线"
             }
         } finally {
             $memory.Dispose()
@@ -59,6 +75,17 @@ try {
     )
     if ($null -eq $manifestEntry) {
         throw "Android 包缺少 SDCC 资源清单"
+    }
+
+    foreach ($license in @(
+        'PIE-Block-GPL-3.0-or-later.txt',
+        'THIRD_PARTY_NOTICES.md'
+    )) {
+        if ($null -eq $archive.GetEntry(
+            "${prefix}assets/pieblock_sdcc/licenses/$license"
+        )) {
+            throw "Android 包缺少许可证文件：$license"
+        }
     }
     $reader = [System.IO.StreamReader]::new(
         $manifestEntry.Open(),
@@ -83,6 +110,7 @@ try {
     Write-Output "文件：$resolvedPackage"
     Write-Output "SDCC 资源：$($resourceNames.Count) 个"
     Write-Output "资源指纹：$($manifest.fingerprint)"
+    Write-Output "Release 编译安全门：$ExpectedPipelineEnabled"
 } finally {
     $archive.Dispose()
 }
