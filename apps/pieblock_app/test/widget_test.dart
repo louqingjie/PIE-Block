@@ -408,9 +408,18 @@ void main() {
 
     final header = find.byKey(const ValueKey('music-header-lane'));
     final piano = find.byKey(const ValueKey('music-piano-keys'));
+    expect(find.byKey(const ValueKey('music-header-clip')), findsOneWidget);
+    expect(find.byKey(const ValueKey('music-piano-clip')), findsOneWidget);
+    final editorRect = tester.getRect(find.byType(MusicEditorPage));
+    final pianoRect = tester.getRect(piano);
+    final toolbarRect = tester.getRect(
+      find.byKey(const ValueKey('music-toolbar-panel')),
+    );
+    expect(toolbarRect.left, pianoRect.right);
+    expect(toolbarRect.right, editorRect.right);
     final headerOrigin = tester.getTopLeft(header);
     final pianoOrigin = tester.getTopLeft(piano);
-    horizontalState.position.jumpTo(300);
+    horizontalState.position.jumpTo(horizontalState.position.maxScrollExtent);
     verticalState.position.jumpTo(verticalState.position.pixels + 100);
     await tester.pump();
     expect(tester.getTopLeft(header), headerOrigin);
@@ -442,9 +451,131 @@ void main() {
 
     expect(find.byKey(const ValueKey('music-header-lane')), findsOneWidget);
     expect(find.byKey(const ValueKey('music-piano-keys')), findsOneWidget);
-    expect(find.text('固定视窗'), findsOneWidget);
-    expect(find.text('逐页跟随'), findsOneWidget);
+    expect(find.text('导入 MIDI'), findsNothing);
+    expect(find.text('导出 MIDI'), findsNothing);
+    expect(find.text('画笔'), findsNothing);
+    expect(find.text('循环预览'), findsNothing);
+    expect(find.text('固定视窗'), findsNothing);
+    expect(find.text('逐页跟随'), findsNothing);
+    expect(find.text('固定跟随'), findsNothing);
+    expect(find.byTooltip('导入 MIDI'), findsOneWidget);
+    expect(find.byTooltip('导出 MIDI'), findsOneWidget);
+    expect(find.byTooltip('画笔'), findsOneWidget);
+    expect(find.byTooltip('循环预览'), findsOneWidget);
+    expect(find.byTooltip('固定视窗'), findsOneWidget);
+    expect(find.byTooltip('速度事件（1）'), findsOneWidget);
+    expect(find.byTooltip('拍号事件（1）'), findsOneWidget);
+    await tester.tap(find.byTooltip('画笔'));
+    await tester.tap(find.byTooltip('固定视窗'));
+    await tester.tap(find.byTooltip('速度事件（1）'));
+    await tester.pumpAndSettle();
+    expect(find.text('添加速度事件'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('音乐工具栏按时间轴 599 和 600 宽度切换图标模式', (tester) async {
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    tester.view.devicePixelRatio = 1;
+
+    Future<void> pumpAt(double width) async {
+      tester.view.physicalSize = Size(width, 800);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appControllerProvider.overrideWith(
+              () => _StaticProjectController(_musicDocument(), 0),
+            ),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: MusicEditorPage(previewService: _FakeMusicPreview()),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    await pumpAt(671);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('music-toolbar-panel'))).width,
+      599,
+    );
+    expect(find.text('导入 MIDI'), findsNothing);
+    expect(find.byTooltip('导入 MIDI'), findsOneWidget);
+
+    await pumpAt(672);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('music-toolbar-panel'))).width,
+      600,
+    );
+    expect(find.text('导入 MIDI'), findsOneWidget);
     expect(find.text('固定跟随'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('宽屏向导裁剪音乐事件栏并将工具栏对齐时间轴', (tester) async {
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1400, 800);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _StaticProjectController(_musicDocument(), 0),
+          ),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: Row(
+              children: [
+                const SizedBox(width: 260),
+                Expanded(
+                  child: MusicEditorPage(previewService: _FakeMusicPreview()),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final editorRect = tester.getRect(find.byType(MusicEditorPage));
+    final pianoRect = tester.getRect(
+      find.byKey(const ValueKey('music-piano-keys')),
+    );
+    final headerClipRect = tester.getRect(
+      find.byKey(const ValueKey('music-header-clip')),
+    );
+    final toolbarRect = tester.getRect(
+      find.byKey(const ValueKey('music-toolbar-panel')),
+    );
+    expect(editorRect.left, 260);
+    expect(headerClipRect.left, pianoRect.right);
+    expect(toolbarRect.left, pianoRect.right);
+    expect(toolbarRect.right, editorRect.right);
+
+    final horizontal = tester
+        .widgetList<Scrollable>(find.byType(Scrollable))
+        .firstWhere(
+          (scrollable) => scrollable.axisDirection == AxisDirection.right,
+        );
+    final horizontalState = tester.state<ScrollableState>(
+      find.byWidget(horizontal),
+    );
+    horizontalState.position.jumpTo(horizontalState.position.maxScrollExtent);
+    await tester.pump();
+    expect(
+      tester.getRect(find.byKey(const ValueKey('music-header-clip'))),
+      headerClipRect,
+    );
     expect(tester.takeException(), isNull);
   });
 

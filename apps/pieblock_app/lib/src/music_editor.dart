@@ -611,19 +611,22 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
                     child: const _RollCorner(),
                   ),
                   Expanded(
-                    child: AnimatedBuilder(
-                      animation: repaint,
-                      builder: (context, child) => CustomPaint(
-                        key: const ValueKey('music-header-lane'),
-                        size: Size.infinite,
-                        painter: _EventLanePainter(
-                          config: config,
-                          pixelsPerQuarter: _pixelsPerQuarter,
-                          horizontalOffset: _horizontalScroll.hasClients
-                              ? _horizontalScroll.offset
-                              : 0,
-                          playheadTick: _playheadTick,
-                          contentWidth: timelineSize.width,
+                    child: ClipRect(
+                      key: const ValueKey('music-header-clip'),
+                      child: AnimatedBuilder(
+                        animation: repaint,
+                        builder: (context, child) => CustomPaint(
+                          key: const ValueKey('music-header-lane'),
+                          size: Size.infinite,
+                          painter: _EventLanePainter(
+                            config: config,
+                            pixelsPerQuarter: _pixelsPerQuarter,
+                            horizontalOffset: _horizontalScroll.hasClients
+                                ? _horizontalScroll.offset
+                                : 0,
+                            playheadTick: _playheadTick,
+                            contentWidth: timelineSize.width,
+                          ),
                         ),
                       ),
                     ),
@@ -636,23 +639,26 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
                 children: [
                   SizedBox(
                     width: _keysWidth,
-                    child: Listener(
-                      key: const ValueKey('music-piano-keys'),
-                      behavior: HitTestBehavior.opaque,
-                      onPointerDown: _pianoDown,
-                      onPointerMove: _pianoMove,
-                      onPointerUp: _pianoUp,
-                      onPointerCancel: _pianoUp,
-                      child: AnimatedBuilder(
-                        animation: repaint,
-                        builder: (context, child) => CustomPaint(
-                          size: Size.infinite,
-                          painter: _PianoKeysPainter(
-                            rowHeight: _rowHeight,
-                            verticalOffset: _verticalScroll.hasClients
-                                ? _verticalScroll.offset
-                                : 0,
-                            auditionPitch: _auditionPitch,
+                    child: ClipRect(
+                      key: const ValueKey('music-piano-clip'),
+                      child: Listener(
+                        key: const ValueKey('music-piano-keys'),
+                        behavior: HitTestBehavior.opaque,
+                        onPointerDown: _pianoDown,
+                        onPointerMove: _pianoMove,
+                        onPointerUp: _pianoUp,
+                        onPointerCancel: _pianoUp,
+                        child: AnimatedBuilder(
+                          animation: repaint,
+                          builder: (context, child) => CustomPaint(
+                            size: Size.infinite,
+                            painter: _PianoKeysPainter(
+                              rowHeight: _rowHeight,
+                              verticalOffset: _verticalScroll.hasClients
+                                  ? _verticalScroll.offset
+                                  : 0,
+                              auditionPitch: _auditionPitch,
+                            ),
                           ),
                         ),
                       ),
@@ -863,191 +869,329 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
       child: Focus(
         autofocus: true,
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Material(
-              color: Theme.of(context).colorScheme.surfaceContainerLow,
-              child: Padding(
-                padding: const EdgeInsets.all(8),
-                child: Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  crossAxisAlignment: WrapCrossAlignment.center,
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final toolbarWidth = math.max(
+                  0.0,
+                  constraints.maxWidth - _keysWidth,
+                );
+                final compactToolbar = toolbarWidth < 600;
+                return Stack(
                   children: [
-                    FilledButton.tonalIcon(
-                      onPressed: _importMidi,
-                      icon: const Icon(Icons.file_open),
-                      label: const Text('导入 MIDI'),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: _exportMidi,
-                      icon: const Icon(Icons.save_alt),
-                      label: const Text('导出 MIDI'),
-                    ),
-                    IconButton(
-                      onPressed: _undo.isEmpty ? null : _undoAction,
-                      tooltip: '撤销 Ctrl+Z',
-                      icon: const Icon(Icons.undo),
-                    ),
-                    IconButton(
-                      onPressed: _redo.isEmpty ? null : _redoAction,
-                      tooltip: '重做 Ctrl+Y',
-                      icon: const Icon(Icons.redo),
-                    ),
-                    SegmentedButton<_MusicTool>(
-                      segments: const [
-                        ButtonSegment(
-                          value: _MusicTool.select,
-                          icon: Icon(Icons.near_me_outlined),
-                          label: Text('选择'),
-                        ),
-                        ButtonSegment(
-                          value: _MusicTool.pencil,
-                          icon: Icon(Icons.edit),
-                          label: Text('画笔'),
-                        ),
-                        ButtonSegment(
-                          value: _MusicTool.erase,
-                          icon: Icon(Icons.delete_outline),
-                          label: Text('删除'),
-                        ),
-                        ButtonSegment(
-                          value: _MusicTool.pan,
-                          icon: Icon(Icons.pan_tool_outlined),
-                          label: Text('平移'),
-                        ),
-                      ],
-                      selected: {_tool},
-                      onSelectionChanged: (value) =>
-                          setState(() => _tool = value.first),
-                    ),
-                    DropdownButton<int>(
-                      value: _snapDivisor,
-                      items: const [
-                        DropdownMenuItem(value: 0, child: Text('不吸附')),
-                        DropdownMenuItem(value: 1, child: Text('1/4')),
-                        DropdownMenuItem(value: 2, child: Text('1/8')),
-                        DropdownMenuItem(value: 4, child: Text('1/16')),
-                        DropdownMenuItem(value: 6, child: Text('1/16 三连音')),
-                        DropdownMenuItem(value: 8, child: Text('1/32')),
-                      ],
-                      onChanged: (value) =>
-                          setState(() => _snapDivisor = value ?? 4),
-                    ),
-                    IconButton(
-                      onPressed: _play,
-                      tooltip: '播放',
-                      icon: _isLoading
-                          ? const SizedBox.square(
-                              dimension: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.play_arrow),
-                    ),
-                    IconButton(
-                      onPressed: _isPlaying ? _togglePause : null,
-                      tooltip: '暂停/继续',
-                      icon: Icon(_isPaused ? Icons.play_arrow : Icons.pause),
-                    ),
-                    IconButton(
-                      onPressed: _stop,
-                      tooltip: '停止',
-                      icon: const Icon(Icons.stop),
-                    ),
-                    FilterChip(
-                      label: const Text('循环预览'),
-                      selected: _loopPreview,
-                      onSelected: (value) =>
-                          setState(() => _loopPreview = value),
-                    ),
-                    SegmentedButton<MusicViewportMode>(
-                      segments: const [
-                        ButtonSegment(
-                          value: MusicViewportMode.fixed,
-                          icon: Icon(Icons.crop_free),
-                          label: Text('固定视窗'),
-                        ),
-                        ButtonSegment(
-                          value: MusicViewportMode.paged,
-                          icon: Icon(Icons.auto_stories_outlined),
-                          label: Text('逐页跟随'),
-                        ),
-                        ButtonSegment(
-                          value: MusicViewportMode.anchored,
-                          icon: Icon(Icons.vertical_align_center),
-                          label: Text('固定跟随'),
-                        ),
-                      ],
-                      selected: {_viewportMode},
-                      onSelectionChanged: (value) =>
-                          _setViewportMode(value.first),
-                    ),
-                    MenuAnchor(
-                      menuChildren: [
-                        for (final event in config.tempoEvents)
-                          MenuItemButton(
-                            onPressed: () => _editTempo(event: event),
-                            child: Text(
-                              'Tick ${event.tick} · ${event.bpm.toStringAsFixed(2)} BPM',
+                    Positioned(
+                      left: 0,
+                      top: 0,
+                      bottom: 0,
+                      width: _keysWidth,
+                      child: DecoratedBox(
+                        key: const ValueKey('music-toolbar-gutter'),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.surface,
+                          border: Border(
+                            right: BorderSide(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .outlineVariant,
                             ),
                           ),
-                        MenuItemButton(
-                          onPressed: _editTempo,
-                          leadingIcon: const Icon(Icons.add),
-                          child: const Text('添加速度事件'),
                         ),
-                      ],
-                      builder: (context, controller, child) =>
-                          OutlinedButton.icon(
-                            onPressed: controller.open,
-                            icon: const Icon(Icons.speed),
-                            label: Text('${config.tempoEvents.length} 个速度'),
-                          ),
+                      ),
                     ),
-                    MenuAnchor(
-                      menuChildren: [
-                        for (final event in config.timeSignatureEvents)
-                          MenuItemButton(
-                            onPressed: () => _editMeter(event: event),
-                            child: Text(
-                              'Tick ${event.tick} · ${event.numerator}/${event.denominator}',
+                    Padding(
+                      padding: const EdgeInsets.only(left: _keysWidth),
+                      child: SizedBox(
+                        key: const ValueKey('music-toolbar-panel'),
+                        width: double.infinity,
+                        child: Material(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .surfaceContainerLow,
+                          child: Padding(
+                            padding: const EdgeInsets.all(8),
+                            child: Wrap(
+                              spacing: 6,
+                              runSpacing: 6,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                if (compactToolbar)
+                                  IconButton.filledTonal(
+                                    onPressed: _importMidi,
+                                    tooltip: '导入 MIDI',
+                                    icon: const Icon(Icons.file_open),
+                                  )
+                                else
+                                  FilledButton.tonalIcon(
+                                    onPressed: _importMidi,
+                                    icon: const Icon(Icons.file_open),
+                                    label: const Text('导入 MIDI'),
+                                  ),
+                                if (compactToolbar)
+                                  IconButton.outlined(
+                                    onPressed: _exportMidi,
+                                    tooltip: '导出 MIDI',
+                                    icon: const Icon(Icons.save_alt),
+                                  )
+                                else
+                                  OutlinedButton.icon(
+                                    onPressed: _exportMidi,
+                                    icon: const Icon(Icons.save_alt),
+                                    label: const Text('导出 MIDI'),
+                                  ),
+                                IconButton(
+                                  onPressed: _undo.isEmpty ? null : _undoAction,
+                                  tooltip: '撤销 Ctrl+Z',
+                                  icon: const Icon(Icons.undo),
+                                ),
+                                IconButton(
+                                  onPressed: _redo.isEmpty ? null : _redoAction,
+                                  tooltip: '重做 Ctrl+Y',
+                                  icon: const Icon(Icons.redo),
+                                ),
+                                SegmentedButton<_MusicTool>(
+                                  showSelectedIcon: !compactToolbar,
+                                  segments: [
+                                    ButtonSegment(
+                                      value: _MusicTool.select,
+                                      icon: const Icon(Icons.near_me_outlined),
+                                      label: compactToolbar
+                                          ? null
+                                          : const Text('选择'),
+                                      tooltip: '选择',
+                                    ),
+                                    ButtonSegment(
+                                      value: _MusicTool.pencil,
+                                      icon: const Icon(Icons.edit),
+                                      label: compactToolbar
+                                          ? null
+                                          : const Text('画笔'),
+                                      tooltip: '画笔',
+                                    ),
+                                    ButtonSegment(
+                                      value: _MusicTool.erase,
+                                      icon: const Icon(Icons.delete_outline),
+                                      label: compactToolbar
+                                          ? null
+                                          : const Text('删除'),
+                                      tooltip: '删除',
+                                    ),
+                                    ButtonSegment(
+                                      value: _MusicTool.pan,
+                                      icon: const Icon(Icons.pan_tool_outlined),
+                                      label: compactToolbar
+                                          ? null
+                                          : const Text('平移'),
+                                      tooltip: '平移',
+                                    ),
+                                  ],
+                                  selected: {_tool},
+                                  onSelectionChanged: (value) =>
+                                      setState(() => _tool = value.first),
+                                ),
+                                DropdownButton<int>(
+                                  value: _snapDivisor,
+                                  items: const [
+                                    DropdownMenuItem(
+                                      value: 0,
+                                      child: Text('不吸附'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 1,
+                                      child: Text('1/4'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 2,
+                                      child: Text('1/8'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 4,
+                                      child: Text('1/16'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 6,
+                                      child: Text('1/16 三连音'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 8,
+                                      child: Text('1/32'),
+                                    ),
+                                  ],
+                                  onChanged: (value) =>
+                                      setState(() => _snapDivisor = value ?? 4),
+                                ),
+                                IconButton(
+                                  onPressed: _play,
+                                  tooltip: '播放',
+                                  icon: _isLoading
+                                      ? const SizedBox.square(
+                                          dimension: 20,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        )
+                                      : const Icon(Icons.play_arrow),
+                                ),
+                                IconButton(
+                                  onPressed: _isPlaying ? _togglePause : null,
+                                  tooltip: '暂停/继续',
+                                  icon: Icon(
+                                    _isPaused ? Icons.play_arrow : Icons.pause,
+                                  ),
+                                ),
+                                IconButton(
+                                  onPressed: _stop,
+                                  tooltip: '停止',
+                                  icon: const Icon(Icons.stop),
+                                ),
+                                if (compactToolbar)
+                                  IconButton.filledTonal(
+                                    isSelected: _loopPreview,
+                                    onPressed: () => setState(
+                                      () => _loopPreview = !_loopPreview,
+                                    ),
+                                    tooltip: '循环预览',
+                                    icon: const Icon(Icons.repeat),
+                                    selectedIcon: const Icon(Icons.repeat_on),
+                                  )
+                                else
+                                  FilterChip(
+                                    label: const Text('循环预览'),
+                                    selected: _loopPreview,
+                                    onSelected: (value) =>
+                                        setState(() => _loopPreview = value),
+                                  ),
+                                SegmentedButton<MusicViewportMode>(
+                                  showSelectedIcon: !compactToolbar,
+                                  segments: [
+                                    ButtonSegment(
+                                      value: MusicViewportMode.fixed,
+                                      icon: const Icon(Icons.crop_free),
+                                      label: compactToolbar
+                                          ? null
+                                          : const Text('固定视窗'),
+                                      tooltip: '固定视窗',
+                                    ),
+                                    ButtonSegment(
+                                      value: MusicViewportMode.paged,
+                                      icon: const Icon(
+                                        Icons.auto_stories_outlined,
+                                      ),
+                                      label: compactToolbar
+                                          ? null
+                                          : const Text('逐页跟随'),
+                                      tooltip: '逐页跟随',
+                                    ),
+                                    ButtonSegment(
+                                      value: MusicViewportMode.anchored,
+                                      icon: const Icon(
+                                        Icons.vertical_align_center,
+                                      ),
+                                      label: compactToolbar
+                                          ? null
+                                          : const Text('固定跟随'),
+                                      tooltip: '固定跟随',
+                                    ),
+                                  ],
+                                  selected: {_viewportMode},
+                                  onSelectionChanged: (value) =>
+                                      _setViewportMode(value.first),
+                                ),
+                                MenuAnchor(
+                                  menuChildren: [
+                                    for (final event in config.tempoEvents)
+                                      MenuItemButton(
+                                        onPressed: () =>
+                                            _editTempo(event: event),
+                                        child: Text(
+                                          'Tick ${event.tick} · ${event.bpm.toStringAsFixed(2)} BPM',
+                                        ),
+                                      ),
+                                    MenuItemButton(
+                                      onPressed: _editTempo,
+                                      leadingIcon: const Icon(Icons.add),
+                                      child: const Text('添加速度事件'),
+                                    ),
+                                  ],
+                                  builder: (context, controller, child) =>
+                                      compactToolbar
+                                      ? IconButton.outlined(
+                                          onPressed: controller.open,
+                                          tooltip:
+                                              '速度事件（${config.tempoEvents.length}）',
+                                          icon: const Icon(Icons.speed),
+                                        )
+                                      : OutlinedButton.icon(
+                                          onPressed: controller.open,
+                                          icon: const Icon(Icons.speed),
+                                          label: Text(
+                                            '${config.tempoEvents.length} 个速度',
+                                          ),
+                                        ),
+                                ),
+                                MenuAnchor(
+                                  menuChildren: [
+                                    for (final event
+                                        in config.timeSignatureEvents)
+                                      MenuItemButton(
+                                        onPressed: () =>
+                                            _editMeter(event: event),
+                                        child: Text(
+                                          'Tick ${event.tick} · ${event.numerator}/${event.denominator}',
+                                        ),
+                                      ),
+                                    MenuItemButton(
+                                      onPressed: _editMeter,
+                                      leadingIcon: const Icon(Icons.add),
+                                      child: const Text('添加拍号事件'),
+                                    ),
+                                  ],
+                                  builder: (context, controller, child) =>
+                                      compactToolbar
+                                      ? IconButton.outlined(
+                                          onPressed: controller.open,
+                                          tooltip:
+                                              '拍号事件（${config.timeSignatureEvents.length}）',
+                                          icon: const Icon(Icons.grid_4x4),
+                                        )
+                                      : OutlinedButton.icon(
+                                          onPressed: controller.open,
+                                          icon: const Icon(Icons.grid_4x4),
+                                          label: Text(
+                                            '${config.timeSignatureEvents.length} 个拍号',
+                                          ),
+                                        ),
+                                ),
+                                SizedBox(
+                                  width: 150,
+                                  child: Slider(
+                                    value: _zoom,
+                                    min: .5,
+                                    max: 3,
+                                    divisions: 10,
+                                    label: '${(_zoom * 100).round()}%',
+                                    onChanged: (value) {
+                                      setState(() => _zoom = value);
+                                      WidgetsBinding.instance
+                                          .addPostFrameCallback((_) {
+                                            if (mounted) {
+                                              _followPlayhead(
+                                                previousTick: null,
+                                              );
+                                            }
+                                          });
+                                    },
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                        MenuItemButton(
-                          onPressed: _editMeter,
-                          leadingIcon: const Icon(Icons.add),
-                          child: const Text('添加拍号事件'),
                         ),
-                      ],
-                      builder: (context, controller, child) =>
-                          OutlinedButton.icon(
-                            onPressed: controller.open,
-                            icon: const Icon(Icons.grid_4x4),
-                            label: Text(
-                              '${config.timeSignatureEvents.length} 个拍号',
-                            ),
-                          ),
-                    ),
-                    SizedBox(
-                      width: 150,
-                      child: Slider(
-                        value: _zoom,
-                        min: .5,
-                        max: 3,
-                        divisions: 10,
-                        label: '${(_zoom * 100).round()}%',
-                        onChanged: (value) {
-                          setState(() => _zoom = value);
-                          WidgetsBinding.instance.addPostFrameCallback((_) {
-                            if (mounted) {
-                              _followPlayhead(previousTick: null);
-                            }
-                          });
-                        },
                       ),
                     ),
                   ],
-                ),
-              ),
+                );
+              },
             ),
             Expanded(child: _rollViewport(config, timelineSize)),
           ],
@@ -1093,6 +1237,7 @@ class _EventLanePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    canvas.clipRect(Offset.zero & size);
     canvas.drawRect(
       Offset.zero & size,
       Paint()..color = const Color(0xff171b20),
@@ -1166,6 +1311,7 @@ class _PianoKeysPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    canvas.clipRect(Offset.zero & size);
     canvas.drawRect(
       Offset.zero & size,
       Paint()..color = const Color(0xff111418),
