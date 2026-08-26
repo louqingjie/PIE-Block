@@ -220,8 +220,9 @@ class HomeScreen extends ConsumerWidget {
         ),
       ),
     );
-    name.dispose();
-    path.dispose();
+    // showDialog 返回时弹窗仍可能处于退出动画中，TextField 还会被重建。
+    // 控制器随后不再被引用，交由 GC 回收，避免过早 dispose 导致 Flutter
+    // 在动画帧中访问已释放的 TextEditingController。
   }
 
   Future<void> _open(BuildContext context, WidgetRef ref) async {

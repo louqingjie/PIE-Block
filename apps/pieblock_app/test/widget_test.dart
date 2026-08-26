@@ -715,6 +715,11 @@ void main() {
 
     expect(dialogs.saveCalls, 1);
     expect(find.text(r'C:\projects\机器人.pieproj'), findsOneWidget);
+
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('打开项目直接调用文件浏览器', (tester) async {
