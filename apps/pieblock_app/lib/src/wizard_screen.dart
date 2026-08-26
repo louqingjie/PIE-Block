@@ -2989,6 +2989,7 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           title: const Text('烧录主控板前请确认'),
+          scrollable: true,
           content: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 760),
             child: SingleChildScrollView(
