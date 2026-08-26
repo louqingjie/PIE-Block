@@ -2989,9 +2989,11 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           title: const Text('烧录主控板前请确认'),
-          scrollable: true,
-          content: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 760),
+          content: SizedBox(
+            // Android 手机上给正文明确的最大高度，避免两张说明图和
+            // 内层滚动视图把 AlertDialog 推出屏幕，只剩下遮罩层。
+            width: double.maxFinite,
+            height: MediaQuery.sizeOf(context).height * 0.52,
             child: SingleChildScrollView(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
