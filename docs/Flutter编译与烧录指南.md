@@ -54,7 +54,7 @@ PIE-Block 始终调用 Keil 的 `-r` 全量重建，避免不同机器人配置�
 Android 版在“编译与烧录”页使用与 Windows 相同的 USB-HID ISP 协议与流程（`pieblock_hid`），仅传输层替换为系统 `UsbManager`（USB Host）：
 
 - 通过 OTG 转接线连接主控板；首次烧录会弹出系统 USB 权限确认。
-- 应用直接访问 HID 接口的中断端点（`UsbDeviceConnection.bulkTransfer`），去掉 Windows/hidapi 语义的前导 `0x00` 报告 ID 后发送 64 字节报告；读输入报告超时返回空。
+- 应用直接访问 HID 接口的中断端点（`UsbRequest` 异步收发；Android 中断端点不支持同步 `bulkTransfer`），打开后常驻挂起中断 IN 请求，去掉 Windows/hidapi 语义的前导 `0x00` 报告 ID 后发送 64 字节报告；读输入报告超时返回空。
 - 其余行为一致：只能冷启动进 ISP、烧录完成自动复位、再次烧录需重新断电上电；取消时关闭连接，可能需要重新上电。
 - 设备无 USB Host 功能的机型不显示烧录区域（`android.hardware.usb.host` 为可选特性）。
 
