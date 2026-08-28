@@ -2909,12 +2909,12 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _prepare());
-    if (Platform.isWindows) {
-      _deviceTimer = Timer.periodic(
-        const Duration(seconds: 1),
-        (_) => ref.read(deployControllerProvider.notifier).refreshDevices(),
-      );
-    }
+    // 安卓同样需要周期检测：UsbHidBridge 检测到板子的瞬间会自动授权并
+    // 打开保持（防止 STC ISP 固件因总线空闲跳回用户程序）。
+    _deviceTimer = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => ref.read(deployControllerProvider.notifier).refreshDevices(),
+    );
   }
 
   @override

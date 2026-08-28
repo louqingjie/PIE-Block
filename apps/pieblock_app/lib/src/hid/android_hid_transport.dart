@@ -24,8 +24,22 @@ class AndroidHidTransport implements HidTransport {
   }
 
   @override
-  Future<bool> open() async =>
-      await _channel.invokeMethod<bool>('open') ?? false;
+  Future<bool> open() async {
+    // 桥接层返回状态：ok / app_mode / no_device / permission_denied /
+    // busy / failed。app_mode 表示板子在运行用户程序，需重新上电进 ISP。
+    final status = await _channel.invokeMethod<String>('open') ?? 'failed';
+    switch (status) {
+      case 'ok':
+        return true;
+      case 'app_mode':
+        throw StateError(
+          '主控板正在运行用户程序（听到奏乐就是它），未进入 ISP 模式：'
+          '请给主控板断电几秒后重新上电，重新插拔 OTG 后立即烧录',
+        );
+      default:
+        return false;
+    }
+  }
 
   @override
   Future<bool> write(Uint8List report) async =>

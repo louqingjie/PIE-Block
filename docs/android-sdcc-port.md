@@ -83,14 +83,38 @@ Release 安全门仍保持关闭，直到以下项目全部完成：
 4. 代表性 Android HEX 经 Windows USB-HID 烧录并完成硬件功能验证；
 5. Release AAB、包内容、许可证和可复现构建检查通过。
 
-## Android USB-HID 烧录（已实现，待硬件验收）
+## Android USB-HID 烧录（已实现，真机兼容性受限）
 
 Android 端已接入与 Windows 相同的 STC32G USB-HID ISP 烧录协议（`pieblock_hid`）：
 
-- 传输层：`UsbHidBridge.kt`（`UsbManager` + `UsbRequest` 异步收发中断端点；Android 规定中断端点不支持同步 `bulkTransfer`，同步路径真机写入返回成功但读永远无响应；打开后常驻挂起中断 IN 请求对齐 Windows HIDCLASS 行为，无公开 `HidDevice` API），通道 `cn.edu.cnu.pieblock/hid`；
+- 传输层：`UsbHidBridge.kt`（`UsbManager` + `UsbRequest` 异步收发中断端点；Android 规定中断端点不支持同步 `bulkTransfer`，同步路径真机写入返回成功但读永远无响应），通道 `cn.edu.cnu.pieblock/hid`；
 - Dart 侧：`AndroidHidTransport` 复用现有 `HidFlasher`/`HidProtocol`，与 Windows 帧、块、ACK 完全一致；
-- 交互：“编译与烧录”页对 Android 开放，首次烧录请求 USB 权限；仅剩下述硬件项待完成——OTG 连接真机、冷启动 ISP、授权、烧录成功复位运行、二次烧录重上电。
 - 已知差异：Android 中断端点发送 64 字节报告本体（去除 hidapi 前导 `0x00` 报告 ID）。
+
+### 真机兼容性结论（2026-08-28 排查）
+
+在 Redmi K80 Pro（HyperOS）与联想小新平板（ZUI）两台设备上均无法烧录：控制传输
+（枚举、SET_IDLE）正常，但中断 OUT/IN 端点瞬间以 0 字节错误完成，且设备无
+CLEAR_HALT/GET_REPORT 处理器，无恢复手段。
+
+排查结论：STC32G ROM ISP 固件要求主机在**枚举后极短时间内（≈百毫秒级）建立
+"claim + 报告描述符获取 + 常驻 IN 轮询"的内核驱动式会话**，之后才武装中断端点。
+Windows（HIDCLASS 即时接管）与桌面 Linux（usbhid 同样即时）都满足；Android 的
+USB 权限弹窗使 App 无法在窗口内完成会话建立（实测 ROM 每次重新插入都要求再次
+授权），错过窗口后固件跳回用户程序（表现为蜂鸣器演奏旧乐曲）。已验证：
+
+- 协议字节与 Windows 完全一致（full64 报告格式双端对照）；
+- 时序复刻 Windows hidapi（打开只 claim、写完成才读）仍失败；
+- WSL usbip 直通对照实验：同一板子在 Linux 内核 HID 驱动（usbhid）下 info
+  交换完全正常，裸 usbfs（等价安卓路径）无论何种时序/EP0 预处理组合均复现
+  「OUT 被 ACK 但固件不处理、IN 永久静默」。
+
+结论属于设备固件对用户态 USB 主机的兼容性限制，非应用层代码缺陷。缓解措施：
+
+- 应用已实现：attach 广播即时建会话、产品字符串人格校验（非 `USB-ISP` 时报
+  「主控板正在运行用户程序」）、授权后重插重试流程；
+- 若在个别机型（授权持久化、窗口更宽）上验证可行，欢迎按机型反馈；
+- 通用可靠路径：安卓端编译后「导出 HEX」，用 Windows 端烧录。
 
 ## 验证命令
 

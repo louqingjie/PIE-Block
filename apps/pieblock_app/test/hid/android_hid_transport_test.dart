@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pieblock_app/src/hid/android_hid_transport.dart';
@@ -25,7 +23,7 @@ void main() {
             {'deviceName': '/dev/bus/usb/001/002'},
           ];
         case 'open':
-          return true;
+          return 'ok';
         case 'write':
           expect(call.arguments, <int>[0x46, 0xb9, 0x6a]);
           return true;
@@ -58,5 +56,19 @@ void main() {
     );
     final transport = AndroidHidTransport(channel: channel);
     expect(await transport.countDevices(), 0);
+  });
+
+  test('open 返回 app_mode 时抛出带指引的错误', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async => 'app_mode');
+    final transport = AndroidHidTransport(channel: channel);
+    await expectLater(
+      transport.open(),
+      throwsA(isA<StateError>().having(
+        (e) => e.message,
+        'message',
+        contains('主控板正在运行用户程序'),
+      )),
+    );
   });
 }
