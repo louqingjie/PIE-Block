@@ -6,7 +6,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:pieblock_core/pieblock_core.dart';
 import 'package:pieblock_toolchain/pieblock_toolchain.dart';
-import '../../../packages/pieblock_toolchain/test/support/android_sdcc_golden_matrix.dart';
+import '../packages/pieblock_toolchain/test/support/android_sdcc_golden_matrix.dart';
 
 const _selectedKind = String.fromEnvironment(
   'PIEBLOCK_GOLDEN_KIND',

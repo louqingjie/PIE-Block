@@ -10,12 +10,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$appRoot = Join-Path $repoRoot 'apps\pieblock_app'
-$releaseDir = Join-Path $appRoot 'build\windows\x64\runner\Release'
-$installerIss = Join-Path $appRoot 'windows\installer\pieblock.iss'
+$releaseDir = Join-Path $repoRoot 'build\windows\x64\runner\Release'
+$installerIss = Join-Path $repoRoot 'windows\installer\pieblock.iss'
 
 # --- 版本号：以 pubspec.yaml 为单一来源 ---
-$pubspec = Get-Content -LiteralPath (Join-Path $appRoot 'pubspec.yaml') -Raw
+$pubspec = Get-Content -LiteralPath (Join-Path $repoRoot 'pubspec.yaml') -Raw
 if ($pubspec -notmatch '(?m)^version:\s*(\d+)\.(\d+)\.(\d+)') {
     throw '无法从 pubspec.yaml 解析 version 行。'
 }

@@ -522,28 +522,28 @@ packages:
   pieblock_core:
     dependency: "direct main"
     description:
-      path: "../../packages/pieblock_core"
+      path: "packages/pieblock_core"
       relative: true
     source: path
     version: "1.0.0"
   pieblock_hid:
     dependency: "direct main"
     description:
-      path: "../../packages/pieblock_hid"
+      path: "packages/pieblock_hid"
       relative: true
     source: path
     version: "1.0.0"
   pieblock_sdcc_native:
     dependency: "direct main"
     description:
-      path: "../../packages/pieblock_sdcc_native"
+      path: "packages/pieblock_sdcc_native"
       relative: true
     source: path
     version: "0.1.0"
   pieblock_toolchain:
     dependency: "direct main"
     description:
-      path: "../../packages/pieblock_toolchain"
+      path: "packages/pieblock_toolchain"
       relative: true
     source: path
     version: "1.0.0"

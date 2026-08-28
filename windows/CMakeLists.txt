@@ -55,7 +55,7 @@ add_subdirectory("runner")
 # PIE-Block's Windows-only USB-HID transport. The protocol remains in Dart;
 # this DLL only owns the blocking Win32 HID handle and overlapped I/O.
 add_library(pieblock_hid SHARED
-  "${CMAKE_CURRENT_SOURCE_DIR}/../../../packages/pieblock_hid/src/pieblock_hid.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/../packages/pieblock_hid/src/pieblock_hid.cpp"
 )
 apply_standard_settings(pieblock_hid)
 target_compile_definitions(pieblock_hid PRIVATE "NOMINMAX")
@@ -88,7 +88,7 @@ install(TARGETS pieblock_hid RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}"
 
 # Keep compiler resources outside flutter_assets so executables can be copied
 # and launched without relying on AssetBundle extraction semantics.
-set(PIEBLOCK_REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../..")
+set(PIEBLOCK_REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/..")
 set(PIEBLOCK_RUNTIME_DIR "${INSTALL_BUNDLE_DATA_DIR}/pieblock_runtime")
 if(EXISTS "${PIEBLOCK_REPO_ROOT}/vendor/sdcc-toolchain")
   install(DIRECTORY "${PIEBLOCK_REPO_ROOT}/vendor/sdcc-toolchain"

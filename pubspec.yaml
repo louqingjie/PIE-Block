@@ -39,13 +39,13 @@ dependencies:
   re_editor: ^0.10.0
   re_highlight: ^0.0.3
   pieblock_core:
-    path: ../../packages/pieblock_core
+    path: packages/pieblock_core
   pieblock_toolchain:
-    path: ../../packages/pieblock_toolchain
+    path: packages/pieblock_toolchain
   pieblock_sdcc_native:
-    path: ../../packages/pieblock_sdcc_native
+    path: packages/pieblock_sdcc_native
   pieblock_hid:
-    path: ../../packages/pieblock_hid
+    path: packages/pieblock_hid
   path: ^1.9.1
   path_provider: ^2.1.5
 

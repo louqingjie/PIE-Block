@@ -13,7 +13,7 @@ dependencies {
     implementation("androidx.core:core-ktx:1.17.0")
 }
 
-val repositoryRoot = rootProject.projectDir.resolve("../../..").canonicalFile
+val repositoryRoot = rootProject.projectDir.resolve("..").canonicalFile
 val generatedSdccAssets = layout.buildDirectory.dir("generated/pieblockSdccAssets")
 val keystorePropertiesFile = rootProject.file("key.properties")
 val keystoreProperties = Properties().apply {
