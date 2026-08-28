@@ -1,4 +1,5 @@
 .vscode/
+.trae/
 
 # Keil MDK build output
 # 忽略目录内的编译产物，但保留 .gdignore 本身可被 git 跟踪

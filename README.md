@@ -23,7 +23,7 @@ PIE-Block 是面向 W.PIE RoboMaster 校内赛的 Windows 桌面集成开发环�
 ## 项目结构
 
 ```text
-apps/pieblock_app/       Flutter Windows 桌面应用
+./                       Flutter 应用（pubspec.yaml 位于仓库根目录）
 packages/pieblock_core/  纯 Dart 项目模型、校验器与 C 生成器
 packages/pieblock_toolchain/ Dart SDCC/Keil 构建、HEX 校验与产物缓存
 packages/pieblock_hid/   Dart 烧录协议与 Windows 原生 HID 传输
@@ -42,14 +42,13 @@ Flutter UI 不包含生成规则。`pieblock_core` 是配置、检查和代码�
 
 ```powershell
 flutter config --enable-windows-desktop
-cd apps/pieblock_app
 flutter pub get
 flutter analyze
 flutter test
 flutter build windows --release
 ```
 
-三个 Dart 包可独立运行 `dart analyze` 与 `dart test`。Windows Release 产物位于 `apps/pieblock_app/build/windows/x64/runner/Release/`，发布时必须保留整个目录；`pieblock_hid.dll`、`data/pieblock_runtime` 和 `data/flutter_assets` 都是运行所必需的。
+三个 Dart 包可独立运行 `dart analyze` 与 `dart test`。Windows Release 产物位于 `build/windows/x64/runner/Release/`，发布时必须保留整个目录；`pieblock_hid.dll`、`data/pieblock_runtime` 和 `data/flutter_assets` 都是运行所必需的。
 
 编译与主控板接线、开关位置和故障排查见 [Flutter 编译与烧录指南](docs/Flutter编译与烧录指南.md)。
 Android 离线 SDCC 的架构、安全门和验收状态见 [Android SDCC 多进程移植](docs/android-sdcc-port.md)。

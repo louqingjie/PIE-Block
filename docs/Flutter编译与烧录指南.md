@@ -75,7 +75,6 @@ Android 版在“编译与烧录”页使用与 Windows 相同的 USB-HID ISP �
 ## 发布构建
 
 ```powershell
-cd apps\pieblock_app
 C:\flutter\flutter\bin\flutter.bat pub get
 C:\flutter\flutter\bin\flutter.bat analyze
 C:\flutter\flutter\bin\flutter.bat test

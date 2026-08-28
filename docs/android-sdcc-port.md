@@ -132,7 +132,7 @@ dart test packages/pieblock_toolchain/test/sdcc_windows_android_golden_test.dart
 
 # Release 包内容审计
 tools/verify_android_package.ps1 `
-  -PackagePath apps/pieblock_app/build/app/outputs/bundle/release/app-release.aab
+  -PackagePath build/app/outputs/bundle/release/app-release.aab
 ```
 
 Android 发行代码使用 GPL-3.0-or-later。每个正式 APK/AAB 必须同时发布匹配的
