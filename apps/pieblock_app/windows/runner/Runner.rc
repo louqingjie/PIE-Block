@@ -92,9 +92,9 @@ BEGIN
             VALUE "CompanyName", "com.wpie" "\0"
             VALUE "FileDescription", "PIE-Block" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "pieblock_app" "\0"
+            VALUE "InternalName", "PIE-Block" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 com.wpie. All rights reserved." "\0"
-            VALUE "OriginalFilename", "pieblock_app.exe" "\0"
+            VALUE "OriginalFilename", "PIE-Block.exe" "\0"
             VALUE "ProductName", "PIE-Block" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
