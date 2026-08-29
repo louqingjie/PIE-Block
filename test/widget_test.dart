@@ -302,7 +302,120 @@ void main() {
     expect(find.bySemanticsLabel('首都师范大学'), findsOneWidget);
   });
 
-  testWidgets('从启动页进入编辑页时播放过渡动画', (tester) async {
+  testWidgets('从启动页进入编辑页时播放横向揭示动画', (tester) async {
+    late _PageTransitionController controller;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => controller = _PageTransitionController(),
+          ),
+        ],
+        child: const PieBlockApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    const backdropKey = ValueKey('home-page-transition-backdrop');
+    const editorKey = ValueKey('editor-page-transition');
+    controller.enterEditor();
+    await tester.pump();
+    expect(find.byKey(backdropKey), findsOneWidget);
+    expect(find.byKey(editorKey), findsOneWidget);
+    expect(
+      find.ancestor(of: find.byKey(editorKey), matching: find.byType(SlideTransition)),
+      findsWidgets,
+    );
+    expect(
+      find.ancestor(of: find.byKey(editorKey), matching: find.byType(ClipRect)),
+      findsWidgets,
+    );
+
+    // 转场树中不再包含全屏淡入或首页缩放：在背景与编辑页到转场 Stack 的
+    // 祖先链上不得出现 Opacity、FadeTransition 或 Transform 节点。
+    final stackElement = tester.element(
+      find
+          .ancestor(of: find.byKey(backdropKey), matching: find.byType(Stack))
+          .first,
+    );
+    bool hasFadeOrScale(Element start) {
+      var result = false;
+      start.visitAncestorElements((element) {
+        if (identical(element, stackElement)) return false;
+        final widget = element.widget;
+        if (widget is Opacity || widget is FadeTransition || widget is Transform) {
+          result = true;
+          return false;
+        }
+        return true;
+      });
+      return result;
+    }
+
+    expect(
+      hasFadeOrScale(tester.element(find.byKey(backdropKey))),
+      isFalse,
+      reason: '首页背景不应再有全屏淡入或缩放节点',
+    );
+    expect(
+      hasFadeOrScale(tester.element(find.byKey(editorKey))),
+      isFalse,
+      reason: '编辑页不应再有全屏淡入节点',
+    );
+
+    // 编辑页从右侧约 2.5% 偏移滑入（测试窗口逻辑宽度 800）。
+    final editorFinder = find.byKey(editorKey);
+    expect(tester.getTopLeft(editorFinder).dx, closeTo(800 * .025, 0.5));
+    // 先空泵一帧启动动画节拍，再推进到动画中段。
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 110));
+    final halfwayDx = tester.getTopLeft(editorFinder).dx;
+    expect(halfwayDx, greaterThan(0));
+    expect(halfwayDx, lessThan(800 * .025));
+
+    // 动画进行中首页背景保持存在，结束后被卸载。
+    expect(find.byKey(backdropKey), findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(find.byKey(backdropKey), findsNothing);
+    expect(find.text('动画测试'), findsOneWidget);
+    expect(tester.getTopLeft(editorFinder).dx, 0);
+  });
+
+  testWidgets('动画中途返回首页不残留编辑页', (tester) async {
+    late _PageTransitionController controller;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => controller = _PageTransitionController(),
+          ),
+        ],
+        child: const PieBlockApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    const backdropKey = ValueKey('home-page-transition-backdrop');
+    const editorKey = ValueKey('editor-page-transition');
+    controller.enterEditor();
+    await tester.pump();
+    expect(find.byKey(backdropKey), findsOneWidget);
+
+    controller.leaveEditor();
+    await tester.pump();
+    expect(find.byKey(backdropKey), findsNothing);
+    expect(find.byKey(editorKey), findsNothing);
+    expect(find.text('新建机器人项目'), findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(find.byKey(editorKey), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('系统减少动态效果时直接展示编辑页', (tester) async {
+    tester.platformDispatcher.accessibilityFeaturesTestValue =
+        const FakeAccessibilityFeatures(disableAnimations: true);
+    addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+
     late _PageTransitionController controller;
     await tester.pumpWidget(
       ProviderScope(
@@ -320,29 +433,9 @@ void main() {
     await tester.pump();
     expect(
       find.byKey(const ValueKey('home-page-transition-backdrop')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey('editor-page-transition')),
-      findsOneWidget,
-    );
-
-    await tester.pump(const Duration(milliseconds: 210));
-    expect(
-      find.byKey(const ValueKey('home-page-transition-backdrop')),
-      findsOneWidget,
-    );
-    await tester.pumpAndSettle();
-    expect(
-      find.byKey(const ValueKey('home-page-transition-backdrop')),
       findsNothing,
     );
     expect(find.text('动画测试'), findsOneWidget);
-
-    controller.leaveEditor();
-    await tester.pumpAndSettle();
-    expect(find.text('新建机器人项目'), findsOneWidget);
-    expect(find.byKey(const ValueKey('editor-page-transition')), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

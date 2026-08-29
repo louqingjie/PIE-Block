@@ -103,12 +103,17 @@ class _AppPageTransition extends StatefulWidget {
 
 class _AppPageTransitionState extends State<_AppPageTransition>
     with SingleTickerProviderStateMixin {
-  static const _duration = Duration(milliseconds: 420);
+  static const _duration = Duration(milliseconds: 220);
+  static const _homeBackdropKey = ValueKey('home-page-transition-backdrop');
+  static const _editorKey = ValueKey('editor-page-transition');
 
   late final AnimationController _controller;
-  late final Animation<double> _curve;
-  late final Animation<Offset> _editorOffset;
+  late final Animation<Offset> _editorSlide;
   var _showHomeBackdrop = false;
+  var _transitionEpoch = 0;
+
+  bool get _reduceMotion =>
+      MediaQuery.maybeOf(context)?.disableAnimations ?? false;
 
   @override
   void initState() {
@@ -118,30 +123,35 @@ class _AppPageTransitionState extends State<_AppPageTransition>
       duration: _duration,
       value: widget.showEditor ? 1 : 0,
     );
-    _curve = CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
-    _editorOffset = Tween<Offset>(
-      begin: const Offset(.045, 0),
+    _editorSlide = Tween<Offset>(
+      begin: const Offset(.025, 0),
       end: Offset.zero,
-    ).animate(_curve);
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
   }
 
   @override
   void didUpdateWidget(covariant _AppPageTransition oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.showEditor == oldWidget.showEditor) return;
-    if (widget.showEditor) {
-      _showHomeBackdrop = true;
-      _controller.forward(from: 0).whenComplete(() {
-        if (mounted && widget.showEditor) {
-          setState(() => _showHomeBackdrop = false);
-        }
-      });
-    } else {
+    if (!widget.showEditor) {
+      // 返回首页：立即切换，并取消一切待执行的动画回调，
+      // 避免已关闭项目的编辑页继续监听空状态。
+      _transitionEpoch++;
       _controller
         ..stop()
         ..value = 0;
       _showHomeBackdrop = false;
+      return;
     }
+    if (_reduceMotion) {
+      // 系统启用“减少动态效果”时直接切换，不播放动画。
+      _controller.value = 1;
+      return;
+    }
+    // 进入编辑页：本帧先挂载编辑页（停在起始偏移）并保留首页静止背景，
+    // 首帧完成后再启动动画，让编辑页首次构建的耗时停在动画开始之前。
+    _showHomeBackdrop = true;
+    _scheduleEditorEntrance();
   }
 
   @override
@@ -150,10 +160,46 @@ class _AppPageTransitionState extends State<_AppPageTransition>
     super.dispose();
   }
 
+  void _scheduleEditorEntrance() {
+    final epoch = ++_transitionEpoch;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || epoch != _transitionEpoch) return;
+      _controller.forward(from: 0).whenComplete(() {
+        if (!mounted || epoch != _transitionEpoch) return;
+        // 动画结束后卸载首页背景，避免长期双页面渲染。
+        setState(() => _showHomeBackdrop = false);
+      });
+    });
+  }
+
+  // 直接定格到编辑页：用于“减少动态效果”，以及减少动态效果期间进入
+  // 编辑页后又关闭该选项等未经过动画的路径，防止编辑页残留在起始偏移。
+  void _snapToEditor() {
+    _transitionEpoch++;
+    _showHomeBackdrop = false;
+    if (_controller.isAnimating || _controller.value != 1) {
+      final epoch = _transitionEpoch;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || epoch != _transitionEpoch) return;
+        _controller
+          ..stop()
+          ..value = 1;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!widget.showEditor) return const HomeScreen();
-    if (MediaQuery.maybeOf(context)?.disableAnimations ?? false) {
+    if (_reduceMotion) {
+      _snapToEditor();
+      return const WizardScreen();
+    }
+    if (!_showHomeBackdrop &&
+        !_controller.isAnimating &&
+        _controller.value != 1) {
+      // 未经过动画路径进入编辑页：直接完整展示，不补播动画。
+      _snapToEditor();
       return const WizardScreen();
     }
     return AnimatedBuilder(
@@ -165,28 +211,19 @@ class _AppPageTransitionState extends State<_AppPageTransition>
           children: [
             if (_showHomeBackdrop)
               ExcludeSemantics(
-                child: Opacity(
-                  opacity: 1 - .18 * _curve.value,
-                  child: Transform.scale(
-                    scale: 1 - .015 * _curve.value,
-                    child: const RepaintBoundary(
-                      key: ValueKey('home-page-transition-backdrop'),
-                      child: HomeScreen(),
-                    ),
-                  ),
+                child: const RepaintBoundary(
+                  key: _homeBackdropKey,
+                  child: HomeScreen(),
                 ),
               ),
-            FadeTransition(
-              opacity: _curve,
-              child: SlideTransition(position: _editorOffset, child: child),
+            // ClipRect 限制滑入区域，编辑页只在自身范围内横向位移。
+            ClipRect(
+              child: SlideTransition(position: _editorSlide, child: child),
             ),
           ],
         ),
       ),
-      child: const RepaintBoundary(
-        key: ValueKey('editor-page-transition'),
-        child: WizardScreen(),
-      ),
+      child: const RepaintBoundary(key: _editorKey, child: WizardScreen()),
     );
   }
 }

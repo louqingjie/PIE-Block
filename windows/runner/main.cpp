@@ -19,6 +19,10 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
 
   flutter::DartProject project(L"data");
 
+  // Windows 上暂时禁用 Impeller（默认使用旧渲染器），待上游修复后再恢复。
+  // 该设置对 Debug/Profile/Release 均生效；其他平台不受影响。
+  project.set_impeller_switch(flutter::ImpellerSwitch::Disabled);
+
   std::vector<std::string> command_line_arguments =
       GetCommandLineArguments();
 
