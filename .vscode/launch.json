@@ -1,0 +1,54 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Flutter · 当前设备（Debug）",
+            "type": "dart",
+            "request": "launch",
+            "program": "lib/main.dart",
+            "cwd": "${workspaceFolder}",
+            "flutterMode": "debug"
+        },
+        {
+            "name": "Flutter · Windows（Debug）",
+            "type": "dart",
+            "request": "launch",
+            "program": "lib/main.dart",
+            "cwd": "${workspaceFolder}",
+            "deviceId": "windows",
+            "flutterMode": "debug"
+        },
+        {
+            "name": "Flutter · Windows（Profile 性能分析）",
+            "type": "dart",
+            "request": "launch",
+            "program": "lib/main.dart",
+            "cwd": "${workspaceFolder}",
+            "deviceId": "windows",
+            "flutterMode": "profile",
+            "showMemoryUsage": true
+        },
+        {
+            "name": "Flutter · Windows（Profile，关闭 Impeller）",
+            "type": "dart",
+            "request": "launch",
+            "program": "lib/main.dart",
+            "cwd": "${workspaceFolder}",
+            "deviceId": "windows",
+            "flutterMode": "profile",
+            "showMemoryUsage": true,
+            "toolArgs": [
+                "--no-enable-impeller"
+            ]
+        },
+        {
+            "name": "Flutter · Windows（Release）",
+            "type": "dart",
+            "request": "launch",
+            "program": "lib/main.dart",
+            "cwd": "${workspaceFolder}",
+            "deviceId": "windows",
+            "flutterMode": "release"
+        }
+    ]
+}
