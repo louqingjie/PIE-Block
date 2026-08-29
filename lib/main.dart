@@ -87,7 +87,106 @@ class _PieBlockAppState extends ConsumerState<PieBlockApp> {
       theme: _theme(Brightness.light),
       darkTheme: _theme(Brightness.dark),
       themeMode: state.themeMode,
-      home: state.document == null ? const HomeScreen() : const WizardScreen(),
+      home: _AppPageTransition(showEditor: state.document != null),
+    );
+  }
+}
+
+class _AppPageTransition extends StatefulWidget {
+  const _AppPageTransition({required this.showEditor});
+
+  final bool showEditor;
+
+  @override
+  State<_AppPageTransition> createState() => _AppPageTransitionState();
+}
+
+class _AppPageTransitionState extends State<_AppPageTransition>
+    with SingleTickerProviderStateMixin {
+  static const _duration = Duration(milliseconds: 420);
+
+  late final AnimationController _controller;
+  late final Animation<double> _curve;
+  late final Animation<Offset> _editorOffset;
+  var _showHomeBackdrop = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: _duration,
+      value: widget.showEditor ? 1 : 0,
+    );
+    _curve = CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
+    _editorOffset = Tween<Offset>(
+      begin: const Offset(.045, 0),
+      end: Offset.zero,
+    ).animate(_curve);
+  }
+
+  @override
+  void didUpdateWidget(covariant _AppPageTransition oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.showEditor == oldWidget.showEditor) return;
+    if (widget.showEditor) {
+      _showHomeBackdrop = true;
+      _controller.forward(from: 0).whenComplete(() {
+        if (mounted && widget.showEditor) {
+          setState(() => _showHomeBackdrop = false);
+        }
+      });
+    } else {
+      _controller
+        ..stop()
+        ..value = 0;
+      _showHomeBackdrop = false;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.showEditor) return const HomeScreen();
+    if (MediaQuery.maybeOf(context)?.disableAnimations ?? false) {
+      return const WizardScreen();
+    }
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) => IgnorePointer(
+        ignoring: !_controller.isCompleted,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (_showHomeBackdrop)
+              ExcludeSemantics(
+                child: Opacity(
+                  opacity: 1 - .18 * _curve.value,
+                  child: Transform.scale(
+                    scale: 1 - .015 * _curve.value,
+                    child: const RepaintBoundary(
+                      key: ValueKey('home-page-transition-backdrop'),
+                      child: HomeScreen(),
+                    ),
+                  ),
+                ),
+              ),
+            FadeTransition(
+              opacity: _curve,
+              child: SlideTransition(position: _editorOffset, child: child),
+            ),
+          ],
+        ),
+      ),
+      child: const RepaintBoundary(
+        key: ValueKey('editor-page-transition'),
+        child: WizardScreen(),
+      ),
     );
   }
 }

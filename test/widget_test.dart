@@ -47,6 +47,20 @@ class _InfantryStartController extends AppController {
   );
 }
 
+class _PageTransitionController extends AppController {
+  @override
+  AppState build() => const AppState();
+
+  void enterEditor() {
+    state = AppState(
+      document: ProjectDocument.create('动画测试', ProjectKind.infantry),
+      saveStatus: SaveStatus.saved,
+    );
+  }
+
+  void leaveEditor() => state = state.copyWith(clearProject: true);
+}
+
 class _InfantryControlsController extends AppController {
   @override
   AppState build() => AppState(
@@ -286,6 +300,50 @@ void main() {
     expect(find.text('打开已有项目'), findsOneWidget);
     expect(find.textContaining('RoboMaster'), findsOneWidget);
     expect(find.bySemanticsLabel('首都师范大学'), findsOneWidget);
+  });
+
+  testWidgets('从启动页进入编辑页时播放过渡动画', (tester) async {
+    late _PageTransitionController controller;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => controller = _PageTransitionController(),
+          ),
+        ],
+        child: const PieBlockApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    controller.enterEditor();
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('home-page-transition-backdrop')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('editor-page-transition')),
+      findsOneWidget,
+    );
+
+    await tester.pump(const Duration(milliseconds: 210));
+    expect(
+      find.byKey(const ValueKey('home-page-transition-backdrop')),
+      findsOneWidget,
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('home-page-transition-backdrop')),
+      findsNothing,
+    );
+    expect(find.text('动画测试'), findsOneWidget);
+
+    controller.leaveEditor();
+    await tester.pumpAndSettle();
+    expect(find.text('新建机器人项目'), findsOneWidget);
+    expect(find.byKey(const ValueKey('editor-page-transition')), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('首页和新建项目弹窗在 360 宽度下完整显示', (tester) async {
