@@ -1,0 +1,9 @@
+// Cloudflare Workers 静态站点配置：直接托管 website/ 目录，无构建步骤
+{
+  "name": "pie-block",
+  "compatibility_date": "2025-08-01",
+  "assets": {
+    "directory": "./website",
+    "html_handling": "auto-trailing-slash"
+  }
+}
