@@ -1,4 +1,4 @@
-﻿﻿[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     # 复用已有的 Release 构建产物，跳过 flutter build
     [switch]$SkipBuild,
@@ -48,7 +48,7 @@ if ([string]::IsNullOrWhiteSpace($Iscc) -or !(Test-Path -LiteralPath $Iscc -Path
 
 # --- Release 构建 ---
 if (!$SkipBuild) {
-    Push-Location $appRoot
+    Push-Location $repoRoot
     try {
         & flutter pub get
         if ($LASTEXITCODE -ne 0) { throw 'flutter pub get 失败。' }
