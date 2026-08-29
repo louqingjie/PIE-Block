@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PIE-Block — 像搭积木一样为 STC32G 写固件</title>
-  <meta name="description" content="PIE-Block 是一款开源图形化编程工具：拖拽积木生成 SDCC C 代码，内置完整工具链，USB 一键烧录，开箱即用。" />
+  <title>PIE-Block — 参数化编程，为 STC32G 快速生成固件</title>
+  <meta name="description" content="PIE-Block 是一款开源参数化编程工具：填写参数即可生成 SDCC C 代码，内置完整工具链，USB 一键烧录，开箱即用。" />
   <link rel="icon" type="image/png" href="assets/icon.png" />
   <link rel="stylesheet" href="assets/style.css" />
 </head>
@@ -30,13 +30,17 @@
 
   <!-- 英雄区 -->
   <section class="hero">
+    <div class="ambient" aria-hidden="true">
+      <span class="blob blob-cyan"></span>
+      <span class="blob blob-coral"></span>
+    </div>
     <div class="container hero-inner">
       <div class="hero-copy">
-        <span class="badge">开源 · 免费 · 图形化编程</span>
-        <h1>像搭积木一样，<br />为 <span class="grad">STC32G</span> 写固件</h1>
+        <span class="badge">开源 · 免费 · 参数化编程</span>
+        <h1>参数填好，<br /><span class="grad">固件到手</span></h1>
         <p class="lead">
-          PIE-Block 把单片机开发变成拖拽积木：自动生成 SDCC C 代码，
-          内置完整编译工具链，USB 一键烧录——从安装到点亮第一颗 LED，只需几分钟。
+          PIE-Block 把单片机开发参数化：引脚、频率、逻辑流程全部变成可调参数，
+          确认即生成 SDCC C 代码——内置完整工具链，USB 一键烧录，开箱即用。
         </p>
         <div class="hero-actions">
           <a class="btn btn-primary btn-lg" href="#download">
@@ -48,28 +52,22 @@
         <p class="hero-meta">v1.0.0 · 约 20 MB · 支持 Windows 10/11 x64</p>
       </div>
 
-      <!-- 纯 CSS 编辑器示意图 -->
+      <!-- 纯 CSS 参数面板示意图 -->
       <div class="hero-visual" aria-hidden="true">
         <div class="editor">
           <div class="editor-titlebar">
-            <span class="dot dot-red"></span><span class="dot dot-yellow"></span><span class="dot dot-green"></span>
+            <span class="dot dot-cyan"></span><span class="dot dot-coral"></span><span class="dot dot-grey"></span>
             <span class="editor-title">PIE-Block — infantry.pie</span>
           </div>
           <div class="editor-body">
-            <div class="editor-palette">
-              <div class="pblock pb-1">主循环</div>
-              <div class="pblock pb-2">GPIO 输出</div>
-              <div class="pblock pb-3">延时 ms</div>
-              <div class="pblock pb-4">PWM 舵机</div>
-              <div class="pblock pb-5">蜂鸣器</div>
-            </div>
-            <div class="editor-canvas">
-              <div class="cb cb-1"><span>当上电启动</span></div>
-              <div class="cb cb-2"><span>P1.5 设为输出</span></div>
-              <div class="cb cb-3"><span>循环 10 次</span>
-                <div class="cb cb-4"><span>翻转 P1.5</span></div>
-                <div class="cb cb-5"><span>延时 500ms</span></div>
-              </div>
+            <div class="editor-params">
+              <div class="pgroup-title">参数配置</div>
+              <div class="prow"><span class="plabel">LED 引脚</span><span class="pvalue">P1.5</span></div>
+              <div class="prow"><span class="plabel">闪烁次数</span><span class="pvalue">10</span></div>
+              <div class="prow"><span class="plabel">间隔 / ms</span><span class="pvalue">500</span></div>
+              <div class="prow"><span class="plabel">电平极性</span><span class="pvalue">高有效</span></div>
+              <div class="prow"><span class="plabel">PWM 频率</span><span class="pvalue">50 Hz</span></div>
+              <button class="pgenerate">生成代码</button>
             </div>
             <div class="editor-code">
               <div class="cline" style="--w:52%">#include "stc32g.h"</div>
@@ -77,13 +75,13 @@
               <div class="cline" style="--w:20%">{</div>
               <div class="cline" style="--w:64%">&nbsp;&nbsp;P15 = 0;</div>
               <div class="cline" style="--w:72%">&nbsp;&nbsp;while (1) {</div>
-              <div class="cline" style="--w:80%">&nbsp;&nbsp;&nbsp;&nbsp;P15 = !P15;</div>
+              <div class="cline accent" style="--w:80%">&nbsp;&nbsp;&nbsp;&nbsp;P15 = !P15;</div>
               <div class="cline" style="--w:76%">&nbsp;&nbsp;&nbsp;&nbsp;delay_ms(500);</div>
               <div class="cline" style="--w:30%">&nbsp;&nbsp;}</div>
               <div class="cline" style="--w:14%">}</div>
             </div>
           </div>
-          <div class="editor-statusbar">SDCC 编译成功 · 0 警告 · 就绪</div>
+          <div class="editor-statusbar"><span class="status-ok">✓ SDCC 编译成功</span>· 0 警告 · 就绪</div>
         </div>
       </div>
     </div>
@@ -93,22 +91,22 @@
   <section class="section" id="features">
     <div class="container">
       <h2 class="section-title">为快速开发而生</h2>
-      <p class="section-sub">从图形化逻辑到板卡固件，一条流水线全部搞定</p>
+      <p class="section-sub">从参数配置到板卡固件，一条流水线全部搞定</p>
       <div class="grid grid-3">
         <div class="card">
-          <div class="card-icon">🧩</div>
-          <h3>图形化积木编程</h3>
-          <p>主循环、GPIO、PWM、串口……常用逻辑全部积木化，新手也能看懂单片机程序的结构。</p>
+          <div class="card-icon">🎛️</div>
+          <h3>参数化编程</h3>
+          <p>引脚分配、时序、外设配置全部参数化，不用死记寄存器，改一个参数就能适配不同硬件方案。</p>
         </div>
         <div class="card">
           <div class="card-icon">⚡</div>
           <h3>一键生成 SDCC C 代码</h3>
-          <p>积木图实时转换为规范、可读的 C 代码，既能直接烧录，也能作为学习 C 语言开发的起点。</p>
+          <p>参数确认即输出规范、可读的 C 代码，既能直接烧录，也能作为学习 C 语言开发的起点。</p>
         </div>
         <div class="card">
           <div class="card-icon">🧰</div>
           <h3>内置完整工具链</h3>
-          <p>SDCC 编译器、固件模板全部随安装包内置，无需配置任何环境变量，解压即用。</p>
+          <p>SDCC 编译器、固件模板全部随安装包内置，无需配置任何环境变量，安装即用。</p>
         </div>
         <div class="card">
           <div class="card-icon">🔌</div>
@@ -118,7 +116,7 @@
         <div class="card">
           <div class="card-icon">🎵</div>
           <h3>音乐编辑器</h3>
-          <p>导入 MIDI 自动生成蜂鸣器曲谱，把喜欢的旋律写进单片机，只改几个积木的事。</p>
+          <p>导入 MIDI 自动生成蜂鸣器曲谱，把喜欢的旋律写进单片机，只改几个参数的事。</p>
         </div>
         <div class="card">
           <div class="card-icon">🧪</div>
@@ -136,7 +134,7 @@
       <p class="section-sub">不需要配置环境，不需要背寄存器</p>
       <div class="grid grid-3 steps">
         <div class="step"><span class="step-num">1</span><h3>安装并打开</h3><p>运行安装包，一路下一步。工具链已内置，装完就是完整开发环境。</p></div>
-        <div class="step"><span class="step-num">2</span><h3>拖拽积木</h3><p>从积木盒拖出逻辑拼成程序，右侧实时预览生成的 C 代码。</p></div>
+        <div class="step"><span class="step-num">2</span><h3>填写参数</h3><p>按硬件方案配置引脚与时序参数，右侧实时预览生成的 C 代码。</p></div>
         <div class="step"><span class="step-num">3</span><h3>一键烧录</h3><p>USB 连接开发板，点击烧录，编译下载一气呵成。</p></div>
       </div>
     </div>
