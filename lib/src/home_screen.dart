@@ -364,23 +364,38 @@ class HomeScreen extends ConsumerWidget {
                               )
                             : Column(
                                 children: [
-                                  for (final path in state.recentPaths)
+                                  for (
+                                    final entry
+                                        in state.recentPaths.indexed
+                                  )
                                     ListTile(
                                       leading: const Icon(
                                         Icons.description_outlined,
                                       ),
                                       title: Text(
-                                        AppDocumentIo.displayName(path),
+                                        AppDocumentIo.displayName(entry.$2),
                                       ),
                                       subtitle: Text(
-                                        path,
+                                        entry.$2,
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                       ),
                                       trailing: const Icon(Icons.chevron_right),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.vertical(
+                                          top: entry.$1 == 0
+                                              ? const Radius.circular(18)
+                                              : Radius.zero,
+                                          bottom:
+                                              entry.$1 ==
+                                                  state.recentPaths.length - 1
+                                              ? const Radius.circular(18)
+                                              : Radius.zero,
+                                        ),
+                                      ),
                                       onTap: () => ref
                                           .read(appControllerProvider.notifier)
-                                          .openProject(path),
+                                          .openProject(entry.$2),
                                     ),
                                 ],
                               ),
