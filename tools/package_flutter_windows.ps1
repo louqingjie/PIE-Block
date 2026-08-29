@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+﻿﻿[CmdletBinding()]
 param(
     # 复用已有的 Release 构建产物，跳过 flutter build
     [switch]$SkipBuild,

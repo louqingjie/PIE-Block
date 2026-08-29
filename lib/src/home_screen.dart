@@ -492,8 +492,8 @@ class _HomeHeader extends StatelessWidget {
             ),
           ],
         ),
-      const SizedBox(height: 5),
-      const Text('用清晰的步骤配置机器人，生成可靠的控制代码'),
+      // const SizedBox(height: 5),
+      // const Text('用清晰的步骤配置机器人，生成可靠的控制代码'),
     ],
   );
 
