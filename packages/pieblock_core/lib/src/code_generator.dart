@@ -33,16 +33,23 @@ abstract final class CodeGenerator {
   static int _slot(String? pin) =>
       expansionPins.indexOf(InfantryPinPlanner.normalizePin(pin));
 
-  static const String _uart1TxQuery = '''
-static void Uart1TxQuery(uint8_t dat)
+  static const String _uart1SendFrameQuery = '''
+static void Uart1SendFrameQuery(const uint8_t *frame, uint8_t length)
 {
+    uint8_t i;
+    uint8_t globalInterruptEnabled = EA;
     uint8_t uart1InterruptEnabled = ES;
+
+    EA = 0;
     ES = 0;
-    TI = 0;
-    SBUF = dat;
-    while (!TI) ;
+    for (i = 0; i < length; i++) {
+        TI = 0;
+        SBUF = frame[i];
+        while (!TI) ;
+    }
     TI = 0;
     ES = uart1InterruptEnabled;
+    EA = globalInterruptEnabled;
 }
 ''';
 
@@ -57,7 +64,7 @@ static void remoteControlInitWithTimeout(void)
     }
 }
 
-$_uart1TxQuery
+$_uart1SendFrameQuery
 #define LED_PORT GPIO_P3
 #define LED1_PIN GPIO_Pin_5
 #define LED2_PIN GPIO_Pin_6
@@ -125,7 +132,7 @@ void ExpansionBoradControl(uint8_t command,
     }
     control_frame_pack[19] = COMM_END_1;
     control_frame_pack[20] = COMM_END_2;
-    for (i = 0; i < 21; i++) Uart1TxQuery(control_frame_pack[i]);
+    Uart1SendFrameQuery(control_frame_pack, 21);
 }
 
 void ReadControllerInputs(void)
@@ -153,8 +160,8 @@ void CalculateChassis(void)
     int speed = maxSpeed;
     int baseSpeed;
     int turnSpeed;$sprint
-    baseSpeed = (int)((float)valueOfRoker[0][1] * speed / 2047);
-    turnSpeed = (int)((float)valueOfRoker[0][0] * speed / 2047);
+    baseSpeed = (int)(((int32_t)valueOfRoker[0][1] * (int32_t)speed) / 2047L);
+    turnSpeed = (int)(((int32_t)valueOfRoker[0][0] * (int32_t)speed) / 2047L);
     dutyOfMotor[${_slot(c.leftFront.pin)}] = ${_dir(c.leftFront.direction!) == 1 ? '' : '-'}baseSpeed ${_dir(c.leftFront.direction!) == 1 ? '-' : '+'} turnSpeed;
     dutyOfMotor[${_slot(c.leftRear.pin)}] = ${_dir(c.leftRear.direction!) == 1 ? '' : '-'}baseSpeed ${_dir(c.leftRear.direction!) == 1 ? '-' : '+'} turnSpeed;
     dutyOfMotor[${_slot(c.rightFront.pin)}] = ${_dir(c.rightFront.direction!) == 1 ? '-' : ''}baseSpeed ${_dir(c.rightFront.direction!) == 1 ? '-' : '+'} turnSpeed;
@@ -195,7 +202,7 @@ void CalculateChassis(void)
     if ($variable < $low) $variable = $low; if ($variable > $high) $variable = $high;''';
       }
       final sign = direction == Direction.forward ? '' : '-';
-      return '    dutyOfMotor[${_slot(pin)}] = $sign(int)((float)$rocker * 10000.0f / 2047.0f);';
+      return '    dutyOfMotor[${_slot(pin)}] = $sign(int)(((int32_t)$rocker * 10000L) / 2047L);';
     }
 
     String dutyValue(int index) {
@@ -454,11 +461,11 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
             );
           } else if (a.mode == ControlMode.speed) {
             body.add(
-              '    dutyOfMotor[$slot] = (int)((float)$read * ${a.parameter!} / 2047);',
+              '    dutyOfMotor[$slot] = (int)(((int32_t)$read * ${a.parameter!}L) / 2047L);',
             );
           } else {
             body.add(
-              '    dutyOfMotor[$slot] += (int)((float)$read * ${a.parameter!} / 2047);',
+              '    dutyOfMotor[$slot] += (int)(((int32_t)$read * ${a.parameter!}L) / 2047L);',
             );
           }
         } else {
@@ -743,7 +750,7 @@ uint8_t Channal = 36;
 
 static uint8_t control_frame_pack[21];
 
-$_uart1TxQuery
+$_uart1SendFrameQuery
 static void Beep(uint16_t frequency, uint16_t duration)
 {
     PWM_SET_Frequency(BUZZER_CH, frequency, 5000);
@@ -768,7 +775,7 @@ static void ExpansionBoradControl(uint8_t command,
     }
     control_frame_pack[19] = COMM_END_1;
     control_frame_pack[20] = COMM_END_2;
-    for (i = 0; i < 21; i++) Uart1TxQuery(control_frame_pack[i]);
+    Uart1SendFrameQuery(control_frame_pack, 21);
 }
 
 void main(void)
