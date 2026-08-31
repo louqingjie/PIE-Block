@@ -247,7 +247,7 @@ void main() {
     test('底盘速度低于建议阈值时给出非阻塞警告', () {
       final low = completeInfantry().copyWith(
         chassis: completeChassis().copyWith(
-          normalSpeed: 6999,
+          normalSpeed: 3999,
           sprintSpeed: 8999,
         ),
       );
@@ -256,11 +256,11 @@ void main() {
           .map((issue) => issue.message);
       expect(
         warnings,
-        containsAll(['普通速度低于 7000，底盘移动速度可能变慢', '冲刺速度低于 9000，底盘移动速度可能变慢']),
+        containsAll(['普通速度低于 4000，底盘移动速度可能变慢', '冲刺速度低于 9000，底盘移动速度可能变慢']),
       );
 
       final boundary = low.copyWith(
-        chassis: low.chassis.copyWith(normalSpeed: 7000, sprintSpeed: 9000),
+        chassis: low.chassis.copyWith(normalSpeed: 4000, sprintSpeed: 9000),
       );
       expect(
         ProjectValidator.validate(boundary)

@@ -1008,11 +1008,19 @@ void main() {
   });
 
   testWidgets('底盘速度过低显示警告但不阻止下一步', (tester) async {
+    final source = _infantryDocument();
+    final config = source.config as InfantryConfig;
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           appControllerProvider.overrideWith(
-            () => _ConfiguredRemoteController(_infantryDocument()),
+            () => _ConfiguredRemoteController(
+              source.copyWith(
+                config: config.copyWith(
+                  chassis: config.chassis.copyWith(normalSpeed: 3999),
+                ),
+              ),
+            ),
           ),
         ],
         child: const MaterialApp(home: WizardScreen()),
@@ -1020,7 +1028,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('普通速度低于 7000，底盘移动速度可能变慢'), findsWidgets);
+    expect(find.text('普通速度低于 4000，底盘移动速度可能变慢'), findsWidgets);
     expect(find.text('冲刺速度低于 9000，底盘移动速度可能变慢'), findsWidgets);
     await tester.tap(find.text('下一步'));
     await tester.pumpAndSettle();
