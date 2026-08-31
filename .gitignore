@@ -175,3 +175,4 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 .widget_preview/
+.workbuddy/
