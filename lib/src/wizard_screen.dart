@@ -338,13 +338,126 @@ class _PinOption extends StatelessWidget {
   );
 }
 
-List<Widget> _selectedPinItems(List<String> pins) => [
+List<Widget> _selectedPinItems(Iterable<String?> pins) => [
   for (final pin in pins)
     Align(
       alignment: Alignment.centerLeft,
-      child: Text(pin, maxLines: 1, overflow: TextOverflow.ellipsis),
+      child: Text(pin ?? '未分配', maxLines: 1, overflow: TextOverflow.ellipsis),
     ),
 ];
+
+String _pinOccupantLabels(InfantryPinReassignmentPlan plan) =>
+    plan.occupants.expand((occupant) => occupant.ownerLabels).toSet().join('、');
+
+InfantryConfig _reassignmentResult(
+  InfantryPinReassignmentPlan plan,
+  InfantryPinReassignmentStrategy strategy,
+) => plan.options.firstWhere((option) => option.strategy == strategy).result;
+
+Future<InfantryConfig?> _resolveInfantryPinSelection(
+  BuildContext context,
+  InfantryConfig config,
+  String fieldPath,
+  String? targetPin,
+) async {
+  final plan = InfantryPinPlanner.planReassignment(
+    config,
+    fieldPath,
+    targetPin,
+  );
+  if (!plan.hasConflict) {
+    return _reassignmentResult(plan, InfantryPinReassignmentStrategy.direct);
+  }
+
+  final target = InfantryPinPlanner.normalizePin(targetPin);
+  final sourceLabel = _fieldLabel(fieldPath);
+  final occupantLabels = _pinOccupantLabels(plan);
+  final disablesFriction = plan.supports(
+    InfantryPinReassignmentStrategy.disableFrictionAndTakeOver,
+  );
+  final strategy = await showDialog<InfantryPinReassignmentStrategy>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text('$target 已被占用'),
+      content: Text(
+        disablesFriction
+            ? '$sourceLabel 要使用 $target，但该引脚由固定摩擦轮占用。确认后将关闭摩擦轮并保留已有摩擦轮参数。'
+            : '$sourceLabel 要使用 $target，当前由 $occupantLabels 占用。${plan.supports(InfantryPinReassignmentStrategy.swap) ? '可以交换双方引脚，或让原设备暂时未分配。' : '当前引脚无法合法交换，只能让原设备暂时未分配。'}',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        if (disablesFriction)
+          FilledButton(
+            onPressed: () => Navigator.pop(
+              context,
+              InfantryPinReassignmentStrategy.disableFrictionAndTakeOver,
+            ),
+            child: const Text('关闭摩擦轮并占用'),
+          )
+        else ...[
+          OutlinedButton(
+            onPressed: () => Navigator.pop(
+              context,
+              InfantryPinReassignmentStrategy.takeOver,
+            ),
+            child: const Text('占用并解除原分配'),
+          ),
+          if (plan.supports(InfantryPinReassignmentStrategy.swap))
+            FilledButton(
+              onPressed: () =>
+                  Navigator.pop(context, InfantryPinReassignmentStrategy.swap),
+              child: const Text('交换引脚'),
+            ),
+        ],
+      ],
+    ),
+  );
+  if (strategy == null) return null;
+  return _reassignmentResult(plan, strategy);
+}
+
+Future<InfantryConfig?> _resolveFrictionModeSelection(
+  BuildContext context,
+  InfantryConfig config,
+  FrictionMode? mode,
+) async {
+  if (mode == null) return null;
+  if (mode == FrictionMode.disabled) {
+    return config.copyWith(frictionMode: FrictionMode.disabled);
+  }
+  final plan = InfantryPinPlanner.planFrictionEnablement(config);
+  if (!plan.hasConflict) {
+    return _reassignmentResult(plan, InfantryPinReassignmentStrategy.direct);
+  }
+  final occupantLabels = _pinOccupantLabels(plan);
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('P64/P66 已被占用'),
+      content: Text(
+        '启用无刷电调摩擦轮需要固定使用 P64/P66，当前占用者为 $occupantLabels。确认后这些设备将变为未分配。',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text('解除占用并启用'),
+        ),
+      ],
+    ),
+  );
+  if (confirmed != true) return null;
+  return _reassignmentResult(
+    plan,
+    InfantryPinReassignmentStrategy.enableFrictionAndTakeOver,
+  );
+}
 
 class WizardScreen extends ConsumerWidget {
   const WizardScreen({super.key});
@@ -582,14 +695,13 @@ class WizardScreen extends ConsumerWidget {
                               : null,
                           tooltip:
                               state.step == controller.reviewStep(document.kind)
-                                  ? '生成代码'
-                                  : state.step ==
-                                          controller.codeStep(document.kind)
-                                      ? '编译与烧录'
-                                      : state.step == controller.deployStep(
-                                              document.kind)
-                                          ? '编译与烧录'
-                                          : '下一步',
+                              ? '生成代码'
+                              : state.step == controller.codeStep(document.kind)
+                              ? '编译与烧录'
+                              : state.step ==
+                                    controller.deployStep(document.kind)
+                              ? '编译与烧录'
+                              : '下一步',
                           icon: const Icon(Icons.arrow_forward),
                         )
                       : FilledButton.icon(
@@ -602,12 +714,12 @@ class WizardScreen extends ConsumerWidget {
                             state.step == controller.reviewStep(document.kind)
                                 ? '生成代码'
                                 : state.step ==
-                                        controller.codeStep(document.kind)
-                                    ? '编译与烧录'
-                                    : state.step == controller.deployStep(
-                                            document.kind)
-                                        ? '编译并烧录'
-                                        : '下一步',
+                                      controller.codeStep(document.kind)
+                                ? '编译与烧录'
+                                : state.step ==
+                                      controller.deployStep(document.kind)
+                                ? '编译并烧录'
+                                : '下一步',
                           ),
                         ),
                 ],
@@ -912,18 +1024,30 @@ class _RemotePage extends ConsumerWidget {
     ) {
       final directionPath = fieldPath.replaceFirst('.pin', '.direction');
       final pinChoices = _includeCurrent(chassisPins, wheel.pin);
+      final visiblePinChoices = <String?>[
+        if (c is InfantryConfig) null,
+        ...pinChoices,
+      ];
       return _FormRow(
         fieldPaths: [fieldPath, directionPath],
         children: [
           Expanded(
             child: _FieldAnchor(
               path: fieldPath,
-              child: DropdownButtonFormField(
+              child: DropdownButtonFormField<String>(
+                key: ValueKey(fieldPath),
                 isExpanded: true,
                 initialValue: wheel.pin,
                 decoration: _fieldDecoration(ref, fieldPath, '$label IO'),
-                selectedItemBuilder: (_) => _selectedPinItems(pinChoices),
-                items: pinChoices.map((e) {
+                selectedItemBuilder: (_) =>
+                    _selectedPinItems(visiblePinChoices),
+                items: visiblePinChoices.map((e) {
+                  if (e == null) {
+                    return const DropdownMenuItem<String>(
+                      value: null,
+                      child: Text('未分配'),
+                    );
+                  }
                   final enabled =
                       c is! InfantryConfig ||
                       InfantryPinPlanner.allowedPins(c, fieldPath).contains(e);
@@ -936,13 +1060,23 @@ class _RemotePage extends ConsumerWidget {
                     child: _PinOption(
                       e,
                       enabled: enabled,
-                      owner: enabled || owner == null
-                          ? null
-                          : '${owner.ownerLabel}占用',
+                      owner: owner == null ? null : '${owner.ownerLabel}占用',
                     ),
                   );
                 }).toList(),
-                onChanged: (v) => update(wheel.copyWith(pin: v)),
+                onChanged: (v) async {
+                  if (c is! InfantryConfig) {
+                    update(wheel.copyWith(pin: v));
+                    return;
+                  }
+                  final result = await _resolveInfantryPinSelection(
+                    context,
+                    c,
+                    fieldPath,
+                    v,
+                  );
+                  if (result != null) ctrl.updateConfig(result);
+                },
               ),
             ),
           ),
@@ -1259,6 +1393,7 @@ class _InfantryMechanismPage extends ConsumerWidget {
       InfantryPinPlanner.motorPins,
       c.feederPin,
     );
+    final feederPinChoices = <String?>[null, ...feederPins];
     Widget axis(String name, bool yaw) {
       final drive = yaw ? c.yawDrive : c.pitchDrive,
           pin = yaw ? c.yawPin : c.pitchPin,
@@ -1281,6 +1416,7 @@ class _InfantryMechanismPage extends ConsumerWidget {
         null => const <String>[],
       };
       final visiblePins = _includeCurrent(candidates, pin);
+      final visiblePinChoices = <String?>[null, ...visiblePins];
       return _Section(
         title: '$name 轴',
         children: [
@@ -1321,12 +1457,20 @@ class _InfantryMechanismPage extends ConsumerWidget {
               Expanded(
                 child: _FieldAnchor(
                   path: pinPath,
-                  child: DropdownButtonFormField(
+                  child: DropdownButtonFormField<String>(
+                    key: ValueKey(pinPath),
                     isExpanded: true,
                     initialValue: pin,
                     decoration: _fieldDecoration(ref, pinPath, 'IO'),
-                    selectedItemBuilder: (_) => _selectedPinItems(visiblePins),
-                    items: visiblePins.map((e) {
+                    selectedItemBuilder: (_) =>
+                        _selectedPinItems(visiblePinChoices),
+                    items: visiblePinChoices.map((e) {
+                      if (e == null) {
+                        return const DropdownMenuItem<String>(
+                          value: null,
+                          child: Text('未分配'),
+                        );
+                      }
                       final enabled = allowedPins.contains(e);
                       final owner = InfantryPinPlanner.occupiedBy(
                         c,
@@ -1339,15 +1483,21 @@ class _InfantryMechanismPage extends ConsumerWidget {
                         child: _PinOption(
                           e,
                           enabled: enabled,
-                          owner: enabled
-                              ? null
-                              : owner?.ownerLabel ?? '当前驱动类型不支持',
+                          owner:
+                              owner?.ownerLabel ??
+                              (enabled ? null : '当前驱动类型不支持'),
                         ),
                       );
                     }).toList(),
-                    onChanged: (v) => update(
-                      yaw ? c.copyWith(yawPin: v) : c.copyWith(pitchPin: v),
-                    ),
+                    onChanged: (v) async {
+                      final result = await _resolveInfantryPinSelection(
+                        context,
+                        c,
+                        pinPath,
+                        v,
+                      );
+                      if (result != null) update(result);
+                    },
                   ),
                 ),
               ),
@@ -1414,7 +1564,8 @@ class _InfantryMechanismPage extends ConsumerWidget {
                   Expanded(
                     child: _FieldAnchor(
                       path: 'mechanism.feeder_pin',
-                      child: DropdownButtonFormField(
+                      child: DropdownButtonFormField<String>(
+                        key: const ValueKey('mechanism.feeder_pin'),
                         isExpanded: true,
                         initialValue: c.feederPin,
                         decoration: _fieldDecoration(
@@ -1423,8 +1574,14 @@ class _InfantryMechanismPage extends ConsumerWidget {
                           '扩展板 IO',
                         ),
                         selectedItemBuilder: (_) =>
-                            _selectedPinItems(feederPins),
-                        items: feederPins.map((e) {
+                            _selectedPinItems(feederPinChoices),
+                        items: feederPinChoices.map((e) {
+                          if (e == null) {
+                            return const DropdownMenuItem<String>(
+                              value: null,
+                              child: Text('未分配'),
+                            );
+                          }
                           final enabled = InfantryPinPlanner.allowedPins(
                             c,
                             'mechanism.feeder_pin',
@@ -1440,13 +1597,21 @@ class _InfantryMechanismPage extends ConsumerWidget {
                             child: _PinOption(
                               e,
                               enabled: enabled,
-                              owner: enabled || owner == null
+                              owner: owner == null
                                   ? null
                                   : '${owner.ownerLabel}占用',
                             ),
                           );
                         }).toList(),
-                        onChanged: (v) => update(c.copyWith(feederPin: v)),
+                        onChanged: (v) async {
+                          final result = await _resolveInfantryPinSelection(
+                            context,
+                            c,
+                            'mechanism.feeder_pin',
+                            v,
+                          );
+                          if (result != null) update(result);
+                        },
                       ),
                     ),
                   ),
@@ -1636,6 +1801,7 @@ class _InfantryControlsPage extends ConsumerWidget {
               _FieldAnchor(
                 path: 'controls.friction_mode',
                 child: DropdownButtonFormField<FrictionMode>(
+                  key: const ValueKey('controls.friction_mode'),
                   initialValue: c.frictionMode,
                   decoration: _fieldDecoration(
                     ref,
@@ -1652,7 +1818,14 @@ class _InfantryControlsPage extends ConsumerWidget {
                       child: Text('不使用'),
                     ),
                   ],
-                  onChanged: (v) => update(c.copyWith(frictionMode: v)),
+                  onChanged: (v) async {
+                    final result = await _resolveFrictionModeSelection(
+                      context,
+                      c,
+                      v,
+                    );
+                    if (result != null) update(result);
+                  },
                 ),
               ),
               if (c.frictionMode == FrictionMode.brushlessEsc) ...[

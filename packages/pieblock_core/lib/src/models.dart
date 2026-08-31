@@ -421,7 +421,8 @@ class MusicConfig extends ProjectConfig {
     List<TimeSignatureEvent>? timeSignatureEvents,
   }) : notes = List.unmodifiable(notes),
        tempoEvents = List.unmodifiable(
-         tempoEvents ?? const [TempoEvent(tick: 0, microsecondsPerQuarter: 500000)],
+         tempoEvents ??
+             const [TempoEvent(tick: 0, microsecondsPerQuarter: 500000)],
        ),
        timeSignatureEvents = List.unmodifiable(
          timeSignatureEvents ??
@@ -745,6 +746,44 @@ class PinAssignment {
   String get ownerLabel => ownerLabels.join('、');
 }
 
+enum InfantryPinReassignmentStrategy {
+  direct,
+  swap,
+  takeOver,
+  disableFrictionAndTakeOver,
+  enableFrictionAndTakeOver,
+}
+
+class InfantryPinReassignmentOption {
+  const InfantryPinReassignmentOption({
+    required this.strategy,
+    required this.result,
+  });
+
+  final InfantryPinReassignmentStrategy strategy;
+  final InfantryConfig result;
+}
+
+class InfantryPinReassignmentPlan {
+  InfantryPinReassignmentPlan({
+    required this.fieldPath,
+    required this.targetPin,
+    required List<PinAssignment> occupants,
+    required List<InfantryPinReassignmentOption> options,
+  }) : occupants = List.unmodifiable(occupants),
+       options = List.unmodifiable(options);
+
+  final String fieldPath;
+  final String? targetPin;
+  final List<PinAssignment> occupants;
+  final List<InfantryPinReassignmentOption> options;
+
+  bool get hasConflict => occupants.isNotEmpty;
+
+  bool supports(InfantryPinReassignmentStrategy strategy) =>
+      options.any((option) => option.strategy == strategy);
+}
+
 abstract final class InfantryPinPlanner {
   static const pwmaFrequency = PwmFrequency.hz50;
   static const pwmbFrequency = PwmFrequency.hz10000;
@@ -764,6 +803,18 @@ abstract final class InfantryPinPlanner {
     final firstSide = _chassisSide(firstFieldPath);
     return firstSide != null && firstSide == _chassisSide(secondFieldPath);
   }
+
+  static String? _fieldPin(InfantryConfig config, String fieldPath) =>
+      switch (fieldPath) {
+        'chassis.left_front.pin' => config.chassis.leftFront.pin,
+        'chassis.left_rear.pin' => config.chassis.leftRear.pin,
+        'chassis.right_front.pin' => config.chassis.rightFront.pin,
+        'chassis.right_rear.pin' => config.chassis.rightRear.pin,
+        'mechanism.feeder_pin' => config.feederPin,
+        'gimbal.yaw.pin' => config.yawPin,
+        'gimbal.pitch.pin' => config.pitchPin,
+        _ => throw ArgumentError.value(fieldPath, 'fieldPath', '未知引脚字段'),
+      };
 
   static List<PinAssignment> _references(InfantryConfig config) => [
     if (config.chassis.leftFront.pin != null)
@@ -873,31 +924,23 @@ abstract final class InfantryPinPlanner {
             : motorPins,
       _ => const <String>[],
     };
-    final current = switch (fieldPath) {
-      'chassis.left_front.pin' => config.chassis.leftFront.pin,
-      'chassis.left_rear.pin' => config.chassis.leftRear.pin,
-      'chassis.right_front.pin' => config.chassis.rightFront.pin,
-      'chassis.right_rear.pin' => config.chassis.rightRear.pin,
-      'mechanism.feeder_pin' => config.feederPin,
-      'gimbal.yaw.pin' => config.yawPin,
-      'gimbal.pitch.pin' => config.pitchPin,
-      _ => '',
-    };
-    final occupied = _references(config)
-        .where(
-          (item) =>
-              item.ownerFieldPath != fieldPath &&
-              !_canShare(fieldPath, item.ownerFieldPath),
-        )
-        .map((item) => item.pin)
-        .toSet();
-    return candidates
-        .where(
-          (candidate) =>
-              !occupied.contains(normalizePin(candidate)) ||
-              normalizePin(candidate) == normalizePin(current),
-        )
-        .toList(growable: false);
+    return List.unmodifiable(candidates);
+  }
+
+  static List<PinAssignment> occupantsOf(
+    InfantryConfig config,
+    String pin,
+    String excludingFieldPath,
+  ) {
+    final normalized = normalizePin(pin);
+    return List.unmodifiable(
+      _references(config).where(
+        (assignment) =>
+            assignment.ownerFieldPath != excludingFieldPath &&
+            !_canShare(excludingFieldPath, assignment.ownerFieldPath) &&
+            assignment.pin == normalized,
+      ),
+    );
   }
 
   static PinAssignment? occupiedBy(
@@ -905,15 +948,261 @@ abstract final class InfantryPinPlanner {
     String pin,
     String excludingFieldPath,
   ) {
-    final normalized = normalizePin(pin);
-    for (final assignment in _references(config)) {
-      if (assignment.ownerFieldPath != excludingFieldPath &&
-          !_canShare(excludingFieldPath, assignment.ownerFieldPath) &&
-          assignment.pin == normalized) {
-        return assignment;
+    final occupants = occupantsOf(config, pin, excludingFieldPath);
+    if (occupants.isEmpty) return null;
+    return PinAssignment.shared(
+      pin: normalizePin(pin),
+      role: occupants.first.role,
+      ownerFieldPaths: [
+        for (final occupant in occupants) ...occupant.ownerFieldPaths,
+      ],
+      ownerLabels: [for (final occupant in occupants) ...occupant.ownerLabels],
+    );
+  }
+
+  static InfantryPinReassignmentPlan planReassignment(
+    InfantryConfig config,
+    String fieldPath,
+    String? targetPin,
+  ) {
+    final normalizedTarget = normalizePin(targetPin);
+    if (targetPin != null &&
+        !allowedPins(
+          config,
+          fieldPath,
+        ).any((candidate) => normalizePin(candidate) == normalizedTarget)) {
+      throw ArgumentError.value(targetPin, 'targetPin', '目标引脚与设备不兼容');
+    }
+    final occupants = targetPin == null
+        ? const <PinAssignment>[]
+        : occupantsOf(config, normalizedTarget, fieldPath);
+    if (occupants.isEmpty) {
+      return InfantryPinReassignmentPlan(
+        fieldPath: fieldPath,
+        targetPin: targetPin,
+        occupants: occupants,
+        options: [
+          InfantryPinReassignmentOption(
+            strategy: InfantryPinReassignmentStrategy.direct,
+            result: _setPin(config, fieldPath, targetPin),
+          ),
+        ],
+      );
+    }
+
+    final hasFriction = occupants.any(
+      (occupant) => occupant.role == PinRole.friction,
+    );
+    if (hasFriction) {
+      var result = config.copyWith(frictionMode: FrictionMode.disabled);
+      for (final occupant in occupants.where(
+        (occupant) => occupant.role != PinRole.friction,
+      )) {
+        result = _setPin(result, occupant.ownerFieldPath, null);
+      }
+      result = _setPin(result, fieldPath, targetPin);
+      return InfantryPinReassignmentPlan(
+        fieldPath: fieldPath,
+        targetPin: targetPin,
+        occupants: occupants,
+        options: [
+          InfantryPinReassignmentOption(
+            strategy:
+                InfantryPinReassignmentStrategy.disableFrictionAndTakeOver,
+            result: result,
+          ),
+        ],
+      );
+    }
+
+    var takeOverResult = config;
+    for (final occupant in occupants) {
+      takeOverResult = _setPin(takeOverResult, occupant.ownerFieldPath, null);
+    }
+    takeOverResult = _setPin(takeOverResult, fieldPath, targetPin);
+    final options = <InfantryPinReassignmentOption>[
+      InfantryPinReassignmentOption(
+        strategy: InfantryPinReassignmentStrategy.takeOver,
+        result: takeOverResult,
+      ),
+    ];
+
+    final currentPin = _fieldPin(config, fieldPath);
+    final normalizedCurrent = normalizePin(currentPin);
+    final canMoveOccupants =
+        normalizedCurrent.isNotEmpty &&
+        occupants.every(
+          (occupant) =>
+              _supportsPin(config, occupant.ownerFieldPath, normalizedCurrent),
+        );
+    if (canMoveOccupants) {
+      var swapResult = config;
+      for (final occupant in occupants) {
+        swapResult = _setPin(swapResult, occupant.ownerFieldPath, null);
+      }
+      swapResult = _setPin(swapResult, fieldPath, targetPin);
+      for (final occupant in occupants) {
+        swapResult = _setPin(
+          swapResult,
+          occupant.ownerFieldPath,
+          normalizedCurrent,
+        );
+      }
+      if (!_pinHasConflict(swapResult, normalizedCurrent) &&
+          !_pinHasConflict(swapResult, normalizedTarget)) {
+        options.insert(
+          0,
+          InfantryPinReassignmentOption(
+            strategy: InfantryPinReassignmentStrategy.swap,
+            result: swapResult,
+          ),
+        );
       }
     }
-    return null;
+    return InfantryPinReassignmentPlan(
+      fieldPath: fieldPath,
+      targetPin: targetPin,
+      occupants: occupants,
+      options: options,
+    );
+  }
+
+  static InfantryConfig applyReassignment(
+    InfantryConfig config,
+    String fieldPath,
+    String? targetPin,
+    InfantryPinReassignmentStrategy strategy,
+  ) {
+    final plan = planReassignment(config, fieldPath, targetPin);
+    for (final option in plan.options) {
+      if (option.strategy == strategy) return option.result;
+    }
+    throw StateError('当前引脚分配不支持 ${strategy.name}');
+  }
+
+  static InfantryPinReassignmentPlan planFrictionEnablement(
+    InfantryConfig config,
+  ) {
+    final occupants = <PinAssignment>[
+      for (final pin in frictionPins)
+        ..._references(config).where(
+          (assignment) =>
+              assignment.pin == pin && assignment.role != PinRole.friction,
+        ),
+    ];
+    if (occupants.isEmpty) {
+      return InfantryPinReassignmentPlan(
+        fieldPath: 'controls.friction_mode',
+        targetPin: null,
+        occupants: occupants,
+        options: [
+          InfantryPinReassignmentOption(
+            strategy: InfantryPinReassignmentStrategy.direct,
+            result: config.copyWith(frictionMode: FrictionMode.brushlessEsc),
+          ),
+        ],
+      );
+    }
+    var result = config;
+    for (final occupant in occupants) {
+      result = _setPin(result, occupant.ownerFieldPath, null);
+    }
+    result = result.copyWith(frictionMode: FrictionMode.brushlessEsc);
+    return InfantryPinReassignmentPlan(
+      fieldPath: 'controls.friction_mode',
+      targetPin: null,
+      occupants: occupants,
+      options: [
+        InfantryPinReassignmentOption(
+          strategy: InfantryPinReassignmentStrategy.enableFrictionAndTakeOver,
+          result: result,
+        ),
+      ],
+    );
+  }
+
+  static InfantryConfig applyFrictionEnablement(
+    InfantryConfig config,
+    InfantryPinReassignmentStrategy strategy,
+  ) {
+    final plan = planFrictionEnablement(config);
+    for (final option in plan.options) {
+      if (option.strategy == strategy) return option.result;
+    }
+    throw StateError('当前配置不支持 ${strategy.name}');
+  }
+
+  static bool _supportsPin(
+    InfantryConfig config,
+    String fieldPath,
+    String normalizedPin,
+  ) => allowedPins(
+    config,
+    fieldPath,
+  ).any((candidate) => normalizePin(candidate) == normalizedPin);
+
+  static String? _canonicalPin(
+    InfantryConfig config,
+    String fieldPath,
+    String? pin,
+  ) {
+    if (pin == null) return null;
+    final normalized = normalizePin(pin);
+    for (final candidate in allowedPins(config, fieldPath)) {
+      if (normalizePin(candidate) == normalized) return candidate;
+    }
+    throw ArgumentError.value(pin, 'pin', '引脚与设备不兼容');
+  }
+
+  static InfantryConfig _setPin(
+    InfantryConfig config,
+    String fieldPath,
+    String? pin,
+  ) {
+    final value = _canonicalPin(config, fieldPath, pin);
+    return switch (fieldPath) {
+      'chassis.left_front.pin' => config.copyWith(
+        chassis: config.chassis.copyWith(
+          leftFront: config.chassis.leftFront.copyWith(pin: value),
+        ),
+      ),
+      'chassis.left_rear.pin' => config.copyWith(
+        chassis: config.chassis.copyWith(
+          leftRear: config.chassis.leftRear.copyWith(pin: value),
+        ),
+      ),
+      'chassis.right_front.pin' => config.copyWith(
+        chassis: config.chassis.copyWith(
+          rightFront: config.chassis.rightFront.copyWith(pin: value),
+        ),
+      ),
+      'chassis.right_rear.pin' => config.copyWith(
+        chassis: config.chassis.copyWith(
+          rightRear: config.chassis.rightRear.copyWith(pin: value),
+        ),
+      ),
+      'mechanism.feeder_pin' => config.copyWith(feederPin: value),
+      'gimbal.yaw.pin' => config.copyWith(yawPin: value),
+      'gimbal.pitch.pin' => config.copyWith(pitchPin: value),
+      _ => throw ArgumentError.value(fieldPath, 'fieldPath', '未知引脚字段'),
+    };
+  }
+
+  static bool _pinHasConflict(InfantryConfig config, String pin) {
+    final references = _references(config)
+        .where((assignment) => assignment.pin == pin)
+        .toList();
+    for (var first = 0; first < references.length; first += 1) {
+      for (var second = first + 1; second < references.length; second += 1) {
+        if (!_canShare(
+          references[first].ownerFieldPath,
+          references[second].ownerFieldPath,
+        )) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 }
 

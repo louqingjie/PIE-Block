@@ -235,6 +235,30 @@ ProjectDocument _infantryDocument() {
   );
 }
 
+ProjectDocument _infantryPinConflictDocument({bool shared = false}) {
+  final source = _infantryDocument();
+  final config = source.config as InfantryConfig;
+  return source.copyWith(
+    config: config.copyWith(
+      frictionMode: FrictionMode.disabled,
+      chassis: config.chassis.copyWith(
+        leftFront: const WheelConfig('P62 P63', Direction.forward),
+        leftRear: shared
+            ? const WheelConfig('P62 P63', Direction.forward)
+            : config.chassis.leftRear,
+      ),
+    ),
+  );
+}
+
+InfantryConfig _currentInfantry(WidgetTester tester) {
+  final container = ProviderScope.containerOf(
+    tester.element(find.byType(WizardScreen)),
+  );
+  return container.read(appControllerProvider).document!.config
+      as InfantryConfig;
+}
+
 ProjectDocument _engineerDocument() {
   final source = ProjectDocument.create('工程测试', ProjectKind.engineer);
   return source.copyWith(
@@ -323,7 +347,10 @@ void main() {
     expect(find.byKey(backdropKey), findsOneWidget);
     expect(find.byKey(editorKey), findsOneWidget);
     expect(
-      find.ancestor(of: find.byKey(editorKey), matching: find.byType(SlideTransition)),
+      find.ancestor(
+        of: find.byKey(editorKey),
+        matching: find.byType(SlideTransition),
+      ),
       findsWidgets,
     );
     expect(
@@ -343,7 +370,9 @@ void main() {
       start.visitAncestorElements((element) {
         if (identical(element, stackElement)) return false;
         final widget = element.widget;
-        if (widget is Opacity || widget is FadeTransition || widget is Transform) {
+        if (widget is Opacity ||
+            widget is FadeTransition ||
+            widget is Transform) {
           result = true;
           return false;
         }
@@ -1096,7 +1125,7 @@ void main() {
     expect(find.text('P66'), findsOneWidget);
   });
 
-  testWidgets('被摩擦轮占用的 IO 使用锁定视觉', (tester) async {
+  testWidgets('被摩擦轮占用的 IO 可选择并显式关闭摩擦轮', (tester) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -1113,8 +1142,177 @@ void main() {
     await tester.ensureVisible(feeder);
     await tester.tap(feeder);
     await tester.pumpAndSettle();
-    expect(find.byIcon(Icons.lock_outline), findsWidgets);
+    expect(find.byIcon(Icons.lock_outline), findsNothing);
     expect(find.textContaining('摩擦轮（固定）占用'), findsWidgets);
+
+    await tester.tap(find.textContaining('P64 · 摩擦轮（固定）占用').last);
+    await tester.pumpAndSettle();
+    expect(find.text('P64 已被占用'), findsOneWidget);
+    expect(find.text('关闭摩擦轮并占用'), findsOneWidget);
+    await tester.tap(find.text('关闭摩擦轮并占用'));
+    await tester.pumpAndSettle();
+
+    final config = _currentInfantry(tester);
+    expect(config.feederPin, 'P64');
+    expect(config.frictionMode, FrictionMode.disabled);
+    expect(config.frictionMaxDuty, 800);
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
+  testWidgets('占用引脚可交换、抢占或取消', (tester) async {
+    Future<void> pumpConflict() async {
+      await tester.pumpWidget(
+        ProviderScope(
+          key: UniqueKey(),
+          overrides: [
+            appControllerProvider.overrideWith(
+              () => _ConfiguredMechanismController(
+                _infantryPinConflictDocument(),
+              ),
+            ),
+          ],
+          child: const MaterialApp(home: WizardScreen()),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> chooseOccupiedP62() async {
+      final feeder = find.byKey(const ValueKey('mechanism.feeder_pin'));
+      await tester.ensureVisible(feeder);
+      await tester.tap(feeder);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('P62 · 左前轮占用').last);
+      await tester.pumpAndSettle();
+      expect(find.text('P62 已被占用'), findsOneWidget);
+    }
+
+    await pumpConflict();
+    await chooseOccupiedP62();
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect(_currentInfantry(tester).feederPin, 'P60');
+
+    await chooseOccupiedP62();
+    await tester.tap(find.text('交换引脚'));
+    await tester.pumpAndSettle();
+    var config = _currentInfantry(tester);
+    expect(config.feederPin, 'P62');
+    expect(config.chassis.leftFront.pin, 'P60 P61');
+    await tester.pump(const Duration(milliseconds: 600));
+
+    await pumpConflict();
+    await chooseOccupiedP62();
+    await tester.tap(find.text('占用并解除原分配'));
+    await tester.pumpAndSettle();
+    config = _currentInfantry(tester);
+    expect(config.feederPin, 'P62');
+    expect(config.chassis.leftFront.pin, isNull);
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
+  testWidgets('步兵引脚可明确设为未分配', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _ConfiguredMechanismController(_infantryDocument()),
+          ),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final feeder = find.byKey(const ValueKey('mechanism.feeder_pin'));
+    await tester.ensureVisible(feeder);
+    await tester.tap(feeder);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('未分配').last);
+    await tester.pumpAndSettle();
+
+    expect(_currentInfantry(tester).feederPin, isNull);
+    expect(
+      find.descendant(of: feeder, matching: find.text('未分配')),
+      findsOneWidget,
+    );
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
+  testWidgets('启用摩擦轮前确认解除 P64/P66 占用', (tester) async {
+    final source = _infantryDocument();
+    final config = source.config as InfantryConfig;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _StaticProjectController(
+              source.copyWith(
+                config: config.copyWith(
+                  frictionMode: FrictionMode.disabled,
+                  feederPin: 'P64',
+                ),
+              ),
+              2,
+            ),
+          ),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final friction = find.byKey(const ValueKey('controls.friction_mode'));
+    await tester.ensureVisible(friction);
+    await tester.tap(friction);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('无刷电调').last);
+    await tester.pumpAndSettle();
+    expect(find.text('P64/P66 已被占用'), findsOneWidget);
+    expect(find.textContaining('拨弹电机'), findsOneWidget);
+    await tester.tap(find.text('解除占用并启用'));
+    await tester.pumpAndSettle();
+
+    final result = _currentInfantry(tester);
+    expect(result.frictionMode, FrictionMode.brushlessEsc);
+    expect(result.feederPin, isNull);
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
+  testWidgets('紧凑布局显示共享占用组并可完成交换', (tester) async {
+    tester.view.physicalSize = const Size(430, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _ConfiguredMechanismController(
+              _infantryPinConflictDocument(shared: true),
+            ),
+          ),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final feeder = find.byKey(const ValueKey('mechanism.feeder_pin'));
+    await tester.ensureVisible(feeder);
+    await tester.tap(feeder);
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('P62 · 左前轮、左后轮占用').last);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('左前轮、左后轮'), findsOneWidget);
+    await tester.tap(find.text('交换引脚'));
+    await tester.pumpAndSettle();
+
+    final result = _currentInfantry(tester);
+    expect(result.feederPin, 'P62');
+    expect(result.chassis.leftFront.pin, 'P60 P61');
+    expect(result.chassis.leftRear.pin, 'P60 P61');
+    await tester.pump(const Duration(milliseconds: 600));
   });
 
   testWidgets('拨弹与摩擦轮条件字段按模式显隐', (tester) async {

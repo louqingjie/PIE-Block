@@ -357,6 +357,176 @@ void main() {
       );
     });
 
+    test('占用不会从硬件兼容候选中移除', () {
+      final config = completeInfantry(frictionMode: FrictionMode.disabled);
+      expect(
+        InfantryPinPlanner.allowedPins(config, 'mechanism.feeder_pin'),
+        containsAll(['P74', 'P75', 'P76', 'P77']),
+      );
+    });
+
+    test('拨弹与轮电机交换时规范化复合引脚名称', () {
+      final source = completeInfantry(frictionMode: FrictionMode.disabled)
+          .copyWith(
+            chassis: completeChassis().copyWith(
+              leftFront: const WheelConfig('P62 P63', Direction.forward),
+            ),
+          );
+      final plan = InfantryPinPlanner.planReassignment(
+        source,
+        'mechanism.feeder_pin',
+        'P62',
+      );
+
+      expect(plan.occupants.single.ownerLabel, '左前轮');
+      expect(plan.supports(InfantryPinReassignmentStrategy.swap), isTrue);
+      final result = InfantryPinPlanner.applyReassignment(
+        source,
+        'mechanism.feeder_pin',
+        'P62',
+        InfantryPinReassignmentStrategy.swap,
+      );
+      expect(result.feederPin, 'P62');
+      expect(result.chassis.leftFront.pin, 'P60 P61');
+      expect(
+        ProjectValidator.validate(result)
+            .where((issue) => issue.message.contains('同时被')),
+        isEmpty,
+      );
+    });
+
+    test('同侧共享占用组可以整体交换或整体解除', () {
+      final source = completeInfantry(frictionMode: FrictionMode.disabled)
+          .copyWith(
+            chassis: completeChassis().copyWith(
+              leftFront: const WheelConfig('P62 P63', Direction.forward),
+              leftRear: const WheelConfig('P62 P63', Direction.forward),
+            ),
+          );
+      final plan = InfantryPinPlanner.planReassignment(
+        source,
+        'mechanism.feeder_pin',
+        'P62',
+      );
+      expect(
+        plan.occupants.map((occupant) => occupant.ownerLabel),
+        containsAll(['左前轮', '左后轮']),
+      );
+
+      final swapped = InfantryPinPlanner.applyReassignment(
+        source,
+        'mechanism.feeder_pin',
+        'P62',
+        InfantryPinReassignmentStrategy.swap,
+      );
+      expect(swapped.chassis.leftFront.pin, 'P60 P61');
+      expect(swapped.chassis.leftRear.pin, 'P60 P61');
+
+      final takenOver = InfantryPinPlanner.applyReassignment(
+        source,
+        'mechanism.feeder_pin',
+        'P62',
+        InfantryPinReassignmentStrategy.takeOver,
+      );
+      expect(takenOver.feederPin, 'P62');
+      expect(takenOver.chassis.leftFront.pin, isNull);
+      expect(takenOver.chassis.leftRear.pin, isNull);
+      expect(
+        ProjectValidator.validate(takenOver).where(
+          (issue) =>
+              issue.severity == IssueSeverity.error &&
+              issue.fieldPath.startsWith('chassis.left_'),
+        ),
+        hasLength(2),
+      );
+    });
+
+    test('交换会拒绝不兼容引脚和跨侧共享', () {
+      final source = completeInfantry(
+        frictionMode: FrictionMode.disabled,
+        shared: true,
+      );
+      final crossSide = InfantryPinPlanner.planReassignment(
+        source,
+        'chassis.left_front.pin',
+        'P76 P26',
+      );
+      expect(crossSide.supports(InfantryPinReassignmentStrategy.swap), isFalse);
+      expect(
+        crossSide.supports(InfantryPinReassignmentStrategy.takeOver),
+        isTrue,
+      );
+
+      final incompatible = InfantryPinPlanner.planReassignment(
+        source,
+        'gimbal.yaw.pin',
+        'P60',
+      );
+      expect(
+        incompatible.supports(InfantryPinReassignmentStrategy.swap),
+        isFalse,
+      );
+    });
+
+    test('当前引脚为空时只能抢占，未分配可直接应用', () {
+      final source = completeInfantry(frictionMode: FrictionMode.disabled)
+          .copyWith(yawPin: null);
+      final occupied = InfantryPinPlanner.planReassignment(
+        source,
+        'gimbal.yaw.pin',
+        'P60',
+      );
+      expect(occupied.supports(InfantryPinReassignmentStrategy.swap), isFalse);
+      expect(
+        occupied.supports(InfantryPinReassignmentStrategy.takeOver),
+        isTrue,
+      );
+
+      final cleared = InfantryPinPlanner.applyReassignment(
+        completeInfantry(),
+        'mechanism.feeder_pin',
+        null,
+        InfantryPinReassignmentStrategy.direct,
+      );
+      expect(cleared.feederPin, isNull);
+    });
+
+    test('固定摩擦轮通过显式事务让出或取得 P64/P66', () {
+      final enabled = completeInfantry();
+      final takePin = InfantryPinPlanner.planReassignment(
+        enabled,
+        'mechanism.feeder_pin',
+        'P64',
+      );
+      expect(
+        takePin.supports(
+          InfantryPinReassignmentStrategy.disableFrictionAndTakeOver,
+        ),
+        isTrue,
+      );
+      final withoutFriction = InfantryPinPlanner.applyReassignment(
+        enabled,
+        'mechanism.feeder_pin',
+        'P64',
+        InfantryPinReassignmentStrategy.disableFrictionAndTakeOver,
+      );
+      expect(withoutFriction.frictionMode, FrictionMode.disabled);
+      expect(withoutFriction.feederPin, 'P64');
+      expect(withoutFriction.frictionMaxDuty, enabled.frictionMaxDuty);
+
+      final enablePlan = InfantryPinPlanner.planFrictionEnablement(
+        withoutFriction,
+      );
+      expect(enablePlan.occupants.single.ownerLabel, '拨弹电机');
+      final restored = InfantryPinPlanner.applyFrictionEnablement(
+        withoutFriction,
+        InfantryPinReassignmentStrategy.enableFrictionAndTakeOver,
+      );
+      expect(restored.frictionMode, FrictionMode.brushlessEsc);
+      expect(restored.feederPin, isNull);
+      expect(restored.frictionMaxDuty, enabled.frictionMaxDuty);
+    });
+
     test('数字键包含 LC/RC 且排除摇杆轴', () {
       expect(digitalRemoteKeys, containsAll(['E', 'LC', 'RC']));
       expect(digitalRemoteKeys, isNot(contains('LX')));
