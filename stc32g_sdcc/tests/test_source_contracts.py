@@ -90,7 +90,7 @@ class FirmwareSafetyContractTests(unittest.TestCase):
         self.assertIn("for (retry = 0; retry < 20; retry++)", source)
         self.assertIn("SPI_ReadWriteByte", (ROOT / "libraries" / "boards" / "src" / "nrf24l01.c").read_text(encoding="utf-8"))
 
-    def test_robot_projects_poll_uart_for_expansion_frames(self) -> None:
+    def test_robot_projects_send_expansion_frames_atomically(self) -> None:
         projects = (
             "0000.培训模板",
             "FRICTION_CALIBRATION",
@@ -102,11 +102,28 @@ class FirmwareSafetyContractTests(unittest.TestCase):
             source = (ROOT / "projects" / project / "src" / "main.c").read_text(
                 encoding="utf-8"
             )
-            self.assertIn("static void Uart1TxQuery", source, project)
-            self.assertIn("Uart1TxQuery(control_frame_pack[i])", source, project)
+            self.assertIn("static void Uart1SendFrameQuery", source, project)
+            self.assertIn("uint8_t globalInterruptEnabled = EA", source, project)
+            self.assertIn("EA = 0", source, project)
+            self.assertIn("Uart1SendFrameQuery(control_frame_pack, 21)", source, project)
             self.assertNotIn(
                 "UART_PutChar(UART_1, control_frame_pack[i])", source, project
             )
+
+    def test_robot_chassis_scaling_avoids_float_sign_conversion(self) -> None:
+        projects = (
+            "0000.培训模板",
+            "ROBOMASTER_ENGINEER",
+            "ROBOMASTER_INFANTRY",
+            "TEST",
+        )
+        for project in projects:
+            source = (ROOT / "projects" / project / "src" / "main.c").read_text(
+                encoding="utf-8"
+            )
+            self.assertNotRegex(source, r"(?:baseSpeed|turnSpeed|_base_spd|_turn_spd)\s*=.*\(float\)", project)
+            self.assertIn("int32_t", source, project)
+            self.assertIn("2047L", source, project)
 
     def test_hspwm_prescaler_uses_async_window(self) -> None:
         source = (ROOT / "libraries" / "drivers" / "src" / "CNU_PIE_PWM.c").read_text(

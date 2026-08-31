@@ -15,6 +15,14 @@ def apply_deadband(value: int, deadband: int) -> int:
     return 0 if abs(value) <= deadband else value
 
 
+def scale_rocker(value: int, speed: int) -> int:
+    """使用与 C 有符号整数除法一致的向零截断缩放。"""
+
+    product = value * speed
+    magnitude = abs(product) // 2047
+    return -magnitude if product < 0 else magnitude
+
+
 def motor_mix(
     left_horizontal: int,
     left_vertical: int,
@@ -27,8 +35,8 @@ def motor_mix(
     """返回 L1/L2/R1/R2，与固件 CalculateMotorControls 一致。"""
 
     speed = ultra_speed if sprint else max_speed
-    base = int(left_vertical * speed / 2047)
-    turn = int(left_horizontal * speed / 2047)
+    base = scale_rocker(left_vertical, speed)
+    turn = scale_rocker(left_horizontal, speed)
     up, down, left, right = arrows
     if up:
         base = max_speed

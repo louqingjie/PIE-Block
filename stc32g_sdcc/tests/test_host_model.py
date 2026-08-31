@@ -11,6 +11,7 @@ from host_model import (
     encode_expansion_frame,
     motor_mix,
     rising_edge,
+    scale_rocker,
     split_motor_commands,
 )
 
@@ -26,6 +27,11 @@ class ControlModelTests(unittest.TestCase):
         self.assertEqual(motor_mix(0, 0), (0, 0, 0, 0))
         self.assertEqual(motor_mix(0, 2047), (-4000, -4000, 4000, 4000))
         self.assertEqual(motor_mix(2047, 0), (-4000, -4000, -4000, -4000))
+
+    def test_integer_rocker_scaling_preserves_negative_sign(self) -> None:
+        for value in (1, 10, 1024, 2047):
+            self.assertEqual(scale_rocker(-value, 4000), -scale_rocker(value, 4000))
+        self.assertEqual(scale_rocker(-2047, 8000), -8000)
 
     def test_cardinal_directions_keep_distinct_direction_payloads(self) -> None:
         cardinal = {
