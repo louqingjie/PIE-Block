@@ -41,6 +41,18 @@ def motor_mix(
     return (-base - turn, -base - turn, base - turn, base - turn)
 
 
+def split_motor_commands(
+    values: Iterable[int],
+) -> tuple[tuple[int, ...], tuple[int, ...]]:
+    """将有符号电机指令拆成扩展板方向值和无符号占空比。"""
+
+    commands = tuple(values)
+    return (
+        tuple(1 if value >= 0 else 0 for value in commands),
+        tuple(abs(value) for value in commands),
+    )
+
+
 def booster_step(current: int, target: int) -> int:
     """执行固件每个主循环的一步摩擦轮渐变。"""
 

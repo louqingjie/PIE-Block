@@ -37,6 +37,18 @@
 /* 工程模板始终链接 nrf24l01.c；即使本诊断不启用 NRF，也需满足其 extern。 */
 uint8_t Channal = 3;
 
+static void Uart1TxQuery(uint8_t dat)
+{
+    uint8_t uart1InterruptEnabled = ES;
+    ES = 0;
+    TI = 0;
+    SBUF = dat;
+    while (!TI)
+        ;
+    TI = 0;
+    ES = uart1InterruptEnabled;
+}
+
 static void ExpansionBoradControl(uint8_t control_cmd,
                                   uint16_t data_p60, uint16_t data_p62,
                                   uint16_t data_p64, uint16_t data_p66,
@@ -68,9 +80,8 @@ static void ExpansionBoradControl(uint8_t control_cmd,
     control_frame_pack[19] = COMM_END_1;
     control_frame_pack[20] = COMM_END_2;
 
-    /* 无 NRF 中断参与，直接使用与官方示例一致的 UART_PutChar。 */
     for (i = 0; i < 21; i++)
-        UART_PutChar(UART_1, control_frame_pack[i]);
+        Uart1TxQuery(control_frame_pack[i]);
 }
 
 static void ShowPhase(uint8_t phase)

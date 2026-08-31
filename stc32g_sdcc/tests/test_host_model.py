@@ -11,6 +11,7 @@ from host_model import (
     encode_expansion_frame,
     motor_mix,
     rising_edge,
+    split_motor_commands,
 )
 
 
@@ -25,6 +26,24 @@ class ControlModelTests(unittest.TestCase):
         self.assertEqual(motor_mix(0, 0), (0, 0, 0, 0))
         self.assertEqual(motor_mix(0, 2047), (-4000, -4000, 4000, 4000))
         self.assertEqual(motor_mix(2047, 0), (-4000, -4000, -4000, -4000))
+
+    def test_cardinal_directions_keep_distinct_direction_payloads(self) -> None:
+        cardinal = {
+            "forward": (0, 2047),
+            "backward": (0, -2047),
+            "left": (-2047, 0),
+            "right": (2047, 0),
+        }
+        outputs = {
+            name: split_motor_commands(motor_mix(horizontal, vertical))
+            for name, (horizontal, vertical) in cardinal.items()
+        }
+
+        self.assertEqual(outputs["forward"], ((0, 0, 1, 1), (4000,) * 4))
+        self.assertEqual(outputs["backward"], ((1, 1, 0, 0), (4000,) * 4))
+        self.assertEqual(outputs["left"], ((1, 1, 1, 1), (4000,) * 4))
+        self.assertEqual(outputs["right"], ((0, 0, 0, 0), (4000,) * 4))
+        self.assertEqual(len({directions for directions, _ in outputs.values()}), 4)
 
     def test_sprint_and_arrow_override(self) -> None:
         self.assertEqual(motor_mix(0, 2047, sprint=True), (-8000, -8000, 8000, 8000))
@@ -51,6 +70,18 @@ class ControlModelTests(unittest.TestCase):
         self.assertEqual(frame[:3], bytes((0xAB, 0xBC, 0xBB)))
         self.assertEqual(frame[3:5], bytes((0x12, 0x34)))
         self.assertEqual(frame[17:19], bytes((0, 4)))
+        self.assertEqual(frame[-2:], bytes((0xCD, 0xDE)))
+
+    def test_direction_frame_is_21_bytes_big_endian(self) -> None:
+        directions = (1, 1, 0, 0, 0, 0, 1, 1)
+        frame = encode_expansion_frame(0xDD, directions)
+
+        self.assertEqual(len(frame), 21)
+        self.assertEqual(frame[:3], bytes((0xAB, 0xBC, 0xDD)))
+        self.assertEqual(
+            frame[3:19],
+            bytes((0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1)),
+        )
         self.assertEqual(frame[-2:], bytes((0xCD, 0xDE)))
 
     def test_expansion_frame_rejects_wrong_shape(self) -> None:

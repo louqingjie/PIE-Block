@@ -14,6 +14,19 @@
 uint16_t control_data[8] = {0};
 uint16_t motor_dir[8] = {0};
 uint8_t control_command = 0x00;
+
+static void Uart1TxQuery(uint8_t dat)
+{
+    uint8_t uart1InterruptEnabled = ES;
+    ES = 0;
+    TI = 0;
+    SBUF = dat;
+    while (!TI)
+        ;
+    TI = 0;
+    ES = uart1InterruptEnabled;
+}
+
 void ExpansionBoradControl(uint8_t control_cmd, uint16_t data_p60, uint16_t data_p62, uint16_t data_p64, uint16_t data_p66, uint16_t data_p74, uint16_t data_p75, uint16_t data_p76, uint16_t data_p77)
 {
     uint8_t i = 0;
@@ -40,7 +53,7 @@ void ExpansionBoradControl(uint8_t control_cmd, uint16_t data_p60, uint16_t data
     control_frame_pack[17] = (uint8_t)((data_p77 >> 8) & 0xFF);
     control_frame_pack[18] = (uint8_t)(data_p77 & 0xFF);
     for (i = 0; i < 21; i++)
-        UART_PutChar(UART_1, control_frame_pack[i]);
+        Uart1TxQuery(control_frame_pack[i]);
 }
 int pie_abs(int x)
 {

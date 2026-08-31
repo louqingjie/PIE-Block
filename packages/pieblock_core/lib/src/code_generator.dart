@@ -33,6 +33,19 @@ abstract final class CodeGenerator {
   static int _slot(String? pin) =>
       expansionPins.indexOf(InfantryPinPlanner.normalizePin(pin));
 
+  static const String _uart1TxQuery = '''
+static void Uart1TxQuery(uint8_t dat)
+{
+    uint8_t uart1InterruptEnabled = ES;
+    ES = 0;
+    TI = 0;
+    SBUF = dat;
+    while (!TI) ;
+    TI = 0;
+    ES = uart1InterruptEnabled;
+}
+''';
+
   static String _runtimeSafety(bool buzzerEnabled) =>
       '''
 static void remoteControlInitWithTimeout(void)
@@ -44,6 +57,7 @@ static void remoteControlInitWithTimeout(void)
     }
 }
 
+$_uart1TxQuery
 #define LED_PORT GPIO_P3
 #define LED1_PIN GPIO_Pin_5
 #define LED2_PIN GPIO_Pin_6
@@ -111,8 +125,7 @@ void ExpansionBoradControl(uint8_t command,
     }
     control_frame_pack[19] = COMM_END_1;
     control_frame_pack[20] = COMM_END_2;
-    /* NRF 外部中断已关闭并改为主循环轮询，使用板级库的 UART 发送状态机。 */
-    for (i = 0; i < 21; i++) UART_PutChar(UART_1, control_frame_pack[i]);
+    for (i = 0; i < 21; i++) Uart1TxQuery(control_frame_pack[i]);
 }
 
 void ReadControllerInputs(void)
@@ -730,6 +743,7 @@ uint8_t Channal = 36;
 
 static uint8_t control_frame_pack[21];
 
+$_uart1TxQuery
 static void Beep(uint16_t frequency, uint16_t duration)
 {
     PWM_SET_Frequency(BUZZER_CH, frequency, 5000);
@@ -754,7 +768,7 @@ static void ExpansionBoradControl(uint8_t command,
     }
     control_frame_pack[19] = COMM_END_1;
     control_frame_pack[20] = COMM_END_2;
-    for (i = 0; i < 21; i++) UART_PutChar(UART_1, control_frame_pack[i]);
+    for (i = 0; i < 21; i++) Uart1TxQuery(control_frame_pack[i]);
 }
 
 void main(void)
@@ -790,8 +804,7 @@ ${commands.join('\n\n')}
     }
     final segmentRows = segments
         .map(
-          (segment) =>
-              '    {${segment.durationMs}UL, ${segment.pitch ?? 0}},',
+          (segment) => '    {${segment.durationMs}UL, ${segment.pitch ?? 0}},',
         )
         .join('\n');
     return '''// MIDI 单音音乐代码（由 PIE-Block Flutter 配置器自动生成）

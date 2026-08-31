@@ -64,6 +64,18 @@ void ExpansionBoradControl(uint8_t control_cmd, uint16_t data_p60, uint16_t data
                            uint16_t data_p66, uint16_t data_p74, uint16_t data_p75, uint16_t data_p76,
                            uint16_t data_p77);
 
+static void Uart1TxQuery(uint8_t dat)
+{
+    uint8_t uart1InterruptEnabled = ES;
+    ES = 0;
+    TI = 0;
+    SBUF = dat;
+    while (!TI)
+        ;
+    TI = 0;
+    ES = uart1InterruptEnabled;
+}
+
 void main()
 {
     All_Init();
@@ -290,10 +302,8 @@ void ExpansionBoradControl(uint8_t control_cmd, uint16_t data_p60, uint16_t data
     control_frame_pack[17] = (uint8_t)((data_p77 >> 8) & 0xFF);
     control_frame_pack[18] = (uint8_t)(data_p77 & 0xFF);
 
-    // 发送
-    // UART_PutBuff(UART_1, control_frame_pack, 21);
     for (i = 0; i < 21; i++)
-        UART_PutChar(UART_1, control_frame_pack[i]);
+        Uart1TxQuery(control_frame_pack[i]);
 }
 
 

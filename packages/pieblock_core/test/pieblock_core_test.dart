@@ -286,6 +286,12 @@ void main() {
       expect(code, contains('Ms_Delay(4200);'));
       expect(code, contains('PWM_SET_Frequency(PWMB_CH4_P03, 50, 0);'));
       expect(code, contains('Ms_Delay(2000);'));
+      expect(code, contains('static void Uart1TxQuery(uint8_t dat)'));
+      expect(code, contains('Uart1TxQuery(control_frame_pack[i])'));
+      expect(
+        code,
+        isNot(contains('UART_PutChar(UART_1, control_frame_pack[i])')),
+      );
     });
   });
 
@@ -361,8 +367,12 @@ void main() {
       expect(code, contains('dutyOfMotor[0]'));
       expect(code, contains('FRICTION_START_DUTY 500'));
       expect(code, contains('retry < 20'));
-      expect(code, contains('UART_PutChar(UART_1, control_frame_pack[i])'));
-      expect(code, isNot(contains('Uart1TxQuery')));
+      expect(code, contains('static void Uart1TxQuery(uint8_t dat)'));
+      expect(code, contains('Uart1TxQuery(control_frame_pack[i])'));
+      expect(
+        code,
+        isNot(contains('UART_PutChar(UART_1, control_frame_pack[i])')),
+      );
       expect(code, contains('P2INTE &= ~GPIO_Pin_6'));
       expect(code, contains('StepBegin(0)'));
       expect(code, contains('UpdateBuzzerFeedback'));
@@ -412,11 +422,12 @@ void main() {
       expect(cycleCode, contains('1000L / 180L'));
       expect(cycleCode, contains('/ 2047'));
       expect(cycleCode, contains('Dir_Change_Order'));
+      expect(cycleCode, contains('static void Uart1TxQuery(uint8_t dat)'));
+      expect(cycleCode, contains('Uart1TxQuery(control_frame_pack[i])'));
       expect(
         cycleCode,
-        contains('UART_PutChar(UART_1, control_frame_pack[i])'),
+        isNot(contains('UART_PutChar(UART_1, control_frame_pack[i])')),
       );
-      expect(cycleCode, isNot(contains('Uart1TxQuery')));
       expect(
         cycleCode,
         contains(
