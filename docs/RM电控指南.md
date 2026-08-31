@@ -67,16 +67,23 @@ uint16_t control_data[8] = {0};
 uint16_t motor_dir[8] = {0};
 uint8_t control_command = 0x00;
 
-static void Uart1TxQuery(uint8_t dat)
+static void Uart1SendFrameQuery(const uint8_t *frame, uint8_t length)
 {
+    uint8_t i;
+    uint8_t globalInterruptEnabled = EA;
     uint8_t uart1InterruptEnabled = ES;
+    EA = 0;
     ES = 0;
-    TI = 0;
-    SBUF = dat;
-    while (!TI)
-        ;
+    for (i = 0; i < length; i++)
+    {
+        TI = 0;
+        SBUF = frame[i];
+        while (!TI)
+            ;
+    }
     TI = 0;
     ES = uart1InterruptEnabled;
+    EA = globalInterruptEnabled;
 }
 
 /* 板间通信函数：主控向拓展板发送控制帧 */
@@ -108,8 +115,7 @@ void ExpansionBoradControl(uint8_t control_cmd,
     control_frame_pack[16] = (uint8_t)(data_p76 & 0xFF);
     control_frame_pack[17] = (uint8_t)((data_p77 >> 8) & 0xFF);
     control_frame_pack[18] = (uint8_t)(data_p77 & 0xFF);
-    for (i = 0; i < 21; i++)
-        Uart1TxQuery(control_frame_pack[i]);
+    Uart1SendFrameQuery(control_frame_pack, 21);
 }
 ```
 
