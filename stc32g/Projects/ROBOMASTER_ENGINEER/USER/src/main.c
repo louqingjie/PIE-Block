@@ -64,16 +64,24 @@ void ExpansionBoradControl(uint8_t control_cmd, uint16_t data_p60, uint16_t data
                            uint16_t data_p66, uint16_t data_p74, uint16_t data_p75, uint16_t data_p76,
                            uint16_t data_p77);
 
-static void Uart1TxQuery(uint8_t dat)
+static void Uart1SendFrameQuery(const uint8_t *frame, uint8_t length)
 {
+    uint8_t i;
+    uint8_t globalInterruptEnabled = EA;
     uint8_t uart1InterruptEnabled = ES;
+
+    EA = 0;
     ES = 0;
-    TI = 0;
-    SBUF = dat;
-    while (!TI)
-        ;
+    for (i = 0; i < length; i++)
+    {
+        TI = 0;
+        SBUF = frame[i];
+        while (!TI)
+            ;
+    }
     TI = 0;
     ES = uart1InterruptEnabled;
+    EA = globalInterruptEnabled;
 }
 
 void main()
@@ -175,13 +183,13 @@ void Calculate_Motor_Controls()
 
     if (valueOfKey[2][0])
     {
-        baseSpeed = (int)((float)valueOfRoker[0][1] * ultraSpeed / 2047);
-        turnSpeed = -(int)((float)valueOfRoker[0][0] * ultraSpeed / 2047);
+        baseSpeed = (int)(((int32_t)valueOfRoker[0][1] * (int32_t)ultraSpeed) / 2047L);
+        turnSpeed = -(int)(((int32_t)valueOfRoker[0][0] * (int32_t)ultraSpeed) / 2047L);
     }
     else
     {
-        baseSpeed = (int)((float)valueOfRoker[0][1] * maxSpeed / 2047);
-        turnSpeed = -(int)((float)valueOfRoker[0][0] * maxSpeed / 2047);
+        baseSpeed = (int)(((int32_t)valueOfRoker[0][1] * (int32_t)maxSpeed) / 2047L);
+        turnSpeed = -(int)(((int32_t)valueOfRoker[0][0] * (int32_t)maxSpeed) / 2047L);
     }
 
     if (valueOfKey[0][0] == 1)
@@ -302,6 +310,5 @@ void ExpansionBoradControl(uint8_t control_cmd, uint16_t data_p60, uint16_t data
     control_frame_pack[17] = (uint8_t)((data_p77 >> 8) & 0xFF);
     control_frame_pack[18] = (uint8_t)(data_p77 & 0xFF);
 
-    for (i = 0; i < 21; i++)
-        Uart1TxQuery(control_frame_pack[i]);
+    Uart1SendFrameQuery(control_frame_pack, 21);
 }

@@ -15,16 +15,24 @@ uint16_t control_data[8] = {0};
 uint16_t motor_dir[8] = {0};
 uint8_t control_command = 0x00;
 
-static void Uart1TxQuery(uint8_t dat)
+static void Uart1SendFrameQuery(const uint8_t *frame, uint8_t length)
 {
+    uint8_t i;
+    uint8_t globalInterruptEnabled = EA;
     uint8_t uart1InterruptEnabled = ES;
+
+    EA = 0;
     ES = 0;
-    TI = 0;
-    SBUF = dat;
-    while (!TI)
-        ;
+    for (i = 0; i < length; i++)
+    {
+        TI = 0;
+        SBUF = frame[i];
+        while (!TI)
+            ;
+    }
     TI = 0;
     ES = uart1InterruptEnabled;
+    EA = globalInterruptEnabled;
 }
 
 void ExpansionBoradControl(uint8_t control_cmd, uint16_t data_p60, uint16_t data_p62, uint16_t data_p64, uint16_t data_p66, uint16_t data_p74, uint16_t data_p75, uint16_t data_p76, uint16_t data_p77)
@@ -52,8 +60,7 @@ void ExpansionBoradControl(uint8_t control_cmd, uint16_t data_p60, uint16_t data
     control_frame_pack[16] = (uint8_t)(data_p76 & 0xFF);
     control_frame_pack[17] = (uint8_t)((data_p77 >> 8) & 0xFF);
     control_frame_pack[18] = (uint8_t)(data_p77 & 0xFF);
-    for (i = 0; i < 21; i++)
-        Uart1TxQuery(control_frame_pack[i]);
+    Uart1SendFrameQuery(control_frame_pack, 21);
 }
 int pie_abs(int x)
 {
@@ -82,8 +89,8 @@ void main(void)
     /* ===== 主循环 ===== */
     while (1)
     {
-        _base_spd = (int)((float)RcRockerValueRead(ROCKER_LEFT_VERTICAL) * (4000) / 2047);
-        _turn_spd = -(int)((float)RcRockerValueRead(ROCKER_LEFT_HORIZONTAL) * (4000) / 2047);
+        _base_spd = (int)(((int32_t)RcRockerValueRead(ROCKER_LEFT_VERTICAL) * 4000L) / 2047L);
+        _turn_spd = -(int)(((int32_t)RcRockerValueRead(ROCKER_LEFT_HORIZONTAL) * 4000L) / 2047L);
         _wheel[0] = -_base_spd - _turn_spd;
         _wheel[1] = -_base_spd - _turn_spd;
         _wheel[2] = _base_spd - _turn_spd;

@@ -139,17 +139,24 @@ static void StepDone(uint8_t step)
 // UART1 查询发送一字节：不依赖 UART1 TX 中断（避免 UART_PutChar 的
 // UART_BUSY 死锁——TX 中断被 NRF P2.6 高优先级中断抢占时 BUSY 永远清不掉）。
 // 发送期间临时关串口中断，轮询硬件 TI 标志。要求 UART1 已 UART_Init 初始化。
-static void Uart1TxQuery(uint8_t dat)
+static void Uart1SendFrameQuery(const uint8_t *frame, uint8_t length)
 {
+    uint8_t i;
+    uint8_t globalInterruptEnabled = EA;
     uint8_t uart1InterruptEnabled = ES;
 
+    EA = 0;          // 整帧发送期间禁止中断，避免字节间出现不可控停顿
     ES = 0;          // 关 UART1 中断，避免中断抢先清 TI 导致死锁
-    TI = 0;          // 丢弃可能残留的发送完成标志
-    SBUF = dat;      // 启动发送
-    while (!TI)      // 等硬件发送完成（TI 与中断无关，必定置位）
-        ;
+    for (i = 0; i < length; i++)
+    {
+        TI = 0;      // 丢弃可能残留的发送完成标志
+        SBUF = frame[i];
+        while (!TI)  // 等硬件发送完成（TI 与中断无关，必定置位）
+            ;
+    }
     TI = 0;          // 清发送完成标志
     ES = uart1InterruptEnabled; // 恢复调用前的 UART1 中断状态
+    EA = globalInterruptEnabled;
 }
 
 void main()
@@ -312,13 +319,13 @@ void CalculateMotorControls()
     // 冲刺模式：按下左摇杆时使用冲刺速度
     if (valueOfKey[2][0])
     {
-        baseSpeed = (int)((float)valueOfRoker[0][1] * ultraSpeed / 2047);
-        turnSpeed = (int)((float)valueOfRoker[0][0] * ultraSpeed / 2047);
+        baseSpeed = (int)(((int32_t)valueOfRoker[0][1] * (int32_t)ultraSpeed) / 2047L);
+        turnSpeed = (int)(((int32_t)valueOfRoker[0][0] * (int32_t)ultraSpeed) / 2047L);
     }
     else
     {
-        baseSpeed = (int)((float)valueOfRoker[0][1] * maxSpeed / 2047);
-        turnSpeed = (int)((float)valueOfRoker[0][0] * maxSpeed / 2047);
+        baseSpeed = (int)(((int32_t)valueOfRoker[0][1] * (int32_t)maxSpeed) / 2047L);
+        turnSpeed = (int)(((int32_t)valueOfRoker[0][0] * (int32_t)maxSpeed) / 2047L);
     }
 
     // 方向键设为移动
@@ -438,6 +445,5 @@ void ExpansionBoradControl(uint8_t control_cmd, uint16_t data_p60, uint16_t data
     control_frame_pack[16] = (uint8_t)(data_p76 & 0xFF);
     control_frame_pack[17] = (uint8_t)((data_p77 >> 8) & 0xFF);
     control_frame_pack[18] = (uint8_t)(data_p77 & 0xFF);
-    for (i = 0; i < 21; i++)
-        Uart1TxQuery(control_frame_pack[i]); // 查询发送，不依赖 TX 中断
+    Uart1SendFrameQuery(control_frame_pack, 21);
 }
