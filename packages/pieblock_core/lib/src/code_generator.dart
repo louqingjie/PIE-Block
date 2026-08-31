@@ -265,14 +265,9 @@ uint8_t frictionEnabled = 0;
     uint8_t friction = RcKeyValueRead(${_key(c.frictionKey!)});
     uint8_t frictionUp = RcKeyValueRead(${_key(c.frictionUpKey!)});
     uint8_t frictionDown = RcKeyValueRead(${_key(c.frictionDownKey!)});
-    uint8_t frictionStartedThisCycle = 0;
     if (friction && !lastFriction) {
         frictionEnabled = !frictionEnabled;
         frictionTargetDuty = frictionEnabled ? FRICTION_MAX_DUTY : 0;
-        if (frictionEnabled && frictionDuty == 0) {
-            frictionDuty = FRICTION_START_DUTY;
-            frictionStartedThisCycle = 1;
-        }
     }
     if (frictionEnabled && frictionUp && !lastFrictionUp && !frictionDown) {
         frictionTargetDuty += FRICTION_SPEED_STEP;
@@ -283,8 +278,18 @@ uint8_t frictionEnabled = 0;
             frictionTargetDuty -= FRICTION_SPEED_STEP;
         else frictionTargetDuty = FRICTION_START_DUTY;
     }
-    if (!frictionStartedThisCycle && frictionDuty < frictionTargetDuty) frictionDuty += FRICTION_STEP_DUTY;
-    else if (!frictionStartedThisCycle && frictionDuty > frictionTargetDuty) frictionDuty -= FRICTION_STEP_DUTY;
+    /* 指南：启停时 0~5% 区间可以跳过（电机 5% 才起转），
+       因此 frictionDuty 只取 0 或 500~上限，中间的 0~500 一律跳变。 */
+    if (frictionTargetDuty >= FRICTION_START_DUTY && frictionDuty < FRICTION_START_DUTY)
+        frictionDuty = FRICTION_START_DUTY;
+    else if (frictionDuty < frictionTargetDuty)
+        frictionDuty += FRICTION_STEP_DUTY;
+    else if (frictionDuty > frictionTargetDuty) {
+        if (frictionTargetDuty == 0 && frictionDuty <= FRICTION_START_DUTY)
+            frictionDuty = 0;
+        else
+            frictionDuty -= FRICTION_STEP_DUTY;
+    }
     lastFriction = friction;
     lastFrictionUp = frictionUp;
     lastFrictionDown = frictionDown;

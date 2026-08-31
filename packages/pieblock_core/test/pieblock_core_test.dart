@@ -579,6 +579,27 @@ void main() {
       expect(code, isNot(contains('FRICTION_START_DUTY')));
     });
 
+    test('摩擦轮启停跳过 0~500 无效区间', () {
+      final code = CodeGenerator.generate(completeInfantry());
+      // 启动：低于最低有效占空比时直接跳到 500，不从 0 逐格爬上来
+      expect(
+        code,
+        contains(
+          'if (frictionTargetDuty >= FRICTION_START_DUTY && frictionDuty < FRICTION_START_DUTY)',
+        ),
+      );
+      // 停机：降到最低有效占空比后直接归零，不在 0~500 之间逐格磨
+      expect(
+        code,
+        contains(
+          'if (frictionTargetDuty == 0 && frictionDuty <= FRICTION_START_DUTY)',
+        ),
+      );
+      // 旧写法只在 duty 恰好为 0 时跳变，关闭途中重新开启会从 0~500 之间
+      // 渐变上去，不应再出现
+      expect(code, isNot(contains('frictionStartedThisCycle')));
+    });
+
     test('工程完整配置可以生成', () {
       expect(CodeGenerator.generate(completeEngineer()), contains('RunMode1'));
     });
