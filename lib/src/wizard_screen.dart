@@ -830,7 +830,12 @@ class _StepProblemPanel extends ConsumerWidget {
 }
 
 class _Section extends StatelessWidget {
-  const _Section({required this.title, required this.children, this.subtitle});
+  const _Section({
+    super.key,
+    required this.title,
+    required this.children,
+    this.subtitle,
+  });
   final String title;
   final String? subtitle;
   final List<Widget> children;
@@ -2912,9 +2917,23 @@ class _DeployPage extends ConsumerStatefulWidget {
 class _DeployPageState extends ConsumerState<_DeployPage> {
   Timer? _deviceTimer;
 
+  final ScrollController _logScroll = ScrollController();
+  final GlobalKey _logSectionKey = GlobalKey();
+  ProviderSubscription<List<String>>? _logEventsSub;
+
+  /// 日志区是否跟随最新一行。用户手动上滑时会暂停，滚回底部再自动恢复。
+  bool _logFollow = false;
+
   @override
   void initState() {
     super.initState();
+    _logScroll.addListener(_onLogScroll);
+    // 只在 events 变化时触发：每秒的 refreshDevices 不会改动 events 引用，
+    // 因此不会误触发滚动。
+    _logEventsSub = ref.listenManual<List<String>>(
+      deployControllerProvider.select((s) => s.events),
+      (previous, next) => _followLogToBottom(),
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) => _prepare());
     // 安卓同样需要周期检测：UsbHidBridge 检测到板子的瞬间会自动授权并
     // 打开保持（防止 STC ISP 固件因总线空闲跳回用户程序）。
@@ -2927,7 +2946,43 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
   @override
   void dispose() {
     _deviceTimer?.cancel();
+    _logEventsSub?.close();
+    _logScroll
+      ..removeListener(_onLogScroll)
+      ..dispose();
     super.dispose();
+  }
+
+  void _onLogScroll() {
+    if (!_logScroll.hasClients) return;
+    // 留一点容差，滚到底部附近就算「在底部」，避免差几个像素就误判。
+    final atBottom = _logScroll.position.extentAfter <= 24;
+    if (atBottom != _logFollow) setState(() => _logFollow = atBottom);
+  }
+
+  /// 新日志追加后跟到最后一行。内容变长要等这一帧布局完才能拿到新的
+  /// maxScrollExtent，所以放到 post-frame 里做。日志逐行刷得很快，用
+  /// jumpTo 而不是 animateTo，避免动画互相打断。
+  void _followLogToBottom() {
+    if (!_logFollow) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_logScroll.hasClients) return;
+      _logScroll.jumpTo(_logScroll.position.maxScrollExtent);
+    });
+  }
+
+  /// 点击编译/烧录类按钮时调用：开启跟随、把日志区滚入视野、并立刻跟到底。
+  void _startLogFollow() {
+    setState(() => _logFollow = true);
+    final context = _logSectionKey.currentContext;
+    if (context != null) {
+      Scrollable.ensureVisible(
+        context,
+        duration: const Duration(milliseconds: 280),
+        alignment: .28,
+      );
+    }
+    _followLogToBottom();
   }
 
   Future<void> _prepare() async {
@@ -2968,6 +3023,7 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
   }
 
   Future<bool> _build() async {
+    _startLogFollow();
     final appController = ref.read(appControllerProvider.notifier);
     await appController.saveNow();
     final app = ref.read(appControllerProvider);
@@ -3073,6 +3129,7 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
   }
 
   Future<void> _primaryAction() async {
+    _startLogFollow();
     var artifact = ref.read(deployControllerProvider).artifact;
     if (artifact == null) {
       if (!await _build()) return;
@@ -3365,6 +3422,7 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
           ],
           const SizedBox(height: 16),
           _Section(
+            key: _logSectionKey,
             title: '进度与日志',
             children: [
               if (deploy.progress != null) ...[
@@ -3393,6 +3451,7 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: SingleChildScrollView(
+                  controller: _logScroll,
                   child: SelectableText(
                     deploy.events.isEmpty ? '等待操作…' : deploy.events.join('\n'),
                     style: const TextStyle(
