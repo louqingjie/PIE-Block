@@ -1007,6 +1007,27 @@ void main() {
     expect(find.textContaining('不能跨侧共用同一 IO'), findsWidgets);
   });
 
+  testWidgets('底盘速度过低显示警告但不阻止下一步', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _ConfiguredRemoteController(_infantryDocument()),
+          ),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('普通速度低于 7000，底盘移动速度可能变慢'), findsWidgets);
+    expect(find.text('冲刺速度低于 9000，底盘移动速度可能变慢'), findsWidgets);
+    await tester.tap(find.text('下一步'));
+    await tester.pumpAndSettle();
+    expect(find.text('2 / 6'), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
   testWidgets('错误显示在字段和问题栏并阻止下一步', (tester) async {
     await tester.pumpWidget(
       ProviderScope(

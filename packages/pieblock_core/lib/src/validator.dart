@@ -84,6 +84,24 @@ abstract final class ProjectValidator {
       issue,
       required: config.chassis.sprintEnabled,
     );
+    if (config.chassis.normalSpeed case final speed?
+        when speed >= 0 && speed < 7000) {
+      issue(
+        IssueSeverity.warning,
+        'chassis.normal_speed',
+        '普通速度低于 7000，底盘移动速度可能变慢',
+        'remote',
+      );
+    }
+    if (config.chassis.sprintSpeed case final speed?
+        when speed >= 0 && speed < 9000) {
+      issue(
+        IssueSeverity.warning,
+        'chassis.sprint_speed',
+        '冲刺速度低于 9000，底盘移动速度可能变慢',
+        'remote',
+      );
+    }
     if (config.chassis.normalSpeed != null &&
         config.chassis.sprintSpeed != null &&
         config.chassis.sprintSpeed! < config.chassis.normalSpeed!) {

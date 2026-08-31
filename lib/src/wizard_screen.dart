@@ -1204,7 +1204,9 @@ class _RemotePage extends ConsumerWidget {
                 ],
               ),
               const SizedBox(height: 10),
-              const _InfoBanner('速度单位为 duty，范围 0–10000；未启用冲刺时冲刺速度不会参与控制。'),
+              const _InfoBanner(
+                '速度单位为 duty，范围 0–10000；建议普通速度不低于 7000、冲刺速度不低于 9000。未启用冲刺时冲刺速度不会参与控制。',
+              ),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('按下左摇杆启用冲刺'),

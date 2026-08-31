@@ -244,6 +244,40 @@ void main() {
       );
     });
 
+    test('底盘速度低于建议阈值时给出非阻塞警告', () {
+      final low = completeInfantry().copyWith(
+        chassis: completeChassis().copyWith(
+          normalSpeed: 6999,
+          sprintSpeed: 8999,
+        ),
+      );
+      final warnings = ProjectValidator.validate(low)
+          .where((issue) => issue.severity == IssueSeverity.warning)
+          .map((issue) => issue.message);
+      expect(
+        warnings,
+        containsAll(['普通速度低于 7000，底盘移动速度可能变慢', '冲刺速度低于 9000，底盘移动速度可能变慢']),
+      );
+
+      final boundary = low.copyWith(
+        chassis: low.chassis.copyWith(normalSpeed: 7000, sprintSpeed: 9000),
+      );
+      expect(
+        ProjectValidator.validate(boundary)
+            .where((issue) => issue.message.contains('底盘移动速度可能变慢')),
+        isEmpty,
+      );
+
+      final invalid = low.copyWith(
+        chassis: low.chassis.copyWith(normalSpeed: -1, sprintSpeed: -1),
+      );
+      expect(
+        ProjectValidator.validate(invalid)
+            .where((issue) => issue.message.contains('底盘移动速度可能变慢')),
+        isEmpty,
+      );
+    });
+
     test('仓库原子保存并打开', () async {
       final dir = await Directory.systemTemp.createTemp('pieblock-core-test-');
       addTearDown(() => dir.delete(recursive: true));
