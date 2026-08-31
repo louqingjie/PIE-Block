@@ -582,10 +582,14 @@ class WizardScreen extends ConsumerWidget {
                               : null,
                           tooltip:
                               state.step == controller.reviewStep(document.kind)
-                              ? '生成代码'
-                              : state.step == controller.codeStep(document.kind)
-                              ? '编译与烧录'
-                              : '下一步',
+                                  ? '生成代码'
+                                  : state.step ==
+                                          controller.codeStep(document.kind)
+                                      ? '编译与烧录'
+                                      : state.step == controller.deployStep(
+                                              document.kind)
+                                          ? '编译与烧录'
+                                          : '下一步',
                           icon: const Icon(Icons.arrow_forward),
                         )
                       : FilledButton.icon(
@@ -598,9 +602,12 @@ class WizardScreen extends ConsumerWidget {
                             state.step == controller.reviewStep(document.kind)
                                 ? '生成代码'
                                 : state.step ==
-                                      controller.codeStep(document.kind)
-                                ? '编译与烧录'
-                                : '下一步',
+                                        controller.codeStep(document.kind)
+                                    ? '编译与烧录'
+                                    : state.step == controller.deployStep(
+                                            document.kind)
+                                        ? '编译并烧录'
+                                        : '下一步',
                           ),
                         ),
                 ],
