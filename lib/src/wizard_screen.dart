@@ -1213,6 +1213,14 @@ class _RemotePage extends ConsumerWidget {
                 value: ch.sprintEnabled,
                 onChanged: (v) => updateChassis(ch.copyWith(sprintEnabled: v)),
               ),
+              SwitchListTile(
+                key: const ValueKey('chassis.turn_reversed'),
+                contentPadding: EdgeInsets.zero,
+                title: const Text('反转左右转向'),
+                subtitle: const Text('前后移动正常，但左右操控相反时启用'),
+                value: ch.turnReversed,
+                onChanged: (v) => updateChassis(ch.copyWith(turnReversed: v)),
+              ),
             ],
           ),
         ],
@@ -2607,6 +2615,9 @@ class _ReviewPage extends ConsumerWidget {
                   leading: const Icon(Icons.speed),
                   title: Text(
                     '普通速度 ${config.chassis.normalSpeed ?? '未填写'} · 冲刺速度 ${config.chassis.sprintSpeed ?? '未填写'}',
+                  ),
+                  subtitle: Text(
+                    config.chassis.turnReversed ? '左右转向：反向' : '左右转向：标准',
                   ),
                 ),
               ],

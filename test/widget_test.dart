@@ -1036,6 +1036,67 @@ void main() {
     await tester.pump(const Duration(milliseconds: 600));
   });
 
+  testWidgets('步兵可反转左右转向并在摘要显示', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _ConfiguredRemoteController(_infantryDocument()),
+          ),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final turnSwitch = find.byKey(const ValueKey('chassis.turn_reversed'));
+    expect(tester.widget<SwitchListTile>(turnSwitch).value, isFalse);
+    await tester.ensureVisible(turnSwitch);
+    await tester.pumpAndSettle();
+    await tester.tap(turnSwitch);
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(WizardScreen)),
+    );
+    final config =
+        container.read(appControllerProvider).document!.config
+            as InfantryConfig;
+    expect(config.chassis.turnReversed, isTrue);
+    container.read(appControllerProvider.notifier).goToStep(3);
+    await tester.pumpAndSettle();
+    expect(find.text('左右转向：反向'), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
+  testWidgets('工程项目共用左右转向反向设置', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _ConfiguredRemoteController(_engineerDocument()),
+          ),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final turnSwitch = find.byKey(const ValueKey('chassis.turn_reversed'));
+    await tester.ensureVisible(turnSwitch);
+    await tester.pumpAndSettle();
+    await tester.tap(turnSwitch);
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(WizardScreen)),
+    );
+    final config =
+        container.read(appControllerProvider).document!.config
+            as EngineerConfig;
+    expect(config.chassis.turnReversed, isTrue);
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
   testWidgets('错误显示在字段和问题栏并阻止下一步', (tester) async {
     await tester.pumpWidget(
       ProviderScope(

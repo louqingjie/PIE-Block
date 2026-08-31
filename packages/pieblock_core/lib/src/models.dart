@@ -109,11 +109,12 @@ class ChassisConfig {
     this.normalSpeed,
     this.sprintSpeed,
     this.sprintEnabled = false,
+    this.turnReversed = false,
   });
   factory ChassisConfig.defaults() => const ChassisConfig();
   final WheelConfig leftFront, leftRear, rightFront, rightRear;
   final int? normalSpeed, sprintSpeed;
-  final bool sprintEnabled;
+  final bool sprintEnabled, turnReversed;
   ChassisConfig copyWith({
     WheelConfig? leftFront,
     WheelConfig? leftRear,
@@ -122,6 +123,7 @@ class ChassisConfig {
     Object? normalSpeed = _unset,
     Object? sprintSpeed = _unset,
     bool? sprintEnabled,
+    bool? turnReversed,
   }) => ChassisConfig(
     leftFront: leftFront ?? this.leftFront,
     leftRear: leftRear ?? this.leftRear,
@@ -134,6 +136,7 @@ class ChassisConfig {
         ? this.sprintSpeed
         : sprintSpeed as int?,
     sprintEnabled: sprintEnabled ?? this.sprintEnabled,
+    turnReversed: turnReversed ?? this.turnReversed,
   );
   Map<String, Object?> toJson() => {
     'left_front': leftFront.toJson(),
@@ -143,6 +146,7 @@ class ChassisConfig {
     'normal_speed': normalSpeed,
     'sprint_speed': sprintSpeed,
     'sprint_enabled': sprintEnabled,
+    'turn_reversed': turnReversed,
   };
   factory ChassisConfig.fromJson(Map<String, Object?> j) => ChassisConfig(
     leftFront: WheelConfig.fromJson(
@@ -160,6 +164,7 @@ class ChassisConfig {
     normalSpeed: (j['normal_speed'] as num?)?.toInt(),
     sprintSpeed: (j['sprint_speed'] as num?)?.toInt(),
     sprintEnabled: j['sprint_enabled'] as bool? ?? false,
+    turnReversed: j['turn_reversed'] as bool? ?? false,
   );
 }
 

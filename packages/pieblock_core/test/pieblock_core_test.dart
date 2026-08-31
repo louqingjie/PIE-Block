@@ -179,6 +179,15 @@ void main() {
       );
     });
 
+    test('底盘转向反向配置默认关闭且可往返', () {
+      expect(ChassisConfig.fromJson(const {}).turnReversed, isFalse);
+      final source = completeChassis().copyWith(turnReversed: true);
+      final json = source.toJson();
+      expect(json['turn_reversed'], isTrue);
+      expect(ChassisConfig.fromJson(json).turnReversed, isTrue);
+      expect(source.copyWith(turnReversed: false).turnReversed, isFalse);
+    });
+
     test('调试项目顺序与配置可往返', () {
       final source = ProjectDocument.create(
         '调试测试',
@@ -568,6 +577,36 @@ void main() {
   });
 
   group('生成器', () {
+    test('底盘转向反向仅在启用时取反 turnSpeed', () {
+      final standardConfig = completeInfantry().copyWith(
+        arrowBehavior: ArrowBehavior.move,
+      );
+      final standard = CodeGenerator.generate(standardConfig);
+      expect(standard, isNot(contains('turnSpeed = -turnSpeed;')));
+
+      final reversed = CodeGenerator.generate(
+        standardConfig.copyWith(
+          chassis: standardConfig.chassis.copyWith(turnReversed: true),
+        ),
+      );
+      const calculation =
+          'turnSpeed = (int)(((int32_t)valueOfRoker[0][0] * (int32_t)speed) / 2047L);';
+      const inversion = 'turnSpeed = -turnSpeed;';
+      const firstWheel = 'dutyOfMotor[4] = baseSpeed - turnSpeed;';
+      expect(reversed.split(inversion), hasLength(2));
+      expect(
+        reversed.indexOf(calculation),
+        lessThan(reversed.indexOf(inversion)),
+      );
+      expect(
+        reversed.indexOf(inversion),
+        lessThan(reversed.indexOf(firstWheel)),
+      );
+      expect(reversed, contains('valueOfRoker[0][0] = -2047'));
+      expect(reversed, contains('valueOfRoker[0][0] = 2047'));
+      expect(reversed.replaceFirst('    $inversion\n', ''), standard);
+    });
+
     test('完整步兵配置生成且使用按键宏和实际槽位', () {
       final code = CodeGenerator.generate(
         completeInfantry().copyWith(triggerKey: 'LC', frictionKey: 'RC'),
