@@ -1071,18 +1071,11 @@ void main() {
 
   testWidgets('摇杆死区过大显示警告但不阻止下一步', (tester) async {
     final source = _infantryDocument();
-    final config = source.config as InfantryConfig;
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           appControllerProvider.overrideWith(
-            () => _ConfiguredRemoteController(
-              source.copyWith(
-                config: config.copyWith(
-                  remote: config.remote.copyWith(deadzone: 501),
-                ),
-              ),
-            ),
+            () => _ConfiguredRemoteController(source),
           ),
         ],
         child: const MaterialApp(home: WizardScreen()),
@@ -1090,7 +1083,22 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    final deadzone = find.byKey(const ValueKey('remote.deadzone'));
+    await tester.enterText(deadzone, '501');
+    await tester.pumpAndSettle();
+    expect(find.text('摇杆死区大于 500，可能影响操控灵敏度'), findsNothing);
+    expect(
+      find.descendant(of: deadzone, matching: find.byIcon(Icons.warning_amber)),
+      findsNothing,
+    );
+
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
     expect(find.text('摇杆死区大于 500，可能影响操控灵敏度'), findsWidgets);
+    expect(
+      find.descendant(of: deadzone, matching: find.byIcon(Icons.warning_amber)),
+      findsOneWidget,
+    );
     await tester.tap(find.text('下一步'));
     await tester.pumpAndSettle();
     expect(find.text('2 / 6'), findsOneWidget);
@@ -1169,15 +1177,55 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.enterText(find.byType(TextFormField).first, '126');
+    final channel = find.byKey(const ValueKey('remote.channel'));
+    await tester.enterText(channel, '126');
     await tester.pumpAndSettle();
-    expect(find.text('遥控器通道号必须在 0–125 之间'), findsWidgets);
+    expect(find.text('遥控器通道号必须在 0–125 之间'), findsNothing);
+    expect(
+      find.descendant(of: channel, matching: find.byIcon(Icons.error_outline)),
+      findsNothing,
+    );
 
     await tester.tap(find.text('下一步'));
     await tester.pumpAndSettle();
+    expect(find.text('遥控器通道号必须在 0–125 之间'), findsWidgets);
+    expect(
+      find.descendant(of: channel, matching: find.byIcon(Icons.error_outline)),
+      findsOneWidget,
+    );
     expect(find.text('1 / 6'), findsOneWidget);
     expect(find.textContaining('请修正标红的配置'), findsOneWidget);
     await tester.pump(const Duration(milliseconds: 1500));
+  });
+
+  testWidgets('切换数值输入框后显示旧字段问题并隐藏当前字段问题', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _ConfiguredRemoteController(_infantryDocument()),
+          ),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final channel = find.byKey(const ValueKey('remote.channel'));
+    final deadzone = find.byKey(const ValueKey('remote.deadzone'));
+    await tester.enterText(channel, '126');
+    await tester.pumpAndSettle();
+    expect(find.text('遥控器通道号必须在 0–125 之间'), findsNothing);
+
+    await tester.enterText(deadzone, '2048');
+    await tester.pumpAndSettle();
+    expect(find.text('遥控器通道号必须在 0–125 之间'), findsWidgets);
+    expect(find.text('摇杆死区必须在 0–2047 之间'), findsNothing);
+
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+    expect(find.text('摇杆死区必须在 0–2047 之间'), findsWidgets);
+    await tester.pump(const Duration(milliseconds: 600));
   });
 
   testWidgets('所有数值输入框可连续输入且不会丢失焦点', (tester) async {

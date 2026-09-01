@@ -21,6 +21,30 @@ final _fieldFocusNodes = <String, FocusNode>{};
 final _highlightedField = ValueNotifier<String?>(null);
 Timer? _highlightTimer;
 
+final _activeInputFieldProvider =
+    NotifierProvider<_ActiveInputFieldController, String?>(
+      _ActiveInputFieldController.new,
+    );
+
+class _ActiveInputFieldController extends Notifier<String?> {
+  @override
+  String? build() => null;
+
+  void focus(String path) => state = path;
+
+  void blur(String path) {
+    if (state == path) state = null;
+  }
+
+  void clear() => state = null;
+}
+
+void _endTextInput(WidgetRef ref) {
+  FocusManager.instance.primaryFocus?.unfocus();
+  FocusManager.instance.applyFocusChangesIfNeeded();
+  ref.read(_activeInputFieldProvider.notifier).clear();
+}
+
 const _compactBreakpoint = 600.0;
 const _wideBreakpoint = 1100.0;
 
@@ -88,7 +112,7 @@ Future<void> _confirmCancelOperation(
 GlobalKey _fieldAnchor(String path) =>
     _fieldAnchors.putIfAbsent(path, GlobalKey.new);
 
-void _scrollToField(String path) {
+void _scrollToField(String path, {bool requestFocus = true}) {
   final context =
       (_fieldAnchors[path] ??
               (path.startsWith('music.') ? _fieldAnchors['music.notes'] : null))
@@ -99,7 +123,7 @@ void _scrollToField(String path) {
       duration: const Duration(milliseconds: 280),
       alignment: .28,
     );
-    _fieldFocusNodes[path]?.requestFocus();
+    if (requestFocus) _fieldFocusNodes[path]?.requestFocus();
     _highlightedField.value = path;
     _highlightTimer?.cancel();
     _highlightTimer = Timer(
@@ -110,14 +134,18 @@ void _scrollToField(String path) {
 }
 
 class _FieldAnchor extends StatelessWidget {
-  const _FieldAnchor({required this.path, required this.child});
+  const _FieldAnchor({
+    required this.path,
+    required this.child,
+    this.focusHandledByChild = false,
+  });
   final String path;
   final Widget child;
+  final bool focusHandledByChild;
 
   @override
-  Widget build(BuildContext context) => Focus(
-    focusNode: _fieldFocusNodes.putIfAbsent(path, FocusNode.new),
-    child: ValueListenableBuilder<String?>(
+  Widget build(BuildContext context) {
+    final anchored = ValueListenableBuilder<String?>(
       valueListenable: _highlightedField,
       builder: (context, highlighted, child) => AnimatedContainer(
         key: _fieldAnchor(path),
@@ -132,11 +160,23 @@ class _FieldAnchor extends StatelessWidget {
         child: child,
       ),
       child: child,
-    ),
-  );
+    );
+    if (focusHandledByChild) return anchored;
+    return Focus(
+      focusNode: _fieldFocusNodes.putIfAbsent(path, FocusNode.new),
+      child: anchored,
+    );
+  }
+}
+
+String? _activeInputField(WidgetRef ref) {
+  final path = ref.watch(_activeInputFieldProvider);
+  if (path == null || !(_fieldFocusNodes[path]?.hasFocus ?? false)) return null;
+  return path;
 }
 
 ValidationIssue? _fieldIssue(WidgetRef ref, String path) {
+  if (_activeInputField(ref) == path) return null;
   final issues = ref
       .read(appControllerProvider.notifier)
       .visibleIssues
@@ -486,6 +526,11 @@ class WizardScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(appControllerProvider),
         controller = ref.read(appControllerProvider.notifier);
+    void goToStep(int step) {
+      _endTextInput(ref);
+      controller.goToStep(step);
+    }
+
     final document = state.document!,
         steps = switch (document.kind) {
           ProjectKind.infantry => infantrySteps,
@@ -526,7 +571,7 @@ class WizardScreen extends ConsumerWidget {
     };
     if (state.pendingFieldPath != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _scrollToField(state.pendingFieldPath!);
+        _scrollToField(state.pendingFieldPath!, requestFocus: false);
         controller.clearPendingField();
       });
     }
@@ -636,7 +681,7 @@ class WizardScreen extends ConsumerWidget {
                                   enabled: i <= state.maxVisitedStep + 1,
                                   onTap: deploy.busy
                                       ? () {}
-                                      : () => controller.goToStep(i),
+                                      : () => goToStep(i),
                                 ),
                             ],
                           ),
@@ -669,14 +714,14 @@ class WizardScreen extends ConsumerWidget {
                   compact
                       ? IconButton.outlined(
                           onPressed: state.step > 0 && !deploy.busy
-                              ? () => controller.goToStep(state.step - 1)
+                              ? () => goToStep(state.step - 1)
                               : null,
                           tooltip: '上一步',
                           icon: const Icon(Icons.arrow_back),
                         )
                       : OutlinedButton.icon(
                           onPressed: state.step > 0 && !deploy.busy
-                              ? () => controller.goToStep(state.step - 1)
+                              ? () => goToStep(state.step - 1)
                               : null,
                           icon: const Icon(Icons.arrow_back),
                           label: const Text('上一步'),
@@ -691,7 +736,7 @@ class WizardScreen extends ConsumerWidget {
                       ? IconButton.filled(
                           onPressed:
                               state.step < steps.length - 1 && !deploy.busy
-                              ? () => controller.goToStep(state.step + 1)
+                              ? () => goToStep(state.step + 1)
                               : null,
                           tooltip:
                               state.step == controller.reviewStep(document.kind)
@@ -707,7 +752,7 @@ class WizardScreen extends ConsumerWidget {
                       : FilledButton.icon(
                           onPressed:
                               state.step < steps.length - 1 && !deploy.busy
-                              ? () => controller.goToStep(state.step + 1)
+                              ? () => goToStep(state.step + 1)
                               : null,
                           icon: const Icon(Icons.arrow_forward),
                           label: Text(
@@ -831,6 +876,7 @@ class _CompactStepPicker extends ConsumerWidget {
               ? null
               : (step) {
                   if (step != null && step <= maxStep) {
+                    _endTextInput(ref);
                     ref.read(appControllerProvider.notifier).goToStep(step);
                   }
                 },
@@ -852,12 +898,17 @@ class _PageFrame extends ConsumerWidget {
   final Widget child;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final activeInputField = _activeInputField(ref);
     final issues = stepId == null
         ? const <ValidationIssue>[]
         : ref
               .read(appControllerProvider.notifier)
               .visibleIssues
-              .where((issue) => issue.stepId == stepId)
+              .where(
+                (issue) =>
+                    issue.stepId == stepId &&
+                    issue.fieldPath != activeInputField,
+              )
               .toList();
     final compact = _isCompact(context);
     return SingleChildScrollView(
@@ -933,7 +984,10 @@ class _StepProblemPanel extends ConsumerWidget {
               ),
               title: Text(issue.message),
               trailing: const Icon(Icons.my_location, size: 18),
-              onTap: () => _scrollToField(issue.fieldPath),
+              onTap: () {
+                _endTextInput(ref);
+                _scrollToField(issue.fieldPath);
+              },
             ),
         ],
       ),
@@ -972,7 +1026,7 @@ class _Section extends StatelessWidget {
   );
 }
 
-class _NumberField extends ConsumerWidget {
+class _NumberField extends ConsumerStatefulWidget {
   const _NumberField({
     required this.label,
     required this.value,
@@ -984,21 +1038,90 @@ class _NumberField extends ConsumerWidget {
   final int? value;
   final ValueChanged<int?> onChanged;
   final String? suffix, fieldPath;
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_NumberField> createState() => _NumberFieldState();
+}
+
+class _NumberFieldState extends ConsumerState<_NumberField> {
+  FocusNode? _focusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _bindFocusNode();
+  }
+
+  @override
+  void didUpdateWidget(covariant _NumberField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.fieldPath != widget.fieldPath) {
+      _unbindFocusNode(oldWidget.fieldPath);
+      _bindFocusNode();
+    }
+  }
+
+  void _bindFocusNode() {
+    final path = widget.fieldPath;
+    if (path == null) return;
+    final node = FocusNode(debugLabel: path)..addListener(_handleFocusChange);
+    _focusNode = node;
+    _fieldFocusNodes[path] = node;
+  }
+
+  void _unbindFocusNode(String? path) {
+    final node = _focusNode;
+    if (node == null) return;
+    if (path != null && identical(_fieldFocusNodes[path], node)) {
+      _fieldFocusNodes.remove(path);
+    }
+    node.removeListener(_handleFocusChange);
+    node.dispose();
+    _focusNode = null;
+  }
+
+  void _handleFocusChange() {
+    final path = widget.fieldPath;
+    if (path == null) return;
+    final controller = ref.read(_activeInputFieldProvider.notifier);
+    if (_focusNode?.hasFocus ?? false) {
+      controller.focus(path);
+    } else {
+      controller.blur(path);
+    }
+  }
+
+  @override
+  void dispose() {
+    _unbindFocusNode(widget.fieldPath);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final field = TextFormField(
-      key: ValueKey(fieldPath ?? label),
-      initialValue: value?.toString() ?? '',
+      key: ValueKey(widget.fieldPath ?? widget.label),
+      focusNode: _focusNode,
+      initialValue: widget.value?.toString() ?? '',
       keyboardType: TextInputType.number,
       inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'-?\d*'))],
-      decoration: fieldPath == null
-          ? InputDecoration(labelText: label, suffixText: suffix)
-          : _fieldDecoration(ref, fieldPath!, label, suffix: suffix),
-      onChanged: (text) => onChanged(int.tryParse(text)),
+      decoration: widget.fieldPath == null
+          ? InputDecoration(labelText: widget.label, suffixText: widget.suffix)
+          : _fieldDecoration(
+              ref,
+              widget.fieldPath!,
+              widget.label,
+              suffix: widget.suffix,
+            ),
+      onChanged: (text) => widget.onChanged(int.tryParse(text)),
     );
-    return fieldPath == null
+    return widget.fieldPath == null
         ? field
-        : _FieldAnchor(path: fieldPath!, child: field);
+        : _FieldAnchor(
+            path: widget.fieldPath!,
+            focusHandledByChild: true,
+            child: field,
+          );
   }
 }
 
@@ -2596,9 +2719,10 @@ class _ReviewPage extends ConsumerWidget {
                     title: Text(issue.message),
                     subtitle: Text(issue.fieldPath),
                     trailing: const Icon(Icons.arrow_forward),
-                    onTap: () => ref
-                        .read(appControllerProvider.notifier)
-                        .goToIssue(issue),
+                    onTap: () {
+                      _endTextInput(ref);
+                      ref.read(appControllerProvider.notifier).goToIssue(issue);
+                    },
                   ),
             ],
           ),
