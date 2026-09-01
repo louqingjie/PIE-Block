@@ -106,7 +106,7 @@ EngineerConfig advancedEngineer({
   switchStrategy: strategy,
   modeSwitchKey: strategy == SwitchStrategy.cycle ? 'E' : null,
   modeKeys: strategy == SwitchStrategy.direct
-      ? const ['E', 'UP', 'DOWN', 'LEFT']
+      ? const ['E', '↑', '↓', '←']
       : null,
   modes: [
     EngineerModeConfig(

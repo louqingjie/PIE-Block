@@ -28,6 +28,10 @@ abstract final class CodeGenerator {
     'E' => 'KEY_OFFSET_1',
     'LC' => 'KEY_OFFSET_Rocker11',
     'RC' => 'KEY_OFFSET_Rocker21',
+    '↑' => 'KEY_OFFSET_UP',
+    '↓' => 'KEY_OFFSET_DOWN',
+    '←' => 'KEY_OFFSET_LEFT',
+    '→' => 'KEY_OFFSET_RIGHT',
     _ => 'KEY_OFFSET_$key',
   };
   static int _slot(String? pin) =>

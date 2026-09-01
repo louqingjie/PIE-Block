@@ -183,7 +183,7 @@ EngineerConfig _engineerAdvanced(SwitchStrategy strategy) => EngineerConfig(
   switchStrategy: strategy,
   modeSwitchKey: strategy == SwitchStrategy.cycle ? 'E' : null,
   modeKeys: strategy == SwitchStrategy.direct
-      ? const ['E', 'UP', 'DOWN', 'LEFT']
+      ? const ['E', '↑', '↓', '←']
       : null,
   modes: [
     EngineerModeConfig(
@@ -216,7 +216,7 @@ EngineerConfig _engineerAdvanced(SwitchStrategy strategy) => EngineerConfig(
         ),
         ActionMapping(
           id: 'servo-direct-preset',
-          key: 'RIGHT',
+          key: '→',
           direction: Direction.forward,
           mode: ControlMode.direct,
           parameter: 45,

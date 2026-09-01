@@ -651,7 +651,7 @@ abstract final class ProjectValidator {
     }
     if (config.arrowBehavior == ArrowBehavior.move ||
         config.arrowBehavior == ArrowBehavior.sprint) {
-      const arrows = {'UP', 'DOWN', 'LEFT', 'RIGHT'};
+      const arrows = {'↑', '↓', '←', '→'};
       final entries = <({String path, String label, String? key})>[
         (path: 'controls.trigger_key', label: '扳机键', key: config.triggerKey),
         if (config.frictionMode == FrictionMode.brushlessEsc)

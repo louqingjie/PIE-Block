@@ -55,10 +55,10 @@ const chassisPins = [
 ];
 const digitalRemoteKeys = [
   'E',
-  'UP',
-  'DOWN',
-  'LEFT',
-  'RIGHT',
+  '↑',
+  '↓',
+  '←',
+  '→',
   'A',
   'B',
   'C',
