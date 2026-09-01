@@ -3875,26 +3875,26 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
             key: _logSectionKey,
             title: '进度与日志',
             children: [
-              if (deploy.progress != null) ...[
-                LinearProgressIndicator(value: deploy.progress),
-                const SizedBox(height: 12),
-              ] else if (deploy.busy) ...[
-                const LinearProgressIndicator(),
-                const SizedBox(height: 12),
-              ],
-              if (deploy.message != null) ...[
-                Text(
-                  deploy.message!,
+              // 栏目高度恒定：进度条与消息行常驻占位，日志框固定 360px。
+              deploy.progress != null
+                  ? LinearProgressIndicator(value: deploy.progress)
+                  : deploy.busy
+                  ? const LinearProgressIndicator()
+                  : const SizedBox(height: 4),
+              const SizedBox(height: 12),
+              SizedBox(
+                height: 20,
+                child: Text(
+                  deploy.message ?? ' ',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
-                const SizedBox(height: 10),
-              ],
+              ),
+              const SizedBox(height: 10),
               Container(
                 width: double.infinity,
-                constraints: const BoxConstraints(
-                  minHeight: 120,
-                  maxHeight: 360,
-                ),
+                height: 360,
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
                   color: Theme.of(context).colorScheme.surfaceContainerHighest,
