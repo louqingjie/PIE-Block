@@ -269,138 +269,145 @@ class HomeScreen extends ConsumerWidget {
           ),
           SafeArea(
             child: Center(
-              child: SingleChildScrollView(
-                padding: EdgeInsets.all(
-                  MediaQuery.sizeOf(context).width < 600 ? 18 : 40,
-                ),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 1040),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _HomeHeader(
-                        dark: dark,
-                        themeMode: state.themeMode,
-                        onCycleTheme: ref
-                            .read(appControllerProvider.notifier)
-                            .cycleTheme,
-                      ),
-                      const SizedBox(height: 44),
-                      LayoutBuilder(
-                        builder: (context, c) {
-                          final cards = [
-                            _ActionCard(
-                              icon: Icons.add_circle_outline,
-                              title: '新建机器人项目',
-                              subtitle: '从步兵、工程、调试或音乐模板开始分步配置',
-                              button: '新建项目',
-                              accent: _brandCyan,
-                              foreground: const Color(0xff00363d),
-                              onPressed: () => _create(context, ref),
-                            ),
-                            _ActionCard(
-                              icon: Icons.folder_open,
-                              title: '打开已有项目',
-                              subtitle: '仅支持新版格式 14 的 .pieproj',
-                              button: '打开项目',
-                              accent: _brandCoral,
-                              foreground: const Color(0xff3d0b08),
-                              onPressed: () => _open(context, ref),
-                            ),
-                          ];
-                          if (c.maxWidth < 600) {
-                            return Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
+              child: ScrollConfiguration(
+                behavior: ScrollConfiguration.of(context)
+                    .copyWith(scrollbars: false),
+                child: SingleChildScrollView(
+                  key: const ValueKey('home-scroll-view'),
+                  padding: EdgeInsets.all(
+                    MediaQuery.sizeOf(context).width < 600 ? 18 : 40,
+                  ),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 1040),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _HomeHeader(
+                          dark: dark,
+                          themeMode: state.themeMode,
+                          onCycleTheme: ref
+                              .read(appControllerProvider.notifier)
+                              .cycleTheme,
+                        ),
+                        const SizedBox(height: 44),
+                        LayoutBuilder(
+                          builder: (context, c) {
+                            final cards = [
+                              _ActionCard(
+                                icon: Icons.add_circle_outline,
+                                title: '新建机器人项目',
+                                subtitle: '从步兵、工程、调试或音乐模板开始分步配置',
+                                button: '新建项目',
+                                accent: _brandCyan,
+                                foreground: const Color(0xff00363d),
+                                onPressed: () => _create(context, ref),
+                              ),
+                              _ActionCard(
+                                icon: Icons.folder_open,
+                                title: '打开已有项目',
+                                subtitle: '仅支持新版格式 14 的 .pieproj',
+                                button: '打开项目',
+                                accent: _brandCoral,
+                                foreground: const Color(0xff3d0b08),
+                                onPressed: () => _open(context, ref),
+                              ),
+                            ];
+                            if (c.maxWidth < 600) {
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  cards.first,
+                                  const SizedBox(height: 16),
+                                  cards.last,
+                                ],
+                              );
+                            }
+                            return Row(
                               children: [
-                                cards.first,
-                                const SizedBox(height: 16),
-                                cards.last,
+                                Expanded(child: cards.first),
+                                const SizedBox(width: 20),
+                                Expanded(child: cards.last),
                               ],
                             );
-                          }
-                          return Row(
-                            children: [
-                              Expanded(child: cards.first),
-                              const SizedBox(width: 20),
-                              Expanded(child: cards.last),
-                            ],
-                          );
-                        },
-                      ),
-                      if (state.message != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 20),
-                          child: MaterialBanner(
-                            content: Text(state.message!),
-                            leading: const Icon(Icons.error_outline),
-                            actions: [
-                              TextButton(
-                                onPressed: ref
-                                    .read(appControllerProvider.notifier)
-                                    .clearMessage,
-                                child: const Text('关闭'),
-                              ),
-                            ],
-                          ),
+                          },
                         ),
-                      const SizedBox(height: 36),
-                      Text(
-                        '最近项目',
-                        style: Theme.of(context).textTheme.titleLarge
-                            ?.copyWith(fontWeight: FontWeight.w700),
-                      ),
-                      const SizedBox(height: 12),
-                      Card(
-                        child: state.recentPaths.isEmpty
-                            ? const Padding(
-                                padding: EdgeInsets.all(28),
-                                child: Row(
+                        if (state.message != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 20),
+                            child: MaterialBanner(
+                              content: Text(state.message!),
+                              leading: const Icon(Icons.error_outline),
+                              actions: [
+                                TextButton(
+                                  onPressed: ref
+                                      .read(appControllerProvider.notifier)
+                                      .clearMessage,
+                                  child: const Text('关闭'),
+                                ),
+                              ],
+                            ),
+                          ),
+                        const SizedBox(height: 36),
+                        Text(
+                          '最近项目',
+                          style: Theme.of(context).textTheme.titleLarge
+                              ?.copyWith(fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: 12),
+                        Card(
+                          child: state.recentPaths.isEmpty
+                              ? const Padding(
+                                  padding: EdgeInsets.all(28),
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.history),
+                                      SizedBox(width: 12),
+                                      Text('还没有最近打开的项目'),
+                                    ],
+                                  ),
+                                )
+                              : Column(
                                   children: [
-                                    Icon(Icons.history),
-                                    SizedBox(width: 12),
-                                    Text('还没有最近打开的项目'),
+                                    for (final entry
+                                        in state.recentPaths.indexed)
+                                      ListTile(
+                                        leading: const Icon(
+                                          Icons.description_outlined,
+                                        ),
+                                        title: Text(
+                                          AppDocumentIo.displayName(entry.$2),
+                                        ),
+                                        subtitle: Text(
+                                          entry.$2,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        trailing: const Icon(
+                                          Icons.chevron_right,
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.vertical(
+                                            top: entry.$1 == 0
+                                                ? const Radius.circular(18)
+                                                : Radius.zero,
+                                            bottom:
+                                                entry.$1 ==
+                                                    state.recentPaths.length - 1
+                                                ? const Radius.circular(18)
+                                                : Radius.zero,
+                                          ),
+                                        ),
+                                        onTap: () => ref
+                                            .read(
+                                              appControllerProvider.notifier,
+                                            )
+                                            .openProject(entry.$2),
+                                      ),
                                   ],
                                 ),
-                              )
-                            : Column(
-                                children: [
-                                  for (
-                                    final entry
-                                        in state.recentPaths.indexed
-                                  )
-                                    ListTile(
-                                      leading: const Icon(
-                                        Icons.description_outlined,
-                                      ),
-                                      title: Text(
-                                        AppDocumentIo.displayName(entry.$2),
-                                      ),
-                                      subtitle: Text(
-                                        entry.$2,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      trailing: const Icon(Icons.chevron_right),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.vertical(
-                                          top: entry.$1 == 0
-                                              ? const Radius.circular(18)
-                                              : Radius.zero,
-                                          bottom:
-                                              entry.$1 ==
-                                                  state.recentPaths.length - 1
-                                              ? const Radius.circular(18)
-                                              : Radius.zero,
-                                        ),
-                                      ),
-                                      onTap: () => ref
-                                          .read(appControllerProvider.notifier)
-                                          .openProject(entry.$2),
-                                    ),
-                                ],
-                              ),
-                      ),
-                    ],
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),

@@ -489,6 +489,39 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('首页隐藏桌面自动滚动条且保持可滚动', (tester) async {
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(800, 400);
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          theme: ThemeData(platform: TargetPlatform.windows),
+          home: const HomeScreen(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    const scrollKey = ValueKey('home-scroll-view');
+    final scrollView = find.byKey(scrollKey);
+    final scrollable = find.descendant(
+      of: scrollView,
+      matching: find.byType(Scrollable),
+    );
+    final position = tester.state<ScrollableState>(scrollable).position;
+    expect(position.maxScrollExtent, greaterThan(0));
+    expect(find.byType(Scrollbar), findsNothing);
+
+    await tester.drag(scrollView, const Offset(0, -200));
+    await tester.pumpAndSettle();
+    expect(position.pixels, greaterThan(0));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('调试向导展示可排序十路测试和动态摩擦轮字段', (tester) async {
     await tester.pumpWidget(
       ProviderScope(
