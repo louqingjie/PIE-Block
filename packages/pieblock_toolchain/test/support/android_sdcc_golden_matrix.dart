@@ -24,9 +24,9 @@ const _baselineHashes = <String, String>{
   'infantry_shared_chassis_sprint':
       '51924b76d7bc8386d3871d21ad90e50dda648767a6ddf1a4b58df1494989326f',
   'engineer_four_mode_cycle':
-      '922c192c5eb9107ef7da96e986cdaf35f742bc1945bc5f43831bdb45ab04c2b7',
+      'aa0f05103e0aadb21e2b2222ee6e58cbecebd16b1a05a23df17203b513ac9035',
   'engineer_four_mode_direct':
-      '35416aa126ac6a650494158d6b473a8674834cf8ee8a298f5484ea42ea66b64c',
+      '3d8a2dd67bf2f828e8bd8633a2dde76a478f16cf4bf204bf5a0ef300c325d67f',
 };
 
 final sdccGoldenCases = <SdccGoldenCase>[
@@ -213,6 +213,14 @@ EngineerConfig _engineerAdvanced(SwitchStrategy strategy) => EngineerConfig(
           mode: ControlMode.continuous,
           parameter: 0.5,
           pin: 'MP03',
+        ),
+        ActionMapping(
+          id: 'servo-direct-preset',
+          key: 'RIGHT',
+          direction: Direction.forward,
+          mode: ControlMode.direct,
+          parameter: 45,
+          pin: 'P60',
         ),
         ActionMapping(
           id: 'motor-direct',

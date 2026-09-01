@@ -65,6 +65,13 @@ EngineerConfig engineer() => EngineerConfig(
           parameter: 1.25,
           pin: 'P60',
         ),
+        ActionMapping(
+          key: 'B',
+          direction: Direction.reverse,
+          mode: ControlMode.direct,
+          parameter: 45,
+          pin: 'MP03',
+        ),
       ],
     ),
   ],

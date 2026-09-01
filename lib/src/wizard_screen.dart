@@ -2415,7 +2415,11 @@ class _ActionRow extends ConsumerWidget {
         ? isAxis
               ? const [ControlMode.direct, ControlMode.incremental]
               : isButton
-              ? const [ControlMode.single, ControlMode.continuous]
+              ? const [
+                  ControlMode.direct,
+                  ControlMode.single,
+                  ControlMode.continuous,
+                ]
               : const <ControlMode>[]
         : isMotorRole
         ? (isAxis
@@ -2435,7 +2439,6 @@ class _ActionRow extends ConsumerWidget {
     ];
     final visiblePins = _includeCurrent(usablePins, action.pin);
     final usesSensitivity =
-        role == PinRole.servo && isButton ||
         action.mode == ControlMode.single ||
         action.mode == ControlMode.continuous;
     final parameterLabel = usesSensitivity

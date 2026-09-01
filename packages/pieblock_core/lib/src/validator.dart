@@ -1064,7 +1064,11 @@ abstract final class ProjectValidator {
         : isAxis
         ? const [ControlMode.incremental, ControlMode.direct]
         : isButton
-        ? const [ControlMode.single, ControlMode.continuous]
+        ? const [
+            ControlMode.direct,
+            ControlMode.single,
+            ControlMode.continuous,
+          ]
         : const <ControlMode>[];
     if (action.mode != null && !allowed.contains(action.mode)) {
       issue(

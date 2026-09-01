@@ -1284,7 +1284,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 600));
   });
 
-  testWidgets('工程按键舵机显示单次持续和失焦灵敏度警告', (tester) async {
+  testWidgets('工程按键舵机显示直接单次持续及对应参数规则', (tester) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -1312,12 +1312,24 @@ void main() {
       ControlMode.single,
       ControlMode.continuous,
     ]);
-    final legacy = modeField(0).items!
+    final direct = modeField(0).items!
         .singleWhere((item) => item.value == ControlMode.direct);
-    expect(legacy.enabled, isFalse);
-    expect((legacy.child as Text).data, '直接（当前配置，不支持）');
+    expect(direct.enabled, isTrue);
+    expect((direct.child as Text).data, '直接');
     expect(modes(1), const [ControlMode.direct, ControlMode.incremental]);
     expect(modes(2), const [ControlMode.direct]);
+
+    String? parameterLabel() => tester
+        .widget<TextField>(
+          find.descendant(
+            of: find.byKey(const ValueKey('modes.0.actions.0.parameter')),
+            matching: find.byType(TextField),
+          ),
+        )
+        .decoration
+        ?.labelText;
+    expect(parameterLabel(), '目标角度 °');
+    expect(find.text('控制方式与输入类型或 IO 输出角色不匹配'), findsNothing);
 
     final mode = find.byKey(const ValueKey('modes.0.actions.0.mode'));
     await tester.ensureVisible(mode);
@@ -1328,6 +1340,7 @@ void main() {
 
     final parameter = find.byKey(const ValueKey('modes.0.actions.0.parameter'));
     await tester.ensureVisible(parameter);
+    expect(parameterLabel(), '灵敏度 °/周期');
     await tester.enterText(parameter, '10.01');
     await tester.pumpAndSettle();
     expect(find.text('舵机角度变化速度可能过快'), findsNothing);
