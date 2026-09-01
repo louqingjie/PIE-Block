@@ -287,6 +287,27 @@ void main() {
       );
     });
 
+    test('摇杆死区大于 500 时给出非阻塞警告', () {
+      Iterable<ValidationIssue> deadzoneIssues(int deadzone) =>
+          ProjectValidator.validate(
+            completeInfantry().copyWith(
+              remote: RemoteConfig(channel: 36, deadzone: deadzone),
+            ),
+          ).where((issue) => issue.fieldPath == 'remote.deadzone');
+
+      expect(deadzoneIssues(500), isEmpty);
+      for (final value in [501, 2047]) {
+        final warning = deadzoneIssues(value).single;
+        expect(warning.severity, IssueSeverity.warning);
+        expect(warning.stepId, 'remote');
+        expect(warning.message, '摇杆死区大于 500，可能影响操控灵敏度');
+      }
+
+      final invalid = deadzoneIssues(2048).single;
+      expect(invalid.severity, IssueSeverity.error);
+      expect(invalid.message, isNot(contains('可能影响操控灵敏度')));
+    });
+
     test('仓库原子保存并打开', () async {
       final dir = await Directory.systemTemp.createTemp('pieblock-core-test-');
       addTearDown(() => dir.delete(recursive: true));

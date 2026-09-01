@@ -65,6 +65,15 @@ abstract final class ProjectValidator {
       'remote',
       issue,
     );
+    if (config.remote.deadzone case final deadzone?
+        when deadzone > 500 && deadzone <= 2047) {
+      issue(
+        IssueSeverity.warning,
+        'remote.deadzone',
+        '摇杆死区大于 500，可能影响操控灵敏度',
+        'remote',
+      );
+    }
     _range(
       config.chassis.normalSpeed,
       0,

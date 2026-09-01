@@ -1138,7 +1138,9 @@ class _RemotePage extends ConsumerWidget {
                 ],
               ),
               const SizedBox(height: 10),
-              const _InfoBanner('通道号范围 0–125，必须与遥控器一致；摇杆死区范围 0–2047。'),
+              const _InfoBanner(
+                '通道号范围 0–125，必须与遥控器一致；摇杆死区范围 0–2047，建议不超过 500。',
+              ),
             ],
           ),
           const SizedBox(height: 18),
