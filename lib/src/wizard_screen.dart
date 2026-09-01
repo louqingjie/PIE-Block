@@ -1442,6 +1442,7 @@ class _PwmPage extends ConsumerWidget {
                               child: _FieldAnchor(
                                 path: 'pwm.pin_roles.$pin',
                                 child: DropdownButtonFormField<PinRole>(
+                                  key: ValueKey('pwm.pin_roles.$pin'),
                                   initialValue: mainServoPins.contains(pin)
                                       ? PinRole.servo
                                       : pwm.pinRoles[pin],
@@ -1450,17 +1451,7 @@ class _PwmPage extends ConsumerWidget {
                                     'pwm.pin_roles.$pin',
                                     pin,
                                   ),
-                                  items:
-                                      (mainServoPins.contains(pin)
-                                              ? const [PinRole.servo]
-                                              : PinRole.values)
-                                          .map(
-                                            (r) => DropdownMenuItem(
-                                              value: r,
-                                              child: Text(_roleLabel(r)),
-                                            ),
-                                          )
-                                          .toList(),
+                                  items: _roleItems(pin, pwm.pinRoles[pin]),
                                   onChanged: mainServoPins.contains(pin)
                                       ? null
                                       : (v) {
@@ -1514,6 +1505,23 @@ class _PwmPage extends ConsumerWidget {
     PinRole.jitterMotor => '抖动电机',
     PinRole.unused => '未使用',
   };
+
+  static List<DropdownMenuItem<PinRole>> _roleItems(
+    String pin,
+    PinRole? current,
+  ) {
+    final allowed = EngineerPinCapabilities.allowedRoles(pin);
+    return [
+      if (current != null && !allowed.contains(current))
+        DropdownMenuItem(
+          value: current,
+          enabled: false,
+          child: Text('${_roleLabel(current)}（当前配置，不支持）'),
+        ),
+      for (final role in allowed)
+        DropdownMenuItem(value: role, child: Text(_roleLabel(role))),
+    ];
+  }
 }
 
 class _InfantryMechanismPage extends ConsumerWidget {

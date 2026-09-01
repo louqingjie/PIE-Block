@@ -43,7 +43,12 @@ EngineerConfig engineer() => EngineerConfig(
   pwm: PwmGroupConfig(
     pwma: PwmFrequency.hz10000,
     pwmb: PwmFrequency.hz10000,
-    pinRoles: {for (final pin in expansionPins) pin: PinRole.motor},
+    pinRoles: {
+      for (final pin in expansionPins)
+        pin: EngineerPinCapabilities.frictionPins.contains(pin)
+            ? PinRole.friction
+            : PinRole.motor,
+    },
     servoMids: const {'MP03': 0, 'MP74': 0},
   ),
   modeCount: 1,

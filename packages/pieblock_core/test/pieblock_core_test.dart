@@ -49,7 +49,12 @@ EngineerConfig completeEngineer() => EngineerConfig(
   pwm: PwmGroupConfig(
     pwma: PwmFrequency.hz10000,
     pwmb: PwmFrequency.hz10000,
-    pinRoles: {for (final pin in expansionPins) pin: PinRole.motor},
+    pinRoles: {
+      for (final pin in expansionPins)
+        pin: EngineerPinCapabilities.frictionPins.contains(pin)
+            ? PinRole.friction
+            : PinRole.motor,
+    },
     servoMids: const {'MP03': 0, 'MP74': 0},
   ),
   modeCount: 1,
@@ -91,7 +96,9 @@ EngineerConfig advancedEngineer({
     pinRoles: {
       'P60': PinRole.servo,
       for (final pin in expansionPins.where((pin) => pin != 'P60'))
-        pin: PinRole.motor,
+        pin: EngineerPinCapabilities.frictionPins.contains(pin)
+            ? PinRole.friction
+            : PinRole.motor,
     },
     servoMids: const {'P60': 0, 'MP03': 0, 'MP74': 0},
   ),
@@ -316,6 +323,95 @@ void main() {
       await repository.create(path, '工程测试', ProjectKind.engineer);
       expect((await repository.open(path)).kind, ProjectKind.engineer);
       expect(File('$path.tmp').existsSync(), isFalse);
+    });
+  });
+
+  group('工程引脚能力', () {
+    test('每组引脚只公开硬件支持的输出角色', () {
+      const motorRoles = [
+        PinRole.motor,
+        PinRole.servo,
+        PinRole.jitterMotor,
+        PinRole.unused,
+      ];
+      const frictionRoles = [
+        PinRole.servo,
+        PinRole.friction,
+        PinRole.unused,
+      ];
+
+      for (final pin in EngineerPinCapabilities.motorPins) {
+        expect(EngineerPinCapabilities.allowedRoles(pin), motorRoles);
+      }
+      for (final pin in EngineerPinCapabilities.frictionPins) {
+        expect(EngineerPinCapabilities.allowedRoles(pin), frictionRoles);
+      }
+      for (final pin in mainServoPins) {
+        expect(
+          EngineerPinCapabilities.allowedRoles(pin),
+          const [PinRole.servo],
+        );
+      }
+      for (final pin in [...expansionPins, ...mainServoPins]) {
+        expect(
+          EngineerPinCapabilities.supportsRole(pin, PinRole.servo),
+          isTrue,
+        );
+      }
+    });
+
+    test('非法角色被保留并产生单一字段错误且阻止生成', () {
+      EngineerConfig withRole(String pin, PinRole role) {
+        final source = completeEngineer();
+        return source.copyWith(
+          pwm: source.pwm.copyWith(pinRoles: {...source.pwm.pinRoles, pin: role}),
+        );
+      }
+
+      for (final invalid in [
+        ('P64', PinRole.motor),
+        ('P66', PinRole.jitterMotor),
+        ('P60', PinRole.friction),
+        ('P74', PinRole.friction),
+      ]) {
+        final config = withRole(invalid.$1, invalid.$2);
+        final issues = ProjectValidator.validate(config)
+            .where((issue) => issue.fieldPath == 'pwm.pin_roles.${invalid.$1}')
+            .toList();
+        expect(
+          issues.where((issue) => issue.severity == IssueSeverity.error),
+          hasLength(1),
+        );
+        expect(
+          issues.where((issue) => issue.severity == IssueSeverity.warning),
+          isEmpty,
+        );
+        expect(() => CodeGenerator.generate(config), throwsStateError);
+      }
+
+      final invalid = withRole('P64', PinRole.motor);
+      final document = ProjectDocument.create(
+        '非法工程配置',
+        ProjectKind.engineer,
+      ).copyWith(config: invalid);
+      final restored = ProjectDocument.fromJson(
+        Map<String, Object?>.from(
+          jsonDecode(jsonEncode(document.toJson())) as Map,
+        ),
+      );
+      expect(
+        (restored.config as EngineerConfig).pwm.pinRoles['P64'],
+        PinRole.motor,
+      );
+    });
+
+    test('P64/P66 摩擦轮角色保持合法', () {
+      final errors = ProjectValidator.validate(completeEngineer()).where(
+        (issue) =>
+            issue.severity == IssueSeverity.error &&
+            issue.fieldPath.startsWith('pwm.pin_roles.'),
+      );
+      expect(errors, isEmpty);
     });
   });
 

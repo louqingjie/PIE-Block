@@ -831,6 +831,16 @@ abstract final class ProjectValidator {
     for (final pin in expansionPins) {
       final role = config.pwm.pinRoles[pin];
       _choice(role, 'pwm.pin_roles.$pin', '$pin 输出角色', 'pwm', issue);
+      final roleSupported = role != null &&
+          EngineerPinCapabilities.supportsRole(pin, role);
+      if (role != null && !roleSupported) {
+        issue(
+          IssueSeverity.error,
+          'pwm.pin_roles.$pin',
+          '$pin 不支持${_engineerRoleLabel(role)}',
+          'pwm',
+        );
+      }
       if (chassisUsed.contains(pin) && role != null && !_motorRole(role)) {
         issue(
           IssueSeverity.error,
@@ -842,7 +852,7 @@ abstract final class ProjectValidator {
       final frequency = expansionPins.indexOf(pin) < 4
           ? config.pwm.pwma
           : config.pwm.pwmb;
-      if (role != null && frequency != null) {
+      if (roleSupported && frequency != null) {
         final expected = role == PinRole.motor
             ? PwmFrequency.hz10000
             : PwmFrequency.hz50;
@@ -1078,4 +1088,12 @@ abstract final class ProjectValidator {
       role == PinRole.motor ||
       role == PinRole.friction ||
       role == PinRole.jitterMotor;
+
+  static String _engineerRoleLabel(PinRole role) => switch (role) {
+    PinRole.motor => '平滑电机',
+    PinRole.servo => '舵机',
+    PinRole.friction => '摩擦轮',
+    PinRole.jitterMotor => '抖动电机',
+    PinRole.unused => '未使用',
+  };
 }

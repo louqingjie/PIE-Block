@@ -156,7 +156,11 @@ PwmGroupConfig _engineerPwm({bool advanced = false}) => PwmGroupConfig(
   buzzerDisabled: advanced,
   pinRoles: {
     for (final pin in expansionPins)
-      pin: advanced && pin == 'P60' ? PinRole.servo : PinRole.motor,
+      pin: advanced && pin == 'P60'
+          ? PinRole.servo
+          : EngineerPinCapabilities.frictionPins.contains(pin)
+          ? PinRole.friction
+          : PinRole.motor,
   },
   servoMids: advanced
       ? const {'P60': -10, 'MP03': 12, 'MP74': -8}

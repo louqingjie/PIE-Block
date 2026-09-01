@@ -1166,6 +1166,83 @@ void main() {
     await tester.pump(const Duration(milliseconds: 600));
   });
 
+  testWidgets('工程引脚角色按硬件能力限制并可修正非法旧值', (tester) async {
+    final source = _engineerDocument();
+    final sourceConfig = source.config as EngineerConfig;
+    final document = source.copyWith(
+      config: sourceConfig.copyWith(
+        pwm: sourceConfig.pwm.copyWith(
+          pinRoles: {...sourceConfig.pwm.pinRoles, 'P64': PinRole.motor},
+        ),
+      ),
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _StaticProjectController(document, 1),
+          ),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    DropdownButton<PinRole> field(String pin) =>
+        tester.widget<DropdownButton<PinRole>>(
+          find.descendant(
+            of: find.byKey(ValueKey('pwm.pin_roles.$pin')),
+            matching: find.byType(DropdownButton<PinRole>),
+          ),
+        );
+    List<PinRole?> roles(String pin) =>
+        field(pin).items!.map((item) => item.value).toList();
+
+    expect(roles('P60'), const [
+      PinRole.motor,
+      PinRole.servo,
+      PinRole.jitterMotor,
+      PinRole.unused,
+    ]);
+    expect(roles('P64'), const [
+      PinRole.motor,
+      PinRole.servo,
+      PinRole.friction,
+      PinRole.unused,
+    ]);
+    expect(roles('P74'), const [
+      PinRole.motor,
+      PinRole.servo,
+      PinRole.jitterMotor,
+      PinRole.unused,
+    ]);
+    expect(roles('MP03'), const [PinRole.servo]);
+    expect(field('MP03').onChanged, isNull);
+
+    final unsupported = field('P64').items!
+        .singleWhere((item) => item.value == PinRole.motor);
+    expect(unsupported.enabled, isFalse);
+    expect((unsupported.child as Text).data, '平滑电机（当前配置，不支持）');
+    expect(find.textContaining('P64 不支持平滑电机'), findsWidgets);
+
+    final p64 = find.byKey(const ValueKey('pwm.pin_roles.P64'));
+    await tester.ensureVisible(p64);
+    await tester.tap(p64);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('摩擦轮').last);
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(WizardScreen)),
+    );
+    final updated =
+        container.read(appControllerProvider).document!.config
+            as EngineerConfig;
+    expect(updated.pwm.pinRoles['P64'], PinRole.friction);
+    expect(find.textContaining('P64 不支持平滑电机'), findsNothing);
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
   testWidgets('错误显示在字段和问题栏并阻止下一步', (tester) async {
     await tester.pumpWidget(
       ProviderScope(

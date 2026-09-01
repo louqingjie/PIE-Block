@@ -290,7 +290,7 @@ godot --headless --no-header --path . --script scripts/cli_codegen.gd -- check `
   "channel": "36",
   "l1_io": "P74 P24", "...": "...",
   "pwm_group_init": { "PWMA": "50Hz", "PWMB": "10000Hz" },
-  "io_role": { "P60": "舵机", "P62": "平滑电机", "P64": "抖动电机", "...": "..." },
+  "io_role": { "P60": "舵机", "P62": "平滑电机", "P64": "摩擦轮", "...": "..." },
   "mode_count": 4,
   "switch_strategy": "单击切换",
   "mode_switch_key": "E",

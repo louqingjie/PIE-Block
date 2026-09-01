@@ -26,6 +26,25 @@ enum ValidationIssueKind { required, invalid }
 
 const expansionPins = ['P60', 'P62', 'P64', 'P66', 'P74', 'P75', 'P76', 'P77'];
 const mainServoPins = ['MP03', 'MP74'];
+
+/// Hardware capabilities for engineer-project output pins.
+abstract final class EngineerPinCapabilities {
+  static const motorPins = ['P60', 'P62', 'P74', 'P75', 'P76', 'P77'];
+  static const frictionPins = ['P64', 'P66'];
+  static const servoPins = [...expansionPins, ...mainServoPins];
+
+  static List<PinRole> allowedRoles(String pin) => PinRole.values
+      .where((role) => supportsRole(pin, role))
+      .toList(growable: false);
+
+  static bool supportsRole(String pin, PinRole role) => switch (role) {
+    PinRole.motor || PinRole.jitterMotor => motorPins.contains(pin),
+    PinRole.friction => frictionPins.contains(pin),
+    PinRole.servo => servoPins.contains(pin),
+    PinRole.unused => expansionPins.contains(pin),
+  };
+}
+
 const chassisPins = [
   'P60 P61',
   'P62 P63',
