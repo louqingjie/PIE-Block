@@ -18,7 +18,7 @@ enum PwmFrequency { hz50, hz10000 }
 
 enum SwitchStrategy { cycle, direct }
 
-enum ControlMode { direct, incremental, speed, accelerate }
+enum ControlMode { direct, incremental, speed, accelerate, single, continuous }
 
 enum IssueSeverity { error, warning }
 
@@ -1243,7 +1243,7 @@ class ActionMapping {
   final String? key, pin;
   final Direction? direction;
   final ControlMode? mode;
-  final int? parameter;
+  final num? parameter;
   ActionMapping copyWith({
     Object? key = _unset,
     Object? direction = _unset,
@@ -1259,7 +1259,7 @@ class ActionMapping {
     mode: identical(mode, _unset) ? this.mode : mode as ControlMode?,
     parameter: identical(parameter, _unset)
         ? this.parameter
-        : parameter as int?,
+        : parameter as num?,
     pin: identical(pin, _unset) ? this.pin : pin as String?,
   );
   Map<String, Object?> toJson() => {
@@ -1275,7 +1275,7 @@ class ActionMapping {
     key: j['key']?.toString(),
     direction: nullableEnumValue(Direction.values, j['direction']),
     mode: nullableEnumValue(ControlMode.values, j['mode']),
-    parameter: (j['parameter'] as num?)?.toInt(),
+    parameter: j['parameter'] as num?,
     pin: j['pin']?.toString(),
   );
 }

@@ -276,6 +276,47 @@ ProjectDocument _engineerDocument() {
   );
 }
 
+ProjectDocument _engineerServoButtonDocument() {
+  final source = _engineerDocument();
+  final config = source.config as EngineerConfig;
+  return source.copyWith(
+    config: config.copyWith(
+      pwm: config.pwm.copyWith(
+        pinRoles: const {'P60': PinRole.servo, 'P62': PinRole.motor},
+        servoMids: const {'P60': 0, 'MP03': 0, 'MP74': 0},
+      ),
+      modes: [
+        EngineerModeConfig(
+          preserveChassis: true,
+          actions: [
+            ActionMapping(
+              key: 'A',
+              direction: Direction.forward,
+              mode: ControlMode.direct,
+              parameter: 30,
+              pin: 'P60',
+            ),
+            ActionMapping(
+              key: 'RX',
+              direction: Direction.forward,
+              mode: ControlMode.direct,
+              parameter: 30,
+              pin: 'MP03',
+            ),
+            ActionMapping(
+              key: 'B',
+              direction: Direction.forward,
+              mode: ControlMode.direct,
+              parameter: 4000,
+              pin: 'P62',
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
+}
+
 ProjectDocument _debugDocument() {
   final source = ProjectDocument.create('调试测试', ProjectKind.debug);
   return source.copyWith(
@@ -1240,6 +1281,78 @@ void main() {
             as EngineerConfig;
     expect(updated.pwm.pinRoles['P64'], PinRole.friction);
     expect(find.textContaining('P64 不支持平滑电机'), findsNothing);
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
+  testWidgets('工程按键舵机显示单次持续和失焦灵敏度警告', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _StaticProjectController(_engineerServoButtonDocument(), 3),
+          ),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    DropdownButton<ControlMode> modeField(int actionIndex) =>
+        tester.widget<DropdownButton<ControlMode>>(
+          find.descendant(
+            of: find.byKey(ValueKey('modes.0.actions.$actionIndex.mode')),
+            matching: find.byType(DropdownButton<ControlMode>),
+          ),
+        );
+    List<ControlMode?> modes(int actionIndex) =>
+        modeField(actionIndex).items!.map((item) => item.value).toList();
+
+    expect(modes(0), const [
+      ControlMode.direct,
+      ControlMode.single,
+      ControlMode.continuous,
+    ]);
+    final legacy = modeField(0).items!
+        .singleWhere((item) => item.value == ControlMode.direct);
+    expect(legacy.enabled, isFalse);
+    expect((legacy.child as Text).data, '直接（当前配置，不支持）');
+    expect(modes(1), const [ControlMode.direct, ControlMode.incremental]);
+    expect(modes(2), const [ControlMode.direct]);
+
+    final mode = find.byKey(const ValueKey('modes.0.actions.0.mode'));
+    await tester.ensureVisible(mode);
+    await tester.tap(mode);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('单次').last);
+    await tester.pumpAndSettle();
+
+    final parameter = find.byKey(const ValueKey('modes.0.actions.0.parameter'));
+    await tester.ensureVisible(parameter);
+    await tester.enterText(parameter, '10.01');
+    await tester.pumpAndSettle();
+    expect(find.text('舵机角度变化速度可能过快'), findsNothing);
+
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+    expect(find.text('舵机角度变化速度可能过快'), findsWidgets);
+
+    await tester.enterText(parameter, '1.23');
+    await tester.pumpAndSettle();
+    await tester.enterText(parameter, '1.234');
+    await tester.pumpAndSettle();
+    final editable = tester.widget<EditableText>(
+      find.descendant(of: parameter, matching: find.byType(EditableText)),
+    );
+    expect(editable.controller.text, '1.23');
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(WizardScreen)),
+    );
+    final updated =
+        container.read(appControllerProvider).document!.config
+            as EngineerConfig;
+    expect(updated.modes.first.actions.first.mode, ControlMode.single);
+    expect(updated.modes.first.actions.first.parameter, 1.23);
     await tester.pump(const Duration(milliseconds: 600));
   });
 

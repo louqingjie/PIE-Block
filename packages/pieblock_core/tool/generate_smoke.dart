@@ -45,14 +45,29 @@ EngineerConfig engineer() => EngineerConfig(
     pwmb: PwmFrequency.hz10000,
     pinRoles: {
       for (final pin in expansionPins)
-        pin: EngineerPinCapabilities.frictionPins.contains(pin)
+        pin: pin == 'P60'
+            ? PinRole.servo
+            : EngineerPinCapabilities.frictionPins.contains(pin)
             ? PinRole.friction
             : PinRole.motor,
     },
-    servoMids: const {'MP03': 0, 'MP74': 0},
+    servoMids: const {'P60': 0, 'MP03': 0, 'MP74': 0},
   ),
   modeCount: 1,
-  modes: [EngineerModeConfig(preserveChassis: true)],
+  modes: [
+    EngineerModeConfig(
+      preserveChassis: true,
+      actions: [
+        ActionMapping(
+          key: 'A',
+          direction: Direction.forward,
+          mode: ControlMode.single,
+          parameter: 1.25,
+          pin: 'P60',
+        ),
+      ],
+    ),
+  ],
 );
 
 DebugConfig debug() => DebugConfig(

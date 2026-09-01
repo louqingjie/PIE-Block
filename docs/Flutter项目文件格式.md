@@ -35,6 +35,8 @@
 
 步兵和工程项目的 `chassis.turn_reversed` 是共用底盘校准项，默认 `false`；启用后仅反转水平摇杆及左右方向键产生的转向量，不改变直行、倒车、冲刺或单轮方向配置。
 
+工程动作的 `mode` 支持 `direct`、`incremental`、`speed`、`accelerate`、`single` 和 `continuous`。数字按键控制舵机时仅使用 `single`（按键上升沿单次增加）或 `continuous`（按住期间逐主循环增加），此时 `parameter` 保存最多两位小数的角度灵敏度；其他动作参数仍为整数。
+
 步兵配置不保存 `pwm`：PWMA 固定为 50Hz，PWMB 固定为 10000Hz，其他引脚角色由实际选择自动推导。只有 `friction_mode` 为 `brushlessEsc` 时 P64/P66 才固定用于摩擦轮；选择 `disabled` 时两端口释放。工程配置继续保存 `pwm`，允许配置分组频率、引脚角色和舵机中位。
 
 调试配置保存 `tests` 数组。数组始终包含 P60、P62、P64、P66、P74、P75、P76、P77、MP03、MP74 十个固定引脚，数组顺序就是固件执行顺序。每项保存 `enabled`、`drive_type`、`direction`、`value`；电机和舵机额外保存 `duration_ms`。摩擦轮仅限 P64/P66，按固定 1.5 秒节拍从 500 渐变至 `value` 后归零。

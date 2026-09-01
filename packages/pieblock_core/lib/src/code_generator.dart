@@ -423,6 +423,25 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
 
   static String _engineer(EngineerConfig c) {
     final modeFunctions = <String>[], cases = <String>[];
+    final servoButtonIndexes = <String, int>{};
+    final servoButtonActions =
+        <({int modeIndex, int actionIndex, ActionMapping action})>[];
+    for (var modeIndex = 0; modeIndex < c.modeCount!; modeIndex++) {
+      final actions = c.modes[modeIndex].actions;
+      for (var actionIndex = 0; actionIndex < actions.length; actionIndex++) {
+        final action = actions[actionIndex];
+        if (action.mode == ControlMode.single ||
+            action.mode == ControlMode.continuous) {
+          servoButtonIndexes['$modeIndex:$actionIndex'] =
+              servoButtonActions.length;
+          servoButtonActions.add((
+            modeIndex: modeIndex,
+            actionIndex: actionIndex,
+            action: action,
+          ));
+        }
+      }
+    }
     final usedPins = <String>{
       for (final mode in c.modes.take(c.modeCount!))
         for (final action in mode.actions)
@@ -431,7 +450,12 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
     for (var i = 0; i < c.modeCount!; i++) {
       final mode = c.modes[i], body = <String>[];
       if (mode.preserveChassis) body.add('    CalculateChassis();');
-      for (final a in mode.actions) {
+      for (
+        var actionIndex = 0;
+        actionIndex < mode.actions.length;
+        actionIndex++
+      ) {
+        final a = mode.actions[actionIndex];
         final sign = a.direction == Direction.forward ? '' : '-';
         final isAxis = a.key!.endsWith('X') || a.key!.endsWith('Y');
         final read = isAxis
@@ -442,56 +466,94 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
         if (slot >= 0) {
           if (role == PinRole.servo) {
             final home = _servoDuty(c.pwm.servoMids[a.pin!]);
-            final delta = isAxis
-                ? '$sign(int)((float)$read * ${a.parameter!} * 1000.0f / 180.0f / 2047.0f)'
-                : '$sign(int)(${a.parameter!} * 1000L / 180L)';
+            if (!isAxis) {
+              final buttonIndex = servoButtonIndexes['$i:$actionIndex']!;
+              final sensitivityHundredths = (a.parameter!.toDouble() * 100)
+                  .round();
+              final signedNumerator =
+                  (a.direction == Direction.forward ? 1 : -1) *
+                  sensitivityHundredths *
+                  1000;
+              final condition = a.mode == ControlMode.single
+                  ? '$read && !servoButtonKeyLast[$buttonIndex]'
+                  : read;
+              body.add(
+                '    if ($condition) {\n'
+                '        servoButtonRemainder[$buttonIndex] += ${signedNumerator}L;\n'
+                '        dutyOfMotor[$slot] += (int)(servoButtonRemainder[$buttonIndex] / 18000L);\n'
+                '        servoButtonRemainder[$buttonIndex] %= 18000L;\n'
+                '    }',
+              );
+              if (a.mode == ControlMode.single) {
+                body.add('    servoButtonKeyLast[$buttonIndex] = $read;');
+              }
+              body.add(
+                '    if (dutyOfMotor[$slot] < 250) { dutyOfMotor[$slot] = 250; servoButtonRemainder[$buttonIndex] = 0; } '
+                'else if (dutyOfMotor[$slot] > 1250) { dutyOfMotor[$slot] = 1250; servoButtonRemainder[$buttonIndex] = 0; }',
+              );
+              continue;
+            }
+            final parameter = a.parameter!.toInt();
+            final delta =
+                '$sign(int)((float)$read * $parameter * 1000.0f / 180.0f / 2047.0f)';
             if (a.mode == ControlMode.direct) {
-              body.add(
-                isAxis
-                    ? '    dutyOfMotor[$slot] = $home + $delta;'
-                    : '    if ($read) dutyOfMotor[$slot] = $home + $delta;',
-              );
+              body.add('    dutyOfMotor[$slot] = $home + $delta;');
             } else {
-              body.add(
-                isAxis
-                    ? '    dutyOfMotor[$slot] += $delta;'
-                    : '    if ($read) dutyOfMotor[$slot] += $delta;',
-              );
+              body.add('    dutyOfMotor[$slot] += $delta;');
             }
             body.add(
               '    if (dutyOfMotor[$slot] < 250) dutyOfMotor[$slot] = 250; else if (dutyOfMotor[$slot] > 1250) dutyOfMotor[$slot] = 1250;',
             );
           } else if (a.mode == ControlMode.direct) {
             body.add(
-              '    dutyOfMotor[$slot] = $read ? $sign${a.parameter!} : 0;',
+              '    dutyOfMotor[$slot] = $read ? $sign${a.parameter!.toInt()} : 0;',
             );
           } else if (a.mode == ControlMode.speed) {
             body.add(
-              '    dutyOfMotor[$slot] = (int)(((int32_t)$read * ${a.parameter!}L) / 2047L);',
+              '    dutyOfMotor[$slot] = (int)(((int32_t)$read * ${a.parameter!.toInt()}L) / 2047L);',
             );
           } else {
             body.add(
-              '    dutyOfMotor[$slot] += (int)(((int32_t)$read * ${a.parameter!}L) / 2047L);',
+              '    dutyOfMotor[$slot] += (int)(((int32_t)$read * ${a.parameter!.toInt()}L) / 2047L);',
             );
           }
         } else {
           final mainIndex = a.pin == 'MP74' ? 1 : 0;
           final home = _servoDuty(c.pwm.servoMids[a.pin!]);
-          final delta = isAxis
-              ? '$sign(int)((float)$read * ${a.parameter!} * 1000.0f / 180.0f / 2047.0f)'
-              : '$sign(int)(${a.parameter!} * 1000L / 180L)';
+          if (!isAxis) {
+            final buttonIndex = servoButtonIndexes['$i:$actionIndex']!;
+            final sensitivityHundredths = (a.parameter!.toDouble() * 100)
+                .round();
+            final signedNumerator =
+                (a.direction == Direction.forward ? 1 : -1) *
+                sensitivityHundredths *
+                1000;
+            final condition = a.mode == ControlMode.single
+                ? '$read && !servoButtonKeyLast[$buttonIndex]'
+                : read;
+            body.add(
+              '    if ($condition) {\n'
+              '        servoButtonRemainder[$buttonIndex] += ${signedNumerator}L;\n'
+              '        mainServoDuty[$mainIndex] += (int)(servoButtonRemainder[$buttonIndex] / 18000L);\n'
+              '        servoButtonRemainder[$buttonIndex] %= 18000L;\n'
+              '    }',
+            );
+            if (a.mode == ControlMode.single) {
+              body.add('    servoButtonKeyLast[$buttonIndex] = $read;');
+            }
+            body.add(
+              '    if (mainServoDuty[$mainIndex] < 250) { mainServoDuty[$mainIndex] = 250; servoButtonRemainder[$buttonIndex] = 0; } '
+              'else if (mainServoDuty[$mainIndex] > 1250) { mainServoDuty[$mainIndex] = 1250; servoButtonRemainder[$buttonIndex] = 0; }',
+            );
+            continue;
+          }
+          final parameter = a.parameter!.toInt();
+          final delta =
+              '$sign(int)((float)$read * $parameter * 1000.0f / 180.0f / 2047.0f)';
           if (a.mode == ControlMode.direct) {
-            body.add(
-              isAxis
-                  ? '    mainServoDuty[$mainIndex] = $home + $delta;'
-                  : '    if ($read) mainServoDuty[$mainIndex] = $home + $delta;',
-            );
+            body.add('    mainServoDuty[$mainIndex] = $home + $delta;');
           } else {
-            body.add(
-              isAxis
-                  ? '    mainServoDuty[$mainIndex] += $delta;'
-                  : '    if ($read) mainServoDuty[$mainIndex] += $delta;',
-            );
+            body.add('    mainServoDuty[$mainIndex] += $delta;');
           }
           body.add(
             '    if (mainServoDuty[$mainIndex] < 250) mainServoDuty[$mainIndex] = 250; else if (mainServoDuty[$mainIndex] > 1250) mainServoDuty[$mainIndex] = 1250;',
@@ -533,6 +595,35 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
 {
     switch (mode) {
 ${prepareCases.join('\n')}
+    }
+}
+''';
+    final singleButtonActions =
+        <({int index, int modeIndex, ActionMapping action})>[];
+    for (var index = 0; index < servoButtonActions.length; index++) {
+      final entry = servoButtonActions[index];
+      if (entry.action.mode == ControlMode.single) {
+        singleButtonActions.add((
+          index: index,
+          modeIndex: entry.modeIndex,
+          action: entry.action,
+        ));
+      }
+    }
+    final servoButtonDeclarations = servoButtonActions.isEmpty
+        ? ''
+        : '''int32_t servoButtonRemainder[${servoButtonActions.length}] = {0};
+${singleButtonActions.isEmpty ? '' : 'uint8_t servoButtonKeyLast[${servoButtonActions.length}] = {0};'}''';
+    final servoButtonSync = singleButtonActions.isEmpty
+        ? ''
+        : '''uint8_t servoButtonStateMode = 0;
+static void SyncServoButtonKeys(uint8_t mode)
+{
+    switch (mode) {
+${List.generate(c.modeCount!, (modeIndex) {
+            final lines = singleButtonActions.where((entry) => entry.modeIndex == modeIndex).map((entry) => '            servoButtonKeyLast[${entry.index}] = RcKeyValueRead(${_key(entry.action.key!)});').join('\n');
+            return lines.isEmpty ? '' : '        case ${modeIndex + 1}:\n$lines\n            break;';
+          }).where((value) => value.isNotEmpty).join('\n')}
     }
 }
 ''';
@@ -598,9 +689,11 @@ ${engineerFeedbackChecks.join('\n')}
 uint8_t currentMode = 1;
 uint8_t lastSwitch = 0;
 uint8_t modeKeyLast[4] = {0};
-uint16_t mainServoDuty[2] = {${_servoDuty(c.pwm.servoMids['MP03'])}, ${_servoDuty(c.pwm.servoMids['MP74'])}};
+int mainServoDuty[2] = {${_servoDuty(c.pwm.servoMids['MP03'])}, ${_servoDuty(c.pwm.servoMids['MP74'])}};
+$servoButtonDeclarations
 $feedback
 $prepareMode
+$servoButtonSync
 $engineerFeedback
 
 ${_chassis(c.chassis)}
@@ -639,6 +732,10 @@ void main(void)
         nrf_handler(); // 轮询 NRF 接收（P2.6 中断已关）
         ReadControllerInputs();
         $switchLogic
+${singleButtonActions.isEmpty ? '' : '''        if (servoButtonStateMode != currentMode) {
+            SyncServoButtonKeys(currentMode);
+            servoButtonStateMode = currentMode;
+        }'''}
         switch (currentMode) {
 ${cases.join('\n')}
         }

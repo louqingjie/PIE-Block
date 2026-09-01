@@ -1125,6 +1125,105 @@ class _NumberFieldState extends ConsumerState<_NumberField> {
   }
 }
 
+class _DecimalNumberField extends ConsumerStatefulWidget {
+  const _DecimalNumberField({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+    required this.fieldPath,
+  });
+
+  final String label;
+  final double? value;
+  final ValueChanged<double?> onChanged;
+  final String fieldPath;
+
+  @override
+  ConsumerState<_DecimalNumberField> createState() =>
+      _DecimalNumberFieldState();
+}
+
+class _DecimalNumberFieldState extends ConsumerState<_DecimalNumberField> {
+  FocusNode? _focusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _bindFocusNode();
+  }
+
+  @override
+  void didUpdateWidget(covariant _DecimalNumberField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.fieldPath != widget.fieldPath) {
+      _unbindFocusNode(oldWidget.fieldPath);
+      _bindFocusNode();
+    }
+  }
+
+  void _bindFocusNode() {
+    final node = FocusNode(debugLabel: widget.fieldPath)
+      ..addListener(_handleFocusChange);
+    _focusNode = node;
+    _fieldFocusNodes[widget.fieldPath] = node;
+  }
+
+  void _unbindFocusNode(String path) {
+    final node = _focusNode;
+    if (node == null) return;
+    if (identical(_fieldFocusNodes[path], node)) {
+      _fieldFocusNodes.remove(path);
+    }
+    node.removeListener(_handleFocusChange);
+    node.dispose();
+    _focusNode = null;
+  }
+
+  void _handleFocusChange() {
+    final controller = ref.read(_activeInputFieldProvider.notifier);
+    if (_focusNode?.hasFocus ?? false) {
+      controller.focus(widget.fieldPath);
+    } else {
+      controller.blur(widget.fieldPath);
+    }
+  }
+
+  @override
+  void dispose() {
+    _unbindFocusNode(widget.fieldPath);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final value = widget.value;
+    final initialValue = value == null
+        ? ''
+        : value == value.truncateToDouble()
+        ? value.toInt().toString()
+        : value.toString();
+    return _FieldAnchor(
+      path: widget.fieldPath,
+      focusHandledByChild: true,
+      child: TextFormField(
+        key: ValueKey(widget.fieldPath),
+        focusNode: _focusNode,
+        initialValue: initialValue,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        inputFormatters: [
+          TextInputFormatter.withFunction((oldValue, newValue) {
+            final valid = RegExp(r'^\d*(?:\.\d{0,2})?$')
+                .hasMatch(newValue.text);
+            return valid ? newValue : oldValue;
+          }),
+        ],
+        decoration: _fieldDecoration(ref, widget.fieldPath, widget.label),
+        onChanged: (text) => widget.onChanged(double.tryParse(text)),
+      ),
+    );
+  }
+}
+
 class _RemotePage extends ConsumerWidget {
   const _RemotePage();
   @override
@@ -2309,14 +2408,21 @@ class _ActionRow extends ConsumerWidget {
         ? PinRole.servo
         : pinRoles[action.pin];
     final isAxis = axisRemoteInputs.contains(action.key);
+    final isButton = digitalRemoteKeys.contains(action.key);
     final isMotorRole =
         role != null && role != PinRole.servo && role != PinRole.unused;
     final modes = role == PinRole.servo
-        ? const [ControlMode.direct, ControlMode.incremental]
+        ? isAxis
+              ? const [ControlMode.direct, ControlMode.incremental]
+              : isButton
+              ? const [ControlMode.single, ControlMode.continuous]
+              : const <ControlMode>[]
         : isMotorRole
         ? (isAxis
               ? const [ControlMode.speed, ControlMode.accelerate]
-              : const [ControlMode.direct])
+              : isButton
+              ? const [ControlMode.direct]
+              : const <ControlMode>[])
         : const <ControlMode>[];
     final visibleModes = <ControlMode>[
       if (action.mode != null && !modes.contains(action.mode)) action.mode!,
@@ -2328,12 +2434,26 @@ class _ActionRow extends ConsumerWidget {
       ...mainServoPins,
     ];
     final visiblePins = _includeCurrent(usablePins, action.pin);
-    final parameterLabel = switch (action.mode) {
-      ControlMode.incremental => '步进角度 °',
-      ControlMode.speed => '最大速度 duty',
-      ControlMode.accelerate => '加速度 duty/周期',
-      ControlMode.direct => role == PinRole.servo ? '目标角度 °' : '占空比 duty',
-      null => '参数',
+    final usesSensitivity =
+        role == PinRole.servo && isButton ||
+        action.mode == ControlMode.single ||
+        action.mode == ControlMode.continuous;
+    final parameterLabel = usesSensitivity
+        ? '灵敏度 °/周期'
+        : switch (action.mode) {
+            ControlMode.incremental => '步进角度 °',
+            ControlMode.speed => '最大速度 duty',
+            ControlMode.accelerate => '加速度 duty/周期',
+            ControlMode.direct => role == PinRole.servo ? '目标角度 °' : '占空比 duty',
+            ControlMode.single || ControlMode.continuous || null => '参数',
+          };
+    String modeLabel(ControlMode mode) => switch (mode) {
+      ControlMode.direct => '直接',
+      ControlMode.incremental => '增量',
+      ControlMode.speed => '速度',
+      ControlMode.accelerate => '增速',
+      ControlMode.single => '单次',
+      ControlMode.continuous => '持续',
     };
     final fields = <Widget>[
       Expanded(
@@ -2373,33 +2493,40 @@ class _ActionRow extends ConsumerWidget {
         child: _FieldAnchor(
           path: '$fieldPath.mode',
           child: DropdownButtonFormField(
+            key: ValueKey('$fieldPath.mode'),
             initialValue: action.mode,
             decoration: _fieldDecoration(ref, '$fieldPath.mode', '控制方式'),
-            items: visibleModes
-                .map(
-                  (e) => DropdownMenuItem(
-                    value: e,
-                    child: Text(switch (e) {
-                      ControlMode.direct => '直接',
-                      ControlMode.incremental => '增量',
-                      ControlMode.speed => '速度',
-                      ControlMode.accelerate => '增速',
-                    }),
-                  ),
-                )
-                .toList(),
+            selectedItemBuilder: (context) => [
+              for (final mode in visibleModes) Text(modeLabel(mode)),
+            ],
+            items: visibleModes.map((e) {
+              final label = modeLabel(e);
+              final supported = modes.contains(e);
+              return DropdownMenuItem(
+                value: e,
+                enabled: supported,
+                child: Text('$label${supported ? '' : '（当前配置，不支持）'}'),
+              );
+            }).toList(),
             onChanged: (v) => onChanged(action.copyWith(mode: v)),
           ),
         ),
       ),
       const SizedBox(width: 8),
       Expanded(
-        child: _NumberField(
-          label: parameterLabel,
-          fieldPath: '$fieldPath.parameter',
-          value: action.parameter,
-          onChanged: (v) => onChanged(action.copyWith(parameter: v)),
-        ),
+        child: usesSensitivity
+            ? _DecimalNumberField(
+                label: parameterLabel,
+                fieldPath: '$fieldPath.parameter',
+                value: action.parameter?.toDouble(),
+                onChanged: (v) => onChanged(action.copyWith(parameter: v)),
+              )
+            : _NumberField(
+                label: parameterLabel,
+                fieldPath: '$fieldPath.parameter',
+                value: action.parameter?.toInt(),
+                onChanged: (v) => onChanged(action.copyWith(parameter: v)),
+              ),
       ),
       const SizedBox(width: 8),
       Expanded(

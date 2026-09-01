@@ -115,14 +115,14 @@ EngineerConfig advancedEngineer({
         ActionMapping(
           key: 'A',
           direction: Direction.forward,
-          mode: ControlMode.direct,
-          parameter: 30,
+          mode: ControlMode.single,
+          parameter: 5.5,
           pin: 'P60',
         ),
         ActionMapping(
           key: 'B',
           direction: Direction.reverse,
-          mode: ControlMode.incremental,
+          mode: ControlMode.continuous,
           parameter: 5,
           pin: 'P60',
         ),
@@ -157,6 +157,36 @@ EngineerConfig advancedEngineer({
     EngineerModeConfig(),
   ],
 );
+
+EngineerConfig servoButtonEngineer({
+  ControlMode mode = ControlMode.single,
+  num parameter = 1.25,
+  String key = 'A',
+  String pin = 'P60',
+  Direction direction = Direction.forward,
+}) {
+  final source = completeEngineer();
+  return source.copyWith(
+    pwm: source.pwm.copyWith(
+      pinRoles: {...source.pwm.pinRoles, 'P60': PinRole.servo},
+      servoMids: {...source.pwm.servoMids, 'P60': 0},
+    ),
+    modes: [
+      EngineerModeConfig(
+        preserveChassis: true,
+        actions: [
+          ActionMapping(
+            key: key,
+            direction: direction,
+            mode: mode,
+            parameter: parameter,
+            pin: pin,
+          ),
+        ],
+      ),
+    ],
+  );
+}
 
 void main() {
   group('项目格式与进度', () {
@@ -193,6 +223,36 @@ void main() {
       expect(json['turn_reversed'], isTrue);
       expect(ChassisConfig.fromJson(json).turnReversed, isTrue);
       expect(source.copyWith(turnReversed: false).turnReversed, isFalse);
+    });
+
+    test('舵机按键控制方式和小数灵敏度可往返', () {
+      final source = ActionMapping(
+        id: 'servo-button',
+        key: 'A',
+        direction: Direction.forward,
+        mode: ControlMode.single,
+        parameter: 1.25,
+        pin: 'P60',
+      );
+      final restored = ActionMapping.fromJson(
+        Map<String, Object?>.from(
+          jsonDecode(jsonEncode(source.toJson())) as Map,
+        ),
+      );
+      expect(restored.mode, ControlMode.single);
+      expect(restored.parameter, 1.25);
+      expect(
+        source.copyWith(mode: ControlMode.continuous).mode,
+        ControlMode.continuous,
+      );
+
+      final legacy = ActionMapping.fromJson({
+        ...source.toJson(),
+        'mode': ControlMode.direct.name,
+        'parameter': 30,
+      });
+      expect(legacy.mode, ControlMode.direct);
+      expect(legacy.parameter, 30);
     });
 
     test('调试项目顺序与配置可往返', () {
@@ -334,11 +394,7 @@ void main() {
         PinRole.jitterMotor,
         PinRole.unused,
       ];
-      const frictionRoles = [
-        PinRole.servo,
-        PinRole.friction,
-        PinRole.unused,
-      ];
+      const frictionRoles = [PinRole.servo, PinRole.friction, PinRole.unused];
 
       for (final pin in EngineerPinCapabilities.motorPins) {
         expect(EngineerPinCapabilities.allowedRoles(pin), motorRoles);
@@ -347,10 +403,9 @@ void main() {
         expect(EngineerPinCapabilities.allowedRoles(pin), frictionRoles);
       }
       for (final pin in mainServoPins) {
-        expect(
-          EngineerPinCapabilities.allowedRoles(pin),
-          const [PinRole.servo],
-        );
+        expect(EngineerPinCapabilities.allowedRoles(pin), const [
+          PinRole.servo,
+        ]);
       }
       for (final pin in [...expansionPins, ...mainServoPins]) {
         expect(
@@ -364,7 +419,9 @@ void main() {
       EngineerConfig withRole(String pin, PinRole role) {
         final source = completeEngineer();
         return source.copyWith(
-          pwm: source.pwm.copyWith(pinRoles: {...source.pwm.pinRoles, pin: role}),
+          pwm: source.pwm.copyWith(
+            pinRoles: {...source.pwm.pinRoles, pin: role},
+          ),
         );
       }
 
@@ -412,6 +469,71 @@ void main() {
             issue.fieldPath.startsWith('pwm.pin_roles.'),
       );
       expect(errors, isEmpty);
+    });
+  });
+
+  group('工程舵机按键控制', () {
+    Iterable<ValidationIssue> parameterIssues(num parameter) =>
+        ProjectValidator.validate(servoButtonEngineer(parameter: parameter))
+            .where((issue) => issue.fieldPath == 'modes.0.actions.0.parameter');
+
+    test('灵敏度范围、精度和速度警告正确', () {
+      expect(parameterIssues(10), isEmpty);
+      for (final value in [10.01, 20]) {
+        final warning = parameterIssues(value).single;
+        expect(warning.severity, IssueSeverity.warning);
+        expect(warning.message, '舵机角度变化速度可能过快');
+      }
+      expect(
+        CodeGenerator.generate(servoButtonEngineer(parameter: 10.01)),
+        contains('servoButtonRemainder'),
+      );
+
+      for (final value in [0, -0.01, 20.01, 1.234]) {
+        final issues = parameterIssues(value).toList();
+        expect(
+          issues.where((issue) => issue.severity == IssueSeverity.error),
+          hasLength(1),
+        );
+        expect(
+          issues.where((issue) => issue.severity == IssueSeverity.warning),
+          isEmpty,
+        );
+        expect(
+          () => CodeGenerator.generate(servoButtonEngineer(parameter: value)),
+          throwsStateError,
+        );
+      }
+    });
+
+    test('数字按键舵机只接受单次持续且旧值原样报错', () {
+      for (final mode in [ControlMode.single, ControlMode.continuous]) {
+        expect(
+          ProjectValidator.validate(servoButtonEngineer(mode: mode))
+              .where((issue) => issue.severity == IssueSeverity.error),
+          isEmpty,
+        );
+      }
+
+      for (final mode in [ControlMode.direct, ControlMode.incremental]) {
+        final config = servoButtonEngineer(mode: mode, parameter: 5);
+        final issue = ProjectValidator.validate(
+          config,
+        ).singleWhere((issue) => issue.fieldPath == 'modes.0.actions.0.mode');
+        expect(issue.severity, IssueSeverity.error);
+        expect(config.modes.single.actions.single.mode, mode);
+      }
+
+      expect(
+        ProjectValidator.validate(
+          servoButtonEngineer(
+            mode: ControlMode.direct,
+            parameter: 30,
+            key: 'RX',
+          ),
+        ).where((issue) => issue.severity == IssueSeverity.error),
+        isEmpty,
+      );
     });
   });
 
@@ -694,6 +816,81 @@ void main() {
   });
 
   group('生成器', () {
+    test('工程舵机单次持续生成按键沿和定点小数余量', () {
+      final source = servoButtonEngineer();
+      final config = source.copyWith(
+        modeCount: 2,
+        switchStrategy: SwitchStrategy.cycle,
+        modeSwitchKey: 'E',
+        modes: [
+          EngineerModeConfig(
+            preserveChassis: true,
+            actions: [
+              ActionMapping(
+                key: 'A',
+                direction: Direction.forward,
+                mode: ControlMode.single,
+                parameter: 1.25,
+                pin: 'P60',
+              ),
+              ActionMapping(
+                key: 'B',
+                direction: Direction.reverse,
+                mode: ControlMode.continuous,
+                parameter: 0.5,
+                pin: 'MP03',
+              ),
+            ],
+          ),
+          EngineerModeConfig(
+            actions: [
+              ActionMapping(
+                key: 'C',
+                direction: Direction.reverse,
+                mode: ControlMode.single,
+                parameter: 0.01,
+                pin: 'MP74',
+              ),
+            ],
+          ),
+        ],
+      );
+      final code = CodeGenerator.generate(config);
+
+      expect(code, contains('int32_t servoButtonRemainder[3] = {0};'));
+      expect(code, contains('uint8_t servoButtonKeyLast[3] = {0};'));
+      expect(
+        code,
+        contains('if (RcKeyValueRead(KEY_OFFSET_A) && !servoButtonKeyLast[0])'),
+      );
+      expect(
+        code,
+        contains('servoButtonKeyLast[0] = RcKeyValueRead(KEY_OFFSET_A);'),
+      );
+      expect(
+        code,
+        isNot(
+          contains('servoButtonKeyLast[1] = RcKeyValueRead(KEY_OFFSET_B);'),
+        ),
+      );
+      expect(code, contains('if (RcKeyValueRead(KEY_OFFSET_B))'));
+      expect(code, contains('servoButtonRemainder[0] += 125000L;'));
+      expect(code, contains('servoButtonRemainder[1] += -50000L;'));
+      expect(code, contains('servoButtonRemainder[2] += -1000L;'));
+      expect(code, contains('servoButtonRemainder[0] / 18000L'));
+      expect(code, contains('servoButtonRemainder[0] %= 18000L'));
+      expect(code, contains('dutyOfMotor[0] += (int)'));
+      expect(code, contains('mainServoDuty[0] += (int)'));
+      expect(code, contains('servoButtonRemainder[0] = 0;'));
+      expect(code, contains('static void SyncServoButtonKeys(uint8_t mode)'));
+      expect(code, contains('servoButtonStateMode != currentMode'));
+      expect(
+        code.indexOf('SyncServoButtonKeys(currentMode);'),
+        lessThan(code.indexOf('switch (currentMode)')),
+      );
+      expect(code, contains('int mainServoDuty[2]'));
+    });
+
     test('底盘转向反向仅在启用时取反 turnSpeed', () {
       final standardConfig = completeInfantry().copyWith(
         arrowBehavior: ArrowBehavior.move,
@@ -810,7 +1007,7 @@ void main() {
       expect(sprint, contains('maxSpeed = ultraSpeed'));
     });
 
-    test('工程四种控制方式、两种切换策略和蜂鸣反馈可生成', () {
+    test('工程六种控制方式、两种切换策略和蜂鸣反馈可生成', () {
       final cycle = advancedEngineer();
       expect(
         ProjectValidator.validate(cycle)
@@ -820,7 +1017,7 @@ void main() {
       final cycleCode = CodeGenerator.generate(cycle);
       expect(cycleCode, contains('ModeSwitchFeedback'));
       expect(cycleCode, contains('PrepareMode'));
-      expect(cycleCode, contains('1000L / 180L'));
+      expect(cycleCode, contains('servoButtonRemainder'));
       expect(cycleCode, contains('/ 2047'));
       expect(cycleCode, contains('Dir_Change_Order'));
       expect(

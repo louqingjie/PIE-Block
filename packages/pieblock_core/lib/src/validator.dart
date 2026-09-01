@@ -236,7 +236,12 @@ abstract final class ProjectValidator {
 
   static void _music(MusicConfig config, _AddIssue issue) {
     if (config.ticksPerQuarter < 1 || config.ticksPerQuarter > 0x7fff) {
-      issue(IssueSeverity.error, 'music.ticks_per_quarter', 'MIDI PPQ 必须在 1–32767 之间', 'music');
+      issue(
+        IssueSeverity.error,
+        'music.ticks_per_quarter',
+        'MIDI PPQ 必须在 1–32767 之间',
+        'music',
+      );
     }
     if (config.notes.isEmpty || !config.notes.any((note) => note.primary)) {
       issue(
@@ -259,13 +264,28 @@ abstract final class ProjectValidator {
         issue(IssueSeverity.error, '$path.id', '音符 ID 不能为空或重复', 'music');
       }
       if (note.pitch < 1 || note.pitch > 127) {
-        issue(IssueSeverity.error, '$path.pitch', 'MIDI 音高必须在 1–127 之间', 'music');
+        issue(
+          IssueSeverity.error,
+          '$path.pitch',
+          'MIDI 音高必须在 1–127 之间',
+          'music',
+        );
       }
       if (note.startTick < 0) {
-        issue(IssueSeverity.error, '$path.start_tick', '音符起始 tick 不能为负数', 'music');
+        issue(
+          IssueSeverity.error,
+          '$path.start_tick',
+          '音符起始 tick 不能为负数',
+          'music',
+        );
       }
       if (note.durationTicks <= 0) {
-        issue(IssueSeverity.error, '$path.duration_ticks', '音符时值必须大于 0', 'music');
+        issue(
+          IssueSeverity.error,
+          '$path.duration_ticks',
+          '音符时值必须大于 0',
+          'music',
+        );
       }
       groups.putIfAbsent(note.startTick, () => []).add(note);
     }
@@ -287,8 +307,14 @@ abstract final class ProjectValidator {
     );
     for (var index = 0; index < config.tempoEvents.length; index++) {
       final event = config.tempoEvents[index];
-      if (event.microsecondsPerQuarter < 1 || event.microsecondsPerQuarter > 0xffffff) {
-        issue(IssueSeverity.error, 'music.tempo_events.$index', '速度事件超出标准 MIDI 范围', 'music');
+      if (event.microsecondsPerQuarter < 1 ||
+          event.microsecondsPerQuarter > 0xffffff) {
+        issue(
+          IssueSeverity.error,
+          'music.tempo_events.$index',
+          '速度事件超出标准 MIDI 范围',
+          'music',
+        );
       }
     }
     _orderedEvents(
@@ -304,14 +330,22 @@ abstract final class ProjectValidator {
           denominator < 1 ||
           denominator > 64 ||
           (denominator & (denominator - 1)) != 0) {
-        issue(IssueSeverity.error, 'music.time_signature_events.$index', '拍号必须使用正分子和 1–64 的二次幂分母', 'music');
+        issue(
+          IssueSeverity.error,
+          'music.time_signature_events.$index',
+          '拍号必须使用正分子和 1–64 的二次幂分母',
+          'music',
+        );
       }
     }
     final segments = MusicTimeline.segments(config);
     if (segments.length > 8192) {
       issue(IssueSeverity.error, 'music.notes', '生成片段不能超过 8192 个', 'music');
     }
-    final duration = segments.fold<int>(0, (total, segment) => total + segment.durationMs);
+    final duration = segments.fold<int>(
+      0,
+      (total, segment) => total + segment.durationMs,
+    );
     if (duration > 20 * 60 * 1000) {
       issue(IssueSeverity.error, 'music.notes', '音乐总时长不能超过 20 分钟', 'music');
     }
@@ -831,8 +865,8 @@ abstract final class ProjectValidator {
     for (final pin in expansionPins) {
       final role = config.pwm.pinRoles[pin];
       _choice(role, 'pwm.pin_roles.$pin', '$pin 输出角色', 'pwm', issue);
-      final roleSupported = role != null &&
-          EngineerPinCapabilities.supportsRole(pin, role);
+      final roleSupported =
+          role != null && EngineerPinCapabilities.supportsRole(pin, role);
       if (role != null && !roleSupported) {
         issue(
           IssueSeverity.error,
@@ -977,6 +1011,8 @@ abstract final class ProjectValidator {
       issue(IssueSeverity.error, '$path.key', '动作输入与模式切换按键冲突', 'mappings');
     }
     final isAxis = action.key != null && axisRemoteInputs.contains(action.key);
+    final isButton =
+        action.key != null && digitalRemoteKeys.contains(action.key);
     if (parent.preserveChassis && (action.key == 'LX' || action.key == 'LY')) {
       issue(
         IssueSeverity.error,
@@ -1022,8 +1058,14 @@ abstract final class ProjectValidator {
         : motor
         ? (isAxis
               ? const [ControlMode.speed, ControlMode.accelerate]
-              : const [ControlMode.direct])
-        : const [ControlMode.incremental, ControlMode.direct];
+              : isButton
+              ? const [ControlMode.direct]
+              : const <ControlMode>[])
+        : isAxis
+        ? const [ControlMode.incremental, ControlMode.direct]
+        : isButton
+        ? const [ControlMode.single, ControlMode.continuous]
+        : const <ControlMode>[];
     if (action.mode != null && !allowed.contains(action.mode)) {
       issue(
         IssueSeverity.error,
@@ -1032,9 +1074,10 @@ abstract final class ProjectValidator {
         'mappings',
       );
     }
+    if (action.mode != null && !allowed.contains(action.mode)) return;
     switch (action.mode) {
       case ControlMode.incremental:
-        _range(
+        _actionIntegerRange(
           action.parameter,
           0,
           90,
@@ -1060,7 +1103,7 @@ abstract final class ProjectValidator {
           );
         }
       case ControlMode.direct:
-        _range(
+        _actionIntegerRange(
           action.parameter,
           0,
           motor ? 10000 : 90,
@@ -1070,7 +1113,7 @@ abstract final class ProjectValidator {
           issue,
         );
       case ControlMode.speed || ControlMode.accelerate:
-        _range(
+        _actionIntegerRange(
           action.parameter,
           0,
           10000,
@@ -1079,8 +1122,57 @@ abstract final class ProjectValidator {
           'mappings',
           issue,
         );
+      case ControlMode.single || ControlMode.continuous:
+        _servoButtonSensitivity(action.parameter, '$path.parameter', issue);
       case null:
         _choice(action.parameter, '$path.parameter', '动作参数', 'mappings', issue);
+    }
+  }
+
+  static void _actionIntegerRange(
+    num? value,
+    int min,
+    int max,
+    String path,
+    String label,
+    String step,
+    _AddIssue issue,
+  ) {
+    if (value != null &&
+        (!value.toDouble().isFinite || value != value.truncate())) {
+      issue(IssueSeverity.error, path, '$label必须为整数', step);
+      return;
+    }
+    _range(value?.toInt(), min, max, path, label, step, issue);
+  }
+
+  static void _servoButtonSensitivity(
+    num? value,
+    String path,
+    _AddIssue issue,
+  ) {
+    if (value == null) {
+      issue(
+        IssueSeverity.error,
+        path,
+        '舵机灵敏度尚未填写',
+        'mappings',
+        ValidationIssueKind.required,
+      );
+      return;
+    }
+    final numeric = value.toDouble();
+    if (!numeric.isFinite || numeric <= 0 || numeric > 20) {
+      issue(IssueSeverity.error, path, '舵机灵敏度必须大于 0 且不超过 20', 'mappings');
+      return;
+    }
+    final hundredths = numeric * 100;
+    if ((hundredths - hundredths.round()).abs() > 1e-9) {
+      issue(IssueSeverity.error, path, '舵机灵敏度最多保留两位小数', 'mappings');
+      return;
+    }
+    if (numeric > 10) {
+      issue(IssueSeverity.warning, path, '舵机角度变化速度可能过快', 'mappings');
     }
   }
 
