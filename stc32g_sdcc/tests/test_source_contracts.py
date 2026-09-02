@@ -95,7 +95,6 @@ class FirmwareSafetyContractTests(unittest.TestCase):
             "0000.培训模板",
             "FRICTION_CALIBRATION",
             "ROBOMASTER_ENGINEER",
-            "ROBOMASTER_INFANTRY",
             "TEST",
         )
         for project in projects:
@@ -109,6 +108,14 @@ class FirmwareSafetyContractTests(unittest.TestCase):
             self.assertNotIn(
                 "UART_PutChar(UART_1, control_frame_pack[i])", source, project
             )
+
+    def test_infantry_uses_known_good_bytewise_uart_query(self) -> None:
+        source = (
+            ROOT / "projects" / "ROBOMASTER_INFANTRY" / "src" / "main.c"
+        ).read_text(encoding="utf-8")
+        self.assertIn("static void Uart1TxQuery(uint8_t dat)", source)
+        self.assertIn("Uart1TxQuery(control_frame_pack[i])", source)
+        self.assertNotIn("Uart1SendFrameQuery", source)
 
     def test_robot_chassis_scaling_avoids_float_sign_conversion(self) -> None:
         projects = (
