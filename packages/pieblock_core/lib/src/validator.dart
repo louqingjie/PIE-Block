@@ -149,14 +149,16 @@ abstract final class ProjectValidator {
         'tests',
         issue,
       );
-      _choice(
-        item.direction,
-        '$base.direction',
-        '${item.pin} 方向',
-        'tests',
-        issue,
-      );
       final drive = item.driveType;
+      if (drive != DebugDriveType.friction) {
+        _choice(
+          item.direction,
+          '$base.direction',
+          '${item.pin} 方向',
+          'tests',
+          issue,
+        );
+      }
       if (mainServoPins.contains(item.pin) &&
           drive != null &&
           drive != DebugDriveType.servo) {

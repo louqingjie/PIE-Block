@@ -312,19 +312,27 @@ class DebugTestItem {
     'pin': pin,
     'enabled': enabled,
     'drive_type': driveType?.name,
-    'direction': direction?.name,
+    if (driveType != DebugDriveType.friction) 'direction': direction?.name,
     'value': value,
     if (driveType != DebugDriveType.friction) 'duration_ms': durationMs,
   };
 
-  factory DebugTestItem.fromJson(Map<String, Object?> json) => DebugTestItem(
-    pin: json['pin']?.toString() ?? '',
-    enabled: json['enabled'] as bool? ?? false,
-    driveType: nullableEnumValue(DebugDriveType.values, json['drive_type']),
-    direction: nullableEnumValue(Direction.values, json['direction']),
-    value: (json['value'] as num?)?.toInt(),
-    durationMs: (json['duration_ms'] as num?)?.toInt() ?? 3000,
-  );
+  factory DebugTestItem.fromJson(Map<String, Object?> json) {
+    final driveType = nullableEnumValue(
+      DebugDriveType.values,
+      json['drive_type'],
+    );
+    return DebugTestItem(
+      pin: json['pin']?.toString() ?? '',
+      enabled: json['enabled'] as bool? ?? false,
+      driveType: driveType,
+      direction: driveType == DebugDriveType.friction
+          ? null
+          : nullableEnumValue(Direction.values, json['direction']),
+      value: (json['value'] as num?)?.toInt(),
+      durationMs: (json['duration_ms'] as num?)?.toInt() ?? 3000,
+    );
+  }
 }
 
 class DebugConfig extends ProjectConfig {

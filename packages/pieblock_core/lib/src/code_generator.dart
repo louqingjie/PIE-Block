@@ -843,7 +843,11 @@ ${engineerFeedback.isEmpty ? '' : '        UpdateServoFeedback();'}
           ..add(
             '    ExpansionBoradControl(Init_Order, ${initValues(slot, 50)});',
           )
-          ..add('    Ms_Delay(1000);');
+          ..add('    Ms_Delay(1000);')
+          ..add(
+            '    ExpansionBoradControl(Dir_Change_Order, ${values(slot, 1)});',
+          )
+          ..add('    Ms_Delay(EXPANSION_FRAME_GAP_MS);');
         for (final duty in curve) {
           lines
             ..add(
@@ -866,7 +870,7 @@ ${engineerFeedback.isEmpty ? '' : '        UpdateServoFeedback();'}
             ..add(
               '    ExpansionBoradControl(Dir_Change_Order, ${values(slot, direction)});',
             )
-            ..add('    Ms_Delay(5);');
+            ..add('    Ms_Delay(EXPANSION_FRAME_GAP_MS);');
         }
         lines
           ..add(
@@ -891,6 +895,7 @@ uint8_t Channal = 36;
 #define BUZZER_FREQ_DONE 700
 #define TEST_GAP_MS 1000
 #define FRICTION_STEP_MS 1500
+#define EXPANSION_FRAME_GAP_MS 5
 #define COMM_HEADER_1 0xAB
 #define COMM_HEADER_2 0xBC
 #define COMM_END_1 0xCD

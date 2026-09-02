@@ -2683,7 +2683,8 @@ class _DebugTestsPage extends ConsumerWidget {
                           _FormRow(
                             fieldPaths: [
                               '$base.drive_type',
-                              '$base.direction',
+                              if (item.driveType != DebugDriveType.friction)
+                                '$base.direction',
                               '$base.value',
                               if (item.driveType != DebugDriveType.friction)
                                 '$base.duration_ms',
@@ -2712,41 +2713,51 @@ class _DebugTestsPage extends ConsumerWidget {
                                         ],
                                         onChanged: (value) => replace(
                                           index,
-                                          item.copyWith(driveType: value),
+                                          item.copyWith(
+                                            driveType: value,
+                                            direction:
+                                                value ==
+                                                    DebugDriveType.friction
+                                                ? null
+                                                : item.direction,
+                                          ),
                                         ),
                                       ),
                                 ),
                               ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: _FieldAnchor(
-                                  path: '$base.direction',
-                                  child: DropdownButtonFormField<Direction>(
-                                    initialValue: item.direction,
-                                    decoration: _fieldDecoration(
-                                      ref,
-                                      '$base.direction',
-                                      '方向',
-                                    ),
-                                    items: Direction.values
-                                        .map(
-                                          (value) => DropdownMenuItem(
-                                            value: value,
-                                            child: Text(
-                                              value == Direction.forward
-                                                  ? '正向'
-                                                  : '反向',
+                              if (item.driveType !=
+                                  DebugDriveType.friction) ...[
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: _FieldAnchor(
+                                    path: '$base.direction',
+                                    child: DropdownButtonFormField<Direction>(
+                                      initialValue: item.direction,
+                                      decoration: _fieldDecoration(
+                                        ref,
+                                        '$base.direction',
+                                        '方向',
+                                      ),
+                                      items: Direction.values
+                                          .map(
+                                            (value) => DropdownMenuItem(
+                                              value: value,
+                                              child: Text(
+                                                value == Direction.forward
+                                                    ? '正向'
+                                                    : '反向',
+                                              ),
                                             ),
-                                          ),
-                                        )
-                                        .toList(),
-                                    onChanged: (value) => replace(
-                                      index,
-                                      item.copyWith(direction: value),
+                                          )
+                                          .toList(),
+                                      onChanged: (value) => replace(
+                                        index,
+                                        item.copyWith(direction: value),
+                                      ),
                                     ),
                                   ),
                                 ),
-                              ),
+                              ],
                               const SizedBox(width: 12),
                               Expanded(
                                 child: _NumberField(

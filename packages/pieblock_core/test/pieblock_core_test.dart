@@ -67,7 +67,6 @@ DebugConfig completeDebug() => DebugConfig(
       pin: 'P64',
       enabled: true,
       driveType: DebugDriveType.friction,
-      direction: Direction.forward,
       value: 750,
     ),
     const DebugTestItem(
@@ -269,8 +268,16 @@ void main() {
       expect(restored.guideProgress.currentStepId, 'tests');
       final config = restored.config as DebugConfig;
       expect(config.tests.first.pin, 'P64');
+      expect(config.tests.first.direction, isNull);
       expect(config.tests[1].durationMs, 4200);
+      expect(config.tests.first.toJson(), isNot(contains('direction')));
       expect(config.tests.first.toJson(), isNot(contains('duration_ms')));
+
+      final legacyFriction = DebugTestItem.fromJson({
+        ...config.tests.first.toJson(),
+        'direction': Direction.reverse.name,
+      });
+      expect(legacyFriction.direction, isNull);
     });
 
     test('新项目必填项为空且不能生成', () {
@@ -609,6 +616,63 @@ void main() {
       expect(
         code,
         isNot(contains('UART_PutChar(UART_1, control_frame_pack[i])')),
+      );
+    });
+
+    test('P64/P66 摩擦轮方向固定为 1 且不要求配置方向', () {
+      String generateFor(String pin, {Direction? legacyDirection}) {
+        return CodeGenerator.generate(
+          DebugConfig(
+            tests: [
+              DebugTestItem(
+                pin: pin,
+                enabled: true,
+                driveType: DebugDriveType.friction,
+                direction: legacyDirection,
+                value: 750,
+              ),
+              for (final candidate in debugPins.where((value) => value != pin))
+                DebugTestItem(pin: candidate),
+            ],
+          ),
+        );
+      }
+
+      final p64 = generateFor('P64', legacyDirection: Direction.reverse);
+      const p64Direction =
+          'ExpansionBoradControl(Dir_Change_Order, 0, 0, 1, 0, 0, 0, 0, 0);';
+      expect(p64, contains(p64Direction));
+      expect(
+        p64.indexOf(p64Direction),
+        lessThan(p64.indexOf('Duty_Change_Order, 0, 0, 500')),
+      );
+
+      final p66 = generateFor('P66');
+      const p66Direction =
+          'ExpansionBoradControl(Dir_Change_Order, 0, 0, 0, 1, 0, 0, 0, 0);';
+      expect(p66, contains(p66Direction));
+      expect(
+        p66.indexOf(p66Direction),
+        lessThan(p66.indexOf('Duty_Change_Order, 0, 0, 0, 500')),
+      );
+    });
+
+    test('电机和舵机仍要求配置方向', () {
+      final invalid = DebugConfig(
+        tests: [
+          const DebugTestItem(
+            pin: 'P60',
+            enabled: true,
+            driveType: DebugDriveType.motor,
+            value: 1000,
+          ),
+          for (final pin in debugPins.where((pin) => pin != 'P60'))
+            DebugTestItem(pin: pin),
+        ],
+      );
+      expect(
+        ProjectValidator.validate(invalid).map((issue) => issue.fieldPath),
+        contains('tests.0.direction'),
       );
     });
   });
@@ -1055,6 +1119,12 @@ void main() {
 
     test('摩擦轮启停跳过 0~500 无效区间', () {
       final code = CodeGenerator.generate(completeInfantry());
+      expect(
+        code,
+        contains(
+          'ExpansionBoradControl(Dir_Change_Order, dutyOfMotor[0]>=0,dutyOfMotor[1]>=0,1,1,',
+        ),
+      );
       // 启动：低于最低有效占空比时直接跳到 500，不从 0 逐格爬上来
       expect(
         code,

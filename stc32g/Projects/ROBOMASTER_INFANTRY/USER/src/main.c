@@ -388,7 +388,7 @@ void Main_Countrol(int *dutyOfMotor, uint16_t *dutyOfServo, uint16_t dutyOfBoost
     // 底盘方向会随摇杆实时变化，必须先发方向帧；拓展板处理完成后再发占空比帧
     ExpansionBoradControl(Dir_Change_Order,
                           1, 1,
-                          0, 0,
+                          1, 1,
                           Get_Dir(dutyOfMotor[0]), Get_Dir(dutyOfMotor[1]),
                           Get_Dir(dutyOfMotor[2]), Get_Dir(dutyOfMotor[3]));
     Ms_Delay(EXPANSION_FRAME_GAP_MS);

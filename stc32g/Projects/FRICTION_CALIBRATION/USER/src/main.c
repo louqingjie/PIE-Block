@@ -14,8 +14,8 @@
 #define FRICTION_MAX_DUTY 1100
 #define FRICTION_STEP_DUTY 10
 #define FRICTION_RAMP_STEP 1
-#define FRICTION_P64_DIRECTION 0
-#define FRICTION_P66_DIRECTION 0
+#define FRICTION_P64_DIRECTION 1
+#define FRICTION_P66_DIRECTION 1
 #define EXPANSION_MOTOR_FREQUENCY 10000
 #define FRICTION_FREQUENCY 50
 #define EXPANSION_FRAME_GAP_MS 5
@@ -219,7 +219,7 @@ static void ShowDutyOnLcd(uint16_t duty)
 
 static void SendFrictionOutput(uint16_t duty)
 {
-    /* P64/P66 的方向沿用现有实测配置：两个摩擦轮方向位均为 0。 */
+    /* P64/P66 的摩擦轮方向不可配置，两个方向位固定为 1。 */
     ExpansionBoradControl(Dir_Change_Order, 0, 0,
                           FRICTION_P64_DIRECTION, FRICTION_P66_DIRECTION,
                           0, 0, 0, 0);

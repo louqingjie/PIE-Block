@@ -326,7 +326,6 @@ ProjectDocument _debugDocument() {
           pin: 'P64',
           enabled: true,
           driveType: DebugDriveType.friction,
-          direction: Direction.forward,
           value: 750,
         ),
         for (final pin in debugPins.where((pin) => pin != 'P64'))
@@ -582,6 +581,21 @@ void main() {
     expect(find.text('调试测试序列'), findsOneWidget);
     expect(find.byIcon(Icons.drag_indicator), findsNWidgets(10));
     expect(find.text('目标值'), findsOneWidget);
+    expect(find.text('方向'), findsNothing);
+    expect(find.text('测试时长'), findsNothing);
+
+    await tester.tap(find.byType(DropdownButtonFormField<DebugDriveType>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('电机').last);
+    await tester.pumpAndSettle();
+    expect(find.text('方向'), findsOneWidget);
+    expect(find.text('测试时长'), findsOneWidget);
+
+    await tester.tap(find.byType(DropdownButtonFormField<DebugDriveType>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('摩擦轮').last);
+    await tester.pumpAndSettle();
+    expect(find.text('方向'), findsNothing);
     expect(find.text('测试时长'), findsNothing);
     expect(tester.takeException(), isNull);
   });
