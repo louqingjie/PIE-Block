@@ -64,24 +64,17 @@ void ExpansionBoradControl(uint8_t control_cmd, uint16_t data_p60, uint16_t data
                            uint16_t data_p66, uint16_t data_p74, uint16_t data_p75, uint16_t data_p76,
                            uint16_t data_p77);
 
-static void Uart1SendFrameQuery(const uint8_t *frame, uint8_t length)
+static void Uart1TxQuery(uint8_t dat)
 {
-    uint8_t i;
-    uint8_t globalInterruptEnabled = EA;
     uint8_t uart1InterruptEnabled = ES;
 
-    EA = 0;
     ES = 0;
-    for (i = 0; i < length; i++)
-    {
-        TI = 0;
-        SBUF = frame[i];
-        while (!TI)
-            ;
-    }
+    TI = 0;
+    SBUF = dat;
+    while (!TI)
+        ;
     TI = 0;
     ES = uart1InterruptEnabled;
-    EA = globalInterruptEnabled;
 }
 
 void main()
@@ -310,7 +303,7 @@ void ExpansionBoradControl(uint8_t control_cmd, uint16_t data_p60, uint16_t data
     control_frame_pack[17] = (uint8_t)((data_p77 >> 8) & 0xFF);
     control_frame_pack[18] = (uint8_t)(data_p77 & 0xFF);
 
-    Uart1SendFrameQuery(control_frame_pack, 21);
+    for (i = 0; i < 21; i++)
+        Uart1TxQuery(control_frame_pack[i]);
 }
-
 

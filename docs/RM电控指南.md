@@ -55,6 +55,10 @@ void main(void)
 
 完整的 `ExpansionBoradControl` 实现（帧封装 + 发送）可直接复制到 main 函数之前：
 
+发送时应由调用者逐字节读取帧数组，再调用单字节查询发送函数。不要把栈上的
+`control_frame_pack` 作为整帧指针传入其他函数；SDCC MCS251 的通用指针取数可能
+生成错误的发送字节。
+
 ```c
 /* 帧头帧尾，内部调用，无需关心 */
 #define COMM_HEADER_1 0xAB
@@ -67,23 +71,16 @@ uint16_t control_data[8] = {0};
 uint16_t motor_dir[8] = {0};
 uint8_t control_command = 0x00;
 
-static void Uart1SendFrameQuery(const uint8_t *frame, uint8_t length)
+static void Uart1TxQuery(uint8_t dat)
 {
-    uint8_t i;
-    uint8_t globalInterruptEnabled = EA;
     uint8_t uart1InterruptEnabled = ES;
-    EA = 0;
     ES = 0;
-    for (i = 0; i < length; i++)
-    {
-        TI = 0;
-        SBUF = frame[i];
-        while (!TI)
-            ;
-    }
+    TI = 0;
+    SBUF = dat;
+    while (!TI)
+        ;
     TI = 0;
     ES = uart1InterruptEnabled;
-    EA = globalInterruptEnabled;
 }
 
 /* 板间通信函数：主控向拓展板发送控制帧 */
@@ -115,7 +112,8 @@ void ExpansionBoradControl(uint8_t control_cmd,
     control_frame_pack[16] = (uint8_t)(data_p76 & 0xFF);
     control_frame_pack[17] = (uint8_t)((data_p77 >> 8) & 0xFF);
     control_frame_pack[18] = (uint8_t)(data_p77 & 0xFF);
-    Uart1SendFrameQuery(control_frame_pack, 21);
+    for (i = 0; i < 21; i++)
+        Uart1TxQuery(control_frame_pack[i]);
 }
 ```
 

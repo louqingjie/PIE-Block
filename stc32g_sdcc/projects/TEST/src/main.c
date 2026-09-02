@@ -18,23 +18,16 @@ uint8_t Channal = 15;
  * UART_BUSY 死锁——TX 中断被 NRF 的 P2.6 高优先级中断抢占时，BUSY 永远
  * 清不掉，发送会永久卡死）。发送期间临时关串口中断，轮询硬件 TI 标志。
  * 要求 UART1 已用 UART_Init 初始化（TR1 已启动，TI 必会置位）。 */
-static void Uart1SendFrameQuery(const uint8_t *frame, uint8_t length)
+static void Uart1TxQuery(uint8_t dat)
 {
-    uint8_t i;
-    uint8_t globalInterruptEnabled = EA;
     uint8_t uart1InterruptEnabled = ES;
-    EA = 0;
     ES = 0;
-    for (i = 0; i < length; i++)
-    {
-        TI = 0;
-        SBUF = frame[i];
-        while (!TI)
-            ;
-    }
+    TI = 0;
+    SBUF = dat;
+    while (!TI)
+        ;
     TI = 0;
     ES = uart1InterruptEnabled;
-    EA = globalInterruptEnabled;
 }
 
 void ExpansionBoradControl(uint8_t control_cmd, uint16_t data_p60, uint16_t data_p62, uint16_t data_p64, uint16_t data_p66, uint16_t data_p74, uint16_t data_p75, uint16_t data_p76, uint16_t data_p77)
@@ -62,7 +55,8 @@ void ExpansionBoradControl(uint8_t control_cmd, uint16_t data_p60, uint16_t data
     control_frame_pack[16] = (uint8_t)(data_p76 & 0xFF);
     control_frame_pack[17] = (uint8_t)((data_p77 >> 8) & 0xFF);
     control_frame_pack[18] = (uint8_t)(data_p77 & 0xFF);
-    Uart1SendFrameQuery(control_frame_pack, 21);
+    for (i = 0; i < 21; i++)
+        Uart1TxQuery(control_frame_pack[i]);
 }
 int pie_abs(int x)
 {
@@ -211,5 +205,4 @@ void main(void)
         _rm_shoot_last_key = RcKeyValueRead(KEY_OFFSET_1);
     }
 }
-
 

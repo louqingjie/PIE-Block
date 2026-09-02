@@ -90,33 +90,58 @@ class FirmwareSafetyContractTests(unittest.TestCase):
         self.assertIn("for (retry = 0; retry < 20; retry++)", source)
         self.assertIn("SPI_ReadWriteByte", (ROOT / "libraries" / "boards" / "src" / "nrf24l01.c").read_text(encoding="utf-8"))
 
-    def test_robot_projects_send_expansion_frames_atomically(self) -> None:
+    def test_robot_projects_use_known_good_bytewise_uart_query(self) -> None:
         projects = (
             "0000.培训模板",
             "FRICTION_CALIBRATION",
             "ROBOMASTER_ENGINEER",
+            "ROBOMASTER_INFANTRY",
             "TEST",
         )
         for project in projects:
             source = (ROOT / "projects" / project / "src" / "main.c").read_text(
                 encoding="utf-8"
             )
-            self.assertIn("static void Uart1SendFrameQuery", source, project)
-            self.assertIn("uint8_t globalInterruptEnabled = EA", source, project)
-            self.assertIn("EA = 0", source, project)
-            self.assertIn("Uart1SendFrameQuery(control_frame_pack, 21)", source, project)
+            self.assertIn("static void Uart1TxQuery(uint8_t dat)", source, project)
+            self.assertIn("Uart1TxQuery(control_frame_pack[i])", source, project)
+            self.assertNotIn("Uart1SendFrameQuery", source, project)
+            self.assertNotIn("uint8_t globalInterruptEnabled = EA", source, project)
             self.assertNotIn(
                 "UART_PutChar(UART_1, control_frame_pack[i])", source, project
             )
 
-    def test_infantry_uses_known_good_bytewise_uart_query(self) -> None:
+    def test_infantry_uses_requested_remote_channel(self) -> None:
         source = (
             ROOT / "projects" / "ROBOMASTER_INFANTRY" / "src" / "main.c"
         ).read_text(encoding="utf-8")
         self.assertIn("uint8_t Channal = 3;", source)
-        self.assertIn("static void Uart1TxQuery(uint8_t dat)", source)
-        self.assertIn("Uart1TxQuery(control_frame_pack[i])", source)
-        self.assertNotIn("Uart1SendFrameQuery", source)
+
+    def test_keil_robot_projects_use_known_good_bytewise_uart_query(self) -> None:
+        projects = (
+            "0000.培训模板",
+            "FRICTION_CALIBRATION",
+            "ROBOMASTER_ENGINEER",
+            "ROBOMASTER_INFANTRY",
+            "TEST",
+        )
+        for project in projects:
+            source = (
+                ROOT.parent / "stc32g" / "Projects" / project / "USER" / "src" / "main.c"
+            ).read_text(encoding="utf-8")
+            self.assertIn("static void Uart1TxQuery(uint8_t dat)", source, project)
+            self.assertIn("Uart1TxQuery(control_frame_pack[i])", source, project)
+            self.assertNotIn("Uart1SendFrameQuery", source, project)
+
+    def test_diagnostics_and_guide_use_bytewise_uart_query(self) -> None:
+        paths = (
+            ROOT.parent / "tools" / "diagnostics" / "friction_wheel_diagnostic.c",
+            ROOT.parent / "docs" / "RM电控指南.md",
+        )
+        for path in paths:
+            source = path.read_text(encoding="utf-8")
+            self.assertIn("static void Uart1TxQuery(uint8_t dat)", source, str(path))
+            self.assertIn("Uart1TxQuery(control_frame_pack[i])", source, str(path))
+            self.assertNotIn("Uart1SendFrameQuery", source, str(path))
 
     def test_robot_chassis_scaling_avoids_float_sign_conversion(self) -> None:
         projects = (
