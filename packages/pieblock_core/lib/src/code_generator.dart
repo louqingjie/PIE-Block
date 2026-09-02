@@ -37,23 +37,17 @@ abstract final class CodeGenerator {
   static int _slot(String? pin) =>
       expansionPins.indexOf(InfantryPinPlanner.normalizePin(pin));
 
-  static const String _uart1SendFrameQuery = '''
-static void Uart1SendFrameQuery(const uint8_t *frame, uint8_t length)
+  static const String _uart1TxQuery = '''
+static void Uart1TxQuery(uint8_t dat)
 {
-    uint8_t i;
-    uint8_t globalInterruptEnabled = EA;
     uint8_t uart1InterruptEnabled = ES;
 
-    EA = 0;
     ES = 0;
-    for (i = 0; i < length; i++) {
-        TI = 0;
-        SBUF = frame[i];
-        while (!TI) ;
-    }
+    TI = 0;
+    SBUF = dat;
+    while (!TI) ;
     TI = 0;
     ES = uart1InterruptEnabled;
-    EA = globalInterruptEnabled;
 }
 ''';
 
@@ -68,7 +62,7 @@ static void remoteControlInitWithTimeout(void)
     }
 }
 
-$_uart1SendFrameQuery
+$_uart1TxQuery
 #define LED_PORT GPIO_P3
 #define LED1_PIN GPIO_Pin_5
 #define LED2_PIN GPIO_Pin_6
@@ -94,7 +88,7 @@ static void StepDone(uint8_t step) { Beep(500 + (uint16_t)(step % 8) * 60, 60); 
   static String _header(RobotConfig c, String title, bool buzzerDisabled) =>
       '''// $title（由 PIE-Block Flutter 配置器自动生成）
 #include "main.h"
-#include "MATH.H"
+#include <stdlib.h>
 
 uint8_t Channal = ${c.remote.channel!};
 uint16_t maxSpeed = ${c.chassis.normalSpeed!};
@@ -136,7 +130,9 @@ void ExpansionBoradControl(uint8_t command,
     }
     control_frame_pack[19] = COMM_END_1;
     control_frame_pack[20] = COMM_END_2;
-    Uart1SendFrameQuery(control_frame_pack, 21);
+    for (i = 0; i < 21; i++) {
+        Uart1TxQuery(control_frame_pack[i]);
+    }
 }
 
 void ReadControllerInputs(void)
@@ -905,7 +901,7 @@ uint8_t Channal = 36;
 
 static uint8_t control_frame_pack[21];
 
-$_uart1SendFrameQuery
+$_uart1TxQuery
 static void Beep(uint16_t frequency, uint16_t duration)
 {
     PWM_SET_Frequency(BUZZER_CH, frequency, 5000);
@@ -930,7 +926,9 @@ static void ExpansionBoradControl(uint8_t command,
     }
     control_frame_pack[19] = COMM_END_1;
     control_frame_pack[20] = COMM_END_2;
-    Uart1SendFrameQuery(control_frame_pack, 21);
+    for (i = 0; i < 21; i++) {
+        Uart1TxQuery(control_frame_pack[i]);
+    }
 }
 
 void main(void)

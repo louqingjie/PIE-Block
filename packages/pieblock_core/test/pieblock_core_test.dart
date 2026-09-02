@@ -602,14 +602,10 @@ void main() {
       expect(code, contains('Ms_Delay(4200);'));
       expect(code, contains('PWM_SET_Frequency(PWMB_CH4_P03, 50, 0);'));
       expect(code, contains('Ms_Delay(2000);'));
-      expect(
-        code,
-        contains(
-          'static void Uart1SendFrameQuery(const uint8_t *frame, uint8_t length)',
-        ),
-      );
-      expect(code, contains('Uart1SendFrameQuery(control_frame_pack, 21)'));
-      expect(code, contains('uint8_t globalInterruptEnabled = EA;'));
+      expect(code, contains('static void Uart1TxQuery(uint8_t dat)'));
+      expect(code, contains('Uart1TxQuery(control_frame_pack[i])'));
+      expect(code, isNot(contains('Uart1SendFrameQuery')));
+      expect(code, isNot(contains('uint8_t globalInterruptEnabled = EA;')));
       expect(
         code,
         isNot(contains('UART_PutChar(UART_1, control_frame_pack[i])')),
@@ -1020,17 +1016,15 @@ void main() {
       );
       expect(code, contains('KEY_OFFSET_Rocker11'));
       expect(code, contains('KEY_OFFSET_Rocker21'));
+      expect(code, contains('#include <stdlib.h>'));
+      expect(code, isNot(contains('#include "MATH.H"')));
       expect(code, contains('dutyOfMotor[0]'));
       expect(code, contains('FRICTION_START_DUTY 500'));
       expect(code, contains('retry < 20'));
-      expect(
-        code,
-        contains(
-          'static void Uart1SendFrameQuery(const uint8_t *frame, uint8_t length)',
-        ),
-      );
-      expect(code, contains('Uart1SendFrameQuery(control_frame_pack, 21)'));
-      expect(code, contains('uint8_t globalInterruptEnabled = EA;'));
+      expect(code, contains('static void Uart1TxQuery(uint8_t dat)'));
+      expect(code, contains('Uart1TxQuery(control_frame_pack[i])'));
+      expect(code, isNot(contains('Uart1SendFrameQuery')));
+      expect(code, isNot(contains('uint8_t globalInterruptEnabled = EA;')));
       expect(
         code,
         contains(
@@ -1113,16 +1107,9 @@ void main() {
       expect(cycleCode, contains('servoButtonRemainder'));
       expect(cycleCode, contains('/ 2047'));
       expect(cycleCode, contains('Dir_Change_Order'));
-      expect(
-        cycleCode,
-        contains(
-          'static void Uart1SendFrameQuery(const uint8_t *frame, uint8_t length)',
-        ),
-      );
-      expect(
-        cycleCode,
-        contains('Uart1SendFrameQuery(control_frame_pack, 21)'),
-      );
+      expect(cycleCode, contains('static void Uart1TxQuery(uint8_t dat)'));
+      expect(cycleCode, contains('Uart1TxQuery(control_frame_pack[i])'));
+      expect(cycleCode, isNot(contains('Uart1SendFrameQuery')));
       expect(cycleCode, isNot(contains('baseSpeed = (int)((float)')));
       expect(cycleCode, isNot(contains('turnSpeed = (int)((float)')));
       expect(
