@@ -161,8 +161,8 @@ void CalculateChassis(void)
     int speed = maxSpeed;
     int baseSpeed;
     int turnSpeed;$sprint
-    baseSpeed = (int)(((int32_t)valueOfRoker[0][1] * (int32_t)speed) / 2047L);
-    turnSpeed = (int)(((int32_t)valueOfRoker[0][0] * (int32_t)speed) / 2047L);
+    baseSpeed = (int)(((int32_t)-valueOfRoker[0][1] * (int32_t)speed) / 2047L);
+    turnSpeed = (int)(((int32_t)-valueOfRoker[0][0] * (int32_t)speed) / 2047L);
 $turnReverse    dutyOfMotor[${_slot(c.leftFront.pin)}] = ${_dir(c.leftFront.direction!) == 1 ? '' : '-'}baseSpeed ${_dir(c.leftFront.direction!) == 1 ? '-' : '+'} turnSpeed;
     dutyOfMotor[${_slot(c.leftRear.pin)}] = ${_dir(c.leftRear.direction!) == 1 ? '' : '-'}baseSpeed ${_dir(c.leftRear.direction!) == 1 ? '-' : '+'} turnSpeed;
     dutyOfMotor[${_slot(c.rightFront.pin)}] = ${_dir(c.rightFront.direction!) == 1 ? '-' : ''}baseSpeed ${_dir(c.rightFront.direction!) == 1 ? '-' : '+'} turnSpeed;
@@ -308,17 +308,17 @@ uint8_t frictionEnabled = 0;
 ''';
     final arrowUpdate = switch (c.arrowBehavior) {
       ArrowBehavior.move =>
-        '''        if (RcKeyValueRead(KEY_OFFSET_UP)) valueOfRoker[0][1] = 2047;
-        if (RcKeyValueRead(KEY_OFFSET_DOWN)) valueOfRoker[0][1] = -2047;
-        if (RcKeyValueRead(KEY_OFFSET_LEFT)) valueOfRoker[0][0] = -2047;
-        if (RcKeyValueRead(KEY_OFFSET_RIGHT)) valueOfRoker[0][0] = 2047;
+        '''        if (RcKeyValueRead(KEY_OFFSET_UP)) valueOfRoker[0][1] = -2047;
+        if (RcKeyValueRead(KEY_OFFSET_DOWN)) valueOfRoker[0][1] = 2047;
+        if (RcKeyValueRead(KEY_OFFSET_LEFT)) valueOfRoker[0][0] = 2047;
+        if (RcKeyValueRead(KEY_OFFSET_RIGHT)) valueOfRoker[0][0] = -2047;
 ''',
       ArrowBehavior.sprint =>
         '''        maxSpeed = ${c.chassis.normalSpeed!};
-        if (RcKeyValueRead(KEY_OFFSET_UP)) { valueOfRoker[0][1] = 2047; maxSpeed = ultraSpeed; }
-        if (RcKeyValueRead(KEY_OFFSET_DOWN)) { valueOfRoker[0][1] = -2047; maxSpeed = ultraSpeed; }
-        if (RcKeyValueRead(KEY_OFFSET_LEFT)) { valueOfRoker[0][0] = -2047; maxSpeed = ultraSpeed; }
-        if (RcKeyValueRead(KEY_OFFSET_RIGHT)) { valueOfRoker[0][0] = 2047; maxSpeed = ultraSpeed; }
+        if (RcKeyValueRead(KEY_OFFSET_UP)) { valueOfRoker[0][1] = -2047; maxSpeed = ultraSpeed; }
+        if (RcKeyValueRead(KEY_OFFSET_DOWN)) { valueOfRoker[0][1] = 2047; maxSpeed = ultraSpeed; }
+        if (RcKeyValueRead(KEY_OFFSET_LEFT)) { valueOfRoker[0][0] = 2047; maxSpeed = ultraSpeed; }
+        if (RcKeyValueRead(KEY_OFFSET_RIGHT)) { valueOfRoker[0][0] = -2047; maxSpeed = ultraSpeed; }
 ''',
       ArrowBehavior.other => '',
       null => '',

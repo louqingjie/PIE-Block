@@ -993,7 +993,7 @@ void main() {
         ),
       );
       const calculation =
-          'turnSpeed = (int)(((int32_t)valueOfRoker[0][0] * (int32_t)speed) / 2047L);';
+          'turnSpeed = (int)(((int32_t)-valueOfRoker[0][0] * (int32_t)speed) / 2047L);';
       const inversion = 'turnSpeed = -turnSpeed;';
       const firstWheel = 'dutyOfMotor[4] = baseSpeed - turnSpeed;';
       expect(reversed.split(inversion), hasLength(2));
@@ -1028,7 +1028,7 @@ void main() {
       expect(
         code,
         contains(
-          'baseSpeed = (int)(((int32_t)valueOfRoker[0][1] * (int32_t)speed) / 2047L);',
+          'baseSpeed = (int)(((int32_t)-valueOfRoker[0][1] * (int32_t)speed) / 2047L);',
         ),
       );
       expect(code, isNot(contains('baseSpeed = (int)((float)')));
