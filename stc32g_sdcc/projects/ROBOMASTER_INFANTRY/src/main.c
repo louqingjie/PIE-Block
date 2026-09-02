@@ -2,7 +2,7 @@
 #include "main.h"
 #include <stdlib.h>
 // ========================= 参数区 =========================
-uint8_t Channal = 36;                          // NRF24L01 通信通道（0-125），与遥控器一致
+uint8_t Channal = 3;                           // NRF24L01 通信通道（0-125），与遥控器一致
 uint16_t maxSpeed = 4000;
 uint16_t ultraSpeed = 8000;
 uint16_t deadBandOfLeft = 10;                   // 左摇杆中心死区
@@ -441,4 +441,3 @@ void ExpansionBoradControl(uint8_t control_cmd, uint16_t data_p60, uint16_t data
     for (i = 0; i < 21; i++)
         Uart1TxQuery(control_frame_pack[i]); // 查询发送，避免跨函数传递栈上帧指针
 }
-

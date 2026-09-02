@@ -113,6 +113,7 @@ class FirmwareSafetyContractTests(unittest.TestCase):
         source = (
             ROOT / "projects" / "ROBOMASTER_INFANTRY" / "src" / "main.c"
         ).read_text(encoding="utf-8")
+        self.assertIn("uint8_t Channal = 3;", source)
         self.assertIn("static void Uart1TxQuery(uint8_t dat)", source)
         self.assertIn("Uart1TxQuery(control_frame_pack[i])", source)
         self.assertNotIn("Uart1SendFrameQuery", source)
