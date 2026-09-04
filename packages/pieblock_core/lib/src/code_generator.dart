@@ -199,7 +199,8 @@ $turnReverse    dutyOfMotor[${_slot(c.leftFront.pin)}] = ${_dir(c.leftFront.dire
         final home = yaw ? yawDuty : pitchDuty;
         final low = (home - 333).clamp(250, 1250);
         final high = (home + 333).clamp(250, 1250);
-        return '''    $variable += (int)((float)$rocker * 2.0f / 2047.0f * 5.555556f);
+        final sign = direction == Direction.forward ? '' : '-';
+        return '''    $variable += (int)((float)$sign$rocker * 2.0f / 2047.0f * 5.555556f);
     if ($variable < $low) $variable = $low; if ($variable > $high) $variable = $high;''';
       }
       final sign = direction == Direction.forward ? '' : '-';

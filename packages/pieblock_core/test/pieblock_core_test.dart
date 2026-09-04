@@ -1074,6 +1074,58 @@ void main() {
       expect(reversed.replaceFirst('    $inversion\n', ''), standard);
     });
 
+    test('云台舵机方向反向时对摇杆增量取反', () {
+      final forward = CodeGenerator.generate(completeInfantry());
+      expect(
+        forward,
+        contains(
+          'yawDuty += (int)((float)valueOfRoker[1][0] * 2.0f / 2047.0f * 5.555556f);',
+        ),
+      );
+      expect(
+        forward,
+        contains(
+          'pitchDuty += (int)((float)valueOfRoker[1][1] * 2.0f / 2047.0f * 5.555556f);',
+        ),
+      );
+
+      final reversedYaw = CodeGenerator.generate(
+        completeInfantry().copyWith(yawDirection: Direction.reverse),
+      );
+      expect(
+        reversedYaw,
+        contains(
+          'yawDuty += (int)((float)-valueOfRoker[1][0] * 2.0f / 2047.0f * 5.555556f);',
+        ),
+      );
+      expect(
+        reversedYaw,
+        isNot(
+          contains(
+            'yawDuty += (int)((float)valueOfRoker[1][0] * 2.0f / 2047.0f * 5.555556f);',
+          ),
+        ),
+      );
+
+      final reversedPitch = CodeGenerator.generate(
+        completeInfantry().copyWith(pitchDirection: Direction.reverse),
+      );
+      expect(
+        reversedPitch,
+        contains(
+          'pitchDuty += (int)((float)-valueOfRoker[1][1] * 2.0f / 2047.0f * 5.555556f);',
+        ),
+      );
+      expect(
+        reversedPitch,
+        isNot(
+          contains(
+            'pitchDuty += (int)((float)valueOfRoker[1][1] * 2.0f / 2047.0f * 5.555556f);',
+          ),
+        ),
+      );
+    });
+
     test('完整步兵配置生成且使用按键宏和实际槽位', () {
       final code = CodeGenerator.generate(
         completeInfantry().copyWith(triggerKey: 'LC', frictionKey: 'RC'),
