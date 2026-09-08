@@ -6,6 +6,7 @@ import 'package:pieblock_core/pieblock_core.dart';
 
 import 'controller.dart';
 import 'document_io.dart';
+import 'platform_paths.dart';
 
 const _brandCyan = Color(0xff02acc0);
 const _brandCoral = Color(0xffef685d);
@@ -67,9 +68,7 @@ class HomeScreen extends ConsumerWidget {
 
   Future<void> _create(BuildContext context, WidgetRef ref) async {
     final name = TextEditingController(text: '我的机器人');
-    final desktop = Platform.isAndroid
-        ? null
-        : '${Platform.environment['USERPROFILE'] ?? Directory.current.path}${Platform.pathSeparator}Desktop';
+    final desktop = defaultDesktopDirectory();
     final path = TextEditingController(
       text: desktop == null
           ? ''

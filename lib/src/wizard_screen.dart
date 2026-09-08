@@ -14,6 +14,7 @@ import 'package:re_highlight/styles/atom-one-light.dart';
 
 import 'controller.dart';
 import 'deploy_controller.dart';
+import 'platform_paths.dart';
 import 'music_editor.dart';
 
 final _fieldAnchors = <String, GlobalKey>{};
@@ -3025,9 +3026,11 @@ class _CodePage extends ConsumerStatefulWidget {
 
 class _CodePageState extends ConsumerState<_CodePage> {
   Future<void> _export(String code) async {
+    final desktop = defaultDesktopDirectory();
     final path = TextEditingController(
-      text:
-          '${Platform.environment['USERPROFILE'] ?? Directory.current.path}${Platform.pathSeparator}Desktop${Platform.pathSeparator}main.c',
+      text: desktop == null
+          ? 'main.c'
+          : '$desktop${Platform.pathSeparator}main.c',
     );
     await showDialog<void>(
       context: context,

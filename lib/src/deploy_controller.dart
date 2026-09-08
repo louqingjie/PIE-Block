@@ -88,11 +88,19 @@ class DeployController extends Notifier<DeployState> {
   }
 
   static Future<FirmwareBuilder> _createBuilder() async {
-    if (!Platform.isAndroid) return FirmwareBuilder();
     final support = await getApplicationSupportDirectory();
     final cache = await getTemporaryDirectory();
     final runtime = Directory(p.join(support.path, 'runtime'));
     await runtime.create(recursive: true);
+    if (!Platform.isAndroid) {
+      return FirmwareBuilder(
+        artifacts: BuildArtifactRepository(
+          root: p.join(support.path, 'builds'),
+        ),
+        runtimeRoot: runtime.path,
+        workRoot: p.join(cache.path, 'builds'),
+      );
+    }
     const platform = MethodChannel('cn.edu.cnu.pieblock/documents');
     final nativeInfo = await platform.invokeMapMethod<String, String>(
       'getSdccNativeInfo',

@@ -90,14 +90,8 @@ class AppController extends Notifier<AppState> {
   final _documentIo = const AppDocumentIo();
   Timer? _saveTimer;
   Future<File> get _settingsFile async {
-    if (Platform.isAndroid) {
-      final directory = await getApplicationSupportDirectory();
-      return File('${directory.path}${Platform.pathSeparator}settings.json');
-    }
-    final base = Platform.environment['APPDATA'] ?? Directory.systemTemp.path;
-    return File(
-      '$base${Platform.pathSeparator}PIE-Block${Platform.pathSeparator}settings.json',
-    );
+    final directory = await getApplicationSupportDirectory();
+    return File('${directory.path}${Platform.pathSeparator}settings.json');
   }
 
   @override
