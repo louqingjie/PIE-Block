@@ -162,6 +162,8 @@ class ToolchainDiscovery {
 }
 
 class FirmwareBuilder {
+  static String get _sdccExecutable =>
+      Platform.isWindows ? 'sdcc.exe' : 'sdcc';
   FirmwareBuilder({
     BuildArtifactRepository? artifacts,
     String? runtimeRoot,
@@ -478,7 +480,7 @@ class FirmwareBuilder {
         source,
       ];
       final run = await _run(
-        p.join(deployed.toolchain, 'bin', 'sdcc.exe'),
+        p.join(deployed.toolchain, 'bin', _sdccExecutable),
         args,
         emit,
         BuildStage.compiling,
@@ -515,7 +517,7 @@ class FirmwareBuilder {
       hexPath,
     ];
     final link = await _run(
-      p.join(deployed.toolchain, 'bin', 'sdcc.exe'),
+      p.join(deployed.toolchain, 'bin', _sdccExecutable),
       linkArgs,
       emit,
       BuildStage.linking,
