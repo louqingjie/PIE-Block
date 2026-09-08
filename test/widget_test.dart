@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -1978,15 +1979,24 @@ void main() {
         expect(find.byType(DropdownButtonFormField<int>), findsWidgets);
         expect(tester.takeException(), isNull);
         if (page.$3 == '编译与烧录') {
-          final flash = find.text('烧录当前固件');
-          await tester.ensureVisible(flash);
-          await tester.tap(flash);
-          await tester.pumpAndSettle();
-          expect(find.text('烧录主控板前请确认'), findsOneWidget);
-          expect(find.byType(Image), findsNWidgets(2));
-          expect(tester.takeException(), isNull);
-          await tester.tap(find.text('取消'));
-          await tester.pumpAndSettle();
+          // USB-HID 烧录入口目前仅在 Windows/Android 提供（Linux 见
+          // wizard_screen 的平台门控），其余平台断言“仅编译”入口存在。
+          if (Platform.isWindows || Platform.isAndroid) {
+            final flash = find.text('烧录当前固件');
+            await tester.ensureVisible(flash);
+            await tester.tap(flash);
+            await tester.pumpAndSettle();
+            expect(find.text('烧录主控板前请确认'), findsOneWidget);
+            expect(find.byType(Image), findsNWidgets(2));
+            expect(tester.takeException(), isNull);
+            await tester.tap(find.text('取消'));
+            await tester.pumpAndSettle();
+          } else {
+            final buildOnly = find.text('仅编译');
+            await tester.ensureVisible(buildOnly);
+            expect(buildOnly, findsWidgets);
+            expect(tester.takeException(), isNull);
+          }
         }
       }
     }
