@@ -274,6 +274,11 @@ void main() {
   float vig = 1.0 - smoothstep(0.35, 0.75, length(uv - 0.5));
   col = mix(col * (1.0 - u_vignette), col, vig);
 
+  // 量化前抖动。光源、暗角、bloom 都是跨度很大的平滑渐变，直接写进 8 位
+  // 缓冲会在暗部留下一圈圈等值线（色带）。补一层 ±1 LSB 白噪声把台阶打散：
+  // 单像素看不出来，色带会消失。参考页没做这一步，它的暗部同样有色带。
+  col += (hash(gl_FragCoord.xy * 1.37) - 0.5) * (2.0 / 255.0);
+
   fragColor = vec4(col, 1.0);
 }
 `;
