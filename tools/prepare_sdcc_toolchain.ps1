@@ -13,12 +13,12 @@ $buildRoot = Join-Path $repoRoot 'tmp\pie-block-sdcc-windows-build'
 $installRoot = Join-Path $repoRoot 'tmp\pie-block-sdcc-windows-install'
 $bash = Join-Path $MsysRoot 'usr\bin\bash.exe'
 
-if (!(Test-Path -LiteralPath $bash -PathType Leaf)) {
-    throw "未找到 MSYS2 bash: $bash"
-}
 if (!$Force -and (Test-Path -LiteralPath (Join-Path $stageRoot 'bundle_manifest.json'))) {
     Write-Host 'SDCC 工具链已准备；如需重建请加 -Force。'
     exit 0
+}
+if (!(Test-Path -LiteralPath $bash -PathType Leaf)) {
+    throw "未找到 MSYS2 bash: $bash"
 }
 
 foreach ($path in @($stageRoot, $buildRoot, $installRoot)) {
@@ -101,6 +101,7 @@ $bundle = [ordered]@{
     source_repository = 'https://github.com/louqingjie/sdcc-c251.git'
     source_commit = $commit
     generated_at_utc = [DateTime]::UtcNow.ToString('o')
+    platform = 'windows-x64'
     files = $hashes
 }
 $bundle | ConvertTo-Json -Depth 5 |
