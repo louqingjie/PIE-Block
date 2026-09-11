@@ -39,6 +39,8 @@
 
 步兵配置不保存 `pwm`：PWMA 固定为 50Hz，PWMB 固定为 10000Hz，其他引脚角色由实际选择自动推导。只有 `friction_mode` 为 `brushlessEsc` 时 P64/P66 才固定用于摩擦轮；选择 `disabled` 时两端口释放。工程配置继续保存 `pwm`，允许配置分组频率、引脚角色和舵机中位。
 
+步兵可选的 `reverse_feed_key` 保存反向拨弹键，`null` 表示不使用，生成的固件里也就没有反向拨弹逻辑。设置后按住该键期间拨弹电机按 `feeder_direction` 的反方向持续转动（速度复用 `trigger_speed`），松开立即归零；该键必须避让扳机键、摩擦轮按键以及已用于底盘的方向键。
+
 调试配置保存 `tests` 数组。数组始终包含 P60、P62、P64、P66、P74、P75、P76、P77、MP03、MP74 十个固定引脚，数组顺序就是固件执行顺序。每项保存 `enabled`、`drive_type`、`direction`、`value`；电机和舵机额外保存 `duration_ms`。摩擦轮仅限 P64/P66，按固定 1.5 秒节拍从 500 渐变至 `value` 后归零。
 
 音乐配置保存 `ticks_per_quarter`、`source_name`、`track_name`、`notes`、`tempo_events` 和 `time_signature_events`。每个音符保存稳定 `id`、`pitch`、`start_tick`、`duration_ticks` 与 `primary`；相同起始 tick 必须且只能有一个主音，其他音符作为低亮度参考并参与 MIDI 导出。速度事件保存每四分音符微秒数，拍号事件保存分子和分母，两类事件都从 tick 0 开始并严格递增。项目不保存原始 MIDI 字节、力度、乐器、通道或控制器。
