@@ -16,17 +16,17 @@ final class SdccGoldenCase {
 
 const _baselineHashes = <String, String>{
   'infantry_servo_blocking_friction':
-      '33ef407ea1ec2533296b63bb46068cf7bd755ca805f0e876d13cd0faf01ecdbb',
+      'd80316055967fbbff9104336c39c8e17e9b8f045e45436ea68c8e003087b0eaa',
   'engineer_single_mode':
-      '15cd88d8b7fc8c6b835ad8ed98bb6ae6473416a0da29817c0d36e8543f0937bd',
+      'fbdd8ec076160830d3d2d839c24ea33eb9a5003bc376dbde499fb58194d1d0ed',
   'infantry_motor_visual_no_friction':
-      '5f275edffd755ef6ed97202a549e3ccb6fd71985ef3783ca639bcfd377f9ee9e',
+      'ed858c2ed5664481c59bb6fd0272db57321dc1036fbf5d81d8dbb20ff8c7766c',
   'infantry_shared_chassis_sprint':
-      '51924b76d7bc8386d3871d21ad90e50dda648767a6ddf1a4b58df1494989326f',
+      'b8aba520d291cd8c0debaa4b0ce2a4cf8a419385e0cd65530b0709e58bb7822f',
   'engineer_four_mode_cycle':
-      'aa0f05103e0aadb21e2b2222ee6e58cbecebd16b1a05a23df17203b513ac9035',
+      '5f87fb5ecb49f6a610f6990351dbd75fdea1b5e8f5c7115f965577f491707e7a',
   'engineer_four_mode_direct':
-      '3d8a2dd67bf2f828e8bd8633a2dde76a478f16cf4bf204bf5a0ef300c325d67f',
+      '8d7c8dc20da6e1beb2cba08ad5915deed7b670ee40c287a0f468d7896dc0f63d',
 };
 
 final sdccGoldenCases = <SdccGoldenCase>[

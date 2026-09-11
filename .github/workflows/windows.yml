@@ -147,8 +147,18 @@ jobs:
             "$PWD/tmp/pie-block-sdcc-windows-install"
 
       - name: 暂存并校验内置工具链
+        id: stage
         shell: pwsh
         run: ./tools/prepare_sdcc_toolchain.ps1 -PackageOnly
+
+      - name: 保存工具链缓存
+        # 编译一次要 20 分钟，后续步骤失败也要把工具链存进缓存，
+        # 否则每次重试都得重编（缓存的默认保存行为要求整个 job 成功）。
+        if: always() && steps.toolchain.outputs.cache-hit != 'true' && steps.stage.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: vendor/sdcc-toolchain
+          key: sdcc-windows-${{ steps.sdcc.outputs.sha }}-${{ hashFiles('tools/prepare_sdcc_toolchain.ps1', 'tools/build_sdcc_windows_package.sh') }}
 
       - name: 校验内置工具链平台
         shell: pwsh
