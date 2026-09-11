@@ -237,8 +237,8 @@ void main() {
   float n = field * 0.5 + 0.5;
   vec3 col = mix(u_c1, u_c2, smoothstep(0.20, 0.50, n));
   col = mix(col, u_c3, smoothstep(0.35, 0.65, n + swirl * 0.25));
-  col = mix(col, u_c4, smoothstep(0.60, 0.85, swirl) * 0.34);
-  col = mix(col, u_c5, smoothstep(0.50, 0.80, n * swirl) * 0.30);
+  col = mix(col, u_c4, smoothstep(0.60, 0.85, swirl) * 0.55);
+  col = mix(col, u_c5, smoothstep(0.50, 0.80, n * swirl) * 0.35);
 
   // 4) 被搅动过的地方浮出三色辉光，用噪声调制混合比例
   float glow = smoothstep(0.0, 0.8, influence);
@@ -337,9 +337,9 @@ void main() {
 
     const opt = Object.assign(
       {
-        // 调色：近黑打底，青色为主，暖色只做少量点缀。
-        // 整体压得比参考页更暗——英雄区上面要压白字，背景亮度直接决定可读性。
-        colors: ["#04070a", "#07202b", "#0b3f52", "#c98a79", "#04070a"],
+        // 调色沿用参考页的明度结构（近黑 / 深色 / 中调 / 亮暖点缀 / 近黑），
+        // 只把色相换到品牌青。明度结构决定观感，换色相不会跑味。
+        colors: ["#010305", "#0f3a4a", "#14536b", "#efd0b4", "#010305"],
         glowColors: ["#e9fffb", "#57d6e8", "#1b6f85"],
         scale: 1.77,
         offsetX: -124,
@@ -347,26 +347,31 @@ void main() {
         speed: 28,
         // flowmap 参数
         flowScale: 4,
-        decay: 0.925,
-        mouseRadius: 0.09,
-        mouseStrength: 1.8,
+        decay: 0.94,
+        // 刷子比参考页宽一些、轻一些：参考页在 Windows 上根本不触发鼠标
+        // （mouseStrength 直接传 0），这套值实际没被验证过，窄而强的刷子
+        // 会把噪声拧出同心环。
+        mouseRadius: 0.14,
+        mouseStrength: 1.2,
         mouseSmoothing: 0.1,
         mouseVelocity: 0.2,
         interactive: true,
         // 显示参数
         distortBoost: 2.2,
-        swirlBoost: 0.8,
+        // 参考页给的是 0.8，配合满 influence 能到 2 弧度的差动旋转，
+        // 效果是把噪声拧成一圈圈同心环。降到 0.12 只剩轻微涡旋。
+        swirlBoost: 0.12,
         grain: 0.005,
-        glowIntensity: 0.11,
+        glowIntensity: 0.13,
         lightX: 0.89,
         lightY: 0.46,
-        lightCore: 0.05,
-        lightHalo: 0.08,
+        lightCore: 0.14,
+        lightHalo: 0.2,
         lightFollow: 0.63,
-        vignette: 0.42,
-        bloomThreshold: 0.72,
-        bloomRange: 0.16,
-        bloomStrength: 0.22,
+        vignette: 0.38,
+        bloomThreshold: 0.61,
+        bloomRange: 0.18,
+        bloomStrength: 0.4,
         fps: 30,
         dprCap: 1.5,
       },
@@ -485,14 +490,18 @@ void main() {
 
     function allocate() {
       const ratio = dpr();
-      canvasWidth = Math.max(1, Math.round(canvas.clientWidth * ratio));
-      canvasHeight = Math.max(1, Math.round(canvas.clientHeight * ratio));
+      const width = Math.max(1, Math.round(canvas.clientWidth * ratio));
+      const height = Math.max(1, Math.round(canvas.clientHeight * ratio));
+      // 尺寸没变就什么都不做：重建 ping-pong 会清掉正在画的痕迹
+      if (targets && width === canvasWidth && height === canvasHeight) return;
+
+      canvasWidth = width;
+      canvasHeight = height;
       canvas.width = canvasWidth;
       canvas.height = canvasHeight;
 
       flowWidth = Math.max(1, Math.round(canvasWidth / opt.flowScale));
       flowHeight = Math.max(1, Math.round(canvasHeight / opt.flowScale));
-      // 尺寸变化会重置痕迹，但只在窗口缩放时发生，看不出来
       targets = [createTarget(gl, flowWidth, flowHeight), createTarget(gl, flowWidth, flowHeight)];
       swap = false;
     }
@@ -631,7 +640,10 @@ void main() {
       });
     }
 
-    window.addEventListener("resize", () => {
+    // 尺寸变化后重建缓冲。用 ResizeObserver 盯画布本身而不是只听 window 的
+    // resize：布局导致的尺寸变化（比如文案换行把英雄区撑高）不会触发 window
+    // 的 resize，但会改动画布的盒子。
+    function reallocate() {
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
         stop();
@@ -639,7 +651,13 @@ void main() {
         render(performance.now());
         sync();
       }, 160);
-    });
+    }
+
+    if ("ResizeObserver" in window) {
+      new ResizeObserver(reallocate).observe(canvas);
+    }
+    window.addEventListener("resize", reallocate);
+    window.addEventListener("orientationchange", reallocate);
 
     startedAt = performance.now();
     allocate();
@@ -664,11 +682,9 @@ void main() {
     speed: 18,
     mouseStrength: 0,
     interactive: false,
-    glowIntensity: 0.09,
-    lightCore: 0.04,
-    lightHalo: 0.07,
+    glowIntensity: 0.11,
     vignette: 0.34,
-    colors: ["#030608", "#06191f", "#093340", "#b87f70", "#030608"],
+    colors: ["#010304", "#0c2f3c", "#104456", "#e6c6ab", "#010304"],
   });
 
   /* ---------- 生成结果面板的页签 ---------- */
