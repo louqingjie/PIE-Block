@@ -345,22 +345,21 @@ void main() {
         offsetX: -124,
         offsetY: -48,
         speed: 28,
-        // flowmap 参数
+        // flowmap 参数（参考页原值）
         flowScale: 4,
-        decay: 0.94,
-        // 刷子比参考页宽一些、轻一些：参考页在 Windows 上根本不触发鼠标
-        // （mouseStrength 直接传 0），这套值实际没被验证过，窄而强的刷子
-        // 会把噪声拧出同心环。
-        mouseRadius: 0.14,
-        mouseStrength: 1.2,
+        decay: 0.925,
+        mouseRadius: 0.09,
+        mouseStrength: 1.8,
         mouseSmoothing: 0.1,
         mouseVelocity: 0.2,
         interactive: true,
-        // 显示参数
+        // 显示参数（参考页原值）
         distortBoost: 2.2,
-        // 参考页给的是 0.8，配合满 influence 能到 2 弧度的差动旋转，
-        // 效果是把噪声拧成一圈圈同心环。降到 0.12 只剩轻微涡旋。
-        swirlBoost: 0.12,
+        // 唯一没照抄的一个数。参考页是 0.8，配合满 influence 约 2 弧度的
+        // 差动旋转，会把噪声拧成一圈圈同心环。参考页在 Windows 与触屏上
+        // 不注册鼠标，这条路径实际没跑过，所以 0.8 也没被暴露过。留 0.15
+        // 是给真正会触发交互的设备（mac / Linux）用的。
+        swirlBoost: 0.15,
         grain: 0.005,
         glowIntensity: 0.13,
         lightX: 0.89,
@@ -464,11 +463,20 @@ void main() {
       hasPointer = true;
     }
 
-    const pointerEnabled = opt.interactive && !reduceMotion.matches;
+    // 平台闸门，与参考页一致：只有「精确指针且不是 Windows」才注册鼠标，
+    // 触屏与 Windows 上 mouseStrength 直接传 0——原站的表现就是这样，
+    // 这也是为什么在原站上拖鼠标没有任何反应。
+    const coarsePointer = window.matchMedia("(hover: none), (pointer: coarse)").matches;
+    const isWindows = navigator.userAgentData
+      ? navigator.userAgentData.platform === "Windows"
+      : navigator.userAgent.includes("Windows");
+
+    const pointerEnabled =
+      opt.interactive && !coarsePointer && !isWindows && !reduceMotion.matches;
+
     if (pointerEnabled) {
       window.addEventListener("pointermove", trackPointer, { passive: true });
     }
-
     let swap = false;
     let targets = null;
     let flowWidth = 0;
@@ -572,8 +580,8 @@ void main() {
         config.lightX + (pointer.smoothX - config.lightX) * follow,
         config.lightY
       );
-      gl.uniform1f(drawU.u_lightCore, config.lightCore);
-      gl.uniform1f(drawU.u_lightHalo, config.lightHalo);
+      gl.uniform1f(drawU.u_lightCore, coarsePointer ? 0 : config.lightCore);
+      gl.uniform1f(drawU.u_lightHalo, coarsePointer ? 0 : config.lightHalo);
       gl.uniform1f(drawU.u_vignette, config.vignette);
       gl.uniform1f(drawU.u_bloomThreshold, config.bloomThreshold);
       gl.uniform1f(drawU.u_bloomRange, config.bloomRange);
