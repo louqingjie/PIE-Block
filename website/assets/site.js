@@ -352,12 +352,16 @@ void main() {
         speed: 28,
         // flowmap 参数（参考页原值）
         flowScale: 4,
-        decay: 0.925,
-        mouseRadius: 0.09,
-        mouseStrength: 1.8,
+        decay: 0.94,
+        mouseRadius: 0.14,
+        mouseStrength: 1.2,
         mouseSmoothing: 0.1,
         mouseVelocity: 0.2,
-        interactive: true,
+        // 默认不接管鼠标：参考页的观感就是纯背景流动，它把鼠标事件整个
+        // 拦掉了（见下面的平台闸门），拖拽波纹在那边从不存在。想开就把
+        // 这里改成 true——但要知道 swirlBoost / mouseRadius 那几个值在
+        // 原站是没跑过的代码，开了以后波纹偏硬。
+        interactive: false,
         // 显示参数（参考页原值）
         distortBoost: 2.2,
         // 唯一没照抄的一个数。参考页是 0.8，配合满 influence 约 2 弧度的
@@ -679,22 +683,18 @@ void main() {
     sync();
   }
 
-  /* 英雄区：主视觉，跟着指针搅动 */
+  /* 英雄区：主视觉。不接管鼠标——参考页的表现就是纯背景流动 */
   createFluid(document.getElementById("hero-canvas"), {
     fps: 30,
     flowScale: 4,
-    mouseStrength: 1.8,
-    interactive: true,
   });
 
-  /* 收尾区：同一个场，更慢更暗，不接指针，只做背景 */
+  /* 收尾区：同一个场，更慢更暗，只做背景 */
   createFluid(document.getElementById("closing-canvas"), {
     fps: 24,
     flowScale: 6,
     dprCap: 1.25,
     speed: 18,
-    mouseStrength: 0,
-    interactive: false,
     glowIntensity: 0.11,
     vignette: 0.34,
     colors: ["#010304", "#0c2f3c", "#104456", "#e6c6ab", "#010304"],
