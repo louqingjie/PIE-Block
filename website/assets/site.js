@@ -1,5 +1,6 @@
 /* PIE-Block 介绍页交互
-   流体背景（WebGL2，flowmap + 域扭曲）、生成结果面板的页签、复制按钮。
+   背景动效（hero 流体 + 点阵网格）、生成结果面板的页签、复制按钮、
+   滚动揭示。
    无依赖；prefers-reduced-motion 下只画一帧静态图。 */
 (() => {
   "use strict";
@@ -673,10 +674,259 @@ void main() {
     sync();
   }
 
-  /* 英雄区：主视觉。不接管鼠标——参考页的表现就是纯背景流动 */
+  /* ==========================================================
+     点阵网格
+     参考页的第二层背景：90px 间距的正交点阵，连线两端各缩进一截，所以
+     看起来是一截截刻度而不是完整的方格。光标 140px 内的节点被推开，靠
+     弹簧回位、阻尼收敛；光标附近的点同时变大变亮。速度收敛到阈值以下就
+     停止排帧，由 mousemove 与滚动唤醒——静止时不占任何 CPU。
+     ========================================================== */
+  function createDotGrid(canvas, options) {
+    if (!canvas) return;
+
+    const opt = Object.assign(
+      {
+        spacing: 90,
+        // 排斥力 = (1 - d / 半径) * 力度上限 * 系数，方向沿「节点 → 光标」向外
+        repelRadius: 140,
+        repelForce: 30,
+        repelScale: 0.1,
+        // 回位弹簧与阻尼
+        spring: 0.05,
+        damping: 0.85,
+        // 所有节点速度都低于它就不再排下一帧
+        settleSpeed: 0.01,
+        lineColor: "rgba(255, 255, 255,",
+        dotColor: "rgba(255, 255, 255,",
+        lineOpacity: 0.08,
+        dotOpacity: 0.16,
+        lineWidth: 0.5,
+        lineInset: 10,
+        minSegment: 20,
+        dotRadius: 1.8,
+        dotGrow: 2,
+        dotAlphaGrow: 0.4,
+        fps: 30,
+        dprCap: 2,
+        // 静态版：不接收鼠标，只在进入视口时画一帧
+        isStatic: false,
+      },
+      options
+    );
+
+    // 参考页在触屏上直接把这块画布丢掉
+    if (window.matchMedia("(hover: none), (pointer: coarse)").matches) return;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    // 静态版与 reduced-motion 都不接管鼠标
+    const interactive = !opt.isStatic && !reduceMotion.matches;
+    const frameBudget = 1000 / opt.fps;
+
+    let nodes = [];
+    let cols = 0;
+    let rows = 0;
+    let width = 0;
+    let height = 0;
+    let raf = 0;
+    let visible = true;
+    let settled = true;
+    let stamp = 0;
+    let resizeTimer = 0;
+    const mouse = { x: NaN, y: NaN };
+
+    function build() {
+      cols = Math.ceil(width / opt.spacing) + 1;
+      rows = Math.ceil(height / opt.spacing) + 1;
+      // 多出来的余量平分到两侧，点阵整体居中
+      const originX = (width - (cols - 1) * opt.spacing) / 2;
+      const originY = (height - (rows - 1) * opt.spacing) / 2;
+      nodes = [];
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+          const x = originX + col * opt.spacing;
+          const y = originY + row * opt.spacing;
+          nodes.push({ restX: x, restY: y, x, y, vx: 0, vy: 0 });
+        }
+      }
+    }
+
+    function segment(from, to) {
+      const dx = to.x - from.x;
+      const dy = to.y - from.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < opt.minSegment) return;
+      const ux = dx / dist;
+      const uy = dy / dist;
+      ctx.beginPath();
+      ctx.moveTo(from.x + ux * opt.lineInset, from.y + uy * opt.lineInset);
+      ctx.lineTo(to.x - ux * opt.lineInset, to.y - uy * opt.lineInset);
+      ctx.stroke();
+    }
+
+    /* 推进一帧并画出，返回本帧最大节点速度（调用方据此判断是否停帧） */
+    function step() {
+      ctx.clearRect(0, 0, width, height);
+
+      const mx = mouse.x;
+      const my = mouse.y;
+      const hasMouse = !Number.isNaN(mx) && !Number.isNaN(my);
+      let maxSpeed = 0;
+
+      for (const node of nodes) {
+        if (hasMouse) {
+          const dx = node.x - mx;
+          const dy = node.y - my;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          // 落在光标正下方时方向无意义，跳过
+          if (dist < opt.repelRadius && dist > 0.1) {
+            const force = (1 - dist / opt.repelRadius) * opt.repelForce * opt.repelScale;
+            node.vx += (dx / dist) * force;
+            node.vy += (dy / dist) * force;
+          }
+        }
+
+        node.vx += (node.restX - node.x) * opt.spring;
+        node.vy += (node.restY - node.y) * opt.spring;
+        node.vx *= opt.damping;
+        node.vy *= opt.damping;
+        node.x += node.vx;
+        node.y += node.vy;
+
+        const speed = Math.abs(node.vx) + Math.abs(node.vy);
+        if (speed > maxSpeed) maxSpeed = speed;
+      }
+
+      ctx.lineWidth = opt.lineWidth;
+      ctx.strokeStyle = opt.lineColor + " " + opt.lineOpacity + ")";
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols - 1; col++) {
+          segment(nodes[row * cols + col], nodes[row * cols + col + 1]);
+        }
+      }
+      for (let col = 0; col < cols; col++) {
+        for (let row = 0; row < rows - 1; row++) {
+          segment(nodes[row * cols + col], nodes[(row + 1) * cols + col]);
+        }
+      }
+
+      ctx.fillStyle = opt.dotColor + " " + opt.dotOpacity + ")";
+      for (const node of nodes) {
+        let radius = opt.dotRadius;
+        let alpha = opt.dotOpacity;
+        if (hasMouse) {
+          const falloff = Math.max(
+            0,
+            1 - Math.hypot(node.x - mx, node.y - my) / opt.repelRadius
+          );
+          radius += opt.dotGrow * falloff;
+          alpha += opt.dotAlphaGrow * falloff;
+        }
+        ctx.globalAlpha = alpha;
+        const side = radius * 2;
+        ctx.fillRect(node.x - radius, node.y - radius, side, side);
+      }
+      ctx.globalAlpha = 1;
+
+      return maxSpeed;
+    }
+
+    function loop(time) {
+      // 不可见就不再排帧，交回 start() 决定何时重启
+      if (!visible) {
+        raf = 0;
+        return;
+      }
+      raf = requestAnimationFrame(loop);
+      // 对齐到固定帧长的网格上，掉帧也不会让节奏漂移
+      if (time - stamp < frameBudget) return;
+      stamp = time - ((time - stamp) % frameBudget);
+
+      if (step() < opt.settleSpeed) {
+        settled = true;
+        cancelAnimationFrame(raf);
+        raf = 0;
+      }
+    }
+
+    function start() {
+      if (raf) return;
+      settled = false;
+      raf = requestAnimationFrame(loop);
+    }
+
+    function stop() {
+      cancelAnimationFrame(raf);
+      raf = 0;
+    }
+
+    function onPointerMove(event) {
+      const rect = canvas.getBoundingClientRect();
+      mouse.x = event.clientX - rect.left;
+      mouse.y = event.clientY - rect.top;
+      // 已经收敛时才需要唤醒，否则本来就在跑
+      if (settled) start();
+    }
+
+    function resizeNow() {
+      // DPR 每次都重新读：页面刚起来时它可能还没稳定，抓一次就定死会让整块
+      // 网格一直按错的比例作图
+      const ratio = Math.min(window.devicePixelRatio || 1, opt.dprCap);
+      width = canvas.clientWidth;
+      height = canvas.clientHeight;
+      canvas.width = Math.max(1, Math.round(width * ratio));
+      canvas.height = Math.max(1, Math.round(height * ratio));
+      // 作图一律按 CSS 像素，DPR 交给变换矩阵
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      build();
+    }
+
+    function onResize() {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        stop();
+        resizeNow();
+        start();
+      }, 150);
+    }
+
+    if (interactive) {
+      window.addEventListener("mousemove", onPointerMove, { passive: true });
+    }
+
+    if ("IntersectionObserver" in window) {
+      new IntersectionObserver(
+        (entries) => {
+          visible = entries.some((entry) => entry.isIntersecting);
+          if (visible) start();
+          else stop();
+        },
+        { threshold: 0 }
+      ).observe(canvas);
+    }
+
+    // 收敛停帧之后窗口还可能被拖动。参考页只在帧循环里查尺寸，停帧后就会
+    // 留下一块错位的网格，直到鼠标再次移动才恢复；这里改成盯画布本身。
+    if ("ResizeObserver" in window) {
+      new ResizeObserver(onResize).observe(canvas);
+    } else {
+      window.addEventListener("resize", onResize);
+    }
+
+    resizeNow();
+    start();
+  }
+
+  /* 英雄区：主视觉。流体打底，上面再叠一层跟着鼠标走的点阵网格 */
   createFluid(document.getElementById("hero-canvas"), {
     fps: 30,
     flowScale: 4,
+  });
+
+  createDotGrid(document.getElementById("hero-grid"), {
+    lineOpacity: 0.08,
+    dotOpacity: 0.16,
   });
 
   /* 收尾区：同一个场，更慢更暗，只做背景 */
@@ -784,7 +1034,7 @@ void main() {
   });
 
   /* ---------- 滚动揭示 ---------- */
-  const reveals = Array.from(document.querySelectorAll(".reveal"));
+  const reveals = Array.from(document.querySelectorAll(".reveal, .closing__grid"));
   const revealAll = () =>
     reveals.forEach((element) => element.classList.add("is-visible"));
 

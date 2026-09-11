@@ -515,6 +515,31 @@ button {
   );
 }
 
+/* 点阵网格：90px 间距的正交点阵，鼠标经过时附近的节点被推开。
+   压在文字压罩之上，所以左侧不会连网格一起被压暗；又在正文（z-index 2、
+   更靠后）之下，永远不会盖住文案与面板。 */
+.hero__grid {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(
+    #000000fc 0%,
+    #000000e8 8.98%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(#000000fc 0%, #000000e8 8.98%, transparent 100%);
+}
+
+.hero__grid canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+}
+
 .hero__inner {
   position: relative;
   z-index: 2;
@@ -1564,6 +1589,12 @@ button {
 
   .hero__inner {
     padding-block: var(--space-9);
+  }
+
+  /* 窄屏不铺点阵：90px 的格子在小屏上只剩几列，还会和文案抢注意力。
+     与参考页在 md 断点以下隐藏这一层同理 */
+  .hero__grid {
+    display: none;
   }
 
   .terminal__frame {
