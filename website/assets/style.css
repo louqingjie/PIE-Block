@@ -7,7 +7,9 @@
 :root {
   /* 底色与表面（四档由深到浅） */
   --bg-page: #0a0a0a;
-  --bg-code: rgba(0, 0, 0, 0.35);
+  /* 代码底。参考页取 .35，这里加深到 .62：这些面板压在流动背景上，
+     底色太透会让注释与次要文字的对比度掉到 4.5:1 以下。 */
+  --bg-code: rgba(0, 0, 0, 0.62);
   --surface-1: hsla(0, 0%, 100%, 0.06);
   --surface-2: hsla(0, 0%, 100%, 0.04);
   --surface-3: hsla(0, 0%, 100%, 0.02);
@@ -477,6 +479,8 @@ button {
   pointer-events: none;
 }
 
+/* 流体画布不透明时会盖住底色；这层渐变只在拿不到 WebGL2、
+   canvas 保持透明时起兜底作用，所以压得很低，不和流体抢画面 */
 .hero__glow {
   position: absolute;
   inset: 0;
@@ -485,14 +489,31 @@ button {
   background:
     radial-gradient(
       620px 420px at 78% 18%,
-      rgba(var(--rgb-brand), 0.12),
+      rgba(var(--rgb-brand), 0.07),
       transparent 70%
     ),
     radial-gradient(
       520px 380px at 12% 82%,
-      rgba(var(--rgb-coral), 0.08),
+      rgba(var(--rgb-coral), 0.05),
       transparent 70%
     );
+}
+
+/* 文字压罩：流体背景的亮暗是起伏的动画，左侧文案区的对比度不能靠运气。
+   沿阅读方向逐级压暗，右侧（光源与代码面板所在）保持通透。 */
+.hero__scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(
+    96deg,
+    rgba(10, 10, 10, 0.72) 0%,
+    rgba(10, 10, 10, 0.6) 26%,
+    rgba(10, 10, 10, 0.34) 46%,
+    rgba(10, 10, 10, 0.12) 62%,
+    rgba(10, 10, 10, 0) 78%
+  );
 }
 
 .hero__inner {
