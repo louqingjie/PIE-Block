@@ -53,6 +53,17 @@ MSYS2 缺少构建工具：$($missingTools -join '、')
   pacman -S --needed mingw-w64-ucrt-x86_64-toolchain
 "@
     }
+    $missingHeaders = & $bash -lc 'for header in zlib.h boost/graph/adjacency_list.hpp; do printf "#include <%s>\n" "$header" | gcc -E -x c - >/dev/null 2>&1 || echo "$header"; done'
+    if ($LASTEXITCODE -ne 0) {
+        throw "在 MSYS2 中检查编译依赖失败，退出码: $LASTEXITCODE"
+    }
+    if ($missingHeaders) {
+        throw @"
+MSYS2 缺少编译依赖头文件：$($missingHeaders -join '、')
+SDCC configure 无条件要求 zlib.h 与 boost/graph/adjacency_list.hpp，请执行：
+  pacman -S --needed mingw-w64-ucrt-x86_64-zlib mingw-w64-ucrt-x86_64-boost
+"@
+    }
     $buildScript = To-MsysPath (Join-Path $PSScriptRoot 'build_sdcc_windows_package.sh')
     $sourcePosix = To-MsysPath $sourceRoot
     $buildPosix = To-MsysPath $buildRoot

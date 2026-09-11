@@ -129,7 +129,9 @@ jobs:
             make
             python
           pacboy: >-
+            boost:p
             toolchain:p
+            zlib:p
 
       - name: 编译 Windows SDCC 工具链
         if: steps.toolchain.outputs.cache-hit != 'true'

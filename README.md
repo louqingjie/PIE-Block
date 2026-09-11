@@ -66,7 +66,7 @@ Android 离线 SDCC 的架构、安全门和验收状态见 [Android SDCC 多进
 
 ```powershell
 git submodule update --init sdcc-c251
-.\tools\prepare_sdcc_toolchain.ps1 -Force   # 需要 MSYS2 UCRT64 的 bison/flex/make 与 toolchain
+.\tools\prepare_sdcc_toolchain.ps1 -Force   # 需要 MSYS2 UCRT64 的 bison/flex/make、toolchain 与 boost/zlib
 $env:PIEBLOCK_RUN_SDCC_GOLDEN = '1'
 Push-Location packages\pieblock_toolchain; dart test; Pop-Location
 .\tools\package_flutter_windows.ps1
