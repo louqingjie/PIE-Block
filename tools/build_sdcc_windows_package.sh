@@ -23,6 +23,9 @@ mv "$source_copy/.version.lf" "$source_copy/.version"
 mkdir -p "$build_root/build"
 
 cd "$build_root/build"
+# 不能加 --disable-sdbinutils：configure.ac:801 会跳过 support/sdbinutils，
+# 而 cc1 链接时需要它产出的 libiberty.a（报错形如
+# "No rule to make target '../../sdbinutils/libiberty/libiberty.a', needed by 'cc1.exe'"）。
 LIB_TYPE=LIB CFLAGS=-std=gnu17 LDFLAGS=-static "$source_copy/configure" \
   --enable-mcs251-port \
   --prefix=/sdcc \
@@ -42,7 +45,7 @@ LIB_TYPE=LIB CFLAGS=-std=gnu17 LDFLAGS=-static "$source_copy/configure" \
   --disable-s08-port --disable-stm8-port --disable-pdk13-port \
   --disable-pdk14-port --disable-pdk15-port --disable-mos6502-port \
   --disable-mos65c02-port --disable-f8-port --disable-f8l-port \
-  --disable-ucsim --disable-sdcdb --disable-sdbinutils --disable-non-free
+  --disable-ucsim --disable-sdcdb --disable-non-free
 
 make -j2 sdcc-base
 install -m 755 support/cpp/gcc/cpp.exe bin/sdcpp.exe
