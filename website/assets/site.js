@@ -240,14 +240,15 @@ void main() {
   col = mix(col, u_c4, smoothstep(0.60, 0.85, swirl) * 0.55);
   col = mix(col, u_c5, smoothstep(0.50, 0.80, n * swirl) * 0.35);
 
-  // 4) 被搅动过的地方浮出三色辉光，用噪声调制混合比例
+  // 4) 被搅动过的地方浮出三色辉光，用噪声调制混合比例。
+  // 两次 mix 的比例都取 influence 的 smoothstep，不是 influence 本身：
+  // 后者是线性上升，痕迹边缘会拖出一条生硬的过渡带。
   float glow = smoothstep(0.0, 0.8, influence);
-  if (glow > 0.0) {
-    float gn = snoise(vec3(warped * 1.5, t * 0.08)) * 0.5 + 0.5;
-    vec3 glowMix = mix(u_glowC, u_glowB, influence);
-    glowMix = mix(glowMix, u_glowA, influence * gn);
-    col = mix(col, glowMix, glow * u_glow);
-  }
+  float glowNoise = snoise(vec3(warped * 1.5, t * 0.08)) * 0.5 + 0.5;
+  float glowDist = smoothstep(0.0, 1.0, influence);
+  vec3 glowMix = mix(u_glowC, u_glowB, glowDist);
+  glowMix = mix(glowMix, u_glowA, glowDist * glowNoise);
+  col = mix(col, glowMix, glow * u_glow);
 
   // 颗粒：坐标跟着流动走，所以噪点是「浮」在流体上的
   if (u_grain > 0.0) {
@@ -268,7 +269,7 @@ void main() {
   // 虚拟光源：暖芯 + 冷晕，位置跟着指针走
   float ld = length((uv - u_light) * vec2(aspect, 1.0));
   col += vec3(1.0, 0.97, 0.9) * exp(-ld * ld * 4.5) * u_lightCore;
-  col += vec3(0.62, 0.86, 1.0) * exp(-ld * 1.8) * u_lightHalo;
+  col += vec3(0.72, 0.80, 1.0) * exp(-ld * 1.8) * u_lightHalo;
 
   // 暗角
   float vig = 1.0 - smoothstep(0.35, 0.75, length(uv - 0.5));
@@ -347,28 +348,23 @@ void main() {
         colors: ["#010305", "#0f3a4a", "#14536b", "#efd0b4", "#010305"],
         glowColors: ["#e9fffb", "#57d6e8", "#1b6f85"],
         scale: 1.77,
+        // 参考页的单位是「百分之一」，进 uniform 前除以 100。
+        // 这两个数决定噪声场被采样的是哪一块区域，差一个量级就完全是另一幅图案。
         offsetX: -124,
         offsetY: -48,
         speed: 28,
         // flowmap 参数（参考页原值）
         flowScale: 4,
-        decay: 0.94,
-        mouseRadius: 0.14,
-        mouseStrength: 1.2,
+        decay: 0.925,
+        mouseRadius: 0.09,
+        mouseStrength: 1.8,
         mouseSmoothing: 0.1,
         mouseVelocity: 0.2,
-        // 默认不接管鼠标：参考页的观感就是纯背景流动，它把鼠标事件整个
-        // 拦掉了（见下面的平台闸门），拖拽波纹在那边从不存在。想开就把
-        // 这里改成 true——但要知道 swirlBoost / mouseRadius 那几个值在
-        // 原站是没跑过的代码，开了以后波纹偏硬。
-        interactive: false,
         // 显示参数（参考页原值）
         distortBoost: 2.2,
-        // 唯一没照抄的一个数。参考页是 0.8，配合满 influence 约 2 弧度的
-        // 差动旋转，会把噪声拧成一圈圈同心环。参考页在 Windows 与触屏上
-        // 不注册鼠标，这条路径实际没跑过，所以 0.8 也没被暴露过。留 0.15
-        // 是给真正会触发交互的设备（mac / Linux）用的。
-        swirlBoost: 0.15,
+        // 满 influence 时约 2 弧度的差动旋转。参考页在 Windows 与触屏上不注册
+        // 鼠标，这条路径只有 mac / Linux 会跑到。
+        swirlBoost: 0.8,
         grain: 0.005,
         glowIntensity: 0.13,
         lightX: 0.89,
@@ -457,34 +453,26 @@ void main() {
     const pointer = { x: 0.5, y: 0.5, smoothX: 0.5, smoothY: 0.5, vx: 0, vy: 0 };
     let hasPointer = false;
 
+    // 归一化到 [0,1] 并翻转 y（WebGL 的纹理原点在左下）。参考页不判定指针
+    // 是否落在画布内，画布外的移动照样参与——高斯刷子在边界外本就衰减到
+    // 接近 0，保留这个「不判定」是为了指针停在英雄区上下缘时刷子还有半枚。
     function trackPointer(event) {
       const rect = canvas.getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0) return;
 
-      const x = (event.clientX - rect.left) / rect.width;
-      const y = (event.clientY - rect.top) / rect.height;
-      // 只认落在画布内的移动，否则在页面别处移动会把痕迹平白拖过来
-      if (x < 0 || x > 1 || y < 0 || y > 1) return;
-
-      pointer.x = x;
-      // 翻转 y：WebGL 的纹理原点在左下
-      pointer.y = 1 - y;
+      pointer.x = (event.clientX - rect.left) / rect.width;
+      pointer.y = 1 - (event.clientY - rect.top) / rect.height;
       hasPointer = true;
     }
 
-    // 平台闸门，与参考页一致：只有「精确指针且不是 Windows」才注册鼠标，
-    // 触屏与 Windows 上 mouseStrength 直接传 0——原站的表现就是这样，
-    // 这也是为什么在原站上拖鼠标没有任何反应。
+    // 触屏闸门与参考页一致。参考页另外把 Windows 整个排除在外（那边只有
+    // mac / Linux 划得出波纹），那是它自己的取舍，我们的受众主要在 Windows
+    // 上，这条不跟。
     const coarsePointer = window.matchMedia("(hover: none), (pointer: coarse)").matches;
-    const isWindows = navigator.userAgentData
-      ? navigator.userAgentData.platform === "Windows"
-      : navigator.userAgent.includes("Windows");
-
-    const pointerEnabled =
-      opt.interactive && !coarsePointer && !isWindows && !reduceMotion.matches;
+    const pointerEnabled = !coarsePointer && !reduceMotion.matches;
 
     if (pointerEnabled) {
-      window.addEventListener("pointermove", trackPointer, { passive: true });
+      window.addEventListener("mousemove", trackPointer, { passive: true });
     }
     let swap = false;
     let targets = null;
@@ -549,7 +537,9 @@ void main() {
       gl.uniform2f(flowU.pointer, pointer.smoothX, pointer.smoothY);
       gl.uniform2f(flowU.velocity, pointer.vx, pointer.vy);
       gl.uniform1f(flowU.radius, config.mouseRadius);
-      // 指针还没进过画布时强度给 0，避免左上角默认位置被盖章
+      // 指针还没进过画布时强度给 0。参考页在这里直接按满强度盖章，指针的
+      // 初始值又是画布中心，于是页面一载入中心就有一块常驻光斑——那个更像
+      // 实现漏出来的痕迹，不跟。
       gl.uniform1f(
         flowU.strength,
         pointerEnabled && hasPointer ? config.mouseStrength : 0
@@ -568,7 +558,7 @@ void main() {
       gl.uniform2f(drawU.u_resolution, canvasWidth, canvasHeight);
       gl.uniform1f(drawU.u_time, elapsed);
       gl.uniform1f(drawU.u_scale, config.scale);
-      gl.uniform2f(drawU.u_offset, config.offsetX, config.offsetY);
+      gl.uniform2f(drawU.u_offset, config.offsetX / 100, config.offsetY / 100);
       gl.uniform3f(drawU.u_c1, palette[0][0], palette[0][1], palette[0][2]);
       gl.uniform3f(drawU.u_c2, palette[1][0], palette[1][1], palette[1][2]);
       gl.uniform3f(drawU.u_c3, palette[2][0], palette[2][1], palette[2][2]);
