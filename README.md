@@ -58,7 +58,7 @@ Android 离线 SDCC 的架构、安全门和验收状态见 [Android SDCC 多进
 `.github/workflows/windows.yml` 在 push / PR 到 `main` 以及手动触发时校验 Windows 构建，分两段执行：
 
 1. **静态分析与单元测试**（ubuntu，约 2 分钟）：`pieblock_core`、`pieblock_hid`、`pieblock_toolchain` 三个包分别 `dart analyze` + `dart test`，再跑根目录的 `flutter analyze` + `flutter test`。
-2. **Windows 构建与打包**（windows-latest，首次 20–35 分钟，工具链缓存命中后 5–8 分钟）：用 MSYS2 UCRT64 跑 `tools/prepare_sdcc_toolchain.ps1` 生成 Windows 版内置 SDCC 工具链（按 `sdcc-c251` 子模块提交缓存），校验 `bundle_manifest.json` 的平台字段，跑 `PIEBLOCK_RUN_SDCC_GOLDEN=1` 的 SDCC 金样比对，再 `flutter build windows --release` 并用 `tools/package_flutter_windows.ps1 -SkipBuild` 出安装包。
+2. **Windows 构建与打包**（windows-latest，首次 20–35 分钟，工具链缓存命中后 5–8 分钟）：在 MSYS2 UCRT64 里跑 `tools/build_sdcc_windows_package.sh` 编译 Windows 版内置 SDCC 工具链（按 `sdcc-c251` 子模块提交与脚本哈希缓存），再用 `tools/prepare_sdcc_toolchain.ps1 -PackageOnly` 暂存并生成 `bundle_manifest.json`；随后校验平台字段，跑 `PIEBLOCK_RUN_SDCC_GOLDEN=1` 的 SDCC 金样比对，再 `flutter build windows --release` 并用 `tools/package_flutter_windows.ps1 -SkipBuild` 出安装包。
 
 产物保留 14 天，名称为 `PIEBlock-<版本>-windows-setup.exe`（Inno 安装包）与 `PIEBlock-<版本>-windows-x64-release.zip`（免安装 `Release` 目录）。金样校验可用 `workflow_dispatch` 的 `skip_golden` 输入临时跳过。
 
@@ -66,7 +66,7 @@ Android 离线 SDCC 的架构、安全门和验收状态见 [Android SDCC 多进
 
 ```powershell
 git submodule update --init sdcc-c251
-.\tools\prepare_sdcc_toolchain.ps1
+.\tools\prepare_sdcc_toolchain.ps1 -Force   # 需要 MSYS2 UCRT64 的 bison/flex/make 与 toolchain
 $env:PIEBLOCK_RUN_SDCC_GOLDEN = '1'
 Push-Location packages\pieblock_toolchain; dart test; Pop-Location
 .\tools\package_flutter_windows.ps1

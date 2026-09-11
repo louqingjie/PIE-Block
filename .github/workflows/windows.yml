@@ -131,9 +131,22 @@ jobs:
           pacboy: >-
             toolchain:p
 
-      - name: 准备内置 SDCC 工具链
+      - name: 编译 Windows SDCC 工具链
+        if: steps.toolchain.outputs.cache-hit != 'true'
+        shell: msys2 {0}
+        run: |
+          command -v bison flex make gcc
+          bison --version | head -1
+          flex --version
+          gcc --version | head -1
+          ./tools/build_sdcc_windows_package.sh \
+            "$PWD/sdcc-c251" \
+            "$PWD/tmp/pie-block-sdcc-windows-build" \
+            "$PWD/tmp/pie-block-sdcc-windows-install"
+
+      - name: 暂存并校验内置工具链
         shell: pwsh
-        run: ./tools/prepare_sdcc_toolchain.ps1
+        run: ./tools/prepare_sdcc_toolchain.ps1 -PackageOnly
 
       - name: 校验内置工具链平台
         shell: pwsh

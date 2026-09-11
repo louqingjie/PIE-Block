@@ -41,6 +41,18 @@ function To-MsysPath([string]$Path) {
 }
 
 if (!$PackageOnly) {
+    $missingTools = & $bash -lc 'for tool in bison flex make gcc; do command -v "$tool" >/dev/null 2>&1 || echo "$tool"; done'
+    if ($LASTEXITCODE -ne 0) {
+        throw "在 MSYS2 中检查构建工具失败，退出码: $LASTEXITCODE"
+    }
+    if ($missingTools) {
+        throw @"
+MSYS2 缺少构建工具：$($missingTools -join '、')
+请在 MSYS2 UCRT64 环境执行：
+  pacman -S --needed bison flex make
+  pacman -S --needed mingw-w64-ucrt-x86_64-toolchain
+"@
+    }
     $buildScript = To-MsysPath (Join-Path $PSScriptRoot 'build_sdcc_windows_package.sh')
     $sourcePosix = To-MsysPath $sourceRoot
     $buildPosix = To-MsysPath $buildRoot
