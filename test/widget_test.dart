@@ -213,14 +213,22 @@ ProjectDocument _infantryDocument() {
       ),
       feederPin: 'P60',
       feederDirection: Direction.forward,
-      yawDrive: DriveType.servo,
-      yawPin: 'MP74',
-      yawDirection: Direction.forward,
-      yawMidOffset: 0,
-      pitchDrive: DriveType.servo,
-      pitchPin: 'MP03',
-      pitchDirection: Direction.forward,
-      pitchMidOffset: 0,
+      yawActuators: const [
+        AxisActuator(
+          drive: DriveType.servo,
+          pin: 'MP74',
+          direction: Direction.forward,
+          midOffset: 0,
+        ),
+      ],
+      pitchActuators: const [
+        AxisActuator(
+          drive: DriveType.servo,
+          pin: 'MP03',
+          direction: Direction.forward,
+          midOffset: 0,
+        ),
+      ],
       arrowBehavior: ArrowBehavior.other,
       feedMode: FeedMode.blockingOpenLoop,
       triggerKey: 'E',
@@ -1559,6 +1567,81 @@ void main() {
     expect(config.feederPin, 'P64');
     expect(config.frictionMode, FrictionMode.disabled);
     expect(config.frictionMaxDuty, 800);
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
+  testWidgets('云台轴可添加第二个执行器并分配 IO', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _ConfiguredMechanismController(_infantryDocument()),
+          ),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final addButtons = find.widgetWithText(TextButton, '添加执行器');
+    expect(addButtons, findsNWidgets(2));
+    await tester.ensureVisible(addButtons.last);
+    await tester.tap(addButtons.last);
+    await tester.pumpAndSettle();
+
+    var config = _currentInfantry(tester);
+    expect(config.pitchActuators, hasLength(2));
+    expect(config.pitchActuators.last.drive, DriveType.servo);
+    expect(find.text('执行器 2'), findsOneWidget);
+
+    final secondPin = find.byKey(const ValueKey('gimbal.pitch.1.pin'));
+    await tester.ensureVisible(secondPin);
+    await tester.tap(secondPin);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('P62').last);
+    await tester.pumpAndSettle();
+
+    config = _currentInfantry(tester);
+    expect(config.pitchActuators.last.pin, 'P62');
+    expect(config.pitchActuators.first.pin, 'MP03');
+    expect(
+      ProjectValidator.validate(
+        config,
+      ).where((i) => i.fieldPath == 'gimbal.pitch.1.pin'),
+      isEmpty,
+    );
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
+  testWidgets('云台轴执行器可删除到留空并解除必填', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _ConfiguredMechanismController(_infantryDocument()),
+          ),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final deleteButtons = find.byTooltip('删除执行器');
+    expect(deleteButtons, findsNWidgets(2));
+    await tester.ensureVisible(deleteButtons.last);
+    await tester.tap(deleteButtons.last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('未配置执行器；该轴可以留空。'), findsOneWidget);
+    final config = _currentInfantry(tester);
+    expect(config.pitchActuators, isEmpty);
+    expect(config.yawActuators, hasLength(1));
+    expect(
+      ProjectValidator.validate(
+        config,
+      ).where((i) => i.fieldPath.startsWith('gimbal.pitch')),
+      isEmpty,
+    );
     await tester.pump(const Duration(milliseconds: 600));
   });
 

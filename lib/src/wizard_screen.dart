@@ -222,6 +222,7 @@ String _fieldLabel(String path) {
   if (path.endsWith('.direction')) return '方向';
   if (path.endsWith('.drive')) return '驱动类型';
   if (path.endsWith('.pin')) return 'IO';
+  if (path.endsWith('.mid_offset')) return '归中偏移';
   if (path.endsWith('.mode')) return '控制方式';
   if (path.endsWith('.parameter')) return '参数';
   if (path.endsWith('.key')) return '按键';
@@ -1639,152 +1640,181 @@ class _InfantryMechanismPage extends ConsumerWidget {
     );
     final feederPinChoices = <String?>[null, ...feederPins];
     Widget axis(String name, bool yaw) {
-      final drive = yaw ? c.yawDrive : c.pitchDrive,
-          pin = yaw ? c.yawPin : c.pitchPin,
-          direction = yaw ? c.yawDirection : c.pitchDirection,
-          mid = yaw ? c.yawMidOffset : c.pitchMidOffset,
-          pinPath = yaw ? 'gimbal.yaw.pin' : 'gimbal.pitch.pin',
-          drivePath = yaw ? 'gimbal.yaw.drive' : 'gimbal.pitch.drive',
-          directionPath = yaw
-              ? 'gimbal.yaw.direction'
-              : 'gimbal.pitch.direction',
-          midPath = yaw ? 'gimbal.yaw.mid_offset' : 'gimbal.pitch.mid_offset';
-      final allowedPins = InfantryPinPlanner.allowedPins(
-        c,
-        pinPath,
-        driveType: drive,
+      final actuators = c.actuators(yaw);
+      void replaceActuators(List<AxisActuator> next) => update(
+        yaw ? c.copyWith(yawActuators: next) : c.copyWith(pitchActuators: next),
       );
-      final candidates = switch (drive) {
-        DriveType.servo => InfantryPinPlanner.servoPins,
-        DriveType.motor => InfantryPinPlanner.motorPins,
-        null => const <String>[],
-      };
-      final visiblePins = _includeCurrent(candidates, pin);
-      final visiblePinChoices = <String?>[null, ...visiblePins];
+      Widget actuatorRow(int index) {
+        final actuator = actuators[index],
+            drive = actuator.drive,
+            pin = actuator.pin,
+            direction = actuator.direction,
+            mid = actuator.midOffset,
+            pinPath = InfantryPinPlanner.axisPath(yaw, index, 'pin'),
+            drivePath = InfantryPinPlanner.axisPath(yaw, index, 'drive'),
+            directionPath = InfantryPinPlanner.axisPath(
+              yaw,
+              index,
+              'direction',
+            ),
+            midPath = InfantryPinPlanner.axisPath(yaw, index, 'mid_offset');
+        void updateAt(AxisActuator Function(AxisActuator) change) {
+          final next = [...actuators];
+          next[index] = change(next[index]);
+          replaceActuators(next);
+        }
+
+        final allowedPins = InfantryPinPlanner.allowedPins(
+          c,
+          pinPath,
+          driveType: drive,
+        );
+        final candidates = switch (drive) {
+          DriveType.servo => InfantryPinPlanner.servoPins,
+          DriveType.motor => InfantryPinPlanner.motorPins,
+          null => const <String>[],
+        };
+        final visiblePins = _includeCurrent(candidates, pin);
+        final visiblePinChoices = <String?>[null, ...visiblePins];
+        return _FormRow(
+          fieldPaths: [
+            drivePath,
+            pinPath,
+            directionPath,
+            if (drive == DriveType.servo) midPath,
+          ],
+          children: [
+            Expanded(
+              child: _FieldAnchor(
+                path: drivePath,
+                child: DropdownButtonFormField(
+                  initialValue: drive,
+                  decoration: _fieldDecoration(ref, drivePath, '驱动类型'),
+                  items: DriveType.values
+                      .map(
+                        (e) => DropdownMenuItem(
+                          value: e,
+                          child: Text(e == DriveType.servo ? '舵机' : '电机'),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (v) {
+                    if (v == null) return;
+                    updateAt((a) => a.copyWith(drive: v));
+                  },
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _FieldAnchor(
+                path: pinPath,
+                child: DropdownButtonFormField<String>(
+                  key: ValueKey(pinPath),
+                  isExpanded: true,
+                  initialValue: pin,
+                  decoration: _fieldDecoration(ref, pinPath, 'IO'),
+                  selectedItemBuilder: (_) => _selectedPinItems(visiblePinChoices),
+                  items: visiblePinChoices.map((e) {
+                    if (e == null) {
+                      return const DropdownMenuItem<String>(
+                        value: null,
+                        child: Text('未分配'),
+                      );
+                    }
+                    final enabled = allowedPins.contains(e);
+                    final owner = InfantryPinPlanner.occupiedBy(c, e, pinPath);
+                    return DropdownMenuItem(
+                      value: e,
+                      enabled: enabled,
+                      child: _PinOption(
+                        e,
+                        enabled: enabled,
+                        owner:
+                            owner?.ownerLabel ??
+                            (enabled ? null : '当前驱动类型不支持'),
+                      ),
+                    );
+                  }).toList(),
+                  onChanged: (v) async {
+                    final result = await _resolveInfantryPinSelection(
+                      context,
+                      c,
+                      pinPath,
+                      v,
+                    );
+                    if (result != null) update(result);
+                  },
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _FieldAnchor(
+                path: directionPath,
+                child: DropdownButtonFormField(
+                  initialValue: direction,
+                  decoration: _fieldDecoration(ref, directionPath, '方向'),
+                  items: Direction.values
+                      .map(
+                        (e) => DropdownMenuItem(
+                          value: e,
+                          child: Text(
+                            e == Direction.forward ? '正向' : '反向',
+                          ),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (v) => updateAt((a) => a.copyWith(direction: v)),
+                ),
+              ),
+            ),
+            if (drive == DriveType.servo) ...[
+              const SizedBox(width: 12),
+              Expanded(
+                child: _NumberField(
+                  label: '归中偏移',
+                  fieldPath: midPath,
+                  suffix: '°',
+                  value: mid,
+                  onChanged: (v) => updateAt((a) => a.copyWith(midOffset: v)),
+                ),
+              ),
+            ],
+            IconButton(
+              tooltip: '删除执行器',
+              onPressed: () => replaceActuators([...actuators]..removeAt(index)),
+              icon: const Icon(Icons.delete_outline),
+            ),
+          ],
+        );
+      }
+
       return _Section(
         title: '$name 轴',
         children: [
-          _FormRow(
-            fieldPaths: [
-              drivePath,
-              pinPath,
-              directionPath,
-              if (drive == DriveType.servo) midPath,
+          for (var index = 0; index < actuators.length; index += 1) ...[
+            if (index > 0) const SizedBox(height: 16),
+            if (actuators.length > 1) ...[
+              Text(
+                '执行器 ${index + 1}',
+                style: Theme.of(context).textTheme.labelLarge,
+              ),
+              const SizedBox(height: 8),
             ],
-            children: [
-              Expanded(
-                child: _FieldAnchor(
-                  path: drivePath,
-                  child: DropdownButtonFormField(
-                    initialValue: drive,
-                    decoration: _fieldDecoration(ref, drivePath, '驱动类型'),
-                    items: DriveType.values
-                        .map(
-                          (e) => DropdownMenuItem(
-                            value: e,
-                            child: Text(e == DriveType.servo ? '舵机' : '电机'),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (v) {
-                      if (v == null) return;
-                      update(
-                        yaw
-                            ? c.copyWith(yawDrive: v)
-                            : c.copyWith(pitchDrive: v),
-                      );
-                    },
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _FieldAnchor(
-                  path: pinPath,
-                  child: DropdownButtonFormField<String>(
-                    key: ValueKey(pinPath),
-                    isExpanded: true,
-                    initialValue: pin,
-                    decoration: _fieldDecoration(ref, pinPath, 'IO'),
-                    selectedItemBuilder: (_) =>
-                        _selectedPinItems(visiblePinChoices),
-                    items: visiblePinChoices.map((e) {
-                      if (e == null) {
-                        return const DropdownMenuItem<String>(
-                          value: null,
-                          child: Text('未分配'),
-                        );
-                      }
-                      final enabled = allowedPins.contains(e);
-                      final owner = InfantryPinPlanner.occupiedBy(
-                        c,
-                        e,
-                        pinPath,
-                      );
-                      return DropdownMenuItem(
-                        value: e,
-                        enabled: enabled,
-                        child: _PinOption(
-                          e,
-                          enabled: enabled,
-                          owner:
-                              owner?.ownerLabel ??
-                              (enabled ? null : '当前驱动类型不支持'),
-                        ),
-                      );
-                    }).toList(),
-                    onChanged: (v) async {
-                      final result = await _resolveInfantryPinSelection(
-                        context,
-                        c,
-                        pinPath,
-                        v,
-                      );
-                      if (result != null) update(result);
-                    },
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _FieldAnchor(
-                  path: directionPath,
-                  child: DropdownButtonFormField(
-                    initialValue: direction,
-                    decoration: _fieldDecoration(ref, directionPath, '方向'),
-                    items: Direction.values
-                        .map(
-                          (e) => DropdownMenuItem(
-                            value: e,
-                            child: Text(e == Direction.forward ? '正向' : '反向'),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (v) => update(
-                      yaw
-                          ? c.copyWith(yawDirection: v)
-                          : c.copyWith(pitchDirection: v),
-                    ),
-                  ),
-                ),
-              ),
-              if (drive == DriveType.servo) ...[
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _NumberField(
-                    label: '归中偏移',
-                    fieldPath: midPath,
-                    suffix: '°',
-                    value: mid,
-                    onChanged: (v) => update(
-                      yaw
-                          ? c.copyWith(yawMidOffset: v)
-                          : c.copyWith(pitchMidOffset: v),
-                    ),
-                  ),
-                ),
-              ],
-            ],
+            actuatorRow(index),
+          ],
+          if (actuators.isEmpty) const Text('未配置执行器；该轴可以留空。'),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => replaceActuators([
+                ...actuators,
+                const AxisActuator(drive: DriveType.servo),
+              ]),
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('添加执行器'),
+            ),
           ),
         ],
       );
