@@ -17,6 +17,7 @@ InfantryConfig completeInfantry({
   FrictionMode frictionMode = FrictionMode.brushlessEsc,
   FeedMode feedMode = FeedMode.blockingOpenLoop,
   bool shared = false,
+  String? reverseFeedKey,
 }) => InfantryConfig(
   remote: const RemoteConfig(channel: 36, deadzone: 100),
   chassis: completeChassis(shared: shared),
@@ -33,6 +34,7 @@ InfantryConfig completeInfantry({
   arrowBehavior: ArrowBehavior.other,
   feedMode: feedMode,
   triggerKey: 'E',
+  reverseFeedKey: reverseFeedKey,
   triggerSpeed: 6000,
   triggerTimeMs: feedMode == FeedMode.blockingOpenLoop ? 250 : null,
   frictionMode: frictionMode,
@@ -223,6 +225,15 @@ void main() {
       expect(json['turn_reversed'], isTrue);
       expect(ChassisConfig.fromJson(json).turnReversed, isTrue);
       expect(source.copyWith(turnReversed: false).turnReversed, isFalse);
+    });
+
+    test('反向拨弹键默认不使用且可往返', () {
+      expect(completeInfantry().toJson()['reverse_feed_key'], isNull);
+      final source = completeInfantry(reverseFeedKey: 'D');
+      final json = source.toJson();
+      expect(json['reverse_feed_key'], 'D');
+      expect(InfantryConfig.fromJson(json).reverseFeedKey, 'D');
+      expect(source.copyWith(reverseFeedKey: null).reverseFeedKey, isNull);
     });
 
     test('舵机按键控制方式和小数灵敏度可往返', () {
@@ -653,6 +664,59 @@ void main() {
       );
     });
 
+    test('反向拨弹键必须避让其他按键和方向键', () {
+      bool hasError(InfantryConfig config, String path) =>
+          ProjectValidator.validate(config).any(
+            (i) => i.severity == IssueSeverity.error && i.fieldPath == path,
+          );
+      expect(
+        hasError(
+          completeInfantry(reverseFeedKey: 'D'),
+          'controls.reverse_feed_key',
+        ),
+        isFalse,
+      );
+      // 与扳机键、摩擦轮开关键重名，或使用摇杆轴
+      for (final key in ['E', 'A', 'LX']) {
+        expect(
+          hasError(
+            completeInfantry(reverseFeedKey: key),
+            'controls.reverse_feed_key',
+          ),
+          isTrue,
+          reason: '$key 不应被接受',
+        );
+      }
+      // 摩擦轮关闭后 'A' 释放
+      expect(
+        hasError(
+          completeInfantry(
+            reverseFeedKey: 'A',
+            frictionMode: FrictionMode.disabled,
+          ),
+          'controls.reverse_feed_key',
+        ),
+        isFalse,
+      );
+      // 方向键已用于底盘时不能作为反向拨弹键，用途为“其他”时可用
+      expect(
+        hasError(
+          completeInfantry(reverseFeedKey: '↓')
+              .copyWith(arrowBehavior: ArrowBehavior.move),
+          'controls.reverse_feed_key',
+        ),
+        isTrue,
+      );
+      expect(
+        hasError(
+          completeInfantry(reverseFeedKey: '↓')
+              .copyWith(arrowBehavior: ArrowBehavior.other),
+          'controls.reverse_feed_key',
+        ),
+        isFalse,
+      );
+    });
+
     test('上游改变后保留非法值并精确报错', () {
       final config = completeInfantry().copyWith(
         yawDrive: DriveType.motor,
@@ -1072,6 +1136,55 @@ void main() {
       // 旧写法只在 duty 恰好为 0 时跳变，关闭途中重新开启会从 0~500 之间
       // 渐变上去，不应再出现
       expect(code, isNot(contains('frictionStartedThisCycle')));
+    });
+
+    test('未设置反向拨弹键时不生成任何反向逻辑', () {
+      final code = CodeGenerator.generate(completeInfantry());
+      expect(code, isNot(contains('reverseFeed')));
+      expect(code, isNot(contains('reverse_feed')));
+    });
+
+    test('反向拨弹键按住持续反转并在松开时归零', () {
+      String reverseBranch(String code) => code.substring(
+        code.indexOf('    if (reverseFeed) {'),
+        code.indexOf('    lastTrigger = trigger;'),
+      );
+      final blocking = CodeGenerator.generate(
+        completeInfantry(reverseFeedKey: 'D'),
+      );
+      expect(
+        blocking,
+        contains('uint8_t reverseFeed = RcKeyValueRead(KEY_OFFSET_D);'),
+      );
+      // 反转占空比与拨弹方向相反：正向拨弹时取负
+      expect(reverseBranch(blocking), contains('dutyOfMotor[0] = -6000;'));
+      // 松开反向键必须归零，不能停在反转占空比上
+      expect(reverseBranch(blocking), contains('dutyOfMotor[0] = 0;'));
+      expect(reverseBranch(blocking), contains('Ms_Delay(250)'));
+
+      final visual = CodeGenerator.generate(
+        completeInfantry(
+          feedMode: FeedMode.visualClosedLoop,
+          reverseFeedKey: 'D',
+        ),
+      );
+      expect(reverseBranch(visual), contains('dutyOfMotor[0] = -6000;'));
+      expect(
+        reverseBranch(visual),
+        contains('dutyOfMotor[0] = trigger ? 6000 : 0;'),
+      );
+      expect(visual, isNot(contains('Ms_Delay(250)')));
+
+      // 拨弹方向本身为反向时，退弹方向翻转为正
+      final reversedFeeder = CodeGenerator.generate(
+        completeInfantry(reverseFeedKey: 'D')
+            .copyWith(feederDirection: Direction.reverse),
+      );
+      expect(reverseBranch(reversedFeeder), contains('dutyOfMotor[0] = 6000;'));
+      expect(
+        reverseBranch(reversedFeeder),
+        contains('dutyOfMotor[0] = -6000;'),
+      );
     });
 
     test('工程完整配置可以生成', () {

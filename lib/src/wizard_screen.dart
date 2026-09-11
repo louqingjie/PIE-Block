@@ -200,6 +200,7 @@ String _fieldLabel(String path) {
     'controls.arrow_behavior': '方向键用途',
     'controls.feed_mode': '拨弹模式',
     'controls.trigger_key': '扳机键',
+    'controls.reverse_feed_key': '反向拨弹键',
     'controls.trigger_speed': '拨弹速度',
     'controls.trigger_time_ms': '单发时长',
     'controls.friction_mode': '摩擦轮类型',
@@ -1910,18 +1911,40 @@ class _InfantryControlsPage extends ConsumerWidget {
       String label,
       String fieldPath,
       String? value,
-      ValueChanged<String?> changed,
-    ) => _FieldAnchor(
-      path: fieldPath,
-      child: DropdownButtonFormField(
-        initialValue: value,
-        decoration: _fieldDecoration(ref, fieldPath, label),
-        items: digitalRemoteKeys
-            .map((e) => DropdownMenuItem(value: e, child: Text(e)))
-            .toList(),
-        onChanged: changed,
-      ),
-    );
+      ValueChanged<String?> changed, {
+      bool allowNone = false,
+    }) {
+      final decoration = _fieldDecoration(ref, fieldPath, label);
+      return _FieldAnchor(
+        path: fieldPath,
+        child: allowNone
+            ? DropdownButtonFormField<String?>(
+                key: ValueKey(fieldPath),
+                initialValue: value,
+                decoration: decoration,
+                items: [
+                  const DropdownMenuItem<String?>(
+                    value: null,
+                    child: Text('不使用'),
+                  ),
+                  ...digitalRemoteKeys.map(
+                    (e) => DropdownMenuItem<String?>(value: e, child: Text(e)),
+                  ),
+                ],
+                onChanged: changed,
+              )
+            : DropdownButtonFormField<String>(
+                key: ValueKey(fieldPath),
+                initialValue: value,
+                decoration: decoration,
+                items: digitalRemoteKeys
+                    .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                    .toList(),
+                onChanged: changed,
+              ),
+      );
+    }
+
     return _PageFrame(
       title: '控制与摩擦轮',
       stepId: 'controls',
@@ -1996,6 +2019,7 @@ class _InfantryControlsPage extends ConsumerWidget {
               _FormRow(
                 fieldPaths: [
                   'controls.trigger_key',
+                  'controls.reverse_feed_key',
                   'controls.trigger_speed',
                   if (c.feedMode == FeedMode.blockingOpenLoop)
                     'controls.trigger_time_ms',
@@ -2007,6 +2031,16 @@ class _InfantryControlsPage extends ConsumerWidget {
                       'controls.trigger_key',
                       c.triggerKey,
                       (v) => update(c.copyWith(triggerKey: v)),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: keyField(
+                      '反向拨弹键',
+                      'controls.reverse_feed_key',
+                      c.reverseFeedKey,
+                      (v) => update(c.copyWith(reverseFeedKey: v)),
+                      allowNone: true,
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -2034,7 +2068,10 @@ class _InfantryControlsPage extends ConsumerWidget {
                 ],
               ),
               const SizedBox(height: 10),
-              const _InfoBanner('拨弹速度范围 0–10000；阻塞开环模式需要单发时长，闭环模式按住扳机持续拨弹。'),
+              const _InfoBanner(
+                '拨弹速度范围 0–10000；阻塞开环模式需要单发时长，闭环模式按住扳机持续拨弹。'
+                '反向拨弹键留空表示不使用；按住时按相反于"拨弹电机方向"的方向持续转动，松开立即停转。',
+              ),
             ],
           ),
           const SizedBox(height: 18),

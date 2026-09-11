@@ -552,6 +552,14 @@ abstract final class ProjectValidator {
       issue,
     );
     _digital(config.triggerKey, 'controls.trigger_key', '扳机键', issue);
+    if (config.reverseFeedKey != null) {
+      _digital(
+        config.reverseFeedKey,
+        'controls.reverse_feed_key',
+        '反向拨弹键',
+        issue,
+      );
+    }
     if (config.feedMode == FeedMode.blockingOpenLoop) {
       _range(
         config.triggerTimeMs,
@@ -578,9 +586,9 @@ abstract final class ProjectValidator {
       'controls',
       issue,
     );
-    if (config.frictionMode == FrictionMode.brushlessEsc) {
-      final keys = <({String path, String label, String? key})>[
-        (path: 'controls.trigger_key', label: '扳机键', key: config.triggerKey),
+    final frictionEnabled = config.frictionMode == FrictionMode.brushlessEsc;
+    if (frictionEnabled) {
+      for (final entry in [
         (
           path: 'controls.friction_key',
           label: '摩擦轮开关键',
@@ -596,30 +604,9 @@ abstract final class ProjectValidator {
           label: '摩擦轮减速键',
           key: config.frictionDownKey,
         ),
-      ];
-      for (final entry in keys.skip(1)) {
+      ]) {
         _choice(entry.key, entry.path, entry.label, 'controls', issue);
         _digital(entry.key, entry.path, entry.label, issue);
-      }
-      final byKey = <String, List<({String path, String label})>>{};
-      for (final entry in keys) {
-        if (entry.key != null) {
-          byKey.putIfAbsent(entry.key!, () => []).add((
-            path: entry.path,
-            label: entry.label,
-          ));
-        }
-      }
-      for (final entries in byKey.values.where((items) => items.length > 1)) {
-        final labels = entries.map((entry) => entry.label).join('、');
-        for (final entry in entries) {
-          issue(
-            IssueSeverity.error,
-            entry.path,
-            '$labels 不能使用同一按键',
-            'controls',
-          );
-        }
       }
       _range(
         config.frictionMaxDuty,
@@ -649,31 +636,51 @@ abstract final class ProjectValidator {
         issue,
       );
     }
+    final keyEntries = <({String path, String label, String? key})>[
+      (path: 'controls.trigger_key', label: '扳机键', key: config.triggerKey),
+      if (config.reverseFeedKey != null)
+        (
+          path: 'controls.reverse_feed_key',
+          label: '反向拨弹键',
+          key: config.reverseFeedKey,
+        ),
+      if (frictionEnabled) ...[
+        (
+          path: 'controls.friction_key',
+          label: '摩擦轮开关键',
+          key: config.frictionKey,
+        ),
+        (
+          path: 'controls.friction_up_key',
+          label: '摩擦轮增速键',
+          key: config.frictionUpKey,
+        ),
+        (
+          path: 'controls.friction_down_key',
+          label: '摩擦轮减速键',
+          key: config.frictionDownKey,
+        ),
+      ],
+    ];
+    final byKey = <String, List<({String path, String label})>>{};
+    for (final entry in keyEntries) {
+      if (entry.key != null) {
+        byKey.putIfAbsent(entry.key!, () => []).add((
+          path: entry.path,
+          label: entry.label,
+        ));
+      }
+    }
+    for (final entries in byKey.values.where((items) => items.length > 1)) {
+      final labels = entries.map((entry) => entry.label).join('、');
+      for (final entry in entries) {
+        issue(IssueSeverity.error, entry.path, '$labels 不能使用同一按键', 'controls');
+      }
+    }
     if (config.arrowBehavior == ArrowBehavior.move ||
         config.arrowBehavior == ArrowBehavior.sprint) {
       const arrows = {'↑', '↓', '←', '→'};
-      final entries = <({String path, String label, String? key})>[
-        (path: 'controls.trigger_key', label: '扳机键', key: config.triggerKey),
-        if (config.frictionMode == FrictionMode.brushlessEsc)
-          (
-            path: 'controls.friction_key',
-            label: '摩擦轮开关键',
-            key: config.frictionKey,
-          ),
-        if (config.frictionMode == FrictionMode.brushlessEsc)
-          (
-            path: 'controls.friction_up_key',
-            label: '摩擦轮增速键',
-            key: config.frictionUpKey,
-          ),
-        if (config.frictionMode == FrictionMode.brushlessEsc)
-          (
-            path: 'controls.friction_down_key',
-            label: '摩擦轮减速键',
-            key: config.frictionDownKey,
-          ),
-      ];
-      for (final entry in entries) {
+      for (final entry in keyEntries) {
         if (entry.key != null && arrows.contains(entry.key)) {
           issue(
             IssueSeverity.error,

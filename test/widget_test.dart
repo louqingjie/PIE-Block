@@ -1672,7 +1672,7 @@ void main() {
     await tester.tap(find.text('无刷电调').last);
     await tester.pumpAndSettle();
     expect(find.text('P64/P66 已被占用'), findsOneWidget);
-    expect(find.textContaining('拨弹电机'), findsOneWidget);
+    expect(find.textContaining('当前占用者为 拨弹电机'), findsOneWidget);
     await tester.tap(find.text('解除占用并启用'));
     await tester.pumpAndSettle();
 
@@ -1715,6 +1715,62 @@ void main() {
     expect(result.feederPin, 'P62');
     expect(result.chassis.leftFront.pin, 'P60 P61');
     expect(result.chassis.leftRear.pin, 'P60 P61');
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
+  testWidgets('反向拨弹键默认为不使用且可分配给数字键', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(_InfantryControlsController.new),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final reverse = find.byKey(const ValueKey('controls.reverse_feed_key'));
+    await tester.ensureVisible(reverse);
+    expect(
+      find.descendant(of: reverse, matching: find.text('不使用')),
+      findsOneWidget,
+    );
+    expect(_currentInfantry(tester).reverseFeedKey, isNull);
+
+    await tester.tap(reverse);
+    await tester.pumpAndSettle();
+    expect(find.text('D'), findsOneWidget);
+    await tester.tap(find.text('D').last);
+    await tester.pumpAndSettle();
+
+    expect(_currentInfantry(tester).reverseFeedKey, 'D');
+    expect(
+      find.descendant(of: reverse, matching: find.text('D')),
+      findsOneWidget,
+    );
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
+  testWidgets('反向拨弹键与扳机键重名时提示冲突', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(_InfantryControlsController.new),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final reverse = find.byKey(const ValueKey('controls.reverse_feed_key'));
+    await tester.ensureVisible(reverse);
+    await tester.tap(reverse);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('E').last);
+    await tester.pumpAndSettle();
+
+    expect(_currentInfantry(tester).reverseFeedKey, 'E');
+    expect(find.textContaining('不能使用同一按键'), findsWidgets);
     await tester.pump(const Duration(milliseconds: 600));
   });
 

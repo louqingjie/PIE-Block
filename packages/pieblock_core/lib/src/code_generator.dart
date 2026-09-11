@@ -296,16 +296,44 @@ uint8_t frictionEnabled = 0;
     lastFrictionDown = frictionDown;
 '''
         : '';
-    final feedUpdate = c.feedMode == FeedMode.visualClosedLoop
-        ? '''    dutyOfMotor[$feederSlot] = trigger ? ${_dir(c.feederDirection!) == 1 ? '' : '-'}${c.triggerSpeed!} : 0;
+    final feedSign = _dir(c.feederDirection!) == 1 ? '' : '-',
+        reverseFeedSign = _dir(c.feederDirection!) == 1 ? '-' : '';
+    final forwardFeedUpdate = c.feedMode == FeedMode.visualClosedLoop
+        ? '''    dutyOfMotor[$feederSlot] = trigger ? $feedSign${c.triggerSpeed!} : 0;
 '''
         : '''    if (trigger && !lastTrigger) {
-        dutyOfMotor[$feederSlot] = ${_dir(c.feederDirection!) == 1 ? '' : '-'}${c.triggerSpeed!};
+        dutyOfMotor[$feederSlot] = $feedSign${c.triggerSpeed!};
         ExpansionBoradControl(Duty_Change_Order, $dutyArgs);
         Ms_Delay(${c.triggerTimeMs!});
         dutyOfMotor[$feederSlot] = 0;
     }
 ''';
+    // 反向拨弹键优先于扳机：按住期间持续反转，松开立即归零。
+    // 归零不能只写在扳机分支里，否则松开反向键后占空比会一直保持反转值。
+    final reverseFeedUpdate = c.feedMode == FeedMode.visualClosedLoop
+        ? '''    if (reverseFeed) {
+        dutyOfMotor[$feederSlot] = $reverseFeedSign${c.triggerSpeed!};
+    } else {
+        dutyOfMotor[$feederSlot] = trigger ? $feedSign${c.triggerSpeed!} : 0;
+    }
+'''
+        : '''    if (reverseFeed) {
+        dutyOfMotor[$feederSlot] = $reverseFeedSign${c.triggerSpeed!};
+    } else {
+        if (trigger && !lastTrigger) {
+            dutyOfMotor[$feederSlot] = $feedSign${c.triggerSpeed!};
+            ExpansionBoradControl(Duty_Change_Order, $dutyArgs);
+            Ms_Delay(${c.triggerTimeMs!});
+        }
+        dutyOfMotor[$feederSlot] = 0;
+    }
+''';
+    final feedUpdate = c.reverseFeedKey == null
+        ? forwardFeedUpdate
+        : reverseFeedUpdate;
+    final reverseFeedDeclaration = c.reverseFeedKey == null
+        ? ''
+        : '    uint8_t reverseFeed = RcKeyValueRead(${_key(c.reverseFeedKey!)});\n';
     final arrowUpdate = switch (c.arrowBehavior) {
       ArrowBehavior.move =>
         '''        if (RcKeyValueRead(KEY_OFFSET_UP)) valueOfRoker[0][1] = 2047;
@@ -395,7 +423,7 @@ void UpdateWeapons(void)
 {
     static uint8_t lastTrigger = 0;
     uint8_t trigger = RcKeyValueRead(${_key(c.triggerKey!)});
-$frictionUpdate$feedUpdate
+$reverseFeedDeclaration$frictionUpdate$feedUpdate
     lastTrigger = trigger;
 }
 

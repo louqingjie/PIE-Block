@@ -547,6 +547,7 @@ class InfantryConfig extends RobotConfig {
     this.arrowBehavior,
     this.feedMode,
     this.triggerKey,
+    this.reverseFeedKey,
     this.triggerSpeed,
     this.triggerTimeMs,
     this.frictionMode,
@@ -564,6 +565,7 @@ class InfantryConfig extends RobotConfig {
       yawPin,
       pitchPin,
       triggerKey,
+      reverseFeedKey,
       frictionKey,
       frictionUpKey,
       frictionDownKey;
@@ -595,6 +597,7 @@ class InfantryConfig extends RobotConfig {
     Object? arrowBehavior = _unset,
     Object? feedMode = _unset,
     Object? triggerKey = _unset,
+    Object? reverseFeedKey = _unset,
     Object? triggerSpeed = _unset,
     Object? triggerTimeMs = _unset,
     Object? frictionMode = _unset,
@@ -643,6 +646,9 @@ class InfantryConfig extends RobotConfig {
     triggerKey: identical(triggerKey, _unset)
         ? this.triggerKey
         : triggerKey as String?,
+    reverseFeedKey: identical(reverseFeedKey, _unset)
+        ? this.reverseFeedKey
+        : reverseFeedKey as String?,
     triggerSpeed: identical(triggerSpeed, _unset)
         ? this.triggerSpeed
         : triggerSpeed as int?,
@@ -691,6 +697,7 @@ class InfantryConfig extends RobotConfig {
     'arrow_behavior': arrowBehavior?.name,
     'feed_mode': feedMode?.name,
     'trigger_key': triggerKey,
+    'reverse_feed_key': reverseFeedKey,
     'trigger_speed': triggerSpeed,
     'trigger_time_ms': triggerTimeMs,
     'friction_mode': frictionMode?.name,
@@ -731,6 +738,7 @@ class InfantryConfig extends RobotConfig {
       ),
       feedMode: nullableEnumValue(FeedMode.values, j['feed_mode']),
       triggerKey: j['trigger_key']?.toString(),
+      reverseFeedKey: j['reverse_feed_key']?.toString(),
       triggerSpeed: (j['trigger_speed'] as num?)?.toInt(),
       triggerTimeMs: (j['trigger_time_ms'] as num?)?.toInt(),
       frictionMode: nullableEnumValue(FrictionMode.values, j['friction_mode']),
