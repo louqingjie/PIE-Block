@@ -3,177 +3,560 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PIE-Block — 参数化编程，为 STC32G 快速生成固件</title>
-  <meta name="description" content="PIE-Block 是一款开源参数化编程工具：填写参数即可生成 SDCC C 代码，内置完整工具链，USB 一键烧录，开箱即用。" />
+  <meta name="theme-color" content="#0a0a0a" />
+  <title>PIE-Block — 参数填好，固件到手</title>
+  <meta name="description" content="PIE-Block 是面向 W.PIE RoboMaster 校内赛的分步式机器人配置与固件生成工具：按步骤描述硬件，生成 STC32G C 代码，内置离线 SDCC C251 工具链，免驱 USB-HID 一键烧录。" />
   <link rel="icon" type="image/png" href="assets/icon.png" />
   <link rel="stylesheet" href="assets/style.css" />
+  <script>document.documentElement.classList.add("js");</script>
 </head>
 <body>
 
   <!-- 导航 -->
   <header class="nav">
-    <div class="container nav-inner">
-      <a class="brand" href="#">
-        <img src="assets/icon.png" alt="PIE-Block 图标" class="brand-icon" />
+    <div class="container nav__inner">
+      <a class="brand" href="#top">
+        <img class="brand__icon" src="assets/icon.png" alt="" />
         <span>PIE-Block</span>
       </a>
-      <nav class="nav-links">
-        <a href="#features">特性</a>
-        <a href="#how">上手</a>
-        <a href="#download">下载</a>
+      <nav class="nav__links" aria-label="主导航">
+        <a href="#features">能力</a>
+        <a href="#flow">工作流</a>
+        <a href="#kinds">项目类型</a>
+        <a href="#start">上手</a>
         <a href="https://github.com/louqingjie/PIE-Block" target="_blank" rel="noopener">GitHub</a>
         <a href="https://gitee.com/louqingjie/PIE-Block" target="_blank" rel="noopener">Gitee</a>
       </nav>
-      <a class="btn btn-sm btn-primary nav-cta" href="#download">免费下载</a>
+      <a class="btn btn--primary btn--sm" href="#start">下载安装包</a>
     </div>
   </header>
 
-  <!-- 英雄区 -->
-  <section class="hero">
-    <div class="ambient" aria-hidden="true">
-      <span class="blob blob-cyan"></span>
-      <span class="blob blob-coral"></span>
-    </div>
-    <div class="container hero-inner">
-      <div class="hero-copy">
-        <span class="badge">开源 · 免费 · 参数化编程</span>
-        <h1>参数填好，<br /><span class="grad">固件到手</span></h1>
-        <p class="lead">
-          PIE-Block 把单片机开发参数化：引脚、频率、逻辑流程全部变成可调参数，
-          确认即生成 SDCC C 代码——内置完整工具链，USB 一键烧录，开箱即用。
-        </p>
-        <div class="hero-actions">
-          <a class="btn btn-primary btn-lg" href="#download">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            下载 Windows 版
-          </a>
-          <a class="btn btn-ghost btn-lg" href="https://github.com/louqingjie/PIE-Block" target="_blank" rel="noopener">查看源码</a>
-        </div>
-        <p class="hero-meta">v1.0.0 · 约 20 MB · 支持 Windows 10/11 x64</p>
-      </div>
+  <main id="top">
 
-      <!-- 纯 CSS 参数面板示意图 -->
-      <div class="hero-visual" aria-hidden="true">
-        <div class="editor">
-          <div class="editor-titlebar">
-            <span class="dot dot-cyan"></span><span class="dot dot-coral"></span><span class="dot dot-grey"></span>
-            <span class="editor-title">PIE-Block — infantry.pie</span>
+    <!-- 英雄区 -->
+    <section class="hero">
+      <canvas class="hero__canvas" id="hero-canvas" aria-hidden="true"></canvas>
+      <div class="hero__glow" aria-hidden="true"></div>
+
+      <div class="container hero__inner">
+        <div class="hero__copy">
+          <div class="hero__head">
+            <p class="hero__eyebrow enter" style="--enter-delay: 0s">PIE-Block 开发者预览版</p>
+            <h1 class="t-hero enter" style="--enter-delay: 0.08s">参数填好，固件到手</h1>
           </div>
-          <div class="editor-body">
-            <div class="editor-params">
-              <div class="pgroup-title">参数配置</div>
-              <div class="prow"><span class="plabel">LED 引脚</span><span class="pvalue">P1.5</span></div>
-              <div class="prow"><span class="plabel">闪烁次数</span><span class="pvalue">10</span></div>
-              <div class="prow"><span class="plabel">间隔 / ms</span><span class="pvalue">500</span></div>
-              <div class="prow"><span class="plabel">电平极性</span><span class="pvalue">高有效</span></div>
-              <div class="prow"><span class="plabel">PWM 频率</span><span class="pvalue">50 Hz</span></div>
-              <button class="pgenerate">生成代码</button>
+
+          <div class="hero__desc enter" style="--enter-delay: 0.16s">
+            <p class="t-body-loose">PIE-Block 面向 W.PIE RoboMaster 校内赛，是运行在 Windows 上的分步式机器人配置与固件生成工具。</p>
+            <p class="t-body-loose">把引脚、通道、速度、动作拆成可以照做的步骤，确认后即生成可编译的 STC32G C 代码——内置离线工具链，免驱 USB-HID 一键烧录。</p>
+          </div>
+
+          <div class="hero__actions enter" style="--enter-delay: 0.24s">
+            <a class="btn btn--primary" href="https://gitee.com/louqingjie/PIE-Block/releases" target="_blank" rel="noopener">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+              下载 Windows 版
+            </a>
+            <a class="btn btn--secondary" href="https://github.com/louqingjie/PIE-Block" target="_blank" rel="noopener">查看源码</a>
+            <a class="btn btn--secondary" href="https://github.com/louqingjie/PIE-Block/tree/main/docs" target="_blank" rel="noopener">项目文档</a>
+          </div>
+
+          <p class="hero__meta enter" style="--enter-delay: 0.32s">首个安装包发布于 Gitee · Windows 10/11 x64 · 内置 SDCC C251 工具链</p>
+        </div>
+
+        <!-- 生成结果面板 -->
+        <div class="terminal enter" style="--enter-delay: 0.4s">
+          <div class="terminal__tabs" role="tablist" aria-label="生成结果">
+            <button class="terminal__tab" id="tab-code" role="tab" aria-selected="true" aria-controls="pane-code">生成代码</button>
+            <button class="terminal__tab" id="tab-flash" role="tab" aria-selected="false" aria-controls="pane-flash">编译与烧录</button>
+          </div>
+
+          <div class="terminal__frame">
+            <div class="terminal__bar">
+              <span class="terminal__dots" aria-hidden="true"><i></i><i></i><i></i></span>
+              <button class="terminal__copy" type="button" data-copy-pane data-copy-label="已复制">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                <span>复制</span>
+              </button>
             </div>
-            <div class="editor-code">
-              <div class="cline" style="--w:52%">#include "stc32g.h"</div>
-              <div class="cline" style="--w:38%">void main()</div>
-              <div class="cline" style="--w:20%">{</div>
-              <div class="cline" style="--w:64%">&nbsp;&nbsp;P15 = 0;</div>
-              <div class="cline" style="--w:72%">&nbsp;&nbsp;while (1) {</div>
-              <div class="cline accent" style="--w:80%">&nbsp;&nbsp;&nbsp;&nbsp;P15 = !P15;</div>
-              <div class="cline" style="--w:76%">&nbsp;&nbsp;&nbsp;&nbsp;delay_ms(500);</div>
-              <div class="cline" style="--w:30%">&nbsp;&nbsp;}</div>
-              <div class="cline" style="--w:14%">}</div>
+
+            <div class="terminal__body">
+<pre class="terminal__pane" id="pane-code" role="tabpanel" aria-labelledby="tab-code" data-active="true"><span class="terminal__dim">// 步兵机器人控制代码（由 PIE-Block 自动生成）</span>
+#include "main.h"
+#include &lt;stdlib.h&gt;
+
+uint8_t  Channal = 36;
+uint16_t maxSpeed = 4000;
+uint16_t ultraSpeed = 8000;
+uint16_t deadBandOfLeft = 100;
+
+void main(void)
+{
+    All_Init();
+    while (1) {
+        ReadControllerInputs();
+        CalculateChassis();
+        UpdateGimbal();
+        UpdateWeapons();
+        Ms_Delay(10);
+    }
+}</pre>
+
+<pre class="terminal__pane" id="pane-flash" role="tabpanel" aria-labelledby="tab-flash"><span class="terminal__prompt">$</span> <span class="terminal__dim">编译并烧录 · 通道 36 · 4000 / 8000 duty</span>
+
+正在准备 SDCC 构建环境…
+[1/7] 编译 main.c
+正在链接 ROBOMASTER_INFANTRY.hex…
+正在校验 HEX 地址和校验和…
+<span class="terminal__ok">HEX 布局有效，共 13241 字节</span>
+
+正在连接主控板引导程序…
+正在擦除主控板程序区…
+正在写入固件 42/96
+写入完成，正在复位主控板…
+<span class="terminal__ok">烧录完成，主控板已运行新程序</span></pre>
             </div>
           </div>
-          <div class="editor-statusbar"><span class="status-ok">✓ SDCC 编译成功</span>· 0 警告 · 就绪</div>
         </div>
       </div>
-    </div>
-  </section>
+    </section>
 
-  <!-- 特性 -->
-  <section class="section" id="features">
-    <div class="container">
-      <h2 class="section-title">为快速开发而生</h2>
-      <p class="section-sub">从参数配置到板卡固件，一条流水线全部搞定</p>
-      <div class="grid grid-3">
-        <div class="card">
-          <div class="card-icon">🎛️</div>
-          <h3>参数化编程</h3>
-          <p>引脚分配、时序、外设配置全部参数化，不用死记寄存器，改一个参数就能适配不同硬件方案。</p>
+    <!-- 能力 -->
+    <section class="section section--band" id="features">
+      <div class="container">
+        <div class="statement reveal">
+          <span class="badge"><span class="badge__inner">设计目标</span></span>
+          <h2 class="t-heading1 statement__title"><span class="t-brandword">PIE-Block</span> 让第一次接触单片机的同学也能配出机器人</h2>
+          <div class="statement__lead">
+            <p class="t-body-loose">机器人代码的门槛往往不在控制逻辑，而在寄存器、引脚复用和那一串点不亮的初始化。</p>
+            <p class="t-body-loose">PIE-Block 把这些拆成可以照做的步骤：按硬件方案填参数，生成前先做静态校验，确认后交给内置工具链编译，再通过免驱 USB-HID 写进主控板。</p>
+          </div>
         </div>
-        <div class="card">
-          <div class="card-icon">⚡</div>
-          <h3>一键生成 SDCC C 代码</h3>
-          <p>参数确认即输出规范、可读的 C 代码，既能直接烧录，也能作为学习 C 语言开发的起点。</p>
-        </div>
-        <div class="card">
-          <div class="card-icon">🧰</div>
-          <h3>内置完整工具链</h3>
-          <p>SDCC 编译器、固件模板全部随安装包内置，无需配置任何环境变量，安装即用。</p>
-        </div>
-        <div class="card">
-          <div class="card-icon">🔌</div>
-          <h3>USB 一键烧录</h3>
-          <p>基于 USB-HID 的直连烧录，插上开发板点一下即可完成编译、下载、复位全流程。</p>
-        </div>
-        <div class="card">
-          <div class="card-icon">🎵</div>
-          <h3>音乐编辑器</h3>
-          <p>导入 MIDI 自动生成蜂鸣器曲谱，把喜欢的旋律写进单片机，只改几个参数的事。</p>
-        </div>
-        <div class="card">
-          <div class="card-icon">🧪</div>
-          <h3>仿真与调试</h3>
-          <p>内置固件仿真与串口调试视图，不接板子也能验证逻辑，接上板子看得见每一步。</p>
-        </div>
-      </div>
-    </div>
-  </section>
 
-  <!-- 三步上手 -->
-  <section class="section section-alt" id="how">
-    <div class="container">
-      <h2 class="section-title">三步上手</h2>
-      <p class="section-sub">不需要配置环境，不需要背寄存器</p>
-      <div class="grid grid-3 steps">
-        <div class="step"><span class="step-num">1</span><h3>安装并打开</h3><p>运行安装包，一路下一步。工具链已内置，装完就是完整开发环境。</p></div>
-        <div class="step"><span class="step-num">2</span><h3>填写参数</h3><p>按硬件方案配置引脚与时序参数，右侧实时预览生成的 C 代码。</p></div>
-        <div class="step"><span class="step-num">3</span><h3>一键烧录</h3><p>USB 连接开发板，点击烧录，编译下载一气呵成。</p></div>
-      </div>
-    </div>
-  </section>
+        <div class="grid grid--3 statement__grid">
+          <div class="card reveal">
+            <div class="card__icon" aria-hidden="true">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="6" r="2"/><path d="M11 6h9"/><circle cx="5" cy="12" r="2"/><path d="M11 12h9"/><circle cx="5" cy="18" r="2"/><path d="M11 18h9"/></svg>
+            </div>
+            <h3 class="t-title card__title">分步向导</h3>
+            <span class="eyebrow card__eyebrow">Step by step</span>
+            <p class="card__body">按机器人结构分页配置，每个字段都标注单位与建议区间。填完就是一份能编译的工程，不需要先学会 C 语言。</p>
+          </div>
 
-  <!-- 下载 -->
-  <section class="section" id="download">
-    <div class="container">
-      <h2 class="section-title">立即下载</h2>
-      <p class="section-sub">免费、开源，欢迎在 Issue 里提建议</p>
-      <div class="download-card">
-        <img src="assets/icon.png" alt="PIE-Block" class="dl-icon" />
-        <div class="dl-info">
-          <h3>PIE-Block for Windows</h3>
-          <p>v1.0.0 · 安装包约 20 MB · Windows 10/11 x64 · 内置 SDCC 工具链</p>
-        </div>
-        <div class="dl-actions">
-          <a class="btn btn-primary btn-lg" href="https://gitee.com/louqingjie/PIE-Block/releases/latest" target="_blank" rel="noopener">从 Gitee 下载</a>
-          <a class="btn btn-ghost" href="https://github.com/louqingjie/PIE-Block/releases" target="_blank" rel="noopener">GitHub Release</a>
+          <div class="card reveal">
+            <div class="card__icon" aria-hidden="true">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4.2-2.9 7.7-7 9-4.1-1.3-7-4.8-7-9V6z"/><path d="M9.2 12l2 2 3.8-3.8"/></svg>
+            </div>
+            <h3 class="t-title card__title">静态校验</h3>
+            <span class="eyebrow card__eyebrow">Static validation</span>
+            <p class="card__body">引脚占用、按键冲突、取值范围、跨页一致性在生成前一次性检查完，每条问题都能点回它所在的字段。</p>
+          </div>
+
+          <div class="card reveal">
+            <div class="card__icon" aria-hidden="true">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8l-9-5-9 5 9 5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>
+            </div>
+            <h3 class="t-title card__title">内置离线工具链</h3>
+            <span class="eyebrow card__eyebrow">Offline toolchain</span>
+            <p class="card__body">SDCC C251 与固件模板随安装包发布，首次使用时释放到本地目录并校验版本与哈希，全程不联网。</p>
+          </div>
         </div>
       </div>
-    </div>
-  </section>
+    </section>
+
+    <!-- 工作流 -->
+    <section class="section" id="flow">
+      <div class="container">
+        <div class="section__head section__head--start">
+          <span class="badge"><span class="badge__inner">工作流</span></span>
+          <h2 class="t-heading1">从填参数到固件上板</h2>
+          <p class="t-body-loose section__lead">四段流水线，每一段都能单独停下检查。</p>
+        </div>
+
+        <div class="detail reveal">
+          <div>
+            <span class="detail__index">01</span>
+            <h3 class="t-heading2 detail__title">按步骤描述硬件</h3>
+            <div class="detail__body">
+              <p>向导按机器人结构分页：遥控器与底盘、云台与拨弹、控制与摩擦轮。引脚分配、通道号、速度、按键用途都是带范围提示的字段，改几个参数就能适配另一套硬件方案。</p>
+              <ul class="detail__points">
+                <li>步兵 6 步、工程 7 步、调试 4 步、音乐 4 步</li>
+                <li>字段带单位与建议区间，越界会即时提示</li>
+                <li>工程文件自动保存，跨页共享的配置在摘要页统一复核</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="ui" aria-hidden="true">
+            <div class="ui__bar">
+              <span class="terminal__dots"><i></i><i></i><i></i></span>
+              <span class="ui__bar-title">步兵项目 — 遥控器与底盘</span>
+            </div>
+            <div class="ui__split">
+              <div class="ui__rail">
+                <div class="steptile steptile--done"><i>1</i><span>遥控器与底盘</span></div>
+                <div class="steptile"><i>2</i><span>云台与拨弹</span></div>
+                <div class="steptile"><i>3</i><span>控制与摩擦轮</span></div>
+                <div class="steptile"><i>4</i><span>检查与摘要</span></div>
+                <div class="steptile"><i>5</i><span>生成代码</span></div>
+                <div class="steptile"><i>6</i><span>编译与烧录</span></div>
+              </div>
+              <div class="ui__main">
+                <div class="ui__section">遥控器</div>
+                <div class="field"><span class="field__label">通道号</span><span class="field__value field__value--brand">36</span></div>
+                <div class="field"><span class="field__label">摇杆死区</span><span class="field__value">100</span></div>
+                <div class="field"><span class="field__label">反转左右转向</span><span class="field__value">关</span></div>
+                <div class="ui__section">四轮底盘</div>
+                <div class="field"><span class="field__label">左前轮 IO</span><span class="field__value">P74 P24</span></div>
+                <div class="field"><span class="field__label">右前轮 IO</span><span class="field__value">P76 P26</span></div>
+                <div class="field"><span class="field__label">普通速度</span><span class="field__value">4000 duty</span></div>
+                <div class="field"><span class="field__label">冲刺速度</span><span class="field__value">8000 duty</span></div>
+              </div>
+            </div>
+            <div class="ui__footer">
+              <span>上一步</span>
+              <span>1 / 6</span>
+              <span>下一步</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="detail reveal">
+          <div>
+            <span class="detail__index">02</span>
+            <h3 class="t-heading2 detail__title">生成前先把问题拦下来</h3>
+            <div class="detail__body">
+              <p>摘要页会把整份配置扫一遍：引脚是否被两个外设抢用、按键是否重复绑定、速度是否落在可用区间、摩擦轮占空比是否是 500–800 的整百值。</p>
+              <ul class="detail__points">
+                <li>错误清零后才允许生成代码</li>
+                <li>警告给出具体的调参建议，而不是只报不合规</li>
+                <li>每条问题点一下就跳回它所在的字段</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="ui" aria-hidden="true">
+            <div class="ui__bar">
+              <span class="terminal__dots"><i></i><i></i><i></i></span>
+              <span class="ui__bar-title">检查与配置摘要</span>
+            </div>
+            <div class="ui__body">
+              <div class="chips issues__legend">
+                <span class="chip chip--error">错误 2</span>
+                <span class="chip chip--warn">警告 3</span>
+              </div>
+              <div class="issues">
+                <div class="issue">
+                  <span class="issue__tag issue__tag--error">错误</span>
+                  <span class="issue__body">
+                    <span class="issue__msg">P60 是主控板舵机口，不能驱动电机</span>
+                    <span class="issue__path">feeder.motorPin</span>
+                  </span>
+                  <span class="issue__go">›</span>
+                </div>
+                <div class="issue">
+                  <span class="issue__tag issue__tag--error">错误</span>
+                  <span class="issue__body">
+                    <span class="issue__msg">摩擦轮最大占空比必须是 500–800 内的整百值</span>
+                    <span class="issue__path">friction.maxDuty</span>
+                  </span>
+                  <span class="issue__go">›</span>
+                </div>
+                <div class="issue">
+                  <span class="issue__tag issue__tag--warn">警告</span>
+                  <span class="issue__body">
+                    <span class="issue__msg">摇杆死区大于 500，可能影响操控灵敏度</span>
+                    <span class="issue__path">remote.deadzone</span>
+                  </span>
+                  <span class="issue__go">›</span>
+                </div>
+                <div class="issue">
+                  <span class="issue__tag issue__tag--warn">警告</span>
+                  <span class="issue__body">
+                    <span class="issue__msg">拨弹时间过长，单发期间底盘和云台会失去响应</span>
+                    <span class="issue__path">feeder.singleShotMs</span>
+                  </span>
+                  <span class="issue__go">›</span>
+                </div>
+              </div>
+            </div>
+            <div class="ui__footer">
+              <span>普通速度 4000 · 冲刺速度 8000</span>
+              <span>返回检查</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="detail reveal">
+          <div>
+            <span class="detail__index">03</span>
+            <h3 class="t-heading2 detail__title">离线编译，免驱烧录</h3>
+            <div class="detail__body">
+              <p>内置 SDCC C251 工具链在首次使用时释放到本地目录并校验版本与哈希，编译全程不联网。产物是一条经过地址与校验和检查的 HEX，再用免驱 USB-HID 写进主控板——插上线点一下，编译、下载、复位一次完成。</p>
+              <ul class="detail__points">
+                <li>HEX 地址与校验和校验通过后才允许烧录</li>
+                <li>按内容哈希复用构建产物，配置没改就不重编</li>
+                <li>可选调用本地 Keil C251 做一次全量重建校验</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="ui" aria-hidden="true">
+            <div class="ui__bar">
+              <span class="terminal__dots"><i></i><i></i><i></i></span>
+              <span class="ui__bar-title">编译与烧录</span>
+            </div>
+            <div class="ui__body">
+              <div class="ui__section">编译器</div>
+              <div class="field"><span class="field__label">当前编译器</span><span class="field__value field__value--brand">内置 SDCC C251</span></div>
+              <div class="ui__section">构建产物</div>
+              <div class="field"><span class="field__label">ROBOMASTER_INFANTRY.hex</span><span class="field__value">13241 字节 · 0 条警告</span></div>
+              <div class="ui__section">主控板 USB-HID</div>
+              <div class="field"><span class="field__label">已检测到 1 块 ISP 主控板</span><span class="field__value">VID 34BF / PID 1001</span></div>
+              <div class="progress"><div class="progress__fill" style="width: 44%"></div></div>
+              <div class="log">
+                <span>正在准备 SDCC 构建环境…</span>
+                <span class="log__line--run">[1/7] 编译 main.c</span>
+                <span>正在链接 ROBOMASTER_INFANTRY.hex…</span>
+                <span>正在校验 HEX 地址和校验和…</span>
+                <span class="log__line--ok">HEX 布局有效，共 13241 字节</span>
+                <span class="log__line--run">正在写入固件 42/96</span>
+              </div>
+            </div>
+            <div class="ui__footer">
+              <span>正在写入固件 42/96</span>
+              <span>取消任务</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="detail reveal">
+          <div>
+            <span class="detail__index">04</span>
+            <h3 class="t-heading2 detail__title">音乐也能烧进去</h3>
+            <div class="detail__body">
+              <p>音乐项目提供原生钢琴卷帘：选择、画笔、删除、平移四种工具，吸附精度从 1/4 一直到三连音与 1/32。导入 MIDI 会自动挑出旋律轨道并提取主旋律，写完在应用内试听，再生成 P33 无源蜂鸣器的单音固件。</p>
+              <ul class="detail__points">
+                <li>MIDI 导入导出，重叠音自动提取为单音主旋律</li>
+                <li>速度与拍号事件按 Tick 编排，支持循环预览</li>
+                <li>参考音符只读，选中后可提升为主旋律</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="ui roll" aria-hidden="true">
+            <div class="ui__bar">
+              <span class="terminal__dots"><i></i><i></i><i></i></span>
+              <span class="ui__bar-title">音乐项目 — 钢琴卷帘</span>
+            </div>
+            <div class="roll__toolbar">
+              <div class="roll__tools">
+                <span class="roll__tool">选择</span>
+                <span class="roll__tool roll__tool--active">画笔</span>
+                <span class="roll__tool">删除</span>
+                <span class="roll__tool">平移</span>
+              </div>
+              <div class="roll__meta">
+                <span class="chip">吸附 1/16</span>
+                <span class="chip">撤销</span>
+                <span class="chip">重做</span>
+              </div>
+            </div>
+            <div class="roll__grid">
+              <div class="roll__corner">BPM /<br />拍号</div>
+              <span class="roll__lane roll__lane--tempo">120 BPM</span>
+              <span class="roll__lane roll__lane--meter">4/4</span>
+              <div class="keys">
+                <span style="top: 4px">C5</span>
+                <span style="top: 50px">C4</span>
+                <span style="top: 96px">C3</span>
+              </div>
+              <div class="roll__canvas">
+                <div class="roll__beat"></div>
+                <div class="roll__bars"></div>
+                <i class="roll__note roll__note--ref" style="top: 12px; left: 4%; width: 6%"></i>
+                <i class="roll__note roll__note--ref" style="top: 35px; left: 22%; width: 6%"></i>
+                <i class="roll__note roll__note--ref" style="top: 58px; left: 46%; width: 6%"></i>
+                <i class="roll__note roll__note--ref" style="top: 35px; left: 70%; width: 6%"></i>
+                <i class="roll__note" style="top: 24px; left: 10%; width: 8%"></i>
+                <i class="roll__note" style="top: 24px; left: 20%; width: 6%"></i>
+                <i class="roll__note roll__note--sel" style="top: 24px; left: 28%; width: 6%"></i>
+                <i class="roll__note" style="top: 35px; left: 36%; width: 10%"></i>
+                <i class="roll__note" style="top: 46px; left: 48%; width: 8%"></i>
+                <i class="roll__note" style="top: 46px; left: 58%; width: 6%"></i>
+                <i class="roll__note" style="top: 35px; left: 66%; width: 10%"></i>
+                <i class="roll__note" style="top: 24px; left: 78%; width: 8%"></i>
+                <i class="roll__note" style="top: 12px; left: 88%; width: 9%"></i>
+                <div class="roll__playhead" style="left: 43%"></div>
+              </div>
+            </div>
+            <div class="roll__status">
+              <span>12 个主旋律音符 · 4 个参考音符</span>
+              <span>120 PPQ · 1 个速度事件 · 1 个拍号事件</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 项目类型 -->
+    <section class="section" id="kinds">
+      <div class="container">
+        <div class="section__head section__head--start">
+          <span class="badge"><span class="badge__inner">项目类型</span></span>
+          <h2 class="t-heading1">四种项目，对应四类任务</h2>
+          <p class="t-body-loose section__lead">新建项目时选一种，向导会按它的步骤链往下走。</p>
+        </div>
+
+        <div class="kinds reveal">
+          <div class="kind">
+            <div class="kind__head">
+              <h3 class="kind__name">步兵</h3>
+              <span class="eyebrow">6 步</span>
+            </div>
+            <div class="kind__steps">
+              <span class="chip">遥控器与底盘</span>
+              <span class="chip">云台与拨弹</span>
+              <span class="chip">控制与摩擦轮</span>
+              <span class="chip">检查与摘要</span>
+              <span class="chip">生成代码</span>
+              <span class="chip">编译与烧录</span>
+            </div>
+            <p class="kind__note">四轮底盘、云台轴、拨弹电机与摩擦轮一页配完，PWM 与引脚角色由配置自动推导。</p>
+          </div>
+
+          <div class="kind">
+            <div class="kind__head">
+              <h3 class="kind__name">工程</h3>
+              <span class="eyebrow">7 步</span>
+            </div>
+            <div class="kind__steps">
+              <span class="chip">遥控器与底盘</span>
+              <span class="chip">PWM 与引脚</span>
+              <span class="chip">模式切换</span>
+              <span class="chip">动作映射</span>
+              <span class="chip">检查与摘要</span>
+              <span class="chip">生成代码</span>
+              <span class="chip">编译与烧录</span>
+            </div>
+            <p class="kind__note">支持 1–4 组独立控制模式，可为每组模式单独编排动作映射与切换按键。</p>
+          </div>
+
+          <div class="kind">
+            <div class="kind__head">
+              <h3 class="kind__name">调试</h3>
+              <span class="eyebrow">4 步</span>
+            </div>
+            <div class="kind__steps">
+              <span class="chip">测试序列</span>
+              <span class="chip">检查与摘要</span>
+              <span class="chip">生成代码</span>
+              <span class="chip">编译与烧录</span>
+            </div>
+            <p class="kind__note">固定的十路启停测试序列，按顺序验证电机与舵机接线，带默认 3 秒安全时长。</p>
+          </div>
+
+          <div class="kind">
+            <div class="kind__head">
+              <h3 class="kind__name">音乐</h3>
+              <span class="eyebrow">4 步</span>
+            </div>
+            <div class="kind__steps">
+              <span class="chip">钢琴卷帘</span>
+              <span class="chip">检查与摘要</span>
+              <span class="chip">生成代码</span>
+              <span class="chip">编译与烧录</span>
+            </div>
+            <p class="kind__note">原生钢琴卷帘编排旋律，导入导出 MIDI，生成 P33 无源蜂鸣器的单音固件。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 上手 -->
+    <section class="section" id="start">
+      <div class="container">
+        <div class="section__head section__head--start">
+          <span class="badge"><span class="badge__inner">开始使用</span></span>
+          <h2 class="t-heading1">下载安装包或从源码构建</h2>
+        </div>
+
+        <div class="start reveal">
+          <div class="start__card">
+            <div class="start__head">
+              <h3 class="t-heading2">下载安装包</h3>
+              <p class="t-caption t-description">Windows 10/11 x64。安装包已内置 SDCC C251 工具链与固件模板，装完就是完整开发环境，不需要另外配环境变量。</p>
+            </div>
+            <div class="start__cmd">
+              <code>PIEBlock-1.0.0-windows-setup.exe</code>
+            </div>
+            <div class="start__foot">
+              <a class="btn btn--primary btn--sm" href="https://gitee.com/louqingjie/PIE-Block/releases" target="_blank" rel="noopener">从 Gitee 下载</a>
+              <a class="btn btn--secondary btn--sm" href="https://github.com/louqingjie/PIE-Block" target="_blank" rel="noopener">查看源码</a>
+            </div>
+          </div>
+
+          <div class="start__card">
+            <div class="start__head">
+              <h3 class="t-heading2">从源码构建</h3>
+              <p class="t-caption t-description">获取完整源码，配置好 Flutter 环境后构建 Windows 桌面版；仓库内同时包含 SDCC C251 工具链的构建与暂存脚本。</p>
+            </div>
+            <div class="start__cmd">
+              <code><span class="terminal__prompt">$</span>git clone https://github.com/louqingjie/PIE-Block.git</code>
+              <button class="start__copy" type="button" data-copy="git clone https://github.com/louqingjie/PIE-Block.git" data-copy-label="已复制">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                复制
+              </button>
+            </div>
+            <div class="start__cmd">
+              <code><span class="terminal__prompt">$</span>flutter pub get &amp;&amp; flutter build windows</code>
+              <button class="start__copy" type="button" data-copy="flutter pub get &amp;&amp; flutter build windows" data-copy-label="已复制">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                复制
+              </button>
+            </div>
+            <div class="start__foot">
+              <span>需要 Flutter stable 与 Windows 桌面构建工具链</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 收尾 -->
+    <section class="section--closing">
+      <canvas class="closing__canvas" id="closing-canvas" aria-hidden="true"></canvas>
+      <div class="container closing__inner">
+        <h2 class="t-heading1">加入 PIE-Block 开源生态</h2>
+        <p class="t-body-loose closing__lead">PIE-Block 仍处于开发者预览阶段，工程格式与功能会随校内赛的实际使用持续迭代。欢迎在 Issue 里提需求、报问题，或者直接提交 Pull Request。</p>
+        <div class="closing__actions">
+          <a class="btn btn--primary" href="https://github.com/louqingjie/PIE-Block" target="_blank" rel="noopener">查看 GitHub</a>
+          <a class="btn btn--secondary" href="https://github.com/louqingjie/PIE-Block/tree/main/docs" target="_blank" rel="noopener">项目文档</a>
+          <a class="btn btn--secondary" href="https://gitee.com/louqingjie/PIE-Block" target="_blank" rel="noopener">Gitee 镜像</a>
+        </div>
+      </div>
+    </section>
+
+  </main>
 
   <!-- 页脚 -->
   <footer class="footer">
-    <div class="container footer-inner">
-      <div class="footer-brand">
-        <img src="assets/icon.png" alt="" class="brand-icon" />
-        <span>PIE-Block</span>
+    <div class="container">
+      <div class="divider"></div>
+      <div class="footer__inner">
+        <div class="footer__brand">
+          <img src="assets/icon.png" alt="" />
+          <span>PIE-Block</span>
+        </div>
+        <p class="t-caption footer__note">开源 · © 2026 PIE-Block · pieblock.asia</p>
+        <nav class="footer__links" aria-label="页脚导航">
+          <a href="#start">下载</a>
+          <a href="https://github.com/louqingjie/PIE-Block/tree/main/docs" target="_blank" rel="noopener">文档</a>
+          <a href="https://github.com/louqingjie/PIE-Block" target="_blank" rel="noopener">GitHub</a>
+          <a href="https://gitee.com/louqingjie/PIE-Block" target="_blank" rel="noopener">Gitee</a>
+        </nav>
       </div>
-      <nav class="footer-links">
-        <a href="https://github.com/louqingjie/PIE-Block" target="_blank" rel="noopener">GitHub</a>
-        <a href="https://gitee.com/louqingjie/PIE-Block" target="_blank" rel="noopener">Gitee</a>
-        <a href="#download">下载</a>
-      </nav>
-      <p class="footer-copy">© 2026 PIE-Block · pieblock.asia</p>
     </div>
   </footer>
 
+  <script src="assets/site.js" defer></script>
 </body>
 </html>
