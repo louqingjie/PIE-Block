@@ -53,6 +53,25 @@ flutter build windows --release
 编译与主控板接线、开关位置和故障排查见 [Flutter 编译与烧录指南](docs/Flutter编译与烧录指南.md)。
 Android 离线 SDCC 的架构、安全门和验收状态见 [Android SDCC 多进程移植](docs/android-sdcc-port.md)。
 
+## 持续集成
+
+`.github/workflows/windows.yml` 在 push / PR 到 `main` 以及手动触发时校验 Windows 构建，分两段执行：
+
+1. **静态分析与单元测试**（ubuntu，约 2 分钟）：`pieblock_core`、`pieblock_hid`、`pieblock_toolchain` 三个包分别 `dart analyze` + `dart test`，再跑根目录的 `flutter analyze` + `flutter test`。
+2. **Windows 构建与打包**（windows-latest，首次 20–35 分钟，工具链缓存命中后 5–8 分钟）：用 MSYS2 UCRT64 跑 `tools/prepare_sdcc_toolchain.ps1` 生成 Windows 版内置 SDCC 工具链（按 `sdcc-c251` 子模块提交缓存），校验 `bundle_manifest.json` 的平台字段，跑 `PIEBLOCK_RUN_SDCC_GOLDEN=1` 的 SDCC 金样比对，再 `flutter build windows --release` 并用 `tools/package_flutter_windows.ps1 -SkipBuild` 出安装包。
+
+产物保留 14 天，名称为 `PIEBlock-<版本>-windows-setup.exe`（Inno 安装包）与 `PIEBlock-<版本>-windows-x64-release.zip`（免安装 `Release` 目录）。金样校验可用 `workflow_dispatch` 的 `skip_golden` 输入临时跳过。
+
+本地复现 CI 的检查：
+
+```powershell
+git submodule update --init sdcc-c251
+.\tools\prepare_sdcc_toolchain.ps1
+$env:PIEBLOCK_RUN_SDCC_GOLDEN = '1'
+Push-Location packages\pieblock_toolchain; dart test; Pop-Location
+.\tools\package_flutter_windows.ps1
+```
+
 ## 项目文件
 
 新版继续使用 `.pieproj` 扩展名，但只接受 `format_version: 15`。格式 14 和旧 Godot 格式不会自动转换，需在新版中重新创建配置。新项目不预填任何必填配置；步兵云台轴默认各有一个未填执行器，可增删为多个或留空；调试工程预置十路停用引脚和 3 秒安全时长。音乐工程默认 480 PPQ、120 BPM 和 4/4 拍，可重新导入原始 MIDI。详细结构见 [项目文件格式](docs/Flutter项目文件格式.md)。
