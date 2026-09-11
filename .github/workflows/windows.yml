@@ -1,0 +1,239 @@
+name: Windows 构建
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      skip_golden:
+        description: 跳过 SDCC 金样校验（仅供排查环境问题时使用）
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # 固定版本来源：.metadata 的 revision 6655482ec06e547f90abf8ae7590466f4415978d
+  # 与 tools/android_sdcc_baseline.json 记录一致，避免 stable 漂移改变金样哈希。
+  FLUTTER_VERSION: 3.47.1
+
+jobs:
+  quality:
+    name: 静态分析与单元测试
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: 拉取依赖
+        run: flutter pub get
+
+      - name: Dart 包静态分析与测试
+        run: |
+          set -euo pipefail
+          for package in pieblock_core pieblock_hid pieblock_toolchain; do
+            echo "::group::$package"
+            (cd "packages/$package" && flutter pub get && dart analyze && dart test)
+            echo "::endgroup::"
+          done
+
+      - name: 应用静态分析
+        run: flutter analyze
+
+      - name: 应用测试
+        run: flutter test
+
+  windows:
+    name: Windows 构建与打包
+    needs: quality
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - name: 检出代码（含 SDCC 子模块）
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: 记录 SDCC 子模块版本
+        id: sdcc
+        shell: pwsh
+        run: |
+          $sha = (git -C sdcc-c251 rev-parse HEAD).Trim()
+          if ([string]::IsNullOrWhiteSpace($sha)) {
+              throw '无法读取 sdcc-c251 子模块提交，请确认子模块已检出。'
+          }
+          "sha=$sha" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: 安装 Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: 缓存 pub 依赖
+        uses: actions/cache@v4
+        with:
+          path: ~/AppData/Local/Pub/Cache
+          key: pub-windows-${{ hashFiles('pubspec.lock') }}
+          restore-keys: pub-windows-
+
+      - name: 缓存内置 SDCC 工具链
+        id: toolchain
+        uses: actions/cache@v4
+        with:
+          path: vendor/sdcc-toolchain
+          key: sdcc-windows-${{ steps.sdcc.outputs.sha }}-${{ hashFiles('tools/prepare_sdcc_toolchain.ps1', 'tools/build_sdcc_windows_package.sh') }}
+
+      - name: 拉取依赖
+        shell: pwsh
+        run: |
+          flutter pub get
+          foreach ($package in @('pieblock_core', 'pieblock_hid', 'pieblock_toolchain')) {
+              Push-Location "packages/$package"
+              try { flutter pub get } finally { Pop-Location }
+          }
+
+      - name: 记录工具链缓存命中情况
+        shell: pwsh
+        run: |
+          "工具链缓存命中：${{ steps.toolchain.outputs.cache-hit == 'true' }}" |
+            Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+
+      - name: 安装 MSYS2 UCRT64 构建环境
+        if: steps.toolchain.outputs.cache-hit != 'true'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            bison
+            flex
+            git
+            make
+            python
+          pacboy: >-
+            toolchain:p
+
+      - name: 准备内置 SDCC 工具链
+        shell: pwsh
+        run: ./tools/prepare_sdcc_toolchain.ps1
+
+      - name: 校验内置工具链平台
+        shell: pwsh
+        run: |
+          $manifestPath = 'vendor/sdcc-toolchain/bundle_manifest.json'
+          if (!(Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+              throw "缺少 $manifestPath，工具链未准备成功。"
+          }
+          $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+          if ($manifest.platform -ne 'windows-x64') {
+              throw "内置工具链平台不是 windows-x64：$($manifest.platform)"
+          }
+          if (!(Test-Path -LiteralPath 'vendor/sdcc-toolchain/bin/sdcc.exe' -PathType Leaf)) {
+              throw '内置工具链缺少 bin/sdcc.exe，无法构建 Windows 固件。'
+          }
+
+      - name: SDCC 金样校验
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.skip_golden }}
+        working-directory: packages/pieblock_toolchain
+        env:
+          PIEBLOCK_RUN_SDCC_GOLDEN: '1'
+        run: dart test test/sdcc_windows_android_golden_test.dart
+
+      - name: 构建 Windows Release
+        run: flutter build windows --release
+
+      - name: 校验 Release 产物完整性
+        shell: pwsh
+        run: |
+          $release = 'build/windows/x64/runner/Release'
+          $required = @(
+              'PIE-Block.exe',
+              'pieblock_hid.dll',
+              'flutter_windows.dll',
+              'data/icudtl.dat',
+              'data/flutter_assets',
+              'data/pieblock_runtime/sdcc-toolchain/bin/sdcc.exe',
+              'data/pieblock_runtime/stc32g_sdcc/build_manifest.json',
+              'data/pieblock_runtime/stc32g/Libraries'
+          )
+          foreach ($relative in $required) {
+              if (!(Test-Path -LiteralPath (Join-Path $release $relative))) {
+                  throw "Release 产物缺失: $relative"
+              }
+          }
+
+      - name: 确保 Inno Setup 可用
+        shell: pwsh
+        run: |
+          $candidates = @(
+              'C:\Program Files (x86)\Inno Setup 6\ISCC.exe',
+              'C:\Program Files\Inno Setup 6\ISCC.exe'
+          )
+          if ($candidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf }) {
+              Write-Host '已安装 Inno Setup 6。'
+              return
+          }
+          Write-Host '未找到 Inno Setup 6，改用 choco 安装。'
+          choco install innosetup -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup 安装失败，退出码: $LASTEXITCODE" }
+
+      - name: 生成 Inno 安装包
+        shell: pwsh
+        run: ./tools/package_flutter_windows.ps1 -SkipBuild
+
+      - name: 打包免安装 zip
+        id: zip
+        shell: pwsh
+        run: |
+          $pubspec = Get-Content -LiteralPath 'pubspec.yaml' -Raw
+          $versionMatch = [regex]::Match($pubspec, '(?m)^version:\s*(\d+\.\d+\.\d+)')
+          if (!$versionMatch.Success) {
+              throw '无法从 pubspec.yaml 解析 version 行。'
+          }
+          $zipName = "PIEBlock-$($versionMatch.Groups[1].Value)-windows-x64-release.zip"
+          $zipPath = Join-Path (Get-Location) $zipName
+          if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force }
+          $sevenZip = 'C:\Program Files\7-Zip\7z.exe'
+          Push-Location 'build/windows/x64/runner/Release'
+          try {
+              if (Test-Path -LiteralPath $sevenZip -PathType Leaf) {
+                  & $sevenZip a -tzip -mx=5 $zipPath '*'
+                  if ($LASTEXITCODE -ne 0) { throw "7-Zip 打包失败，退出码: $LASTEXITCODE" }
+              }
+              else {
+                  Compress-Archive -Path * -DestinationPath $zipPath -CompressionLevel Optimal
+              }
+          }
+          finally {
+              Pop-Location
+          }
+          if (!(Test-Path -LiteralPath $zipPath -PathType Leaf)) { throw "未生成 $zipName" }
+          "name=$zipName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: PIEBlock-windows-x64
+          path: |
+            output/PIEBlock-*-windows-setup.exe
+            ${{ steps.zip.outputs.name }}
+          if-no-files-found: error
+          retention-days: 14
