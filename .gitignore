@@ -176,3 +176,4 @@ app.*.map.json
 /android/app/release
 .widget_preview/
 .workbuddy/
+.zcode/
