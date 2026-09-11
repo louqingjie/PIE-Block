@@ -6,7 +6,7 @@ import 'package:pieblock_toolchain/pieblock_toolchain.dart';
 
 /// 离线 SDCC 编译端到端验证工具。
 ///
-/// 用法: dart run tool/compile_project.dart <kind>
+/// 用法: `dart run tool/compile_project.dart <kind>`
 ///   kind: infantry | engineer | debug | music
 ///
 /// 用 ProjectDocument.create 的新工程默认配置作为确定性输入（与新建工程
