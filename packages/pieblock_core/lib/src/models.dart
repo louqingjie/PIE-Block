@@ -530,20 +530,52 @@ class MusicConfig extends ProjectConfig {
   );
 }
 
+/// 云台单个轴上的一个执行器：一个驱动类型、一个 IO、一个方向。
+///
+/// 同轴可以挂 1~N 个执行器（如两只舵机并联增扭），也可以一个都不挂。
+class AxisActuator {
+  const AxisActuator({this.drive, this.pin, this.direction, this.midOffset});
+  final DriveType? drive;
+  final String? pin;
+  final Direction? direction;
+  final int? midOffset;
+  AxisActuator copyWith({
+    Object? drive = _unset,
+    Object? pin = _unset,
+    Object? direction = _unset,
+    Object? midOffset = _unset,
+  }) => AxisActuator(
+    drive: identical(drive, _unset) ? this.drive : drive as DriveType?,
+    pin: identical(pin, _unset) ? this.pin : pin as String?,
+    direction: identical(direction, _unset)
+        ? this.direction
+        : direction as Direction?,
+    midOffset: identical(midOffset, _unset)
+        ? this.midOffset
+        : midOffset as int?,
+  );
+  Map<String, Object?> toJson() => {
+    'drive': drive?.name,
+    'pin': pin,
+    'direction': direction?.name,
+    'mid_offset': midOffset,
+  };
+  factory AxisActuator.fromJson(Map<String, Object?> json) => AxisActuator(
+    drive: nullableEnumValue(DriveType.values, json['drive']),
+    pin: json['pin']?.toString(),
+    direction: nullableEnumValue(Direction.values, json['direction']),
+    midOffset: (json['mid_offset'] as num?)?.toInt(),
+  );
+}
+
 class InfantryConfig extends RobotConfig {
   InfantryConfig({
     super.remote = const RemoteConfig(),
     ChassisConfig? chassis,
     this.feederPin,
     this.feederDirection,
-    this.yawDrive,
-    this.yawPin,
-    this.yawDirection,
-    this.yawMidOffset,
-    this.pitchDrive,
-    this.pitchPin,
-    this.pitchDirection,
-    this.pitchMidOffset,
+    List<AxisActuator> yawActuators = const [AxisActuator()],
+    List<AxisActuator> pitchActuators = const [AxisActuator()],
     this.arrowBehavior,
     this.feedMode,
     this.triggerKey,
@@ -558,12 +590,12 @@ class InfantryConfig extends RobotConfig {
     this.frictionStep,
     this.zeroEnabled = false,
     this.buzzerDisabled = false,
-  }) : super(chassis: chassis ?? ChassisConfig.defaults());
+  }) : yawActuators = List.unmodifiable(yawActuators),
+       pitchActuators = List.unmodifiable(pitchActuators),
+       super(chassis: chassis ?? ChassisConfig.defaults());
   @override
   ProjectKind get kind => ProjectKind.infantry;
   final String? feederPin,
-      yawPin,
-      pitchPin,
       triggerKey,
       reverseFeedKey,
       frictionKey,
@@ -572,28 +604,23 @@ class InfantryConfig extends RobotConfig {
   final ArrowBehavior? arrowBehavior;
   final FeedMode? feedMode;
   final FrictionMode? frictionMode;
-  final Direction? feederDirection, yawDirection, pitchDirection;
-  final DriveType? yawDrive, pitchDrive;
-  final int? yawMidOffset,
-      pitchMidOffset,
-      triggerSpeed,
+  final Direction? feederDirection;
+  final List<AxisActuator> yawActuators, pitchActuators;
+  final int? triggerSpeed,
       triggerTimeMs,
       frictionMaxDuty,
       frictionStep;
   final bool zeroEnabled, buzzerDisabled;
+
+  /// [yaw] 为 true 时返回 Yaw 轴的执行器，否则返回 Pitch 轴的执行器。
+  List<AxisActuator> actuators(bool yaw) => yaw ? yawActuators : pitchActuators;
   InfantryConfig copyWith({
     RemoteConfig? remote,
     ChassisConfig? chassis,
     Object? feederPin = _unset,
     Object? feederDirection = _unset,
-    Object? yawDrive = _unset,
-    Object? yawPin = _unset,
-    Object? yawDirection = _unset,
-    Object? yawMidOffset = _unset,
-    Object? pitchDrive = _unset,
-    Object? pitchPin = _unset,
-    Object? pitchDirection = _unset,
-    Object? pitchMidOffset = _unset,
+    Object? yawActuators = _unset,
+    Object? pitchActuators = _unset,
     Object? arrowBehavior = _unset,
     Object? feedMode = _unset,
     Object? triggerKey = _unset,
@@ -617,26 +644,12 @@ class InfantryConfig extends RobotConfig {
     feederDirection: identical(feederDirection, _unset)
         ? this.feederDirection
         : feederDirection as Direction?,
-    yawDrive: identical(yawDrive, _unset)
-        ? this.yawDrive
-        : yawDrive as DriveType?,
-    yawPin: identical(yawPin, _unset) ? this.yawPin : yawPin as String?,
-    yawDirection: identical(yawDirection, _unset)
-        ? this.yawDirection
-        : yawDirection as Direction?,
-    yawMidOffset: identical(yawMidOffset, _unset)
-        ? this.yawMidOffset
-        : yawMidOffset as int?,
-    pitchDrive: identical(pitchDrive, _unset)
-        ? this.pitchDrive
-        : pitchDrive as DriveType?,
-    pitchPin: identical(pitchPin, _unset) ? this.pitchPin : pitchPin as String?,
-    pitchDirection: identical(pitchDirection, _unset)
-        ? this.pitchDirection
-        : pitchDirection as Direction?,
-    pitchMidOffset: identical(pitchMidOffset, _unset)
-        ? this.pitchMidOffset
-        : pitchMidOffset as int?,
+    yawActuators: identical(yawActuators, _unset)
+        ? this.yawActuators
+        : List<AxisActuator>.from(yawActuators as List),
+    pitchActuators: identical(pitchActuators, _unset)
+        ? this.pitchActuators
+        : List<AxisActuator>.from(pitchActuators as List),
     arrowBehavior: identical(arrowBehavior, _unset)
         ? this.arrowBehavior
         : arrowBehavior as ArrowBehavior?,
@@ -682,18 +695,8 @@ class InfantryConfig extends RobotConfig {
     'chassis': chassis.toJson(),
     'feeder_pin': feederPin,
     'feeder_direction': feederDirection?.name,
-    'yaw': {
-      'drive': yawDrive?.name,
-      'pin': yawPin,
-      'direction': yawDirection?.name,
-      'mid_offset': yawMidOffset,
-    },
-    'pitch': {
-      'drive': pitchDrive?.name,
-      'pin': pitchPin,
-      'direction': pitchDirection?.name,
-      'mid_offset': pitchMidOffset,
-    },
+    'yaw': [for (final actuator in yawActuators) actuator.toJson()],
+    'pitch': [for (final actuator in pitchActuators) actuator.toJson()],
     'arrow_behavior': arrowBehavior?.name,
     'feed_mode': feedMode?.name,
     'trigger_key': triggerKey,
@@ -710,8 +713,10 @@ class InfantryConfig extends RobotConfig {
     'buzzer_disabled': buzzerDisabled,
   };
   factory InfantryConfig.fromJson(Map<String, Object?> j) {
-    final y = Map<String, Object?>.from(j['yaw'] as Map? ?? {}),
-        p = Map<String, Object?>.from(j['pitch'] as Map? ?? {});
+    List<AxisActuator> actuators(String key) => [
+      for (final raw in j[key] as List? ?? const [])
+        if (raw is Map) AxisActuator.fromJson(Map<String, Object?>.from(raw)),
+    ];
     return InfantryConfig(
       remote: RemoteConfig.fromJson(
         Map<String, Object?>.from(j['remote'] as Map? ?? {}),
@@ -724,14 +729,8 @@ class InfantryConfig extends RobotConfig {
         Direction.values,
         j['feeder_direction'],
       ),
-      yawDrive: nullableEnumValue(DriveType.values, y['drive']),
-      yawPin: y['pin']?.toString(),
-      yawDirection: nullableEnumValue(Direction.values, y['direction']),
-      yawMidOffset: (y['mid_offset'] as num?)?.toInt(),
-      pitchDrive: nullableEnumValue(DriveType.values, p['drive']),
-      pitchPin: p['pin']?.toString(),
-      pitchDirection: nullableEnumValue(Direction.values, p['direction']),
-      pitchMidOffset: (p['mid_offset'] as num?)?.toInt(),
+      yawActuators: actuators('yaw'),
+      pitchActuators: actuators('pitch'),
       arrowBehavior: nullableEnumValue(
         ArrowBehavior.values,
         j['arrow_behavior'],
@@ -825,6 +824,38 @@ abstract final class InfantryPinPlanner {
 
   static String normalizePin(String? value) => value?.split(' ').first ?? '';
 
+  /// 云台执行器在引脚字段路径里的定位。
+  static String axisPath(bool yaw, int index, String field) =>
+      'gimbal.${yaw ? 'yaw' : 'pitch'}.$index.$field';
+
+  /// 解析 `gimbal.<yaw|pitch>.<index>.<field>` 形式的路径，非云台路径返回 null。
+  static ({bool yaw, int index, String field})? parseAxisPath(
+    String fieldPath,
+  ) {
+    final parts = fieldPath.split('.');
+    if (parts.length != 4 || parts.first != 'gimbal') return null;
+    final yaw = switch (parts[1]) {
+      'yaw' => true,
+      'pitch' => false,
+      _ => null,
+    };
+    final index = int.tryParse(parts[2]);
+    if (yaw == null || index == null || index < 0) return null;
+    return (yaw: yaw, index: index, field: parts[3]);
+  }
+
+  /// 执行器在界面与报错里的显示名，单执行器时与旧文案一致。
+  static String axisLabel(bool yaw, int index) =>
+      '${yaw ? 'Yaw' : 'Pitch'} 轴${index == 0 ? '' : ' ${index + 1}'}';
+
+  static AxisActuator? _actuatorAt(
+    InfantryConfig config,
+    ({bool yaw, int index, String field}) axis,
+  ) {
+    final actuators = config.actuators(axis.yaw);
+    return axis.index < actuators.length ? actuators[axis.index] : null;
+  }
+
   static String? _chassisSide(String fieldPath) => switch (fieldPath) {
     'chassis.left_front.pin' || 'chassis.left_rear.pin' => 'left',
     'chassis.right_front.pin' || 'chassis.right_rear.pin' => 'right',
@@ -836,17 +867,18 @@ abstract final class InfantryPinPlanner {
     return firstSide != null && firstSide == _chassisSide(secondFieldPath);
   }
 
-  static String? _fieldPin(InfantryConfig config, String fieldPath) =>
-      switch (fieldPath) {
-        'chassis.left_front.pin' => config.chassis.leftFront.pin,
-        'chassis.left_rear.pin' => config.chassis.leftRear.pin,
-        'chassis.right_front.pin' => config.chassis.rightFront.pin,
-        'chassis.right_rear.pin' => config.chassis.rightRear.pin,
-        'mechanism.feeder_pin' => config.feederPin,
-        'gimbal.yaw.pin' => config.yawPin,
-        'gimbal.pitch.pin' => config.pitchPin,
-        _ => throw ArgumentError.value(fieldPath, 'fieldPath', '未知引脚字段'),
-      };
+  static String? _fieldPin(InfantryConfig config, String fieldPath) {
+    final axis = parseAxisPath(fieldPath);
+    if (axis != null) return _actuatorAt(config, axis)?.pin;
+    return switch (fieldPath) {
+      'chassis.left_front.pin' => config.chassis.leftFront.pin,
+      'chassis.left_rear.pin' => config.chassis.leftRear.pin,
+      'chassis.right_front.pin' => config.chassis.rightFront.pin,
+      'chassis.right_rear.pin' => config.chassis.rightRear.pin,
+      'mechanism.feeder_pin' => config.feederPin,
+      _ => throw ArgumentError.value(fieldPath, 'fieldPath', '未知引脚字段'),
+    };
+  }
 
   static List<PinAssignment> _references(InfantryConfig config) => [
     if (config.chassis.leftFront.pin != null)
@@ -884,24 +916,28 @@ abstract final class InfantryPinPlanner {
         ownerFieldPath: 'mechanism.feeder_pin',
         ownerLabel: '拨弹电机',
       ),
-    if (config.yawPin != null && config.yawDrive != null)
-      PinAssignment(
-        pin: config.yawPin!,
-        role: config.yawDrive == DriveType.servo
-            ? PinRole.servo
-            : PinRole.motor,
-        ownerFieldPath: 'gimbal.yaw.pin',
-        ownerLabel: 'Yaw 轴',
-      ),
-    if (config.pitchPin != null && config.pitchDrive != null)
-      PinAssignment(
-        pin: config.pitchPin!,
-        role: config.pitchDrive == DriveType.servo
-            ? PinRole.servo
-            : PinRole.motor,
-        ownerFieldPath: 'gimbal.pitch.pin',
-        ownerLabel: 'Pitch 轴',
-      ),
+    for (var index = 0; index < config.yawActuators.length; index += 1)
+      if (config.yawActuators[index].pin != null &&
+          config.yawActuators[index].drive != null)
+        PinAssignment(
+          pin: config.yawActuators[index].pin!,
+          role: config.yawActuators[index].drive == DriveType.servo
+              ? PinRole.servo
+              : PinRole.motor,
+          ownerFieldPath: axisPath(true, index, 'pin'),
+          ownerLabel: axisLabel(true, index),
+        ),
+    for (var index = 0; index < config.pitchActuators.length; index += 1)
+      if (config.pitchActuators[index].pin != null &&
+          config.pitchActuators[index].drive != null)
+        PinAssignment(
+          pin: config.pitchActuators[index].pin!,
+          role: config.pitchActuators[index].drive == DriveType.servo
+              ? PinRole.servo
+              : PinRole.motor,
+          ownerFieldPath: axisPath(false, index, 'pin'),
+          ownerLabel: axisLabel(false, index),
+        ),
     if (config.frictionMode == FrictionMode.brushlessEsc)
       for (final pin in frictionPins)
         PinAssignment(
@@ -939,21 +975,23 @@ abstract final class InfantryPinPlanner {
     String fieldPath, {
     DriveType? driveType,
   }) {
-    final selectedDrive =
-        driveType ??
-        (fieldPath == 'gimbal.yaw.pin' ? config.yawDrive : config.pitchDrive);
+    final axis = parseAxisPath(fieldPath);
+    if (axis != null) {
+      final selectedDrive = driveType ?? _actuatorAt(config, axis)?.drive;
+      return List.unmodifiable(
+        selectedDrive == null
+            ? const <String>[]
+            : selectedDrive == DriveType.servo
+            ? servoPins
+            : motorPins,
+      );
+    }
     final candidates = switch (fieldPath) {
       'chassis.left_front.pin' ||
       'chassis.left_rear.pin' ||
       'chassis.right_front.pin' ||
       'chassis.right_rear.pin' => chassisPins,
       'mechanism.feeder_pin' => motorPins,
-      'gimbal.yaw.pin' || 'gimbal.pitch.pin' =>
-        selectedDrive == null
-            ? const <String>[]
-            : selectedDrive == DriveType.servo
-            ? servoPins
-            : motorPins,
       _ => const <String>[],
     };
     return List.unmodifiable(candidates);
@@ -1192,6 +1230,8 @@ abstract final class InfantryPinPlanner {
     String? pin,
   ) {
     final value = _canonicalPin(config, fieldPath, pin);
+    final axis = parseAxisPath(fieldPath);
+    if (axis != null) return _setActuatorPin(config, axis, value);
     return switch (fieldPath) {
       'chassis.left_front.pin' => config.copyWith(
         chassis: config.chassis.copyWith(
@@ -1214,10 +1254,23 @@ abstract final class InfantryPinPlanner {
         ),
       ),
       'mechanism.feeder_pin' => config.copyWith(feederPin: value),
-      'gimbal.yaw.pin' => config.copyWith(yawPin: value),
-      'gimbal.pitch.pin' => config.copyWith(pitchPin: value),
       _ => throw ArgumentError.value(fieldPath, 'fieldPath', '未知引脚字段'),
     };
+  }
+
+  static InfantryConfig _setActuatorPin(
+    InfantryConfig config,
+    ({bool yaw, int index, String field}) axis,
+    String? pin,
+  ) {
+    final actuators = [...config.actuators(axis.yaw)];
+    if (axis.index >= actuators.length) {
+      throw ArgumentError.value(axis.index, 'fieldPath', '执行器不存在');
+    }
+    actuators[axis.index] = actuators[axis.index].copyWith(pin: pin);
+    return axis.yaw
+        ? config.copyWith(yawActuators: actuators)
+        : config.copyWith(pitchActuators: actuators);
   }
 
   static bool _pinHasConflict(InfantryConfig config, String pin) {
@@ -1474,7 +1527,7 @@ class ProjectDocument {
     required this.config,
     required this.guideProgress,
   });
-  static const formatVersion = 14;
+  static const formatVersion = 15;
   final String name;
   final ProjectKind kind;
   final DateTime createdAt, updatedAt;

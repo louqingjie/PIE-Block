@@ -23,14 +23,22 @@ InfantryConfig completeInfantry({
   chassis: completeChassis(shared: shared),
   feederPin: 'P60',
   feederDirection: Direction.forward,
-  yawDrive: DriveType.servo,
-  yawPin: 'MP74',
-  yawDirection: Direction.forward,
-  yawMidOffset: 0,
-  pitchDrive: DriveType.servo,
-  pitchPin: 'MP03',
-  pitchDirection: Direction.forward,
-  pitchMidOffset: 0,
+  yawActuators: const [
+    AxisActuator(
+      drive: DriveType.servo,
+      pin: 'MP74',
+      direction: Direction.forward,
+      midOffset: 0,
+    ),
+  ],
+  pitchActuators: const [
+    AxisActuator(
+      drive: DriveType.servo,
+      pin: 'MP03',
+      direction: Direction.forward,
+      midOffset: 0,
+    ),
+  ],
   arrowBehavior: ArrowBehavior.other,
   feedMode: feedMode,
   triggerKey: 'E',
@@ -192,7 +200,7 @@ EngineerConfig servoButtonEngineer({
 
 void main() {
   group('项目格式与进度', () {
-    test('格式 14 往返并保存向导进度', () {
+    test('格式 15 往返并保存向导进度', () {
       final source = ProjectDocument.create('步兵测试', ProjectKind.infantry)
           .copyWith(
             guideProgress: const GuideProgress(
@@ -205,15 +213,52 @@ void main() {
           jsonDecode(jsonEncode(source.toJson())) as Map,
         ),
       );
-      expect(source.toJson()['format_version'], 14);
+      expect(source.toJson()['format_version'], 15);
       expect(restored.guideProgress.currentStepId, 'controls');
       expect(restored.guideProgress.visitedStepIds, hasLength(3));
       expect((source.toJson()['config']! as Map), isNot(contains('pwm')));
     });
 
-    test('格式 13 直接拒绝', () {
+    test('云台执行器按数组往返并支持多个执行器', () {
+      final source = completeInfantry().copyWith(
+        yawActuators: const [
+          AxisActuator(
+            drive: DriveType.servo,
+            pin: 'MP74',
+            direction: Direction.forward,
+            midOffset: -12,
+          ),
+          AxisActuator(
+            drive: DriveType.servo,
+            pin: 'P75',
+            direction: Direction.reverse,
+            midOffset: 8,
+          ),
+        ],
+        pitchActuators: const [
+          AxisActuator(
+            drive: DriveType.motor,
+            pin: 'P77',
+            direction: Direction.reverse,
+          ),
+        ],
+      );
+      final json = source.toJson();
+      expect(json['yaw'], hasLength(2));
+      expect(json['pitch'], hasLength(1));
+      final restored = InfantryConfig.fromJson(
+        Map<String, Object?>.from(jsonDecode(jsonEncode(json)) as Map),
+      );
+      expect(restored.yawActuators, hasLength(2));
+      expect(restored.yawActuators[1].pin, 'P75');
+      expect(restored.yawActuators[1].midOffset, 8);
+      expect(restored.pitchActuators.single.drive, DriveType.motor);
+      expect(restored.pitchActuators.single.midOffset, isNull);
+    });
+
+    test('格式 14 直接拒绝', () {
       expect(
-        () => ProjectDocument.fromJson({'format_version': 13}),
+        () => ProjectDocument.fromJson({'format_version': 14}),
         throwsFormatException,
       );
     });
@@ -719,15 +764,20 @@ void main() {
 
     test('上游改变后保留非法值并精确报错', () {
       final config = completeInfantry().copyWith(
-        yawDrive: DriveType.motor,
-        yawPin: 'MP74',
+        yawActuators: const [
+          AxisActuator(
+            drive: DriveType.motor,
+            pin: 'MP74',
+            direction: Direction.forward,
+          ),
+        ],
       );
-      expect(config.yawPin, 'MP74');
+      expect(config.yawActuators.single.pin, 'MP74');
       expect(
         ProjectValidator.validate(config).any(
           (i) =>
               i.severity == IssueSeverity.error &&
-              i.fieldPath == 'gimbal.yaw.pin',
+              i.fieldPath == 'gimbal.yaw.0.pin',
         ),
         isTrue,
       );
@@ -835,7 +885,7 @@ void main() {
 
       final incompatible = InfantryPinPlanner.planReassignment(
         source,
-        'gimbal.yaw.pin',
+        'gimbal.yaw.0.pin',
         'P60',
       );
       expect(
@@ -845,11 +895,19 @@ void main() {
     });
 
     test('当前引脚为空时只能抢占，未分配可直接应用', () {
-      final source = completeInfantry(frictionMode: FrictionMode.disabled)
-          .copyWith(yawPin: null);
+      final source = completeInfantry(
+        frictionMode: FrictionMode.disabled,
+      ).copyWith(
+        yawActuators: const [
+          AxisActuator(
+            drive: DriveType.servo,
+            direction: Direction.forward,
+          ),
+        ],
+      );
       final occupied = InfantryPinPlanner.planReassignment(
         source,
-        'gimbal.yaw.pin',
+        'gimbal.yaw.0.pin',
         'P60',
       );
       expect(occupied.supports(InfantryPinReassignmentStrategy.swap), isFalse);
@@ -901,6 +959,135 @@ void main() {
       expect(restored.frictionMode, FrictionMode.brushlessEsc);
       expect(restored.feederPin, isNull);
       expect(restored.frictionMaxDuty, enabled.frictionMaxDuty);
+    });
+
+    test('同轴多个执行器各自占用引脚并可被抢占', () {
+      final config = completeInfantry(frictionMode: FrictionMode.disabled)
+          .copyWith(
+            pitchActuators: const [
+              AxisActuator(
+                drive: DriveType.servo,
+                pin: 'MP03',
+                direction: Direction.forward,
+                midOffset: 0,
+              ),
+              AxisActuator(
+                drive: DriveType.servo,
+                pin: 'P62',
+                direction: Direction.reverse,
+                midOffset: 10,
+              ),
+            ],
+          );
+      expect(
+        InfantryPinPlanner.allowedPins(config, 'gimbal.pitch.1.pin'),
+        InfantryPinPlanner.servoPins,
+      );
+      expect(
+        InfantryPinPlanner.allowedPins(
+          config.copyWith(
+            yawActuators: const [
+              AxisActuator(
+                drive: DriveType.motor,
+                pin: 'P62',
+                direction: Direction.forward,
+              ),
+            ],
+          ),
+          'gimbal.yaw.0.pin',
+        ),
+        InfantryPinPlanner.motorPins,
+      );
+      expect(InfantryPinPlanner.derive(config)['P62']!.ownerLabel, 'Pitch 轴 2');
+      expect(
+        InfantryPinPlanner.occupantsOf(config, 'P62', 'gimbal.pitch.1.pin'),
+        isEmpty,
+      );
+      expect(
+        InfantryPinPlanner.occupantsOf(config, 'P60', 'gimbal.pitch.1.pin')
+            .single
+            .ownerLabel,
+        '拨弹电机',
+      );
+
+      final taken = InfantryPinPlanner.applyReassignment(
+        config,
+        'gimbal.pitch.1.pin',
+        'P60',
+        InfantryPinReassignmentStrategy.takeOver,
+      );
+      expect(taken.pitchActuators[1].pin, 'P60');
+      expect(taken.pitchActuators.first.pin, 'MP03');
+      expect(taken.feederPin, isNull);
+    });
+
+    test('执行器逐个校验，空轴不报必填', () {
+      final blank = InfantryConfig();
+      expect(
+        ProjectValidator.validate(
+          blank,
+        ).where((i) => i.fieldPath.startsWith('gimbal.')),
+        isNotEmpty,
+      );
+
+      expect(
+        ProjectValidator.validate(
+          blank.copyWith(yawActuators: const [], pitchActuators: const []),
+        ).where((i) => i.fieldPath.startsWith('gimbal.')),
+        isEmpty,
+      );
+
+      final secondIncomplete =
+          completeInfantry(frictionMode: FrictionMode.disabled).copyWith(
+            pitchActuators: const [
+              AxisActuator(
+                drive: DriveType.servo,
+                pin: 'MP03',
+                direction: Direction.forward,
+                midOffset: 0,
+              ),
+              AxisActuator(drive: DriveType.servo),
+            ],
+          );
+      final missing = ProjectValidator.validate(secondIncomplete)
+          .where((i) => i.fieldPath.startsWith('gimbal.pitch.1.'))
+          .toList();
+      expect(
+        missing.map((i) => i.fieldPath),
+        containsAll([
+          'gimbal.pitch.1.pin',
+          'gimbal.pitch.1.direction',
+          'gimbal.pitch.1.mid_offset',
+        ]),
+      );
+      expect(
+        missing.every((i) => i.kind == ValidationIssueKind.required),
+        isTrue,
+      );
+
+      final duplicated = secondIncomplete.copyWith(
+        pitchActuators: const [
+          AxisActuator(
+            drive: DriveType.servo,
+            pin: 'MP03',
+            direction: Direction.forward,
+            midOffset: 0,
+          ),
+          AxisActuator(
+            drive: DriveType.servo,
+            pin: 'MP03',
+            direction: Direction.forward,
+            midOffset: 0,
+          ),
+        ],
+      );
+      expect(
+        ProjectValidator.validate(duplicated)
+            .where((i) => i.message.contains('同时被'))
+            .map((i) => i.fieldPath)
+            .toSet(),
+        containsAll(['gimbal.pitch.0.pin', 'gimbal.pitch.1.pin']),
+      );
     });
 
     test('数字键包含 LC/RC 且排除摇杆轴', () {
@@ -1189,6 +1376,70 @@ void main() {
 
     test('工程完整配置可以生成', () {
       expect(CodeGenerator.generate(completeEngineer()), contains('RunMode1'));
+    });
+
+    test('同轴多个执行器各自生成控制语句', () {
+      final config = completeInfantry(frictionMode: FrictionMode.disabled)
+          .copyWith(
+            zeroEnabled: true,
+            pitchActuators: const [
+              AxisActuator(
+                drive: DriveType.servo,
+                pin: 'MP03',
+                direction: Direction.forward,
+                midOffset: 0,
+              ),
+              AxisActuator(
+                drive: DriveType.servo,
+                pin: 'P64',
+                direction: Direction.reverse,
+                midOffset: 10,
+              ),
+              AxisActuator(
+                drive: DriveType.motor,
+                pin: 'P62',
+                direction: Direction.forward,
+              ),
+            ],
+          );
+      final code = CodeGenerator.generate(config);
+      expect(code, contains('uint16_t pitchDuty2 = 806;'));
+      expect(
+        code,
+        contains(
+          '    pitchDuty2 += (int)((float)valueOfRoker[1][1] * 2.0f / 2047.0f * 5.555556f);',
+        ),
+      );
+      expect(
+        code,
+        contains(
+          '    if (pitchDuty2 < 473) pitchDuty2 = 473; if (pitchDuty2 > 1139) pitchDuty2 = 1139;',
+        ),
+      );
+      expect(
+        code,
+        contains(
+          '    dutyOfMotor[1] = (int)(((int32_t)valueOfRoker[1][1] * 10000L) / 2047L);',
+        ),
+      );
+      expect(
+        code,
+        contains(
+          'if (RcKeyValueRead(KEY_OFFSET_Rocker21)) { yawDuty = 750; pitchDuty = 750; pitchDuty2 = 806; }',
+        ),
+      );
+      expect(code, contains('static uint16_t lastFeedbackDuty[3] = {0};'));
+      expect(code, contains('pitchDuty2,abs(dutyOfMotor[3])'));
+    });
+
+    test('空轴不生成占空比变量和控制语句', () {
+      final config = completeInfantry(
+        frictionMode: FrictionMode.disabled,
+      ).copyWith(pitchActuators: const []);
+      final code = CodeGenerator.generate(config);
+      expect(code, contains('uint16_t yawDuty = 750;'));
+      expect(code, isNot(contains('pitchDuty')));
+      expect(code, isNot(contains('valueOfRoker[1][1] * 2.0f')));
     });
 
     test('步兵两种拨弹、方向键、摩擦轮和蜂鸣器条件进入代码', () {

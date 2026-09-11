@@ -186,44 +186,82 @@ $turnReverse    dutyOfMotor[${_slot(c.leftFront.pin)}] = ${_dir(c.leftFront.dire
 
   static String _infantry(InfantryConfig c) {
     final frictionEnabled = c.frictionMode == FrictionMode.brushlessEsc;
-    final yawDuty = _servoDuty(c.yawMidOffset),
-        pitchDuty = _servoDuty(c.pitchMidOffset),
-        feederSlot = _slot(c.feederPin);
-    String axisUpdate({required bool yaw}) {
-      final drive = yaw ? c.yawDrive : c.pitchDrive,
-          pin = yaw ? c.yawPin : c.pitchPin,
-          direction = yaw ? c.yawDirection : c.pitchDirection,
-          rocker = yaw ? 'valueOfRoker[1][0]' : 'valueOfRoker[1][1]',
-          variable = yaw ? 'yawDuty' : 'pitchDuty';
-      if (drive == DriveType.servo) {
-        final home = yaw ? yawDuty : pitchDuty;
+    final feederSlot = _slot(c.feederPin);
+    // 云台按「先 Yaw 后 Pitch、轴内按配置顺序」生成。
+    const yawAndPitch = [true, false];
+    AxisActuator? actuatorAt({required bool yaw, required int index}) =>
+        index < c.actuators(yaw).length ? c.actuators(yaw)[index] : null;
+    // 每轴首个执行器沿用 yawDuty / pitchDuty，其余执行器依次为 yawDuty2、pitchDuty2……
+    String dutyName({required bool yaw, required int index}) =>
+        '${yaw ? 'yaw' : 'pitch'}Duty${index == 0 ? '' : index + 1}';
+    final servoActuators = <({bool yaw, int index})>[
+      for (final yaw in yawAndPitch)
+        for (var index = 0; index < c.actuators(yaw).length; index += 1)
+          if (c.actuators(yaw)[index].drive == DriveType.servo)
+            (yaw: yaw, index: index),
+    ];
+    final dutyVariables = <({String name, int home})>[
+      for (final yaw in yawAndPitch)
+        if (c.actuators(yaw).isNotEmpty) ...[
+          (
+            name: dutyName(yaw: yaw, index: 0),
+            home: _servoDuty(actuatorAt(yaw: yaw, index: 0)?.midOffset),
+          ),
+          for (final item in servoActuators)
+            if (item.yaw == yaw && item.index > 0)
+              (
+                name: dutyName(yaw: item.yaw, index: item.index),
+                home: _servoDuty(
+                  actuatorAt(yaw: item.yaw, index: item.index)!.midOffset,
+                ),
+              ),
+        ],
+    ];
+    String actuatorUpdate({required bool yaw, required int index}) {
+      final actuator = actuatorAt(yaw: yaw, index: index)!;
+      final rocker = yaw ? 'valueOfRoker[1][0]' : 'valueOfRoker[1][1]';
+      if (actuator.drive == DriveType.servo) {
+        final variable = dutyName(yaw: yaw, index: index);
+        final home = _servoDuty(actuator.midOffset);
         final low = (home - 333).clamp(250, 1250);
         final high = (home + 333).clamp(250, 1250);
         return '''    $variable += (int)((float)$rocker * 2.0f / 2047.0f * 5.555556f);
     if ($variable < $low) $variable = $low; if ($variable > $high) $variable = $high;''';
       }
-      final sign = direction == Direction.forward ? '' : '-';
-      return '    dutyOfMotor[${_slot(pin)}] = $sign(int)(((int32_t)$rocker * 10000L) / 2047L);';
+      final sign = actuator.direction == Direction.forward ? '' : '-';
+      return '    dutyOfMotor[${_slot(actuator.pin)}] = $sign(int)(((int32_t)$rocker * 10000L) / 2047L);';
     }
+
+    final gimbalBlocks = <String>[
+      for (final yaw in yawAndPitch)
+        for (var index = 0; index < c.actuators(yaw).length; index += 1)
+          actuatorUpdate(yaw: yaw, index: index),
+    ];
+    final dutyDeclarations = dutyVariables
+        .map((item) => 'uint16_t ${item.name} = ${item.home};')
+        .join('\n');
+    final dutyResets = dutyVariables
+        .map((item) => '${item.name} = ${item.home};')
+        .join(' ');
 
     String dutyValue(int index) {
       if (frictionEnabled && (index == 2 || index == 3)) {
         return 'frictionDuty';
       }
-      if (c.yawDrive == DriveType.servo && _slot(c.yawPin) == index) {
-        return 'yawDuty';
-      }
-      if (c.pitchDrive == DriveType.servo && _slot(c.pitchPin) == index) {
-        return 'pitchDuty';
+      for (final item in servoActuators) {
+        if (_slot(actuatorAt(yaw: item.yaw, index: item.index)!.pin) == index) {
+          return dutyName(yaw: item.yaw, index: item.index);
+        }
       }
       return 'abs(dutyOfMotor[$index])';
     }
 
     String directionValue(int index) {
-      if (frictionEnabled && (index == 2 || index == 3) ||
-          c.yawDrive == DriveType.servo && _slot(c.yawPin) == index ||
-          c.pitchDrive == DriveType.servo && _slot(c.pitchPin) == index) {
-        return '1';
+      if (frictionEnabled && (index == 2 || index == 3)) return '1';
+      for (final item in servoActuators) {
+        if (_slot(actuatorAt(yaw: item.yaw, index: item.index)!.pin) == index) {
+          return '1';
+        }
       }
       return 'dutyOfMotor[$index]>=0';
     }
@@ -232,18 +270,16 @@ $turnReverse    dutyOfMotor[${_slot(c.leftFront.pin)}] = ${_dir(c.leftFront.dire
         directionArgs = List.generate(8, directionValue).join(','),
         mainServoInit = <String>[],
         mainServoUpdates = <String>[];
-    if (c.yawDrive == DriveType.servo && mainServoPins.contains(c.yawPin)) {
-      final channel = c.yawPin == 'MP74' ? '1_P74' : '4_P03';
-      mainServoInit.add('    PWM_Init(PWMB_CH$channel, 50, $yawDuty);');
-      mainServoUpdates.add(
-        '        PWM_SET_Frequency(PWMB_CH$channel, 50, yawDuty);',
+    for (final item in servoActuators) {
+      final actuator = actuatorAt(yaw: item.yaw, index: item.index)!;
+      if (!mainServoPins.contains(actuator.pin)) continue;
+      final channel = actuator.pin == 'MP74' ? '1_P74' : '4_P03';
+      final duty = dutyName(yaw: item.yaw, index: item.index);
+      mainServoInit.add(
+        '    PWM_Init(PWMB_CH$channel, 50, ${_servoDuty(actuator.midOffset)});',
       );
-    }
-    if (c.pitchDrive == DriveType.servo && mainServoPins.contains(c.pitchPin)) {
-      final channel = c.pitchPin == 'MP74' ? '1_P74' : '4_P03';
-      mainServoInit.add('    PWM_Init(PWMB_CH$channel, 50, $pitchDuty);');
       mainServoUpdates.add(
-        '        PWM_SET_Frequency(PWMB_CH$channel, 50, pitchDuty);',
+        '        PWM_SET_Frequency(PWMB_CH$channel, 50, $duty);',
       );
     }
     final frictionDefines = frictionEnabled
@@ -352,8 +388,8 @@ uint8_t frictionEnabled = 0;
       null => '',
     };
     final servoDuties = <String>[
-      if (c.yawDrive == DriveType.servo) 'yawDuty',
-      if (c.pitchDrive == DriveType.servo) 'pitchDuty',
+      for (final item in servoActuators)
+        dutyName(yaw: item.yaw, index: item.index),
     ];
     final feedbackChecks = <String>[];
     for (var index = 0; index < servoDuties.length; index++) {
@@ -381,8 +417,7 @@ ${frictionEnabled ? '    else if (frictionDuty != frictionTargetDuty) PWM_SET_Fr
 ''';
     return '''${_header(c, '步兵机器人控制代码', c.buzzerDisabled)}
 $frictionDefines
-uint16_t yawDuty = $yawDuty;
-uint16_t pitchDuty = $pitchDuty;
+$dutyDeclarations
 $frictionGlobals
 $buzzerFeedback
 
@@ -414,9 +449,8 @@ ${c.buzzerDisabled ? '' : '''    Beep(523, 120);
 
 void UpdateGimbal(void)
 {
-${axisUpdate(yaw: true)}
-${axisUpdate(yaw: false)}
-    ${c.zeroEnabled ? 'if (RcKeyValueRead(KEY_OFFSET_Rocker21)) { yawDuty = $yawDuty; pitchDuty = $pitchDuty; }' : ''}
+${gimbalBlocks.join('\n')}
+    ${c.zeroEnabled ? 'if (RcKeyValueRead(KEY_OFFSET_Rocker21)) { $dutyResets }' : ''}
 }
 
 void UpdateWeapons(void)

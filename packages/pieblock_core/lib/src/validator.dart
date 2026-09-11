@@ -707,39 +707,55 @@ abstract final class ProjectValidator {
 
   static void _axis(InfantryConfig config, bool yaw, _AddIssue issue) {
     final name = yaw ? 'Yaw' : 'Pitch';
-    final base = yaw ? 'gimbal.yaw' : 'gimbal.pitch';
-    final drive = yaw ? config.yawDrive : config.pitchDrive;
-    final pin = yaw ? config.yawPin : config.pitchPin;
-    final direction = yaw ? config.yawDirection : config.pitchDirection;
-    final mid = yaw ? config.yawMidOffset : config.pitchMidOffset;
-    _choice(drive, '$base.drive', '$name 驱动类型', 'mechanism', issue);
-    _choice(pin, '$base.pin', '$name IO', 'mechanism', issue);
-    _choice(direction, '$base.direction', '$name 方向', 'mechanism', issue);
-    if (drive == DriveType.servo) {
-      _range(
-        mid,
-        -90,
-        90,
-        '$base.mid_offset',
-        '$name 归中偏移',
+    final actuators = config.actuators(yaw);
+    for (var index = 0; index < actuators.length; index += 1) {
+      final actuator = actuators[index];
+      // 单执行器时沿用一直以来的文案，多执行器时补上序号。
+      final label = actuators.length == 1 ? name : '$name 执行器 ${index + 1}';
+      String path(String field) =>
+          InfantryPinPlanner.axisPath(yaw, index, field);
+      _choice(
+        actuator.drive,
+        path('drive'),
+        '$label 驱动类型',
         'mechanism',
         issue,
       );
-    }
-    if (pin != null && drive != null) {
-      final valid = drive == DriveType.servo
-          ? InfantryPinPlanner.servoPins
-          : InfantryPinPlanner.motorPins;
-      if (!valid.contains(pin)) {
-        issue(IssueSeverity.error, '$base.pin', '$name 不能使用 $pin', 'mechanism');
-      }
-      if (drive == DriveType.motor && mainServoPins.contains(pin)) {
-        issue(
-          IssueSeverity.error,
-          '$base.pin',
-          '$pin 是主控板舵机口，不能驱动电机',
+      _choice(actuator.pin, path('pin'), '$label IO', 'mechanism', issue);
+      _choice(
+        actuator.direction,
+        path('direction'),
+        '$label 方向',
+        'mechanism',
+        issue,
+      );
+      if (actuator.drive == DriveType.servo) {
+        _range(
+          actuator.midOffset,
+          -90,
+          90,
+          path('mid_offset'),
+          '$label 归中偏移',
           'mechanism',
+          issue,
         );
+      }
+      final pin = actuator.pin;
+      if (pin != null && actuator.drive != null) {
+        final valid = actuator.drive == DriveType.servo
+            ? InfantryPinPlanner.servoPins
+            : InfantryPinPlanner.motorPins;
+        if (!valid.contains(pin)) {
+          issue(IssueSeverity.error, path('pin'), '$label 不能使用 $pin', 'mechanism');
+        }
+        if (actuator.drive == DriveType.motor && mainServoPins.contains(pin)) {
+          issue(
+            IssueSeverity.error,
+            path('pin'),
+            '$pin 是主控板舵机口，不能驱动电机',
+            'mechanism',
+          );
+        }
       }
     }
   }
@@ -784,24 +800,26 @@ abstract final class ProjectValidator {
             group: 'feeder',
             role: PinRole.motor,
           ),
-          (
-            path: 'gimbal.yaw.pin',
-            label: 'Yaw 轴',
-            pin: config.yawPin,
-            group: 'yaw',
-            role: config.yawDrive == DriveType.servo
-                ? PinRole.servo
-                : PinRole.motor,
-          ),
-          (
-            path: 'gimbal.pitch.pin',
-            label: 'Pitch 轴',
-            pin: config.pitchPin,
-            group: 'pitch',
-            role: config.pitchDrive == DriveType.servo
-                ? PinRole.servo
-                : PinRole.motor,
-          ),
+          for (var index = 0; index < config.yawActuators.length; index += 1)
+            (
+              path: InfantryPinPlanner.axisPath(true, index, 'pin'),
+              label: InfantryPinPlanner.axisLabel(true, index),
+              pin: config.yawActuators[index].pin,
+              group: 'yaw',
+              role: config.yawActuators[index].drive == DriveType.servo
+                  ? PinRole.servo
+                  : PinRole.motor,
+            ),
+          for (var index = 0; index < config.pitchActuators.length; index += 1)
+            (
+              path: InfantryPinPlanner.axisPath(false, index, 'pin'),
+              label: InfantryPinPlanner.axisLabel(false, index),
+              pin: config.pitchActuators[index].pin,
+              group: 'pitch',
+              role: config.pitchActuators[index].drive == DriveType.servo
+                  ? PinRole.servo
+                  : PinRole.motor,
+            ),
           if (config.frictionMode == FrictionMode.brushlessEsc)
             for (final pin in InfantryPinPlanner.frictionPins)
               (
