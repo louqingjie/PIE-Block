@@ -1,6 +1,6 @@
 /* PIE-Block 介绍页交互
-   背景动效（hero 流体 + 点阵网格）、生成结果面板的页签、复制按钮、
-   滚动揭示。
+   背景动效（hero 流体 + 点阵网格、收尾区静态网格）、生成结果面板的页签、
+   复制按钮、滚动揭示。
    无依赖；prefers-reduced-motion 下只画一帧静态图。 */
 (() => {
   "use strict";
@@ -918,26 +918,74 @@ void main() {
     start();
   }
 
+  /* ==========================================================
+     英雄区流体层的入场与滚动
+     参考页这两个动效由 framer-motion 驱动：入场是 opacity 0→1、blur(20px)→0、
+     1.8s ease-out；滚动时模糊量等于「英雄区顶部滑出视口的比例 × 20px」，滚出
+     方向瞬时生效（那边把 transition 时长设成 0），滚回顶部才用 1.8s 慢慢变清晰。
+     ========================================================== */
+  function driveHeroFluid(canvas) {
+    if (!canvas || reduceMotion.matches) return;
+
+    canvas.style.opacity = "0";
+    canvas.style.filter = "blur(20px)";
+
+    let queued = false;
+    // 是否已经离开过顶部。用来区分「载入时的入场」与「滚回顶部」：
+    // 前者由 CSS 过渡负责，后者要走 1.8s 的去模糊。
+    let blurred = false;
+
+    function update() {
+      queued = false;
+      const rect = canvas.getBoundingClientRect();
+      const height = rect.height || 1;
+      const progress = Math.min(1, Math.max(0, -rect.top / (0.6 * height)));
+      // 停在顶部且还没滚动过：什么都不做，别打断正在播的入场
+      if (progress <= 0 && !blurred) return;
+
+      blurred = progress > 0;
+      canvas.style.transitionDuration = blurred ? "0s" : "1.8s";
+      canvas.style.filter = `blur(${(20 * progress).toFixed(2)}px)`;
+    }
+
+    // 先落到初始态再起过渡，同一帧里设两次会合并成一次样式计算、看不到动画
+    requestAnimationFrame(() => {
+      canvas.style.transition = "opacity 1.8s ease-out, filter 1.8s ease-out";
+      canvas.style.opacity = "1";
+      canvas.style.filter = "blur(0px)";
+      // 刷新时可能停在页面中段，那种情况下不重放淡入，直接就位
+      update();
+    });
+
+    window.addEventListener(
+      "scroll",
+      () => {
+        if (queued) return;
+        queued = true;
+        requestAnimationFrame(update);
+      },
+      { passive: true }
+    );
+  }
+
   /* 英雄区：主视觉。流体打底，上面再叠一层跟着鼠标走的点阵网格 */
   createFluid(document.getElementById("hero-canvas"), {
     fps: 30,
     flowScale: 4,
   });
 
+  driveHeroFluid(document.getElementById("hero-canvas"));
+
   createDotGrid(document.getElementById("hero-grid"), {
     lineOpacity: 0.08,
     dotOpacity: 0.16,
   });
 
-  /* 收尾区：同一个场，更慢更暗，只做背景 */
-  createFluid(document.getElementById("closing-canvas"), {
-    fps: 24,
-    flowScale: 6,
-    dprCap: 1.25,
-    speed: 18,
-    glowIntensity: 0.11,
-    vignette: 0.34,
-    colors: ["#010304", "#0c2f3c", "#104456", "#e6c6ab", "#010304"],
+  /* 收尾区：同一套点阵，更淡、不接收鼠标，只在滚进视口时画一帧 */
+  createDotGrid(document.getElementById("closing-grid"), {
+    lineOpacity: 0.05,
+    dotOpacity: 0.12,
+    isStatic: true,
   });
 
   /* ---------- 生成结果面板的页签 ---------- */

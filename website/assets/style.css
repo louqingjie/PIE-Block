@@ -476,6 +476,14 @@ button {
   height: 100%;
   z-index: 0;
   pointer-events: none;
+  /* 与参考页同一条遮罩：顶部几乎不透明，往下渐隐到全透明。流体因此集中在
+     英雄区上半屏，不会一路铺满，底部也不会和下一区抢注意力 */
+  -webkit-mask-image: linear-gradient(
+    #000000fc 0%,
+    #000000e8 8.98%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(#000000fc 0%, #000000e8 8.98%, transparent 100%);
 }
 
 /* 流体画布不透明时会盖住底色；这层渐变只在拿不到 WebGL2、
@@ -1420,25 +1428,43 @@ button {
 }
 
 /* ========== 收尾区 ========== */
-.closing__canvas {
+/* 与参考页底部 CTA 区同款：静态点阵，只在中段显影 */
+.closing__grid {
   position: absolute;
   top: 80px;
   left: 0;
   width: 100%;
   height: 500px;
   z-index: 0;
-  opacity: 0.7;
   pointer-events: none;
-  -webkit-mask-image: radial-gradient(
-    ellipse 60% 70% at 50% 60%,
-    #000 30%,
-    transparent 100%
-  );
-  mask-image: radial-gradient(
-    ellipse 60% 70% at 50% 60%,
-    #000 30%,
-    transparent 100%
-  );
+  /* 四条边同时渐隐（intersect 取交集），点阵从中段向外淡出 */
+  -webkit-mask-image: linear-gradient(
+      to bottom,
+      transparent 0%,
+      black 20%,
+      black 80%,
+      transparent 100%
+    ),
+    linear-gradient(to right, transparent 0%, black 15%, black 85%, transparent 100%);
+  -webkit-mask-composite: source-in;
+  mask-image: linear-gradient(
+      to bottom,
+      transparent 0%,
+      black 20%,
+      black 80%,
+      transparent 100%
+    ),
+    linear-gradient(to right, transparent 0%, black 15%, black 85%, transparent 100%);
+  mask-composite: intersect;
+}
+
+.closing__grid canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
 }
 
 .closing__inner {
@@ -1541,6 +1567,18 @@ button {
 }
 
 .js .reveal.is-visible {
+  opacity: 1;
+  transform: none;
+}
+
+/* 收尾区的点阵：滚进视口时从 85% 放大淡入，比正文的揭示慢一档 */
+.js .closing__grid {
+  opacity: 0;
+  transform: scale(0.85);
+  transition: opacity 1.2s var(--easing), transform 1.2s var(--easing);
+}
+
+.js .closing__grid.is-visible {
   opacity: 1;
   transform: none;
 }
@@ -1687,13 +1725,15 @@ button {
   }
 
   .enter,
-  .reveal {
+  .reveal,
+  .js .closing__grid {
     opacity: 1;
     animation: none;
     transform: none;
   }
 
-  .reveal {
+  .reveal,
+  .js .closing__grid {
     transition: none;
   }
 
