@@ -1,10 +1,10 @@
 # Flutter 项目文件格式
 
-`.pieproj` 是 UTF-8 JSON 文件。格式 14 使用稳定语义字段，不包含 UI 控件路径或生成代码，并保存可恢复的向导进度。
+`.pieproj` 是 UTF-8 JSON 文件。格式 15 使用稳定语义字段，不包含 UI 控件路径或生成代码，并保存可恢复的向导进度。
 
 ```json
 {
-  "format_version": 14,
+  "format_version": 15,
   "name": "我的机器人",
   "project_kind": "infantry",
   "created_at": "2026-08-25T01:00:00.000Z",
@@ -17,8 +17,8 @@
     "remote": {"channel": null, "deadzone": null},
     "chassis": {"turn_reversed": false},
     "feeder_pin": null,
-    "yaw": {"drive": null, "pin": null},
-    "pitch": {"drive": null, "pin": null},
+    "yaw": [{"drive": null, "pin": null}],
+    "pitch": [{"drive": null, "pin": null}],
     "friction_mode": null,
     "buzzer_disabled": false
   }
@@ -41,10 +41,12 @@
 
 步兵可选的 `reverse_feed_key` 保存反向拨弹键，`null` 表示不使用，生成的固件里也就没有反向拨弹逻辑。设置后按住该键期间拨弹电机按 `feeder_direction` 的反方向持续转动（速度复用 `trigger_speed`），松开立即归零；该键必须避让扳机键、摩擦轮按键以及已用于底盘的方向键。
 
+步兵的 `yaw` 与 `pitch` 都是执行器数组。每个元素保存 `drive`、`pin`、`direction` 与舵机的 `mid_offset`；同一轴可以挂 1~N 个执行器，舵机与电机可混用且各自占用独立 IO、独立方向，空数组表示该轴不配置。所有执行器共享同一个摇杆通道（Yaw 用右摇杆水平、Pitch 用右摇杆垂直），生成固件时按数组顺序展开：每轴首个执行器沿用 `yawDuty`/`pitchDuty`，其余依次为 `yawDuty2`、`pitchDuty2`……
+
 调试配置保存 `tests` 数组。数组始终包含 P60、P62、P64、P66、P74、P75、P76、P77、MP03、MP74 十个固定引脚，数组顺序就是固件执行顺序。每项保存 `enabled`、`drive_type`、`direction`、`value`；电机和舵机额外保存 `duration_ms`。摩擦轮仅限 P64/P66，按固定 1.5 秒节拍从 500 渐变至 `value` 后归零。
 
 音乐配置保存 `ticks_per_quarter`、`source_name`、`track_name`、`notes`、`tempo_events` 和 `time_signature_events`。每个音符保存稳定 `id`、`pitch`、`start_tick`、`duration_ticks` 与 `primary`；相同起始 tick 必须且只能有一个主音，其他音符作为低亮度参考并参与 MIDI 导出。速度事件保存每四分音符微秒数，拍号事件保存分子和分母，两类事件都从 tick 0 开始并严格递增。项目不保存原始 MIDI 字节、力度、乐器、通道或控制器。
 
 项目可以在配置未完成时保存。生成代码是配置的派生结果，不写入项目文件；任何配置变化都会重新检查并重新生成。HEX、编译日志、编译器选择和 Keil 路径也不写入 `.pieproj`：构建产物放在用户本地缓存，编译器偏好属于应用设置。应用使用同目录临时文件写入后替换目标文件。
 
-格式 13 及其他版本均不兼容格式 14。应用会拒绝打开并提示在对应旧版 PIE-Block 中处理，不执行自动转换。
+格式 14 及其他版本均不兼容格式 15。应用会拒绝打开并提示在对应旧版 PIE-Block 中处理，不执行自动转换。
