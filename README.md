@@ -74,6 +74,29 @@ wrangler deploy
 把产物拷进 `website/app/`、删掉不会被下载的 `*.symbols`。产物约 38MB 且**不进 git**
 （`.gitignore` 已忽略 `website/app/`），所以每次改完代码要重新跑一遍脚本再部署。
 
+### 工作流区的界面截图
+
+`#flow` 区那 4 张图是**真实应用截图**，不是画的：`website/assets/shots/*.webp`，
+每张 1440×902、约 40KB。界面改了以后重拍的办法：
+
+1. 起本地服务：`python3 -m http.server 8765 -d website`
+2. 把 `website/assets/shots/demo/<名字>.json` 灌进浏览器的 localStorage：
+   键 `pieblock.project:<项目名>.pieproj` 放该 JSON，键 `pieblock.settings` 放
+   `{"theme":"dark","recent":["<项目名>.pieproj"],"compiler":"sdcc"}`
+3. 打开 `/app/`，在首页点开那个项目——它就落在 JSON 里
+   `guide_progress.current_step_id` 指定的那一步
+4. 窗口设到 1740×1090（页面会报 1438×901），整屏截图
+5. 转格式：`magick in.png -resize 1440x -quality 82 out.webp`
+
+四份演示项目与图片一一对应：`wizard` 向导「遥控器与底盘」、`review` 检查与摘要、
+`code` 生成代码、`music` 钢琴卷帘。**`review` 那份是故意带错的**（引脚冲突、
+摩擦轮占空比不是整百值、死区超建议值），问题列表才有内容——四份 JSON 由
+`packages/pieblock_core` 的模型构造，改完模型可以照着重生成。
+
+「编译与烧录」没有真图：Web 版的这一步是「请用桌面版」引导页，而桌面端的烧录
+进行中状态需要插着真实主控板才出现。所以第三块的配图是生成代码页，文案也相应
+改成了讲代码生成，编译烧录缩成一条「在桌面版完成」。
+
 `--pwa-strategy=none` 是刻意的：Flutter 默认的 service worker 缓存很激进，网页版
 迭代时用户容易卡在旧版本。`--base-href /app/` 也是必需的：Cloudflare 只能托管一个
 目录，应用必须能识别自己在子路径下，否则会去根路径找 `main.dart.js`。

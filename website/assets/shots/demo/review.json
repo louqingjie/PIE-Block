@@ -1,0 +1,76 @@
+{
+  "format_version": 15,
+  "name": "演示步兵",
+  "project_kind": "infantry",
+  "created_at": "2026-09-12T09:43:29.553031Z",
+  "updated_at": "2026-09-12T09:43:29.553038Z",
+  "guide_progress": {
+    "current_step_id": "review",
+    "visited_step_ids": [
+      "remote",
+      "mechanism",
+      "controls",
+      "review"
+    ]
+  },
+  "config": {
+    "remote": {
+      "channel": 36,
+      "deadzone": 900
+    },
+    "chassis": {
+      "left_front": {
+        "pin": "P74 P24",
+        "direction": "forward"
+      },
+      "left_rear": {
+        "pin": "P75 P25",
+        "direction": "forward"
+      },
+      "right_front": {
+        "pin": "P60 P26",
+        "direction": "reverse"
+      },
+      "right_rear": {
+        "pin": "P77 P27",
+        "direction": "reverse"
+      },
+      "normal_speed": 4000,
+      "sprint_speed": 8000,
+      "sprint_enabled": false,
+      "turn_reversed": false
+    },
+    "feeder_pin": "P60",
+    "feeder_direction": "forward",
+    "yaw": [
+      {
+        "drive": "servo",
+        "pin": "MP74",
+        "direction": "forward",
+        "mid_offset": 0
+      }
+    ],
+    "pitch": [
+      {
+        "drive": "servo",
+        "pin": "MP03",
+        "direction": "forward",
+        "mid_offset": 0
+      }
+    ],
+    "arrow_behavior": "other",
+    "feed_mode": "blockingOpenLoop",
+    "trigger_key": "E",
+    "reverse_feed_key": null,
+    "trigger_speed": 6000,
+    "trigger_time_ms": 2000,
+    "friction_mode": "brushlessEsc",
+    "friction_key": "A",
+    "friction_up_key": "B",
+    "friction_down_key": "C",
+    "friction_max_duty": 777,
+    "friction_step": 100,
+    "zero_enabled": false,
+    "buzzer_disabled": false
+  }
+}
