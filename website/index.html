@@ -180,38 +180,9 @@
             </div>
           </div>
 
-          <div class="ui" aria-hidden="true">
-            <div class="ui__bar">
-              <span class="terminal__dots"><i></i><i></i><i></i></span>
-              <span class="ui__bar-title">步兵项目 — 遥控器与底盘</span>
-            </div>
-            <div class="ui__split">
-              <div class="ui__rail">
-                <div class="steptile steptile--done"><i>1</i><span>遥控器与底盘</span></div>
-                <div class="steptile"><i>2</i><span>云台与拨弹</span></div>
-                <div class="steptile"><i>3</i><span>控制与摩擦轮</span></div>
-                <div class="steptile"><i>4</i><span>检查与摘要</span></div>
-                <div class="steptile"><i>5</i><span>生成代码</span></div>
-                <div class="steptile"><i>6</i><span>编译与烧录</span></div>
-              </div>
-              <div class="ui__main">
-                <div class="ui__section">遥控器</div>
-                <div class="field"><span class="field__label">通道号</span><span class="field__value field__value--brand">36</span></div>
-                <div class="field"><span class="field__label">摇杆死区</span><span class="field__value">100</span></div>
-                <div class="field"><span class="field__label">反转左右转向</span><span class="field__value">关</span></div>
-                <div class="ui__section">四轮底盘</div>
-                <div class="field"><span class="field__label">左前轮 IO</span><span class="field__value">P74 P24</span></div>
-                <div class="field"><span class="field__label">右前轮 IO</span><span class="field__value">P76 P26</span></div>
-                <div class="field"><span class="field__label">普通速度</span><span class="field__value">4000 duty</span></div>
-                <div class="field"><span class="field__label">冲刺速度</span><span class="field__value">8000 duty</span></div>
-              </div>
-            </div>
-            <div class="ui__footer">
-              <span>上一步</span>
-              <span>1 / 6</span>
-              <span>下一步</span>
-            </div>
-          </div>
+          <figure class="shot" aria-hidden="true">
+            <img src="assets/shots/wizard.webp" alt="" width="1440" height="902" loading="lazy" decoding="async" />
+          </figure>
         </div>
 
         <div class="detail reveal">
@@ -228,99 +199,28 @@
             </div>
           </div>
 
-          <div class="ui" aria-hidden="true">
-            <div class="ui__bar">
-              <span class="terminal__dots"><i></i><i></i><i></i></span>
-              <span class="ui__bar-title">检查与配置摘要</span>
-            </div>
-            <div class="ui__body">
-              <div class="chips issues__legend">
-                <span class="chip chip--error">错误 2</span>
-                <span class="chip chip--warn">警告 3</span>
-              </div>
-              <div class="issues">
-                <div class="issue">
-                  <span class="issue__tag issue__tag--error">错误</span>
-                  <span class="issue__body">
-                    <span class="issue__msg">P60 是主控板舵机口，不能驱动电机</span>
-                    <span class="issue__path">feeder.motorPin</span>
-                  </span>
-                  <span class="issue__go">›</span>
-                </div>
-                <div class="issue">
-                  <span class="issue__tag issue__tag--error">错误</span>
-                  <span class="issue__body">
-                    <span class="issue__msg">摩擦轮最大占空比必须是 500–800 内的整百值</span>
-                    <span class="issue__path">friction.maxDuty</span>
-                  </span>
-                  <span class="issue__go">›</span>
-                </div>
-                <div class="issue">
-                  <span class="issue__tag issue__tag--warn">警告</span>
-                  <span class="issue__body">
-                    <span class="issue__msg">摇杆死区大于 500，可能影响操控灵敏度</span>
-                    <span class="issue__path">remote.deadzone</span>
-                  </span>
-                  <span class="issue__go">›</span>
-                </div>
-                <div class="issue">
-                  <span class="issue__tag issue__tag--warn">警告</span>
-                  <span class="issue__body">
-                    <span class="issue__msg">拨弹时间过长，单发期间底盘和云台会失去响应</span>
-                    <span class="issue__path">feeder.singleShotMs</span>
-                  </span>
-                  <span class="issue__go">›</span>
-                </div>
-              </div>
-            </div>
-            <div class="ui__footer">
-              <span>普通速度 4000 · 冲刺速度 8000</span>
-              <span>返回检查</span>
-            </div>
-          </div>
+          <figure class="shot" aria-hidden="true">
+            <img src="assets/shots/review.webp" alt="" width="1440" height="902" loading="lazy" decoding="async" />
+          </figure>
         </div>
 
         <div class="detail reveal">
           <div>
             <span class="detail__index">03</span>
-            <h3 class="t-heading2 detail__title">离线编译，免驱烧录</h3>
+            <h3 class="t-heading2 detail__title">生成可编译的 C 代码</h3>
             <div class="detail__body">
-              <p>内置 SDCC C251 工具链在首次使用时释放到本地目录并校验版本与哈希，编译全程不联网。产物是一条经过地址与校验和检查的 HEX，再用免驱 USB-HID 写进主控板——插上线点一下，编译、下载、复位一次完成。</p>
+              <p>前面填的每一项都会落到同一份 main.c 上：引脚与 PWM 角色、按键映射、速度区间按你的硬件方案展开，生成规则集中在一处，配置和代码一一对应。</p>
               <ul class="detail__points">
-                <li>HEX 地址与校验和校验通过后才允许烧录</li>
-                <li>按内容哈希复用构建产物，配置没改就不重编</li>
-                <li>可选调用本地 Keil C251 做一次全量重建校验</li>
+                <li>只读实时生成，带行号与 C 语法高亮，可搜索、可整段复制</li>
+                <li>一键导出 main.c，直接拿进 Keil 或其它工程</li>
+                <li>编译与烧录需要本机工具链与 USB-HID，在桌面版完成</li>
               </ul>
             </div>
           </div>
 
-          <div class="ui" aria-hidden="true">
-            <div class="ui__bar">
-              <span class="terminal__dots"><i></i><i></i><i></i></span>
-              <span class="ui__bar-title">编译与烧录</span>
-            </div>
-            <div class="ui__body">
-              <div class="ui__section">编译器</div>
-              <div class="field"><span class="field__label">当前编译器</span><span class="field__value field__value--brand">内置 SDCC C251</span></div>
-              <div class="ui__section">构建产物</div>
-              <div class="field"><span class="field__label">ROBOMASTER_INFANTRY.hex</span><span class="field__value">13241 字节 · 0 条警告</span></div>
-              <div class="ui__section">主控板 USB-HID</div>
-              <div class="field"><span class="field__label">已检测到 1 块 ISP 主控板</span><span class="field__value">VID 34BF / PID 1001</span></div>
-              <div class="progress"><div class="progress__fill" style="width: 44%"></div></div>
-              <div class="log">
-                <span>正在准备 SDCC 构建环境…</span>
-                <span class="log__line--run">[1/7] 编译 main.c</span>
-                <span>正在链接 ROBOMASTER_INFANTRY.hex…</span>
-                <span>正在校验 HEX 地址和校验和…</span>
-                <span class="log__line--ok">HEX 布局有效，共 13241 字节</span>
-                <span class="log__line--run">正在写入固件 42/96</span>
-              </div>
-            </div>
-            <div class="ui__footer">
-              <span>正在写入固件 42/96</span>
-              <span>取消任务</span>
-            </div>
-          </div>
+          <figure class="shot" aria-hidden="true">
+            <img src="assets/shots/code.webp" alt="" width="1440" height="902" loading="lazy" decoding="async" />
+          </figure>
         </div>
 
         <div class="detail reveal">
@@ -337,57 +237,9 @@
             </div>
           </div>
 
-          <div class="ui roll" aria-hidden="true">
-            <div class="ui__bar">
-              <span class="terminal__dots"><i></i><i></i><i></i></span>
-              <span class="ui__bar-title">音乐项目 — 钢琴卷帘</span>
-            </div>
-            <div class="roll__toolbar">
-              <div class="roll__tools">
-                <span class="roll__tool">选择</span>
-                <span class="roll__tool roll__tool--active">画笔</span>
-                <span class="roll__tool">删除</span>
-                <span class="roll__tool">平移</span>
-              </div>
-              <div class="roll__meta">
-                <span class="chip">吸附 1/16</span>
-                <span class="chip">撤销</span>
-                <span class="chip">重做</span>
-              </div>
-            </div>
-            <div class="roll__grid">
-              <div class="roll__corner">BPM /<br />拍号</div>
-              <span class="roll__lane roll__lane--tempo">120 BPM</span>
-              <span class="roll__lane roll__lane--meter">4/4</span>
-              <div class="keys">
-                <span style="top: 4px">C5</span>
-                <span style="top: 50px">C4</span>
-                <span style="top: 96px">C3</span>
-              </div>
-              <div class="roll__canvas">
-                <div class="roll__beat"></div>
-                <div class="roll__bars"></div>
-                <i class="roll__note roll__note--ref" style="top: 12px; left: 4%; width: 6%"></i>
-                <i class="roll__note roll__note--ref" style="top: 35px; left: 22%; width: 6%"></i>
-                <i class="roll__note roll__note--ref" style="top: 58px; left: 46%; width: 6%"></i>
-                <i class="roll__note roll__note--ref" style="top: 35px; left: 70%; width: 6%"></i>
-                <i class="roll__note" style="top: 24px; left: 10%; width: 8%"></i>
-                <i class="roll__note" style="top: 24px; left: 20%; width: 6%"></i>
-                <i class="roll__note roll__note--sel" style="top: 24px; left: 28%; width: 6%"></i>
-                <i class="roll__note" style="top: 35px; left: 36%; width: 10%"></i>
-                <i class="roll__note" style="top: 46px; left: 48%; width: 8%"></i>
-                <i class="roll__note" style="top: 46px; left: 58%; width: 6%"></i>
-                <i class="roll__note" style="top: 35px; left: 66%; width: 10%"></i>
-                <i class="roll__note" style="top: 24px; left: 78%; width: 8%"></i>
-                <i class="roll__note" style="top: 12px; left: 88%; width: 9%"></i>
-                <div class="roll__playhead" style="left: 43%"></div>
-              </div>
-            </div>
-            <div class="roll__status">
-              <span>12 个主旋律音符 · 4 个参考音符</span>
-              <span>120 PPQ · 1 个速度事件 · 1 个拍号事件</span>
-            </div>
-          </div>
+          <figure class="shot" aria-hidden="true">
+            <img src="assets/shots/music.webp" alt="" width="1440" height="902" loading="lazy" decoding="async" />
+          </figure>
         </div>
       </div>
     </section>
