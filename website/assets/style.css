@@ -628,6 +628,71 @@ button {
   opacity: 1;
 }
 
+/* 全屏按钮：压在应用右上角。默认很淡，鼠标进到应用上才明显起来，免得
+   和界面本身抢注意力；触屏上没有 hover，就一直保持可见。 */
+.hero__app-full {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: rgba(10, 10, 10, 0.55);
+  backdrop-filter: blur(var(--blur-glass));
+  -webkit-backdrop-filter: blur(var(--blur-glass));
+  color: var(--text-secondary);
+  cursor: pointer;
+  opacity: 0.45;
+  transition: opacity 0.2s var(--easing), color 0.2s var(--easing),
+    border-color 0.2s var(--easing);
+}
+
+.hero__app:hover .hero__app-full,
+.hero__app-full:focus-visible {
+  opacity: 1;
+}
+
+.hero__app-full:hover {
+  color: var(--text-primary);
+  border-color: rgba(var(--rgb-brand), 0.4);
+}
+
+/* 触屏没有 hover，一直保持可见 */
+@media (hover: none) {
+  .hero__app-full {
+    opacity: 1;
+  }
+}
+
+.hero__app-full .hero__app-icon-exit,
+.hero__app.is-fullscreen .hero__app-icon-expand {
+  display: none;
+}
+
+.hero__app.is-fullscreen .hero__app-icon-exit {
+  display: block;
+}
+
+/* 全屏时 UA 会给元素铺满视口，但作者样式优先级更高——我们那句 height 会把它
+   摁回 640px。这里显式铺满，并去掉圆角。 */
+.hero__app:fullscreen,
+.hero__app:-webkit-full-screen {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+}
+
+.hero__app.is-fullscreen .hero__app-full {
+  opacity: 1;
+}
+
 /* 启动态与超时提示都盖在 iframe 上：应用没就绪之前它只是一块空白画布，
    与其露出来不如给一句说明。 */
 .hero__app-boot,

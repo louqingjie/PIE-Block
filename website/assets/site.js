@@ -1093,6 +1093,54 @@ void main() {
     else window.addEventListener("load", start, { once: true });
   })();
 
+  /* ---------- 在线体验：全屏 ----------
+     优先原地全屏：应用里填到一半的配置不会丢，Esc 就回到页面（状态同步在
+     fullscreenchange 上）。iOS Safari 不给非视频元素全屏，那种情况下按钮
+     退化成打开独立的 /app/ 页面——那个页面本来就在（iframe 就是它）。 */
+  (function setupAppFullscreen() {
+    const pane = document.querySelector(".hero__app");
+    const button = document.querySelector("[data-app-full]");
+    if (!pane || !button) return;
+
+    const request = pane.requestFullscreen || pane.webkitRequestFullscreen;
+    const exit = document.exitFullscreen || document.webkitExitFullscreen;
+    const active = () =>
+      document.fullscreenElement || document.webkitFullscreenElement || null;
+    const enabled =
+      document.fullscreenEnabled || document.webkitFullscreenEnabled;
+
+    function sync() {
+      const on = active() === pane;
+      pane.classList.toggle("is-fullscreen", on);
+      const label = on ? "退出全屏" : "全屏使用";
+      button.setAttribute("aria-label", label);
+      button.title = label;
+    }
+
+    function openStandalone() {
+      window.open("app/", "_blank", "noopener");
+    }
+
+    button.addEventListener("click", async () => {
+      if (active() === pane) {
+        exit.call(document);
+        return;
+      }
+      if (!request || !enabled) {
+        openStandalone();
+        return;
+      }
+      try {
+        await request.call(pane);
+      } catch (error) {
+        openStandalone();
+      }
+    });
+
+    document.addEventListener("fullscreenchange", sync);
+    document.addEventListener("webkitfullscreenchange", sync);
+  })();
+
   /* ---------- 滚动揭示 ---------- */
   const reveals = Array.from(document.querySelectorAll(".reveal, .closing__grid"));
   const revealAll = () =>

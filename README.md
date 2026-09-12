@@ -56,9 +56,12 @@ Android 离线 SDCC 的架构、安全门和验收状态见 [Android SDCC 多进
 ## 官网与在线体验
 
 官网是 `website/` 下的零依赖静态站（`wrangler.jsonc` 把整个目录交给 Cloudflare
-Workers 托管）。英雄区那块面板默认就是 Flutter Web 版：页面加载完之后才拉取应用，
-应用画出第一帧会 `postMessage` 通知页面淡入，10 秒内没就绪就退回静态代码示例并给
-一个重试按钮。
+Workers 托管）。英雄区右列就是 Flutter Web 版：页面加载完之后才拉取应用，应用画出第一帧会
+`postMessage` 通知页面淡入，10 秒内没就绪就换成一句提示加一个重试按钮。
+
+应用右上角有个全屏按钮：优先原地全屏（`requestFullscreen`，填到一半的配置不会
+丢，Esc 就回到页面）；iOS Safari 不给非视频元素全屏，那种情况下按钮退化成在新
+标签页打开独立的 `/app/` ——那个页面本来就在，iframe 加载的就是它。
 
 发布：
 
