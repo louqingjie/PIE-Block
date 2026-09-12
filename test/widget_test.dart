@@ -10,6 +10,7 @@ import 'package:pieblock_app/main.dart';
 import 'package:pieblock_app/src/controller.dart';
 import 'package:pieblock_app/src/deploy_controller.dart';
 import 'package:pieblock_app/src/home_screen.dart';
+import 'package:pieblock_app/src/platform/document_io.dart';
 import 'package:pieblock_app/src/music_editor.dart';
 import 'package:pieblock_app/src/music_preview.dart';
 import 'package:pieblock_app/src/wizard_screen.dart';
@@ -25,7 +26,7 @@ class _FakeProjectFileDialogs extends ProjectFileDialogs {
   int saveCalls = 0;
 
   @override
-  Future<String?> chooseProjectToOpen() async {
+  Future<SelectedDocument?> chooseProjectToOpen() async {
     openCalls += 1;
     return null;
   }

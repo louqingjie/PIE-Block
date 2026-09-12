@@ -3,6 +3,9 @@ import 'dart:io';
 
 import 'models.dart';
 
+/// 桌面 / 移动端项目仓库：项目是文件系统上的 `.pieproj` 文件。
+///
+/// Android 的 content URI 不走这里（见应用侧的 AppDocumentIo）。
 class ProjectRepository {
   const ProjectRepository();
 
@@ -41,4 +44,7 @@ class ProjectRepository {
       await temporary.rename(path);
     }
   }
+
+  /// 项目是否还在（设置里的最近项目列表要据此过滤掉已被删掉的那些）。
+  Future<bool> exists(String path) async => File(path).exists();
 }

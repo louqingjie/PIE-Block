@@ -1,12 +1,12 @@
-import 'dart:io';
-
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
 import 'package:pieblock_core/pieblock_core.dart';
 
 import 'controller.dart';
-import 'document_io.dart';
-import 'platform_paths.dart';
+import 'platform/document_io.dart';
+import 'platform/paths.dart';
 
 const _brandCyan = Color(0xff02acc0);
 const _brandCoral = Color(0xffef685d);
@@ -16,8 +16,9 @@ class ProjectFileDialogs {
 
   final AppDocumentIo documentIo;
 
-  Future<String?> chooseProjectToOpen() async {
-    final file = await documentIo.open(
+  /// 返回整份文件而不只是引用：Web 上引用只是一个文件名，导入时需要内容。
+  Future<SelectedDocument?> chooseProjectToOpen() async {
+    return documentIo.open(
       label: 'PIE-Block 项目',
       extensions: const ['pieproj'],
       mimeTypes: const [
@@ -26,7 +27,6 @@ class ProjectFileDialogs {
         'text/plain',
       ],
     );
-    return file?.reference;
   }
 
   Future<String?> chooseProjectSavePath({
@@ -69,13 +69,17 @@ class HomeScreen extends ConsumerWidget {
   Future<void> _create(BuildContext context, WidgetRef ref) async {
     final name = TextEditingController(text: '我的机器人');
     final desktop = defaultDesktopDirectory();
+    // Web 上没有可写目录，项目名就是文件名，这里不需要「保存位置」。
     final path = TextEditingController(
-      text: desktop == null
+      text: kIsWeb
           ? ''
-          : '$desktop${Platform.pathSeparator}我的机器人.pieproj',
+          : desktop == null
+          ? ''
+          : p.join(desktop, '我的机器人.pieproj'),
     );
     String? androidReference;
     var kind = ProjectKind.infantry;
+    final android = !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
     await showDialog<void>(
       context: context,
       builder: (context) => StatefulBuilder(
@@ -120,63 +124,68 @@ class HomeScreen extends ConsumerWidget {
                     decoration: const InputDecoration(labelText: '项目名称'),
                   ),
                   const SizedBox(height: 12),
-                  Builder(
-                    builder: (context) {
-                      final field = TextField(
-                        controller: path,
-                        readOnly: Platform.isAndroid,
-                        decoration: InputDecoration(
-                          labelText: '保存位置',
-                          helperText: Platform.isAndroid
-                              ? '使用系统文档选择器保存，可在创建时选择'
-                              : '选择或输入完整的 .pieproj 文件路径',
-                          prefixIcon: const Icon(Icons.folder_outlined),
-                        ),
-                      );
-                      final browse = OutlinedButton.icon(
-                        onPressed: () async {
-                          final currentPath = path.text.trim();
-                          final selected = await _chooseSavePath(
-                            context,
-                            suggestedName:
-                                '${name.text.trim().isEmpty ? '我的机器人' : name.text.trim()}.pieproj',
-                            initialDirectory: currentPath.isEmpty
-                                ? desktop
-                                : Platform.isAndroid
-                                ? null
-                                : File(currentPath).parent.path,
-                          );
-                          if (selected != null && context.mounted) {
-                            if (Platform.isAndroid) {
-                              androidReference = selected;
-                              path.text = AppDocumentIo.displayName(selected);
-                            } else {
-                              path.text = selected;
-                            }
-                          }
-                        },
-                        icon: const Icon(Icons.folder_open_outlined),
-                        label: const Text('浏览'),
-                      );
-                      if (MediaQuery.sizeOf(context).width < 600) {
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [field, const SizedBox(height: 10), browse],
-                        );
-                      }
-                      return Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(child: field),
-                          const SizedBox(width: 12),
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: browse,
+                  if (!kIsWeb)
+                    Builder(
+                      builder: (context) {
+                        final field = TextField(
+                          controller: path,
+                          readOnly: android,
+                          decoration: InputDecoration(
+                            labelText: '保存位置',
+                            helperText: android
+                                ? '使用系统文档选择器保存，可在创建时选择'
+                                : '选择或输入完整的 .pieproj 文件路径',
+                            prefixIcon: const Icon(Icons.folder_outlined),
                           ),
-                        ],
-                      );
-                    },
-                  ),
+                        );
+                        final browse = OutlinedButton.icon(
+                          onPressed: () async {
+                            final currentPath = path.text.trim();
+                            final selected = await _chooseSavePath(
+                              context,
+                              suggestedName:
+                                  '${name.text.trim().isEmpty ? '我的机器人' : name.text.trim()}.pieproj',
+                              initialDirectory: currentPath.isEmpty
+                                  ? desktop
+                                  : android
+                                  ? null
+                                  : p.dirname(currentPath),
+                            );
+                            if (selected != null && context.mounted) {
+                              if (android) {
+                                androidReference = selected;
+                                path.text = AppDocumentIo.displayName(selected);
+                              } else {
+                                path.text = selected;
+                              }
+                            }
+                          },
+                          icon: const Icon(Icons.folder_open_outlined),
+                          label: const Text('浏览'),
+                        );
+                        if (MediaQuery.sizeOf(context).width < 600) {
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              field,
+                              const SizedBox(height: 10),
+                              browse,
+                            ],
+                          );
+                        }
+                        return Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(child: field),
+                            const SizedBox(width: 12),
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: browse,
+                            ),
+                          ],
+                        );
+                      },
+                    ),
                 ],
               ),
             ),
@@ -188,23 +197,26 @@ class HomeScreen extends ConsumerWidget {
             ),
             FilledButton(
               onPressed: () async {
-                if (name.text.trim().isEmpty) return;
-                if (androidReference == null && Platform.isAndroid) {
+                final projectName = name.text.trim();
+                if (projectName.isEmpty) return;
+                if (androidReference == null && android) {
                   final selected = await _chooseSavePath(
                     context,
-                    suggestedName: '${name.text.trim()}.pieproj',
+                    suggestedName: '$projectName.pieproj',
                   );
                   if (selected == null || !context.mounted) return;
                   androidReference = selected;
                   path.text = AppDocumentIo.displayName(selected);
                 }
-                if (path.text.trim().isEmpty) return;
+                // Web 上没有目录可选：项目名就是文件名，内容存在浏览器里。
+                final projectPath = kIsWeb
+                    ? '$projectName.pieproj'
+                    : androidReference ?? path.text;
+                if (projectPath.trim().isEmpty) return;
                 // 先关闭新建弹窗，再切换根页面；否则根页面重建会在弹窗
                 // 仍挂载时卸载其 InheritedElement，Android 上会触发
                 // framework.dart 的 `_dependents.isEmpty` 断言。
                 final controller = ref.read(appControllerProvider.notifier);
-                final projectPath = androidReference ?? path.text;
-                final projectName = name.text;
                 final projectKind = kind;
                 Navigator.pop(context);
                 await controller.createProject(
@@ -226,9 +238,16 @@ class HomeScreen extends ConsumerWidget {
 
   Future<void> _open(BuildContext context, WidgetRef ref) async {
     try {
-      final path = await fileDialogs.chooseProjectToOpen();
-      if (path == null || path.trim().isEmpty) return;
-      await ref.read(appControllerProvider.notifier).openProject(path);
+      final selected = await fileDialogs.chooseProjectToOpen();
+      if (selected == null) return;
+      final controller = ref.read(appControllerProvider.notifier);
+      // Web 上项目存在浏览器里，选到的文件要先落库再打开；桌面与 Android
+      // 的引用本身就是可再次读取的位置，直接打开即可。
+      if (kIsWeb) {
+        await controller.importProject(selected);
+      } else {
+        await controller.openProject(selected.reference);
+      }
     } catch (error) {
       if (context.mounted) {
         ScaffoldMessenger.of(context)
@@ -512,7 +531,8 @@ class _HomeHeader extends StatelessWidget {
           children: [
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [_brandIcon(), _themeButton()],
+              // Web 版固定暗色，不提供主题切换。
+              children: [_brandIcon(), if (!kIsWeb) _themeButton()],
             ),
             const SizedBox(height: 20),
             _title(compact: true),
@@ -525,7 +545,7 @@ class _HomeHeader extends StatelessWidget {
           const SizedBox(width: 16),
           Expanded(child: _title(compact: false)),
           const SizedBox(width: 18),
-          _themeButton(),
+          if (!kIsWeb) _themeButton(),
         ],
       );
     },

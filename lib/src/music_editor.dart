@@ -7,7 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pieblock_core/pieblock_core.dart';
 
 import 'controller.dart';
-import 'document_io.dart';
+import 'platform/document_io.dart';
 import 'music_preview.dart';
 
 enum _MusicTool { select, pencil, erase, pan }

@@ -1,15 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pieblock_core/pieblock_core.dart';
-import 'package:pieblock_toolchain/pieblock_toolchain.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:pieblock_toolchain/models.dart';
 
-import 'document_io.dart';
+import 'platform/document_io.dart';
+import 'platform/settings_store.dart';
 
 enum SaveStatus { idle, saving, saved, failed }
 
@@ -89,10 +88,14 @@ class AppController extends Notifier<AppState> {
   final _repository = const ProjectRepository();
   final _documentIo = const AppDocumentIo();
   Timer? _saveTimer;
-  Future<File> get _settingsFile async {
-    final directory = await getApplicationSupportDirectory();
-    return File('${directory.path}${Platform.pathSeparator}settings.json');
-  }
+
+  /// Web 上没有编译器，Android 只有内置 SDCC —— 这两种情况都不给选。
+  bool get _forcesBuiltInCompiler =>
+      kIsWeb || defaultTargetPlatform == TargetPlatform.android;
+
+  /// Android 的 SAF 引用（content://）没法同步判断存在性，交给打开失败时处理。
+  static bool _isContentUri(String reference) =>
+      Uri.tryParse(reference)?.scheme == 'content';
 
   @override
   AppState build() {
@@ -103,18 +106,17 @@ class AppController extends Notifier<AppState> {
 
   Future<void> _loadSettings() async {
     try {
-      final file = await _settingsFile;
-      if (!await file.exists()) return;
-      final json = jsonDecode(await file.readAsString()) as Map;
-      final recent = (json['recent'] as List? ?? [])
-          .map((e) => e.toString())
-          .where(
-            (p) =>
-                Platform.isAndroid && Uri.tryParse(p)?.scheme == 'content' ||
-                File(p).existsSync(),
-          )
-          .take(8)
-          .toList();
+      final json = await readSettings();
+      if (json == null) return;
+      // 最近项目里可能有已经不在的条目（桌面是文件被删了，Web 是浏览器
+      // 存储被清了），逐个确认；content:// 引用没法判断，先留着。
+      final recent = <String>[];
+      for (final entry in (json['recent'] as List? ?? []).take(8)) {
+        final path = entry.toString();
+        if (_isContentUri(path) || await _repository.exists(path)) {
+          recent.add(path);
+        }
+      }
       final mode =
           ThemeMode.values.where((e) => e.name == json['theme']).firstOrNull ??
           ThemeMode.system;
@@ -123,7 +125,9 @@ class AppController extends Notifier<AppState> {
               .where((value) => value.name == json['compiler'])
               .firstOrNull ??
           CompilerKind.sdcc;
-      final compiler = Platform.isAndroid ? CompilerKind.sdcc : storedCompiler;
+      final compiler = _forcesBuiltInCompiler
+          ? CompilerKind.sdcc
+          : storedCompiler;
       state = state.copyWith(
         recentPaths: recent,
         themeMode: mode,
@@ -135,17 +139,13 @@ class AppController extends Notifier<AppState> {
   }
 
   Future<void> _saveSettings() async {
-    final file = await _settingsFile;
-    await file.parent.create(recursive: true);
-    await file.writeAsString(
-      jsonEncode({
-        'theme': state.themeMode.name,
-        'recent': state.recentPaths,
-        'compiler': state.compiler.name,
-        if (state.keilPath != null) 'keil_path': state.keilPath,
-        'suppress_flash_guide': state.suppressFlashGuide,
-      }),
-    );
+    await writeSettings({
+      'theme': state.themeMode.name,
+      'recent': state.recentPaths,
+      'compiler': state.compiler.name,
+      if (state.keilPath != null) 'keil_path': state.keilPath,
+      'suppress_flash_guide': state.suppressFlashGuide,
+    });
   }
 
   void cycleTheme() {
@@ -189,6 +189,22 @@ class AppController extends Notifier<AppState> {
       return true;
     } catch (error) {
       state = state.copyWith(message: '创建失败：$error');
+      return false;
+    }
+  }
+
+  /// 把外部选来的项目文件落库后再打开。
+  ///
+  /// 桌面与 Android 的引用本身就是「可以再次读取的位置」，直接 open 就行；
+  /// Web 上引用只是文件名，内容必须先写进浏览器存储，否则打开时会找不到。
+  Future<bool> importProject(SelectedDocument selected) async {
+    try {
+      final document = _decodeDocument(selected.bytes);
+      await _repository.save(selected.reference, document);
+      _adopt(document, selected.reference);
+      return true;
+    } catch (error) {
+      state = state.copyWith(message: '导入失败：$error');
       return false;
     }
   }

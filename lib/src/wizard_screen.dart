@@ -1,12 +1,12 @@
 import 'dart:async';
-import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:pieblock_core/pieblock_core.dart';
-import 'package:pieblock_toolchain/pieblock_toolchain.dart';
+import 'package:pieblock_toolchain/models.dart';
 import 'package:re_editor/re_editor.dart';
 import 'package:re_highlight/languages/c.dart';
 import 'package:re_highlight/styles/atom-one-dark.dart';
@@ -14,7 +14,8 @@ import 'package:re_highlight/styles/atom-one-light.dart';
 
 import 'controller.dart';
 import 'deploy_controller.dart';
-import 'platform_paths.dart';
+import 'platform/file_export.dart';
+import 'platform/keil_discovery.dart';
 import 'music_editor.dart';
 
 final _fieldAnchors = <String, GlobalKey>{};
@@ -26,6 +27,13 @@ final _activeInputFieldProvider =
     NotifierProvider<_ActiveInputFieldController, String?>(
       _ActiveInputFieldController.new,
     );
+
+/// 平台判断。Web 上一律为 false——网页版既没有本地编译器，也没有 USB-HID，
+/// 这些分支在网页版里必须整块消失。
+bool get _isAndroid =>
+    !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+bool get _isWindows =>
+    !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
 
 class _ActiveInputFieldController extends Notifier<String?> {
   @override
@@ -1714,7 +1722,8 @@ class _InfantryMechanismPage extends ConsumerWidget {
                   isExpanded: true,
                   initialValue: pin,
                   decoration: _fieldDecoration(ref, pinPath, 'IO'),
-                  selectedItemBuilder: (_) => _selectedPinItems(visiblePinChoices),
+                  selectedItemBuilder: (_) =>
+                      _selectedPinItems(visiblePinChoices),
                   items: visiblePinChoices.map((e) {
                     if (e == null) {
                       return const DropdownMenuItem<String>(
@@ -1731,8 +1740,7 @@ class _InfantryMechanismPage extends ConsumerWidget {
                         e,
                         enabled: enabled,
                         owner:
-                            owner?.ownerLabel ??
-                            (enabled ? null : '当前驱动类型不支持'),
+                            owner?.ownerLabel ?? (enabled ? null : '当前驱动类型不支持'),
                       ),
                     );
                   }).toList(),
@@ -1759,9 +1767,7 @@ class _InfantryMechanismPage extends ConsumerWidget {
                       .map(
                         (e) => DropdownMenuItem(
                           value: e,
-                          child: Text(
-                            e == Direction.forward ? '正向' : '反向',
-                          ),
+                          child: Text(e == Direction.forward ? '正向' : '反向'),
                         ),
                       )
                       .toList(),
@@ -1783,7 +1789,8 @@ class _InfantryMechanismPage extends ConsumerWidget {
             ],
             IconButton(
               tooltip: '删除执行器',
-              onPressed: () => replaceActuators([...actuators]..removeAt(index)),
+              onPressed: () =>
+                  replaceActuators([...actuators]..removeAt(index)),
               icon: const Icon(Icons.delete_outline),
             ),
           ],
@@ -3093,39 +3100,11 @@ class _CodePage extends ConsumerStatefulWidget {
 
 class _CodePageState extends ConsumerState<_CodePage> {
   Future<void> _export(String code) async {
-    final desktop = defaultDesktopDirectory();
-    final path = TextEditingController(
-      text: desktop == null
-          ? 'main.c'
-          : '$desktop${Platform.pathSeparator}main.c',
-    );
-    await showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('导出 main.c'),
-        content: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 520),
-          child: SingleChildScrollView(
-            child: TextField(
-              controller: path,
-              decoration: const InputDecoration(labelText: '完整文件路径'),
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              await File(path.text).writeAsString(code);
-              if (context.mounted) Navigator.pop(context);
-            },
-            child: const Text('导出'),
-          ),
-        ],
-      ),
+    await exportGeneratedText(
+      context,
+      suggestedName: 'main.c',
+      text: code,
+      mimeType: 'text/plain',
     );
   }
 
@@ -3427,6 +3406,55 @@ class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
   }
 }
 
+/// 网页版的「编译与烧录」：功能不存在，但也不能留一个空页——
+/// 说清楚为什么、以及要去哪里完成，顺带把下载链接给出去。
+class _WebDeployNotice extends StatelessWidget {
+  const _WebDeployNotice();
+
+  static const _downloadUrl =
+      'https://github.com/louqingjie/PIE-Block/releases';
+
+  @override
+  Widget build(BuildContext context) => _PageFrame(
+    title: '编译与烧录',
+    subtitle: '网页版负责配置与生成代码，编译和烧录请在桌面版完成。',
+    child: _Section(
+      title: '这两步需要本机环境',
+      children: [
+        const _InfoBanner(
+          '编译要调用本机的 SDCC / Keil 工具链，烧录要直接访问 USB-HID 设备，'
+          '浏览器里都做不到。项目配置与生成的 C 代码不受影响，可以照常导出。',
+        ),
+        const SizedBox(height: 16),
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            FilledButton.icon(
+              onPressed: () async {
+                await Clipboard.setData(
+                  const ClipboardData(text: _downloadUrl),
+                );
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context)
+                      .showSnackBar(const SnackBar(content: Text('下载链接已复制')));
+                }
+              },
+              icon: const Icon(Icons.copy_all_outlined),
+              label: const Text('复制桌面版下载链接'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        SelectableText(
+          _downloadUrl,
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+      ],
+    ),
+  );
+}
+
 class _DeployPage extends ConsumerStatefulWidget {
   const _DeployPage();
 
@@ -3507,7 +3535,7 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
 
   Future<void> _prepare() async {
     var app = ref.read(appControllerProvider);
-    if (Platform.isAndroid && app.compiler != CompilerKind.sdcc) {
+    if (_isAndroid && app.compiler != CompilerKind.sdcc) {
       ref.read(appControllerProvider.notifier).setCompiler(CompilerKind.sdcc);
       app = ref.read(appControllerProvider);
     }
@@ -3661,7 +3689,7 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
   }
 
   Future<void> _exportHex() async {
-    if (Platform.isAndroid) {
+    if (_isAndroid) {
       await ref.read(deployControllerProvider.notifier).exportHexOnAndroid();
       return;
     }
@@ -3740,6 +3768,8 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
 
   @override
   Widget build(BuildContext context) {
+    // 网页版没有本地编译器，也没有 USB-HID，这一页整块换引导。
+    if (kIsWeb) return const _WebDeployNotice();
     final app = ref.watch(appControllerProvider);
     final deploy = ref.watch(deployControllerProvider);
     final artifact = deploy.artifact;
@@ -3750,7 +3780,7 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
     };
     return _PageFrame(
       title: '编译与烧录',
-      subtitle: Platform.isAndroid
+      subtitle: _isAndroid
           ? deploy.compilerAvailable
                 ? '使用内置 SDCC 离线编译 STC32G12K128 固件，并通过 OTG USB-HID 写入主控板。'
                 : '当前安装包未启用 Android 原生编译；项目配置与代码生成仍可正常使用。'
@@ -3759,13 +3789,13 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
         children: [
           _Section(
             title: '编译器',
-            subtitle: Platform.isAndroid
+            subtitle: _isAndroid
                 ? deploy.compilerAvailable
                       ? 'Android 使用随应用发布的原生 SDCC C251，不需要联网。'
                       : '原生编译安全门禁尚未通过，编译入口已禁用。'
                 : '内置 SDCC 可完全离线使用；Keil 使用本机已安装的 C251。',
             children: [
-              if (Platform.isAndroid)
+              if (_isAndroid)
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: Icon(
@@ -3857,7 +3887,7 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
                 spacing: 10,
                 runSpacing: 10,
                 children: [
-                  if (Platform.isWindows || Platform.isAndroid)
+                  if (_isWindows || _isAndroid)
                     FilledButton.icon(
                       onPressed: deploy.busy ? null : _primaryAction,
                       icon: Icon(
@@ -3867,12 +3897,9 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
                       ),
                       label: Text(artifact == null ? '编译并烧录' : '烧录当前固件'),
                     ),
-                  (Platform.isAndroid
-                      ? FilledButton.icon
-                      : OutlinedButton.icon)(
+                  (_isAndroid ? FilledButton.icon : OutlinedButton.icon)(
                     onPressed:
-                        deploy.busy ||
-                            (Platform.isAndroid && !deploy.compilerAvailable)
+                        deploy.busy || (_isAndroid && !deploy.compilerAvailable)
                         ? null
                         : _build,
                     icon: const Icon(Icons.build_outlined),
@@ -3893,7 +3920,7 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
                       icon: const Icon(Icons.stop_circle_outlined),
                       label: const Text('取消任务'),
                     ),
-                  if (Platform.isWindows && deploy.licenseFailure)
+                  if (_isWindows && deploy.licenseFailure)
                     TextButton.icon(
                       onPressed: _applyLicense,
                       icon: const Icon(Icons.key_outlined),
@@ -3903,7 +3930,7 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
               ),
             ],
           ),
-          if (Platform.isWindows || Platform.isAndroid) ...[
+          if (_isWindows || _isAndroid) ...[
             const SizedBox(height: 16),
             _Section(
               title: '主控板 USB-HID',
@@ -3933,7 +3960,7 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
                 ),
                 const SizedBox(height: 10),
                 _InfoBanner(
-                  Platform.isAndroid
+                  _isAndroid
                       ? '通过 OTG 转接线连接主控板；首次烧录会请求 USB 权限。请先将主控板断电再重新上电进入 ISP 模式；烧录成功后 HID 设备自动消失是正常现象。'
                       : '未检测到时，请关闭四个供电开关，将主控板断电后重新连接 USB。烧录成功后 HID 设备自动消失是正常现象。',
                 ),
