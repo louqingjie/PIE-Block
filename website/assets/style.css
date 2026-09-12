@@ -74,7 +74,8 @@
   /* 版心 */
   --gutter: clamp(20px, 5.7vw, 72px);
   --content-max: 1440px;
-  --nav-h: 64px;
+  /* 浮动 dock 的占位高度：顶部内边距 8px + 胶囊 40px，只用于锚点滚动偏移 */
+  --nav-h: 48px;
 
   --easing: cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -408,63 +409,201 @@ button {
   gap: var(--space-6);
 }
 
-/* ========== 导航 ========== */
-.nav {
-  position: sticky;
+/* ========== 顶部 dock ========== */
+/* 悬浮居中的胶囊，不占布局。形态与数值照 deepseek.com/harness 的
+   ds-header-wrapper / ds-header-bar：外层宽度 = 本站内容宽，内层 max-width
+   在顶部铺满、滚过后收窄成 980（收窄后的宽度直接照参考页）。 */
+.dock {
+  position: fixed;
   top: 0;
+  left: 0;
+  right: 0;
   z-index: 100;
-  height: var(--nav-h);
-  background: rgba(10, 10, 10, 0.65);
-  backdrop-filter: blur(var(--blur-glass));
-  -webkit-backdrop-filter: blur(var(--blur-glass));
-  border-bottom: 1px solid var(--border-default);
+  width: min(100% - 2 * var(--gutter), var(--content-max));
+  margin-inline: auto;
+  padding-top: var(--space-2);
+  /* 只有胶囊本身可点：整条浮动区域不该拦住英雄区的交互 */
+  pointer-events: none;
 }
 
-.nav__inner {
+.dock__bar {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--space-5);
-  height: 100%;
+  max-width: var(--content-max);
+  margin-inline: auto;
+  padding: 4px 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  pointer-events: auto;
+  /* 参考页用 spring(stiffness 180 / damping 28)，阻尼比约 1.04 属于过阻尼、
+     没有回弹，所以一条强 ease-out 曲线就等价，不必引动画库 */
+  transition: max-width 0.55s var(--easing), padding 0.55s var(--easing);
 }
 
-.brand {
+/* 毛玻璃底：顶部完全透明，滚过阈值后才淡入 */
+.dock__bar::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  z-index: -1;
+  border-radius: inherit;
+  border: 1px solid var(--border-default);
+  /* 25% 白是参考页 dark 主题的 surface-raised 取值 */
+  background: hsla(0, 0%, 100%, 0.25);
+  backdrop-filter: blur(var(--blur-glass));
+  -webkit-backdrop-filter: blur(var(--blur-glass));
+  opacity: 0;
+  visibility: hidden;
+  /* 隐藏时把 visibility 推到淡出结束之后，免得刚滚回顶部还能点到 */
+  transition: opacity 0.4s ease-in-out, visibility 0s 0.4s;
+  pointer-events: none;
+}
+
+.dock.is-scrolled .dock__bar {
+  /* 980 是参考页收窄后的字面值；用固定值而不是百分比，是为了在窄一些的
+     视口下也看得到收窄（那里胶囊本身就没到 1100，按比例算反而没变化） */
+  max-width: 980px;
+  padding-inline: 16px 6px;
+}
+
+.dock.is-scrolled .dock__bar::before {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.4s ease-in-out, visibility 0s;
+}
+
+.dock__lead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.dock__brand {
   display: flex;
   align-items: center;
   gap: 10px;
   font-size: 16px;
   font-weight: 500;
   letter-spacing: -0.01em;
+  white-space: nowrap;
 }
 
-.brand__icon {
+.dock__logo {
   width: 26px;
   height: 26px;
   border-radius: 7px;
 }
 
-.nav__links {
+/* hero 的「开发者预览版」滚出视口后滑入：左移 6px + 3px 模糊，与参考页同款 */
+.dock__badge {
+  opacity: 0;
+  transform: translateX(-6px);
+  filter: blur(3px);
+  pointer-events: none;
+  /* 复用 .badge 的渐变描边，但别让它在导航里一直转 */
+  animation: none;
+  transition: opacity 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+    filter 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.dock__badge.is-shown {
+  opacity: 1;
+  transform: none;
+  filter: none;
+}
+
+.dock__badge .badge__inner {
+  padding: 4px 8px 5px;
+  font-size: 11px;
+}
+
+.dock__links {
   display: flex;
   align-items: center;
   gap: var(--space-5);
   margin-left: auto;
 }
 
-.nav__links a {
+.dock__links a {
   font-size: 14px;
   color: var(--text-description);
   transition: color 0.2s var(--easing);
 }
 
-.nav__links a:hover {
+.dock__links a:hover {
   color: var(--text-primary);
 }
 
+.dock__toggle {
+  display: none;
+  margin-left: auto;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+}
+
+/* ========== 移动端抽屉 ========== */
+/* 常驻 DOM，只切 is-open（参考页同款）；打开时由 site.js 锁住页面滚动 */
+.dock-menu {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-page);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+.dock-menu.is-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* 与 dock、正文用同一条版心线 */
+.dock-menu__head,
+.dock-menu__body {
+  width: min(100% - 2 * var(--gutter), var(--content-max));
+  margin-inline: auto;
+}
+
+.dock-menu__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-block: 12px;
+}
+
+.dock-menu__body {
+  flex: 1;
+  overflow-y: auto;
+  padding-bottom: var(--space-9);
+}
+
+.dock-menu__item {
+  display: flex;
+  align-items: center;
+  padding: var(--space-5) 0;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
 /* ========== 英雄区 ========== */
 .hero {
   position: relative;
   display: flex;
   align-items: center;
-  min-height: calc(100svh - var(--nav-h));
+  /* dock 是浮动的、不占布局，英雄区回到整屏（参考页也是 100vh + 浮动 dock） */
+  min-height: 100svh;
   overflow: hidden;
 }
 
@@ -1688,15 +1827,22 @@ button {
 }
 
 @media (max-width: 900px) {
-  :root {
-    --nav-h: 60px;
+  /* 窄屏折叠：站内链接收进抽屉，汉堡出现；下载按钮留在胶囊里
+     （参考页移动端只剩 logo + 汉堡，但下载是这个站的首要动作） */
+  .dock__bar {
+    gap: var(--space-3);
   }
 
-  .nav__links {
+  .dock__links {
     display: none;
   }
 
-  .nav__links--always {
+  /* 徽章在窄屏会把胶囊挤爆，只在宽屏展示 */
+  .dock__badge {
+    display: none;
+  }
+
+  .dock__toggle {
     display: flex;
   }
 

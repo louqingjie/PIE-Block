@@ -12,23 +12,52 @@
 </head>
 <body>
 
-  <!-- 导航 -->
-  <header class="nav">
-    <div class="container nav__inner">
-      <a class="brand" href="#top">
-        <img class="brand__icon" src="assets/icon.png" alt="" />
-        <span>PIE-Block</span>
-      </a>
-      <nav class="nav__links" aria-label="主导航">
+  <!-- 顶部 dock：悬浮胶囊。顶部完全透明，滚过 80px 后浮出毛玻璃底并收窄；
+       窄屏折叠成汉堡 + 全屏抽屉。形态与滚动行为照 deepseek.com/harness 那条 -->
+  <div class="dock" data-dock>
+    <div class="dock__bar">
+      <div class="dock__lead">
+        <a class="dock__brand" href="#top">
+          <img class="dock__logo" src="assets/icon.png" alt="" />
+          <span>PIE-Block</span>
+        </a>
+        <!-- hero 的「开发者预览版」滚出视口后滑入，复用页面已有的渐变描边徽章 -->
+        <span class="dock__badge badge" data-dock-badge><span class="badge__inner">开发者预览版</span></span>
+      </div>
+      <nav class="dock__links" aria-label="主导航">
         <a href="#features">能力</a>
         <a href="#flow">工作流</a>
         <a href="#kinds">项目类型</a>
         <a href="#start">上手</a>
         <a href="https://github.com/louqingjie/PIE-Block" target="_blank" rel="noopener">GitHub</a>
       </nav>
-      <a class="btn btn--primary btn--sm" href="#start">下载安装包</a>
+      <a class="btn btn--primary btn--sm dock__cta" href="#start">下载安装包</a>
+      <button class="dock__toggle" type="button" aria-label="打开菜单" aria-expanded="false" aria-controls="dock-menu" data-dock-toggle>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+      </button>
     </div>
-  </header>
+  </div>
+
+  <!-- 移动端抽屉：常驻 DOM，只切 is-open；打开时锁住页面滚动 -->
+  <div class="dock-menu" id="dock-menu" data-dock-menu>
+    <div class="dock-menu__head">
+      <a class="dock__brand" href="#top">
+        <img class="dock__logo" src="assets/icon.png" alt="" />
+        <span>PIE-Block</span>
+      </a>
+      <button class="dock__toggle" type="button" aria-label="关闭菜单" data-dock-close>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M6 18L18 6"/></svg>
+      </button>
+    </div>
+    <nav class="dock-menu__body" aria-label="移动端导航">
+      <a class="dock-menu__item" href="#features">能力</a>
+      <a class="dock-menu__item" href="#flow">工作流</a>
+      <a class="dock-menu__item" href="#kinds">项目类型</a>
+      <a class="dock-menu__item" href="#start">上手</a>
+      <a class="dock-menu__item" href="https://github.com/louqingjie/PIE-Block" target="_blank" rel="noopener">GitHub</a>
+      <a class="dock-menu__item" href="#start">下载安装包</a>
+    </nav>
+  </div>
 
   <main id="top">
 

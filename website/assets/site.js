@@ -1141,6 +1141,70 @@ void main() {
     document.addEventListener("webkitfullscreenchange", sync);
   })();
 
+  /* ---------- 顶部 dock ----------
+     参考页那条 dock 的三个行为：滚过 80px 后胶囊浮出毛玻璃底并收窄（它用
+     framer-motion 弹簧，我们等价成 CSS 过渡）、hero 的「开发者预览版」滚出
+     视口后品牌旁滑入同字徽章、窄屏汉堡打开全屏抽屉并锁住页面滚动。 */
+  (function setupDock() {
+    const dock = document.querySelector("[data-dock]");
+    if (!dock) return;
+
+    /* 只做「滚过阈值」的单向判断——参考页没有下滚隐藏、上滚显示 */
+    const threshold = 80;
+    let ticking = false;
+    function syncBar() {
+      ticking = false;
+      dock.classList.toggle("is-scrolled", window.scrollY > threshold);
+    }
+    syncBar();
+    window.addEventListener(
+      "scroll",
+      () => {
+        if (ticking) return;
+        ticking = true;
+        requestAnimationFrame(syncBar);
+      },
+      { passive: true }
+    );
+
+    /* hero 的预览小标题滚出视口后，品牌旁滑入徽章 */
+    const badge = document.querySelector("[data-dock-badge]");
+    const eyebrow = document.querySelector(".hero__eyebrow");
+    if (badge && eyebrow && "IntersectionObserver" in window) {
+      new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            badge.classList.toggle("is-shown", !entry.isIntersecting);
+          });
+        },
+        { threshold: 0 }
+      ).observe(eyebrow);
+    }
+
+    /* 窄屏抽屉 */
+    const menu = document.querySelector("[data-dock-menu]");
+    const openButton = document.querySelector("[data-dock-toggle]");
+    if (!menu || !openButton) return;
+    const closeButton = document.querySelector("[data-dock-close]");
+
+    function setMenu(open) {
+      menu.classList.toggle("is-open", open);
+      openButton.setAttribute("aria-expanded", String(open));
+      // 与参考页一致：html 与 body 一起锁，避免背景跟着滚
+      document.documentElement.style.overflow = open ? "hidden" : "";
+      document.body.style.overflow = open ? "hidden" : "";
+    }
+
+    openButton.addEventListener("click", () => setMenu(true));
+    if (closeButton) closeButton.addEventListener("click", () => setMenu(false));
+    menu.querySelectorAll("a").forEach((link) => {
+      link.addEventListener("click", () => setMenu(false));
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") setMenu(false);
+    });
+  })();
+
   /* ---------- 滚动揭示 ---------- */
   const reveals = Array.from(document.querySelectorAll(".reveal, .closing__grid"));
   const revealAll = () =>
