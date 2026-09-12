@@ -63,74 +63,19 @@
           <p class="hero__meta enter" style="--enter-delay: 0.32s">首个安装包发布于 GitHub · Windows 10/11 x64 · 内置 SDCC C251 工具链</p>
         </div>
 
-        <!-- 生成结果面板 -->
-        <div class="terminal enter" style="--enter-delay: 0.4s">
-          <div class="terminal__tabs" role="tablist" aria-label="生成结果">
-            <button class="terminal__tab" id="tab-app" role="tab" aria-selected="true" aria-controls="pane-app">在线体验</button>
-            <button class="terminal__tab" id="tab-code" role="tab" aria-selected="false" aria-controls="pane-code">生成代码</button>
-            <button class="terminal__tab" id="tab-flash" role="tab" aria-selected="false" aria-controls="pane-flash">编译与烧录</button>
+        <!-- 在线体验：整块就是 Flutter Web 版本身，没有页签也没有面板外壳。
+             iframe 的 src 在整页加载完之后才设，免得 6MB 的应用和首屏抢带宽；
+             应用画出第一帧会 postMessage 过来，超时就退回一句提示加一个重试
+             （见 site.js 的 setupEmbeddedApp）。 -->
+        <div class="hero__app enter" style="--enter-delay: 0.4s">
+          <iframe class="hero__app-frame" data-app-frame data-src="app/" title="PIE-Block 在线体验"></iframe>
+          <div class="hero__app-boot" data-app-boot>
+            <span class="hero__app-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span>正在启动在线体验…</span>
           </div>
-
-          <div class="terminal__frame">
-            <div class="terminal__bar">
-              <span class="terminal__dots" aria-hidden="true"><i></i><i></i><i></i></span>
-              <button class="terminal__copy" type="button" data-copy-pane data-copy-label="已复制">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                <span>复制</span>
-              </button>
-            </div>
-
-            <div class="terminal__body">
-              <!-- 在线体验：默认页签。iframe 的 src 在整页加载完之后才设，
-                   免得 6MB 的应用和首屏抢带宽；就绪信号由应用自己 postMessage 过来，
-                   超时就退回静态示例（见 site.js 的 setupEmbeddedApp）。 -->
-              <div class="terminal__pane terminal__pane--app" id="pane-app" role="tabpanel" aria-labelledby="tab-app" data-active="true">
-                <iframe class="terminal__app" data-app-frame data-src="app/" title="PIE-Block 在线体验"></iframe>
-                <div class="terminal__boot" data-app-boot>
-                  <span class="terminal__boot-dots" aria-hidden="true"><i></i><i></i><i></i></span>
-                  <span>正在启动在线体验…</span>
-                </div>
-                <div class="terminal__app-note" data-app-note>
-                  <p class="terminal__app-note-text">在线体验没能及时加载出来，可以先看下面的静态示例。</p>
-                  <button class="terminal__app-retry" type="button" data-app-retry>重试</button>
-                </div>
-              </div>
-
-<pre class="terminal__pane" id="pane-code" role="tabpanel" aria-labelledby="tab-code"><span class="terminal__dim">// 步兵机器人控制代码（由 PIE-Block 自动生成）</span>
-#include "main.h"
-#include &lt;stdlib.h&gt;
-
-uint8_t  Channal = 36;
-uint16_t maxSpeed = 4000;
-uint16_t ultraSpeed = 8000;
-uint16_t deadBandOfLeft = 100;
-
-void main(void)
-{
-    All_Init();
-    while (1) {
-        ReadControllerInputs();
-        CalculateChassis();
-        UpdateGimbal();
-        UpdateWeapons();
-        Ms_Delay(10);
-    }
-}</pre>
-
-<pre class="terminal__pane" id="pane-flash" role="tabpanel" aria-labelledby="tab-flash"><span class="terminal__prompt">$</span> <span class="terminal__dim">编译并烧录 · 通道 36 · 4000 / 8000 duty</span>
-
-正在准备 SDCC 构建环境…
-[1/7] 编译 main.c
-正在链接 ROBOMASTER_INFANTRY.hex…
-正在校验 HEX 地址和校验和…
-<span class="terminal__ok">HEX 布局有效，共 13241 字节</span>
-
-正在连接主控板引导程序…
-正在擦除主控板程序区…
-正在写入固件 42/96
-写入完成，正在复位主控板…
-<span class="terminal__ok">烧录完成，主控板已运行新程序</span></pre>
-            </div>
+          <div class="hero__app-note" data-app-note>
+            <p class="hero__app-note-text">在线体验没能及时加载出来，可能是网络太慢或者浏览器不支持。</p>
+            <button class="hero__app-retry" type="button" data-app-retry>重试</button>
           </div>
         </div>
       </div>

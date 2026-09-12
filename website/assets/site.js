@@ -988,39 +988,6 @@ void main() {
     isStatic: true,
   });
 
-  /* ---------- 生成结果面板的页签 ---------- */
-  document.querySelectorAll(".terminal__tabs").forEach((tablist) => {
-    const tabs = Array.from(tablist.querySelectorAll('[role="tab"]'));
-    const terminal = tablist.closest(".terminal");
-    if (!terminal || tabs.length === 0) return;
-
-    const panes = Array.from(terminal.querySelectorAll(".terminal__pane"));
-
-    function select(tab) {
-      const targetId = tab.getAttribute("aria-controls");
-      tabs.forEach((item) => {
-        item.setAttribute("aria-selected", String(item === tab));
-        item.tabIndex = item === tab ? 0 : -1;
-      });
-      panes.forEach((pane) => {
-        pane.dataset.active = String(pane.id === targetId);
-      });
-    }
-
-    tabs.forEach((tab, index) => {
-      tab.tabIndex = tab.getAttribute("aria-selected") === "true" ? 0 : -1;
-      tab.addEventListener("click", () => select(tab));
-      tab.addEventListener("keydown", (event) => {
-        const offset = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
-        if (offset === 0) return;
-        event.preventDefault();
-        const next = tabs[(index + offset + tabs.length) % tabs.length];
-        select(next);
-        next.focus();
-      });
-    });
-  });
-
   /* ---------- 复制按钮 ---------- */
   function setCopyLabel(button, text) {
     const span = button.querySelector("span");
@@ -1060,17 +1027,9 @@ void main() {
     }
   }
 
-  document.querySelectorAll("[data-copy], [data-copy-pane]").forEach((button) => {
+  document.querySelectorAll("[data-copy]").forEach((button) => {
     button.addEventListener("click", async () => {
-      let text = button.dataset.copy;
-
-      if (button.hasAttribute("data-copy-pane")) {
-        const terminal = button.closest(".terminal");
-        const pane =
-          terminal && terminal.querySelector('.terminal__pane[data-active="true"]');
-        text = pane ? pane.textContent : "";
-      }
-
+      const text = button.dataset.copy;
       if (!text) return;
 
       const ok = await writeClipboard(text);
@@ -1082,16 +1041,17 @@ void main() {
   });
 
   /* ---------- 在线体验：延迟加载 + 超时降级 ----------
-     面板默认就是这块应用。整个流程刻意做得「退化态即初始态」：
+     英雄区右列整块就是这个应用。降级态刻意做得和初始态一样安静：
        · 整页 load 之后才设 iframe.src —— 首屏那 60KB 不该和 6MB 的应用抢带宽；
        · 应用画出第一帧会 postMessage 过来，收到才淡入（在此之前它只是一块
          空白画布，露出来不如给一句「正在启动」）；
-       · 10 秒还没就绪就撤掉启动态、露出静态代码示例加一个重试，但 iframe
-         继续在后台加载 —— 真到了仍然会淡入，所以慢网只是晚一点，不会失败。 */
+       · 10 秒还没就绪就把启动态换成一句提示加一个重试，但 iframe 继续在后台
+         加载 —— 真到了仍然会淡入，所以慢网只是晚一点，不会变成一个错误页。 */
   (function setupEmbeddedApp() {
-    const pane = document.getElementById("pane-app");
     const frame = document.querySelector("[data-app-frame]");
-    if (!pane || !frame) return;
+    if (!frame) return;
+    const pane = frame.closest(".hero__app");
+    if (!pane) return;
 
     const source = frame.getAttribute("data-src");
     if (!source) return;
