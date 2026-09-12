@@ -3,6 +3,7 @@ name: Windows 构建
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -262,3 +263,48 @@ jobs:
             ${{ steps.zip.outputs.name }}
           if-no-files-found: error
           retention-days: 14
+
+  release:
+    name: 发布 GitHub Release
+    needs: windows
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 校验标签与 pubspec 版本一致
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(grep -m1 -oP '^version:\s*\K[0-9]+\.[0-9]+\.[0-9]+' pubspec.yaml)"
+          if [ "$tag" != "$version" ]; then
+            echo "::error::标签 $GITHUB_REF_NAME 与 pubspec.yaml 的 $version 不一致，请先提升版本号再打标签。"
+            exit 1
+          fi
+          echo "版本校验通过：$version"
+
+      - name: 下载构建产物
+        uses: actions/download-artifact@v4
+        with:
+          name: PIEBlock-windows-x64
+          path: artifacts
+
+      - name: 创建 Release 并上传产物
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          notes="docs/releases/$version.md"
+          arguments=(--verify-tag --title "PIE-Block $version")
+          if [ -f "$notes" ]; then
+            arguments+=(--notes-file "$notes")
+          else
+            arguments+=(--generate-notes)
+          fi
+          ls -lh artifacts artifacts/output
+          gh release create "$GITHUB_REF_NAME" "${arguments[@]}" \
+            artifacts/output/*.exe artifacts/*.zip

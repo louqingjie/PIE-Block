@@ -62,6 +62,8 @@ Android 离线 SDCC 的架构、安全门和验收状态见 [Android SDCC 多进
 
 产物保留 14 天，名称为 `PIEBlock-<版本>-windows-setup.exe`（Inno 安装包）与 `PIEBlock-<版本>-windows-x64-release.zip`（免安装 `Release` 目录）。金样校验可用 `workflow_dispatch` 的 `skip_golden` 输入临时跳过。
 
+推送 `v*` 标签会额外触发 `release` job：校验标签与 `pubspec.yaml` 版本一致后，用该版本的产物创建 GitHub Release。Release 正文优先取 `docs/releases/<版本>.md`，没有该文件时用自动生成的变更说明——发版请同时提交版本说明文件。
+
 本地复现 CI 的检查：
 
 ```powershell
