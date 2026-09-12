@@ -292,6 +292,16 @@ jobs:
           name: PIEBlock-windows-x64
           path: artifacts
 
+      - name: 补一个稳定命名的安装包
+        run: |
+          set -euo pipefail
+          # 官网的下载按钮用 /releases/latest/download/PIEBlock-windows-setup.exe，
+          # 这个链接不随版本号变化。产物本身仍带版本号，这里只是多传一份副本；
+          # 注意：Release 若被标记为 prerelease，latest 不会指向它，直链会 404。
+          exe="$(ls artifacts/output/*windows-setup.exe)"
+          cp "$exe" artifacts/PIEBlock-windows-setup.exe
+          ls -lh artifacts/PIEBlock-windows-setup.exe
+
       - name: 创建 Release 并上传产物
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -307,4 +317,5 @@ jobs:
           fi
           ls -lh artifacts artifacts/output
           gh release create "$GITHUB_REF_NAME" "${arguments[@]}" \
-            artifacts/output/*.exe artifacts/*.zip
+            artifacts/output/*.exe artifacts/*.zip \
+            artifacts/PIEBlock-windows-setup.exe
