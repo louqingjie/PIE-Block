@@ -18,7 +18,7 @@ PIE-Block 是面向 W.PIE RoboMaster 校内赛的 Windows 桌面集成开发环�
 - HEX 地址与校验和检查、按内容哈希复用构建结果、导出 HEX
 - STC32G ROM USB-HID 主控板烧录、进度、取消和失败提示
 
-暂不提供云端编译、串口/蓝牙烧录、AI 编辑、3D 仿真、Web、CLI 或 MCP。Android 可配置、编辑、预览和编译音乐项目；步兵/工程离线 SDCC 正在进行多进程真机黄金验证，Release 安全门通过前不对用户开放，且 Android 仍不支持 USB-HID 烧录。
+暂不提供云端编译、串口/蓝牙烧录、AI 编辑、3D 仿真、CLI 或 MCP。官网嵌了一个 Web 版（只读暗色、默认打开），可以配置项目、看生成的 C 代码，编译与烧录仍然只能在桌面版完成——浏览器里既没有本地工具链也访问不到 USB-HID。Web 版的项目存在浏览器 localStorage 里，导入导出走文件上传下载。Android 可配置、编辑、预览和编译音乐项目；步兵/工程离线 SDCC 正在进行多进程真机黄金验证，Release 安全门通过前不对用户开放，且 Android 仍不支持 USB-HID 烧录。
 
 ## 项目结构
 
@@ -52,6 +52,33 @@ flutter build windows --release
 
 编译与主控板接线、开关位置和故障排查见 [Flutter 编译与烧录指南](docs/Flutter编译与烧录指南.md)。
 Android 离线 SDCC 的架构、安全门和验收状态见 [Android SDCC 多进程移植](docs/android-sdcc-port.md)。
+
+## 官网与在线体验
+
+官网是 `website/` 下的零依赖静态站（`wrangler.jsonc` 把整个目录交给 Cloudflare
+Workers 托管）。英雄区那块面板默认就是 Flutter Web 版：页面加载完之后才拉取应用，
+应用画出第一帧会 `postMessage` 通知页面淡入，10 秒内没就绪就退回静态代码示例并给
+一个重试按钮。
+
+发布：
+
+```bash
+tools/build_website.sh      # Windows: tools\build_website.ps1
+wrangler deploy
+```
+
+构建脚本做三件事：`flutter build web --base-href /app/ --pwa-strategy=none`、
+把产物拷进 `website/app/`、删掉不会被下载的 `*.symbols`。产物约 38MB 且**不进 git**
+（`.gitignore` 已忽略 `website/app/`），所以每次改完代码要重新跑一遍脚本再部署。
+
+`--pwa-strategy=none` 是刻意的：Flutter 默认的 service worker 缓存很激进，网页版
+迭代时用户容易卡在旧版本。`--base-href /app/` 也是必需的：Cloudflare 只能托管一个
+目录，应用必须能识别自己在子路径下，否则会去根路径找 `main.dart.js`。
+
+Web 版与桌面版共用同一套代码，差异都由 `lib/src/platform/` 下的条件导入隔离
+（设置存 localStorage 还是 settings.json、项目存浏览器还是文件、导出走下载还是路径
+对话框、有没有本地 Keil 与编译器）。`deploy_controller` 在 Web 上是空桩，这也顺带
+把两个 `dart:ffi` 包挡在 Web 构建之外。
 
 ## 持续集成
 

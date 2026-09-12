@@ -65,6 +65,11 @@ node_modules/
 dist/
 release/
 
+# 官网里嵌入的 Flutter Web 产物（约 40MB，由 tools/build_website.sh 生成后
+# 直接 wrangler deploy；不要命名为 website/build/ 或 website/dist/，
+# 那两个名字会被上面的目录规则静默忽略）
+website/app/
+
 # 发布时生成的内置运行时 / 编译器 staging（二进制不提交）
 vendor/opencode-runtime/
 vendor/keil-toolchain/
