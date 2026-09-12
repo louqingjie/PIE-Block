@@ -615,7 +615,8 @@ button {
 }
 
 .terminal__tab {
-  padding: 8px 16px;
+  /* 下内边距比上边多 2px：页签底部有 2px 被面板压住，补回来标签才是居中的 */
+  padding: 8px 16px 10px;
   font-size: 13px;
   font-weight: 500;
   color: var(--text-description);
@@ -631,7 +632,12 @@ button {
   color: var(--text-primary);
 }
 
+/* 选中的页签要压在面板之上：面板的顶边那条 1px 描边必须被页签自己的底边
+   盖掉，否则会横穿页签，看着像两个框叠在一起。抬起来之后靠 backdrop-filter
+   把底下那条描边糊掉，页签的底色才和面板连成一片。 */
 .terminal__tab[aria-selected="true"] {
+  position: relative;
+  z-index: 1;
   color: var(--text-primary);
   background: var(--bg-code);
   backdrop-filter: blur(var(--blur-glass));
@@ -639,8 +645,9 @@ button {
   border-color: var(--border-subtle);
 }
 
+/* 只上提 2px：正好让页签的左右描边收在面板顶边上，描边不会伸进面板里 */
 .terminal__frame {
-  margin-top: -13px;
+  margin-top: -2px;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-media);
   background: var(--bg-code);
@@ -1635,10 +1642,7 @@ button {
     display: none;
   }
 
-  .terminal__frame {
-    margin-top: -1px;
-  }
-
+  /* 窄屏页签顶到面板左边，上提量保持与基准一致（-2px）即可 */
   .terminal__tabs {
     margin-left: 0;
   }
