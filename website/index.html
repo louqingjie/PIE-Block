@@ -66,7 +66,8 @@
         <!-- 生成结果面板 -->
         <div class="terminal enter" style="--enter-delay: 0.4s">
           <div class="terminal__tabs" role="tablist" aria-label="生成结果">
-            <button class="terminal__tab" id="tab-code" role="tab" aria-selected="true" aria-controls="pane-code">生成代码</button>
+            <button class="terminal__tab" id="tab-app" role="tab" aria-selected="true" aria-controls="pane-app">在线体验</button>
+            <button class="terminal__tab" id="tab-code" role="tab" aria-selected="false" aria-controls="pane-code">生成代码</button>
             <button class="terminal__tab" id="tab-flash" role="tab" aria-selected="false" aria-controls="pane-flash">编译与烧录</button>
           </div>
 
@@ -80,7 +81,22 @@
             </div>
 
             <div class="terminal__body">
-<pre class="terminal__pane" id="pane-code" role="tabpanel" aria-labelledby="tab-code" data-active="true"><span class="terminal__dim">// 步兵机器人控制代码（由 PIE-Block 自动生成）</span>
+              <!-- 在线体验：默认页签。iframe 的 src 在整页加载完之后才设，
+                   免得 6MB 的应用和首屏抢带宽；就绪信号由应用自己 postMessage 过来，
+                   超时就退回静态示例（见 site.js 的 setupEmbeddedApp）。 -->
+              <div class="terminal__pane terminal__pane--app" id="pane-app" role="tabpanel" aria-labelledby="tab-app" data-active="true">
+                <iframe class="terminal__app" data-app-frame data-src="app/" title="PIE-Block 在线体验"></iframe>
+                <div class="terminal__boot" data-app-boot>
+                  <span class="terminal__boot-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+                  <span>正在启动在线体验…</span>
+                </div>
+                <div class="terminal__app-note" data-app-note>
+                  <p class="terminal__app-note-text">在线体验没能及时加载出来，可以先看下面的静态示例。</p>
+                  <button class="terminal__app-retry" type="button" data-app-retry>重试</button>
+                </div>
+              </div>
+
+<pre class="terminal__pane" id="pane-code" role="tabpanel" aria-labelledby="tab-code"><span class="terminal__dim">// 步兵机器人控制代码（由 PIE-Block 自动生成）</span>
 #include "main.h"
 #include &lt;stdlib.h&gt;
 

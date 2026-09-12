@@ -1081,6 +1081,58 @@ void main() {
     });
   });
 
+  /* ---------- 在线体验：延迟加载 + 超时降级 ----------
+     面板默认就是这块应用。整个流程刻意做得「退化态即初始态」：
+       · 整页 load 之后才设 iframe.src —— 首屏那 60KB 不该和 6MB 的应用抢带宽；
+       · 应用画出第一帧会 postMessage 过来，收到才淡入（在此之前它只是一块
+         空白画布，露出来不如给一句「正在启动」）；
+       · 10 秒还没就绪就撤掉启动态、露出静态代码示例加一个重试，但 iframe
+         继续在后台加载 —— 真到了仍然会淡入，所以慢网只是晚一点，不会失败。 */
+  (function setupEmbeddedApp() {
+    const pane = document.getElementById("pane-app");
+    const frame = document.querySelector("[data-app-frame]");
+    if (!pane || !frame) return;
+
+    const source = frame.getAttribute("data-src");
+    if (!source) return;
+
+    const retry = document.querySelector("[data-app-retry]");
+    const timeoutMs = Number(pane.dataset.appTimeout || 10000);
+    let timer = 0;
+
+    function start() {
+      pane.classList.remove("is-ready");
+      clearTimeout(timer);
+      // 超时只是「把启动态换成提示」，加载本身不停
+      timer = setTimeout(() => pane.classList.add("is-timeout"), timeoutMs);
+      frame.src = source;
+    }
+
+    function reveal() {
+      clearTimeout(timer);
+      pane.classList.add("is-ready");
+      pane.classList.remove("is-timeout");
+    }
+
+    window.addEventListener("message", (event) => {
+      // 只认同源、且确实来自这个 iframe 的就绪信号
+      if (event.origin !== window.location.origin) return;
+      if (event.source !== frame.contentWindow) return;
+      if (event.data !== "pieblock:ready") return;
+      reveal();
+    });
+
+    if (retry) {
+      retry.addEventListener("click", () => {
+        pane.classList.remove("is-timeout");
+        start();
+      });
+    }
+
+    if (document.readyState === "complete") start();
+    else window.addEventListener("load", start, { once: true });
+  })();
+
   /* ---------- 滚动揭示 ---------- */
   const reveals = Array.from(document.querySelectorAll(".reveal, .closing__grid"));
   const revealAll = () =>
