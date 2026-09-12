@@ -65,6 +65,9 @@ node_modules/
 dist/
 release/
 
+# wrangler 本地缓存（账号信息与部署临时文件，不进 git）
+.wrangler/
+
 # 官网里嵌入的 Flutter Web 产物（约 40MB，由 tools/build_website.sh 生成后
 # 直接 wrangler deploy；不要命名为 website/build/ 或 website/dist/，
 # 那两个名字会被上面的目录规则静默忽略）
