@@ -83,6 +83,16 @@ flutter:
     - family: PieBlockSans
       fonts:
         - asset: assets/fonts/NotoSansSC-Regular-subset.ttf
+    - family: PieBlockMono
+      fonts:
+        - asset: assets/fonts/JetBrainsMonoNL-Regular.ttf
+        - asset: assets/fonts/JetBrainsMonoNL-Italic.ttf
+          style: italic
+        - asset: assets/fonts/JetBrainsMonoNL-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/JetBrainsMonoNL-BoldItalic.ttf
+          weight: 700
+          style: italic
 
   # To add assets to your application, add an assets section, like this:
   # assets:

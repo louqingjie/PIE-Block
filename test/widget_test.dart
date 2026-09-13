@@ -1924,6 +1924,21 @@ void main() {
     expect(editor.readOnly, isTrue);
     expect(editor.wordWrap, isFalse);
     expect(editor.chunkAnalyzer, isA<NonCodeChunkAnalyzer>());
+    expect(editor.style!.fontFamily, 'PieBlockMono');
+    expect(
+      editor.style!.fontFamilyFallback,
+      containsAll(<String>[
+        'PieBlockSans',
+        'Noto Sans CJK SC',
+        'Source Han Sans SC',
+        'WenQuanYi Micro Hei Mono',
+      ]),
+    );
+    final lineNumbers = tester.widget<DefaultCodeLineNumber>(
+      find.byKey(const ValueKey('generated-code-line-numbers')),
+    );
+    expect(lineNumbers.textStyle!.fontFamily, 'PieBlockMono');
+    expect(lineNumbers.focusedTextStyle!.fontFamily, 'PieBlockMono');
     expect(
       find.byKey(const ValueKey('generated-code-line-numbers')),
       findsOneWidget,

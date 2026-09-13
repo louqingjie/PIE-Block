@@ -3174,6 +3174,13 @@ class _CodePageState extends ConsumerState<_CodePage> {
   }
 }
 
+const _codeFontFallbacks = <String>[
+  'PieBlockSans',
+  'Noto Sans CJK SC',
+  'Source Han Sans SC',
+  'WenQuanYi Micro Hei Mono',
+];
+
 class _GeneratedCodePreview extends StatefulWidget {
   const _GeneratedCodePreview({
     required this.code,
@@ -3403,21 +3410,23 @@ class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
                         notifier: notifier,
                         textStyle: TextStyle(
                           color: gutter,
-                          fontFamily: 'Consolas',
+                          fontFamily: 'PieBlockMono',
+                          fontFamilyFallback: _codeFontFallbacks,
                           fontSize: 13,
                           height: 1.45,
                         ),
                         focusedTextStyle: TextStyle(
                           color: Theme.of(context).colorScheme.primary,
-                          fontFamily: 'Consolas',
+                          fontFamily: 'PieBlockMono',
+                          fontFamilyFallback: _codeFontFallbacks,
                           fontSize: 13,
                           height: 1.45,
                         ),
                       ),
                     ),
             style: CodeEditorStyle(
-              fontFamily: 'Consolas',
-              fontFamilyFallback: const ['PieBlockSans', 'Microsoft YaHei UI'],
+              fontFamily: 'PieBlockMono',
+              fontFamilyFallback: _codeFontFallbacks,
               fontSize: 13,
               fontHeight: 1.45,
               textColor: foreground,
