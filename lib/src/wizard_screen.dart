@@ -3099,10 +3099,12 @@ class _CodePage extends ConsumerStatefulWidget {
 }
 
 class _CodePageState extends ConsumerState<_CodePage> {
-  Future<void> _export(String code) async {
+  OutputTarget _target = OutputTarget.c;
+
+  Future<void> _export(String code, String fileName) async {
     await exportGeneratedText(
       context,
-      suggestedName: 'main.c',
+      suggestedName: fileName,
       text: code,
       mimeType: 'text/plain',
     );
@@ -3114,7 +3116,11 @@ class _CodePageState extends ConsumerState<_CodePage> {
         config = ref.watch(appControllerProvider).document!.config,
         issues = ctrl.issues;
     final blocked = issues.any((i) => i.severity == IssueSeverity.error);
-    final code = blocked ? '' : CodeGenerator.generate(config);
+    // 汇编输出处于试点阶段，仅部分项目类型支持；不支持时固定回落 C。
+    final asmAvailable = !blocked && CodeGenerator.asmSupported(config.kind);
+    final target = asmAvailable ? _target : OutputTarget.c;
+    final fileName = target == OutputTarget.asm ? 'main.asm' : 'main.c';
+    final code = blocked ? '' : CodeGenerator.generate(config, target: target);
     return _PageFrame(
       title: '生成代码',
       subtitle: blocked ? '仍有错误，返回检查页修正后才能生成。' : '代码根据项目配置实时生成，只读且不会写回项目文件。',
@@ -3131,12 +3137,34 @@ class _CodePageState extends ConsumerState<_CodePage> {
             )
           : Column(
               children: [
+                if (asmAvailable)
+                  _Section(
+                    title: '输出语言',
+                    children: [
+                      SegmentedButton<OutputTarget>(
+                        segments: const [
+                          ButtonSegment(
+                            value: OutputTarget.c,
+                            label: Text('C 代码'),
+                          ),
+                          ButtonSegment(
+                            value: OutputTarget.asm,
+                            label: Text('汇编'),
+                          ),
+                        ],
+                        selected: {target},
+                        onSelectionChanged: (selection) =>
+                            setState(() => _target = selection.first),
+                      ),
+                    ],
+                  ),
                 _Section(
-                  title: 'main.c',
+                  title: fileName,
                   children: [
                     _GeneratedCodePreview(
                       code: code,
-                      onExport: () => _export(code),
+                      onExport: () => _export(code, fileName),
+                      fileName: fileName,
                     ),
                   ],
                 ),
@@ -3147,10 +3175,15 @@ class _CodePageState extends ConsumerState<_CodePage> {
 }
 
 class _GeneratedCodePreview extends StatefulWidget {
-  const _GeneratedCodePreview({required this.code, required this.onExport});
+  const _GeneratedCodePreview({
+    required this.code,
+    required this.onExport,
+    this.fileName = 'main.c',
+  });
 
   final String code;
   final VoidCallback onExport;
+  final String fileName;
 
   @override
   State<_GeneratedCodePreview> createState() => _GeneratedCodePreviewState();
@@ -3291,7 +3324,7 @@ class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
     final export = compact
         ? IconButton.filled(
             onPressed: widget.onExport,
-            tooltip: '另存为 main.c',
+            tooltip: '另存为 ${widget.fileName}',
             icon: const Icon(Icons.save_alt),
           )
         : FilledButton.icon(
