@@ -1012,9 +1012,11 @@ class _Section extends StatelessWidget {
     required this.title,
     required this.children,
     this.subtitle,
+    this.trailing,
   });
   final String title;
   final String? subtitle;
+  final Widget? trailing;
   final List<Widget> children;
   @override
   Widget build(BuildContext context) => Card(
@@ -1023,11 +1025,30 @@ class _Section extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: Theme.of(context).textTheme.titleLarge
-                ?.copyWith(fontWeight: FontWeight.w700),
-          ),
+          if (trailing == null)
+            Text(
+              title,
+              style: Theme.of(context).textTheme.titleLarge
+                  ?.copyWith(fontWeight: FontWeight.w700),
+            )
+          else
+            SizedBox(
+              width: double.infinity,
+              child: Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 16,
+                runSpacing: 12,
+                children: [
+                  Text(
+                    title,
+                    style: Theme.of(context).textTheme.titleLarge
+                        ?.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                  ?trailing,
+                ],
+              ),
+            ),
           if (subtitle != null) ...[const SizedBox(height: 5), Text(subtitle!)],
           const SizedBox(height: 20),
           ...children,
@@ -3135,41 +3156,79 @@ class _CodePageState extends ConsumerState<_CodePage> {
                 ),
               ],
             )
-          : Column(
+          : _Section(
+              title: fileName,
+              trailing: asmAvailable
+                  ? _OutputLanguageSwitch(
+                      target: target,
+                      onChanged: (value) => setState(() => _target = value),
+                    )
+                  : null,
               children: [
-                if (asmAvailable)
-                  _Section(
-                    title: '输出语言',
-                    children: [
-                      SegmentedButton<OutputTarget>(
-                        segments: const [
-                          ButtonSegment(
-                            value: OutputTarget.c,
-                            label: Text('C 代码'),
-                          ),
-                          ButtonSegment(
-                            value: OutputTarget.asm,
-                            label: Text('汇编'),
-                          ),
-                        ],
-                        selected: {target},
-                        onSelectionChanged: (selection) =>
-                            setState(() => _target = selection.first),
-                      ),
-                    ],
-                  ),
-                _Section(
-                  title: fileName,
-                  children: [
-                    _GeneratedCodePreview(
-                      code: code,
-                      onExport: () => _export(code, fileName),
-                      fileName: fileName,
-                    ),
-                  ],
+                _GeneratedCodePreview(
+                  code: code,
+                  onExport: () => _export(code, fileName),
+                  fileName: fileName,
                 ),
               ],
             ),
+    );
+  }
+}
+
+class _OutputLanguageSwitch extends StatelessWidget {
+  const _OutputLanguageSwitch({required this.target, required this.onChanged});
+
+  final OutputTarget target;
+  final ValueChanged<OutputTarget> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Semantics(
+      label: '输出语言',
+      child: Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: colors.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: SegmentedButton<OutputTarget>(
+          showSelectedIcon: false,
+          style: ButtonStyle(
+            side: const WidgetStatePropertyAll(BorderSide.none),
+            shape: WidgetStatePropertyAll(
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            backgroundColor: WidgetStateProperty.resolveWith(
+              (states) => states.contains(WidgetState.selected)
+                  ? colors.secondaryContainer
+                  : Colors.transparent,
+            ),
+            foregroundColor: WidgetStateProperty.resolveWith(
+              (states) => states.contains(WidgetState.selected)
+                  ? colors.onSecondaryContainer
+                  : colors.onSurfaceVariant,
+            ),
+          ),
+          segments: const [
+            ButtonSegment(
+              value: OutputTarget.c,
+              icon: Icon(Icons.code, size: 18),
+              label: Text('C 代码'),
+              tooltip: '输出 C 代码',
+            ),
+            ButtonSegment(
+              value: OutputTarget.asm,
+              icon: Icon(Icons.memory, size: 18),
+              label: Text('汇编'),
+              tooltip: '输出汇编代码',
+            ),
+          ],
+          selected: {target},
+          onSelectionChanged: (selection) => onChanged(selection.first),
+        ),
+      ),
     );
   }
 }

@@ -2046,7 +2046,9 @@ void main() {
         await tester.pumpWidget(
           ProviderScope(
             overrides: [
-              appControllerProvider.overrideWith(_GeneratedCodeController.new),
+              appControllerProvider.overrideWith(
+                () => _StaticProjectController(_musicDocument(), 2),
+              ),
             ],
             child: MaterialApp(
               theme: ThemeData(brightness: brightness, useMaterial3: true),
@@ -2056,6 +2058,22 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(find.byType(CodeEditor), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        await tester.ensureVisible(find.text('C 代码'));
+        await tester.tap(find.text('C 代码'));
+        await tester.pumpAndSettle();
+        expect(find.text('main.c'), findsOneWidget);
+        final cCode = tester
+            .widget<CodeEditor>(find.byType(CodeEditor))
+            .controller!
+            .text;
+        await tester.tap(find.text('汇编'));
+        await tester.pumpAndSettle();
+        expect(find.text('main.asm'), findsOneWidget);
+        expect(
+          tester.widget<CodeEditor>(find.byType(CodeEditor)).controller!.text,
+          isNot(cCode),
+        );
         expect(tester.takeException(), isNull);
       }
     }
