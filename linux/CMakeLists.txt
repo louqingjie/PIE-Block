@@ -126,3 +126,27 @@ if(NOT CMAKE_BUILD_TYPE MATCHES "Debug")
   install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
     COMPONENT Runtime)
 endif()
+
+# 内置编译资源：SDCC 工具链、SDCC 固件模板与 STC32G Keil 工程参考，
+# 供 pieblock_toolchain 的 _locateAssets() 在 <bundle>/data/pieblock_runtime
+# 下定位；与 windows/CMakeLists.txt 的 pieblock_runtime 安装保持同构。
+set(PIEBLOCK_REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/..")
+set(PIEBLOCK_RUNTIME_DIR "${INSTALL_BUNDLE_DATA_DIR}/pieblock_runtime")
+if(EXISTS "${PIEBLOCK_REPO_ROOT}/vendor/sdcc-toolchain")
+  # USE_SOURCE_PERMISSIONS 保留 prepare_sdcc_toolchain.sh 生成的可执行位
+  #（bin/sdcc 等）；CMake 默认会把文件权限收敛为 644。
+  install(DIRECTORY "${PIEBLOCK_REPO_ROOT}/vendor/sdcc-toolchain"
+    DESTINATION "${PIEBLOCK_RUNTIME_DIR}" COMPONENT Runtime
+    USE_SOURCE_PERMISSIONS)
+endif()
+install(DIRECTORY "${PIEBLOCK_REPO_ROOT}/stc32g_sdcc"
+  DESTINATION "${PIEBLOCK_RUNTIME_DIR}" COMPONENT Runtime
+  PATTERN "build" EXCLUDE)
+install(DIRECTORY "${PIEBLOCK_REPO_ROOT}/stc32g/Libraries"
+  DESTINATION "${PIEBLOCK_RUNTIME_DIR}/stc32g" COMPONENT Runtime)
+install(DIRECTORY
+  "${PIEBLOCK_REPO_ROOT}/stc32g/Projects/ROBOMASTER_INFANTRY"
+  "${PIEBLOCK_REPO_ROOT}/stc32g/Projects/ROBOMASTER_ENGINEER"
+  DESTINATION "${PIEBLOCK_RUNTIME_DIR}/stc32g/Projects" COMPONENT Runtime
+  PATTERN "Objects" EXCLUDE PATTERN "Listings" EXCLUDE
+  PATTERN "*.hex" EXCLUDE PATTERN "*.log" EXCLUDE)

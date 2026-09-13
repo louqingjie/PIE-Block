@@ -50,6 +50,16 @@ flutter build windows --release
 
 三个 Dart 包可独立运行 `dart analyze` 与 `dart test`。Windows Release 产物位于 `build/windows/x64/runner/Release/`，发布时必须保留整个目录；`pieblock_hid.dll`、`data/pieblock_runtime` 和 `data/flutter_assets` 都是运行所必需的。
 
+Linux 构建与打包（x64）：
+
+```bash
+tools/prepare_sdcc_toolchain.sh   # 从 sdcc-c251 子模块编译并暂存内置 SDCC 工具链
+flutter build linux --release     # CMake 会把工具链与固件模板装进 bundle
+tools/package_flutter_linux.sh    # 校验并打包 build/dist/PIEBlock-<版本>-linux-x64.tar.gz
+```
+
+`flutter build linux --release` 直接产出自包含 bundle（`build/linux/x64/release/bundle/`），`data/pieblock_runtime` 由 `linux/CMakeLists.txt` 在构建时安装，发布时保留整个目录；Linux 端仅支持 SDCC 离线编译，USB-HID 烧录目前仅 Windows 可用。
+
 编译与主控板接线、开关位置和故障排查见 [Flutter 编译与烧录指南](docs/Flutter编译与烧录指南.md)。
 Android 离线 SDCC 的架构、安全门和验收状态见 [Android SDCC 多进程移植](docs/android-sdcc-port.md)。
 

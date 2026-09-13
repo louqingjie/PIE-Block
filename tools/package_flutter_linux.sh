@@ -59,15 +59,10 @@ for relative in "${required[@]}"; do
   fi
 done
 
-# 运行时资源：内置 SDCC 工具链 + STC32G 固件模板 + Keil 工程参考。
-# 发布包内与可执行文件同级放置，供 pieblock_toolchain 的 _locateAssets() 定位。
+# 运行时资源（内置 SDCC 工具链 + STC32G 固件模板 + Keil 工程参考）由
+# linux/CMakeLists.txt 在 flutter build 阶段安装到 data/pieblock_runtime，
+# 与 windows/CMakeLists.txt 同构；这里只校验齐全性。
 runtime="$bundle/data/pieblock_runtime"
-rm -rf -- "$runtime"
-mkdir -p "$runtime"
-cp -a vendor/sdcc-toolchain "$runtime/sdcc-toolchain"
-cp -a stc32g_sdcc "$runtime/stc32g_sdcc"
-cp -a stc32g "$runtime/stc32g"
-
 required_runtime=(
   "$runtime/sdcc-toolchain/bundle_manifest.json"
   "$runtime/sdcc-toolchain/bin/sdcc"
@@ -77,6 +72,7 @@ required_runtime=(
 for relative in "${required_runtime[@]}"; do
   if [ ! -e "$relative" ]; then
     echo "运行时资源缺失: $relative" >&2
+    echo "请先运行 tools/prepare_sdcc_toolchain.sh 暂存工具链，再重新执行 flutter build linux --release。" >&2
     exit 1
   fi
 done
