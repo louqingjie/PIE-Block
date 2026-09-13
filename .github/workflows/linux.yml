@@ -78,7 +78,10 @@ jobs:
         if: steps.toolchain.outputs.cache-hit != 'true'
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends bison flex zlib1g-dev
+          # libboost-graph-dev：SDCC configure 硬性要求 boost/graph/adjacency_list.hpp
+          #（与 Windows 侧 MSYS2 的 boost:p 对应）；zlib 头文件 runner 自带，仍显式装上。
+          sudo apt-get install -y --no-install-recommends \
+            bison flex zlib1g-dev libboost-graph-dev
 
       - name: 编译并暂存 Linux SDCC 工具链
         id: prepare
