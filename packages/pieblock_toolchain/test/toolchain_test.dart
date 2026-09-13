@@ -82,17 +82,19 @@ void main() {
     expect((await IntelHexValidator.validateApplication(hex.path)).ok, isTrue);
   });
 
-  test('构建指纹随源码、类型和编译器变化', () {
+  test('构建指纹随源码、类型、编译器和输出目标变化', () {
     BuildFingerprint fingerprint(
       String code,
       ProjectKind kind,
-      CompilerKind compiler,
-    ) => FirmwareBuilder.fingerprint(
+      CompilerKind compiler, [
+      OutputTarget target = OutputTarget.c,
+    ]) => FirmwareBuilder.fingerprint(
       BuildRequest(
         projectKind: kind,
         sourceCode: code,
         compiler: compiler,
         compilerFingerprint: 'compiler-v1',
+        outputTarget: target,
       ),
     );
     final base = fingerprint(
@@ -130,6 +132,40 @@ void main() {
         ).value,
       ),
     );
+    expect(
+      base.value,
+      isNot(
+        fingerprint(
+          'int main(void){}',
+          ProjectKind.infantry,
+          CompilerKind.sdcc,
+          OutputTarget.asm,
+        ).value,
+      ),
+    );
+  });
+
+  test('汇编输出在 Android 内嵌后端上被明确拒绝', () async {
+    final directory = await Directory.systemTemp.createTemp('pieblock-asm-');
+    addTearDown(() => directory.delete(recursive: true));
+    final builder = FirmwareBuilder(
+      sdccBackend: _FakeSdccBackend(),
+      runtimeRoot: '${directory.path}/runtime',
+      workRoot: '${directory.path}/work',
+      artifacts: BuildArtifactRepository(root: '${directory.path}/artifacts'),
+    );
+    final operation = builder.start(
+      const BuildRequest(
+        projectKind: ProjectKind.music,
+        sourceCode: '_main:\n\teret\n',
+        compiler: CompilerKind.sdcc,
+        compilerFingerprint: 'native-test',
+        outputTarget: OutputTarget.asm,
+      ),
+    );
+    final result = await operation.result;
+    expect(result.success, isFalse);
+    expect(result.log, contains('当前平台不支持汇编输出构建'));
   });
 
   test('音乐和调试项目按编译器选择明确模板', () {

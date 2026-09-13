@@ -164,6 +164,8 @@ class ToolchainDiscovery {
 class FirmwareBuilder {
   static String get _sdccExecutable =>
       Platform.isWindows ? 'sdcc.exe' : 'sdcc';
+  static String get _sdasExecutable =>
+      Platform.isWindows ? 'sdas251.exe' : 'sdas251';
   FirmwareBuilder({
     BuildArtifactRepository? artifacts,
     String? runtimeRoot,
@@ -208,6 +210,7 @@ class FirmwareBuilder {
               request.projectKind.name,
               request.compiler.name,
               request.compilerFingerprint,
+              request.outputTarget.name,
               sourceHash,
             ].join('|'),
           ),
@@ -369,6 +372,10 @@ class FirmwareBuilder {
   ) async {
     final backend = _sdccBackend;
     if (backend == null) return _buildSdcc(request, work, emit);
+    if (request.outputTarget == OutputTarget.asm) {
+      // Android 内嵌管线尚未放行 sdas251，汇编输出试点仅支持桌面子进程路径。
+      throw StateError('当前平台不支持汇编输出构建，请使用桌面端 SDCC 工具链。');
+    }
     final result = await backend.build(request, work, emit);
     var success = result.success;
     if (success && result.hexPath != null && result.mapPath != null) {
@@ -432,7 +439,8 @@ class FirmwareBuilder {
     final sources = _sourcesFor(manifest, project);
     final output = Directory(p.join(work, 'output'))
       ..createSync(recursive: true);
-    final mainPath = p.join(work, 'main.c');
+    final isAsm = request.outputTarget == OutputTarget.asm;
+    final mainPath = p.join(work, isAsm ? 'main.asm' : 'main.c');
     await File(mainPath).writeAsString(request.sourceCode);
     final interruptHeader = p.join(
       output.path,
@@ -458,7 +466,9 @@ class FirmwareBuilder {
     var warningCount = 0;
     for (var index = 0; index < sources.$1.length; index++) {
       final relative = sources.$1[index];
-      final source = relative.endsWith('/src/main.c')
+      final isMain = relative.endsWith('/src/main.c');
+      final assembleMain = isMain && isAsm;
+      final source = isMain
           ? mainPath
           : p.join(deployed.firmware, relative.replaceAll('/', p.separator));
       final object = p.join(
@@ -467,21 +477,25 @@ class FirmwareBuilder {
       );
       emit(
         BuildStage.compiling,
-        '[${index + 1}/${sources.$1.length}] 编译 $relative',
+        '[${index + 1}/${sources.$1.length}] ${assembleMain ? '汇编' : '编译'} $relative',
         current: index + 1,
         total: sources.$1.length,
       );
       final args = <String>[
         for (final flag in (manifest['compile_flags']! as List)) '$flag',
         ...includeArgs,
-        if (relative.endsWith('/src/main.c')) ...['--include', interruptHeader],
+        if (isMain && !assembleMain) ...['--include', interruptHeader],
         '-o',
         object,
         source,
       ];
       final run = await _run(
-        p.join(deployed.toolchain, 'bin', _sdccExecutable),
-        args,
+        p.join(
+          deployed.toolchain,
+          'bin',
+          assembleMain ? _sdasExecutable : _sdccExecutable,
+        ),
+        assembleMain ? <String>['-l', '-o', object, source] : args,
         emit,
         BuildStage.compiling,
       );
