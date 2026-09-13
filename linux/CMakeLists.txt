@@ -57,6 +57,18 @@ pkg_check_modules(GTK REQUIRED IMPORTED_TARGET gtk+-3.0)
 # Application build; see runner/CMakeLists.txt.
 add_subdirectory("runner")
 
+# PIE-Block 的 Linux USB-HID 传输层（hidraw）。协议在 Dart 侧；本库只负责
+# 阻塞式 hidraw 读写与跨 isolate 的取消打断，与 windows/CMakeLists.txt 的
+# pieblock_hid.dll 保持同一 C ABI（packages/pieblock_hid/src/pieblock_hid.h）。
+add_library(pieblock_hid SHARED
+  "${CMAKE_CURRENT_SOURCE_DIR}/../packages/pieblock_hid/src/pieblock_hid_hidraw.cpp"
+)
+target_compile_options(pieblock_hid PRIVATE -Wall)
+target_include_directories(pieblock_hid PRIVATE
+  "${CMAKE_CURRENT_SOURCE_DIR}/../packages/pieblock_hid/src")
+set_target_properties(pieblock_hid PROPERTIES CXX_STANDARD 17)
+
+
 # Run the Flutter tool portions of the build. This must not be removed.
 add_dependencies(${BINARY_NAME} flutter_assemble)
 
@@ -92,6 +104,11 @@ set(INSTALL_BUNDLE_DATA_DIR "${CMAKE_INSTALL_PREFIX}/data")
 set(INSTALL_BUNDLE_LIB_DIR "${CMAKE_INSTALL_PREFIX}/lib")
 
 install(TARGETS ${BINARY_NAME} RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}"
+  COMPONENT Runtime)
+
+# 安装到 lib/：pieblock_app 的 RUNPATH 为 $ORIGIN/lib，
+# Dart 侧 DynamicLibrary.open('libpieblock_hid.so') 由此命中。
+install(TARGETS pieblock_hid LIBRARY DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
 
 install(FILES "${FLUTTER_ICU_DATA_FILE}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
