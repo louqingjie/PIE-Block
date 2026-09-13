@@ -92,6 +92,10 @@ find "$stage" -type f -exec chmod 644 {} +
 chmod 755 "$stage/pieblock_app"
 chmod 755 "$stage/data/pieblock_runtime/sdcc-toolchain/bin/"*
 
+# udev 规则随包附带：解包后运行 tools/install_udev_rules.sh（或手工拷贝到
+# /etc/udev/rules.d/）即可授权 hidraw，普通用户免 root 烧录。
+install -m 644 "$repo_root/linux/udev/70-pieblock-hid.rules" "$stage/"
+
 tarball="$dist/$output_base_name.tar.gz"
 rm -f -- "$tarball"
 tar -czf "$tarball" -C "$dist" "$output_base_name"

@@ -1,0 +1,9 @@
+# PIE-Block 主控板（STC32G USB-ISP 引导器）的 hidraw 访问授权。
+# 设备：VID 34BF / PID 1001，产品字符串 "USB-ISP"，
+# 标准 HID 类设备（usbhid 驱动绑定，应用走 /dev/hidraw* 节点读写）。
+# TAG+="uaccess" 把节点授权给当前活跃登录会话（systemd-logind），
+# 插上即用、无需 root 运行应用。
+# 无 systemd/uaccess 的环境（少数服务器发行版）：可把 MODE 改为 0666 作手工回退。
+ACTION!="add|change", GOTO="pieblock_hid_end"
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="34bf", ATTRS{idProduct}=="1001", MODE="0660", TAG+="uaccess"
+LABEL="pieblock_hid_end"

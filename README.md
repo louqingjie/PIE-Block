@@ -1,6 +1,6 @@
 # PIE-Block
 
-PIE-Block 是面向 W.PIE RoboMaster 校内赛的 Windows 桌面集成开发环境。新版使用 Flutter 构建，通过分步向导帮助没有编程经验的同学完成机器人配置、生成代码、编译并烧录 STC32G 主控板。
+PIE-Block 是面向 W.PIE RoboMaster 校内赛的桌面集成开发环境（Windows / Linux）。新版使用 Flutter 构建，通过分步向导帮助没有编程经验的同学完成机器人配置、生成代码、编译并烧录 STC32G 主控板。
 
 ## 当前版本
 
@@ -18,7 +18,7 @@ PIE-Block 是面向 W.PIE RoboMaster 校内赛的 Windows 桌面集成开发环�
 - HEX 地址与校验和检查、按内容哈希复用构建结果、导出 HEX
 - STC32G ROM USB-HID 主控板烧录、进度、取消和失败提示
 
-暂不提供云端编译、串口/蓝牙烧录、AI 编辑、3D 仿真、CLI 或 MCP。官网嵌了一个 Web 版（只读暗色、默认打开），可以配置项目、看生成的 C 代码，编译与烧录仍然只能在桌面版完成——浏览器里既没有本地工具链也访问不到 USB-HID。Web 版的项目存在浏览器 localStorage 里，导入导出走文件上传下载。Android 可配置、编辑、预览和编译音乐项目；步兵/工程离线 SDCC 正在进行多进程真机黄金验证，Release 安全门通过前不对用户开放，且 Android 仍不支持 USB-HID 烧录。
+暂不提供云端编译、串口/蓝牙烧录、AI 编辑、3D 仿真、CLI 或 MCP。官网嵌了一个 Web 版（只读暗色、默认打开），可以配置项目、看生成的 C 代码，编译与烧录仍然只能在桌面版完成——浏览器里既没有本地工具链也访问不到 USB-HID。Web 版的项目存在浏览器 localStorage 里，导入导出走文件上传下载。USB-HID 烧录在 Windows 直接可用，Linux 需先安装 udev 规则（见烧录指南）；Android 可配置、编辑、预览和编译音乐项目，烧录受固件入场时序限制暂不可用（见 Android 移植文档），步兵/工程离线 SDCC 正在进行多进程真机黄金验证，Release 安全门通过前不对用户开放。
 
 ## 项目结构
 
@@ -58,7 +58,7 @@ flutter build linux --release     # CMake 会把工具链与固件模板装进 b
 tools/package_flutter_linux.sh    # 校验并打包 build/dist/PIEBlock-<版本>-linux-x64.tar.gz
 ```
 
-`flutter build linux --release` 直接产出自包含 bundle（`build/linux/x64/release/bundle/`），`data/pieblock_runtime` 由 `linux/CMakeLists.txt` 在构建时安装，发布时保留整个目录；Linux 端仅支持 SDCC 离线编译，USB-HID 烧录目前仅 Windows 可用。
+`flutter build linux --release` 直接产出自包含 bundle（`build/linux/x64/release/bundle/`），`data/pieblock_runtime` 由 `linux/CMakeLists.txt` 在构建时安装，发布时保留整个目录；Linux 端支持 SDCC 离线编译与 USB-HID 烧录，烧录前需安装 udev 规则（`sudo tools/install_udev_rules.sh`，详见烧录指南）。
 
 编译与主控板接线、开关位置和故障排查见 [Flutter 编译与烧录指南](docs/Flutter编译与烧录指南.md)。
 Android 离线 SDCC 的架构、安全门和验收状态见 [Android SDCC 多进程移植](docs/android-sdcc-port.md)。

@@ -49,6 +49,21 @@ PIE-Block 始终调用 Keil 的 `-r` 全量重建，避免不同机器人配置�
 
 烧录步骤为 `info → unlock → erase → 128 字节分块写入 → reset`，硬超时为 90 秒。擦除开始后断线需要重新断电进入 ISP，再使用同一个已编译固件重试，无需重复编译。
 
+## Linux 端烧录
+
+Linux 版使用同一 USB-HID ISP 协议与流程，传输层为内核 hidraw 驱动（`pieblock_hid_hidraw.cpp`）。
+
+- **首次使用前安装 udev 规则**（ hidraw 节点默认只有 root 可写）：
+
+  ```bash
+  sudo tools/install_udev_rules.sh
+  ```
+
+  脚本把 `linux/udev/70-pieblock-hid.rules`（VID 34BF / PID 1001，`TAG+="uaccess"`）装到 `/etc/udev/rules.d/` 并重载 udev，授予当前登录会话访问权。发布 tar.gz 顶层附带同名规则文件，解包后同样运行该脚本即可。无 systemd/uaccess 的环境可手工把规则中 `MODE` 改为 `0666` 后重新插拔设备。
+- 安装规则后**重新插拔主控板**（或重新上电进 ISP）再检测；应用内未检测到设备且刚装完规则时，先重新插拔再排查。
+- 进入 ISP 的方式与 Windows 相同：关闭四个供电开关、断电后重新上电；烧录成功后 HID 设备自动消失是正常现象。
+- 其余操作（编译并烧录、仅编译、导出 HEX、90 秒硬超时、取消行为）与 Windows 完全一致。
+
 ## Android 端烧录（OTG）
 
 Android 版在“编译与烧录”页使用与 Windows 相同的 USB-HID ISP 协议与流程（`pieblock_hid`），仅传输层替换为系统 `UsbManager`（USB Host）：

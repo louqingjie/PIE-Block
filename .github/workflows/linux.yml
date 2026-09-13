@@ -135,6 +135,7 @@ jobs:
           bundle='build/linux/x64/release/bundle'
           required=(
             'pieblock_app'
+            'lib/libpieblock_hid.so'
             'data/icudtl.dat'
             'data/flutter_assets'
             'data/flutter_assets/assets/fonts/NotoSansSC-Regular-subset.ttf'
@@ -162,6 +163,19 @@ jobs:
           export PIEBLOCK_RUNTIME_ROOT="$PWD/build/linux/x64/release/bundle/data/pieblock_runtime"
           dart run packages/pieblock_core/tool/generate_smoke.dart build/smoke
           dart run packages/pieblock_toolchain/tool/build_smoke.dart music build/smoke/music.c
+
+      - name: 传输层加载冒烟
+        run: |
+          set -euo pipefail
+          # CI 上没有真设备：验证 bundle 内的 .so 能被 FFI 加载、枚举不崩，
+          # 无设备时按约定输出 0。
+          count="$(PIEBLOCK_HID_DLL="$PWD/build/linux/x64/release/bundle/lib/libpieblock_hid.so" \
+            dart run packages/pieblock_hid/tool/detect.dart)"
+          echo "$count"
+          if [ "$count" != "STC USB-HID devices: 0" ]; then
+            echo "传输层加载冒烟输出异常：$count" >&2
+            exit 1
+          fi
 
       - name: 打包 Linux tar.gz
         run: ./tools/package_flutter_linux.sh --skip-build
