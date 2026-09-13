@@ -96,13 +96,21 @@ class _ConfiguredRemoteController extends AppController {
 }
 
 class _GeneratedCodeController extends AppController {
+  _GeneratedCodeController({ProjectDocument? document})
+    : document = document ?? _infantryDocument();
+
+  final ProjectDocument document;
+
   @override
-  AppState build() => AppState(
-    document: _infantryDocument(),
-    step: 4,
-    maxVisitedStep: 4,
-    saveStatus: SaveStatus.saved,
-  );
+  AppState build() {
+    final step = codeStep(document.kind);
+    return AppState(
+      document: document,
+      step: step,
+      maxVisitedStep: step,
+      saveStatus: SaveStatus.saved,
+    );
+  }
 }
 
 class _StaticProjectController extends AppController {
@@ -1986,6 +1994,44 @@ void main() {
     await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     await tester.pump();
     expect(controller.text, originalCode);
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  testWidgets('IDE 代码预览汇编输出切换 AS251 高亮', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _GeneratedCodeController(document: _musicDocument()),
+          ),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final editorFinder = find.byKey(const ValueKey('generated-code-editor'));
+    CodeEditor editor = tester.widget<CodeEditor>(editorFinder);
+    expect(editor.style!.codeTheme!.languages, contains('c'));
+
+    // 切到汇编：语言主题换成 as251，不再按 C 着色。
+    await tester.tap(find.text('汇编'));
+    await tester.pumpAndSettle();
+
+    editor = tester.widget<CodeEditor>(editorFinder);
+    expect(editor.style!.codeTheme!.languages, contains('asm'));
+    expect(editor.style!.codeTheme!.languages, isNot(contains('c')));
+    expect(editor.controller!.text, contains('ecall'));
+
+    // 切回 C：恢复 C 模式。
+    await tester.tap(find.text('C 代码'));
+    await tester.pumpAndSettle();
+
+    editor = tester.widget<CodeEditor>(editorFinder);
+    expect(editor.style!.codeTheme!.languages, contains('c'));
+    expect(editor.style!.codeTheme!.languages, isNot(contains('asm')));
     debugDefaultTargetPlatformOverride = null;
   });
 

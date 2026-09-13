@@ -12,6 +12,7 @@ import 'package:re_highlight/languages/c.dart';
 import 'package:re_highlight/styles/atom-one-dark.dart';
 import 'package:re_highlight/styles/atom-one-light.dart';
 
+import 'as251_highlight_mode.dart';
 import 'controller.dart';
 import 'deploy_controller.dart';
 import 'platform/file_export.dart';
@@ -3496,7 +3497,10 @@ class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
               cursorLineColor: Theme.of(context).colorScheme.primary
                   .withValues(alpha: .07),
               codeTheme: CodeHighlightTheme(
-                languages: {'c': CodeHighlightThemeMode(mode: langC)},
+                // 按输出文件选语言；保持单条目，re_editor 才走确定性高亮。
+                languages: widget.fileName.endsWith('.asm')
+                    ? {'asm': CodeHighlightThemeMode(mode: langAs251)}
+                    : {'c': CodeHighlightThemeMode(mode: langC)},
                 theme: syntaxTheme,
               ),
             ),
