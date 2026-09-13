@@ -80,7 +80,13 @@ class DeployController extends Notifier<DeployState> {
   DeployState build() {
     _builderFuture = _createBuilder();
     _flasher = HidFlasher(
-      transport: Platform.isAndroid ? () => AndroidHidTransport() : null,
+      // Windows 走默认工厂（NativeHidTransport）；Linux 显式注入同一实现，
+      // Android 用平台通道桥接。
+      transport: Platform.isAndroid
+          ? () => AndroidHidTransport()
+          : Platform.isLinux
+          ? () => NativeHidTransport()
+          : null,
       useIsolate: !Platform.isAndroid,
     );
     ref.onDispose(cancelAll);

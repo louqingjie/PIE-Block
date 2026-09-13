@@ -35,6 +35,9 @@ bool get _isAndroid =>
     !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 bool get _isWindows =>
     !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
+bool get _isLinux => !kIsWeb && defaultTargetPlatform == TargetPlatform.linux;
+/// 支持 USB-HID 烧录的桌面平台（Android 走 OTG，Linux 需 udev 规则授权）。
+bool get _supportsFlashing => _isWindows || _isAndroid || _isLinux;
 
 class _ActiveInputFieldController extends Notifier<String?> {
   @override
@@ -3992,7 +3995,7 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
                 spacing: 10,
                 runSpacing: 10,
                 children: [
-                  if (_isWindows || _isAndroid)
+                  if (_supportsFlashing)
                     FilledButton.icon(
                       onPressed: deploy.busy ? null : _primaryAction,
                       icon: Icon(
@@ -4035,7 +4038,7 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
               ),
             ],
           ),
-          if (_isWindows || _isAndroid) ...[
+          if (_supportsFlashing) ...[
             const SizedBox(height: 16),
             _Section(
               title: '主控板 USB-HID',
@@ -4067,6 +4070,8 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
                 _InfoBanner(
                   _isAndroid
                       ? '通过 OTG 转接线连接主控板；首次烧录会请求 USB 权限。请先将主控板断电再重新上电进入 ISP 模式；烧录成功后 HID 设备自动消失是正常现象。'
+                      : _isLinux
+                      ? '首次使用需安装 udev 规则以获得 hidraw 设备权限（sudo tools/install_udev_rules.sh，详见烧录指南）。未检测到时，请关闭四个供电开关，将主控板断电后重新连接 USB；烧录成功后 HID 设备自动消失是正常现象。'
                       : '未检测到时，请关闭四个供电开关，将主控板断电后重新连接 USB。烧录成功后 HID 设备自动消失是正常现象。',
                 ),
               ],

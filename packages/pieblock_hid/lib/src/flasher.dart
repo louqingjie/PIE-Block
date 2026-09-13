@@ -50,7 +50,7 @@ class FlashOperation {
 
 class HidFlasher {
   HidFlasher({HidTransport Function()? transport, this.useIsolate = true})
-    : _transportFactory = transport ?? WindowsHidTransport.new;
+    : _transportFactory = transport ?? NativeHidTransport.new;
 
   final HidTransport Function() _transportFactory;
   final bool useIsolate;
@@ -255,10 +255,14 @@ class HidFlasher {
         .toString();
   }
 
+  /// 桌面 isolate 烧录路径使用的传输层：协议层与原生层都是跨平台同一套，
+  /// 仅库名/设备枚举由原生实现按平台处理。
+  static HidTransport desktopTransport() => NativeHidTransport();
+
   static void _cancelNative() {
-    if (!Platform.isWindows) return;
+    if (!Platform.isWindows && !Platform.isLinux) return;
     try {
-      final transport = WindowsHidTransport();
+      final transport = desktopTransport();
       transport.cancel();
       transport.close();
     } catch (_) {}
@@ -278,7 +282,7 @@ class HidFlasher {
         });
     FlashResult result;
     try {
-      result = await _runFlash(path, expected, WindowsHidTransport(), event);
+      result = await _runFlash(path, expected, desktopTransport(), event);
     } catch (error) {
       result = FlashResult(
         success: false,

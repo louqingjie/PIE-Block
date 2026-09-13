@@ -13,8 +13,10 @@ abstract interface class HidTransport {
   Future<void> close();
 }
 
-class WindowsHidTransport implements HidTransport {
-  WindowsHidTransport() : _bindings = _HidBindings.load();
+// 桌面端（Windows/Linux）的 FFI 传输层：库名按平台解析，
+// 指向各自的原生实现（同一 C ABI，见 packages/pieblock_hid/src/pieblock_hid.h）。
+class NativeHidTransport implements HidTransport {
+  NativeHidTransport() : _bindings = _HidBindings.load();
 
   final _HidBindings _bindings;
 
@@ -84,10 +86,19 @@ class _HidBindings {
   final _VoidDart close;
 
   factory _HidBindings.load() {
-    if (!Platform.isWindows) throw UnsupportedError('USB-HID 烧录仅支持 Windows');
+    final String defaultName;
+    if (Platform.isWindows) {
+      defaultName = 'pieblock_hid.dll';
+    } else if (Platform.isLinux) {
+      defaultName = 'libpieblock_hid.so';
+    } else {
+      throw UnsupportedError(
+        'USB-HID 烧录不支持当前平台（${Platform.operatingSystem}）',
+      );
+    }
     final override = Platform.environment['PIEBLOCK_HID_DLL'];
     final library = DynamicLibrary.open(
-      override == null || override.isEmpty ? 'pieblock_hid.dll' : override,
+      override == null || override.isEmpty ? defaultName : override,
     );
     return _HidBindings(
       library.lookupFunction<_CountNative, _CountDart>('pb_hid_count'),

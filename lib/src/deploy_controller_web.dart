@@ -65,7 +65,7 @@ final deployControllerProvider =
     NotifierProvider<DeployController, DeployState>(DeployController.new);
 
 class DeployController extends Notifier<DeployState> {
-  static const _message = '网页版不提供编译与烧录，请在 Windows 桌面版完成';
+  static const _message = '网页版不提供编译与烧录，请在桌面版完成';
 
   @override
   DeployState build() => const DeployState(compilerAvailable: false);
