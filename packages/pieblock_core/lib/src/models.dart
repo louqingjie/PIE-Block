@@ -1,5 +1,8 @@
 enum ProjectKind { infantry, engineer, debug, music }
 
+/// 代码生成的输出目标：C 源码（默认）或直接生成的汇编源码。
+enum OutputTarget { c, asm }
+
 enum Direction { forward, reverse }
 
 enum DriveType { servo, motor }

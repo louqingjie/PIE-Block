@@ -5,19 +5,34 @@ import 'music.dart';
 import 'validator.dart';
 
 abstract final class CodeGenerator {
-  static String generate(ProjectConfig config) {
+  static String generate(
+    ProjectConfig config, {
+    OutputTarget target = OutputTarget.c,
+  }) {
     final errors = ProjectValidator.validate(config)
         .where((issue) => issue.severity == IssueSeverity.error);
     if (errors.isNotEmpty) {
       throw StateError('配置尚未完成，不能生成代码：${errors.first.message}');
     }
-    return switch (config) {
-      InfantryConfig value => _infantry(value),
-      EngineerConfig value => _engineer(value),
-      DebugConfig value => _debug(value),
-      MusicConfig value => _music(value),
+    return switch (target) {
+      OutputTarget.c => switch (config) {
+        InfantryConfig value => _infantry(value),
+        EngineerConfig value => _engineer(value),
+        DebugConfig value => _debug(value),
+        MusicConfig value => _music(value),
+      },
+      OutputTarget.asm => switch (config) {
+        MusicConfig value => _musicAsm(value),
+        _ => throw UnsupportedError(
+          '「${config.kind.name}」项目暂不支持直接生成汇编，'
+          '当前仅音乐项目提供汇编输出。',
+        ),
+      },
     };
   }
+
+  /// 汇编输出目前处于试点阶段，仅音乐项目提供。
+  static bool asmSupported(ProjectKind kind) => kind == ProjectKind.music;
 
   static int _dir(Direction value) => value == Direction.forward ? 1 : 0;
   static int _frequency(PwmFrequency value) =>
@@ -1102,6 +1117,434 @@ void main(void)
     while (1)
         Music_PlayOnce();
 }
+''';
+  }
+
+  /// 单字节十六进制立即数（汇编源码用）。
+  static String _asmByte(int value) =>
+      '#0x${(value & 0xff).toRadixString(16).padLeft(2, '0')}';
+
+  /// 32 位大端字节序列（汇编 .db 用）。
+  static List<String> _asmDword(int value) => [
+    _asmByte(value >> 24),
+    _asmByte(value >> 16),
+    _asmByte(value >> 8),
+    _asmByte(value),
+  ];
+
+  /// 16 位大端字节序列（汇编 .db 用）。
+  static List<String> _asmWord(int value) =>
+      [_asmByte(value >> 8), _asmByte(value)];
+
+  /// 直接生成音乐项目的 SDCC as251 汇编（与 [_music] 的 C 版行为一致）。
+  ///
+  /// 结构与 C 版逐函数对应：Music_Wait / Music_Stop / Music_PlaySegment /
+  /// Music_PlayOnce / All_Init / main，数据表改用平行数组存储。
+  /// 调用约定实测自 vendored SDCC（-mmcs251 --model-large --stack-auto），
+  /// 结论记录在 docs/汇编生成器.md。
+  static String _musicAsm(MusicConfig config) {
+    final segments = MusicTimeline.segments(config);
+    final frequencies = List.generate(128, (note) {
+      if (note == 0) return 1000;
+      return (440 * math.pow(2, (note - 69) / 12)).round();
+    });
+
+    final frequencyRows = <String>[];
+    for (var row = 0; row < 32; row++) {
+      final bytes = <String>[];
+      for (var col = 0; col < 4; col++) {
+        bytes.addAll(_asmWord(frequencies[row * 4 + col]));
+      }
+      final first = row * 4;
+      frequencyRows.add(
+        '\t.db\t${bytes.join(', ')}\t; 音符 $first~${first + 3}',
+      );
+    }
+
+    final durationRows = <String>[
+      for (var index = 0; index < segments.length; index++)
+        '\t.db\t${_asmDword(segments[index].durationMs).join(', ')}'
+            '\t; 段 $index：${segments[index].durationMs} ms',
+    ];
+    final noteRows = <String>[
+      for (var index = 0; index < segments.length; index++)
+        '\t.db\t${_asmByte(segments[index].pitch ?? 0)}\t'
+            '; 段 $index：${segments[index].pitch == null ? '休止' : '音符 ${segments[index].pitch}'}',
+    ];
+
+    return '''; ============================================================================
+; MIDI 单音音乐程序（汇编版，由 PIE-Block 配置器直接生成）
+; 目标芯片：STC32G12K128（MCS-251 内核，24 位线性模式）
+; 组装：sdas251；由构建管线自动汇编并与固件库链接。
+; 与 C 版 main.c 行为完全一致：循环播放音符序列驱动蜂鸣器。
+; 函数与 C 版一一对应，可并排对照阅读。
+; ----------------------------------------------------------------------------
+; SDCC C251 调用约定速查（本文件调用库函数时均遵循）：
+;   1. C 符号在汇编中多一个下划线前缀：Ms_Delay() → _Ms_Delay。
+;   2. 第一个参数用寄存器传递：
+;        8 位（PWM 通道号）→ DPL；
+;        16 位（毫秒数）→ DPTR（DPL=低字节，DPH=高字节）；
+;        32 位（频率/占空比）→ DPL=最低字节，DPH、B 依次更高，A=最高字节。
+;   3. 其余参数从右往左逐个压栈，多字节值高位字节在前（大端）；
+;      调用方负责清理栈参数（dec spx,#4，每 4 字节一条）。
+;   4. 调用统一 ecall，函数返回 eret；直接尾跳可用 ejmp。
+;   5. A、B、DPTR/DPX、R0~R7 都可能被被调用的 C 函数改写，
+;      跨调用需要保留的值先 push、调用后 pop。
+;   6. 常量表在 24 位代码空间（0xFF0000 起）：取表先把地址装入
+;      DPL/DPH/DPXL，再 mov dr28,dpx，最后 movc a,@a+dptr 逐字节读。
+; ============================================================================
+
+; ── 库函数（C 固件库提供实现的符号） ──
+	.globl	_Board_Init		; void Board_Init(void)
+	.globl	_Ms_Delay		; void Ms_Delay(uint16_t ms)
+	.globl	_PWM_Init		; void PWM_Init(通道, uint32_t 频率, uint32_t 占空比)
+	.globl	_PWM_SET_Frequency	; void PWM_SET_Frequency(通道, uint32_t 频率, uint32_t 占空比)
+	.globl	__sdcc_gsinit_startup
+	.globl	_main
+
+; ── 可写变量：外部 RAM 段，上电时由运行库清零 ──
+	.area	XSEG    (XDATA)
+_Channal::
+	.ds	1		; 遥控器通道号（音乐模式不使用，保留给 nrf24l01 库）
+
+; ── 栈底标记：运行库启动代码据此初始化堆栈指针 ──
+	.area	SSEG
+	.globl	__start__stack
+__start__stack:
+	.ds	1
+
+; ── 复位向量与程序入口（每个 main 模块必须提供，与 C 版一致） ──
+	.area	HOME    (CODE)
+__interrupt_vect:
+	ljmp	__sdcc_mcs251_reset_trampoline
+__sdcc_mcs251_reset_trampoline::
+	ejmp	__sdcc_gsinit_startup	; 跳到运行库启动代码（清内存等）
+
+	.area	GSFINAL (CODE)
+	ejmp	__sdcc_program_startup	; 启动链终点：初始化完成后进入主程序
+
+	.area	HOME    (CODE)
+	.globl	__sdcc_program_startup
+__sdcc_program_startup:
+	ecall	_main
+__sdcc_program_exit:
+	sjmp	.			; main 不会返回，保险起见原地循环
+
+; ── 代码 ──
+	.area	CSEG    (CODE)
+
+; ── 寄存器别名：R0~R7（0 号寄存器组）的直接地址，push/pop 需要这种形式 ──
+ar0 = 0x00
+ar1 = 0x01
+ar2 = 0x02
+ar3 = 0x03
+ar4 = 0x04
+ar5 = 0x05
+ar6 = 0x06
+ar7 = 0x07
+
+; ── 常量 ──
+PWMB_CH3_P33 = 0x61		; 音乐蜂鸣器所在 PWM 通道
+MUSIC_TONE_FREQ = 1000		; 静音时 PWM 仍保持的输出频率
+MUSIC_DUTY_ON = 5000		; 发声占空比（万分比）
+MUSIC_SEGMENT_COUNT = ${segments.length}	; 段表长度
+
+; ── 常量表：MIDI 音符编号 → PWM 频率（Hz），128 项，16 位大端 ──
+; 音符 0 是休止占位值（休止走 Music_Stop，不会真的用它发声）。
+_musicFrequencies:
+${frequencyRows.join('\n')}
+
+; ── 常量表：每段时长（毫秒），32 位大端，共 ${segments.length} 段 ──
+_musicSegmentDurations:
+${durationRows.join('\n')}
+
+; ── 常量表：每段音符编号（0=休止） ──
+_musicSegmentNotes:
+${noteRows.join('\n')}
+
+; ────────────────────────────────────────────────────────────────────────────
+; void Music_Wait(uint32_t duration_ms)
+; 等待指定毫秒；超过 65535 毫秒的部分拆成每次 65535 毫秒交给 Ms_Delay。
+; 入口（第一个 32 位参数）：A=最高字节，B、DPH 次之，DPL=最低字节。
+; ────────────────────────────────────────────────────────────────────────────
+_Music_Wait:
+	mov	r7, dpl			; 保存参数：r7=最低字节 … r4=最高字节
+	mov	r6, dph
+	mov	r5, b
+	mov	r4, a
+MW_loop:				; while (duration_ms > 65535UL)
+	clr	c
+	mov	a, #0xff		; 32 位比较 0x0000FFFF - duration_ms
+	subb	a, r7
+	mov	a, #0xff
+	subb	a, r6
+	clr	a
+	subb	a, r5
+	clr	a
+	subb	a, r4
+	jnc	MW_tail			; 无借位说明 duration_ms ≤ 65535
+	mov	dptr, #0xffff		; Ms_Delay(65535)
+	push	ar4			; 保护现场（Ms_Delay 会改写 R0~R7）
+	push	ar5
+	push	ar6
+	push	ar7
+	ecall	_Ms_Delay
+	pop	ar7
+	pop	ar6
+	pop	ar5
+	pop	ar4
+	mov	a, r7			; duration_ms -= 65535UL（低 16 位 +1 等价）
+	add	a, #0x01
+	mov	r7, a
+	clr	a
+	addc	a, r6
+	mov	r6, a
+	mov	a, r5
+	addc	a, #0xff
+	mov	r5, a
+	mov	a, r4
+	addc	a, #0xff
+	mov	r4, a
+	ejmp	MW_loop
+MW_tail:				; if (duration_ms > 0UL)
+	mov	a, r7
+	orl	a, r6
+	orl	a, r5
+	orl	a, r4
+	jz	MW_done
+	mov	dpl, r7			; Ms_Delay((uint16_t)duration_ms)
+	mov	dph, r6
+	ecall	_Ms_Delay
+MW_done:
+	eret
+
+; ────────────────────────────────────────────────────────────────────────────
+; void Music_Stop(void)
+; 静音：PWM_SET_Frequency(PWMB_CH3_P33, MUSIC_TONE_FREQ, MUSIC_DUTY_OFF)
+; ────────────────────────────────────────────────────────────────────────────
+_Music_Stop:
+	clr	a			; 参数从右往左压栈：先压占空比 0
+	push	acc
+	push	acc
+	push	acc
+	push	acc
+	clr	a			; 频率 MUSIC_TONE_FREQ，高位字节在前
+	push	acc
+	push	acc
+	mov	a, #(MUSIC_TONE_FREQ >> 8)
+	push	acc
+	mov	a, #(MUSIC_TONE_FREQ & 0xff)
+	push	acc
+	mov	dpl, #(PWMB_CH3_P33)	; 第一个参数：PWM 通道号
+	ecall	_PWM_SET_Frequency
+	dec	spx, #4			; 清理栈上的 8 字节参数
+	dec	spx, #4
+	eret
+
+; ────────────────────────────────────────────────────────────────────────────
+; void Music_PlaySegment(uint16_t index)
+; 播放第 index 段：音符 0 表示休止（走 Music_Stop 的参数序列），
+; 否则按频率表发声；随后等待该段时长。
+; ────────────────────────────────────────────────────────────────────────────
+_Music_PlaySegment:
+	mov	r2, dpl			; r3:r2 = 段序号 index
+	mov	r3, dph
+	mov	a, r2			; 取音符：musicSegmentNotes[index]
+	add	a, #_musicSegmentNotes
+	mov	r4, a
+	mov	a, r3
+	addc	a, #(_musicSegmentNotes >> 8)
+	mov	r5, a
+	clr	a
+	addc	a, #(_musicSegmentNotes >> 16)
+	mov	dpl, r4
+	mov	dph, r5
+	mov	dpxl, a
+	mov	dr28, dpx
+	clr	a
+	movc	a, @a+dptr
+	mov	r6, a			; r6 = 音符编号（0=休止）
+	jnz	MPS_voice
+	push	ar2			; 保护 index（C 函数会改写 R0~R7）
+	push	ar3
+	clr	a			; 休止：占空比 0（参数从右往左压栈）
+	push	acc
+	push	acc
+	push	acc
+	push	acc
+	clr	a			; 频率 MUSIC_TONE_FREQ，高位字节在前
+	push	acc
+	push	acc
+	mov	a, #(MUSIC_TONE_FREQ >> 8)
+	push	acc
+	mov	a, #(MUSIC_TONE_FREQ & 0xff)
+	push	acc
+	mov	dpl, #(PWMB_CH3_P33)
+	ecall	_PWM_SET_Frequency
+	dec	spx, #4
+	dec	spx, #4
+	pop	ar3
+	pop	ar2
+	ejmp	MPS_wait
+MPS_voice:				; 发声：查频率表 musicFrequencies[note]
+	mov	a, r6
+	add	a, r6			; 偏移 = note*2（音符 ≤ 127，不会溢出）
+	mov	r7, a
+	clr	a
+	rlc	a
+	mov	r5, a			; 偏移第二字节
+	mov	a, r7
+	add	a, #_musicFrequencies
+	mov	r4, a
+	mov	a, r5
+	addc	a, #(_musicFrequencies >> 8)
+	mov	r5, a
+	clr	a
+	addc	a, #(_musicFrequencies >> 16)
+	mov	dpl, r4
+	mov	dph, r5
+	mov	dpxl, a
+	mov	dr28, dpx
+	clr	a
+	movc	a, @a+dptr
+	mov	r4, a			; 频率高字节
+	inc	dpx
+	clr	a
+	movc	a, @a+dptr
+	mov	r5, a			; 频率低字节
+	push	ar2			; 保护 index（C 函数会改写 R0~R7）
+	push	ar3
+	clr	a			; 压占空比 MUSIC_DUTY_ON（高位在前）
+	push	acc
+	push	acc
+	mov	a, #(MUSIC_DUTY_ON >> 8)
+	push	acc
+	mov	a, #(MUSIC_DUTY_ON & 0xff)
+	push	acc
+	clr	a			; 压频率（高 16 位恒为 0）
+	push	acc
+	push	acc
+	push	ar4
+	push	ar5
+	mov	dpl, #(PWMB_CH3_P33)
+	ecall	_PWM_SET_Frequency
+	dec	spx, #4
+	dec	spx, #4
+	pop	ar3
+	pop	ar2
+MPS_wait:				; Music_Wait(musicSegmentDurations[index])
+	mov	a, r2			; 偏移 = index*4（两次倍增）
+	add	a, r2
+	mov	r4, a
+	mov	a, r3
+	rlc	a
+	mov	r5, a
+	mov	a, r4
+	add	a, r4
+	mov	r4, a
+	mov	a, r5
+	rlc	a
+	mov	r5, a
+	clr	a
+	rlc	a
+	mov	r6, a			; 偏移第三字节（防超大段表溢出）
+	mov	a, r4
+	add	a, #_musicSegmentDurations
+	mov	r4, a
+	mov	a, r5
+	addc	a, #(_musicSegmentDurations >> 8)
+	mov	r5, a
+	mov	a, r6
+	addc	a, #(_musicSegmentDurations >> 16)
+	mov	dpl, r4
+	mov	dph, r5
+	mov	dpxl, a
+	mov	dr28, dpx
+	clr	a
+	movc	a, @a+dptr
+	mov	r7, a			; 时长最高字节
+	inc	dpx
+	clr	a
+	movc	a, @a+dptr
+	mov	r6, a
+	inc	dpx
+	clr	a
+	movc	a, @a+dptr
+	mov	r5, a
+	inc	dpx
+	clr	a
+	movc	a, @a+dptr
+	mov	r4, a			; 时长最低字节
+	mov	a, r7			; 32 位参数：A=最高 … DPL=最低
+	mov	b, r6
+	mov	dph, r5
+	mov	dpl, r4
+	ejmp	_Music_Wait		; 尾调用：直接跳转，省一次返回
+
+; ────────────────────────────────────────────────────────────────────────────
+; void Music_PlayOnce(void)
+; 从头到尾播放一遍所有段，结束后静音。
+; ────────────────────────────────────────────────────────────────────────────
+_Music_PlayOnce:
+	mov	r2, #0x00		; r3:r2 = 段序号 i，从 0 开始
+	mov	r3, #0x00
+MPO_loop:				; for (i = 0; i < MUSIC_SEGMENT_COUNT; i++)
+	clr	c
+	mov	a, r2
+	subb	a, #(MUSIC_SEGMENT_COUNT & 0xff)
+	mov	a, r3
+	subb	a, #(MUSIC_SEGMENT_COUNT >> 8)
+	jnc	MPO_done		; i ≥ 段数：播放完毕
+	mov	dpl, r2			; Music_PlaySegment(i)
+	mov	dph, r3
+	push	ar2
+	push	ar3
+	ecall	_Music_PlaySegment
+	pop	ar3
+	pop	ar2
+	inc	r2			; ++i（16 位自增，INC 不影响标志位）
+	mov	a, r2
+	jnz	MPO_loop
+	inc	r3
+	ejmp	MPO_loop
+MPO_done:
+	ejmp	_Music_Stop		; 尾调用 Music_Stop()
+
+; ────────────────────────────────────────────────────────────────────────────
+; void All_Init(void)
+; 上电初始化：写通道号、初始化板级与 PWM 通道（静音）、进入静音状态。
+; ────────────────────────────────────────────────────────────────────────────
+_All_Init:
+	mov	dptr, #_Channal		; Channal = 36（C 版由静态初始化完成）
+	mov	a, #0x24
+	movx	@dptr, a
+	ecall	_Board_Init
+	clr	a			; PWM_Init(通道, MUSIC_TONE_FREQ, 0)
+	push	acc
+	push	acc
+	push	acc
+	push	acc
+	clr	a
+	push	acc
+	push	acc
+	mov	a, #(MUSIC_TONE_FREQ >> 8)
+	push	acc
+	mov	a, #(MUSIC_TONE_FREQ & 0xff)
+	push	acc
+	mov	dpl, #(PWMB_CH3_P33)
+	ecall	_PWM_Init
+	dec	spx, #4
+	dec	spx, #4
+	ejmp	_Music_Stop		; 尾调用 Music_Stop()
+
+; ────────────────────────────────────────────────────────────────────────────
+; void main(void)
+; ────────────────────────────────────────────────────────────────────────────
+_main:
+	ecall	_All_Init
+M_main_loop:
+	ecall	_Music_PlayOnce
+	ejmp	M_main_loop
 ''';
   }
 }

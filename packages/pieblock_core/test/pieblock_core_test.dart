@@ -1495,5 +1495,62 @@ void main() {
       expect(directCode, isNot(contains('ModeSwitchFeedback')));
       expect(directCode, isNot(contains('Beep(')));
     });
+
+    test('音乐项目请求汇编输出 SDCC as251 源码', () {
+      final config = MusicConfig(
+        notes: const [
+          MusicNote(id: 'c4', pitch: 60, startTick: 0, durationTicks: 480),
+          MusicNote(id: 'e4', pitch: 64, startTick: 720, durationTicks: 480),
+        ],
+        tempoEvents: const [
+          TempoEvent(tick: 0, microsecondsPerQuarter: 500000),
+          TempoEvent(tick: 960, microsecondsPerQuarter: 400000),
+        ],
+      );
+      expect(CodeGenerator.asmSupported(ProjectKind.music), isTrue);
+
+      final asm = CodeGenerator.generate(config, target: OutputTarget.asm);
+      // 复位向量、程序入口与栈底标记：与 SDCC 生成的主模块骨架一致。
+      expect(asm, contains('__interrupt_vect:'));
+      expect(asm, contains('__sdcc_program_startup:'));
+      expect(asm, contains('__start__stack:'));
+      // 库函数 extern 与调用约定（下划线前缀、ecall 调用）。
+      expect(asm, contains('.globl\t_Board_Init'));
+      expect(asm, contains('.globl\t_Ms_Delay'));
+      expect(asm, contains('.globl\t_PWM_Init'));
+      expect(asm, contains('.globl\t_PWM_SET_Frequency'));
+      expect(asm, contains('ecall\t_Ms_Delay'));
+      expect(asm, contains('ecall\t_PWM_SET_Frequency'));
+      expect(asm, contains('mov\tdpl, #(PWMB_CH3_P33)'));
+      // 与 C 版一一对应的函数骨架。
+      expect(asm, contains('_Music_Wait:'));
+      expect(asm, contains('_Music_Stop:'));
+      expect(asm, contains('_Music_PlaySegment:'));
+      expect(asm, contains('_Music_PlayOnce:'));
+      expect(asm, contains('_All_Init:'));
+      expect(asm, contains('_main:'));
+      // 频率表：音符 69（A4）= 440 Hz = 0x01B8，大端存放。
+      expect(asm, contains('#0x01, #0xb8'));
+      // 段表：C4 500ms、休止 250ms、E4 500ms → 共 3 段。
+      expect(asm, contains('MUSIC_SEGMENT_COUNT = 3'));
+      expect(asm, contains('_musicSegmentDurations:'));
+      expect(asm, contains('_musicSegmentNotes:'));
+      expect(asm, contains('休止'));
+      // Channal 由 All_Init 显式写入，等价 C 版静态初始化。
+      expect(asm, contains('mov\ta, #0x24'));
+    });
+
+    test('非音乐项目请求汇编输出抛出 UnsupportedError', () {
+      expect(CodeGenerator.asmSupported(ProjectKind.infantry), isFalse);
+      expect(CodeGenerator.asmSupported(ProjectKind.engineer), isFalse);
+      expect(CodeGenerator.asmSupported(ProjectKind.debug), isFalse);
+      expect(
+        () => CodeGenerator.generate(
+          completeInfantry(),
+          target: OutputTarget.asm,
+        ),
+        throwsUnsupportedError,
+      );
+    });
   });
 }

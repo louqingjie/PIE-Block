@@ -142,4 +142,8 @@ void main(List<String> arguments) {
       .writeAsStringSync(CodeGenerator.generate(debug()));
   File('${directory.path}${Platform.pathSeparator}music.c')
       .writeAsStringSync(CodeGenerator.generate(music()));
+  File('${directory.path}${Platform.pathSeparator}music.asm')
+      .writeAsStringSync(
+        CodeGenerator.generate(music(), target: OutputTarget.asm),
+      );
 }
