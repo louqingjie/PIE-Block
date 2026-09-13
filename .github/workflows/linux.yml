@@ -1,0 +1,231 @@
+name: Linux 构建
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # 与 windows.yml 保持一致：固定 .metadata 对应的 stable 版本，避免漂移。
+  FLUTTER_VERSION: 3.47.1
+
+jobs:
+  linux:
+    name: Linux 构建与打包
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: 检出代码（含 SDCC 子模块）
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: 记录 SDCC 子模块版本
+        id: sdcc
+        run: |
+          sha="$(git -C sdcc-c251 rev-parse HEAD)"
+          if [ -z "$sha" ]; then
+            echo "无法读取 sdcc-c251 子模块提交，请确认子模块已检出。" >&2
+            exit 1
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: 安装 Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: 缓存 pub 依赖
+        uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: pub-linux-${{ hashFiles('pubspec.lock') }}
+          restore-keys: pub-linux-
+
+      - name: 缓存内置 SDCC 工具链
+        id: toolchain
+        uses: actions/cache@v4
+        with:
+          path: vendor/sdcc-toolchain
+          key: sdcc-linux-${{ steps.sdcc.outputs.sha }}-${{ hashFiles('tools/prepare_sdcc_toolchain.sh', 'tools/build_sdcc_linux_package.sh') }}
+
+      - name: 拉取依赖
+        run: |
+          set -euo pipefail
+          flutter pub get
+          for package in pieblock_core pieblock_hid pieblock_toolchain; do
+            (cd "packages/$package" && flutter pub get)
+          done
+
+      - name: 记录工具链缓存命中情况
+        run: |
+          echo "工具链缓存命中：${{ steps.toolchain.outputs.cache-hit == 'true' }}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 安装工具链编译依赖
+        if: steps.toolchain.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends bison flex zlib1g-dev
+
+      - name: 编译并暂存 Linux SDCC 工具链
+        id: prepare
+        if: steps.toolchain.outputs.cache-hit != 'true'
+        run: |
+          gcc --version | head -1
+          bison --version | head -1
+          flex --version
+          ./tools/prepare_sdcc_toolchain.sh
+
+      - name: 保存工具链缓存
+        # 编译一次约 20 分钟，后续步骤失败也要把工具链存进缓存，
+        # 否则每次重试都得重编（缓存的默认保存行为要求整个 job 成功）。
+        if: always() && steps.toolchain.outputs.cache-hit != 'true' && steps.prepare.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: vendor/sdcc-toolchain
+          key: sdcc-linux-${{ steps.sdcc.outputs.sha }}-${{ hashFiles('tools/prepare_sdcc_toolchain.sh', 'tools/build_sdcc_linux_package.sh') }}
+
+      - name: 校验内置工具链平台
+        run: |
+          set -euo pipefail
+          manifest_path='vendor/sdcc-toolchain/bundle_manifest.json'
+          if [ ! -f "$manifest_path" ]; then
+            echo "缺少 $manifest_path，工具链未准备成功。" >&2
+            exit 1
+          fi
+          platform="$(python3 -c "import json;print(json.load(open('$manifest_path')).get('platform',''))")"
+          if [ "$platform" != 'linux-x64' ]; then
+            echo "内置工具链平台不是 linux-x64：$platform" >&2
+            exit 1
+          fi
+          if [ ! -x vendor/sdcc-toolchain/bin/sdcc ]; then
+            echo "内置工具链缺少可执行的 bin/sdcc，无法构建固件。" >&2
+            exit 1
+          fi
+          vendor/sdcc-toolchain/bin/sdcc --version
+
+      - name: 安装 Flutter Linux 构建依赖
+        run: |
+          sudo apt-get install -y --no-install-recommends \
+            clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
+
+      - name: 构建 Linux Release
+        run: flutter build linux --release
+
+      - name: 校验 Release 产物完整性
+        run: |
+          set -euo pipefail
+          bundle='build/linux/x64/release/bundle'
+          required=(
+            'pieblock_app'
+            'data/icudtl.dat'
+            'data/flutter_assets'
+            'data/flutter_assets/assets/fonts/NotoSansSC-Regular-subset.ttf'
+            'data/pieblock_runtime/sdcc-toolchain/bin/sdcc'
+            'data/pieblock_runtime/sdcc-toolchain/bundle_manifest.json'
+            'data/pieblock_runtime/stc32g_sdcc/build_manifest.json'
+            'data/pieblock_runtime/stc32g/Libraries'
+          )
+          for relative in "${required[@]}"; do
+            if [ ! -e "$bundle/$relative" ]; then
+              echo "Release 产物缺失: $relative" >&2
+              exit 1
+            fi
+          done
+          if [ ! -x "$bundle/data/pieblock_runtime/sdcc-toolchain/bin/sdcc" ]; then
+            echo "bundle 内的 sdcc 不可执行（CMake 权限丢失）。" >&2
+            exit 1
+          fi
+
+      - name: 端到端冒烟：用打包产物编译固件
+        run: |
+          set -euo pipefail
+          # 把 PIEBLOCK_RUNTIME_ROOT 指向 bundle 内的运行时资源，
+          # 验证 CMake 安装的资源能被 _locateAssets() 定位并完整编译出 HEX。
+          export PIEBLOCK_RUNTIME_ROOT="$PWD/build/linux/x64/release/bundle/data/pieblock_runtime"
+          dart run packages/pieblock_core/tool/generate_smoke.dart build/smoke
+          dart run packages/pieblock_toolchain/tool/build_smoke.dart music build/smoke/music.c
+
+      - name: 打包 Linux tar.gz
+        run: ./tools/package_flutter_linux.sh --skip-build
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: PIEBlock-linux-x64
+          path: build/dist/PIEBlock-*-linux-x64.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: 发布 GitHub Release
+    needs: linux
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 校验标签与 pubspec 版本一致
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(grep -m1 -oP '^version:\s*\K[0-9]+\.[0-9]+\.[0-9]+' pubspec.yaml)"
+          if [ "$tag" != "$version" ]; then
+            echo "::error::标签 $GITHUB_REF_NAME 与 pubspec.yaml 的 $version 不一致，请先提升版本号再打标签。"
+            exit 1
+          fi
+          echo "版本校验通过：$version"
+
+      - name: 下载构建产物
+        uses: actions/download-artifact@v4
+        with:
+          name: PIEBlock-linux-x64
+          path: artifacts
+
+      - name: 补一个稳定命名的 tar.gz
+        run: |
+          set -euo pipefail
+          # 预留给官网后续的 Linux 下载直链
+          #（/releases/latest/download/PIEBlock-linux-x64.tar.gz，不随版本号变化）；
+          # Release 若被标记为 prerelease，latest 不会指向它，直链会 404。
+          tarball="$(ls artifacts/PIEBlock-*-linux-x64.tar.gz)"
+          cp "$tarball" artifacts/PIEBlock-linux-x64.tar.gz
+          ls -lh artifacts/PIEBlock-linux-x64.tar.gz
+
+      - name: 上传产物到 Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          notes="docs/releases/$version.md"
+          arguments=(--verify-tag --title "PIE-Block $version")
+          if [ -f "$notes" ]; then
+            arguments+=(--notes-file "$notes")
+          else
+            arguments+=(--generate-notes)
+          fi
+          ls -lh artifacts
+          # windows.yml 在同一 tag 上并行发布，Release 可能已被对方创建；
+          # 幂等处理：已存在则补传，不存在才创建。
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" artifacts/*.tar.gz --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "${arguments[@]}" artifacts/*.tar.gz
+          fi

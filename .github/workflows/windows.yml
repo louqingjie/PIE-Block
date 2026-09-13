@@ -302,7 +302,7 @@ jobs:
           cp "$exe" artifacts/PIEBlock-windows-setup.exe
           ls -lh artifacts/PIEBlock-windows-setup.exe
 
-      - name: 创建 Release 并上传产物
+      - name: 上传产物到 Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -316,6 +316,14 @@ jobs:
             arguments+=(--generate-notes)
           fi
           ls -lh artifacts artifacts/output
-          gh release create "$GITHUB_REF_NAME" "${arguments[@]}" \
-            artifacts/output/*.exe artifacts/*.zip \
-            artifacts/PIEBlock-windows-setup.exe
+          # linux.yml 在同一 tag 上并行发布，Release 可能已被对方创建；
+          # 幂等处理：已存在则补传，不存在才创建。
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" \
+              artifacts/output/*.exe artifacts/*.zip \
+              artifacts/PIEBlock-windows-setup.exe --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "${arguments[@]}" \
+              artifacts/output/*.exe artifacts/*.zip \
+              artifacts/PIEBlock-windows-setup.exe
+          fi
