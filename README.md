@@ -13,7 +13,7 @@ PIE-Block 是面向 W.PIE RoboMaster 校内赛的 Windows 桌面集成开发环�
 - 字段范围、引脚占用、按键冲突和跨模式静态检查
 - `.pieproj` 格式 15 项目文件，保存向导进度并以 500ms 防抖自动保存
 - Material 3 浅色、深色和跟随系统主题
-- 只读 C 代码预览、搜索、复制和导出 `main.c`
+- 只读 C 代码预览、搜索、复制和导出 `main.c`；音乐项目试点可直接生成等价汇编并导出 `main.asm`（详见 `docs/汇编生成器.md`）
 - 随应用发布的离线 SDCC C251，以及可选的本地 Keil C251 全量构建
 - HEX 地址与校验和检查、按内容哈希复用构建结果、导出 HEX
 - STC32G ROM USB-HID 主控板烧录、进度、取消和失败提示
@@ -24,7 +24,7 @@ PIE-Block 是面向 W.PIE RoboMaster 校内赛的 Windows 桌面集成开发环�
 
 ```text
 ./                       Flutter 应用（pubspec.yaml 位于仓库根目录）
-packages/pieblock_core/  纯 Dart 项目模型、校验器与 C 生成器
+packages/pieblock_core/  纯 Dart 项目模型、校验器与 C/汇编生成器
 packages/pieblock_toolchain/ Dart SDCC/Keil 构建、HEX 校验与产物缓存
 packages/pieblock_hid/   Dart 烧录协议与 Windows 原生 HID 传输
 packages/pieblock_sdcc_native/ Android C ABI 5 与多进程编译桥接
@@ -34,7 +34,7 @@ keil_server/             独立云编译服务（不由当前应用调用）
 docs/                    硬件与项目格式文档
 ```
 
-Flutter UI 不包含生成规则。`pieblock_core` 是配置、检查和代码生成的唯一实现。
+Flutter UI 不包含生成规则。`pieblock_core` 是配置、检查和代码生成的唯一实现（C 与汇编两种输出目标均在此实现）。
 
 ## 开发
 
