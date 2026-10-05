@@ -36,6 +36,8 @@
 
 新项目的必填数值、枚举、按键、IO、方向、驱动类型、工程 PWM 和模式策略均为 `null`，应用不会替用户提前选择。纯可选开关默认关闭。
 
+新建弹窗有一个默认关闭的「模板工程」开关。只有显式打开它时，配置才整份取自 `assets/templates/<kind>.pieproj`；项目文件本身不写入任何模板标记，创建出来就是普通项目，`name`、两个时间戳和 `guide_progress` 都按本次创建重新生成。模板文件同为 `format_version: 16`，格式版本变更时必须用 `dart run tool/generate_project_templates.dart` 重存四份模板，否则 `test/project_templates_test.dart` 会失败。步兵模板的拨弹电机落在固定 50Hz 的 PWMA（四轮已占满固定 10000Hz 的 PWMB），因此会带一条「电机可能一卡一卡」提示，这是既定取舍而非模板缺陷。
+
 步兵和工程项目的 `chassis.turn_reversed` 是共用底盘校准项，默认 `false`；启用后仅反转水平摇杆及左右方向键产生的转向量，不改变直行、倒车、冲刺或单轮方向配置。
 
 工程动作的 `mode` 支持 `direct`、`incremental`、`speed`、`accelerate`、`single` 和 `continuous`。数字按键控制舵机时可使用 `direct`（按键上升沿到达相对中位点的预设角度）、`single`（按键上升沿按灵敏度单次增加）或 `continuous`（按住期间按灵敏度逐主循环增加）。`direct` 的 `parameter` 为 0–90 的整数目标角度，方向决定中位点两侧；`single` 和 `continuous` 的 `parameter` 保存最多两位小数的角度灵敏度；其他动作参数仍为整数。
