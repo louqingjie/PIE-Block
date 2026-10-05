@@ -7,6 +7,7 @@ import 'package:pieblock_core/pieblock_core.dart';
 import 'controller.dart';
 import 'platform/document_io.dart';
 import 'platform/paths.dart';
+import 'project_templates.dart';
 
 const _brandCyan = Color(0xff02acc0);
 const _brandCoral = Color(0xffef685d);
@@ -43,9 +44,14 @@ class ProjectFileDialogs {
 }
 
 class HomeScreen extends ConsumerWidget {
-  const HomeScreen({super.key, this.fileDialogs = const ProjectFileDialogs()});
+  const HomeScreen({
+    super.key,
+    this.fileDialogs = const ProjectFileDialogs(),
+    this.templates = const ProjectTemplates(),
+  });
 
   final ProjectFileDialogs fileDialogs;
+  final ProjectTemplates templates;
 
   Future<String?> _chooseSavePath(
     BuildContext context, {
@@ -79,7 +85,14 @@ class HomeScreen extends ConsumerWidget {
     );
     String? androidReference;
     var kind = ProjectKind.infantry;
+    var useTemplate = false;
     final android = !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+    // 弹窗存续期间不再碰 ref：创建按钮的回调里有 await，届时外层弹窗可能已经
+    // 不在挂载状态。这里一次性取出控制器和提示偏好快照供整个弹窗使用。
+    final appController = ref.read(appControllerProvider.notifier);
+    var suppressTemplateGuide = ref.read(
+      appControllerProvider,
+    ).suppressTemplateGuide;
     await showDialog<void>(
       context: context,
       builder: (context) => StatefulBuilder(
@@ -116,6 +129,26 @@ class HomeScreen extends ConsumerWidget {
                     ],
                     selected: {kind},
                     onSelectionChanged: (v) => setState(() => kind = v.first),
+                  ),
+                  SwitchListTile(
+                    key: const ValueKey('new_project.template'),
+                    contentPadding: EdgeInsets.zero,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    value: useTemplate,
+                    title: const Text('模板工程'),
+                    subtitle: const Text('载入示例配置，预填当前所选类型的全部机器人字段'),
+                    onChanged: (value) async {
+                      if (value && !suppressTemplateGuide) {
+                        final result = await _confirmTemplateUsage(context);
+                        if (!context.mounted) return;
+                        if (result.suppress) {
+                          suppressTemplateGuide = true;
+                          appController.suppressTemplateGuide();
+                        }
+                        if (!result.confirmed) return;
+                      }
+                      setState(() => useTemplate = value);
+                    },
                   ),
                   const SizedBox(height: 20),
                   TextField(
@@ -213,16 +246,32 @@ class HomeScreen extends ConsumerWidget {
                     ? '$projectName.pieproj'
                     : androidReference ?? path.text;
                 if (projectPath.trim().isEmpty) return;
+                final projectKind = kind;
+                ProjectConfig? template;
+                if (useTemplate) {
+                  // 载入失败就中止：静默退化成空项目会让用户以为字段已填好，
+                  // 到向导里才发现满屏红字。
+                  try {
+                    template = await templates.config(projectKind);
+                  } catch (error) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('模板载入失败：$error')),
+                      );
+                    }
+                    return;
+                  }
+                }
+                if (!context.mounted) return;
                 // 先关闭新建弹窗，再切换根页面；否则根页面重建会在弹窗
                 // 仍挂载时卸载其 InheritedElement，Android 上会触发
                 // framework.dart 的 `_dependents.isEmpty` 断言。
-                final controller = ref.read(appControllerProvider.notifier);
-                final projectKind = kind;
                 Navigator.pop(context);
-                await controller.createProject(
+                await appController.createProject(
                   projectPath,
                   projectName,
                   projectKind,
+                  template: template,
                 );
               },
               child: const Text('创建项目'),
@@ -234,6 +283,66 @@ class HomeScreen extends ConsumerWidget {
     // showDialog 返回时弹窗仍可能处于退出动画中，TextField 还会被重建。
     // 控制器随后不再被引用，交由 GC 回收，避免过早 dispose 导致 Flutter
     // 在动画帧中访问已释放的 TextEditingController。
+  }
+
+  /// 打开「模板工程」开关前的劝阻式确认。返回用户是否确认，以及是否要求
+  /// 以后不再提示——两者分开返回，因为「取消 + 勾了不再提示」是有效组合。
+  Future<({bool confirmed, bool suppress})> _confirmTemplateUsage(
+    BuildContext context,
+  ) async {
+    var suppress = false;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      // 允许点遮罩关闭会把「不再提示」的勾选静默丢掉。
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('确认使用模板工程？'),
+          content: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(dialogContext).height * 0.6,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    '模板工程会一次性写入全部机器人配置字段，创建后可直接进入审查与生成环节。',
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    '使用模板将跳过逐项配置过程。初次使用者难以借此了解各配置项与遥控器按键、'
+                    'IO 端口、执行器方向之间的对应关系，也不易判断自身设备的实际取值。',
+                  ),
+                  const SizedBox(height: 12),
+                  const Text('建议先以空白项目跟随引导完整配置一次，再视需要使用模板。'),
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    value: suppress,
+                    onChanged: (value) =>
+                        setDialogState(() => suppress = value ?? false),
+                    title: const Text('以后不再显示此提示'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('返回空白项目'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('我已了解，继续使用模板'),
+            ),
+          ],
+        ),
+      ),
+    );
+    return (confirmed: confirmed == true, suppress: suppress);
   }
 
   Future<void> _open(BuildContext context, WidgetRef ref) async {

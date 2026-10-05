@@ -27,6 +27,7 @@ class AppState {
     this.compiler = CompilerKind.sdcc,
     this.keilPath,
     this.suppressFlashGuide = false,
+    this.suppressTemplateGuide = false,
   });
   final ProjectDocument? document;
   final String? path;
@@ -40,6 +41,7 @@ class AppState {
   final CompilerKind compiler;
   final String? keilPath;
   final bool suppressFlashGuide;
+  final bool suppressTemplateGuide;
   AppState copyWith({
     ProjectDocument? document,
     String? path,
@@ -58,6 +60,7 @@ class AppState {
     String? keilPath,
     bool clearKeilPath = false,
     bool? suppressFlashGuide,
+    bool? suppressTemplateGuide,
     bool clearProject = false,
   }) => AppState(
     document: clearProject ? null : document ?? this.document,
@@ -77,6 +80,8 @@ class AppState {
     compiler: compiler ?? this.compiler,
     keilPath: clearKeilPath ? null : keilPath ?? this.keilPath,
     suppressFlashGuide: suppressFlashGuide ?? this.suppressFlashGuide,
+    suppressTemplateGuide:
+        suppressTemplateGuide ?? this.suppressTemplateGuide,
   );
 }
 
@@ -134,6 +139,7 @@ class AppController extends Notifier<AppState> {
         compiler: compiler,
         keilPath: json['keil_path']?.toString(),
         suppressFlashGuide: json['suppress_flash_guide'] == true,
+        suppressTemplateGuide: json['suppress_template_guide'] == true,
       );
     } catch (_) {}
   }
@@ -145,6 +151,7 @@ class AppController extends Notifier<AppState> {
       'compiler': state.compiler.name,
       if (state.keilPath != null) 'keil_path': state.keilPath,
       'suppress_flash_guide': state.suppressFlashGuide,
+      'suppress_template_guide': state.suppressTemplateGuide,
     });
   }
 
@@ -173,13 +180,28 @@ class AppController extends Notifier<AppState> {
     unawaited(_saveSettings());
   }
 
-  Future<bool> createProject(String path, String name, ProjectKind kind) async {
+  void suppressTemplateGuide() {
+    state = state.copyWith(suppressTemplateGuide: true);
+    unawaited(_saveSettings());
+  }
+
+  Future<bool> createProject(
+    String path,
+    String name,
+    ProjectKind kind, {
+    ProjectConfig? template,
+  }) async {
     try {
       final isContentUri = Uri.tryParse(path)?.scheme == 'content';
       final normalized = isContentUri || path.toLowerCase().endsWith('.pieproj')
           ? path
           : '$path.pieproj';
-      final document = ProjectDocument.create(name.trim(), kind);
+      final created = ProjectDocument.create(name.trim(), kind);
+      // 模板只替换 config：名称、时间戳和引导进度都按本次创建重新生成，
+      // 项目文件里也不留任何「来自模板」的痕迹。
+      final document = template == null
+          ? created
+          : created.copyWith(config: template);
       if (isContentUri) {
         await _documentIo.write(normalized, _encodeDocument(document));
       } else {

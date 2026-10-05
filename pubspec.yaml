@@ -78,6 +78,7 @@ flutter:
     - assets/images/cnu-white.png
     - assets/images/switch_main.png
     - assets/images/switch_expend.png
+    - assets/templates/
 
   fonts:
     - family: PieBlockSans

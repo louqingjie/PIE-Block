@@ -102,6 +102,11 @@ stc32g/toolchain/mcs251-tests/build/
 
 *.pieproj
 
+# 上面这条是为了忽略本地随手新建的用户项目；assets/templates/ 下的四份是
+# 应用内置的模板工程资源，必须入库，否则打包和 CI 都读不到。
+!assets/templates/
+!assets/templates/*.pieproj
+
 # Local ISP/flash debug scratch (do not commit)
 STC32G.pdf
 _probe_*

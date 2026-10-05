@@ -13,6 +13,7 @@ import 'package:pieblock_app/src/home_screen.dart';
 import 'package:pieblock_app/src/platform/document_io.dart';
 import 'package:pieblock_app/src/music_editor.dart';
 import 'package:pieblock_app/src/music_preview.dart';
+import 'package:pieblock_app/src/project_templates.dart';
 import 'package:pieblock_app/src/wizard_screen.dart';
 import 'package:pieblock_core/pieblock_core.dart';
 import 'package:pieblock_toolchain/pieblock_toolchain.dart';
@@ -41,8 +42,30 @@ class _FakeProjectFileDialogs extends ProjectFileDialogs {
   }
 }
 
-class _InfantryStartController extends AppController {
+/// 记录 createProject 收到的参数，避免测试真的写盘。
+class _CapturingCreateController extends AppController {
+  ProjectConfig? template;
+  ProjectKind? kind;
+  int createCalls = 0;
+
   @override
+  AppState build() => const AppState();
+
+  @override
+  Future<bool> createProject(
+    String path,
+    String name,
+    ProjectKind kind, {
+    ProjectConfig? template,
+  }) async {
+    createCalls += 1;
+    this.kind = kind;
+    this.template = template;
+    return true;
+  }
+}
+
+class _InfantryStartController extends AppController {  @override
   AppState build() => AppState(
     document: ProjectDocument.create('步兵测试', ProjectKind.infantry),
     saveStatus: SaveStatus.saved,
@@ -556,6 +579,7 @@ void main() {
     expect(find.text('浏览'), findsOneWidget);
     expect(find.text('调试'), findsOneWidget);
     expect(find.text('音乐'), findsOneWidget);
+    expect(find.text('模板工程'), findsOneWidget);
     expect(find.text('创建项目'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
@@ -1011,6 +1035,169 @@ void main() {
     await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();
     expect(find.byType(AlertDialog), findsNothing);
+    expect(tester.takeException(), isNull);
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  testWidgets('模板工程开关默认关闭，打开前必须先确认', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _CapturingCreateController(),
+          ),
+        ],
+        child: MaterialApp(home: HomeScreen(fileDialogs: _FakeProjectFileDialogs())),
+      ),
+    );
+    await tester.tap(find.text('新建项目'));
+    await tester.pumpAndSettle();
+
+    final toggle = find.descendant(
+      of: find.byKey(const ValueKey('new_project.template')),
+      matching: find.byType(Switch),
+    );
+    expect(tester.widget<Switch>(toggle).value, isFalse);
+
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(find.text('确认使用模板工程？'), findsOneWidget);
+    expect(find.text('以后不再显示此提示'), findsOneWidget);
+    // 确认之前开关不能已经打开，否则劝阻就没有拦截效果。
+    expect(tester.widget<Switch>(toggle).value, isFalse);
+
+    await tester.tap(find.text('返回空白项目'));
+    await tester.pumpAndSettle();
+    expect(find.text('确认使用模板工程？'), findsNothing);
+    expect(tester.widget<Switch>(toggle).value, isFalse);
+
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('我已了解，继续使用模板'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<Switch>(toggle).value, isTrue);
+    expect(tester.takeException(), isNull);
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  testWidgets('勾选不再提示后，同一弹窗内再开关不再弹确认', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    late _CapturingCreateController controller;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => controller = _CapturingCreateController(),
+          ),
+        ],
+        child: MaterialApp(home: HomeScreen(fileDialogs: _FakeProjectFileDialogs())),
+      ),
+    );
+    await tester.tap(find.text('新建项目'));
+    await tester.pumpAndSettle();
+    final toggle = find.descendant(
+      of: find.byKey(const ValueKey('new_project.template')),
+      matching: find.byType(Switch),
+    );
+
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('以后不再显示此提示'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('我已了解，继续使用模板'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<Switch>(toggle).value, isTrue);
+    expect(controller.state.suppressTemplateGuide, isTrue);
+
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(find.text('确认使用模板工程？'), findsNothing);
+    expect(tester.widget<Switch>(toggle).value, isTrue);
+    expect(tester.takeException(), isNull);
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  testWidgets('打开开关后按当前所选类型预填配置，关闭时不预填', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    late _CapturingCreateController controller;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => controller = _CapturingCreateController(),
+          ),
+        ],
+        child: MaterialApp(
+          home: HomeScreen(
+            fileDialogs: _FakeProjectFileDialogs(
+              savePath: r'C:\projects\机器人.pieproj',
+            ),
+            templates: ProjectTemplates(
+              loader: (assetPath) => rootBundle.loadString(assetPath),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('新建项目'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('浏览'));
+    await tester.pumpAndSettle();
+
+    // 开关保持关闭时创建：走原来的空白项目路径。
+    await tester.tap(find.text('创建项目'));
+    await tester.pumpAndSettle();
+    expect(controller.createCalls, 1);
+    expect(controller.template, isNull);
+
+    await tester.tap(find.text('新建项目'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('浏览'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('工程'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('创建项目'));
+    await tester.pumpAndSettle();
+    expect(controller.createCalls, 2);
+    expect(controller.template, isNull);
+
+    // 打开开关并确认，切到工程后模板应跟随当前类型而不是停留在步兵。
+    await tester.tap(find.text('新建项目'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('浏览'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const ValueKey('new_project.template')),
+        matching: find.byType(Switch),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('我已了解，继续使用模板'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('调试'));
+    await tester.pumpAndSettle();
+    // 切换类型不应该把已确认过的开关关掉，也不应该重新弹提示。
+    expect(find.text('确认使用模板工程？'), findsNothing);
+    await tester.tap(find.text('创建项目'));
+    await tester.pumpAndSettle();
+
+    expect(controller.createCalls, 3);
+    expect(controller.kind, ProjectKind.debug);
+    final template = controller.template;
+    expect(template, isA<DebugConfig>());
+    expect(
+      ProjectValidator.validate(template!).where(
+        (issue) => issue.severity == IssueSeverity.error,
+      ),
+      isEmpty,
+    );
     expect(tester.takeException(), isNull);
     debugDefaultTargetPlatformOverride = null;
   });

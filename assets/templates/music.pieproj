@@ -1,0 +1,131 @@
+{
+  "format_version": 16,
+  "name": "模板工程",
+  "project_kind": "music",
+  "created_at": "2026-01-01T00:00:00.000Z",
+  "updated_at": "2026-01-01T00:00:00.000Z",
+  "guide_progress": {
+    "current_step_id": "music",
+    "visited_step_ids": [
+      "music"
+    ]
+  },
+  "config": {
+    "ticks_per_quarter": 480,
+    "source_name": null,
+    "track_name": "一闪一闪亮晶晶",
+    "notes": [
+      {
+        "id": "n1",
+        "pitch": 60,
+        "start_tick": 0,
+        "duration_ticks": 480,
+        "primary": true
+      },
+      {
+        "id": "n2",
+        "pitch": 60,
+        "start_tick": 480,
+        "duration_ticks": 480,
+        "primary": true
+      },
+      {
+        "id": "n3",
+        "pitch": 67,
+        "start_tick": 960,
+        "duration_ticks": 480,
+        "primary": true
+      },
+      {
+        "id": "n4",
+        "pitch": 67,
+        "start_tick": 1440,
+        "duration_ticks": 480,
+        "primary": true
+      },
+      {
+        "id": "n5",
+        "pitch": 69,
+        "start_tick": 1920,
+        "duration_ticks": 480,
+        "primary": true
+      },
+      {
+        "id": "n6",
+        "pitch": 69,
+        "start_tick": 2400,
+        "duration_ticks": 480,
+        "primary": true
+      },
+      {
+        "id": "n7",
+        "pitch": 67,
+        "start_tick": 2880,
+        "duration_ticks": 960,
+        "primary": true
+      },
+      {
+        "id": "n8",
+        "pitch": 65,
+        "start_tick": 3840,
+        "duration_ticks": 480,
+        "primary": true
+      },
+      {
+        "id": "n9",
+        "pitch": 65,
+        "start_tick": 4320,
+        "duration_ticks": 480,
+        "primary": true
+      },
+      {
+        "id": "n10",
+        "pitch": 64,
+        "start_tick": 4800,
+        "duration_ticks": 480,
+        "primary": true
+      },
+      {
+        "id": "n11",
+        "pitch": 64,
+        "start_tick": 5280,
+        "duration_ticks": 480,
+        "primary": true
+      },
+      {
+        "id": "n12",
+        "pitch": 62,
+        "start_tick": 5760,
+        "duration_ticks": 480,
+        "primary": true
+      },
+      {
+        "id": "n13",
+        "pitch": 62,
+        "start_tick": 6240,
+        "duration_ticks": 480,
+        "primary": true
+      },
+      {
+        "id": "n14",
+        "pitch": 60,
+        "start_tick": 6720,
+        "duration_ticks": 960,
+        "primary": true
+      }
+    ],
+    "tempo_events": [
+      {
+        "tick": 0,
+        "microseconds_per_quarter": 500000
+      }
+    ],
+    "time_signature_events": [
+      {
+        "tick": 0,
+        "numerator": 4,
+        "denominator": 4
+      }
+    ]
+  }
+}
