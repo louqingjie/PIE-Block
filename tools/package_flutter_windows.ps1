@@ -20,10 +20,18 @@ if ($pubspec -notmatch '(?m)^version:\s*(\d+)\.(\d+)\.(\d+)') {
 }
 $version = "$($Matches[1]).$($Matches[2]).$($Matches[3])"
 
-# --- 内置 SDCC 工具链前置检查 ---
+# --- 内置 SDCC 工具链前置检查：必须是 Windows 版，否则 flutter build 会静默装错资源 ---
 $bundleManifest = Join-Path $repoRoot 'vendor\sdcc-toolchain\bundle_manifest.json'
 if (!(Test-Path -LiteralPath $bundleManifest -PathType Leaf)) {
     throw '缺少内置 SDCC 工具链，请先运行 tools\prepare_sdcc_toolchain.ps1。'
+}
+$bundle = Get-Content -LiteralPath $bundleManifest -Raw | ConvertFrom-Json
+if ($null -ne $bundle.platform -and $bundle.platform -ne 'windows-x64') {
+    throw "内置 SDCC 工具链平台不是 windows-x64：$($bundle.platform)；请重新运行 tools\prepare_sdcc_toolchain.ps1 -Force。"
+}
+$sdccExe = Join-Path $repoRoot 'vendor\sdcc-toolchain\bin\sdcc.exe'
+if (!(Test-Path -LiteralPath $sdccExe -PathType Leaf)) {
+    throw "内置 SDCC 工具链缺少 bin\sdcc.exe，Windows 固件无法编译：$sdccExe（请重新运行 tools\prepare_sdcc_toolchain.ps1 -Force）"
 }
 
 # --- 定位 ISCC.exe ---

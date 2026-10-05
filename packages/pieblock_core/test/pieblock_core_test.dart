@@ -17,30 +17,41 @@ InfantryConfig completeInfantry({
   FrictionMode frictionMode = FrictionMode.brushlessEsc,
   FeedMode feedMode = FeedMode.blockingOpenLoop,
   bool shared = false,
+  String? reverseFeedKey,
 }) => InfantryConfig(
   remote: const RemoteConfig(channel: 36, deadzone: 100),
   chassis: completeChassis(shared: shared),
   feederPin: 'P60',
   feederDirection: Direction.forward,
-  yawDrive: DriveType.servo,
-  yawPin: 'MP74',
-  yawDirection: Direction.forward,
-  yawMidOffset: 0,
-  pitchDrive: DriveType.servo,
-  pitchPin: 'MP03',
-  pitchDirection: Direction.forward,
-  pitchMidOffset: 0,
+  yawActuators: const [
+    AxisActuator(
+      drive: DriveType.servo,
+      pin: 'MP74',
+      direction: Direction.forward,
+      midOffset: 0,
+    ),
+  ],
+  pitchActuators: const [
+    AxisActuator(
+      drive: DriveType.servo,
+      pin: 'MP03',
+      direction: Direction.forward,
+      midOffset: 0,
+    ),
+  ],
   arrowBehavior: ArrowBehavior.other,
   feedMode: feedMode,
   triggerKey: 'E',
+  reverseFeedKey: reverseFeedKey,
   triggerSpeed: 6000,
   triggerTimeMs: feedMode == FeedMode.blockingOpenLoop ? 250 : null,
   frictionMode: frictionMode,
   frictionKey: frictionMode == FrictionMode.brushlessEsc ? 'A' : null,
   frictionUpKey: frictionMode == FrictionMode.brushlessEsc ? 'B' : null,
   frictionDownKey: frictionMode == FrictionMode.brushlessEsc ? 'C' : null,
-  frictionMaxDuty: frictionMode == FrictionMode.brushlessEsc ? 800 : null,
-  frictionStep: frictionMode == FrictionMode.brushlessEsc ? 100 : null,
+  frictionP64MaxDuty: frictionMode == FrictionMode.brushlessEsc ? 800 : null,
+  frictionP66MaxDuty: frictionMode == FrictionMode.brushlessEsc ? 700 : null,
+  frictionLevelStep: frictionMode == FrictionMode.brushlessEsc ? 10 : null,
 );
 
 EngineerConfig completeEngineer() => EngineerConfig(
@@ -67,7 +78,15 @@ DebugConfig completeDebug() => DebugConfig(
       pin: 'P64',
       enabled: true,
       driveType: DebugDriveType.friction,
-      value: 750,
+      direction: Direction.forward,
+      value: 100,
+    ),
+    const DebugTestItem(
+      pin: 'P66',
+      enabled: true,
+      driveType: DebugDriveType.friction,
+      direction: Direction.forward,
+      value: 50,
     ),
     const DebugTestItem(
       pin: 'MP03',
@@ -77,9 +96,13 @@ DebugConfig completeDebug() => DebugConfig(
       value: 30,
       durationMs: 4200,
     ),
-    for (final pin in debugPins.where((pin) => pin != 'P64' && pin != 'MP03'))
+    for (final pin in debugPins.where(
+      (pin) => pin != 'P64' && pin != 'P66' && pin != 'MP03',
+    ))
       DebugTestItem(pin: pin),
   ],
+  frictionP64MaxDuty: 800,
+  frictionP66MaxDuty: 700,
 );
 
 EngineerConfig advancedEngineer({
@@ -189,7 +212,7 @@ EngineerConfig servoButtonEngineer({
 
 void main() {
   group('项目格式与进度', () {
-    test('格式 14 往返并保存向导进度', () {
+    test('格式 16 往返并保存向导进度', () {
       final source = ProjectDocument.create('步兵测试', ProjectKind.infantry)
           .copyWith(
             guideProgress: const GuideProgress(
@@ -202,15 +225,52 @@ void main() {
           jsonDecode(jsonEncode(source.toJson())) as Map,
         ),
       );
-      expect(source.toJson()['format_version'], 14);
+      expect(source.toJson()['format_version'], 16);
       expect(restored.guideProgress.currentStepId, 'controls');
       expect(restored.guideProgress.visitedStepIds, hasLength(3));
       expect((source.toJson()['config']! as Map), isNot(contains('pwm')));
     });
 
-    test('格式 13 直接拒绝', () {
+    test('云台执行器按数组往返并支持多个执行器', () {
+      final source = completeInfantry().copyWith(
+        yawActuators: const [
+          AxisActuator(
+            drive: DriveType.servo,
+            pin: 'MP74',
+            direction: Direction.forward,
+            midOffset: -12,
+          ),
+          AxisActuator(
+            drive: DriveType.servo,
+            pin: 'P75',
+            direction: Direction.reverse,
+            midOffset: 8,
+          ),
+        ],
+        pitchActuators: const [
+          AxisActuator(
+            drive: DriveType.motor,
+            pin: 'P77',
+            direction: Direction.reverse,
+          ),
+        ],
+      );
+      final json = source.toJson();
+      expect(json['yaw'], hasLength(2));
+      expect(json['pitch'], hasLength(1));
+      final restored = InfantryConfig.fromJson(
+        Map<String, Object?>.from(jsonDecode(jsonEncode(json)) as Map),
+      );
+      expect(restored.yawActuators, hasLength(2));
+      expect(restored.yawActuators[1].pin, 'P75');
+      expect(restored.yawActuators[1].midOffset, 8);
+      expect(restored.pitchActuators.single.drive, DriveType.motor);
+      expect(restored.pitchActuators.single.midOffset, isNull);
+    });
+
+    test('格式 14 直接拒绝', () {
       expect(
-        () => ProjectDocument.fromJson({'format_version': 13}),
+        () => ProjectDocument.fromJson({'format_version': 14}),
         throwsFormatException,
       );
     });
@@ -222,6 +282,15 @@ void main() {
       expect(json['turn_reversed'], isTrue);
       expect(ChassisConfig.fromJson(json).turnReversed, isTrue);
       expect(source.copyWith(turnReversed: false).turnReversed, isFalse);
+    });
+
+    test('反向拨弹键默认不使用且可往返', () {
+      expect(completeInfantry().toJson()['reverse_feed_key'], isNull);
+      final source = completeInfantry(reverseFeedKey: 'D');
+      final json = source.toJson();
+      expect(json['reverse_feed_key'], 'D');
+      expect(InfantryConfig.fromJson(json).reverseFeedKey, 'D');
+      expect(source.copyWith(reverseFeedKey: null).reverseFeedKey, isNull);
     });
 
     test('舵机按键控制方式和小数灵敏度可往返', () {
@@ -269,9 +338,14 @@ void main() {
       final config = restored.config as DebugConfig;
       expect(config.tests.first.pin, 'P64');
       expect(config.tests.first.direction, isNull);
-      expect(config.tests[1].durationMs, 4200);
+      expect(config.tests[2].durationMs, 4200);
       expect(config.tests.first.toJson(), isNot(contains('direction')));
       expect(config.tests.first.toJson(), isNot(contains('duration_ms')));
+      expect(config.frictionP64MaxDuty, 800);
+      expect(config.frictionP66MaxDuty, 700);
+      expect(config.frictionMaxDutyOf('P64'), 800);
+      expect(config.frictionMaxDutyOf('P66'), 700);
+      expect(config.frictionMaxDutyOf('P60'), isNull);
 
       final legacyFriction = DebugTestItem.fromJson({
         ...config.tests.first.toJson(),
@@ -324,6 +398,61 @@ void main() {
             .singleWhere((issue) => issue.fieldPath == 'remote.channel')
             .kind,
         ValidationIssueKind.invalid,
+      );
+    });
+
+    test('摩擦轮比例映射律：油门 0% 落在启动占空比，满油落在各自上限', () {
+      // 需求里的基准算例：P64 上限 700、P66 上限 800，中油门应得 600 / 650。
+      expect(Friction.dutyOfLevel(50, 700), 600);
+      expect(Friction.dutyOfLevel(50, 800), 650);
+      for (final maxDuty in [700, 800]) {
+        expect(Friction.dutyOfLevel(0, maxDuty), Friction.startDuty);
+        expect(Friction.dutyOfLevel(100, maxDuty), maxDuty);
+        // 映射单调不减，且始终落在 [启动占空比, 满油上限] 区间内。
+        var previous = 0;
+        for (var level = 0; level <= Friction.levelMax; level++) {
+          final duty = Friction.dutyOfLevel(level, maxDuty);
+          expect(duty, greaterThanOrEqualTo(previous));
+          expect(duty, inInclusiveRange(Friction.startDuty, maxDuty));
+          previous = duty;
+        }
+      }
+      // 越界的油门按量程夹紧，不外插。
+      expect(Friction.dutyOfLevel(-10, 800), Friction.startDuty);
+      expect(Friction.dutyOfLevel(200, 800), 800);
+    });
+
+    test('摩擦轮两侧上限各自校验且油门步长限定在量程内', () {
+      List<String> messages(InfantryConfig config) =>
+          ProjectValidator.validate(config)
+              .map((issue) => issue.message)
+              .toList();
+
+      expect(
+        messages(completeInfantry().copyWith(frictionP64MaxDuty: 750)),
+        contains(contains('P64 摩擦轮最大占空比必须是 500–800 内的整百值')),
+      );
+      expect(
+        messages(completeInfantry().copyWith(frictionP66MaxDuty: 900)),
+        contains(contains('P66 摩擦轮最大占空比必须在 500–800 之间')),
+      );
+      expect(
+        messages(completeInfantry().copyWith(frictionLevelStep: 0)),
+        contains(contains('摩擦轮油门步长必须在 1–100 之间')),
+      );
+      expect(
+        messages(completeInfantry().copyWith(frictionLevelStep: 101)),
+        contains(contains('摩擦轮油门步长必须在 1–100 之间')),
+      );
+      // 两侧上限不同是正常配置，不应产生任何摩擦轮相关问题。
+      expect(
+        messages(
+          completeInfantry().copyWith(
+            frictionP64MaxDuty: 700,
+            frictionP66MaxDuty: 800,
+          ),
+        ).where((message) => message.contains('摩擦轮')),
+        isEmpty,
       );
     });
 
@@ -601,11 +730,20 @@ void main() {
       expect(() => CodeGenerator.generate(invalid), throwsStateError);
     });
 
-    test('生成混合测试、非整百摩擦轮曲线和安全完成循环', () {
+    test('调试曲线按各引脚自己的满油上限换算比例值', () {
       final code = CodeGenerator.generate(completeDebug());
-      expect(code.indexOf('1. P64'), lessThan(code.indexOf('2. MP03')));
-      expect(code, contains('Duty_Change_Order, 0, 0, 750'));
-      expect(code, contains('Duty_Change_Order, 0, 0, 700'));
+      expect(code.indexOf('1. P64'), lessThan(code.indexOf('2. P66')));
+      expect(code.indexOf('2. P66'), lessThan(code.indexOf('3. MP03')));
+      // P64 上限 800（跨度 300）：油门 0/20/40/60/80/100% → 500/560/620/680/740/800。
+      expect(code, contains('Duty_Change_Order, 0, 0, 500'));
+      expect(code, contains('Duty_Change_Order, 0, 0, 560'));
+      expect(code, contains('Duty_Change_Order, 0, 0, 620'));
+      expect(code, contains('Duty_Change_Order, 0, 0, 740'));
+      expect(code, contains('Duty_Change_Order, 0, 0, 800'));
+      // P66 上限 700（跨度 200）：同一油门映射出更低的占空比。
+      expect(code, contains('Duty_Change_Order, 0, 0, 0, 580'));
+      expect(code, contains('Duty_Change_Order, 0, 0, 0, 600'));
+      expect(code, isNot(contains('Duty_Change_Order, 0, 0, 0, 800')));
       expect(code, contains('Ms_Delay(4200);'));
       expect(code, contains('PWM_SET_Frequency(PWMB_CH4_P03, 50, 0);'));
       expect(code, contains('Ms_Delay(2000);'));
@@ -623,13 +761,15 @@ void main() {
       String generateFor(String pin, {Direction? legacyDirection}) {
         return CodeGenerator.generate(
           DebugConfig(
+            frictionP64MaxDuty: 800,
+            frictionP66MaxDuty: 700,
             tests: [
               DebugTestItem(
                 pin: pin,
                 enabled: true,
                 driveType: DebugDriveType.friction,
                 direction: legacyDirection,
-                value: 750,
+                value: 100,
               ),
               for (final candidate in debugPins.where((value) => value != pin))
                 DebugTestItem(pin: candidate),
@@ -717,17 +857,75 @@ void main() {
       );
     });
 
+    test('反向拨弹键必须避让其他按键和方向键', () {
+      bool hasError(InfantryConfig config, String path) =>
+          ProjectValidator.validate(config).any(
+            (i) => i.severity == IssueSeverity.error && i.fieldPath == path,
+          );
+      expect(
+        hasError(
+          completeInfantry(reverseFeedKey: 'D'),
+          'controls.reverse_feed_key',
+        ),
+        isFalse,
+      );
+      // 与扳机键、摩擦轮开关键重名，或使用摇杆轴
+      for (final key in ['E', 'A', 'LX']) {
+        expect(
+          hasError(
+            completeInfantry(reverseFeedKey: key),
+            'controls.reverse_feed_key',
+          ),
+          isTrue,
+          reason: '$key 不应被接受',
+        );
+      }
+      // 摩擦轮关闭后 'A' 释放
+      expect(
+        hasError(
+          completeInfantry(
+            reverseFeedKey: 'A',
+            frictionMode: FrictionMode.disabled,
+          ),
+          'controls.reverse_feed_key',
+        ),
+        isFalse,
+      );
+      // 方向键已用于底盘时不能作为反向拨弹键，用途为“其他”时可用
+      expect(
+        hasError(
+          completeInfantry(reverseFeedKey: '↓')
+              .copyWith(arrowBehavior: ArrowBehavior.move),
+          'controls.reverse_feed_key',
+        ),
+        isTrue,
+      );
+      expect(
+        hasError(
+          completeInfantry(reverseFeedKey: '↓')
+              .copyWith(arrowBehavior: ArrowBehavior.other),
+          'controls.reverse_feed_key',
+        ),
+        isFalse,
+      );
+    });
+
     test('上游改变后保留非法值并精确报错', () {
       final config = completeInfantry().copyWith(
-        yawDrive: DriveType.motor,
-        yawPin: 'MP74',
+        yawActuators: const [
+          AxisActuator(
+            drive: DriveType.motor,
+            pin: 'MP74',
+            direction: Direction.forward,
+          ),
+        ],
       );
-      expect(config.yawPin, 'MP74');
+      expect(config.yawActuators.single.pin, 'MP74');
       expect(
         ProjectValidator.validate(config).any(
           (i) =>
               i.severity == IssueSeverity.error &&
-              i.fieldPath == 'gimbal.yaw.pin',
+              i.fieldPath == 'gimbal.yaw.0.pin',
         ),
         isTrue,
       );
@@ -835,7 +1033,7 @@ void main() {
 
       final incompatible = InfantryPinPlanner.planReassignment(
         source,
-        'gimbal.yaw.pin',
+        'gimbal.yaw.0.pin',
         'P60',
       );
       expect(
@@ -846,10 +1044,17 @@ void main() {
 
     test('当前引脚为空时只能抢占，未分配可直接应用', () {
       final source = completeInfantry(frictionMode: FrictionMode.disabled)
-          .copyWith(yawPin: null);
+          .copyWith(
+            yawActuators: const [
+              AxisActuator(
+                drive: DriveType.servo,
+                direction: Direction.forward,
+              ),
+            ],
+          );
       final occupied = InfantryPinPlanner.planReassignment(
         source,
-        'gimbal.yaw.pin',
+        'gimbal.yaw.0.pin',
         'P60',
       );
       expect(occupied.supports(InfantryPinReassignmentStrategy.swap), isFalse);
@@ -888,7 +1093,8 @@ void main() {
       );
       expect(withoutFriction.frictionMode, FrictionMode.disabled);
       expect(withoutFriction.feederPin, 'P64');
-      expect(withoutFriction.frictionMaxDuty, enabled.frictionMaxDuty);
+      expect(withoutFriction.frictionP64MaxDuty, enabled.frictionP64MaxDuty);
+      expect(withoutFriction.frictionP66MaxDuty, enabled.frictionP66MaxDuty);
 
       final enablePlan = InfantryPinPlanner.planFrictionEnablement(
         withoutFriction,
@@ -900,7 +1106,139 @@ void main() {
       );
       expect(restored.frictionMode, FrictionMode.brushlessEsc);
       expect(restored.feederPin, isNull);
-      expect(restored.frictionMaxDuty, enabled.frictionMaxDuty);
+      expect(restored.frictionP64MaxDuty, enabled.frictionP64MaxDuty);
+      expect(restored.frictionP66MaxDuty, enabled.frictionP66MaxDuty);
+      expect(restored.frictionLevelStep, enabled.frictionLevelStep);
+    });
+
+    test('同轴多个执行器各自占用引脚并可被抢占', () {
+      final config = completeInfantry(frictionMode: FrictionMode.disabled)
+          .copyWith(
+            pitchActuators: const [
+              AxisActuator(
+                drive: DriveType.servo,
+                pin: 'MP03',
+                direction: Direction.forward,
+                midOffset: 0,
+              ),
+              AxisActuator(
+                drive: DriveType.servo,
+                pin: 'P62',
+                direction: Direction.reverse,
+                midOffset: 10,
+              ),
+            ],
+          );
+      expect(
+        InfantryPinPlanner.allowedPins(config, 'gimbal.pitch.1.pin'),
+        InfantryPinPlanner.servoPins,
+      );
+      expect(
+        InfantryPinPlanner.allowedPins(
+          config.copyWith(
+            yawActuators: const [
+              AxisActuator(
+                drive: DriveType.motor,
+                pin: 'P62',
+                direction: Direction.forward,
+              ),
+            ],
+          ),
+          'gimbal.yaw.0.pin',
+        ),
+        InfantryPinPlanner.motorPins,
+      );
+      expect(InfantryPinPlanner.derive(config)['P62']!.ownerLabel, 'Pitch 轴 2');
+      expect(
+        InfantryPinPlanner.occupantsOf(config, 'P62', 'gimbal.pitch.1.pin'),
+        isEmpty,
+      );
+      expect(
+        InfantryPinPlanner.occupantsOf(
+          config,
+          'P60',
+          'gimbal.pitch.1.pin',
+        ).single.ownerLabel,
+        '拨弹电机',
+      );
+
+      final taken = InfantryPinPlanner.applyReassignment(
+        config,
+        'gimbal.pitch.1.pin',
+        'P60',
+        InfantryPinReassignmentStrategy.takeOver,
+      );
+      expect(taken.pitchActuators[1].pin, 'P60');
+      expect(taken.pitchActuators.first.pin, 'MP03');
+      expect(taken.feederPin, isNull);
+    });
+
+    test('执行器逐个校验，空轴不报必填', () {
+      final blank = InfantryConfig();
+      expect(
+        ProjectValidator.validate(blank)
+            .where((i) => i.fieldPath.startsWith('gimbal.')),
+        isNotEmpty,
+      );
+
+      expect(
+        ProjectValidator.validate(
+          blank.copyWith(yawActuators: const [], pitchActuators: const []),
+        ).where((i) => i.fieldPath.startsWith('gimbal.')),
+        isEmpty,
+      );
+
+      final secondIncomplete =
+          completeInfantry(frictionMode: FrictionMode.disabled).copyWith(
+            pitchActuators: const [
+              AxisActuator(
+                drive: DriveType.servo,
+                pin: 'MP03',
+                direction: Direction.forward,
+                midOffset: 0,
+              ),
+              AxisActuator(drive: DriveType.servo),
+            ],
+          );
+      final missing = ProjectValidator.validate(secondIncomplete)
+          .where((i) => i.fieldPath.startsWith('gimbal.pitch.1.'))
+          .toList();
+      expect(
+        missing.map((i) => i.fieldPath),
+        containsAll([
+          'gimbal.pitch.1.pin',
+          'gimbal.pitch.1.direction',
+          'gimbal.pitch.1.mid_offset',
+        ]),
+      );
+      expect(
+        missing.every((i) => i.kind == ValidationIssueKind.required),
+        isTrue,
+      );
+
+      final duplicated = secondIncomplete.copyWith(
+        pitchActuators: const [
+          AxisActuator(
+            drive: DriveType.servo,
+            pin: 'MP03',
+            direction: Direction.forward,
+            midOffset: 0,
+          ),
+          AxisActuator(
+            drive: DriveType.servo,
+            pin: 'MP03',
+            direction: Direction.forward,
+            midOffset: 0,
+          ),
+        ],
+      );
+      expect(
+        ProjectValidator.validate(duplicated)
+            .where((i) => i.message.contains('同时被'))
+            .map((i) => i.fieldPath)
+            .toSet(),
+        containsAll(['gimbal.pitch.0.pin', 'gimbal.pitch.1.pin']),
+      );
     });
 
     test('数字键包含 LC/RC 且排除摇杆轴', () {
@@ -1090,7 +1428,16 @@ void main() {
       );
 
       final reversedYaw = CodeGenerator.generate(
-        completeInfantry().copyWith(yawDirection: Direction.reverse),
+        completeInfantry().copyWith(
+          yawActuators: const [
+            AxisActuator(
+              drive: DriveType.servo,
+              pin: 'MP74',
+              direction: Direction.reverse,
+              midOffset: 0,
+            ),
+          ],
+        ),
       );
       expect(
         reversedYaw,
@@ -1108,7 +1455,16 @@ void main() {
       );
 
       final reversedPitch = CodeGenerator.generate(
-        completeInfantry().copyWith(pitchDirection: Direction.reverse),
+        completeInfantry().copyWith(
+          pitchActuators: const [
+            AxisActuator(
+              drive: DriveType.servo,
+              pin: 'MP03',
+              direction: Direction.reverse,
+              midOffset: 0,
+            ),
+          ],
+        ),
       );
       expect(
         reversedPitch,
@@ -1181,14 +1537,26 @@ void main() {
       expect(
         code,
         contains(
-          'if (frictionTargetDuty >= FRICTION_START_DUTY && frictionDuty < FRICTION_START_DUTY)',
+          'if (frictionTargetDutyP64 >= FRICTION_START_DUTY && frictionDutyP64 < FRICTION_START_DUTY)',
+        ),
+      );
+      expect(
+        code,
+        contains(
+          'if (frictionTargetDutyP66 >= FRICTION_START_DUTY && frictionDutyP66 < FRICTION_START_DUTY)',
         ),
       );
       // 停机：降到最低有效占空比后直接归零，不在 0~500 之间逐格磨
       expect(
         code,
         contains(
-          'if (frictionTargetDuty == 0 && frictionDuty <= FRICTION_START_DUTY)',
+          'if (frictionTargetDutyP64 == 0 && frictionDutyP64 <= FRICTION_START_DUTY)',
+        ),
+      );
+      expect(
+        code,
+        contains(
+          'if (frictionTargetDutyP66 == 0 && frictionDutyP66 <= FRICTION_START_DUTY)',
         ),
       );
       // 旧写法只在 duty 恰好为 0 时跳变，关闭途中重新开启会从 0~500 之间
@@ -1196,8 +1564,166 @@ void main() {
       expect(code, isNot(contains('frictionStartedThisCycle')));
     });
 
+    test('两侧摩擦轮按各自满油上限映射同一油门比例值', () {
+      final code = CodeGenerator.generate(
+        completeInfantry().copyWith(
+          frictionP64MaxDuty: 700,
+          frictionP66MaxDuty: 800,
+          frictionLevelStep: 10,
+        ),
+      );
+      expect(code, contains('#define FRICTION_MAX_DUTY_P64 700'));
+      expect(code, contains('#define FRICTION_MAX_DUTY_P66 800'));
+      expect(code, contains('#define FRICTION_LEVEL_MAX 100'));
+      expect(code, contains('#define FRICTION_LEVEL_STEP 10'));
+      expect(code, contains('uint8_t frictionLevel = 0;'));
+      // 比例值换算：duty = 500 + level * (该侧上限 - 500) / 100
+      expect(
+        code,
+        contains(
+          '((uint16_t)level * (uint16_t)(maxDuty - FRICTION_START_DUTY)) / FRICTION_LEVEL_MAX',
+        ),
+      );
+      // 油门是唯一控制量，目标占空比每周期重新映射
+      expect(
+        code,
+        contains(
+          'frictionTargetDutyP64 = frictionEnabled\n'
+          '        ? FrictionDutyOfLevel(frictionLevel, FRICTION_MAX_DUTY_P64) : 0;',
+        ),
+      );
+      expect(
+        code,
+        contains(
+          'frictionTargetDutyP66 = frictionEnabled\n'
+          '        ? FrictionDutyOfLevel(frictionLevel, FRICTION_MAX_DUTY_P66) : 0;',
+        ),
+      );
+      // 按键只改油门，不再直接加减占空比真值
+      expect(
+        code,
+        contains('frictionLevel = frictionEnabled ? FRICTION_LEVEL_MAX : 0;'),
+      );
+      expect(code, isNot(contains('FRICTION_SPEED_STEP')));
+      // 两个引脚各自独立输出，不再共用同一个占空比变量
+      expect(code, contains('frictionDutyP64,frictionDutyP66'));
+      expect(code, isNot(contains('frictionDuty,')));
+    });
+
+    test('未设置反向拨弹键时不生成任何反向逻辑', () {
+      final code = CodeGenerator.generate(completeInfantry());
+      expect(code, isNot(contains('reverseFeed')));
+      expect(code, isNot(contains('reverse_feed')));
+    });
+
+    test('反向拨弹键按住持续反转并在松开时归零', () {
+      String reverseBranch(String code) => code.substring(
+        code.indexOf('    if (reverseFeed) {'),
+        code.indexOf('    lastTrigger = trigger;'),
+      );
+      final blocking = CodeGenerator.generate(
+        completeInfantry(reverseFeedKey: 'D'),
+      );
+      expect(
+        blocking,
+        contains('uint8_t reverseFeed = RcKeyValueRead(KEY_OFFSET_D);'),
+      );
+      // 反转占空比与拨弹方向相反：正向拨弹时取负
+      expect(reverseBranch(blocking), contains('dutyOfMotor[0] = -6000;'));
+      // 松开反向键必须归零，不能停在反转占空比上
+      expect(reverseBranch(blocking), contains('dutyOfMotor[0] = 0;'));
+      expect(reverseBranch(blocking), contains('Ms_Delay(250)'));
+
+      final visual = CodeGenerator.generate(
+        completeInfantry(
+          feedMode: FeedMode.visualClosedLoop,
+          reverseFeedKey: 'D',
+        ),
+      );
+      expect(reverseBranch(visual), contains('dutyOfMotor[0] = -6000;'));
+      expect(
+        reverseBranch(visual),
+        contains('dutyOfMotor[0] = trigger ? 6000 : 0;'),
+      );
+      expect(visual, isNot(contains('Ms_Delay(250)')));
+
+      // 拨弹方向本身为反向时，退弹方向翻转为正
+      final reversedFeeder = CodeGenerator.generate(
+        completeInfantry(reverseFeedKey: 'D')
+            .copyWith(feederDirection: Direction.reverse),
+      );
+      expect(reverseBranch(reversedFeeder), contains('dutyOfMotor[0] = 6000;'));
+      expect(
+        reverseBranch(reversedFeeder),
+        contains('dutyOfMotor[0] = -6000;'),
+      );
+    });
+
     test('工程完整配置可以生成', () {
       expect(CodeGenerator.generate(completeEngineer()), contains('RunMode1'));
+    });
+
+    test('同轴多个执行器各自生成控制语句', () {
+      final config = completeInfantry(frictionMode: FrictionMode.disabled)
+          .copyWith(
+            zeroEnabled: true,
+            pitchActuators: const [
+              AxisActuator(
+                drive: DriveType.servo,
+                pin: 'MP03',
+                direction: Direction.forward,
+                midOffset: 0,
+              ),
+              AxisActuator(
+                drive: DriveType.servo,
+                pin: 'P64',
+                direction: Direction.reverse,
+                midOffset: 10,
+              ),
+              AxisActuator(
+                drive: DriveType.motor,
+                pin: 'P62',
+                direction: Direction.forward,
+              ),
+            ],
+          );
+      final code = CodeGenerator.generate(config);
+      expect(code, contains('uint16_t pitchDuty2 = 806;'));
+      expect(
+        code,
+        contains(
+          '    pitchDuty2 += (int)((float)-valueOfRoker[1][1] * 2.0f / 2047.0f * 5.555556f);',
+        ),
+      );
+      expect(
+        code,
+        contains(
+          '    if (pitchDuty2 < 473) pitchDuty2 = 473; if (pitchDuty2 > 1139) pitchDuty2 = 1139;',
+        ),
+      );
+      expect(
+        code,
+        contains(
+          '    dutyOfMotor[1] = (int)(((int32_t)valueOfRoker[1][1] * 10000L) / 2047L);',
+        ),
+      );
+      expect(
+        code,
+        contains(
+          'if (RcKeyValueRead(KEY_OFFSET_Rocker21)) { yawDuty = 750; pitchDuty = 750; pitchDuty2 = 806; }',
+        ),
+      );
+      expect(code, contains('static uint16_t lastFeedbackDuty[3] = {0};'));
+      expect(code, contains('pitchDuty2,abs(dutyOfMotor[3])'));
+    });
+
+    test('空轴不生成占空比变量和控制语句', () {
+      final config = completeInfantry(frictionMode: FrictionMode.disabled)
+          .copyWith(pitchActuators: const []);
+      final code = CodeGenerator.generate(config);
+      expect(code, contains('uint16_t yawDuty = 750;'));
+      expect(code, isNot(contains('pitchDuty')));
+      expect(code, isNot(contains('valueOfRoker[1][1] * 2.0f')));
     });
 
     test('步兵两种拨弹、方向键、摩擦轮和蜂鸣器条件进入代码', () {
@@ -1252,6 +1778,63 @@ void main() {
       expect(directCode, contains('modeKeyLast[0]'));
       expect(directCode, isNot(contains('ModeSwitchFeedback')));
       expect(directCode, isNot(contains('Beep(')));
+    });
+
+    test('音乐项目请求汇编输出 SDCC as251 源码', () {
+      final config = MusicConfig(
+        notes: const [
+          MusicNote(id: 'c4', pitch: 60, startTick: 0, durationTicks: 480),
+          MusicNote(id: 'e4', pitch: 64, startTick: 720, durationTicks: 480),
+        ],
+        tempoEvents: const [
+          TempoEvent(tick: 0, microsecondsPerQuarter: 500000),
+          TempoEvent(tick: 960, microsecondsPerQuarter: 400000),
+        ],
+      );
+      expect(CodeGenerator.asmSupported(ProjectKind.music), isTrue);
+
+      final asm = CodeGenerator.generate(config, target: OutputTarget.asm);
+      // 复位向量、程序入口与栈底标记：与 SDCC 生成的主模块骨架一致。
+      expect(asm, contains('__interrupt_vect:'));
+      expect(asm, contains('__sdcc_program_startup:'));
+      expect(asm, contains('__start__stack:'));
+      // 库函数 extern 与调用约定（下划线前缀、ecall 调用）。
+      expect(asm, contains('.globl\t_Board_Init'));
+      expect(asm, contains('.globl\t_Ms_Delay'));
+      expect(asm, contains('.globl\t_PWM_Init'));
+      expect(asm, contains('.globl\t_PWM_SET_Frequency'));
+      expect(asm, contains('ecall\t_Ms_Delay'));
+      expect(asm, contains('ecall\t_PWM_SET_Frequency'));
+      expect(asm, contains('mov\tdpl, #(PWMB_CH3_P33)'));
+      // 与 C 版一一对应的函数骨架。
+      expect(asm, contains('_Music_Wait:'));
+      expect(asm, contains('_Music_Stop:'));
+      expect(asm, contains('_Music_PlaySegment:'));
+      expect(asm, contains('_Music_PlayOnce:'));
+      expect(asm, contains('_All_Init:'));
+      expect(asm, contains('_main:'));
+      // 频率表：音符 69（A4）= 440 Hz = 0x01B8，大端存放。
+      expect(asm, contains('#0x01, #0xb8'));
+      // 段表：C4 500ms、休止 250ms、E4 500ms → 共 3 段。
+      expect(asm, contains('MUSIC_SEGMENT_COUNT = 3'));
+      expect(asm, contains('_musicSegmentDurations:'));
+      expect(asm, contains('_musicSegmentNotes:'));
+      expect(asm, contains('休止'));
+      // Channal 由 All_Init 显式写入，等价 C 版静态初始化。
+      expect(asm, contains('mov\ta, #0x24'));
+    });
+
+    test('非音乐项目请求汇编输出抛出 UnsupportedError', () {
+      expect(CodeGenerator.asmSupported(ProjectKind.infantry), isFalse);
+      expect(CodeGenerator.asmSupported(ProjectKind.engineer), isFalse);
+      expect(CodeGenerator.asmSupported(ProjectKind.debug), isFalse);
+      expect(
+        () => CodeGenerator.generate(
+          completeInfantry(),
+          target: OutputTarget.asm,
+        ),
+        throwsUnsupportedError,
+      );
     });
   });
 }

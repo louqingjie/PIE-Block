@@ -1,19 +1,22 @@
 import 'dart:async';
-import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:pieblock_core/pieblock_core.dart';
-import 'package:pieblock_toolchain/pieblock_toolchain.dart';
+import 'package:pieblock_toolchain/models.dart';
 import 'package:re_editor/re_editor.dart';
 import 'package:re_highlight/languages/c.dart';
 import 'package:re_highlight/styles/atom-one-dark.dart';
 import 'package:re_highlight/styles/atom-one-light.dart';
 
+import 'as251_highlight_mode.dart';
 import 'controller.dart';
 import 'deploy_controller.dart';
+import 'platform/file_export.dart';
+import 'platform/keil_discovery.dart';
 import 'music_editor.dart';
 
 final _fieldAnchors = <String, GlobalKey>{};
@@ -25,6 +28,17 @@ final _activeInputFieldProvider =
     NotifierProvider<_ActiveInputFieldController, String?>(
       _ActiveInputFieldController.new,
     );
+
+/// 平台判断。Web 上一律为 false——网页版既没有本地编译器，也没有 USB-HID，
+/// 这些分支在网页版里必须整块消失。
+bool get _isAndroid =>
+    !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+bool get _isWindows =>
+    !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
+bool get _isLinux => !kIsWeb && defaultTargetPlatform == TargetPlatform.linux;
+
+/// 支持 USB-HID 烧录的桌面平台（Android 走 OTG，Linux 需 udev 规则授权）。
+bool get _supportsFlashing => _isWindows || _isAndroid || _isLinux;
 
 class _ActiveInputFieldController extends Notifier<String?> {
   @override
@@ -199,14 +213,18 @@ String _fieldLabel(String path) {
     'controls.arrow_behavior': '方向键用途',
     'controls.feed_mode': '拨弹模式',
     'controls.trigger_key': '扳机键',
+    'controls.reverse_feed_key': '反向拨弹键',
     'controls.trigger_speed': '拨弹速度',
     'controls.trigger_time_ms': '单发时长',
     'controls.friction_mode': '摩擦轮类型',
     'controls.friction_key': '摩擦轮开关键',
     'controls.friction_up_key': '摩擦轮增速键',
     'controls.friction_down_key': '摩擦轮减速键',
-    'controls.friction_max_duty': '最大占空比',
-    'controls.friction_step': '调速步长',
+    'controls.friction_p64_max_duty': 'P64 最大占空比',
+    'controls.friction_p66_max_duty': 'P66 最大占空比',
+    'controls.friction_level_step': '油门步长',
+    'tests.friction_p64_max_duty': 'P64 最大占空比',
+    'tests.friction_p66_max_duty': 'P66 最大占空比',
     'pwm.pwma': 'PWMA 频率',
     'pwm.pwmb': 'PWMB 频率',
     'modes.count': '模式数量',
@@ -220,6 +238,7 @@ String _fieldLabel(String path) {
   if (path.endsWith('.direction')) return '方向';
   if (path.endsWith('.drive')) return '驱动类型';
   if (path.endsWith('.pin')) return 'IO';
+  if (path.endsWith('.mid_offset')) return '归中偏移';
   if (path.endsWith('.mode')) return '控制方式';
   if (path.endsWith('.parameter')) return '参数';
   if (path.endsWith('.key')) return '按键';
@@ -335,6 +354,74 @@ class _InfoBanner extends StatelessWidget {
       ],
     ),
   );
+}
+
+/// 复核页里单个调试项的一句话摘要。摩擦轮额外换算出实际占空比，
+/// 方便核对「多少油门对应多少 duty」。
+String _debugDriveSummary(DebugConfig config, DebugTestItem item) =>
+    switch (item.driveType) {
+      DebugDriveType.motor => '电机 ${item.value ?? '未填写'}',
+      DebugDriveType.servo => '舵机 ${item.value ?? '未填写'}°',
+      DebugDriveType.friction => switch ((
+        item.value,
+        config.frictionMaxDutyOf(item.pin),
+      )) {
+        (final level?, final maxDuty?) =>
+          '摩擦轮油门 $level% → ${Friction.dutyOfLevel(level, maxDuty)}',
+        _ => '摩擦轮油门 ${item.value ?? '未填写'}%',
+      },
+      null => '未选择驱动',
+    };
+
+class _FrictionLevelPreview extends StatelessWidget {
+  const _FrictionLevelPreview({
+    required this.p64MaxDuty,
+    required this.p66MaxDuty,
+  });
+
+  final int p64MaxDuty, p66MaxDuty;
+
+  static const _levels = [0, 25, 50, 75, 100];
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: .45),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '油门换算速查',
+            style: theme.textTheme.labelLarge?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final level in _levels)
+                Chip(
+                  visualDensity: VisualDensity.compact,
+                  label: Text(
+                    '$level% → P64 '
+                    '${Friction.dutyOfLevel(level, p64MaxDuty)} / P66 '
+                    '${Friction.dutyOfLevel(level, p66MaxDuty)}',
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _PinOption extends StatelessWidget {
@@ -1001,9 +1088,11 @@ class _Section extends StatelessWidget {
     required this.title,
     required this.children,
     this.subtitle,
+    this.trailing,
   });
   final String title;
   final String? subtitle;
+  final Widget? trailing;
   final List<Widget> children;
   @override
   Widget build(BuildContext context) => Card(
@@ -1012,11 +1101,30 @@ class _Section extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: Theme.of(context).textTheme.titleLarge
-                ?.copyWith(fontWeight: FontWeight.w700),
-          ),
+          if (trailing == null)
+            Text(
+              title,
+              style: Theme.of(context).textTheme.titleLarge
+                  ?.copyWith(fontWeight: FontWeight.w700),
+            )
+          else
+            SizedBox(
+              width: double.infinity,
+              child: Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 16,
+                runSpacing: 12,
+                children: [
+                  Text(
+                    title,
+                    style: Theme.of(context).textTheme.titleLarge
+                        ?.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                  ?trailing,
+                ],
+              ),
+            ),
           if (subtitle != null) ...[const SizedBox(height: 5), Text(subtitle!)],
           const SizedBox(height: 20),
           ...children,
@@ -1637,152 +1745,180 @@ class _InfantryMechanismPage extends ConsumerWidget {
     );
     final feederPinChoices = <String?>[null, ...feederPins];
     Widget axis(String name, bool yaw) {
-      final drive = yaw ? c.yawDrive : c.pitchDrive,
-          pin = yaw ? c.yawPin : c.pitchPin,
-          direction = yaw ? c.yawDirection : c.pitchDirection,
-          mid = yaw ? c.yawMidOffset : c.pitchMidOffset,
-          pinPath = yaw ? 'gimbal.yaw.pin' : 'gimbal.pitch.pin',
-          drivePath = yaw ? 'gimbal.yaw.drive' : 'gimbal.pitch.drive',
-          directionPath = yaw
-              ? 'gimbal.yaw.direction'
-              : 'gimbal.pitch.direction',
-          midPath = yaw ? 'gimbal.yaw.mid_offset' : 'gimbal.pitch.mid_offset';
-      final allowedPins = InfantryPinPlanner.allowedPins(
-        c,
-        pinPath,
-        driveType: drive,
+      final actuators = c.actuators(yaw);
+      void replaceActuators(List<AxisActuator> next) => update(
+        yaw ? c.copyWith(yawActuators: next) : c.copyWith(pitchActuators: next),
       );
-      final candidates = switch (drive) {
-        DriveType.servo => InfantryPinPlanner.servoPins,
-        DriveType.motor => InfantryPinPlanner.motorPins,
-        null => const <String>[],
-      };
-      final visiblePins = _includeCurrent(candidates, pin);
-      final visiblePinChoices = <String?>[null, ...visiblePins];
+      Widget actuatorRow(int index) {
+        final actuator = actuators[index],
+            drive = actuator.drive,
+            pin = actuator.pin,
+            direction = actuator.direction,
+            mid = actuator.midOffset,
+            pinPath = InfantryPinPlanner.axisPath(yaw, index, 'pin'),
+            drivePath = InfantryPinPlanner.axisPath(yaw, index, 'drive'),
+            directionPath = InfantryPinPlanner.axisPath(
+              yaw,
+              index,
+              'direction',
+            ),
+            midPath = InfantryPinPlanner.axisPath(yaw, index, 'mid_offset');
+        void updateAt(AxisActuator Function(AxisActuator) change) {
+          final next = [...actuators];
+          next[index] = change(next[index]);
+          replaceActuators(next);
+        }
+
+        final allowedPins = InfantryPinPlanner.allowedPins(
+          c,
+          pinPath,
+          driveType: drive,
+        );
+        final candidates = switch (drive) {
+          DriveType.servo => InfantryPinPlanner.servoPins,
+          DriveType.motor => InfantryPinPlanner.motorPins,
+          null => const <String>[],
+        };
+        final visiblePins = _includeCurrent(candidates, pin);
+        final visiblePinChoices = <String?>[null, ...visiblePins];
+        return _FormRow(
+          fieldPaths: [
+            drivePath,
+            pinPath,
+            directionPath,
+            if (drive == DriveType.servo) midPath,
+          ],
+          children: [
+            Expanded(
+              child: _FieldAnchor(
+                path: drivePath,
+                child: DropdownButtonFormField(
+                  initialValue: drive,
+                  decoration: _fieldDecoration(ref, drivePath, '驱动类型'),
+                  items: DriveType.values
+                      .map(
+                        (e) => DropdownMenuItem(
+                          value: e,
+                          child: Text(e == DriveType.servo ? '舵机' : '电机'),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (v) {
+                    if (v == null) return;
+                    updateAt((a) => a.copyWith(drive: v));
+                  },
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _FieldAnchor(
+                path: pinPath,
+                child: DropdownButtonFormField<String>(
+                  key: ValueKey(pinPath),
+                  isExpanded: true,
+                  initialValue: pin,
+                  decoration: _fieldDecoration(ref, pinPath, 'IO'),
+                  selectedItemBuilder: (_) =>
+                      _selectedPinItems(visiblePinChoices),
+                  items: visiblePinChoices.map((e) {
+                    if (e == null) {
+                      return const DropdownMenuItem<String>(
+                        value: null,
+                        child: Text('未分配'),
+                      );
+                    }
+                    final enabled = allowedPins.contains(e);
+                    final owner = InfantryPinPlanner.occupiedBy(c, e, pinPath);
+                    return DropdownMenuItem(
+                      value: e,
+                      enabled: enabled,
+                      child: _PinOption(
+                        e,
+                        enabled: enabled,
+                        owner:
+                            owner?.ownerLabel ?? (enabled ? null : '当前驱动类型不支持'),
+                      ),
+                    );
+                  }).toList(),
+                  onChanged: (v) async {
+                    final result = await _resolveInfantryPinSelection(
+                      context,
+                      c,
+                      pinPath,
+                      v,
+                    );
+                    if (result != null) update(result);
+                  },
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _FieldAnchor(
+                path: directionPath,
+                child: DropdownButtonFormField(
+                  initialValue: direction,
+                  decoration: _fieldDecoration(ref, directionPath, '方向'),
+                  items: Direction.values
+                      .map(
+                        (e) => DropdownMenuItem(
+                          value: e,
+                          child: Text(e == Direction.forward ? '正向' : '反向'),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (v) => updateAt((a) => a.copyWith(direction: v)),
+                ),
+              ),
+            ),
+            if (drive == DriveType.servo) ...[
+              const SizedBox(width: 12),
+              Expanded(
+                child: _NumberField(
+                  label: '归中偏移',
+                  fieldPath: midPath,
+                  suffix: '°',
+                  value: mid,
+                  onChanged: (v) => updateAt((a) => a.copyWith(midOffset: v)),
+                ),
+              ),
+            ],
+            IconButton(
+              tooltip: '删除执行器',
+              onPressed: () =>
+                  replaceActuators([...actuators]..removeAt(index)),
+              icon: const Icon(Icons.delete_outline),
+            ),
+          ],
+        );
+      }
+
       return _Section(
         title: '$name 轴',
         children: [
-          _FormRow(
-            fieldPaths: [
-              drivePath,
-              pinPath,
-              directionPath,
-              if (drive == DriveType.servo) midPath,
+          for (var index = 0; index < actuators.length; index += 1) ...[
+            if (index > 0) const SizedBox(height: 16),
+            if (actuators.length > 1) ...[
+              Text(
+                '执行器 ${index + 1}',
+                style: Theme.of(context).textTheme.labelLarge,
+              ),
+              const SizedBox(height: 8),
             ],
-            children: [
-              Expanded(
-                child: _FieldAnchor(
-                  path: drivePath,
-                  child: DropdownButtonFormField(
-                    initialValue: drive,
-                    decoration: _fieldDecoration(ref, drivePath, '驱动类型'),
-                    items: DriveType.values
-                        .map(
-                          (e) => DropdownMenuItem(
-                            value: e,
-                            child: Text(e == DriveType.servo ? '舵机' : '电机'),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (v) {
-                      if (v == null) return;
-                      update(
-                        yaw
-                            ? c.copyWith(yawDrive: v)
-                            : c.copyWith(pitchDrive: v),
-                      );
-                    },
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _FieldAnchor(
-                  path: pinPath,
-                  child: DropdownButtonFormField<String>(
-                    key: ValueKey(pinPath),
-                    isExpanded: true,
-                    initialValue: pin,
-                    decoration: _fieldDecoration(ref, pinPath, 'IO'),
-                    selectedItemBuilder: (_) =>
-                        _selectedPinItems(visiblePinChoices),
-                    items: visiblePinChoices.map((e) {
-                      if (e == null) {
-                        return const DropdownMenuItem<String>(
-                          value: null,
-                          child: Text('未分配'),
-                        );
-                      }
-                      final enabled = allowedPins.contains(e);
-                      final owner = InfantryPinPlanner.occupiedBy(
-                        c,
-                        e,
-                        pinPath,
-                      );
-                      return DropdownMenuItem(
-                        value: e,
-                        enabled: enabled,
-                        child: _PinOption(
-                          e,
-                          enabled: enabled,
-                          owner:
-                              owner?.ownerLabel ??
-                              (enabled ? null : '当前驱动类型不支持'),
-                        ),
-                      );
-                    }).toList(),
-                    onChanged: (v) async {
-                      final result = await _resolveInfantryPinSelection(
-                        context,
-                        c,
-                        pinPath,
-                        v,
-                      );
-                      if (result != null) update(result);
-                    },
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _FieldAnchor(
-                  path: directionPath,
-                  child: DropdownButtonFormField(
-                    initialValue: direction,
-                    decoration: _fieldDecoration(ref, directionPath, '方向'),
-                    items: Direction.values
-                        .map(
-                          (e) => DropdownMenuItem(
-                            value: e,
-                            child: Text(e == Direction.forward ? '正向' : '反向'),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (v) => update(
-                      yaw
-                          ? c.copyWith(yawDirection: v)
-                          : c.copyWith(pitchDirection: v),
-                    ),
-                  ),
-                ),
-              ),
-              if (drive == DriveType.servo) ...[
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _NumberField(
-                    label: '归中偏移',
-                    fieldPath: midPath,
-                    suffix: '°',
-                    value: mid,
-                    onChanged: (v) => update(
-                      yaw
-                          ? c.copyWith(yawMidOffset: v)
-                          : c.copyWith(pitchMidOffset: v),
-                    ),
-                  ),
-                ),
-              ],
-            ],
+            actuatorRow(index),
+          ],
+          if (actuators.isEmpty) const Text('未配置执行器；该轴可以留空。'),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => replaceActuators([
+                ...actuators,
+                const AxisActuator(drive: DriveType.servo),
+              ]),
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('添加执行器'),
+            ),
           ),
         ],
       );
@@ -1909,18 +2045,40 @@ class _InfantryControlsPage extends ConsumerWidget {
       String label,
       String fieldPath,
       String? value,
-      ValueChanged<String?> changed,
-    ) => _FieldAnchor(
-      path: fieldPath,
-      child: DropdownButtonFormField(
-        initialValue: value,
-        decoration: _fieldDecoration(ref, fieldPath, label),
-        items: digitalRemoteKeys
-            .map((e) => DropdownMenuItem(value: e, child: Text(e)))
-            .toList(),
-        onChanged: changed,
-      ),
-    );
+      ValueChanged<String?> changed, {
+      bool allowNone = false,
+    }) {
+      final decoration = _fieldDecoration(ref, fieldPath, label);
+      return _FieldAnchor(
+        path: fieldPath,
+        child: allowNone
+            ? DropdownButtonFormField<String?>(
+                key: ValueKey(fieldPath),
+                initialValue: value,
+                decoration: decoration,
+                items: [
+                  const DropdownMenuItem<String?>(
+                    value: null,
+                    child: Text('不使用'),
+                  ),
+                  ...digitalRemoteKeys.map(
+                    (e) => DropdownMenuItem<String?>(value: e, child: Text(e)),
+                  ),
+                ],
+                onChanged: changed,
+              )
+            : DropdownButtonFormField<String>(
+                key: ValueKey(fieldPath),
+                initialValue: value,
+                decoration: decoration,
+                items: digitalRemoteKeys
+                    .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                    .toList(),
+                onChanged: changed,
+              ),
+      );
+    }
+
     return _PageFrame(
       title: '控制与摩擦轮',
       stepId: 'controls',
@@ -1995,6 +2153,7 @@ class _InfantryControlsPage extends ConsumerWidget {
               _FormRow(
                 fieldPaths: [
                   'controls.trigger_key',
+                  'controls.reverse_feed_key',
                   'controls.trigger_speed',
                   if (c.feedMode == FeedMode.blockingOpenLoop)
                     'controls.trigger_time_ms',
@@ -2006,6 +2165,16 @@ class _InfantryControlsPage extends ConsumerWidget {
                       'controls.trigger_key',
                       c.triggerKey,
                       (v) => update(c.copyWith(triggerKey: v)),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: keyField(
+                      '反向拨弹键',
+                      'controls.reverse_feed_key',
+                      c.reverseFeedKey,
+                      (v) => update(c.copyWith(reverseFeedKey: v)),
+                      allowNone: true,
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -2033,7 +2202,10 @@ class _InfantryControlsPage extends ConsumerWidget {
                 ],
               ),
               const SizedBox(height: 10),
-              const _InfoBanner('拨弹速度范围 0–10000；阻塞开环模式需要单发时长，闭环模式按住扳机持续拨弹。'),
+              const _InfoBanner(
+                '拨弹速度范围 0–10000；阻塞开环模式需要单发时长，闭环模式按住扳机持续拨弹。'
+                '反向拨弹键留空表示不使用；按住时按相反于"拨弹电机方向"的方向持续转动，松开立即停转。',
+              ),
             ],
           ),
           const SizedBox(height: 18),
@@ -2110,36 +2282,60 @@ class _InfantryControlsPage extends ConsumerWidget {
                 const SizedBox(height: 14),
                 _FormRow(
                   fieldPaths: const [
-                    'controls.friction_max_duty',
-                    'controls.friction_step',
+                    'controls.friction_p64_max_duty',
+                    'controls.friction_p66_max_duty',
+                    'controls.friction_level_step',
                   ],
                   children: [
-                    Expanded(
-                      child: _NumberField(
-                        label: '最大占空比',
-                        fieldPath: 'controls.friction_max_duty',
-                        suffix: 'duty',
-                        value: c.frictionMaxDuty,
-                        onChanged: (v) =>
-                            update(c.copyWith(frictionMaxDuty: v)),
+                    for (final pin in const ['P64', 'P66']) ...[
+                      if (pin != 'P64') const SizedBox(width: 12),
+                      Expanded(
+                        child: _NumberField(
+                          label: '$pin 最大占空比',
+                          fieldPath:
+                              'controls.friction_${pin.toLowerCase()}_max_duty',
+                          suffix: 'duty',
+                          value: pin == 'P64'
+                              ? c.frictionP64MaxDuty
+                              : c.frictionP66MaxDuty,
+                          onChanged: (v) => update(
+                            pin == 'P64'
+                                ? c.copyWith(frictionP64MaxDuty: v)
+                                : c.copyWith(frictionP66MaxDuty: v),
+                          ),
+                        ),
                       ),
-                    ),
+                    ],
                     const SizedBox(width: 12),
                     Expanded(
                       child: _NumberField(
-                        label: '每次调速步长',
-                        fieldPath: 'controls.friction_step',
-                        suffix: 'duty',
-                        value: c.frictionStep,
-                        onChanged: (v) => update(c.copyWith(frictionStep: v)),
+                        label: '每次油门步长',
+                        fieldPath: 'controls.friction_level_step',
+                        suffix: '%',
+                        value: c.frictionLevelStep,
+                        onChanged: (v) =>
+                            update(c.copyWith(frictionLevelStep: v)),
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 10),
-                const _InfoBanner(
-                  '无刷电调固定占用 P64/P66；500 duty 起步，最大占空比须为 500–800 的整百值，输出逐周期 ±1 平滑变化。',
+                _InfoBanner(
+                  '无刷电调固定占用 P64/P66，两个引脚各自一个满油上限（须为 '
+                  '${Friction.minMaxDuty}–${Friction.maxMaxDuty} 的整百值）。'
+                  '油门 0~${Friction.levelMax}% 按 '
+                  'duty = ${Friction.startDuty} + 油门 ÷ ${Friction.levelMax} × (该侧上限 − ${Friction.startDuty}) '
+                  '换算成两侧各自的占空比，'
+                  '${Friction.startDuty} duty 是电调启动信号固定不变，输出逐周期 ±1 平滑变化。',
                 ),
+                if (c.frictionP64MaxDuty != null &&
+                    c.frictionP66MaxDuty != null) ...[
+                  const SizedBox(height: 10),
+                  _FrictionLevelPreview(
+                    p64MaxDuty: c.frictionP64MaxDuty!,
+                    p66MaxDuty: c.frictionP66MaxDuty!,
+                  ),
+                ],
               ],
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
@@ -2605,13 +2801,63 @@ class _DebugTestsPage extends ConsumerWidget {
       controller.updateConfig(config.copyWith(tests: tests));
     }
 
+    final frictionPinsUsed = {
+      for (final item in config.tests)
+        if (item.driveType == DebugDriveType.friction) item.pin,
+    };
+
     return _PageFrame(
       title: '调试测试序列',
       subtitle: '启用需要测试的引脚并拖动排序。固件会按此顺序逐项执行，完成后保持停机。',
       stepId: 'tests',
       child: Column(
         children: [
-          const _InfoBanner('机械装车前请先完成舵机归中。摩擦轮采用 500 至目标值的固定安全渐变，每档 1.5 秒。'),
+          _InfoBanner(
+            '机械装车前请先完成舵机归中。摩擦轮曲线按 ${Friction.levelMax}% 油门'
+            '每 20% 一档从 ${Friction.startDuty} 爬到目标油门再回落，每档 1.5 秒；'
+            '每一档用该引脚自己的满油上限换算成占空比。',
+          ),
+          if (frictionPinsUsed.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            _FormRow(
+              fieldPaths: [
+                for (final pin in Friction.pins)
+                  'tests.friction_${pin.toLowerCase()}_max_duty',
+              ],
+              children: [
+                for (final pin in Friction.pins) ...[
+                  if (pin != Friction.pins.first) const SizedBox(width: 12),
+                  Expanded(
+                    child: _NumberField(
+                      label: '$pin 最大占空比',
+                      fieldPath: 'tests.friction_${pin.toLowerCase()}_max_duty',
+                      suffix: 'duty',
+                      value: config.frictionMaxDutyOf(pin),
+                      onChanged: (v) => controller.updateConfig(
+                        pin == 'P64'
+                            ? config.copyWith(frictionP64MaxDuty: v)
+                            : config.copyWith(frictionP66MaxDuty: v),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            const SizedBox(height: 10),
+            _InfoBanner(
+              '至少有一项摩擦轮测试，所以两个引脚的满油上限都需要填写'
+              '（${Friction.minMaxDuty}–${Friction.maxMaxDuty} 的整百值）。'
+              '这与步兵项目里的同名配置含义一致，方便按同一台车的实测数据标定。',
+            ),
+            if (config.frictionP64MaxDuty != null &&
+                config.frictionP66MaxDuty != null) ...[
+              const SizedBox(height: 10),
+              _FrictionLevelPreview(
+                p64MaxDuty: config.frictionP64MaxDuty!,
+                p66MaxDuty: config.frictionP66MaxDuty!,
+              ),
+            ],
+          ],
           const SizedBox(height: 18),
           _FieldAnchor(
             path: 'tests',
@@ -2645,7 +2891,7 @@ class _DebugTestsPage extends ConsumerWidget {
                 };
                 final valueLabel = switch (item.driveType) {
                   DebugDriveType.servo => '角度',
-                  DebugDriveType.friction => '目标值',
+                  DebugDriveType.friction => '油门',
                   _ => '速度',
                 };
                 return Card(
@@ -2762,6 +3008,10 @@ class _DebugTestsPage extends ConsumerWidget {
                               Expanded(
                                 child: _NumberField(
                                   label: valueLabel,
+                                  suffix:
+                                      item.driveType == DebugDriveType.friction
+                                      ? '%'
+                                      : null,
                                   value: item.value,
                                   fieldPath: '$base.value',
                                   onChanged: (value) => replace(
@@ -2961,12 +3211,7 @@ class _ReviewPage extends ConsumerWidget {
                       child: Text('${entry.$1 + 1}'),
                     ),
                     title: Text(
-                      '${entry.$2.pin} · ${switch (entry.$2.driveType) {
-                        DebugDriveType.motor => '电机 ${entry.$2.value ?? '未填写'}',
-                        DebugDriveType.servo => '舵机 ${entry.$2.value ?? '未填写'}°',
-                        DebugDriveType.friction => '摩擦轮至 ${entry.$2.value ?? '未填写'}',
-                        null => '未选择驱动',
-                      }}',
+                      '${entry.$2.pin} · ${_debugDriveSummary(config, entry.$2)}',
                     ),
                   ),
               ],
@@ -3035,38 +3280,14 @@ class _CodePage extends ConsumerStatefulWidget {
 }
 
 class _CodePageState extends ConsumerState<_CodePage> {
-  Future<void> _export(String code) async {
-    final path = TextEditingController(
-      text:
-          '${Platform.environment['USERPROFILE'] ?? Directory.current.path}${Platform.pathSeparator}Desktop${Platform.pathSeparator}main.c',
-    );
-    await showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('导出 main.c'),
-        content: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 520),
-          child: SingleChildScrollView(
-            child: TextField(
-              controller: path,
-              decoration: const InputDecoration(labelText: '完整文件路径'),
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              await File(path.text).writeAsString(code);
-              if (context.mounted) Navigator.pop(context);
-            },
-            child: const Text('导出'),
-          ),
-        ],
-      ),
+  OutputTarget _target = OutputTarget.c;
+
+  Future<void> _export(String code, String fileName) async {
+    await exportGeneratedText(
+      context,
+      suggestedName: fileName,
+      text: code,
+      mimeType: 'text/plain',
     );
   }
 
@@ -3076,7 +3297,11 @@ class _CodePageState extends ConsumerState<_CodePage> {
         config = ref.watch(appControllerProvider).document!.config,
         issues = ctrl.issues;
     final blocked = issues.any((i) => i.severity == IssueSeverity.error);
-    final code = blocked ? '' : CodeGenerator.generate(config);
+    // 汇编输出处于试点阶段，仅部分项目类型支持；不支持时固定回落 C。
+    final asmAvailable = !blocked && CodeGenerator.asmSupported(config.kind);
+    final target = asmAvailable ? _target : OutputTarget.c;
+    final fileName = target == OutputTarget.asm ? 'main.asm' : 'main.c';
+    final code = blocked ? '' : CodeGenerator.generate(config, target: target);
     return _PageFrame(
       title: '生成代码',
       subtitle: blocked ? '仍有错误，返回检查页修正后才能生成。' : '代码根据项目配置实时生成，只读且不会写回项目文件。',
@@ -3091,16 +3316,19 @@ class _CodePageState extends ConsumerState<_CodePage> {
                 ),
               ],
             )
-          : Column(
+          : _Section(
+              title: fileName,
+              trailing: asmAvailable
+                  ? _OutputLanguageSwitch(
+                      target: target,
+                      onChanged: (value) => setState(() => _target = value),
+                    )
+                  : null,
               children: [
-                _Section(
-                  title: 'main.c',
-                  children: [
-                    _GeneratedCodePreview(
-                      code: code,
-                      onExport: () => _export(code),
-                    ),
-                  ],
+                _GeneratedCodePreview(
+                  code: code,
+                  onExport: () => _export(code, fileName),
+                  fileName: fileName,
                 ),
               ],
             ),
@@ -3108,11 +3336,80 @@ class _CodePageState extends ConsumerState<_CodePage> {
   }
 }
 
+class _OutputLanguageSwitch extends StatelessWidget {
+  const _OutputLanguageSwitch({required this.target, required this.onChanged});
+
+  final OutputTarget target;
+  final ValueChanged<OutputTarget> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Semantics(
+      label: '输出语言',
+      child: Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: colors.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: SegmentedButton<OutputTarget>(
+          showSelectedIcon: false,
+          style: ButtonStyle(
+            side: const WidgetStatePropertyAll(BorderSide.none),
+            shape: WidgetStatePropertyAll(
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            backgroundColor: WidgetStateProperty.resolveWith(
+              (states) => states.contains(WidgetState.selected)
+                  ? colors.secondaryContainer
+                  : Colors.transparent,
+            ),
+            foregroundColor: WidgetStateProperty.resolveWith(
+              (states) => states.contains(WidgetState.selected)
+                  ? colors.onSecondaryContainer
+                  : colors.onSurfaceVariant,
+            ),
+          ),
+          segments: const [
+            ButtonSegment(
+              value: OutputTarget.c,
+              icon: Icon(Icons.code, size: 18),
+              label: Text('C 代码'),
+              tooltip: '输出 C 代码',
+            ),
+            ButtonSegment(
+              value: OutputTarget.asm,
+              icon: Icon(Icons.memory, size: 18),
+              label: Text('汇编'),
+              tooltip: '输出汇编代码',
+            ),
+          ],
+          selected: {target},
+          onSelectionChanged: (selection) => onChanged(selection.first),
+        ),
+      ),
+    );
+  }
+}
+
+const _codeFontFallbacks = <String>[
+  'PieBlockSans',
+  'Noto Sans CJK SC',
+  'Source Han Sans SC',
+  'WenQuanYi Micro Hei Mono',
+];
+
 class _GeneratedCodePreview extends StatefulWidget {
-  const _GeneratedCodePreview({required this.code, required this.onExport});
+  const _GeneratedCodePreview({
+    required this.code,
+    required this.onExport,
+    this.fileName = 'main.c',
+  });
 
   final String code;
   final VoidCallback onExport;
+  final String fileName;
 
   @override
   State<_GeneratedCodePreview> createState() => _GeneratedCodePreviewState();
@@ -3253,7 +3550,7 @@ class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
     final export = compact
         ? IconButton.filled(
             onPressed: widget.onExport,
-            tooltip: '另存为 main.c',
+            tooltip: '另存为 ${widget.fileName}',
             icon: const Icon(Icons.save_alt),
           )
         : FilledButton.icon(
@@ -3332,21 +3629,23 @@ class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
                         notifier: notifier,
                         textStyle: TextStyle(
                           color: gutter,
-                          fontFamily: 'Consolas',
+                          fontFamily: 'PieBlockMono',
+                          fontFamilyFallback: _codeFontFallbacks,
                           fontSize: 13,
                           height: 1.45,
                         ),
                         focusedTextStyle: TextStyle(
                           color: Theme.of(context).colorScheme.primary,
-                          fontFamily: 'Consolas',
+                          fontFamily: 'PieBlockMono',
+                          fontFamilyFallback: _codeFontFallbacks,
                           fontSize: 13,
                           height: 1.45,
                         ),
                       ),
                     ),
             style: CodeEditorStyle(
-              fontFamily: 'Consolas',
-              fontFamilyFallback: const ['PieBlockSans', 'Microsoft YaHei UI'],
+              fontFamily: 'PieBlockMono',
+              fontFamilyFallback: _codeFontFallbacks,
               fontSize: 13,
               fontHeight: 1.45,
               textColor: foreground,
@@ -3357,7 +3656,10 @@ class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
               cursorLineColor: Theme.of(context).colorScheme.primary
                   .withValues(alpha: .07),
               codeTheme: CodeHighlightTheme(
-                languages: {'c': CodeHighlightThemeMode(mode: langC)},
+                // 按输出文件选语言；保持单条目，re_editor 才走确定性高亮。
+                languages: widget.fileName.endsWith('.asm')
+                    ? {'asm': CodeHighlightThemeMode(mode: langAs251)}
+                    : {'c': CodeHighlightThemeMode(mode: langC)},
                 theme: syntaxTheme,
               ),
             ),
@@ -3366,6 +3668,55 @@ class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
       ],
     );
   }
+}
+
+/// 网页版的「编译与烧录」：功能不存在，但也不能留一个空页——
+/// 说清楚为什么、以及要去哪里完成，顺带把下载链接给出去。
+class _WebDeployNotice extends StatelessWidget {
+  const _WebDeployNotice();
+
+  static const _downloadUrl =
+      'https://github.com/louqingjie/PIE-Block/releases';
+
+  @override
+  Widget build(BuildContext context) => _PageFrame(
+    title: '编译与烧录',
+    subtitle: '网页版负责配置与生成代码，编译和烧录请在桌面版完成。',
+    child: _Section(
+      title: '这两步需要本机环境',
+      children: [
+        const _InfoBanner(
+          '编译要调用本机的 SDCC / Keil 工具链，烧录要直接访问 USB-HID 设备，'
+          '浏览器里都做不到。项目配置与生成的 C 代码不受影响，可以照常导出。',
+        ),
+        const SizedBox(height: 16),
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            FilledButton.icon(
+              onPressed: () async {
+                await Clipboard.setData(
+                  const ClipboardData(text: _downloadUrl),
+                );
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context)
+                      .showSnackBar(const SnackBar(content: Text('下载链接已复制')));
+                }
+              },
+              icon: const Icon(Icons.copy_all_outlined),
+              label: const Text('复制桌面版下载链接'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        SelectableText(
+          _downloadUrl,
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+      ],
+    ),
+  );
 }
 
 class _DeployPage extends ConsumerStatefulWidget {
@@ -3448,7 +3799,7 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
 
   Future<void> _prepare() async {
     var app = ref.read(appControllerProvider);
-    if (Platform.isAndroid && app.compiler != CompilerKind.sdcc) {
+    if (_isAndroid && app.compiler != CompilerKind.sdcc) {
       ref.read(appControllerProvider.notifier).setCompiler(CompilerKind.sdcc);
       app = ref.read(appControllerProvider);
     }
@@ -3602,7 +3953,7 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
   }
 
   Future<void> _exportHex() async {
-    if (Platform.isAndroid) {
+    if (_isAndroid) {
       await ref.read(deployControllerProvider.notifier).exportHexOnAndroid();
       return;
     }
@@ -3681,6 +4032,8 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
 
   @override
   Widget build(BuildContext context) {
+    // 网页版没有本地编译器，也没有 USB-HID，这一页整块换引导。
+    if (kIsWeb) return const _WebDeployNotice();
     final app = ref.watch(appControllerProvider);
     final deploy = ref.watch(deployControllerProvider);
     final artifact = deploy.artifact;
@@ -3691,7 +4044,7 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
     };
     return _PageFrame(
       title: '编译与烧录',
-      subtitle: Platform.isAndroid
+      subtitle: _isAndroid
           ? deploy.compilerAvailable
                 ? '使用内置 SDCC 离线编译 STC32G12K128 固件，并通过 OTG USB-HID 写入主控板。'
                 : '当前安装包未启用 Android 原生编译；项目配置与代码生成仍可正常使用。'
@@ -3700,13 +4053,13 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
         children: [
           _Section(
             title: '编译器',
-            subtitle: Platform.isAndroid
+            subtitle: _isAndroid
                 ? deploy.compilerAvailable
                       ? 'Android 使用随应用发布的原生 SDCC C251，不需要联网。'
                       : '原生编译安全门禁尚未通过，编译入口已禁用。'
                 : '内置 SDCC 可完全离线使用；Keil 使用本机已安装的 C251。',
             children: [
-              if (Platform.isAndroid)
+              if (_isAndroid)
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: Icon(
@@ -3798,7 +4151,7 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
                 spacing: 10,
                 runSpacing: 10,
                 children: [
-                  if (Platform.isWindows || Platform.isAndroid)
+                  if (_supportsFlashing)
                     FilledButton.icon(
                       onPressed: deploy.busy ? null : _primaryAction,
                       icon: Icon(
@@ -3808,12 +4161,9 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
                       ),
                       label: Text(artifact == null ? '编译并烧录' : '烧录当前固件'),
                     ),
-                  (Platform.isAndroid
-                      ? FilledButton.icon
-                      : OutlinedButton.icon)(
+                  (_isAndroid ? FilledButton.icon : OutlinedButton.icon)(
                     onPressed:
-                        deploy.busy ||
-                            (Platform.isAndroid && !deploy.compilerAvailable)
+                        deploy.busy || (_isAndroid && !deploy.compilerAvailable)
                         ? null
                         : _build,
                     icon: const Icon(Icons.build_outlined),
@@ -3834,7 +4184,7 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
                       icon: const Icon(Icons.stop_circle_outlined),
                       label: const Text('取消任务'),
                     ),
-                  if (Platform.isWindows && deploy.licenseFailure)
+                  if (_isWindows && deploy.licenseFailure)
                     TextButton.icon(
                       onPressed: _applyLicense,
                       icon: const Icon(Icons.key_outlined),
@@ -3844,7 +4194,7 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
               ),
             ],
           ),
-          if (Platform.isWindows || Platform.isAndroid) ...[
+          if (_supportsFlashing) ...[
             const SizedBox(height: 16),
             _Section(
               title: '主控板 USB-HID',
@@ -3874,8 +4224,10 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
                 ),
                 const SizedBox(height: 10),
                 _InfoBanner(
-                  Platform.isAndroid
+                  _isAndroid
                       ? '通过 OTG 转接线连接主控板；首次烧录会请求 USB 权限。请先将主控板断电再重新上电进入 ISP 模式；烧录成功后 HID 设备自动消失是正常现象。'
+                      : _isLinux
+                      ? '首次使用需安装 udev 规则以获得 hidraw 设备权限（sudo tools/install_udev_rules.sh，详见烧录指南）。未检测到时，请关闭四个供电开关，将主控板断电后重新连接 USB；烧录成功后 HID 设备自动消失是正常现象。'
                       : '未检测到时，请关闭四个供电开关，将主控板断电后重新连接 USB。烧录成功后 HID 设备自动消失是正常现象。',
                 ),
               ],

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -9,6 +10,7 @@ import 'package:pieblock_app/main.dart';
 import 'package:pieblock_app/src/controller.dart';
 import 'package:pieblock_app/src/deploy_controller.dart';
 import 'package:pieblock_app/src/home_screen.dart';
+import 'package:pieblock_app/src/platform/document_io.dart';
 import 'package:pieblock_app/src/music_editor.dart';
 import 'package:pieblock_app/src/music_preview.dart';
 import 'package:pieblock_app/src/wizard_screen.dart';
@@ -24,7 +26,7 @@ class _FakeProjectFileDialogs extends ProjectFileDialogs {
   int saveCalls = 0;
 
   @override
-  Future<String?> chooseProjectToOpen() async {
+  Future<SelectedDocument?> chooseProjectToOpen() async {
     openCalls += 1;
     return null;
   }
@@ -94,13 +96,21 @@ class _ConfiguredRemoteController extends AppController {
 }
 
 class _GeneratedCodeController extends AppController {
+  _GeneratedCodeController({ProjectDocument? document})
+    : document = document ?? _infantryDocument();
+
+  final ProjectDocument document;
+
   @override
-  AppState build() => AppState(
-    document: _infantryDocument(),
-    step: 4,
-    maxVisitedStep: 4,
-    saveStatus: SaveStatus.saved,
-  );
+  AppState build() {
+    final step = codeStep(document.kind);
+    return AppState(
+      document: document,
+      step: step,
+      maxVisitedStep: step,
+      saveStatus: SaveStatus.saved,
+    );
+  }
 }
 
 class _StaticProjectController extends AppController {
@@ -212,14 +222,22 @@ ProjectDocument _infantryDocument() {
       ),
       feederPin: 'P60',
       feederDirection: Direction.forward,
-      yawDrive: DriveType.servo,
-      yawPin: 'MP74',
-      yawDirection: Direction.forward,
-      yawMidOffset: 0,
-      pitchDrive: DriveType.servo,
-      pitchPin: 'MP03',
-      pitchDirection: Direction.forward,
-      pitchMidOffset: 0,
+      yawActuators: const [
+        AxisActuator(
+          drive: DriveType.servo,
+          pin: 'MP74',
+          direction: Direction.forward,
+          midOffset: 0,
+        ),
+      ],
+      pitchActuators: const [
+        AxisActuator(
+          drive: DriveType.servo,
+          pin: 'MP03',
+          direction: Direction.forward,
+          midOffset: 0,
+        ),
+      ],
       arrowBehavior: ArrowBehavior.other,
       feedMode: FeedMode.blockingOpenLoop,
       triggerKey: 'E',
@@ -229,8 +247,9 @@ ProjectDocument _infantryDocument() {
       frictionKey: 'A',
       frictionUpKey: 'B',
       frictionDownKey: 'C',
-      frictionMaxDuty: 800,
-      frictionStep: 100,
+      frictionP64MaxDuty: 800,
+      frictionP66MaxDuty: 700,
+      frictionLevelStep: 10,
     ),
   );
 }
@@ -326,11 +345,23 @@ ProjectDocument _debugDocument() {
           pin: 'P64',
           enabled: true,
           driveType: DebugDriveType.friction,
-          value: 750,
+          direction: Direction.forward,
+          value: 100,
         ),
-        for (final pin in debugPins.where((pin) => pin != 'P64'))
+        const DebugTestItem(
+          pin: 'P66',
+          enabled: true,
+          driveType: DebugDriveType.friction,
+          direction: Direction.forward,
+          value: 50,
+        ),
+        for (final pin in debugPins.where(
+          (pin) => pin != 'P64' && pin != 'P66',
+        ))
           DebugTestItem(pin: pin),
       ],
+      frictionP64MaxDuty: 800,
+      frictionP66MaxDuty: 700,
     ),
   );
 }
@@ -580,23 +611,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('调试测试序列'), findsOneWidget);
     expect(find.byIcon(Icons.drag_indicator), findsNWidgets(10));
-    expect(find.text('目标值'), findsOneWidget);
-    expect(find.text('方向'), findsNothing);
+    // 两个引脚各自一个满油上限，油门值按各自上限换算成占空比
+    expect(find.text('油门'), findsNWidgets(2));
+    expect(find.text('P64 最大占空比'), findsOneWidget);
+    expect(find.text('P66 最大占空比'), findsOneWidget);
     expect(find.text('测试时长'), findsNothing);
-
-    await tester.tap(find.byType(DropdownButtonFormField<DebugDriveType>));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('电机').last);
-    await tester.pumpAndSettle();
-    expect(find.text('方向'), findsOneWidget);
-    expect(find.text('测试时长'), findsOneWidget);
-
-    await tester.tap(find.byType(DropdownButtonFormField<DebugDriveType>));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('摩擦轮').last);
-    await tester.pumpAndSettle();
-    expect(find.text('方向'), findsNothing);
-    expect(find.text('测试时长'), findsNothing);
+    expect(find.text('50% → P64 650 / P66 600'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -967,6 +987,10 @@ void main() {
   });
 
   testWidgets('新建项目可浏览保存位置', (tester) async {
+    // 断言的是桌面行为（把完整路径写回输入框），需固定平台；
+    // 否则 flutter_test 默认平台为 Android，会走文档选择器分支。
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
     final dialogs = _FakeProjectFileDialogs(
       savePath: r'C:\projects\机器人.pieproj',
     );
@@ -988,6 +1012,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(AlertDialog), findsNothing);
     expect(tester.takeException(), isNull);
+    debugDefaultTargetPlatformOverride = null;
   });
 
   testWidgets('打开项目直接调用文件浏览器', (tester) async {
@@ -1509,8 +1534,10 @@ void main() {
     expect(find.text('LX'), findsNothing);
     expect(find.text('LY'), findsNothing);
 
-    final maxDutyTop = tester.getTopLeft(find.text('最大占空比')).dy;
-    final stepTop = tester.getTopLeft(find.text('每次调速步长')).dy;
+    final maxDutyTop = tester.getTopLeft(find.text('P64 最大占空比')).dy;
+    final p66MaxDutyTop = tester.getTopLeft(find.text('P66 最大占空比')).dy;
+    final stepTop = tester.getTopLeft(find.text('每次油门步长')).dy;
+    expect((maxDutyTop - p66MaxDutyTop).abs(), lessThan(1));
     expect((maxDutyTop - stepTop).abs(), lessThan(1));
   });
 
@@ -1571,7 +1598,81 @@ void main() {
     final config = _currentInfantry(tester);
     expect(config.feederPin, 'P64');
     expect(config.frictionMode, FrictionMode.disabled);
-    expect(config.frictionMaxDuty, 800);
+    expect(config.frictionP64MaxDuty, 800);
+    expect(config.frictionP66MaxDuty, 700);
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
+  testWidgets('云台轴可添加第二个执行器并分配 IO', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _ConfiguredMechanismController(_infantryDocument()),
+          ),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final addButtons = find.widgetWithText(TextButton, '添加执行器');
+    expect(addButtons, findsNWidgets(2));
+    await tester.ensureVisible(addButtons.last);
+    await tester.tap(addButtons.last);
+    await tester.pumpAndSettle();
+
+    var config = _currentInfantry(tester);
+    expect(config.pitchActuators, hasLength(2));
+    expect(config.pitchActuators.last.drive, DriveType.servo);
+    expect(find.text('执行器 2'), findsOneWidget);
+
+    final secondPin = find.byKey(const ValueKey('gimbal.pitch.1.pin'));
+    await tester.ensureVisible(secondPin);
+    await tester.tap(secondPin);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('P62').last);
+    await tester.pumpAndSettle();
+
+    config = _currentInfantry(tester);
+    expect(config.pitchActuators.last.pin, 'P62');
+    expect(config.pitchActuators.first.pin, 'MP03');
+    expect(
+      ProjectValidator.validate(config)
+          .where((i) => i.fieldPath == 'gimbal.pitch.1.pin'),
+      isEmpty,
+    );
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
+  testWidgets('云台轴执行器可删除到留空并解除必填', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _ConfiguredMechanismController(_infantryDocument()),
+          ),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final deleteButtons = find.byTooltip('删除执行器');
+    expect(deleteButtons, findsNWidgets(2));
+    await tester.ensureVisible(deleteButtons.last);
+    await tester.tap(deleteButtons.last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('未配置执行器；该轴可以留空。'), findsOneWidget);
+    final config = _currentInfantry(tester);
+    expect(config.pitchActuators, isEmpty);
+    expect(config.yawActuators, hasLength(1));
+    expect(
+      ProjectValidator.validate(config)
+          .where((i) => i.fieldPath.startsWith('gimbal.pitch')),
+      isEmpty,
+    );
     await tester.pump(const Duration(milliseconds: 600));
   });
 
@@ -1685,7 +1786,7 @@ void main() {
     await tester.tap(find.text('无刷电调').last);
     await tester.pumpAndSettle();
     expect(find.text('P64/P66 已被占用'), findsOneWidget);
-    expect(find.textContaining('拨弹电机'), findsOneWidget);
+    expect(find.textContaining('当前占用者为 拨弹电机'), findsOneWidget);
     await tester.tap(find.text('解除占用并启用'));
     await tester.pumpAndSettle();
 
@@ -1731,6 +1832,62 @@ void main() {
     await tester.pump(const Duration(milliseconds: 600));
   });
 
+  testWidgets('反向拨弹键默认为不使用且可分配给数字键', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(_InfantryControlsController.new),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final reverse = find.byKey(const ValueKey('controls.reverse_feed_key'));
+    await tester.ensureVisible(reverse);
+    expect(
+      find.descendant(of: reverse, matching: find.text('不使用')),
+      findsOneWidget,
+    );
+    expect(_currentInfantry(tester).reverseFeedKey, isNull);
+
+    await tester.tap(reverse);
+    await tester.pumpAndSettle();
+    expect(find.text('D'), findsOneWidget);
+    await tester.tap(find.text('D').last);
+    await tester.pumpAndSettle();
+
+    expect(_currentInfantry(tester).reverseFeedKey, 'D');
+    expect(
+      find.descendant(of: reverse, matching: find.text('D')),
+      findsOneWidget,
+    );
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
+  testWidgets('反向拨弹键与扳机键重名时提示冲突', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(_InfantryControlsController.new),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final reverse = find.byKey(const ValueKey('controls.reverse_feed_key'));
+    await tester.ensureVisible(reverse);
+    await tester.tap(reverse);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('E').last);
+    await tester.pumpAndSettle();
+
+    expect(_currentInfantry(tester).reverseFeedKey, 'E');
+    expect(find.textContaining('不能使用同一按键'), findsWidgets);
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
   testWidgets('拨弹与摩擦轮条件字段按模式显隐', (tester) async {
     await tester.pumpWidget(
       ProviderScope(
@@ -1742,7 +1899,9 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('单发时长'), findsOneWidget);
-    expect(find.text('最大占空比'), findsOneWidget);
+    expect(find.text('P64 最大占空比'), findsOneWidget);
+    expect(find.text('P66 最大占空比'), findsOneWidget);
+    expect(find.text('每次油门步长'), findsOneWidget);
 
     await tester.tap(find.text('阻塞开环单发'));
     await tester.pumpAndSettle();
@@ -1755,8 +1914,9 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('不使用').last);
     await tester.pumpAndSettle();
-    expect(find.text('最大占空比'), findsNothing);
-    expect(find.text('每次调速步长'), findsNothing);
+    expect(find.text('P64 最大占空比'), findsNothing);
+    expect(find.text('P66 最大占空比'), findsNothing);
+    expect(find.text('每次油门步长'), findsNothing);
   });
 
   testWidgets('IDE 代码预览支持 C 高亮、行号和跨行选择', (tester) async {
@@ -1797,6 +1957,21 @@ void main() {
     expect(editor.readOnly, isTrue);
     expect(editor.wordWrap, isFalse);
     expect(editor.chunkAnalyzer, isA<NonCodeChunkAnalyzer>());
+    expect(editor.style!.fontFamily, 'PieBlockMono');
+    expect(
+      editor.style!.fontFamilyFallback,
+      containsAll(<String>[
+        'PieBlockSans',
+        'Noto Sans CJK SC',
+        'Source Han Sans SC',
+        'WenQuanYi Micro Hei Mono',
+      ]),
+    );
+    final lineNumbers = tester.widget<DefaultCodeLineNumber>(
+      find.byKey(const ValueKey('generated-code-line-numbers')),
+    );
+    expect(lineNumbers.textStyle!.fontFamily, 'PieBlockMono');
+    expect(lineNumbers.focusedTextStyle!.fontFamily, 'PieBlockMono');
     expect(
       find.byKey(const ValueKey('generated-code-line-numbers')),
       findsOneWidget,
@@ -1844,6 +2019,44 @@ void main() {
     await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     await tester.pump();
     expect(controller.text, originalCode);
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  testWidgets('IDE 代码预览汇编输出切换 AS251 高亮', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _GeneratedCodeController(document: _musicDocument()),
+          ),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final editorFinder = find.byKey(const ValueKey('generated-code-editor'));
+    CodeEditor editor = tester.widget<CodeEditor>(editorFinder);
+    expect(editor.style!.codeTheme!.languages, contains('c'));
+
+    // 切到汇编：语言主题换成 as251，不再按 C 着色。
+    await tester.tap(find.text('汇编'));
+    await tester.pumpAndSettle();
+
+    editor = tester.widget<CodeEditor>(editorFinder);
+    expect(editor.style!.codeTheme!.languages, contains('asm'));
+    expect(editor.style!.codeTheme!.languages, isNot(contains('c')));
+    expect(editor.controller!.text, contains('ecall'));
+
+    // 切回 C：恢复 C 模式。
+    await tester.tap(find.text('C 代码'));
+    await tester.pumpAndSettle();
+
+    editor = tester.widget<CodeEditor>(editorFinder);
+    expect(editor.style!.codeTheme!.languages, contains('c'));
+    expect(editor.style!.codeTheme!.languages, isNot(contains('asm')));
     debugDefaultTargetPlatformOverride = null;
   });
 
@@ -1904,7 +2117,9 @@ void main() {
         await tester.pumpWidget(
           ProviderScope(
             overrides: [
-              appControllerProvider.overrideWith(_GeneratedCodeController.new),
+              appControllerProvider.overrideWith(
+                () => _StaticProjectController(_musicDocument(), 2),
+              ),
             ],
             child: MaterialApp(
               theme: ThemeData(brightness: brightness, useMaterial3: true),
@@ -1914,6 +2129,22 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(find.byType(CodeEditor), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        await tester.ensureVisible(find.text('C 代码'));
+        await tester.tap(find.text('C 代码'));
+        await tester.pumpAndSettle();
+        expect(find.text('main.c'), findsOneWidget);
+        final cCode = tester
+            .widget<CodeEditor>(find.byType(CodeEditor))
+            .controller!
+            .text;
+        await tester.tap(find.text('汇编'));
+        await tester.pumpAndSettle();
+        expect(find.text('main.asm'), findsOneWidget);
+        expect(
+          tester.widget<CodeEditor>(find.byType(CodeEditor)).controller!.text,
+          isNot(cCode),
+        );
         expect(tester.takeException(), isNull);
       }
     }
@@ -1992,15 +2223,24 @@ void main() {
         expect(find.byType(DropdownButtonFormField<int>), findsWidgets);
         expect(tester.takeException(), isNull);
         if (page.$3 == '编译与烧录') {
-          final flash = find.text('烧录当前固件');
-          await tester.ensureVisible(flash);
-          await tester.tap(flash);
-          await tester.pumpAndSettle();
-          expect(find.text('烧录主控板前请确认'), findsOneWidget);
-          expect(find.byType(Image), findsNWidgets(2));
-          expect(tester.takeException(), isNull);
-          await tester.tap(find.text('取消'));
-          await tester.pumpAndSettle();
+          // USB-HID 烧录入口目前仅在 Windows/Android 提供（Linux 见
+          // wizard_screen 的平台门控），其余平台断言“仅编译”入口存在。
+          if (Platform.isWindows || Platform.isAndroid) {
+            final flash = find.text('烧录当前固件');
+            await tester.ensureVisible(flash);
+            await tester.tap(flash);
+            await tester.pumpAndSettle();
+            expect(find.text('烧录主控板前请确认'), findsOneWidget);
+            expect(find.byType(Image), findsNWidgets(2));
+            expect(tester.takeException(), isNull);
+            await tester.tap(find.text('取消'));
+            await tester.pumpAndSettle();
+          } else {
+            final buildOnly = find.text('仅编译');
+            await tester.ensureVisible(buildOnly);
+            expect(buildOnly, findsWidgets);
+            expect(tester.takeException(), isNull);
+          }
         }
       }
     }

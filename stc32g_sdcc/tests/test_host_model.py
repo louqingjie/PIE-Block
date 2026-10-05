@@ -9,6 +9,8 @@ from host_model import (
     apply_deadband,
     booster_step,
     encode_expansion_frame,
+    friction_duty_of_level,
+    friction_targets,
     motor_mix,
     rising_edge,
     scale_rocker,
@@ -64,6 +66,51 @@ class ControlModelTests(unittest.TestCase):
         self.assertEqual(booster_step(800, 799), 799)
         self.assertEqual(booster_step(500, 0), 0)
         self.assertEqual(booster_step(501, 0), 500)
+
+    def test_friction_level_maps_each_side_by_its_own_max_duty(self) -> None:
+        # 需求里的基准算例：P64 上限 700、P66 上限 800，中油门应得 600 / 650。
+        self.assertEqual(friction_duty_of_level(50, 700), 600)
+        self.assertEqual(friction_duty_of_level(50, 800), 650)
+        for max_duty in (700, 800):
+            self.assertEqual(friction_duty_of_level(0, max_duty), 500)
+            self.assertEqual(friction_duty_of_level(100, max_duty), max_duty)
+        # 越界油门按量程夹紧。
+        self.assertEqual(friction_duty_of_level(-5, 800), 500)
+        self.assertEqual(friction_duty_of_level(150, 800), 800)
+        # 同一油门映射出两侧不同占空比；关闭时两侧都归零。
+        self.assertEqual(friction_targets(50, True, (700, 800)), (600, 650))
+        self.assertEqual(friction_targets(100, True, (700, 800)), (700, 800))
+        self.assertEqual(friction_targets(50, False, (700, 800)), (0, 0))
+
+    def test_both_sides_ramp_independently_at_one_duty_per_cycle(self) -> None:
+        # 两侧目标不同，各自以 ±1/周期逼近：先到位的一侧原地等待。
+        targets = friction_targets(50, True, (700, 800))
+        duties = [0, 0]
+        for _ in range(1000):
+            previous = list(duties)
+            duties = [
+                booster_step(current, target)
+                for current, target in zip(duties, targets)
+            ]
+            # 除 0 → 500 的启动跳变（跳过无效区间）外，每周期每侧最多变化 1 duty。
+            for before, after in zip(previous, duties):
+                jumped_to_start = before == 0 and after == 500
+                self.assertTrue(jumped_to_start or abs(after - before) <= 1)
+            self.assertLessEqual(duties[1] - duties[0], 200)
+        self.assertEqual(tuple(duties), targets)
+        # 停机：两侧各自把剩余占空比走完再归零，全程不落在 1~499 的无效区间。
+        stop = friction_targets(0, False, (700, 800))
+        self.assertEqual(stop, (0, 0))
+        for _ in range(1000):
+            if duties == [0, 0]:
+                break
+            duties = [
+                booster_step(current, target)
+                for current, target in zip(duties, stop)
+            ]
+            for duty in duties:
+                self.assertTrue(duty == 0 or duty >= 500, duty)
+        self.assertEqual(duties, [0, 0])
 
     def test_rising_edge_only_triggers_once(self) -> None:
         self.assertTrue(rising_edge(True, False))

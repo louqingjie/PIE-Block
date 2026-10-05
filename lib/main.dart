@@ -1,9 +1,11 @@
 import 'dart:ui' show AppExitResponse;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'src/controller.dart';
+import 'src/platform/host_bridge.dart';
 import 'src/deploy_controller.dart';
 import 'src/home_screen.dart';
 import 'src/wizard_screen.dart';
@@ -23,6 +25,9 @@ class _PieBlockAppState extends ConsumerState<PieBlockApp> {
   @override
   void initState() {
     super.initState();
+    // 首帧出来才算真的能用：官网把 Web 版嵌在 iframe 里，收到这个信号
+    // 之前一直显示加载态，超时就退回静态示例。
+    WidgetsBinding.instance.addPostFrameCallback((_) => notifyHostReady());
     _lifecycle = AppLifecycleListener(
       onExitRequested: () async {
         ref.read(deployControllerProvider.notifier).cancelAll();
@@ -49,11 +54,17 @@ class _PieBlockAppState extends ConsumerState<PieBlockApp> {
       brightness: brightness,
       colorScheme: scheme,
       fontFamily: 'PieBlockSans',
+      // 子集字体缺字时按这个顺序回退。前面几个是 Windows 的，后面几个
+      // 覆盖 macOS / Linux / Web，避免 Web 上落到浏览器默认字体。
       fontFamilyFallback: const [
         'Microsoft YaHei UI',
+        'PingFang SC',
+        'Noto Sans CJK SC',
+        'Source Han Sans SC',
         'Segoe UI',
         'Segoe UI Symbol',
         'Segoe UI Emoji',
+        'sans-serif',
       ],
       scaffoldBackgroundColor: brightness == Brightness.light
           ? const Color(0xfff6f8fa)
@@ -86,7 +97,9 @@ class _PieBlockAppState extends ConsumerState<PieBlockApp> {
       title: 'PIE-Block',
       theme: _theme(Brightness.light),
       darkTheme: _theme(Brightness.dark),
-      themeMode: state.themeMode,
+      // 网页版固定暗色：官网本身是近黑底，浅色面板会突兀；而且首页
+      // 也隐藏了主题切换按钮，不会出现两套观感。
+      themeMode: kIsWeb ? ThemeMode.dark : state.themeMode,
       home: _AppPageTransition(showEditor: state.document != null),
     );
   }

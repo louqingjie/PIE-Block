@@ -135,5 +135,27 @@ tools/verify_android_package.ps1 `
   -PackagePath build/app/outputs/bundle/release/app-release.aab
 ```
 
+### 重刷黄金基线
+
+生成器或固件源码改动后黄金哈希必然变化，必须重刷基线，否则这个安全门会静默失效
+（该基线曾在 2026-09-01 之后因连续 7 个固件改动而停留在过期值）：
+
+```powershell
+# 1. 用当前源码跑一遍，从输出抄下每个用例的 windowsSha256
+$env:PIEBLOCK_RUN_SDCC_GOLDEN = "1"
+dart test packages/pieblock_toolchain/test/sdcc_windows_android_golden_test.dart
+
+# 2. 同步更新两处期望值（保持一致）
+#    packages/pieblock_toolchain/test/support/android_sdcc_golden_matrix.dart 的 _baselineHashes
+#    tools/android_sdcc_baseline.json 的 windows_golden_sha256
+
+# 3. 在真机重跑，确认 Android 侧产出同一份固件
+flutter test integration_test/android_sdcc_full_build_test.dart -d <device-id>
+```
+
+Windows 与 Linux 的 C251 代码生成逐字节一致，可用 `tools/prepare_sdcc_toolchain.sh`
+产出的 Linux 工具链交叉核对哈希；但只有真机结果也一致，发布安全门才算通过。
+GitHub Actions 的 Windows 流水线每次 push 都会跑这个比对，基线再过期会立刻暴露。
+
 Android 发行代码使用 GPL-3.0-or-later。每个正式 APK/AAB 必须同时发布匹配的
 SDCC fork 源码标签、许可证、第三方声明和可复现构建说明。

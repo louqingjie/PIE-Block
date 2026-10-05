@@ -13,12 +13,12 @@ $buildRoot = Join-Path $repoRoot 'tmp\pie-block-sdcc-windows-build'
 $installRoot = Join-Path $repoRoot 'tmp\pie-block-sdcc-windows-install'
 $bash = Join-Path $MsysRoot 'usr\bin\bash.exe'
 
-if (!(Test-Path -LiteralPath $bash -PathType Leaf)) {
-    throw "未找到 MSYS2 bash: $bash"
-}
 if (!$Force -and (Test-Path -LiteralPath (Join-Path $stageRoot 'bundle_manifest.json'))) {
     Write-Host 'SDCC 工具链已准备；如需重建请加 -Force。'
     exit 0
+}
+if (!(Test-Path -LiteralPath $bash -PathType Leaf)) {
+    throw "未找到 MSYS2 bash: $bash"
 }
 
 foreach ($path in @($stageRoot, $buildRoot, $installRoot)) {
@@ -41,6 +41,29 @@ function To-MsysPath([string]$Path) {
 }
 
 if (!$PackageOnly) {
+    $missingTools = & $bash -lc 'for tool in bison flex make gcc; do command -v "$tool" >/dev/null 2>&1 || echo "$tool"; done'
+    if ($LASTEXITCODE -ne 0) {
+        throw "在 MSYS2 中检查构建工具失败，退出码: $LASTEXITCODE"
+    }
+    if ($missingTools) {
+        throw @"
+MSYS2 缺少构建工具：$($missingTools -join '、')
+请在 MSYS2 UCRT64 环境执行：
+  pacman -S --needed bison flex make
+  pacman -S --needed mingw-w64-ucrt-x86_64-toolchain
+"@
+    }
+    $missingHeaders = & $bash -lc 'for header in zlib.h boost/graph/adjacency_list.hpp; do printf "#include <%s>\n" "$header" | gcc -E -x c - >/dev/null 2>&1 || echo "$header"; done'
+    if ($LASTEXITCODE -ne 0) {
+        throw "在 MSYS2 中检查编译依赖失败，退出码: $LASTEXITCODE"
+    }
+    if ($missingHeaders) {
+        throw @"
+MSYS2 缺少编译依赖头文件：$($missingHeaders -join '、')
+SDCC configure 无条件要求 zlib.h 与 boost/graph/adjacency_list.hpp，请执行：
+  pacman -S --needed mingw-w64-ucrt-x86_64-zlib mingw-w64-ucrt-x86_64-boost
+"@
+    }
     $buildScript = To-MsysPath (Join-Path $PSScriptRoot 'build_sdcc_windows_package.sh')
     $sourcePosix = To-MsysPath $sourceRoot
     $buildPosix = To-MsysPath $buildRoot
@@ -101,6 +124,7 @@ $bundle = [ordered]@{
     source_repository = 'https://github.com/louqingjie/sdcc-c251.git'
     source_commit = $commit
     generated_at_utc = [DateTime]::UtcNow.ToString('o')
+    platform = 'windows-x64'
     files = $hashes
 }
 $bundle | ConvertTo-Json -Depth 5 |

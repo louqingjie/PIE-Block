@@ -61,15 +61,40 @@ def split_motor_commands(
     )
 
 
-def booster_step(current: int, target: int) -> int:
-    """执行固件每个主循环的一步摩擦轮渐变。"""
+FRICTION_START_DUTY = 500
+FRICTION_LEVEL_MAX = 100
 
-    if target >= 500 and current < 500:
-        return 500
+
+def friction_duty_of_level(level: int, max_duty: int) -> int:
+    """把油门百分比按该侧满油上限换算成占空比。
+
+    与固件的 FrictionDutyOfLevel 同律：500 是电调启动信号，固定作为映射下界。
+    """
+
+    span = max_duty - FRICTION_START_DUTY
+    return FRICTION_START_DUTY + (min(max(level, 0), FRICTION_LEVEL_MAX) * span) // FRICTION_LEVEL_MAX
+
+
+def friction_targets(level: int, enabled: bool, max_duties: tuple[int, int]) -> tuple[int, int]:
+    """由油门比例值算出 P64/P66 各自的目标占空比。"""
+
+    if not enabled:
+        return (0, 0)
+    return tuple(friction_duty_of_level(level, max_duty) for max_duty in max_duties)  # type: ignore[return-value]
+
+
+def booster_step(current: int, target: int) -> int:
+    """执行固件每个主循环的一步摩擦轮渐变（单侧）。
+
+    两个引脚各自独立调用本函数，因此 duty 变化率始终是 ±1/周期。
+    """
+
+    if target >= FRICTION_START_DUTY and current < FRICTION_START_DUTY:
+        return FRICTION_START_DUTY
     if current < target:
         return current + 1
     if current > target:
-        if current <= 500 and target == 0:
+        if current <= FRICTION_START_DUTY and target == 0:
             return 0
         return current - 1
     return current

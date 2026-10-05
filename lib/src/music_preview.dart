@@ -1,9 +1,10 @@
-import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter_soloud/flutter_soloud.dart';
 import 'package:pieblock_core/pieblock_core.dart';
+
+import 'platform/background_run.dart';
 
 abstract interface class MusicPreviewService {
   bool get playing;
@@ -61,7 +62,7 @@ class SoloudMusicPreview implements MusicPreviewService {
     await _ensureInitialized();
     if (request != _playRequest) return;
 
-    final wav = await Isolate.run(() => _renderMusicPreviewWav(config));
+    final wav = await runInBackground(() => _renderMusicPreviewWav(config));
     if (request != _playRequest) return;
     final source = await _engine.loadMem('pieblock_music_preview.wav', wav);
     if (request != _playRequest) {

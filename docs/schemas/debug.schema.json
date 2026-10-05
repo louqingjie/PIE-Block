@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "Flutter 调试项目配置：按 tests 数组顺序逐项测试固定引脚。",
+  "description": "Flutter 调试项目配置：按 tests 数组顺序逐项测试固定引脚。摩擦轮按引脚分立满油上限，曲线走 0–100 油门比例值：duty = 500 + 油门% × (该引脚满油上限 − 500) ÷ 100。",
   "properties": {
     "tests": {
       "description": "固定十路引脚的可排序测试序列",
@@ -45,7 +45,9 @@
             "type": "string"
           },
           "value": {
-            "description": "电机速度、舵机角度或摩擦轮目标值",
+            "description": "电机速度、舵机角度，或摩擦轮的 0–100 油门百分比（按 duty = 500 + 油门% × (该引脚满油上限 − 500) ÷ 100 换算成占空比）",
+            "maximum": 100,
+            "minimum": 0,
             "type": ["integer", "null"]
           },
           "duration_ms": {
@@ -59,6 +61,16 @@
         "type": "object"
       },
       "type": "array"
+    },
+    "friction_p64_max_duty": {
+      "description": "P64 摩擦轮满油占空比；仅当 P64 被用作摩擦轮时必填",
+      "enum": [500, 600, 700, 800, null],
+      "type": ["integer", "null"]
+    },
+    "friction_p66_max_duty": {
+      "description": "P66 摩擦轮满油占空比；仅当 P66 被用作摩擦轮时必填",
+      "enum": [500, 600, 700, 800, null],
+      "type": ["integer", "null"]
     }
   },
   "required": ["tests"],

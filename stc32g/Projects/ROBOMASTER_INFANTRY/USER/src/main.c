@@ -16,9 +16,13 @@ uint16_t deadBandOfRight = 10;                  // 右摇杆中心死区
 uint16_t midDutyOfServo[2] = {750, 750};        // 云台水平/垂直舵机中值（归中角 +0° / +0°）
 // 摇杆可摆动幅度 ±60°（相对归中位置）
 uint16_t maxChangeDutyOfServo[2] = {333, 333};
-uint16_t singleChangeDutyOfBooster = 100;       // 按下按键单次占空比改变量
-uint16_t maxDutyOfBooster = 1100;               // 摩擦轮最大占空比（指南上限，不得提高）
-uint16_t minDutyOfBooster = 500;                // 摩擦轮最低有效占空比
+uint8_t levelStepOfBooster = 10;                // 按下按键单次油门改变量（百分比）
+// 两侧摩擦轮机械差异导致同占空比转速不同，分别标定各自满油占空比。
+// 指南红线是 1100，这里取更低的 800。
+uint16_t maxDutyOfBoosterP64 = 800;             // P64 摩擦轮满油占空比
+uint16_t maxDutyOfBoosterP66 = 700;             // P66 摩擦轮满油占空比
+#define START_DUTY_OF_BOOSTER 500                // 电调启动信号，同时是映射下界
+#define LEVEL_MAX_OF_BOOSTER 100                 // 油门量程上限（百分比）
 uint16_t boosterDutyOfFeed = 6000;             // 拨弹电机单发转动占空比
 uint16_t boosterFeedDelayMs = 100;              // 拨弹电机单发转动时长(ms)
 // 摇杆推到底时云台每周期转过 2.0°
@@ -53,8 +57,9 @@ uint8_t control_command = 0x00;
 float floatDutyOfServo[2]; // 云台舵机
 uint16_t dutyOfServo[2];
 int dutyOfMotor[5]; // 底盘电机、供弹电机、云台电机（如有）
-uint16_t dutyOfBooster = 0, expectDutyOfBooster = 0;
-uint16_t levelDutyOfBooster = 1100; // 摩擦轮目标转速档位（B/C 键微调）
+uint16_t dutyOfBoosterP64 = 0, dutyOfBoosterP66 = 0;
+uint16_t expectDutyOfBoosterP64 = 0, expectDutyOfBoosterP66 = 0;
+uint8_t levelOfBooster = 0; // 摩擦轮油门比例值 0~100，按键只改它
 uint8_t valueOfKey[3][4];
 uint8_t valueOfEKey;
 uint8_t triggerKeyValue, lastTriggerKeyValue, boosterKeyValue, lastBoosterKeyValue;
@@ -76,7 +81,7 @@ void CalculateMotorControls();
 void CalculateGimbalControls();
 void CalculateBoosterControl();
 uint8_t Get_Dir(int rawdata);
-void Main_Countrol(int *dutyOfMotor, uint16_t *dutyOfServo, uint16_t dutyOfBooster);
+void Main_Countrol(int *dutyOfMotor, uint16_t *dutyOfServo);
 void ExpansionBoradControl(uint8_t control_cmd, uint16_t data_p60, uint16_t data_p62, uint16_t data_p64,
                            uint16_t data_p66, uint16_t data_p74, uint16_t data_p75, uint16_t data_p76,
                            uint16_t data_p77);
@@ -183,34 +188,48 @@ void main()
         if (triggerKeyValue && !lastTriggerKeyValue)
         {
             dutyOfMotor[4] = boosterDutyOfFeed;
-            // 注意：此处保持 dutyOfBooster 不变，不能跳变到目标值，
+            // 注意：此处保持两侧 dutyOfBoosterP64/P66 不变，不能跳变到目标值，
             // 否则会违反摩擦轮占空比渐变要求
-            Main_Countrol(dutyOfMotor, dutyOfServo, dutyOfBooster);
+            Main_Countrol(dutyOfMotor, dutyOfServo);
             Ms_Delay(boosterFeedDelayMs);
             dutyOfMotor[4] = 0;
-            Main_Countrol(dutyOfMotor, dutyOfServo, dutyOfBooster);
+            Main_Countrol(dutyOfMotor, dutyOfServo);
         }
         lastTriggerKeyValue = triggerKeyValue;
 
         // 摩擦轮占空比平滑变化
         // 每轮至少包含方向/占空比帧间隔各 5ms，加循环尾延时 10ms，
         // 因此周期至少 20ms；每周期变化 1，即每秒最多变化 50，占空比渐变符合指南上限。
+        // 注意：渐变跑在占空比上而不是油门上。若改为对油门每周期 ±1 再映射，
+        // 满油 800 的一侧每次会跳 3 duty，即每秒 150，越过指南的每秒 100 上限。
         // 从静止启动时先跳到 500（指南：启停不考虑 0~5% 区间）
-        if (expectDutyOfBooster >= 500 && dutyOfBooster < 500)
-            dutyOfBooster = 500;
-        else if (dutyOfBooster < expectDutyOfBooster)
-            dutyOfBooster++;
-        else if (dutyOfBooster > expectDutyOfBooster)
+        if (expectDutyOfBoosterP64 >= START_DUTY_OF_BOOSTER && dutyOfBoosterP64 < START_DUTY_OF_BOOSTER)
+            dutyOfBoosterP64 = START_DUTY_OF_BOOSTER;
+        else if (dutyOfBoosterP64 < expectDutyOfBoosterP64)
+            dutyOfBoosterP64++;
+        else if (dutyOfBoosterP64 > expectDutyOfBoosterP64)
         {
             // 降到 500 以下时直接停机，避免在低占空比区间长时间堵转
-            if (dutyOfBooster <= 500 && expectDutyOfBooster == 0)
-                dutyOfBooster = 0;
+            if (dutyOfBoosterP64 <= START_DUTY_OF_BOOSTER && expectDutyOfBoosterP64 == 0)
+                dutyOfBoosterP64 = 0;
             else
-                dutyOfBooster--;
+                dutyOfBoosterP64--;
+        }
+        // 两侧各自独立逼近自己那侧的目标，先到位的一侧原地等待
+        if (expectDutyOfBoosterP66 >= START_DUTY_OF_BOOSTER && dutyOfBoosterP66 < START_DUTY_OF_BOOSTER)
+            dutyOfBoosterP66 = START_DUTY_OF_BOOSTER;
+        else if (dutyOfBoosterP66 < expectDutyOfBoosterP66)
+            dutyOfBoosterP66++;
+        else if (dutyOfBoosterP66 > expectDutyOfBoosterP66)
+        {
+            if (dutyOfBoosterP66 <= START_DUTY_OF_BOOSTER && expectDutyOfBoosterP66 == 0)
+                dutyOfBoosterP66 = 0;
+            else
+                dutyOfBoosterP66--;
         }
 
         // 发送控制函数
-        Main_Countrol(dutyOfMotor, dutyOfServo, dutyOfBooster);
+        Main_Countrol(dutyOfMotor, dutyOfServo);
         Ms_Delay(10);
     }
 }
@@ -340,38 +359,56 @@ void CalculateMotorControls()
         dutyOfMotor[4] = 0;
 }
 
+/* 油门比例值 → 占空比。500 是电调启动信号，固定作为映射下界；
+   两侧机械差异导致同占空比转速不同，因此 P64/P66 各用自己的满油上限，
+   同一油门映射出各自的占空比。全整数运算，无浮点。 */
+static uint16_t DutyOfBoosterLevel(uint8_t level, uint16_t maxDuty)
+{
+    return (uint16_t)(START_DUTY_OF_BOOSTER +
+                      ((uint16_t)level * (uint16_t)(maxDuty - START_DUTY_OF_BOOSTER)) / LEVEL_MAX_OF_BOOSTER);
+}
+
 void CalculateBoosterControl()
 {
-    // B/C 键上升沿微调摩擦轮目标转速档位（不是直接改 expectDutyOfBooster，
-    // 否则会被下面的开关逻辑覆盖）。档位限制在 500~1100，上限由指南规定
+    // B/C 键上升沿微调油门比例值（不是直接改目标占空比，
+    // 否则会被下面的开关逻辑覆盖）。油门限制在 0~100%，
+    // 0% 即 START_DUTY_OF_BOOSTER，即最低有效转速。
     if (valueOfKey[1][1] && !lastBoosterUpKeyValue)
     {
-        if (levelDutyOfBooster + singleChangeDutyOfBooster <= maxDutyOfBooster)
-            levelDutyOfBooster += singleChangeDutyOfBooster;
+        if (levelOfBooster + levelStepOfBooster <= LEVEL_MAX_OF_BOOSTER)
+            levelOfBooster += levelStepOfBooster;
         else
-            levelDutyOfBooster = maxDutyOfBooster;
+            levelOfBooster = LEVEL_MAX_OF_BOOSTER;
     }
     if (valueOfKey[1][2] && !lastBoosterDownKeyValue)
     {
-        if (levelDutyOfBooster >= minDutyOfBooster + singleChangeDutyOfBooster)
-            levelDutyOfBooster -= singleChangeDutyOfBooster;
+        if (levelOfBooster > levelStepOfBooster)
+            levelOfBooster -= levelStepOfBooster;
         else
-            levelDutyOfBooster = minDutyOfBooster;
+            levelOfBooster = 0;
     }
     lastBoosterUpKeyValue = valueOfKey[1][1];
     lastBoosterDownKeyValue = valueOfKey[1][2];
 
-    // 摩擦轮开关由 A 上升沿翻转
+    // 摩擦轮开关由 A 上升沿翻转，开即满油、关即停机
     if (boosterKeyValue && !lastBoosterKeyValue)
     {                                       // 检测上升沿
         statusOfBooster = !statusOfBooster; // 翻转状态
+        levelOfBooster = statusOfBooster ? LEVEL_MAX_OF_BOOSTER : 0;
     }
     lastBoosterKeyValue = boosterKeyValue;
 
+    /* 目标占空比每周期由油门重新映射，避免按键跳档后残留旧目标。 */
     if (statusOfBooster)
-        expectDutyOfBooster = levelDutyOfBooster;
+    {
+        expectDutyOfBoosterP64 = DutyOfBoosterLevel(levelOfBooster, maxDutyOfBoosterP64);
+        expectDutyOfBoosterP66 = DutyOfBoosterLevel(levelOfBooster, maxDutyOfBoosterP66);
+    }
     else
-        expectDutyOfBooster = 0;
+    {
+        expectDutyOfBoosterP64 = 0;
+        expectDutyOfBoosterP66 = 0;
+    }
 }
 
 void CalculateGimbalControls()
@@ -383,7 +420,7 @@ void CalculateGimbalControls()
     dutyOfServo[1] = (uint16_t)floatDutyOfServo[1];
 }
 
-void Main_Countrol(int *dutyOfMotor, uint16_t *dutyOfServo, uint16_t dutyOfBooster)
+void Main_Countrol(int *dutyOfMotor, uint16_t *dutyOfServo)
 {
     // 底盘方向会随摇杆实时变化，必须先发方向帧；拓展板处理完成后再发占空比帧
     ExpansionBoradControl(Dir_Change_Order,
@@ -393,7 +430,7 @@ void Main_Countrol(int *dutyOfMotor, uint16_t *dutyOfServo, uint16_t dutyOfBoost
                           Get_Dir(dutyOfMotor[2]), Get_Dir(dutyOfMotor[3]));
     Ms_Delay(EXPANSION_FRAME_GAP_MS);
     ExpansionBoradControl(Duty_Change_Order, dutyOfMotor[4], 0,
-                          dutyOfBooster, dutyOfBooster,
+                          dutyOfBoosterP64, dutyOfBoosterP66,
                           (uint16_t)abs(dutyOfMotor[0]), (uint16_t)abs(dutyOfMotor[1]),
                           (uint16_t)abs(dutyOfMotor[2]), (uint16_t)abs(dutyOfMotor[3]));
     Ms_Delay(EXPANSION_FRAME_GAP_MS);
@@ -405,8 +442,8 @@ void Main_Countrol(int *dutyOfMotor, uint16_t *dutyOfServo, uint16_t dutyOfBoost
 /// @param control_cmd
 /// @param data_p60 供弹电机
 /// @param data_p62 空
-/// @param data_p64 摩擦轮L
-/// @param data_p66 摩擦轮R
+/// @param data_p64 P64 摩擦轮
+/// @param data_p66 P66 摩擦轮
 /// @param data_p74 左前电机
 /// @param data_p75 左后电机
 /// @param data_p76 右前电机

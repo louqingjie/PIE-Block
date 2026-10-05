@@ -220,10 +220,10 @@ abstract final class ProjectValidator {
         case DebugDriveType.friction:
           _range(
             item.value,
-            500,
-            800,
+            0,
+            Friction.levelMax,
             '$base.value',
-            '${item.pin} 摩擦轮目标值',
+            '${item.pin} 摩擦轮油门',
             'tests',
             issue,
           );
@@ -233,6 +233,35 @@ abstract final class ProjectValidator {
     }
     if (seen.length != debugPins.length || !seen.containsAll(debugPins)) {
       issue(IssueSeverity.error, 'tests', '调试序列必须包含全部十个固定引脚', 'tests');
+    }
+    final frictionPinsUsed = {
+      for (final item in config.tests)
+        if (item.driveType == DebugDriveType.friction) item.pin,
+    };
+    for (final maxDuty in [
+      (pin: 'P64', value: config.frictionP64MaxDuty),
+      (pin: 'P66', value: config.frictionP66MaxDuty),
+    ]) {
+      final path = 'tests.friction_${maxDuty.pin.toLowerCase()}_max_duty';
+      final label = '${maxDuty.pin} 摩擦轮最大占空比';
+      _range(
+        maxDuty.value,
+        Friction.minMaxDuty,
+        Friction.maxMaxDuty,
+        path,
+        label,
+        'tests',
+        issue,
+        required: frictionPinsUsed.contains(maxDuty.pin),
+      );
+      if (maxDuty.value != null && maxDuty.value! % 100 != 0) {
+        issue(
+          IssueSeverity.error,
+          path,
+          '$label必须是 ${Friction.minMaxDuty}–${Friction.maxMaxDuty} 内的整百值',
+          'tests',
+        );
+      }
     }
   }
 
@@ -554,6 +583,14 @@ abstract final class ProjectValidator {
       issue,
     );
     _digital(config.triggerKey, 'controls.trigger_key', '扳机键', issue);
+    if (config.reverseFeedKey != null) {
+      _digital(
+        config.reverseFeedKey,
+        'controls.reverse_feed_key',
+        '反向拨弹键',
+        issue,
+      );
+    }
     if (config.feedMode == FeedMode.blockingOpenLoop) {
       _range(
         config.triggerTimeMs,
@@ -580,9 +617,9 @@ abstract final class ProjectValidator {
       'controls',
       issue,
     );
-    if (config.frictionMode == FrictionMode.brushlessEsc) {
-      final keys = <({String path, String label, String? key})>[
-        (path: 'controls.trigger_key', label: '扳机键', key: config.triggerKey),
+    final frictionEnabled = config.frictionMode == FrictionMode.brushlessEsc;
+    if (frictionEnabled) {
+      for (final entry in [
         (
           path: 'controls.friction_key',
           label: '摩擦轮开关键',
@@ -598,84 +635,95 @@ abstract final class ProjectValidator {
           label: '摩擦轮减速键',
           key: config.frictionDownKey,
         ),
-      ];
-      for (final entry in keys.skip(1)) {
+      ]) {
         _choice(entry.key, entry.path, entry.label, 'controls', issue);
         _digital(entry.key, entry.path, entry.label, issue);
       }
-      final byKey = <String, List<({String path, String label})>>{};
-      for (final entry in keys) {
-        if (entry.key != null) {
-          byKey.putIfAbsent(entry.key!, () => []).add((
-            path: entry.path,
-            label: entry.label,
-          ));
-        }
-      }
-      for (final entries in byKey.values.where((items) => items.length > 1)) {
-        final labels = entries.map((entry) => entry.label).join('、');
-        for (final entry in entries) {
+      for (final maxDuty in [
+        (
+          path: 'controls.friction_p64_max_duty',
+          label: 'P64 摩擦轮最大占空比',
+          value: config.frictionP64MaxDuty,
+        ),
+        (
+          path: 'controls.friction_p66_max_duty',
+          label: 'P66 摩擦轮最大占空比',
+          value: config.frictionP66MaxDuty,
+        ),
+      ]) {
+        _range(
+          maxDuty.value,
+          Friction.minMaxDuty,
+          Friction.maxMaxDuty,
+          maxDuty.path,
+          maxDuty.label,
+          'controls',
+          issue,
+        );
+        if (maxDuty.value != null && maxDuty.value! % 100 != 0) {
           issue(
             IssueSeverity.error,
-            entry.path,
-            '$labels 不能使用同一按键',
+            maxDuty.path,
+            '${maxDuty.label}必须是 ${Friction.minMaxDuty}–${Friction.maxMaxDuty} 内的整百值',
             'controls',
           );
         }
       }
       _range(
-        config.frictionMaxDuty,
-        500,
-        800,
-        'controls.friction_max_duty',
-        '摩擦轮最大占空比',
-        'controls',
-        issue,
-      );
-      if (config.frictionMaxDuty != null &&
-          config.frictionMaxDuty! % 100 != 0) {
-        issue(
-          IssueSeverity.error,
-          'controls.friction_max_duty',
-          '摩擦轮最大占空比必须是 500–800 内的整百值',
-          'controls',
-        );
-      }
-      _range(
-        config.frictionStep,
+        config.frictionLevelStep,
         1,
-        800,
-        'controls.friction_step',
-        '摩擦轮调速步长',
+        Friction.levelMax,
+        'controls.friction_level_step',
+        '摩擦轮油门步长',
         'controls',
         issue,
       );
     }
+    final keyEntries = <({String path, String label, String? key})>[
+      (path: 'controls.trigger_key', label: '扳机键', key: config.triggerKey),
+      if (config.reverseFeedKey != null)
+        (
+          path: 'controls.reverse_feed_key',
+          label: '反向拨弹键',
+          key: config.reverseFeedKey,
+        ),
+      if (frictionEnabled) ...[
+        (
+          path: 'controls.friction_key',
+          label: '摩擦轮开关键',
+          key: config.frictionKey,
+        ),
+        (
+          path: 'controls.friction_up_key',
+          label: '摩擦轮增速键',
+          key: config.frictionUpKey,
+        ),
+        (
+          path: 'controls.friction_down_key',
+          label: '摩擦轮减速键',
+          key: config.frictionDownKey,
+        ),
+      ],
+    ];
+    final byKey = <String, List<({String path, String label})>>{};
+    for (final entry in keyEntries) {
+      if (entry.key != null) {
+        byKey.putIfAbsent(entry.key!, () => []).add((
+          path: entry.path,
+          label: entry.label,
+        ));
+      }
+    }
+    for (final entries in byKey.values.where((items) => items.length > 1)) {
+      final labels = entries.map((entry) => entry.label).join('、');
+      for (final entry in entries) {
+        issue(IssueSeverity.error, entry.path, '$labels 不能使用同一按键', 'controls');
+      }
+    }
     if (config.arrowBehavior == ArrowBehavior.move ||
         config.arrowBehavior == ArrowBehavior.sprint) {
       const arrows = {'↑', '↓', '←', '→'};
-      final entries = <({String path, String label, String? key})>[
-        (path: 'controls.trigger_key', label: '扳机键', key: config.triggerKey),
-        if (config.frictionMode == FrictionMode.brushlessEsc)
-          (
-            path: 'controls.friction_key',
-            label: '摩擦轮开关键',
-            key: config.frictionKey,
-          ),
-        if (config.frictionMode == FrictionMode.brushlessEsc)
-          (
-            path: 'controls.friction_up_key',
-            label: '摩擦轮增速键',
-            key: config.frictionUpKey,
-          ),
-        if (config.frictionMode == FrictionMode.brushlessEsc)
-          (
-            path: 'controls.friction_down_key',
-            label: '摩擦轮减速键',
-            key: config.frictionDownKey,
-          ),
-      ];
-      for (final entry in entries) {
+      for (final entry in keyEntries) {
         if (entry.key != null && arrows.contains(entry.key)) {
           issue(
             IssueSeverity.error,
@@ -702,39 +750,54 @@ abstract final class ProjectValidator {
 
   static void _axis(InfantryConfig config, bool yaw, _AddIssue issue) {
     final name = yaw ? 'Yaw' : 'Pitch';
-    final base = yaw ? 'gimbal.yaw' : 'gimbal.pitch';
-    final drive = yaw ? config.yawDrive : config.pitchDrive;
-    final pin = yaw ? config.yawPin : config.pitchPin;
-    final direction = yaw ? config.yawDirection : config.pitchDirection;
-    final mid = yaw ? config.yawMidOffset : config.pitchMidOffset;
-    _choice(drive, '$base.drive', '$name 驱动类型', 'mechanism', issue);
-    _choice(pin, '$base.pin', '$name IO', 'mechanism', issue);
-    _choice(direction, '$base.direction', '$name 方向', 'mechanism', issue);
-    if (drive == DriveType.servo) {
-      _range(
-        mid,
-        -90,
-        90,
-        '$base.mid_offset',
-        '$name 归中偏移',
+    final actuators = config.actuators(yaw);
+    for (var index = 0; index < actuators.length; index += 1) {
+      final actuator = actuators[index];
+      // 单执行器时沿用一直以来的文案，多执行器时补上序号。
+      final label = actuators.length == 1 ? name : '$name 执行器 ${index + 1}';
+      String path(String field) =>
+          InfantryPinPlanner.axisPath(yaw, index, field);
+      _choice(actuator.drive, path('drive'), '$label 驱动类型', 'mechanism', issue);
+      _choice(actuator.pin, path('pin'), '$label IO', 'mechanism', issue);
+      _choice(
+        actuator.direction,
+        path('direction'),
+        '$label 方向',
         'mechanism',
         issue,
       );
-    }
-    if (pin != null && drive != null) {
-      final valid = drive == DriveType.servo
-          ? InfantryPinPlanner.servoPins
-          : InfantryPinPlanner.motorPins;
-      if (!valid.contains(pin)) {
-        issue(IssueSeverity.error, '$base.pin', '$name 不能使用 $pin', 'mechanism');
-      }
-      if (drive == DriveType.motor && mainServoPins.contains(pin)) {
-        issue(
-          IssueSeverity.error,
-          '$base.pin',
-          '$pin 是主控板舵机口，不能驱动电机',
+      if (actuator.drive == DriveType.servo) {
+        _range(
+          actuator.midOffset,
+          -90,
+          90,
+          path('mid_offset'),
+          '$label 归中偏移',
           'mechanism',
+          issue,
         );
+      }
+      final pin = actuator.pin;
+      if (pin != null && actuator.drive != null) {
+        final valid = actuator.drive == DriveType.servo
+            ? InfantryPinPlanner.servoPins
+            : InfantryPinPlanner.motorPins;
+        if (!valid.contains(pin)) {
+          issue(
+            IssueSeverity.error,
+            path('pin'),
+            '$label 不能使用 $pin',
+            'mechanism',
+          );
+        }
+        if (actuator.drive == DriveType.motor && mainServoPins.contains(pin)) {
+          issue(
+            IssueSeverity.error,
+            path('pin'),
+            '$pin 是主控板舵机口，不能驱动电机',
+            'mechanism',
+          );
+        }
       }
     }
   }
@@ -779,24 +842,26 @@ abstract final class ProjectValidator {
             group: 'feeder',
             role: PinRole.motor,
           ),
-          (
-            path: 'gimbal.yaw.pin',
-            label: 'Yaw 轴',
-            pin: config.yawPin,
-            group: 'yaw',
-            role: config.yawDrive == DriveType.servo
-                ? PinRole.servo
-                : PinRole.motor,
-          ),
-          (
-            path: 'gimbal.pitch.pin',
-            label: 'Pitch 轴',
-            pin: config.pitchPin,
-            group: 'pitch',
-            role: config.pitchDrive == DriveType.servo
-                ? PinRole.servo
-                : PinRole.motor,
-          ),
+          for (var index = 0; index < config.yawActuators.length; index += 1)
+            (
+              path: InfantryPinPlanner.axisPath(true, index, 'pin'),
+              label: InfantryPinPlanner.axisLabel(true, index),
+              pin: config.yawActuators[index].pin,
+              group: 'yaw',
+              role: config.yawActuators[index].drive == DriveType.servo
+                  ? PinRole.servo
+                  : PinRole.motor,
+            ),
+          for (var index = 0; index < config.pitchActuators.length; index += 1)
+            (
+              path: InfantryPinPlanner.axisPath(false, index, 'pin'),
+              label: InfantryPinPlanner.axisLabel(false, index),
+              pin: config.pitchActuators[index].pin,
+              group: 'pitch',
+              role: config.pitchActuators[index].drive == DriveType.servo
+                  ? PinRole.servo
+                  : PinRole.motor,
+            ),
           if (config.frictionMode == FrictionMode.brushlessEsc)
             for (final pin in InfantryPinPlanner.frictionPins)
               (
@@ -1066,11 +1131,7 @@ abstract final class ProjectValidator {
         : isAxis
         ? const [ControlMode.incremental, ControlMode.direct]
         : isButton
-        ? const [
-            ControlMode.direct,
-            ControlMode.single,
-            ControlMode.continuous,
-          ]
+        ? const [ControlMode.direct, ControlMode.single, ControlMode.continuous]
         : const <ControlMode>[];
     if (action.mode != null && !allowed.contains(action.mode)) {
       issue(

@@ -1,5 +1,8 @@
 enum ProjectKind { infantry, engineer, debug, music }
 
+/// 代码生成的输出目标：C 源码（默认）或直接生成的汇编源码。
+enum OutputTarget { c, asm }
+
 enum Direction { forward, reverse }
 
 enum DriveType { servo, motor }
@@ -26,6 +29,32 @@ enum ValidationIssueKind { required, invalid }
 
 const expansionPins = ['P60', 'P62', 'P64', 'P66', 'P74', 'P75', 'P76', 'P77'];
 const mainServoPins = ['MP03', 'MP74'];
+
+/// 摩擦轮控制参数与映射律。
+///
+/// 摩擦轮按**油门比例**控制：油门是唯一的控制量，P64/P66 各自的满油占空比
+/// 不同（补偿两侧机械差异），实际输出由
+/// `duty = frictionStartDuty + level/100 * (maxDuty - frictionStartDuty)`
+/// 线性映射得到。`frictionStartDuty` 是电调启动信号，固定不可调。
+abstract final class Friction {
+  /// 电调启动占空比，同时也是比例映射的下界。
+  static const startDuty = 500;
+
+  /// 油门的量程上限（百分比）。
+  static const levelMax = 100;
+
+  static const minMaxDuty = 500;
+  static const maxMaxDuty = 800;
+
+  /// 摩擦轮允许占用的引脚。
+  static const pins = EngineerPinCapabilities.frictionPins;
+
+  /// 把 [level] 百分比油门按 [maxDuty] 映射为占空比。
+  static int dutyOfLevel(int level, int maxDuty) {
+    final span = maxDuty - startDuty;
+    return startDuty + (level.clamp(0, levelMax) * span) ~/ levelMax;
+  }
+}
 
 /// Hardware capabilities for engineer-project output pins.
 abstract final class EngineerPinCapabilities {
@@ -336,18 +365,45 @@ class DebugTestItem {
 }
 
 class DebugConfig extends ProjectConfig {
-  DebugConfig({List<DebugTestItem>? tests})
-    : tests = List.unmodifiable(
-        tests ?? [for (final pin in debugPins) DebugTestItem(pin: pin)],
-      );
+  DebugConfig({
+    List<DebugTestItem>? tests,
+    this.frictionP64MaxDuty,
+    this.frictionP66MaxDuty,
+  }) : tests = List.unmodifiable(
+         tests ?? [for (final pin in debugPins) DebugTestItem(pin: pin)],
+       );
   final List<DebugTestItem> tests;
+
+  /// 摩擦轮在 P64/P66 上的满油占空比，调试曲线的比例值按各自上限换算。
+  final int? frictionP64MaxDuty, frictionP66MaxDuty;
+
+  /// 返回 [pin] 的摩擦轮满油占空比，[pin] 不是摩擦轮引脚时返回 null。
+  int? frictionMaxDutyOf(String pin) => switch (pin) {
+    'P64' => frictionP64MaxDuty,
+    'P66' => frictionP66MaxDuty,
+    _ => null,
+  };
+
   @override
   ProjectKind get kind => ProjectKind.debug;
-  DebugConfig copyWith({List<DebugTestItem>? tests}) =>
-      DebugConfig(tests: tests ?? this.tests);
+  DebugConfig copyWith({
+    List<DebugTestItem>? tests,
+    Object? frictionP64MaxDuty = _unset,
+    Object? frictionP66MaxDuty = _unset,
+  }) => DebugConfig(
+    tests: tests ?? this.tests,
+    frictionP64MaxDuty: identical(frictionP64MaxDuty, _unset)
+        ? this.frictionP64MaxDuty
+        : frictionP64MaxDuty as int?,
+    frictionP66MaxDuty: identical(frictionP66MaxDuty, _unset)
+        ? this.frictionP66MaxDuty
+        : frictionP66MaxDuty as int?,
+  );
   @override
   Map<String, Object?> toJson() => {
     'tests': tests.map((item) => item.toJson()).toList(),
+    'friction_p64_max_duty': frictionP64MaxDuty,
+    'friction_p66_max_duty': frictionP66MaxDuty,
   };
   factory DebugConfig.fromJson(Map<String, Object?> json) {
     final tests = <DebugTestItem>[], seen = <String>{};
@@ -359,7 +415,11 @@ class DebugConfig extends ProjectConfig {
     for (final pin in debugPins) {
       if (seen.add(pin)) tests.add(DebugTestItem(pin: pin));
     }
-    return DebugConfig(tests: tests);
+    return DebugConfig(
+      tests: tests,
+      frictionP64MaxDuty: (json['friction_p64_max_duty'] as num?)?.toInt(),
+      frictionP66MaxDuty: (json['friction_p66_max_duty'] as num?)?.toInt(),
+    );
   }
 }
 
@@ -538,79 +598,112 @@ class MusicConfig extends ProjectConfig {
   );
 }
 
+/// 云台单个轴上的一个执行器：一个驱动类型、一个 IO、一个方向。
+///
+/// 同轴可以挂 1~N 个执行器（如两只舵机并联增扭），也可以一个都不挂。
+class AxisActuator {
+  const AxisActuator({this.drive, this.pin, this.direction, this.midOffset});
+  final DriveType? drive;
+  final String? pin;
+  final Direction? direction;
+  final int? midOffset;
+  AxisActuator copyWith({
+    Object? drive = _unset,
+    Object? pin = _unset,
+    Object? direction = _unset,
+    Object? midOffset = _unset,
+  }) => AxisActuator(
+    drive: identical(drive, _unset) ? this.drive : drive as DriveType?,
+    pin: identical(pin, _unset) ? this.pin : pin as String?,
+    direction: identical(direction, _unset)
+        ? this.direction
+        : direction as Direction?,
+    midOffset: identical(midOffset, _unset)
+        ? this.midOffset
+        : midOffset as int?,
+  );
+  Map<String, Object?> toJson() => {
+    'drive': drive?.name,
+    'pin': pin,
+    'direction': direction?.name,
+    'mid_offset': midOffset,
+  };
+  factory AxisActuator.fromJson(Map<String, Object?> json) => AxisActuator(
+    drive: nullableEnumValue(DriveType.values, json['drive']),
+    pin: json['pin']?.toString(),
+    direction: nullableEnumValue(Direction.values, json['direction']),
+    midOffset: (json['mid_offset'] as num?)?.toInt(),
+  );
+}
+
 class InfantryConfig extends RobotConfig {
   InfantryConfig({
     super.remote = const RemoteConfig(),
     ChassisConfig? chassis,
     this.feederPin,
     this.feederDirection,
-    this.yawDrive,
-    this.yawPin,
-    this.yawDirection,
-    this.yawMidOffset,
-    this.pitchDrive,
-    this.pitchPin,
-    this.pitchDirection,
-    this.pitchMidOffset,
+    List<AxisActuator> yawActuators = const [AxisActuator()],
+    List<AxisActuator> pitchActuators = const [AxisActuator()],
     this.arrowBehavior,
     this.feedMode,
     this.triggerKey,
+    this.reverseFeedKey,
     this.triggerSpeed,
     this.triggerTimeMs,
     this.frictionMode,
     this.frictionKey,
     this.frictionUpKey,
     this.frictionDownKey,
-    this.frictionMaxDuty,
-    this.frictionStep,
+    this.frictionP64MaxDuty,
+    this.frictionP66MaxDuty,
+    this.frictionLevelStep,
     this.zeroEnabled = false,
     this.buzzerDisabled = false,
-  }) : super(chassis: chassis ?? ChassisConfig.defaults());
+  }) : yawActuators = List.unmodifiable(yawActuators),
+       pitchActuators = List.unmodifiable(pitchActuators),
+       super(chassis: chassis ?? ChassisConfig.defaults());
   @override
   ProjectKind get kind => ProjectKind.infantry;
   final String? feederPin,
-      yawPin,
-      pitchPin,
       triggerKey,
+      reverseFeedKey,
       frictionKey,
       frictionUpKey,
       frictionDownKey;
   final ArrowBehavior? arrowBehavior;
   final FeedMode? feedMode;
   final FrictionMode? frictionMode;
-  final Direction? feederDirection, yawDirection, pitchDirection;
-  final DriveType? yawDrive, pitchDrive;
-  final int? yawMidOffset,
-      pitchMidOffset,
-      triggerSpeed,
+  final Direction? feederDirection;
+  final List<AxisActuator> yawActuators, pitchActuators;
+  final int? triggerSpeed,
       triggerTimeMs,
-      frictionMaxDuty,
-      frictionStep;
+      frictionP64MaxDuty,
+      frictionP66MaxDuty,
+      frictionLevelStep;
   final bool zeroEnabled, buzzerDisabled;
+
+  /// [yaw] 为 true 时返回 Yaw 轴的执行器，否则返回 Pitch 轴的执行器。
+  List<AxisActuator> actuators(bool yaw) => yaw ? yawActuators : pitchActuators;
   InfantryConfig copyWith({
     RemoteConfig? remote,
     ChassisConfig? chassis,
     Object? feederPin = _unset,
     Object? feederDirection = _unset,
-    Object? yawDrive = _unset,
-    Object? yawPin = _unset,
-    Object? yawDirection = _unset,
-    Object? yawMidOffset = _unset,
-    Object? pitchDrive = _unset,
-    Object? pitchPin = _unset,
-    Object? pitchDirection = _unset,
-    Object? pitchMidOffset = _unset,
+    Object? yawActuators = _unset,
+    Object? pitchActuators = _unset,
     Object? arrowBehavior = _unset,
     Object? feedMode = _unset,
     Object? triggerKey = _unset,
+    Object? reverseFeedKey = _unset,
     Object? triggerSpeed = _unset,
     Object? triggerTimeMs = _unset,
     Object? frictionMode = _unset,
     Object? frictionKey = _unset,
     Object? frictionUpKey = _unset,
     Object? frictionDownKey = _unset,
-    Object? frictionMaxDuty = _unset,
-    Object? frictionStep = _unset,
+    Object? frictionP64MaxDuty = _unset,
+    Object? frictionP66MaxDuty = _unset,
+    Object? frictionLevelStep = _unset,
     bool? zeroEnabled,
     bool? buzzerDisabled,
   }) => InfantryConfig(
@@ -622,26 +715,12 @@ class InfantryConfig extends RobotConfig {
     feederDirection: identical(feederDirection, _unset)
         ? this.feederDirection
         : feederDirection as Direction?,
-    yawDrive: identical(yawDrive, _unset)
-        ? this.yawDrive
-        : yawDrive as DriveType?,
-    yawPin: identical(yawPin, _unset) ? this.yawPin : yawPin as String?,
-    yawDirection: identical(yawDirection, _unset)
-        ? this.yawDirection
-        : yawDirection as Direction?,
-    yawMidOffset: identical(yawMidOffset, _unset)
-        ? this.yawMidOffset
-        : yawMidOffset as int?,
-    pitchDrive: identical(pitchDrive, _unset)
-        ? this.pitchDrive
-        : pitchDrive as DriveType?,
-    pitchPin: identical(pitchPin, _unset) ? this.pitchPin : pitchPin as String?,
-    pitchDirection: identical(pitchDirection, _unset)
-        ? this.pitchDirection
-        : pitchDirection as Direction?,
-    pitchMidOffset: identical(pitchMidOffset, _unset)
-        ? this.pitchMidOffset
-        : pitchMidOffset as int?,
+    yawActuators: identical(yawActuators, _unset)
+        ? this.yawActuators
+        : List<AxisActuator>.from(yawActuators as List),
+    pitchActuators: identical(pitchActuators, _unset)
+        ? this.pitchActuators
+        : List<AxisActuator>.from(pitchActuators as List),
     arrowBehavior: identical(arrowBehavior, _unset)
         ? this.arrowBehavior
         : arrowBehavior as ArrowBehavior?,
@@ -651,6 +730,9 @@ class InfantryConfig extends RobotConfig {
     triggerKey: identical(triggerKey, _unset)
         ? this.triggerKey
         : triggerKey as String?,
+    reverseFeedKey: identical(reverseFeedKey, _unset)
+        ? this.reverseFeedKey
+        : reverseFeedKey as String?,
     triggerSpeed: identical(triggerSpeed, _unset)
         ? this.triggerSpeed
         : triggerSpeed as int?,
@@ -669,12 +751,15 @@ class InfantryConfig extends RobotConfig {
     frictionDownKey: identical(frictionDownKey, _unset)
         ? this.frictionDownKey
         : frictionDownKey as String?,
-    frictionMaxDuty: identical(frictionMaxDuty, _unset)
-        ? this.frictionMaxDuty
-        : frictionMaxDuty as int?,
-    frictionStep: identical(frictionStep, _unset)
-        ? this.frictionStep
-        : frictionStep as int?,
+    frictionP64MaxDuty: identical(frictionP64MaxDuty, _unset)
+        ? this.frictionP64MaxDuty
+        : frictionP64MaxDuty as int?,
+    frictionP66MaxDuty: identical(frictionP66MaxDuty, _unset)
+        ? this.frictionP66MaxDuty
+        : frictionP66MaxDuty as int?,
+    frictionLevelStep: identical(frictionLevelStep, _unset)
+        ? this.frictionLevelStep
+        : frictionLevelStep as int?,
     zeroEnabled: zeroEnabled ?? this.zeroEnabled,
     buzzerDisabled: buzzerDisabled ?? this.buzzerDisabled,
   );
@@ -684,35 +769,29 @@ class InfantryConfig extends RobotConfig {
     'chassis': chassis.toJson(),
     'feeder_pin': feederPin,
     'feeder_direction': feederDirection?.name,
-    'yaw': {
-      'drive': yawDrive?.name,
-      'pin': yawPin,
-      'direction': yawDirection?.name,
-      'mid_offset': yawMidOffset,
-    },
-    'pitch': {
-      'drive': pitchDrive?.name,
-      'pin': pitchPin,
-      'direction': pitchDirection?.name,
-      'mid_offset': pitchMidOffset,
-    },
+    'yaw': [for (final actuator in yawActuators) actuator.toJson()],
+    'pitch': [for (final actuator in pitchActuators) actuator.toJson()],
     'arrow_behavior': arrowBehavior?.name,
     'feed_mode': feedMode?.name,
     'trigger_key': triggerKey,
+    'reverse_feed_key': reverseFeedKey,
     'trigger_speed': triggerSpeed,
     'trigger_time_ms': triggerTimeMs,
     'friction_mode': frictionMode?.name,
     'friction_key': frictionKey,
     'friction_up_key': frictionUpKey,
     'friction_down_key': frictionDownKey,
-    'friction_max_duty': frictionMaxDuty,
-    'friction_step': frictionStep,
+    'friction_p64_max_duty': frictionP64MaxDuty,
+    'friction_p66_max_duty': frictionP66MaxDuty,
+    'friction_level_step': frictionLevelStep,
     'zero_enabled': zeroEnabled,
     'buzzer_disabled': buzzerDisabled,
   };
   factory InfantryConfig.fromJson(Map<String, Object?> j) {
-    final y = Map<String, Object?>.from(j['yaw'] as Map? ?? {}),
-        p = Map<String, Object?>.from(j['pitch'] as Map? ?? {});
+    List<AxisActuator> actuators(String key) => [
+      for (final raw in j[key] as List? ?? const [])
+        if (raw is Map) AxisActuator.fromJson(Map<String, Object?>.from(raw)),
+    ];
     return InfantryConfig(
       remote: RemoteConfig.fromJson(
         Map<String, Object?>.from(j['remote'] as Map? ?? {}),
@@ -725,28 +804,24 @@ class InfantryConfig extends RobotConfig {
         Direction.values,
         j['feeder_direction'],
       ),
-      yawDrive: nullableEnumValue(DriveType.values, y['drive']),
-      yawPin: y['pin']?.toString(),
-      yawDirection: nullableEnumValue(Direction.values, y['direction']),
-      yawMidOffset: (y['mid_offset'] as num?)?.toInt(),
-      pitchDrive: nullableEnumValue(DriveType.values, p['drive']),
-      pitchPin: p['pin']?.toString(),
-      pitchDirection: nullableEnumValue(Direction.values, p['direction']),
-      pitchMidOffset: (p['mid_offset'] as num?)?.toInt(),
+      yawActuators: actuators('yaw'),
+      pitchActuators: actuators('pitch'),
       arrowBehavior: nullableEnumValue(
         ArrowBehavior.values,
         j['arrow_behavior'],
       ),
       feedMode: nullableEnumValue(FeedMode.values, j['feed_mode']),
       triggerKey: j['trigger_key']?.toString(),
+      reverseFeedKey: j['reverse_feed_key']?.toString(),
       triggerSpeed: (j['trigger_speed'] as num?)?.toInt(),
       triggerTimeMs: (j['trigger_time_ms'] as num?)?.toInt(),
       frictionMode: nullableEnumValue(FrictionMode.values, j['friction_mode']),
       frictionKey: j['friction_key']?.toString(),
       frictionUpKey: j['friction_up_key']?.toString(),
       frictionDownKey: j['friction_down_key']?.toString(),
-      frictionMaxDuty: (j['friction_max_duty'] as num?)?.toInt(),
-      frictionStep: (j['friction_step'] as num?)?.toInt(),
+      frictionP64MaxDuty: (j['friction_p64_max_duty'] as num?)?.toInt(),
+      frictionP66MaxDuty: (j['friction_p66_max_duty'] as num?)?.toInt(),
+      frictionLevelStep: (j['friction_level_step'] as num?)?.toInt(),
       zeroEnabled: j['zero_enabled'] as bool? ?? false,
       buzzerDisabled: j['buzzer_disabled'] as bool? ?? false,
     );
@@ -825,6 +900,38 @@ abstract final class InfantryPinPlanner {
 
   static String normalizePin(String? value) => value?.split(' ').first ?? '';
 
+  /// 云台执行器在引脚字段路径里的定位。
+  static String axisPath(bool yaw, int index, String field) =>
+      'gimbal.${yaw ? 'yaw' : 'pitch'}.$index.$field';
+
+  /// 解析 `gimbal.<yaw|pitch>.<index>.<field>` 形式的路径，非云台路径返回 null。
+  static ({bool yaw, int index, String field})? parseAxisPath(
+    String fieldPath,
+  ) {
+    final parts = fieldPath.split('.');
+    if (parts.length != 4 || parts.first != 'gimbal') return null;
+    final yaw = switch (parts[1]) {
+      'yaw' => true,
+      'pitch' => false,
+      _ => null,
+    };
+    final index = int.tryParse(parts[2]);
+    if (yaw == null || index == null || index < 0) return null;
+    return (yaw: yaw, index: index, field: parts[3]);
+  }
+
+  /// 执行器在界面与报错里的显示名，单执行器时与旧文案一致。
+  static String axisLabel(bool yaw, int index) =>
+      '${yaw ? 'Yaw' : 'Pitch'} 轴${index == 0 ? '' : ' ${index + 1}'}';
+
+  static AxisActuator? _actuatorAt(
+    InfantryConfig config,
+    ({bool yaw, int index, String field}) axis,
+  ) {
+    final actuators = config.actuators(axis.yaw);
+    return axis.index < actuators.length ? actuators[axis.index] : null;
+  }
+
   static String? _chassisSide(String fieldPath) => switch (fieldPath) {
     'chassis.left_front.pin' || 'chassis.left_rear.pin' => 'left',
     'chassis.right_front.pin' || 'chassis.right_rear.pin' => 'right',
@@ -836,17 +943,18 @@ abstract final class InfantryPinPlanner {
     return firstSide != null && firstSide == _chassisSide(secondFieldPath);
   }
 
-  static String? _fieldPin(InfantryConfig config, String fieldPath) =>
-      switch (fieldPath) {
-        'chassis.left_front.pin' => config.chassis.leftFront.pin,
-        'chassis.left_rear.pin' => config.chassis.leftRear.pin,
-        'chassis.right_front.pin' => config.chassis.rightFront.pin,
-        'chassis.right_rear.pin' => config.chassis.rightRear.pin,
-        'mechanism.feeder_pin' => config.feederPin,
-        'gimbal.yaw.pin' => config.yawPin,
-        'gimbal.pitch.pin' => config.pitchPin,
-        _ => throw ArgumentError.value(fieldPath, 'fieldPath', '未知引脚字段'),
-      };
+  static String? _fieldPin(InfantryConfig config, String fieldPath) {
+    final axis = parseAxisPath(fieldPath);
+    if (axis != null) return _actuatorAt(config, axis)?.pin;
+    return switch (fieldPath) {
+      'chassis.left_front.pin' => config.chassis.leftFront.pin,
+      'chassis.left_rear.pin' => config.chassis.leftRear.pin,
+      'chassis.right_front.pin' => config.chassis.rightFront.pin,
+      'chassis.right_rear.pin' => config.chassis.rightRear.pin,
+      'mechanism.feeder_pin' => config.feederPin,
+      _ => throw ArgumentError.value(fieldPath, 'fieldPath', '未知引脚字段'),
+    };
+  }
 
   static List<PinAssignment> _references(InfantryConfig config) => [
     if (config.chassis.leftFront.pin != null)
@@ -884,24 +992,28 @@ abstract final class InfantryPinPlanner {
         ownerFieldPath: 'mechanism.feeder_pin',
         ownerLabel: '拨弹电机',
       ),
-    if (config.yawPin != null && config.yawDrive != null)
-      PinAssignment(
-        pin: config.yawPin!,
-        role: config.yawDrive == DriveType.servo
-            ? PinRole.servo
-            : PinRole.motor,
-        ownerFieldPath: 'gimbal.yaw.pin',
-        ownerLabel: 'Yaw 轴',
-      ),
-    if (config.pitchPin != null && config.pitchDrive != null)
-      PinAssignment(
-        pin: config.pitchPin!,
-        role: config.pitchDrive == DriveType.servo
-            ? PinRole.servo
-            : PinRole.motor,
-        ownerFieldPath: 'gimbal.pitch.pin',
-        ownerLabel: 'Pitch 轴',
-      ),
+    for (var index = 0; index < config.yawActuators.length; index += 1)
+      if (config.yawActuators[index].pin != null &&
+          config.yawActuators[index].drive != null)
+        PinAssignment(
+          pin: config.yawActuators[index].pin!,
+          role: config.yawActuators[index].drive == DriveType.servo
+              ? PinRole.servo
+              : PinRole.motor,
+          ownerFieldPath: axisPath(true, index, 'pin'),
+          ownerLabel: axisLabel(true, index),
+        ),
+    for (var index = 0; index < config.pitchActuators.length; index += 1)
+      if (config.pitchActuators[index].pin != null &&
+          config.pitchActuators[index].drive != null)
+        PinAssignment(
+          pin: config.pitchActuators[index].pin!,
+          role: config.pitchActuators[index].drive == DriveType.servo
+              ? PinRole.servo
+              : PinRole.motor,
+          ownerFieldPath: axisPath(false, index, 'pin'),
+          ownerLabel: axisLabel(false, index),
+        ),
     if (config.frictionMode == FrictionMode.brushlessEsc)
       for (final pin in frictionPins)
         PinAssignment(
@@ -939,21 +1051,23 @@ abstract final class InfantryPinPlanner {
     String fieldPath, {
     DriveType? driveType,
   }) {
-    final selectedDrive =
-        driveType ??
-        (fieldPath == 'gimbal.yaw.pin' ? config.yawDrive : config.pitchDrive);
+    final axis = parseAxisPath(fieldPath);
+    if (axis != null) {
+      final selectedDrive = driveType ?? _actuatorAt(config, axis)?.drive;
+      return List.unmodifiable(
+        selectedDrive == null
+            ? const <String>[]
+            : selectedDrive == DriveType.servo
+            ? servoPins
+            : motorPins,
+      );
+    }
     final candidates = switch (fieldPath) {
       'chassis.left_front.pin' ||
       'chassis.left_rear.pin' ||
       'chassis.right_front.pin' ||
       'chassis.right_rear.pin' => chassisPins,
       'mechanism.feeder_pin' => motorPins,
-      'gimbal.yaw.pin' || 'gimbal.pitch.pin' =>
-        selectedDrive == null
-            ? const <String>[]
-            : selectedDrive == DriveType.servo
-            ? servoPins
-            : motorPins,
       _ => const <String>[],
     };
     return List.unmodifiable(candidates);
@@ -1192,6 +1306,8 @@ abstract final class InfantryPinPlanner {
     String? pin,
   ) {
     final value = _canonicalPin(config, fieldPath, pin);
+    final axis = parseAxisPath(fieldPath);
+    if (axis != null) return _setActuatorPin(config, axis, value);
     return switch (fieldPath) {
       'chassis.left_front.pin' => config.copyWith(
         chassis: config.chassis.copyWith(
@@ -1214,10 +1330,23 @@ abstract final class InfantryPinPlanner {
         ),
       ),
       'mechanism.feeder_pin' => config.copyWith(feederPin: value),
-      'gimbal.yaw.pin' => config.copyWith(yawPin: value),
-      'gimbal.pitch.pin' => config.copyWith(pitchPin: value),
       _ => throw ArgumentError.value(fieldPath, 'fieldPath', '未知引脚字段'),
     };
+  }
+
+  static InfantryConfig _setActuatorPin(
+    InfantryConfig config,
+    ({bool yaw, int index, String field}) axis,
+    String? pin,
+  ) {
+    final actuators = [...config.actuators(axis.yaw)];
+    if (axis.index >= actuators.length) {
+      throw ArgumentError.value(axis.index, 'fieldPath', '执行器不存在');
+    }
+    actuators[axis.index] = actuators[axis.index].copyWith(pin: pin);
+    return axis.yaw
+        ? config.copyWith(yawActuators: actuators)
+        : config.copyWith(pitchActuators: actuators);
   }
 
   static bool _pinHasConflict(InfantryConfig config, String pin) {
@@ -1474,7 +1603,7 @@ class ProjectDocument {
     required this.config,
     required this.guideProgress,
   });
-  static const formatVersion = 14;
+  static const formatVersion = 16;
   final String name;
   final ProjectKind kind;
   final DateTime createdAt, updatedAt;
