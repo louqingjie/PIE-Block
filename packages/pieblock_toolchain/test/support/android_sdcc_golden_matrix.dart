@@ -107,8 +107,9 @@ InfantryConfig _infantryServoBlockingFriction() => InfantryConfig(
   frictionKey: 'A',
   frictionUpKey: 'B',
   frictionDownKey: 'C',
-  frictionMaxDuty: 800,
-  frictionStep: 100,
+  frictionP64MaxDuty: 800,
+  frictionP66MaxDuty: 700,
+  frictionLevelStep: 10,
 );
 
 InfantryConfig _infantryMotorVisualNoFriction() => InfantryConfig(
@@ -169,8 +170,9 @@ InfantryConfig _infantrySharedChassisSprint() => InfantryConfig(
   frictionKey: 'A',
   frictionUpKey: 'B',
   frictionDownKey: 'C',
-  frictionMaxDuty: 700,
-  frictionStep: 50,
+  frictionP64MaxDuty: 700,
+  frictionP66MaxDuty: 800,
+  frictionLevelStep: 5,
   zeroEnabled: true,
 );
 

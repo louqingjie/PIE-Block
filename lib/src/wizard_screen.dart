@@ -36,6 +36,7 @@ bool get _isAndroid =>
 bool get _isWindows =>
     !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
 bool get _isLinux => !kIsWeb && defaultTargetPlatform == TargetPlatform.linux;
+
 /// 支持 USB-HID 烧录的桌面平台（Android 走 OTG，Linux 需 udev 规则授权）。
 bool get _supportsFlashing => _isWindows || _isAndroid || _isLinux;
 
@@ -219,8 +220,11 @@ String _fieldLabel(String path) {
     'controls.friction_key': '摩擦轮开关键',
     'controls.friction_up_key': '摩擦轮增速键',
     'controls.friction_down_key': '摩擦轮减速键',
-    'controls.friction_max_duty': '最大占空比',
-    'controls.friction_step': '调速步长',
+    'controls.friction_p64_max_duty': 'P64 最大占空比',
+    'controls.friction_p66_max_duty': 'P66 最大占空比',
+    'controls.friction_level_step': '油门步长',
+    'tests.friction_p64_max_duty': 'P64 最大占空比',
+    'tests.friction_p66_max_duty': 'P66 最大占空比',
     'pwm.pwma': 'PWMA 频率',
     'pwm.pwmb': 'PWMB 频率',
     'modes.count': '模式数量',
@@ -350,6 +354,74 @@ class _InfoBanner extends StatelessWidget {
       ],
     ),
   );
+}
+
+/// 复核页里单个调试项的一句话摘要。摩擦轮额外换算出实际占空比，
+/// 方便核对「多少油门对应多少 duty」。
+String _debugDriveSummary(DebugConfig config, DebugTestItem item) =>
+    switch (item.driveType) {
+      DebugDriveType.motor => '电机 ${item.value ?? '未填写'}',
+      DebugDriveType.servo => '舵机 ${item.value ?? '未填写'}°',
+      DebugDriveType.friction => switch ((
+        item.value,
+        config.frictionMaxDutyOf(item.pin),
+      )) {
+        (final level?, final maxDuty?) =>
+          '摩擦轮油门 $level% → ${Friction.dutyOfLevel(level, maxDuty)}',
+        _ => '摩擦轮油门 ${item.value ?? '未填写'}%',
+      },
+      null => '未选择驱动',
+    };
+
+class _FrictionLevelPreview extends StatelessWidget {
+  const _FrictionLevelPreview({
+    required this.p64MaxDuty,
+    required this.p66MaxDuty,
+  });
+
+  final int p64MaxDuty, p66MaxDuty;
+
+  static const _levels = [0, 25, 50, 75, 100];
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: .45),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '油门换算速查',
+            style: theme.textTheme.labelLarge?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final level in _levels)
+                Chip(
+                  visualDensity: VisualDensity.compact,
+                  label: Text(
+                    '$level% → P64 '
+                    '${Friction.dutyOfLevel(level, p64MaxDuty)} / P66 '
+                    '${Friction.dutyOfLevel(level, p66MaxDuty)}',
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _PinOption extends StatelessWidget {
@@ -2210,36 +2282,60 @@ class _InfantryControlsPage extends ConsumerWidget {
                 const SizedBox(height: 14),
                 _FormRow(
                   fieldPaths: const [
-                    'controls.friction_max_duty',
-                    'controls.friction_step',
+                    'controls.friction_p64_max_duty',
+                    'controls.friction_p66_max_duty',
+                    'controls.friction_level_step',
                   ],
                   children: [
-                    Expanded(
-                      child: _NumberField(
-                        label: '最大占空比',
-                        fieldPath: 'controls.friction_max_duty',
-                        suffix: 'duty',
-                        value: c.frictionMaxDuty,
-                        onChanged: (v) =>
-                            update(c.copyWith(frictionMaxDuty: v)),
+                    for (final pin in const ['P64', 'P66']) ...[
+                      if (pin != 'P64') const SizedBox(width: 12),
+                      Expanded(
+                        child: _NumberField(
+                          label: '$pin 最大占空比',
+                          fieldPath:
+                              'controls.friction_${pin.toLowerCase()}_max_duty',
+                          suffix: 'duty',
+                          value: pin == 'P64'
+                              ? c.frictionP64MaxDuty
+                              : c.frictionP66MaxDuty,
+                          onChanged: (v) => update(
+                            pin == 'P64'
+                                ? c.copyWith(frictionP64MaxDuty: v)
+                                : c.copyWith(frictionP66MaxDuty: v),
+                          ),
+                        ),
                       ),
-                    ),
+                    ],
                     const SizedBox(width: 12),
                     Expanded(
                       child: _NumberField(
-                        label: '每次调速步长',
-                        fieldPath: 'controls.friction_step',
-                        suffix: 'duty',
-                        value: c.frictionStep,
-                        onChanged: (v) => update(c.copyWith(frictionStep: v)),
+                        label: '每次油门步长',
+                        fieldPath: 'controls.friction_level_step',
+                        suffix: '%',
+                        value: c.frictionLevelStep,
+                        onChanged: (v) =>
+                            update(c.copyWith(frictionLevelStep: v)),
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 10),
-                const _InfoBanner(
-                  '无刷电调固定占用 P64/P66；500 duty 起步，最大占空比须为 500–800 的整百值，输出逐周期 ±1 平滑变化。',
+                _InfoBanner(
+                  '无刷电调固定占用 P64/P66，两个引脚各自一个满油上限（须为 '
+                  '${Friction.minMaxDuty}–${Friction.maxMaxDuty} 的整百值）。'
+                  '油门 0~${Friction.levelMax}% 按 '
+                  'duty = ${Friction.startDuty} + 油门 ÷ ${Friction.levelMax} × (该侧上限 − ${Friction.startDuty}) '
+                  '换算成两侧各自的占空比，'
+                  '${Friction.startDuty} duty 是电调启动信号固定不变，输出逐周期 ±1 平滑变化。',
                 ),
+                if (c.frictionP64MaxDuty != null &&
+                    c.frictionP66MaxDuty != null) ...[
+                  const SizedBox(height: 10),
+                  _FrictionLevelPreview(
+                    p64MaxDuty: c.frictionP64MaxDuty!,
+                    p66MaxDuty: c.frictionP66MaxDuty!,
+                  ),
+                ],
               ],
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
@@ -2705,13 +2801,63 @@ class _DebugTestsPage extends ConsumerWidget {
       controller.updateConfig(config.copyWith(tests: tests));
     }
 
+    final frictionPinsUsed = {
+      for (final item in config.tests)
+        if (item.driveType == DebugDriveType.friction) item.pin,
+    };
+
     return _PageFrame(
       title: '调试测试序列',
       subtitle: '启用需要测试的引脚并拖动排序。固件会按此顺序逐项执行，完成后保持停机。',
       stepId: 'tests',
       child: Column(
         children: [
-          const _InfoBanner('机械装车前请先完成舵机归中。摩擦轮采用 500 至目标值的固定安全渐变，每档 1.5 秒。'),
+          _InfoBanner(
+            '机械装车前请先完成舵机归中。摩擦轮曲线按 ${Friction.levelMax}% 油门'
+            '每 20% 一档从 ${Friction.startDuty} 爬到目标油门再回落，每档 1.5 秒；'
+            '每一档用该引脚自己的满油上限换算成占空比。',
+          ),
+          if (frictionPinsUsed.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            _FormRow(
+              fieldPaths: [
+                for (final pin in Friction.pins)
+                  'tests.friction_${pin.toLowerCase()}_max_duty',
+              ],
+              children: [
+                for (final pin in Friction.pins) ...[
+                  if (pin != Friction.pins.first) const SizedBox(width: 12),
+                  Expanded(
+                    child: _NumberField(
+                      label: '$pin 最大占空比',
+                      fieldPath: 'tests.friction_${pin.toLowerCase()}_max_duty',
+                      suffix: 'duty',
+                      value: config.frictionMaxDutyOf(pin),
+                      onChanged: (v) => controller.updateConfig(
+                        pin == 'P64'
+                            ? config.copyWith(frictionP64MaxDuty: v)
+                            : config.copyWith(frictionP66MaxDuty: v),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            const SizedBox(height: 10),
+            _InfoBanner(
+              '至少有一项摩擦轮测试，所以两个引脚的满油上限都需要填写'
+              '（${Friction.minMaxDuty}–${Friction.maxMaxDuty} 的整百值）。'
+              '这与步兵项目里的同名配置含义一致，方便按同一台车的实测数据标定。',
+            ),
+            if (config.frictionP64MaxDuty != null &&
+                config.frictionP66MaxDuty != null) ...[
+              const SizedBox(height: 10),
+              _FrictionLevelPreview(
+                p64MaxDuty: config.frictionP64MaxDuty!,
+                p66MaxDuty: config.frictionP66MaxDuty!,
+              ),
+            ],
+          ],
           const SizedBox(height: 18),
           _FieldAnchor(
             path: 'tests',
@@ -2745,7 +2891,7 @@ class _DebugTestsPage extends ConsumerWidget {
                 };
                 final valueLabel = switch (item.driveType) {
                   DebugDriveType.servo => '角度',
-                  DebugDriveType.friction => '目标值',
+                  DebugDriveType.friction => '油门',
                   _ => '速度',
                 };
                 return Card(
@@ -2851,6 +2997,10 @@ class _DebugTestsPage extends ConsumerWidget {
                               Expanded(
                                 child: _NumberField(
                                   label: valueLabel,
+                                  suffix:
+                                      item.driveType == DebugDriveType.friction
+                                      ? '%'
+                                      : null,
                                   value: item.value,
                                   fieldPath: '$base.value',
                                   onChanged: (value) => replace(
@@ -3050,12 +3200,7 @@ class _ReviewPage extends ConsumerWidget {
                       child: Text('${entry.$1 + 1}'),
                     ),
                     title: Text(
-                      '${entry.$2.pin} · ${switch (entry.$2.driveType) {
-                        DebugDriveType.motor => '电机 ${entry.$2.value ?? '未填写'}',
-                        DebugDriveType.servo => '舵机 ${entry.$2.value ?? '未填写'}°',
-                        DebugDriveType.friction => '摩擦轮至 ${entry.$2.value ?? '未填写'}',
-                        null => '未选择驱动',
-                      }}',
+                      '${entry.$2.pin} · ${_debugDriveSummary(config, entry.$2)}',
                     ),
                   ),
               ],

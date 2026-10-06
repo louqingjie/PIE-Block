@@ -247,8 +247,9 @@ ProjectDocument _infantryDocument() {
       frictionKey: 'A',
       frictionUpKey: 'B',
       frictionDownKey: 'C',
-      frictionMaxDuty: 800,
-      frictionStep: 100,
+      frictionP64MaxDuty: 800,
+      frictionP66MaxDuty: 700,
+      frictionLevelStep: 10,
     ),
   );
 }
@@ -345,11 +346,22 @@ ProjectDocument _debugDocument() {
           enabled: true,
           driveType: DebugDriveType.friction,
           direction: Direction.forward,
-          value: 750,
+          value: 100,
         ),
-        for (final pin in debugPins.where((pin) => pin != 'P64'))
+        const DebugTestItem(
+          pin: 'P66',
+          enabled: true,
+          driveType: DebugDriveType.friction,
+          direction: Direction.forward,
+          value: 50,
+        ),
+        for (final pin in debugPins.where(
+          (pin) => pin != 'P64' && pin != 'P66',
+        ))
           DebugTestItem(pin: pin),
       ],
+      frictionP64MaxDuty: 800,
+      frictionP66MaxDuty: 700,
     ),
   );
 }
@@ -599,8 +611,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('调试测试序列'), findsOneWidget);
     expect(find.byIcon(Icons.drag_indicator), findsNWidgets(10));
-    expect(find.text('目标值'), findsOneWidget);
+    // 两个引脚各自一个满油上限，油门值按各自上限换算成占空比
+    expect(find.text('油门'), findsNWidgets(2));
+    expect(find.text('P64 最大占空比'), findsOneWidget);
+    expect(find.text('P66 最大占空比'), findsOneWidget);
     expect(find.text('测试时长'), findsNothing);
+    expect(find.text('50% → P64 650 / P66 600'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -1513,8 +1529,10 @@ void main() {
     expect(find.text('LX'), findsNothing);
     expect(find.text('LY'), findsNothing);
 
-    final maxDutyTop = tester.getTopLeft(find.text('最大占空比')).dy;
-    final stepTop = tester.getTopLeft(find.text('每次调速步长')).dy;
+    final maxDutyTop = tester.getTopLeft(find.text('P64 最大占空比')).dy;
+    final p66MaxDutyTop = tester.getTopLeft(find.text('P66 最大占空比')).dy;
+    final stepTop = tester.getTopLeft(find.text('每次油门步长')).dy;
+    expect((maxDutyTop - p66MaxDutyTop).abs(), lessThan(1));
     expect((maxDutyTop - stepTop).abs(), lessThan(1));
   });
 
@@ -1575,7 +1593,8 @@ void main() {
     final config = _currentInfantry(tester);
     expect(config.feederPin, 'P64');
     expect(config.frictionMode, FrictionMode.disabled);
-    expect(config.frictionMaxDuty, 800);
+    expect(config.frictionP64MaxDuty, 800);
+    expect(config.frictionP66MaxDuty, 700);
     await tester.pump(const Duration(milliseconds: 600));
   });
 
@@ -1614,9 +1633,8 @@ void main() {
     expect(config.pitchActuators.last.pin, 'P62');
     expect(config.pitchActuators.first.pin, 'MP03');
     expect(
-      ProjectValidator.validate(
-        config,
-      ).where((i) => i.fieldPath == 'gimbal.pitch.1.pin'),
+      ProjectValidator.validate(config)
+          .where((i) => i.fieldPath == 'gimbal.pitch.1.pin'),
       isEmpty,
     );
     await tester.pump(const Duration(milliseconds: 600));
@@ -1646,9 +1664,8 @@ void main() {
     expect(config.pitchActuators, isEmpty);
     expect(config.yawActuators, hasLength(1));
     expect(
-      ProjectValidator.validate(
-        config,
-      ).where((i) => i.fieldPath.startsWith('gimbal.pitch')),
+      ProjectValidator.validate(config)
+          .where((i) => i.fieldPath.startsWith('gimbal.pitch')),
       isEmpty,
     );
     await tester.pump(const Duration(milliseconds: 600));
@@ -1877,7 +1894,9 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('单发时长'), findsOneWidget);
-    expect(find.text('最大占空比'), findsOneWidget);
+    expect(find.text('P64 最大占空比'), findsOneWidget);
+    expect(find.text('P66 最大占空比'), findsOneWidget);
+    expect(find.text('每次油门步长'), findsOneWidget);
 
     await tester.tap(find.text('阻塞开环单发'));
     await tester.pumpAndSettle();
@@ -1890,8 +1909,9 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('不使用').last);
     await tester.pumpAndSettle();
-    expect(find.text('最大占空比'), findsNothing);
-    expect(find.text('每次调速步长'), findsNothing);
+    expect(find.text('P64 最大占空比'), findsNothing);
+    expect(find.text('P66 最大占空比'), findsNothing);
+    expect(find.text('每次油门步长'), findsNothing);
   });
 
   testWidgets('IDE 代码预览支持 C 高亮、行号和跨行选择', (tester) async {
