@@ -5,13 +5,18 @@
  *       只验证 UART1 -> 机械拓展板 -> P64/P66 -> 摩擦轮这条硬件链路。
  *
  * 上电后的自动测试顺序（每阶段开始前停 3 秒）：
- *   1. P35 LED 亮：只测试 P64 右摩擦轮
- *   2. P36 LED 亮：只测试 P66 左摩擦轮
+ *   1. P35 LED 亮：只测试 P64 摩擦轮
+ *   2. P36 LED 亮：只测试 P66 摩擦轮
  *   3. P37 LED 亮：P64/P66 两个摩擦轮同时测试
  *   4. P35/P36/P37 全亮：测试结束，所有动力输出保持为 0
  *
  * 每个阶段均按 500 -> 600 -> 700 -> 800 安全升速，再逐级降到 0。
  * 最高占空比 800，低于指南上限 1100。请勿在测试过程中直接切断执行器电源。
+ *
+ * 两个摩擦轮一律按引脚称呼，不区分左右：机械装车方向可变，
+ * 「哪一侧装哪只轮子」无法从代码里判断，把引脚当唯一真相源才不会标错。
+ * 由此测出的两个满油占空比分别填回步兵/调试项目里的
+ * P64 与 P66 摩擦轮上限配置。
  */
 
 #include "main.h"
@@ -26,8 +31,9 @@
 #define Dir_Change_Order 0xDD
 
 #define DIAG_LED_PORT GPIO_P3
-#define DIAG_LED_LEFT GPIO_Pin_5
-#define DIAG_LED_RIGHT GPIO_Pin_6
+/* 三个阶段指示灯，同样按引脚/阶段命名，不按左右命名。 */
+#define DIAG_LED_P64 GPIO_Pin_5
+#define DIAG_LED_P66 GPIO_Pin_6
 #define DIAG_LED_BOTH GPIO_Pin_7
 
 #define RAMP_STEP_DELAY_MS 1500
@@ -86,16 +92,16 @@ static void ExpansionBoradControl(uint8_t control_cmd,
 
 static void ShowPhase(uint8_t phase)
 {
-    GPIO_Write_Bit(DIAG_LED_PORT, DIAG_LED_LEFT, phase == 1 || phase == 4 ? 0 : 1);
-    GPIO_Write_Bit(DIAG_LED_PORT, DIAG_LED_RIGHT, phase == 2 || phase == 4 ? 0 : 1);
+    GPIO_Write_Bit(DIAG_LED_PORT, DIAG_LED_P64, phase == 1 || phase == 4 ? 0 : 1);
+    GPIO_Write_Bit(DIAG_LED_PORT, DIAG_LED_P66, phase == 2 || phase == 4 ? 0 : 1);
     GPIO_Write_Bit(DIAG_LED_PORT, DIAG_LED_BOTH, phase == 3 || phase == 4 ? 0 : 1);
 }
 
-static void SetFrictionDuty(uint16_t left_duty, uint16_t right_duty)
+static void SetFrictionDuty(uint16_t p64_duty, uint16_t p66_duty)
 {
     /* 与官方可运行示例保持相同顺序：先占空比帧，再方向帧。 */
     ExpansionBoradControl(Duty_Change_Order,
-                          0, 0, left_duty, right_duty,
+                          0, 0, p64_duty, p66_duty,
                           0, 0, 0, 0);
     ExpansionBoradControl(Dir_Change_Order,
                           1, 1, 0, 0,
@@ -142,7 +148,7 @@ void main(void)
     Board_Init();
 
     GPIO_Init(DIAG_LED_PORT,
-              (GPIO_Pin_enum)(DIAG_LED_LEFT | DIAG_LED_RIGHT | DIAG_LED_BOTH),
+              (GPIO_Pin_enum)(DIAG_LED_P64 | DIAG_LED_P66 | DIAG_LED_BOTH),
               GPIO_OUT_PP);
     ShowPhase(0);
 
