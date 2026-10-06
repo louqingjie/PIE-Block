@@ -423,7 +423,7 @@ class HomeScreen extends ConsumerWidget {
                               _ActionCard(
                                 icon: Icons.add_circle_outline,
                                 title: '新建机器人项目',
-                                subtitle: '从步兵、工程、调试或音乐模板开始分步配置',
+                                subtitle: '从步兵、工程、调试或音乐类型开始分步配置',
                                 button: '新建项目',
                                 accent: _brandCyan,
                                 foreground: const Color(0xff00363d),
@@ -432,7 +432,9 @@ class HomeScreen extends ConsumerWidget {
                               _ActionCard(
                                 icon: Icons.folder_open,
                                 title: '打开已有项目',
-                                subtitle: '仅支持新版格式 14 的 .pieproj',
+                                // 版本号取自代码而不是写死，避免每次升格式都漏改文案。
+                                subtitle:
+                                    '仅支持当前格式 ${ProjectDocument.formatVersion} 的 .pieproj',
                                 button: '打开项目',
                                 accent: _brandCoral,
                                 foreground: const Color(0xff3d0b08),
