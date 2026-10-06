@@ -640,7 +640,6 @@ void main() {
     expect(find.text('P64 最大占空比'), findsOneWidget);
     expect(find.text('P66 最大占空比'), findsOneWidget);
     expect(find.text('测试时长'), findsNothing);
-    expect(find.text('50% → P64 650 / P66 600'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

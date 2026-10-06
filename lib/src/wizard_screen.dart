@@ -373,57 +373,6 @@ String _debugDriveSummary(DebugConfig config, DebugTestItem item) =>
       null => '未选择驱动',
     };
 
-class _FrictionLevelPreview extends StatelessWidget {
-  const _FrictionLevelPreview({
-    required this.p64MaxDuty,
-    required this.p66MaxDuty,
-  });
-
-  final int p64MaxDuty, p66MaxDuty;
-
-  static const _levels = [0, 25, 50, 75, 100];
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: .45),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '油门换算速查',
-            style: theme.textTheme.labelLarge?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final level in _levels)
-                Chip(
-                  visualDensity: VisualDensity.compact,
-                  label: Text(
-                    '$level% → P64 '
-                    '${Friction.dutyOfLevel(level, p64MaxDuty)} / P66 '
-                    '${Friction.dutyOfLevel(level, p66MaxDuty)}',
-                  ),
-                ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _PinOption extends StatelessWidget {
   const _PinOption(this.pin, {this.owner, this.enabled = true});
   final String pin;
@@ -2328,14 +2277,6 @@ class _InfantryControlsPage extends ConsumerWidget {
                   '换算成两侧各自的占空比，'
                   '${Friction.startDuty} duty 是电调启动信号固定不变，输出逐周期 ±1 平滑变化。',
                 ),
-                if (c.frictionP64MaxDuty != null &&
-                    c.frictionP66MaxDuty != null) ...[
-                  const SizedBox(height: 10),
-                  _FrictionLevelPreview(
-                    p64MaxDuty: c.frictionP64MaxDuty!,
-                    p66MaxDuty: c.frictionP66MaxDuty!,
-                  ),
-                ],
               ],
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
@@ -2849,14 +2790,6 @@ class _DebugTestsPage extends ConsumerWidget {
               '（${Friction.minMaxDuty}–${Friction.maxMaxDuty} 的整百值）。'
               '这与步兵项目里的同名配置含义一致，方便按同一台车的实测数据标定。',
             ),
-            if (config.frictionP64MaxDuty != null &&
-                config.frictionP66MaxDuty != null) ...[
-              const SizedBox(height: 10),
-              _FrictionLevelPreview(
-                p64MaxDuty: config.frictionP64MaxDuty!,
-                p66MaxDuty: config.frictionP66MaxDuty!,
-              ),
-            ],
           ],
           const SizedBox(height: 18),
           _FieldAnchor(
