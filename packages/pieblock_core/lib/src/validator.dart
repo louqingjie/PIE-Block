@@ -218,10 +218,10 @@ abstract final class ProjectValidator {
         case DebugDriveType.friction:
           _range(
             item.value,
-            500,
-            800,
+            0,
+            Friction.levelMax,
             '$base.value',
-            '${item.pin} 摩擦轮目标值',
+            '${item.pin} 摩擦轮油门',
             'tests',
             issue,
           );
@@ -231,6 +231,35 @@ abstract final class ProjectValidator {
     }
     if (seen.length != debugPins.length || !seen.containsAll(debugPins)) {
       issue(IssueSeverity.error, 'tests', '调试序列必须包含全部十个固定引脚', 'tests');
+    }
+    final frictionPinsUsed = {
+      for (final item in config.tests)
+        if (item.driveType == DebugDriveType.friction) item.pin,
+    };
+    for (final maxDuty in [
+      (pin: 'P64', value: config.frictionP64MaxDuty),
+      (pin: 'P66', value: config.frictionP66MaxDuty),
+    ]) {
+      final path = 'tests.friction_${maxDuty.pin.toLowerCase()}_max_duty';
+      final label = '${maxDuty.pin} 摩擦轮最大占空比';
+      _range(
+        maxDuty.value,
+        Friction.minMaxDuty,
+        Friction.maxMaxDuty,
+        path,
+        label,
+        'tests',
+        issue,
+        required: frictionPinsUsed.contains(maxDuty.pin),
+      );
+      if (maxDuty.value != null && maxDuty.value! % 100 != 0) {
+        issue(
+          IssueSeverity.error,
+          path,
+          '$label必须是 ${Friction.minMaxDuty}–${Friction.maxMaxDuty} 内的整百值',
+          'tests',
+        );
+      }
     }
   }
 
@@ -608,30 +637,42 @@ abstract final class ProjectValidator {
         _choice(entry.key, entry.path, entry.label, 'controls', issue);
         _digital(entry.key, entry.path, entry.label, issue);
       }
-      _range(
-        config.frictionMaxDuty,
-        500,
-        800,
-        'controls.friction_max_duty',
-        '摩擦轮最大占空比',
-        'controls',
-        issue,
-      );
-      if (config.frictionMaxDuty != null &&
-          config.frictionMaxDuty! % 100 != 0) {
-        issue(
-          IssueSeverity.error,
-          'controls.friction_max_duty',
-          '摩擦轮最大占空比必须是 500–800 内的整百值',
+      for (final maxDuty in [
+        (
+          path: 'controls.friction_p64_max_duty',
+          label: 'P64 摩擦轮最大占空比',
+          value: config.frictionP64MaxDuty,
+        ),
+        (
+          path: 'controls.friction_p66_max_duty',
+          label: 'P66 摩擦轮最大占空比',
+          value: config.frictionP66MaxDuty,
+        ),
+      ]) {
+        _range(
+          maxDuty.value,
+          Friction.minMaxDuty,
+          Friction.maxMaxDuty,
+          maxDuty.path,
+          maxDuty.label,
           'controls',
+          issue,
         );
+        if (maxDuty.value != null && maxDuty.value! % 100 != 0) {
+          issue(
+            IssueSeverity.error,
+            maxDuty.path,
+            '${maxDuty.label}必须是 ${Friction.minMaxDuty}–${Friction.maxMaxDuty} 内的整百值',
+            'controls',
+          );
+        }
       }
       _range(
-        config.frictionStep,
+        config.frictionLevelStep,
         1,
-        800,
-        'controls.friction_step',
-        '摩擦轮调速步长',
+        Friction.levelMax,
+        'controls.friction_level_step',
+        '摩擦轮油门步长',
         'controls',
         issue,
       );
@@ -714,13 +755,7 @@ abstract final class ProjectValidator {
       final label = actuators.length == 1 ? name : '$name 执行器 ${index + 1}';
       String path(String field) =>
           InfantryPinPlanner.axisPath(yaw, index, field);
-      _choice(
-        actuator.drive,
-        path('drive'),
-        '$label 驱动类型',
-        'mechanism',
-        issue,
-      );
+      _choice(actuator.drive, path('drive'), '$label 驱动类型', 'mechanism', issue);
       _choice(actuator.pin, path('pin'), '$label IO', 'mechanism', issue);
       _choice(
         actuator.direction,
@@ -746,7 +781,12 @@ abstract final class ProjectValidator {
             ? InfantryPinPlanner.servoPins
             : InfantryPinPlanner.motorPins;
         if (!valid.contains(pin)) {
-          issue(IssueSeverity.error, path('pin'), '$label 不能使用 $pin', 'mechanism');
+          issue(
+            IssueSeverity.error,
+            path('pin'),
+            '$label 不能使用 $pin',
+            'mechanism',
+          );
         }
         if (actuator.drive == DriveType.motor && mainServoPins.contains(pin)) {
           issue(
@@ -1089,11 +1129,7 @@ abstract final class ProjectValidator {
         : isAxis
         ? const [ControlMode.incremental, ControlMode.direct]
         : isButton
-        ? const [
-            ControlMode.direct,
-            ControlMode.single,
-            ControlMode.continuous,
-          ]
+        ? const [ControlMode.direct, ControlMode.single, ControlMode.continuous]
         : const <ControlMode>[];
     if (action.mode != null && !allowed.contains(action.mode)) {
       issue(

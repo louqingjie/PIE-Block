@@ -30,6 +30,32 @@ enum ValidationIssueKind { required, invalid }
 const expansionPins = ['P60', 'P62', 'P64', 'P66', 'P74', 'P75', 'P76', 'P77'];
 const mainServoPins = ['MP03', 'MP74'];
 
+/// 摩擦轮控制参数与映射律。
+///
+/// 摩擦轮按**油门比例**控制：油门是唯一的控制量，P64/P66 各自的满油占空比
+/// 不同（补偿两侧机械差异），实际输出由
+/// `duty = frictionStartDuty + level/100 * (maxDuty - frictionStartDuty)`
+/// 线性映射得到。`frictionStartDuty` 是电调启动信号，固定不可调。
+abstract final class Friction {
+  /// 电调启动占空比，同时也是比例映射的下界。
+  static const startDuty = 500;
+
+  /// 油门的量程上限（百分比）。
+  static const levelMax = 100;
+
+  static const minMaxDuty = 500;
+  static const maxMaxDuty = 800;
+
+  /// 摩擦轮允许占用的引脚。
+  static const pins = EngineerPinCapabilities.frictionPins;
+
+  /// 把 [level] 百分比油门按 [maxDuty] 映射为占空比。
+  static int dutyOfLevel(int level, int maxDuty) {
+    final span = maxDuty - startDuty;
+    return startDuty + (level.clamp(0, levelMax) * span) ~/ levelMax;
+  }
+}
+
 /// Hardware capabilities for engineer-project output pins.
 abstract final class EngineerPinCapabilities {
   static const motorPins = ['P60', 'P62', 'P74', 'P75', 'P76', 'P77'];
@@ -331,18 +357,45 @@ class DebugTestItem {
 }
 
 class DebugConfig extends ProjectConfig {
-  DebugConfig({List<DebugTestItem>? tests})
-    : tests = List.unmodifiable(
-        tests ?? [for (final pin in debugPins) DebugTestItem(pin: pin)],
-      );
+  DebugConfig({
+    List<DebugTestItem>? tests,
+    this.frictionP64MaxDuty,
+    this.frictionP66MaxDuty,
+  }) : tests = List.unmodifiable(
+         tests ?? [for (final pin in debugPins) DebugTestItem(pin: pin)],
+       );
   final List<DebugTestItem> tests;
+
+  /// 摩擦轮在 P64/P66 上的满油占空比，调试曲线的比例值按各自上限换算。
+  final int? frictionP64MaxDuty, frictionP66MaxDuty;
+
+  /// 返回 [pin] 的摩擦轮满油占空比，[pin] 不是摩擦轮引脚时返回 null。
+  int? frictionMaxDutyOf(String pin) => switch (pin) {
+    'P64' => frictionP64MaxDuty,
+    'P66' => frictionP66MaxDuty,
+    _ => null,
+  };
+
   @override
   ProjectKind get kind => ProjectKind.debug;
-  DebugConfig copyWith({List<DebugTestItem>? tests}) =>
-      DebugConfig(tests: tests ?? this.tests);
+  DebugConfig copyWith({
+    List<DebugTestItem>? tests,
+    Object? frictionP64MaxDuty = _unset,
+    Object? frictionP66MaxDuty = _unset,
+  }) => DebugConfig(
+    tests: tests ?? this.tests,
+    frictionP64MaxDuty: identical(frictionP64MaxDuty, _unset)
+        ? this.frictionP64MaxDuty
+        : frictionP64MaxDuty as int?,
+    frictionP66MaxDuty: identical(frictionP66MaxDuty, _unset)
+        ? this.frictionP66MaxDuty
+        : frictionP66MaxDuty as int?,
+  );
   @override
   Map<String, Object?> toJson() => {
     'tests': tests.map((item) => item.toJson()).toList(),
+    'friction_p64_max_duty': frictionP64MaxDuty,
+    'friction_p66_max_duty': frictionP66MaxDuty,
   };
   factory DebugConfig.fromJson(Map<String, Object?> json) {
     final tests = <DebugTestItem>[], seen = <String>{};
@@ -354,7 +407,11 @@ class DebugConfig extends ProjectConfig {
     for (final pin in debugPins) {
       if (seen.add(pin)) tests.add(DebugTestItem(pin: pin));
     }
-    return DebugConfig(tests: tests);
+    return DebugConfig(
+      tests: tests,
+      frictionP64MaxDuty: (json['friction_p64_max_duty'] as num?)?.toInt(),
+      frictionP66MaxDuty: (json['friction_p66_max_duty'] as num?)?.toInt(),
+    );
   }
 }
 
@@ -589,8 +646,9 @@ class InfantryConfig extends RobotConfig {
     this.frictionKey,
     this.frictionUpKey,
     this.frictionDownKey,
-    this.frictionMaxDuty,
-    this.frictionStep,
+    this.frictionP64MaxDuty,
+    this.frictionP66MaxDuty,
+    this.frictionLevelStep,
     this.zeroEnabled = false,
     this.buzzerDisabled = false,
   }) : yawActuators = List.unmodifiable(yawActuators),
@@ -611,8 +669,9 @@ class InfantryConfig extends RobotConfig {
   final List<AxisActuator> yawActuators, pitchActuators;
   final int? triggerSpeed,
       triggerTimeMs,
-      frictionMaxDuty,
-      frictionStep;
+      frictionP64MaxDuty,
+      frictionP66MaxDuty,
+      frictionLevelStep;
   final bool zeroEnabled, buzzerDisabled;
 
   /// [yaw] 为 true 时返回 Yaw 轴的执行器，否则返回 Pitch 轴的执行器。
@@ -634,8 +693,9 @@ class InfantryConfig extends RobotConfig {
     Object? frictionKey = _unset,
     Object? frictionUpKey = _unset,
     Object? frictionDownKey = _unset,
-    Object? frictionMaxDuty = _unset,
-    Object? frictionStep = _unset,
+    Object? frictionP64MaxDuty = _unset,
+    Object? frictionP66MaxDuty = _unset,
+    Object? frictionLevelStep = _unset,
     bool? zeroEnabled,
     bool? buzzerDisabled,
   }) => InfantryConfig(
@@ -683,12 +743,15 @@ class InfantryConfig extends RobotConfig {
     frictionDownKey: identical(frictionDownKey, _unset)
         ? this.frictionDownKey
         : frictionDownKey as String?,
-    frictionMaxDuty: identical(frictionMaxDuty, _unset)
-        ? this.frictionMaxDuty
-        : frictionMaxDuty as int?,
-    frictionStep: identical(frictionStep, _unset)
-        ? this.frictionStep
-        : frictionStep as int?,
+    frictionP64MaxDuty: identical(frictionP64MaxDuty, _unset)
+        ? this.frictionP64MaxDuty
+        : frictionP64MaxDuty as int?,
+    frictionP66MaxDuty: identical(frictionP66MaxDuty, _unset)
+        ? this.frictionP66MaxDuty
+        : frictionP66MaxDuty as int?,
+    frictionLevelStep: identical(frictionLevelStep, _unset)
+        ? this.frictionLevelStep
+        : frictionLevelStep as int?,
     zeroEnabled: zeroEnabled ?? this.zeroEnabled,
     buzzerDisabled: buzzerDisabled ?? this.buzzerDisabled,
   );
@@ -710,8 +773,9 @@ class InfantryConfig extends RobotConfig {
     'friction_key': frictionKey,
     'friction_up_key': frictionUpKey,
     'friction_down_key': frictionDownKey,
-    'friction_max_duty': frictionMaxDuty,
-    'friction_step': frictionStep,
+    'friction_p64_max_duty': frictionP64MaxDuty,
+    'friction_p66_max_duty': frictionP66MaxDuty,
+    'friction_level_step': frictionLevelStep,
     'zero_enabled': zeroEnabled,
     'buzzer_disabled': buzzerDisabled,
   };
@@ -747,8 +811,9 @@ class InfantryConfig extends RobotConfig {
       frictionKey: j['friction_key']?.toString(),
       frictionUpKey: j['friction_up_key']?.toString(),
       frictionDownKey: j['friction_down_key']?.toString(),
-      frictionMaxDuty: (j['friction_max_duty'] as num?)?.toInt(),
-      frictionStep: (j['friction_step'] as num?)?.toInt(),
+      frictionP64MaxDuty: (j['friction_p64_max_duty'] as num?)?.toInt(),
+      frictionP66MaxDuty: (j['friction_p66_max_duty'] as num?)?.toInt(),
+      frictionLevelStep: (j['friction_level_step'] as num?)?.toInt(),
       zeroEnabled: j['zero_enabled'] as bool? ?? false,
       buzzerDisabled: j['buzzer_disabled'] as bool? ?? false,
     );
@@ -1530,7 +1595,7 @@ class ProjectDocument {
     required this.config,
     required this.guideProgress,
   });
-  static const formatVersion = 15;
+  static const formatVersion = 16;
   final String name;
   final ProjectKind kind;
   final DateTime createdAt, updatedAt;

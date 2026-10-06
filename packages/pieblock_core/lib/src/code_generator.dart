@@ -260,8 +260,9 @@ $turnReverse    dutyOfMotor[${_slot(c.leftFront.pin)}] = ${_dir(c.leftFront.dire
         .join(' ');
 
     String dutyValue(int index) {
-      if (frictionEnabled && (index == 2 || index == 3)) {
-        return 'frictionDuty';
+      if (frictionEnabled) {
+        if (index == _slot('P64')) return 'frictionDutyP64';
+        if (index == _slot('P66')) return 'frictionDutyP66';
       }
       for (final item in servoActuators) {
         if (_slot(actuatorAt(yaw: item.yaw, index: item.index)!.pin) == index) {
@@ -272,7 +273,9 @@ $turnReverse    dutyOfMotor[${_slot(c.leftFront.pin)}] = ${_dir(c.leftFront.dire
     }
 
     String directionValue(int index) {
-      if (frictionEnabled && (index == 2 || index == 3)) return '1';
+      if (frictionEnabled && (index == _slot('P64') || index == _slot('P66'))) {
+        return '1';
+      }
       for (final item in servoActuators) {
         if (_slot(actuatorAt(yaw: item.yaw, index: item.index)!.pin) == index) {
           return '1';
@@ -298,18 +301,45 @@ $turnReverse    dutyOfMotor[${_slot(c.leftFront.pin)}] = ${_dir(c.leftFront.dire
       );
     }
     final frictionDefines = frictionEnabled
-        ? '''#define FRICTION_START_DUTY 500
+        ? '''#define FRICTION_START_DUTY ${Friction.startDuty}
 #define FRICTION_STEP_DUTY 1
-#define FRICTION_MAX_DUTY ${c.frictionMaxDuty!}
-#define FRICTION_SPEED_STEP ${c.frictionStep!}
+#define FRICTION_LEVEL_MAX ${Friction.levelMax}
+#define FRICTION_MAX_DUTY_P64 ${c.frictionP64MaxDuty!}
+#define FRICTION_MAX_DUTY_P66 ${c.frictionP66MaxDuty!}
+#define FRICTION_LEVEL_STEP ${c.frictionLevelStep!}
 '''
         : '';
     final frictionGlobals = frictionEnabled
-        ? '''uint16_t frictionDuty = 0;
-uint16_t frictionTargetDuty = 0;
+        ? '''uint8_t frictionLevel = 0;
+uint16_t frictionDutyP64 = 0;
+uint16_t frictionDutyP66 = 0;
+uint16_t frictionTargetDutyP64 = 0;
+uint16_t frictionTargetDutyP66 = 0;
 uint8_t frictionEnabled = 0;
 '''
         : '';
+    // 比例值是唯一控制量：油门 duty = 500 + 油门/100 * (该侧上限 - 500)。
+    // P64/P66 各自用自己的上限做线性映射，补偿两侧机械差异带来的转速差。
+    final frictionHelpers = frictionEnabled
+        ? '''static uint16_t FrictionDutyOfLevel(uint8_t level, uint16_t maxDuty) {
+    return (uint16_t)(FRICTION_START_DUTY
+        + ((uint16_t)level * (uint16_t)(maxDuty - FRICTION_START_DUTY)) / FRICTION_LEVEL_MAX);
+}
+'''
+        : '';
+    String frictionRamp(String pin) => [
+      '',
+      '    if (frictionTargetDuty$pin >= FRICTION_START_DUTY && frictionDuty$pin < FRICTION_START_DUTY)',
+      '        frictionDuty$pin = FRICTION_START_DUTY;',
+      '    else if (frictionDuty$pin < frictionTargetDuty$pin)',
+      '        frictionDuty$pin += FRICTION_STEP_DUTY;',
+      '    else if (frictionDuty$pin > frictionTargetDuty$pin) {',
+      '        if (frictionTargetDuty$pin == 0 && frictionDuty$pin <= FRICTION_START_DUTY)',
+      '            frictionDuty$pin = 0;',
+      '        else',
+      '            frictionDuty$pin -= FRICTION_STEP_DUTY;',
+      '    }',
+    ].join('\n');
     final frictionUpdate = frictionEnabled
         ? '''    static uint8_t lastFriction = 0;
     static uint8_t lastFrictionUp = 0;
@@ -319,29 +349,26 @@ uint8_t frictionEnabled = 0;
     uint8_t frictionDown = RcKeyValueRead(${_key(c.frictionDownKey!)});
     if (friction && !lastFriction) {
         frictionEnabled = !frictionEnabled;
-        frictionTargetDuty = frictionEnabled ? FRICTION_MAX_DUTY : 0;
+        frictionLevel = frictionEnabled ? FRICTION_LEVEL_MAX : 0;
     }
     if (frictionEnabled && frictionUp && !lastFrictionUp && !frictionDown) {
-        frictionTargetDuty += FRICTION_SPEED_STEP;
-        if (frictionTargetDuty > FRICTION_MAX_DUTY) frictionTargetDuty = FRICTION_MAX_DUTY;
+        if (frictionLevel < FRICTION_LEVEL_MAX - FRICTION_LEVEL_STEP)
+            frictionLevel += FRICTION_LEVEL_STEP;
+        else frictionLevel = FRICTION_LEVEL_MAX;
     }
     if (frictionEnabled && frictionDown && !lastFrictionDown && !frictionUp) {
-        if (frictionTargetDuty > FRICTION_START_DUTY + FRICTION_SPEED_STEP)
-            frictionTargetDuty -= FRICTION_SPEED_STEP;
-        else frictionTargetDuty = FRICTION_START_DUTY;
+        if (frictionLevel > FRICTION_LEVEL_STEP)
+            frictionLevel -= FRICTION_LEVEL_STEP;
+        else frictionLevel = 0;
     }
+    /* 目标占空比每周期由油门重新映射，避免按键跳档后残留旧目标。 */
+    frictionTargetDutyP64 = frictionEnabled
+        ? FrictionDutyOfLevel(frictionLevel, FRICTION_MAX_DUTY_P64) : 0;
+    frictionTargetDutyP66 = frictionEnabled
+        ? FrictionDutyOfLevel(frictionLevel, FRICTION_MAX_DUTY_P66) : 0;
     /* 指南：启停时 0~5% 区间可以跳过（电机 5% 才起转），
-       因此 frictionDuty 只取 0 或 500~上限，中间的 0~500 一律跳变。 */
-    if (frictionTargetDuty >= FRICTION_START_DUTY && frictionDuty < FRICTION_START_DUTY)
-        frictionDuty = FRICTION_START_DUTY;
-    else if (frictionDuty < frictionTargetDuty)
-        frictionDuty += FRICTION_STEP_DUTY;
-    else if (frictionDuty > frictionTargetDuty) {
-        if (frictionTargetDuty == 0 && frictionDuty <= FRICTION_START_DUTY)
-            frictionDuty = 0;
-        else
-            frictionDuty -= FRICTION_STEP_DUTY;
-    }
+       因此输出只取 0 或 500~各自上限，中间的 0~500 一律跳变。
+       斜坡跑在占空比上（两侧各自 ±1 duty/周期）， duty 变化率不超过 50/s。 */${frictionRamp('P64')}${frictionRamp('P66')}
     lastFriction = friction;
     lastFrictionUp = frictionUp;
     lastFrictionDown = frictionDown;
@@ -426,7 +453,7 @@ static void UpdateBuzzerFeedback(void)
 ${feedbackChecks.join('\n')}
     if (!feedbackInitialized) { feedbackInitialized = 1; changed = 0; }
     if (changed) PWM_SET_Frequency(BUZZER_CH, feedbackDuty, 5000);
-${frictionEnabled ? '    else if (frictionDuty != frictionTargetDuty) PWM_SET_Frequency(BUZZER_CH, frictionDuty, 5000);' : ''}
+${frictionEnabled ? '    else if (frictionDutyP64 != frictionTargetDutyP64 || frictionDutyP66 != frictionTargetDutyP66) PWM_SET_Frequency(BUZZER_CH, frictionDutyP64, 5000);' : ''}
     else PWM_SET_Frequency(BUZZER_CH, 500, 0);
 }
 ''';
@@ -434,6 +461,7 @@ ${frictionEnabled ? '    else if (frictionDuty != frictionTargetDuty) PWM_SET_Fr
 $frictionDefines
 $dutyDeclarations
 $frictionGlobals
+$frictionHelpers
 $buzzerFeedback
 
 ${_chassis(c.chassis)}
@@ -510,7 +538,8 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
       final actions = c.modes[modeIndex].actions;
       for (var actionIndex = 0; actionIndex < actions.length; actionIndex++) {
         final action = actions[actionIndex];
-        final isServoButton = digitalRemoteKeys.contains(action.key) &&
+        final isServoButton =
+            digitalRemoteKeys.contains(action.key) &&
             (mainServoPins.contains(action.pin) ||
                 c.pwm.pinRoles[action.pin] == PinRole.servo);
         if (!isServoButton) continue;
@@ -562,8 +591,7 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
             final home = _servoDuty(c.pwm.servoMids[a.pin!]);
             if (!isAxis) {
               if (a.mode == ControlMode.direct) {
-                final edgeIndex =
-                    servoButtonEdgeIndexes['$i:$actionIndex']!;
+                final edgeIndex = servoButtonEdgeIndexes['$i:$actionIndex']!;
                 final signedAngle =
                     (a.direction == Direction.forward ? 1 : -1) *
                     a.parameter!.toInt();
@@ -729,7 +757,8 @@ ${prepareCases.join('\n')}
     }
 }
 ''';
-    final servoButtonDeclarations = '''${servoButtonRemainderActions.isEmpty ? '' : 'int32_t servoButtonRemainder[${servoButtonRemainderActions.length}] = {0};'}
+    final servoButtonDeclarations =
+        '''${servoButtonRemainderActions.isEmpty ? '' : 'int32_t servoButtonRemainder[${servoButtonRemainderActions.length}] = {0};'}
 ${servoButtonEdgeActions.isEmpty ? '' : 'uint8_t servoButtonKeyLast[${servoButtonEdgeActions.length}] = {0};'}''';
     final servoButtonSync = servoButtonEdgeActions.isEmpty
         ? ''
@@ -742,9 +771,7 @@ ${List.generate(c.modeCount!, (modeIndex) {
             for (var index = 0; index < servoButtonEdgeActions.length; index++) {
               final entry = servoButtonEdgeActions[index];
               if (entry.modeIndex == modeIndex) {
-                lines.add(
-                  '            servoButtonKeyLast[$index] = RcKeyValueRead(${_key(entry.action.key!)});',
-                );
+                lines.add('            servoButtonKeyLast[$index] = RcKeyValueRead(${_key(entry.action.key!)});');
               }
             }
             return lines.isEmpty ? '' : '        case ${modeIndex + 1}:\n${lines.join('\n')}\n            break;';
@@ -911,11 +938,19 @@ ${engineerFeedback.isEmpty ? '' : '        UpdateServoFeedback();'}
           ..add('    Ms_Delay(${item.durationMs});')
           ..add('    PWM_SET_Frequency($channel, 50, 0);');
       } else if (item.driveType == DebugDriveType.friction) {
-        final up = <int>[500];
+        // 调试曲线与运行控制同律：油门按 20% 一档爬升再回落，
+        // 每一档按该引脚自己的满油上限换算成占空比，末尾补一档 0 表示停机。
+        const levelStep = 20;
+        final up = <int>[0];
         while (up.last < item.value!) {
-          up.add((up.last + 100).clamp(500, item.value!));
+          up.add((up.last + levelStep).clamp(0, item.value!));
         }
-        final curve = <int>[...up, ...up.reversed.skip(1), 0];
+        final maxDuty = config.frictionMaxDutyOf(item.pin)!;
+        final curve = <int>[
+          for (final level in [...up, ...up.reversed.skip(1)])
+            Friction.dutyOfLevel(level, maxDuty),
+          0,
+        ];
         lines
           ..add(
             '    ExpansionBoradControl(Init_Order, ${initValues(slot, 50)});',
@@ -1133,8 +1168,10 @@ void main(void)
   ];
 
   /// 16 位大端字节序列（汇编 .db 用）。
-  static List<String> _asmWord(int value) =>
-      [_asmByte(value >> 8), _asmByte(value)];
+  static List<String> _asmWord(int value) => [
+    _asmByte(value >> 8),
+    _asmByte(value),
+  ];
 
   /// 直接生成音乐项目的 SDCC as251 汇编（与 [_music] 的 C 版行为一致）。
   ///
@@ -1156,9 +1193,7 @@ void main(void)
         bytes.addAll(_asmWord(frequencies[row * 4 + col]));
       }
       final first = row * 4;
-      frequencyRows.add(
-        '\t.db\t${bytes.join(', ')}\t; 音符 $first~${first + 3}',
-      );
+      frequencyRows.add('\t.db\t${bytes.join(', ')}\t; 音符 $first~${first + 3}');
     }
 
     final durationRows = <String>[

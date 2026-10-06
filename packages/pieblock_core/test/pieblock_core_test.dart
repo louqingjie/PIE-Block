@@ -49,8 +49,9 @@ InfantryConfig completeInfantry({
   frictionKey: frictionMode == FrictionMode.brushlessEsc ? 'A' : null,
   frictionUpKey: frictionMode == FrictionMode.brushlessEsc ? 'B' : null,
   frictionDownKey: frictionMode == FrictionMode.brushlessEsc ? 'C' : null,
-  frictionMaxDuty: frictionMode == FrictionMode.brushlessEsc ? 800 : null,
-  frictionStep: frictionMode == FrictionMode.brushlessEsc ? 100 : null,
+  frictionP64MaxDuty: frictionMode == FrictionMode.brushlessEsc ? 800 : null,
+  frictionP66MaxDuty: frictionMode == FrictionMode.brushlessEsc ? 700 : null,
+  frictionLevelStep: frictionMode == FrictionMode.brushlessEsc ? 10 : null,
 );
 
 EngineerConfig completeEngineer() => EngineerConfig(
@@ -78,7 +79,14 @@ DebugConfig completeDebug() => DebugConfig(
       enabled: true,
       driveType: DebugDriveType.friction,
       direction: Direction.forward,
-      value: 750,
+      value: 100,
+    ),
+    const DebugTestItem(
+      pin: 'P66',
+      enabled: true,
+      driveType: DebugDriveType.friction,
+      direction: Direction.forward,
+      value: 50,
     ),
     const DebugTestItem(
       pin: 'MP03',
@@ -88,9 +96,13 @@ DebugConfig completeDebug() => DebugConfig(
       value: 30,
       durationMs: 4200,
     ),
-    for (final pin in debugPins.where((pin) => pin != 'P64' && pin != 'MP03'))
+    for (final pin in debugPins.where(
+      (pin) => pin != 'P64' && pin != 'P66' && pin != 'MP03',
+    ))
       DebugTestItem(pin: pin),
   ],
+  frictionP64MaxDuty: 800,
+  frictionP66MaxDuty: 700,
 );
 
 EngineerConfig advancedEngineer({
@@ -200,7 +212,7 @@ EngineerConfig servoButtonEngineer({
 
 void main() {
   group('项目格式与进度', () {
-    test('格式 15 往返并保存向导进度', () {
+    test('格式 16 往返并保存向导进度', () {
       final source = ProjectDocument.create('步兵测试', ProjectKind.infantry)
           .copyWith(
             guideProgress: const GuideProgress(
@@ -213,7 +225,7 @@ void main() {
           jsonDecode(jsonEncode(source.toJson())) as Map,
         ),
       );
-      expect(source.toJson()['format_version'], 15);
+      expect(source.toJson()['format_version'], 16);
       expect(restored.guideProgress.currentStepId, 'controls');
       expect(restored.guideProgress.visitedStepIds, hasLength(3));
       expect((source.toJson()['config']! as Map), isNot(contains('pwm')));
@@ -325,8 +337,13 @@ void main() {
       expect(restored.guideProgress.currentStepId, 'tests');
       final config = restored.config as DebugConfig;
       expect(config.tests.first.pin, 'P64');
-      expect(config.tests[1].durationMs, 4200);
+      expect(config.tests[2].durationMs, 4200);
       expect(config.tests.first.toJson(), isNot(contains('duration_ms')));
+      expect(config.frictionP64MaxDuty, 800);
+      expect(config.frictionP66MaxDuty, 700);
+      expect(config.frictionMaxDutyOf('P64'), 800);
+      expect(config.frictionMaxDutyOf('P66'), 700);
+      expect(config.frictionMaxDutyOf('P60'), isNull);
     });
 
     test('新项目必填项为空且不能生成', () {
@@ -373,6 +390,61 @@ void main() {
             .singleWhere((issue) => issue.fieldPath == 'remote.channel')
             .kind,
         ValidationIssueKind.invalid,
+      );
+    });
+
+    test('摩擦轮比例映射律：油门 0% 落在启动占空比，满油落在各自上限', () {
+      // 需求里的基准算例：P64 上限 700、P66 上限 800，中油门应得 600 / 650。
+      expect(Friction.dutyOfLevel(50, 700), 600);
+      expect(Friction.dutyOfLevel(50, 800), 650);
+      for (final maxDuty in [700, 800]) {
+        expect(Friction.dutyOfLevel(0, maxDuty), Friction.startDuty);
+        expect(Friction.dutyOfLevel(100, maxDuty), maxDuty);
+        // 映射单调不减，且始终落在 [启动占空比, 满油上限] 区间内。
+        var previous = 0;
+        for (var level = 0; level <= Friction.levelMax; level++) {
+          final duty = Friction.dutyOfLevel(level, maxDuty);
+          expect(duty, greaterThanOrEqualTo(previous));
+          expect(duty, inInclusiveRange(Friction.startDuty, maxDuty));
+          previous = duty;
+        }
+      }
+      // 越界的油门按量程夹紧，不外插。
+      expect(Friction.dutyOfLevel(-10, 800), Friction.startDuty);
+      expect(Friction.dutyOfLevel(200, 800), 800);
+    });
+
+    test('摩擦轮两侧上限各自校验且油门步长限定在量程内', () {
+      List<String> messages(InfantryConfig config) =>
+          ProjectValidator.validate(config)
+              .map((issue) => issue.message)
+              .toList();
+
+      expect(
+        messages(completeInfantry().copyWith(frictionP64MaxDuty: 750)),
+        contains(contains('P64 摩擦轮最大占空比必须是 500–800 内的整百值')),
+      );
+      expect(
+        messages(completeInfantry().copyWith(frictionP66MaxDuty: 900)),
+        contains(contains('P66 摩擦轮最大占空比必须在 500–800 之间')),
+      );
+      expect(
+        messages(completeInfantry().copyWith(frictionLevelStep: 0)),
+        contains(contains('摩擦轮油门步长必须在 1–100 之间')),
+      );
+      expect(
+        messages(completeInfantry().copyWith(frictionLevelStep: 101)),
+        contains(contains('摩擦轮油门步长必须在 1–100 之间')),
+      );
+      // 两侧上限不同是正常配置，不应产生任何摩擦轮相关问题。
+      expect(
+        messages(
+          completeInfantry().copyWith(
+            frictionP64MaxDuty: 700,
+            frictionP66MaxDuty: 800,
+          ),
+        ).where((message) => message.contains('摩擦轮')),
+        isEmpty,
       );
     });
 
@@ -650,11 +722,20 @@ void main() {
       expect(() => CodeGenerator.generate(invalid), throwsStateError);
     });
 
-    test('生成混合测试、非整百摩擦轮曲线和安全完成循环', () {
+    test('调试曲线按各引脚自己的满油上限换算比例值', () {
       final code = CodeGenerator.generate(completeDebug());
-      expect(code.indexOf('1. P64'), lessThan(code.indexOf('2. MP03')));
-      expect(code, contains('Duty_Change_Order, 0, 0, 750'));
-      expect(code, contains('Duty_Change_Order, 0, 0, 700'));
+      expect(code.indexOf('1. P64'), lessThan(code.indexOf('2. P66')));
+      expect(code.indexOf('2. P66'), lessThan(code.indexOf('3. MP03')));
+      // P64 上限 800（跨度 300）：油门 0/20/40/60/80/100% → 500/560/620/680/740/800。
+      expect(code, contains('Duty_Change_Order, 0, 0, 500'));
+      expect(code, contains('Duty_Change_Order, 0, 0, 560'));
+      expect(code, contains('Duty_Change_Order, 0, 0, 620'));
+      expect(code, contains('Duty_Change_Order, 0, 0, 740'));
+      expect(code, contains('Duty_Change_Order, 0, 0, 800'));
+      // P66 上限 700（跨度 200）：同一油门映射出更低的占空比。
+      expect(code, contains('Duty_Change_Order, 0, 0, 0, 580'));
+      expect(code, contains('Duty_Change_Order, 0, 0, 0, 600'));
+      expect(code, isNot(contains('Duty_Change_Order, 0, 0, 0, 800')));
       expect(code, contains('Ms_Delay(4200);'));
       expect(code, contains('PWM_SET_Frequency(PWMB_CH4_P03, 50, 0);'));
       expect(code, contains('Ms_Delay(2000);'));
@@ -895,16 +976,15 @@ void main() {
     });
 
     test('当前引脚为空时只能抢占，未分配可直接应用', () {
-      final source = completeInfantry(
-        frictionMode: FrictionMode.disabled,
-      ).copyWith(
-        yawActuators: const [
-          AxisActuator(
-            drive: DriveType.servo,
-            direction: Direction.forward,
-          ),
-        ],
-      );
+      final source = completeInfantry(frictionMode: FrictionMode.disabled)
+          .copyWith(
+            yawActuators: const [
+              AxisActuator(
+                drive: DriveType.servo,
+                direction: Direction.forward,
+              ),
+            ],
+          );
       final occupied = InfantryPinPlanner.planReassignment(
         source,
         'gimbal.yaw.0.pin',
@@ -946,7 +1026,8 @@ void main() {
       );
       expect(withoutFriction.frictionMode, FrictionMode.disabled);
       expect(withoutFriction.feederPin, 'P64');
-      expect(withoutFriction.frictionMaxDuty, enabled.frictionMaxDuty);
+      expect(withoutFriction.frictionP64MaxDuty, enabled.frictionP64MaxDuty);
+      expect(withoutFriction.frictionP66MaxDuty, enabled.frictionP66MaxDuty);
 
       final enablePlan = InfantryPinPlanner.planFrictionEnablement(
         withoutFriction,
@@ -958,7 +1039,9 @@ void main() {
       );
       expect(restored.frictionMode, FrictionMode.brushlessEsc);
       expect(restored.feederPin, isNull);
-      expect(restored.frictionMaxDuty, enabled.frictionMaxDuty);
+      expect(restored.frictionP64MaxDuty, enabled.frictionP64MaxDuty);
+      expect(restored.frictionP66MaxDuty, enabled.frictionP66MaxDuty);
+      expect(restored.frictionLevelStep, enabled.frictionLevelStep);
     });
 
     test('同轴多个执行器各自占用引脚并可被抢占', () {
@@ -1004,9 +1087,11 @@ void main() {
         isEmpty,
       );
       expect(
-        InfantryPinPlanner.occupantsOf(config, 'P60', 'gimbal.pitch.1.pin')
-            .single
-            .ownerLabel,
+        InfantryPinPlanner.occupantsOf(
+          config,
+          'P60',
+          'gimbal.pitch.1.pin',
+        ).single.ownerLabel,
         '拨弹电机',
       );
 
@@ -1024,9 +1109,8 @@ void main() {
     test('执行器逐个校验，空轴不报必填', () {
       final blank = InfantryConfig();
       expect(
-        ProjectValidator.validate(
-          blank,
-        ).where((i) => i.fieldPath.startsWith('gimbal.')),
+        ProjectValidator.validate(blank)
+            .where((i) => i.fieldPath.startsWith('gimbal.')),
         isNotEmpty,
       );
 
@@ -1310,19 +1394,77 @@ void main() {
       expect(
         code,
         contains(
-          'if (frictionTargetDuty >= FRICTION_START_DUTY && frictionDuty < FRICTION_START_DUTY)',
+          'if (frictionTargetDutyP64 >= FRICTION_START_DUTY && frictionDutyP64 < FRICTION_START_DUTY)',
+        ),
+      );
+      expect(
+        code,
+        contains(
+          'if (frictionTargetDutyP66 >= FRICTION_START_DUTY && frictionDutyP66 < FRICTION_START_DUTY)',
         ),
       );
       // 停机：降到最低有效占空比后直接归零，不在 0~500 之间逐格磨
       expect(
         code,
         contains(
-          'if (frictionTargetDuty == 0 && frictionDuty <= FRICTION_START_DUTY)',
+          'if (frictionTargetDutyP64 == 0 && frictionDutyP64 <= FRICTION_START_DUTY)',
+        ),
+      );
+      expect(
+        code,
+        contains(
+          'if (frictionTargetDutyP66 == 0 && frictionDutyP66 <= FRICTION_START_DUTY)',
         ),
       );
       // 旧写法只在 duty 恰好为 0 时跳变，关闭途中重新开启会从 0~500 之间
       // 渐变上去，不应再出现
       expect(code, isNot(contains('frictionStartedThisCycle')));
+    });
+
+    test('两侧摩擦轮按各自满油上限映射同一油门比例值', () {
+      final code = CodeGenerator.generate(
+        completeInfantry().copyWith(
+          frictionP64MaxDuty: 700,
+          frictionP66MaxDuty: 800,
+          frictionLevelStep: 10,
+        ),
+      );
+      expect(code, contains('#define FRICTION_MAX_DUTY_P64 700'));
+      expect(code, contains('#define FRICTION_MAX_DUTY_P66 800'));
+      expect(code, contains('#define FRICTION_LEVEL_MAX 100'));
+      expect(code, contains('#define FRICTION_LEVEL_STEP 10'));
+      expect(code, contains('uint8_t frictionLevel = 0;'));
+      // 比例值换算：duty = 500 + level * (该侧上限 - 500) / 100
+      expect(
+        code,
+        contains(
+          '((uint16_t)level * (uint16_t)(maxDuty - FRICTION_START_DUTY)) / FRICTION_LEVEL_MAX',
+        ),
+      );
+      // 油门是唯一控制量，目标占空比每周期重新映射
+      expect(
+        code,
+        contains(
+          'frictionTargetDutyP64 = frictionEnabled\n'
+          '        ? FrictionDutyOfLevel(frictionLevel, FRICTION_MAX_DUTY_P64) : 0;',
+        ),
+      );
+      expect(
+        code,
+        contains(
+          'frictionTargetDutyP66 = frictionEnabled\n'
+          '        ? FrictionDutyOfLevel(frictionLevel, FRICTION_MAX_DUTY_P66) : 0;',
+        ),
+      );
+      // 按键只改油门，不再直接加减占空比真值
+      expect(
+        code,
+        contains('frictionLevel = frictionEnabled ? FRICTION_LEVEL_MAX : 0;'),
+      );
+      expect(code, isNot(contains('FRICTION_SPEED_STEP')));
+      // 两个引脚各自独立输出，不再共用同一个占空比变量
+      expect(code, contains('frictionDutyP64,frictionDutyP66'));
+      expect(code, isNot(contains('frictionDuty,')));
     });
 
     test('未设置反向拨弹键时不生成任何反向逻辑', () {
@@ -1433,9 +1575,8 @@ void main() {
     });
 
     test('空轴不生成占空比变量和控制语句', () {
-      final config = completeInfantry(
-        frictionMode: FrictionMode.disabled,
-      ).copyWith(pitchActuators: const []);
+      final config = completeInfantry(frictionMode: FrictionMode.disabled)
+          .copyWith(pitchActuators: const []);
       final code = CodeGenerator.generate(config);
       expect(code, contains('uint16_t yawDuty = 750;'));
       expect(code, isNot(contains('pitchDuty')));

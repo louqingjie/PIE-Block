@@ -41,8 +41,9 @@ InfantryConfig infantry() => InfantryConfig(
   frictionKey: 'A',
   frictionUpKey: 'B',
   frictionDownKey: 'C',
-  frictionMaxDuty: 800,
-  frictionStep: 100,
+  frictionP64MaxDuty: 800,
+  frictionP66MaxDuty: 700,
+  frictionLevelStep: 10,
 );
 
 EngineerConfig engineer() => EngineerConfig(
@@ -100,7 +101,14 @@ DebugConfig debug() => DebugConfig(
       enabled: true,
       driveType: DebugDriveType.friction,
       direction: Direction.forward,
-      value: 750,
+      value: 100,
+    ),
+    const DebugTestItem(
+      pin: 'P66',
+      enabled: true,
+      driveType: DebugDriveType.friction,
+      direction: Direction.forward,
+      value: 60,
     ),
     const DebugTestItem(
       pin: 'MP03',
@@ -110,10 +118,12 @@ DebugConfig debug() => DebugConfig(
       value: 30,
     ),
     for (final pin in debugPins.where(
-      (pin) => pin != 'P60' && pin != 'P64' && pin != 'MP03',
+      (pin) => pin != 'P60' && pin != 'P64' && pin != 'P66' && pin != 'MP03',
     ))
       DebugTestItem(pin: pin),
   ],
+  frictionP64MaxDuty: 800,
+  frictionP66MaxDuty: 700,
 );
 
 MusicConfig music() => MusicConfig(
@@ -142,8 +152,7 @@ void main(List<String> arguments) {
       .writeAsStringSync(CodeGenerator.generate(debug()));
   File('${directory.path}${Platform.pathSeparator}music.c')
       .writeAsStringSync(CodeGenerator.generate(music()));
-  File('${directory.path}${Platform.pathSeparator}music.asm')
-      .writeAsStringSync(
-        CodeGenerator.generate(music(), target: OutputTarget.asm),
-      );
+  File('${directory.path}${Platform.pathSeparator}music.asm').writeAsStringSync(
+    CodeGenerator.generate(music(), target: OutputTarget.asm),
+  );
 }
