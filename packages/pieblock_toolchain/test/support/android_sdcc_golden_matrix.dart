@@ -16,13 +16,13 @@ final class SdccGoldenCase {
 
 const _baselineHashes = <String, String>{
   'infantry_servo_blocking_friction':
-      'd80316055967fbbff9104336c39c8e17e9b8f045e45436ea68c8e003087b0eaa',
+      'aa60cf2ea3cda3934d1c6fd931a01c76c6f0fca77abd323e8a9930c8d399225a',
   'engineer_single_mode':
       'fbdd8ec076160830d3d2d839c24ea33eb9a5003bc376dbde499fb58194d1d0ed',
   'infantry_motor_visual_no_friction':
       'ed858c2ed5664481c59bb6fd0272db57321dc1036fbf5d81d8dbb20ff8c7766c',
   'infantry_shared_chassis_sprint':
-      'b8aba520d291cd8c0debaa4b0ce2a4cf8a419385e0cd65530b0709e58bb7822f',
+      '91b87388fe58ab833f8557ddc9ad2cc8d696cae825dbd0c9b638e6dbb71648be',
   'engineer_four_mode_cycle':
       '5f87fb5ecb49f6a610f6990351dbd75fdea1b5e8f5c7115f965577f491707e7a',
   'engineer_four_mode_direct':
