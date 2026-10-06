@@ -1,6 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "步兵机器人：底盘4电机+云台(Yaw/Pitch)+摩擦轮+拨弹。P64/P66固定用于摩擦轮。",
+  "description": "Godot 旧版 CLI 的步兵配置，已停用、不再被 Flutter 版读取，仅作历史参考。Flutter 版（.pieproj 格式 16）的步兵配置见 docs/Flutter项目文件格式.md，摩擦轮改用 friction_p64_max_duty / friction_p66_max_duty 分立满油上限加 friction_level_step 百分比步长，按引脚命名且不分左右。",
+  "deprecated": true,
   "kind": "infantry",
   "properties": {
     "arrow_key": {
