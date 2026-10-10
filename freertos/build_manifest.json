@@ -1,0 +1,98 @@
+{
+  "version": "freertos_sdcc_v1",
+  "kind_projects": {
+    "freertos": "FREERTOS_DEMO"
+  },
+  "include_dirs": [
+    "../stc32g_sdcc/include",
+    "Sources/User",
+    "Sources/User/include",
+    "Sources/FreeRTOS/include",
+    "Sources/FreeRTOS/portable/STC32G12K128"
+  ],
+  "compile_flags": [
+    "-mmcs251",
+    "--model-large",
+    "--stack-auto",
+    "--opt-code-size",
+    "--constseg",
+    "CSEG",
+    "-c"
+  ],
+  "link_flags": [
+    "-mmcs251",
+    "--model-large",
+    "--stack-auto",
+    "--constseg",
+    "CSEG",
+    "--nostdlib",
+    "--iram-size",
+    "0x1000",
+    "--xram-loc",
+    "0x010000",
+    "--xram-size",
+    "0x2000",
+    "--code-loc",
+    "0xff0000",
+    "-Wl-b FRHEAP=0x0400"
+  ],
+  "runtime_libraries": [
+    "mcs251.lib",
+    "libsdcc.lib",
+    "liblong.lib",
+    "libint.lib",
+    "libfloat.lib",
+    "liblonglong.lib"
+  ],
+  "source_groups": {
+    "startup": [
+      "Sources/User/stc32g12k128_startup.c"
+    ],
+    "kernel": [
+      "Sources/FreeRTOS/portable/STC32G12K128/port.c",
+      "Sources/FreeRTOS/list.c",
+      "Sources/FreeRTOS/queue.c",
+      "Sources/FreeRTOS/tasks.c",
+      "Sources/FreeRTOS/portable/MemMang/heap_4.c"
+    ],
+    "user": [
+      "Sources/User/display.c",
+      "Sources/User/rtc.c",
+      "Sources/User/ntc.c",
+      "Sources/User/adckey.c",
+      "Sources/User/adc.c",
+      "Sources/User/uart2_3.c",
+      "Sources/User/MatrixKey.c",
+      "Sources/User/DebugPrintf.c",
+      "Sources/User/putchar.c"
+    ]
+  },
+  "assemblies": [
+    "Sources/FreeRTOS/portable/STC32G12K128/portheap.asm"
+  ],
+  "layout": {
+    "vector_base": 16711680,
+    "code_end": 16777216,
+    "xram_base": 65536,
+    "xram_limit": 73728,
+    "edata_limit": 4096,
+    "direct_limit": 256,
+    "frheap_area": "FRHEAP",
+    "frheap_base": 1024,
+    "frheap_size": 3072
+  },
+  "projects": {
+    "FREERTOS_DEMO": {
+      "main": "Sources/User/main.c",
+      "source_groups": [
+        "startup",
+        "kernel",
+        "user"
+      ],
+      "interrupt_scan": [
+        "Sources/FreeRTOS/portable/STC32G12K128/port.c",
+        "Sources/User/uart2_3.c"
+      ]
+    }
+  }
+}
