@@ -153,9 +153,8 @@ dart test packages/pieblock_toolchain/test/sdcc_windows_android_golden_test.dart
 flutter test integration_test/android_sdcc_full_build_test.dart -d <device-id>
 ```
 
-Windows 与 Linux 的 C251 代码生成逐字节一致，可用 `tools/prepare_sdcc_toolchain.sh`
-产出的 Linux 工具链交叉核对哈希；但只有真机结果也一致，发布安全门才算通过。
-GitHub Actions 的 Windows 流水线每次 push 都会跑这个比对，基线再过期会立刻暴露。
+这份比对**只在 Android 验收时按需运行**（`tools/run_android_sdcc_ci.ps1` 的无设备验收，加上上面第 3 步的真机矩阵），不再作为 GitHub Actions 桌面流水线的门禁：桌面版编固件用的就是随包发布的同一条工具链，跨平台一致性对它不构成风险，而把一份手工维护的常量挂成发版前置条件，结果是每次生成器改动都要重刷、过期了还会以「构建失败」的形式出现。Windows 与 Linux 的 C251 代码生成逐字节一致，可用 `tools/prepare_sdcc_toolchain.sh` 产出的 Linux 工具链交叉核对哈希；但只有真机结果也一致，发布安全门才算通过。
+代价是基线过期不会再被 CI 自动发现——改动生成器或固件后，请在做 Android 验收前主动按上面三步重刷。
 
 Android 发行代码使用 GPL-3.0-or-later。每个正式 APK/AAB 必须同时发布匹配的
 SDCC fork 源码标签、许可证、第三方声明和可复现构建说明。

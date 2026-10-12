@@ -121,9 +121,11 @@ Web 版与桌面版共用同一套代码，差异都由 `lib/src/platform/` 下�
 `.github/workflows/windows.yml` 在 push / PR 到 `main` 以及手动触发时校验 Windows 构建，分两段执行：
 
 1. **静态分析与单元测试**（ubuntu，约 2 分钟）：`pieblock_core`、`pieblock_hid`、`pieblock_toolchain` 三个包分别 `dart analyze` + `dart test`，再跑根目录的 `flutter analyze` + `flutter test`。
-2. **Windows 构建与打包**（windows-latest，首次 20–35 分钟，工具链缓存命中后 5–8 分钟）：在 MSYS2 UCRT64 里跑 `tools/build_sdcc_windows_package.sh` 编译 Windows 版内置 SDCC 工具链（按 `sdcc-c251` 子模块提交与脚本哈希缓存），再用 `tools/prepare_sdcc_toolchain.ps1 -PackageOnly` 暂存并生成 `bundle_manifest.json`；随后校验平台字段，跑 `PIEBLOCK_RUN_SDCC_GOLDEN=1` 的 SDCC 金样比对，再 `flutter build windows --release` 并用 `tools/package_flutter_windows.ps1 -SkipBuild` 出安装包。
+2. **Windows 构建与打包**（windows-latest，首次 20–35 分钟，工具链缓存命中后 5–8 分钟）：在 MSYS2 UCRT64 里跑 `tools/build_sdcc_windows_package.sh` 编译 Windows 版内置 SDCC 工具链（按 `sdcc-c251` 子模块提交与脚本哈希缓存），再用 `tools/prepare_sdcc_toolchain.ps1 -PackageOnly` 暂存并生成 `bundle_manifest.json`；随后校验平台字段，再 `flutter build windows --release` 并用 `tools/package_flutter_windows.ps1 -SkipBuild` 出安装包。
 
-产物保留 14 天，名称为 `PIEBlock-<版本>-windows-setup.exe`（Inno 安装包）与 `PIEBlock-<版本>-windows-x64-release.zip`（免安装 `Release` 目录）。金样校验可用 `workflow_dispatch` 的 `skip_golden` 输入临时跳过。
+产物保留 14 天，名称为 `PIEBlock-<版本>-windows-setup.exe`（Inno 安装包）与 `PIEBlock-<版本>-windows-x64-release.zip`（免安装 `Release` 目录）。
+
+SDCC 黄金固件比对不在桌面发版流水线里跑：桌面版编固件用的就是随包发布的同一条工具链，跨平台一致性对它不构成风险。该比对只在 Android 验收时按需运行（`tools/run_android_sdcc_ci.ps1` 的无设备验收，以及真机上的黄金矩阵），见 [Android SDCC 多进程移植](docs/android-sdcc-port.md)。
 
 推送 `v*` 标签会额外触发 `release` job：校验标签与 `pubspec.yaml` 版本一致后，用该版本的产物创建 GitHub Release。Release 正文优先取 `docs/releases/<版本>.md`，没有该文件时用自动生成的变更说明——发版请同时提交版本说明文件。
 
@@ -132,7 +134,6 @@ Web 版与桌面版共用同一套代码，差异都由 `lib/src/platform/` 下�
 ```powershell
 git submodule update --init sdcc-c251
 .\tools\prepare_sdcc_toolchain.ps1 -Force   # 需要 MSYS2 UCRT64 的 bison/flex/make、toolchain 与 boost/zlib
-$env:PIEBLOCK_RUN_SDCC_GOLDEN = '1'
 Push-Location packages\pieblock_toolchain; dart test; Pop-Location
 .\tools\package_flutter_windows.ps1
 ```
