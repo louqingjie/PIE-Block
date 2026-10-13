@@ -743,7 +743,7 @@ void main() {
       expect(code, isNot(contains('FrictionRampTo(3, 800)')));
       expect(code, contains('Ms_Delay(4200);'));
       expect(code, contains('PWM_SET_Frequency(PWMB_CH4_P03, 50, 0);'));
-      expect(code, contains('Ms_Delay(2000);'));
+      expect(code, contains('Ms_Delay(CUE_ALLDONE_REPEAT_MS);'));
       expect(code, contains('static void Uart1TxQuery(uint8_t dat)'));
       expect(code, contains('Uart1TxQuery(control_frame_pack[i])'));
       expect(code, isNot(contains('Uart1SendFrameQuery')));
@@ -860,42 +860,50 @@ void main() {
       );
     });
 
-    test('调试提示音用事件轮廓与步序双通道区分', () {
+    test('调试提示音用一条上行音型做步序与结束', () {
       final code = CodeGenerator.generate(completeDebug());
 
-      // 事件层：READY 上行、DONE 下行、全部完成低音区起音。
-      // 时值统一走宏，宏值随提示音风格渲染，这里断言标准风格的取值。
+      // 方案总览注释应描述音型方案，不是旧的「轮廓 + 点数」双通道。
+      expect(code, contains('一条上行音型 C6-E6-G6-C7-E7'));
+
+      // 音高与风格无关，全部走宏。
       expect(code, contains('#define CUE_C6 1047'));
       expect(code, contains('#define CUE_G6 1568'));
+      expect(code, contains('#define CUE_C7 2093'));
+      expect(code, contains('#define CUE_E7 2637'));
       expect(code, contains('#define CUE_G5 784'));
-      expect(code, contains('#define CUE_EVENT_NOTE_MS 90'));
-      expect(code, contains('#define CUE_EVENT_DONE_MS 140'));
-      expect(code, contains('#define CUE_EVENT_GAP_MS 40'));
-      expect(code, contains('#define CUE_ALLDONE_NOTE_MS 120'));
-      expect(code, contains('#define CUE_ALLDONE_TAIL_MS 300'));
-      expect(
-        code,
-        contains(
-          'Beep(CUE_C6, CUE_EVENT_NOTE_MS);\n    Ms_Delay(CUE_EVENT_GAP_MS);\n'
-          '    Beep(CUE_E6, CUE_EVENT_NOTE_MS);\n    Ms_Delay(CUE_EVENT_GAP_MS);\n'
-          '    Beep(CUE_G6, CUE_EVENT_NOTE_MS);',
-        ),
-      );
-      expect(
-        code,
-        contains(
-          'Beep(CUE_G6, CUE_EVENT_DONE_MS);\n    Ms_Delay(CUE_EVENT_GAP_MS);\n'
-          '    Beep(CUE_C6, CUE_EVENT_DONE_MS);',
-        ),
-      );
-      expect(code, contains('Beep(CUE_C5, CUE_ALLDONE_NOTE_MS);'));
+      expect(code, contains('#define CUE_MOTIF_LEN 5'));
+      expect(code, contains('#define CUE_EVENT_DONE_MS 280'));
+      expect(code, contains('#define CUE_EVENT_GAP_MS 80'));
+      expect(code, contains('#define CUE_SECTION_GAP_MS 300'));
+      expect(code, contains('#define CUE_ALLDONE_REPEAT_MS 2000'));
 
-      // 步序层：音区八度 + 点数 <= 5，两个通道都写进模板。
-      expect(code, contains('#define CUE_ZONE_LOW CUE_G5'));
-      expect(code, contains('#define CUE_ZONE_HIGH CUE_G6'));
+      // 全部完成改为《卡农》曲谱后，旧的琶音时值宏应被收敛掉。
+      expect(code, isNot(contains('CUE_ALLDONE_NOTE_MS')));
+      expect(code, isNot(contains('CUE_ALLDONE_TAIL_MS')));
+
+      // 音型取音高用 switch，避开 SDCC 的数组变址取错字节问题。
+      expect(
+        code,
+        contains('static uint16_t MotifNote(uint8_t index, uint8_t high)'),
+      );
+      expect(code, contains('case 0: return (uint16_t)(CUE_C6 * octave);'));
+
+      // 开始区已删除：个数本身就是序号，不再先播一遍完整音型。
+      // 连同它的时值宏一起收敛掉，避免留下没人用的宏。
+      expect(code, isNot(contains('static void ReadyCue')));
+      expect(code, isNot(contains('ReadyCue();')));
+      expect(code, isNot(contains('CUE_EVENT_NOTE_MS')));
+      expect(code, isNot(contains('Beep(MotifNote(i, 0)')));
+
+      // 全部完成是《卡农》主题：逐音渲染，首尾两音都要在。
+      expect(code, contains('Beep(330, 100);')); // 第一音 E4
+      expect(code, contains('Beep(1047, 2821);')); // 末音 C6，长尾音
+
+      // 步序与结束共用同一套音区进位公式。
       expect(code, contains('#define CUE_ZONE_SPAN 5'));
-      expect(code, contains('#define CUE_UNIT_MS 110'));
-      expect(code, contains('#define CUE_GAP_MS 70'));
+      expect(code, contains('#define CUE_UNIT_MS 220'));
+      expect(code, contains('#define CUE_GAP_MS 140'));
       expect(
         code,
         contains('zone = (uint8_t)((step - 1) / CUE_ZONE_SPAN);'),
@@ -905,13 +913,25 @@ void main() {
         contains('count = (uint8_t)((step - 1) % CUE_ZONE_SPAN + 1);'),
       );
 
+      // 分区停顿：步序区之后、结束区之前各一处。
+      expect(
+        code,
+        contains('    StepCue(1);\n    Ms_Delay(CUE_SECTION_GAP_MS);'),
+      );
+      expect(
+        code,
+        contains('    Ms_Delay(CUE_SECTION_GAP_MS);\n    DoneCue('),
+      );
+      // 每一项都应有 2 处分区停顿（步序区后、结束区前）。
+      expect('Ms_Delay(CUE_SECTION_GAP_MS);'.allMatches(code).length, 6);
+
       // 每个测试项按顺序播自己的步序码，步号从 1 连续递增。
-      // 统计调用次数时排除函数定义行（'ReadyCue();' 不会匹配到 'static void ReadyCue(void)'）。
       expect(code, contains('StepCue(1);'));
       expect(code, contains('StepCue(2);'));
       expect(code, contains('StepCue(3);'));
-      expect('\n    ReadyCue();'.allMatches(code).length, 3);
-      expect('\n    DoneCue();'.allMatches(code).length, 3);
+      expect(code, contains('DoneCue(1);'));
+      expect(code, contains('DoneCue(2);'));
+      expect(code, contains('DoneCue(3);'));
       expect(
         code.indexOf('StepCue(1);'),
         lessThan(code.indexOf('StepCue(2);')),
@@ -920,11 +940,18 @@ void main() {
         code.indexOf('StepCue(2);'),
         lessThan(code.indexOf('StepCue(3);')),
       );
+      // 结束区跟在对应步序之后，而不是统一在最后。
+      expect(
+        code.indexOf('StepCue(1);'),
+        lessThan(code.indexOf('DoneCue(1);')),
+      );
 
-      // 结尾进入全部完成循环。
+      // 结尾进入全部完成循环，重复间隔同样走宏。
       expect(
         code,
-        contains('while (1) {\n        AllDoneCue();\n        Ms_Delay(2000);'),
+        contains(
+          'while (1) {\n        AllDoneCue();\n        Ms_Delay(CUE_ALLDONE_REPEAT_MS);',
+        ),
       );
 
       // 旧版两个平音常量不应残留。
@@ -932,21 +959,24 @@ void main() {
       expect(code, isNot(contains('BUZZER_FREQ_DONE')));
     });
 
-    test('紧凑提示音风格压缩全部时值宏', () {
+    test('紧凑提示音风格把标准时值整体减半', () {
       final code = CodeGenerator.generate(
         completeDebug().copyWith(cueStyle: DebugCueStyle.compact),
       );
 
-      expect(code, contains('#define CUE_UNIT_MS 60'));
-      expect(code, contains('#define CUE_GAP_MS 30'));
-      expect(code, contains('#define CUE_EVENT_NOTE_MS 60'));
-      expect(code, contains('#define CUE_EVENT_DONE_MS 70'));
-      expect(code, contains('#define CUE_EVENT_GAP_MS 20'));
-      expect(code, contains('#define CUE_ALLDONE_TAIL_MS 200'));
+      // 紧凑风格 = 标准风格的每个时值除以 2。
+      expect(code, contains('#define CUE_UNIT_MS 110'));
+      expect(code, contains('#define CUE_GAP_MS 70'));
+      expect(code, contains('#define CUE_EVENT_DONE_MS 140'));
+      expect(code, contains('#define CUE_EVENT_GAP_MS 40'));
+      expect(code, contains('#define CUE_SECTION_GAP_MS 150'));
+      expect(code, contains('#define CUE_ALLDONE_REPEAT_MS 1000'));
+      // 《卡农》曲谱逐音渲染，时值也随风格减半（第一音 100ms → 50ms）。
+      expect(code, contains('Beep(330, 50);'));
       // 音高与编码方式不随风格变化。
       expect(code, contains('#define CUE_C6 1047'));
       expect(code, contains('#define CUE_ZONE_SPAN 5'));
-      expect(code, isNot(contains('#define CUE_UNIT_MS 110')));
+      expect(code, isNot(contains('#define CUE_UNIT_MS 220')));
     });
 
     test('提示音风格随项目文件往返且旧文件回落标准', () {
@@ -962,30 +992,35 @@ void main() {
       expect(DebugCues.styleByName('compact'), DebugCueStyle.compact);
     });
 
-    test('提示音曲谱的步序映射符合音区与点数双通道', () {
+    test('步序用上行音型的前 N 个音表示第 N 项', () {
       for (final style in DebugCues.styles) {
-        // 步 1~5 低音区，步 6 起高音区（正好差一个八度）。
+        // 项 1~5：低音区，音数 = 序号，且正好是上行音型的前 count 个音。
         for (var index = 1; index <= 5; index++) {
           final notes = DebugCues.step(index, style)
               .where((note) => note.frequencyHz != null)
+              .map((note) => note.frequencyHz!)
               .toList();
-          expect(notes.length, index, reason: '步 $index 应有 $index 声');
+          expect(notes.length, index, reason: '第 $index 项应有 $index 个音');
           expect(
-            notes.every((note) => note.frequencyHz == DebugCues.zoneLow),
-            isTrue,
+            notes,
+            DebugCues.ascentLow.take(index).toList(),
+            reason: '第 $index 项应是上行音型的前 $index 个音',
           );
         }
+        // 项 6~10：整体升八度，音数继续按 (N-1)%5+1 走。
         for (var index = 6; index <= 10; index++) {
+          final count = (index - 1) % 5 + 1;
           final notes = DebugCues.step(index, style)
               .where((note) => note.frequencyHz != null)
+              .map((note) => note.frequencyHz!)
               .toList();
-          expect(notes.length, index - 5);
+          expect(notes.length, count);
           expect(
-            notes.every((note) => note.frequencyHz == DebugCues.zoneHigh),
-            isTrue,
+            notes,
+            DebugCues.ascentHigh.take(count).toList(),
+            reason: '第 $index 项应是高八度音型的前 $count 个音',
           );
         }
-        expect(DebugCues.zoneHigh, DebugCues.zoneLow * 2);
 
         // 越界序号不抛异常，按最后一段处理。
         expect(DebugCues.step(0, style), isNotEmpty);
@@ -993,23 +1028,27 @@ void main() {
         expect(DebugCues.step(99, style), isNotEmpty);
       }
 
-      // 事件音轮廓：READY 音高递增、DONE 递减、全部完成从最低音起。
-      int? last;
-      final ready = DebugCues.ready(DebugCueStyle.standard)
-          .where((note) => note.frequencyHz != null)
-          .map((note) => note.frequencyHz!)
-          .toList();
-      for (final frequency in ready) {
-        if (last != null) expect(frequency > last, isTrue);
-        last = frequency;
+      // 音型本身单调递增（它只是被 step() 按个数取前缀，不再单独播一遍，
+      // 但它仍是整个方案的音高来源，所以这里的顺序性质要守住）。
+      for (var i = 1; i < DebugCues.ascentLow.length; i++) {
+        expect(DebugCues.ascentLow[i] > DebugCues.ascentLow[i - 1], isTrue,
+            reason: '上行音型第 $i 个音应高于前一个');
       }
-      expect(
-        DebugCues.done(DebugCueStyle.standard).last.frequencyHz,
-        DebugCues.noteC6,
-      );
+
+      // 全部完成现在是《卡农》主题：从原曲第一音（E4，330Hz）开始，
+      // 不再靠“唯一低音区长琶音”来辨识。
       expect(
         DebugCues.allDone(DebugCueStyle.standard).first.frequencyHz,
-        DebugCues.noteC5,
+        330,
+      );
+      expect(DebugCues.ascentLow.first, DebugCues.noteC6);
+
+      // 《卡农》曲谱长度远超逐项提示，长度本身就是最强的辨识特征。
+      expect(
+        DebugCues.durationMs(DebugCues.allDone(DebugCueStyle.standard)),
+        greaterThan(
+          DebugCues.durationMs(DebugCues.fullStep(5, DebugCueStyle.standard)),
+        ),
       );
 
       // 紧凑风格整体短于标准风格。
@@ -1019,6 +1058,194 @@ void main() {
           DebugCues.durationMs(DebugCues.fullStep(5, DebugCueStyle.standard)),
         ),
       );
+    });
+
+    test('结束区是步序音型的对称回落且不与步序落音撞音高', () {
+      for (final style in DebugCues.styles) {
+        for (var index = 1; index <= 10; index++) {
+          final offset = index - 1;
+          final count = offset % 5 + 1;
+          final motif = offset ~/ 5 != 0
+              ? DebugCues.ascentHigh
+              : DebugCues.ascentLow;
+          final stepNotes = DebugCues.step(index, style)
+              .where((note) => note.frequencyHz != null)
+              .map((note) => note.frequencyHz!)
+              .toList();
+          final doneNotes = DebugCues.stepDone(index, style)
+              .where((note) => note.frequencyHz != null)
+              .map((note) => note.frequencyHz!)
+              .toList();
+
+          // 回落单调递减，方向与步序相反。
+          for (var i = 1; i < doneNotes.length; i++) {
+            expect(doneNotes[i] < doneNotes[i - 1], isTrue,
+                reason: '第 $index 项回落应单调递减');
+          }
+
+          // 交界处不能同音高：步序落音 != 回落起音。
+          // 这是「用同一个音型做步序和结束」最容易踩的坑。
+          // 例外是音型前两个音的退化区间（项 1、项 6）：交界处无法拉开，
+          // 辨识由音区（八度）承担。
+          if (count > 2) {
+            expect(
+              stepNotes.last == doneNotes.first,
+              isFalse,
+              reason: '第 $index 项：步序落音与回落起音不应同音高',
+            );
+          }
+
+          // 回落 = 步序音型跳过落音后倒序，且只落在步序音之内，
+          // 所以结束区总不比步序区更长（项 1 两者等长，均为单音）。
+          final expected = count == 1
+              ? <int>[motif.first]
+              : motif.take(count - 1).toList().reversed.toList();
+          expect(
+            doneNotes,
+            expected,
+            reason: '第 $index 项：回落应是步序跳过落音后的倒序',
+          );
+          expect(
+            doneNotes.length,
+            lessThanOrEqualTo(stepNotes.length),
+            reason: '第 $index 项：结束区不应比步序区更长',
+          );
+        }
+
+        // 项 1 的步序只有一个音，回落也只能是一个音（回到音型首音）。
+        expect(
+          DebugCues.stepDone(1, style)
+              .where((note) => note.frequencyHz != null)
+              .length,
+          1,
+        );
+
+        // 两个音区相差一个八度：十二平均律取整有 ±2Hz 误差。
+        for (var i = 0; i < DebugCues.ascentLow.length; i++) {
+          expect(
+            (DebugCues.ascentHigh[i] - DebugCues.ascentLow[i] * 2).abs(),
+            lessThanOrEqualTo(2),
+            reason: '音型第 $i 个音的高低八度应相差一倍',
+          );
+        }
+      }
+    });
+
+    test('试听曲线是「上行 N 音 → 停顿 → 对称回落」两段', () {
+      for (final style in DebugCues.styles) {
+        final t = DebugCues.eventTiming(style);
+        final step = DebugCues.stepTiming(style);
+
+        // 分区停顿必须明显长于步序音之间的内部间隔，否则听不出段落边界。
+        expect(t.sectionGapMs, greaterThan(step.gapMs * 2));
+
+        // 完整提示只有两个段落：上行 N 音 → 停顿 → 对称回落。
+        // 不再有开始区，所以 sectionGap 只有一处（stepDone 自身不含静默）。
+        // 这里用第 3 项（音数 3，回落 2 音）。
+        final full = DebugCues.fullStep(3, style);
+        final silences = <int>[];
+        for (var i = 0; i < full.length; i++) {
+          if (full[i].frequencyHz == null) silences.add(i);
+        }
+        final sectionGaps = [
+          for (final i in silences)
+            if (full[i].durationMs == t.sectionGapMs) i,
+        ];
+        expect(sectionGaps.length, 1, reason: '应有一处分区停顿');
+
+        final gap = sectionGaps.single;
+        // 第一段是步序的上行（第 3 项 = 3 个音）。
+        expect(full.take(gap).where((n) => n.frequencyHz != null).length, 3);
+        // 第二段是对称回落（第 3 项：跳过落音后剩 2 个音）。
+        expect(
+          full.sublist(gap + 1).where((n) => n.frequencyHz != null).length,
+          2,
+        );
+
+        // 曲线开头直接出声，末尾也直接以回落的末音收尾——
+        // 整项提示里不存在多余的完整音型。
+        expect(full.first.frequencyHz, isNotNull);
+        expect(full.last.frequencyHz, isNotNull);
+        expect(
+          full.where((n) => n.frequencyHz != null).length,
+          DebugCues.step(3, style).where((n) => n.frequencyHz != null).length +
+              DebugCues.stepDone(3, style)
+                  .where((n) => n.frequencyHz != null)
+                  .length,
+        );
+      }
+    });
+
+    test('步序与回落之间不会同音高', () {
+      for (final style in DebugCues.styles) {
+        // 这是「用同一个音型做步序和结束」最容易踩的坑：如果回落取完整倒序，
+        // 交界处就是「上行最高音 → 同一个最高音」两声同音高连读。
+        // 用「音型音序」判断，天然跨八度成立（八度只乘 2，不改变音序）。
+        //
+        // 例外是音型的前两个音：项 1 步序与回落都只剩音型首音（同一个音），
+        // 项 6 步序是 [C7] 而回落是 [C6]，八度刚好抵消。这两项无法在交界处
+        // 拉开音高，它们的序内辨识由音区（八度）承担，与设计文档一致。
+        for (var index = 1; index <= 10; index++) {
+          final count = (index - 1) % 5 + 1;
+          final stepLast = DebugCues.step(index, style)
+              .where((n) => n.frequencyHz != null)
+              .last
+              .frequencyHz;
+          final doneFirst = DebugCues.stepDone(index, style)
+              .where((n) => n.frequencyHz != null)
+              .first
+              .frequencyHz;
+          if (count <= 2) {
+            // 退化区间：回落起点（音序 count-2）与步序落音（音序 count-1）
+            // 的实际音高关系由八度进位决定，这里只要求两端都真的发了声。
+            expect(stepLast, isNotNull);
+            expect(doneFirst, isNotNull);
+            continue;
+          }
+          expect(stepLast == doneFirst, isFalse,
+              reason: '第 $index 项交界处不应同音高');
+        }
+      }
+    });
+
+    test('紧凑风格的每个时值都是标准风格的一半', () {
+      const standard = DebugCueStyle.standard;
+      const compact = DebugCueStyle.compact;
+
+      final stdStep = DebugCues.stepTiming(standard);
+      final cptStep = DebugCues.stepTiming(compact);
+      expect(cptStep.unitMs, stdStep.unitMs ~/ 2);
+      expect(cptStep.gapMs, stdStep.gapMs ~/ 2);
+
+      final stdEvent = DebugCues.eventTiming(standard);
+      final cptEvent = DebugCues.eventTiming(compact);
+      expect(cptEvent.eventDoneMs, stdEvent.eventDoneMs ~/ 2);
+      expect(cptEvent.eventGapMs, stdEvent.eventGapMs ~/ 2);
+      expect(cptEvent.sectionGapMs, stdEvent.sectionGapMs ~/ 2);
+
+      expect(
+        DebugCues.allDoneRepeatMs(compact),
+        DebugCues.allDoneRepeatMs(standard) ~/ 2,
+      );
+
+      // 同一条曲线的总时长也应严格减半，避免某个时值漏乘。
+      for (var index = 1; index <= 10; index++) {
+        expect(
+          DebugCues.durationMs(DebugCues.fullStep(index, compact)),
+          DebugCues.durationMs(DebugCues.fullStep(index, standard)) ~/ 2,
+          reason: '步 $index 的完整提示应精确减半',
+        );
+      }
+
+      // 全部完成的《卡农》曲谱也走同一套缩放：结构完全一致，
+      // 每个音的时值都是标准风格的一半（向下取整）。
+      final stdAll = DebugCues.allDone(standard);
+      final cptAll = DebugCues.allDone(compact);
+      expect(cptAll.length, stdAll.length, reason: '曲线结构不应因风格改变');
+      for (var i = 0; i < stdAll.length; i++) {
+        expect(cptAll[i].frequencyHz, stdAll[i].frequencyHz);
+        expect(cptAll[i].durationMs, stdAll[i].durationMs ~/ 2);
+      }
     });
 
     test('电机和舵机仍要求配置方向', () {

@@ -962,11 +962,13 @@ ${engineerFeedback.isEmpty ? '' : '        UpdateServoFeedback();'}
     final unitMs = stepTiming.unitMs;
     final gapMs = stepTiming.gapMs;
     final eventTiming = DebugCues.eventTiming(style);
-    final eventNoteMs = eventTiming.eventNoteMs;
     final eventDoneMs = eventTiming.eventDoneMs;
     final eventGapMs = eventTiming.eventGapMs;
-    final allDoneNoteMs = eventTiming.allDoneNoteMs;
-    final allDoneTailMs = eventTiming.allDoneTailMs;
+    final sectionGapMs = eventTiming.sectionGapMs;
+    // 全部完成是《卡农》主题：逐音渲染，时值随风格缩放，
+    // 与 UI 试听共用 DebugCues.allDone 这一份数据源。
+    final allDoneNotes = DebugCues.allDone(style);
+    final allDoneRepeatMs = DebugCues.allDoneRepeatMs(style);
     // 拓展板 Init 只用来设定 PWM 组频率（PWMA：P60/P62/P64/P66，PWMB：P74~P77）：
     // 电机 10000Hz，舵机与摩擦轮 50Hz。main() 起始已把两组初始化为 50Hz，
     // 之后只有测试项所需的组频率与当前不同时才重发 Init，不再逐个测试项重复初始化。
@@ -994,8 +996,11 @@ ${engineerFeedback.isEmpty ? '' : '        UpdateServoFeedback();'}
       }
       final lines = <String>[
         '    /* ${index + 1}. ${item.pin} ${item.driveType!.name} */',
-        '    ReadyCue();',
+        // 直接播「上行前 N 个音」——个数即序号，不需要先播完整音型做前奏。
         '    StepCue(${index + 1});',
+        // 步序区和测试动作之间要有停顿：否则第一声会被动作噪音盖掉，
+        // 也让「上行 N 音」和随后的回落分开成两句。
+        '    Ms_Delay(CUE_SECTION_GAP_MS);',
         if (needInit)
           '    ExpansionBoradControl(Init_Order, ${initValues(slot, frequency)});',
       ];
@@ -1042,19 +1047,36 @@ ${engineerFeedback.isEmpty ? '' : '        UpdateServoFeedback();'}
             '    ExpansionBoradControl(Duty_Change_Order, ${values(slot, 0)});',
           );
       }
-      lines.add('    DoneCue();');
+      // 测试动作与结束区之间的停顿，作用与步序区那处一致。
+      lines
+        ..add('    Ms_Delay(CUE_SECTION_GAP_MS);')
+        ..add('    DoneCue(${index + 1});');
       if (index < active.length - 1) lines.add('    Ms_Delay(TEST_GAP_MS);');
       commands.add(lines.join('\n'));
     }
+
+    // 全部完成旋律：《卡农》主题的逐音渲染。
+    // 408 个音，每个音一行 Beep，静默一段一行 Ms_Delay——
+    // 数据源是 DebugCues.allDone()，与 UI 试听完全同源，不会漂移。
+    final allDoneBody = <String>[];
+    for (final note in allDoneNotes) {
+      if (note.frequencyHz == null) {
+        allDoneBody.add('    Ms_Delay(${note.durationMs});');
+      } else {
+        allDoneBody.add('    Beep(${note.frequencyHz}, ${note.durationMs});');
+      }
+    }
+    final allDoneBodyText = allDoneBody.join('\n');
 
     return '''// 调试测试代码（由 PIE-Block Flutter 配置器自动生成）
 #include "main.h"
 
 /* 提示音方案（详见 docs/design/调试模式提示音方案.md）：
-   轮廓编码事件类型——READY 上行 C6-E6-G6、DONE 下行 G6-C6、
-   全部完成是唯一从低音区起音的长琶音；步序用“音区（八度）+ 点数（<=5）”
-   双通道冗余编码，音区表示十位、点数表示个位。全部音高落在无源蜂鸣器的
-   有效响应区，避开旧版 500Hz 平音所在的弱区。 */
+   步序用一条上行音型 C6-E6-G6-C7-E7 的前 N 个音表示第 N 项
+   （个数即序号，不单独播一遍完整音型做前奏），结束用同一音型跳过步序
+   落音后对称回落，构成一句「上去、回来」的乐句。音区（八度）负责进位：
+   项 1~5 低八度，项 6 起高八度。全部完成播放《卡农》主题（MIDI 第一
+   音轨）的完整旋律，与逐项短乐句形成长度与复杂度双重隔离。 */
 uint8_t Channal = 36;
 #define BUZZER_CH PWMA_CH4N_P33
 #define BUZZER_DUTY_ON 5000
@@ -1067,18 +1089,24 @@ uint8_t Channal = 36;
 #define CUE_C6 ${DebugCues.noteC6}
 #define CUE_E6 ${DebugCues.noteE6}
 #define CUE_G6 ${DebugCues.noteG6}
-/* 步序码：八度音区 + 点数单元时值（时值随「提示音风格」配置渲染） */
-#define CUE_ZONE_LOW CUE_G5
-#define CUE_ZONE_HIGH CUE_G6
+#define CUE_C7 ${DebugCues.noteC7}
+#define CUE_E7 ${DebugCues.noteE7}
+/* 上行音型：C6-E6-G6-C7-E7。步序用它的前 N 个音表示第 N 项（个数即序号），
+   回落用跳过步序落音后倒序，所以步序和结束是同一句旋律的一去一回。 */
+#define CUE_MOTIF_LEN ${DebugCues.zoneSpan}
+/* 步序码：八度音区进位（项 1~5 低八度，项 6 起高八度） */
 #define CUE_ZONE_SPAN ${DebugCues.zoneSpan}
 #define CUE_UNIT_MS $unitMs
 #define CUE_GAP_MS $gapMs
-/* 事件音时值 */
-#define CUE_EVENT_NOTE_MS $eventNoteMs
+/* 回落音时值 */
 #define CUE_EVENT_DONE_MS $eventDoneMs
 #define CUE_EVENT_GAP_MS $eventGapMs
-#define CUE_ALLDONE_NOTE_MS $allDoneNoteMs
-#define CUE_ALLDONE_TAIL_MS $allDoneTailMs
+/* 分区停顿：步序音与测试动作、测试动作与回落之间的静默，
+   必须明显长于 CUE_GAP_MS，否则去回两段会连成一个乐句，听不出边界。 */
+#define CUE_SECTION_GAP_MS $sectionGapMs
+/* 全部完成旋律（《卡农》主题）的音高、时值全部逐音写在 AllDoneCue 里，
+   不再用宏概括——曲谱是固定数据，宏只会掩盖它。这里只留循环间隔。 */
+#define CUE_ALLDONE_REPEAT_MS $allDoneRepeatMs
 #define TEST_GAP_MS 1000
 #define FRICTION_STEP_MS 1500
 #define FRICTION_START_DUTY 500
@@ -1104,29 +1132,26 @@ static void Beep(uint16_t frequency, uint16_t duration)
     PWM_SET_Frequency(BUZZER_CH, frequency, 0);
 }
 
-/* 步骤开始：上行大三和弦分解 C6-E6-G6。轮廓上行表示“开始”，
-   不依赖音高记忆，只听走向就能与 DONE 区分开。 */
-static void ReadyCue(void)
+/* 上行音型第 index 个音（index 从 0 开始），high 为真时整体升八度。
+   用 switch 而不是数组变址：SDCC 对 "数组 + 变址" 的写法有已知取错字节的
+   问题（见 ExpansionBoradControl 里的注释），能避开就避开。 */
+static uint16_t MotifNote(uint8_t index, uint8_t high)
 {
-    Beep(CUE_C6, CUE_EVENT_NOTE_MS);
-    Ms_Delay(CUE_EVENT_GAP_MS);
-    Beep(CUE_E6, CUE_EVENT_NOTE_MS);
-    Ms_Delay(CUE_EVENT_GAP_MS);
-    Beep(CUE_G6, CUE_EVENT_NOTE_MS);
+    uint16_t octave = high ? 2 : 1;
+
+    switch (index)
+    {
+    case 0: return (uint16_t)(CUE_C6 * octave);
+    case 1: return (uint16_t)(CUE_E6 * octave);
+    case 2: return (uint16_t)(CUE_G6 * octave);
+    case 3: return (uint16_t)(CUE_C7 * octave);
+    default: return (uint16_t)(CUE_E7 * octave);
+    }
 }
 
-/* 步骤完成：下行四度 G6-C6，轮廓下行表示“结束”。 */
-static void DoneCue(void)
-{
-    Beep(CUE_G6, CUE_EVENT_DONE_MS);
-    Ms_Delay(CUE_EVENT_GAP_MS);
-    Beep(CUE_C6, CUE_EVENT_DONE_MS);
-}
-
-/* 步序提示：音区（八度）编码十位，点数编码个位。
-   点数封顶 CUE_ZONE_SPAN 是因为人类可靠计数约 4~5 声；
-   八度是最易分辨的音程，比半音/全音阶梯稳健。
-   两个通道互为冗余：数不准就看音区，听不准就数点数。 */
+/* 步序提示：用上行音型的前 count 个音表示第 count 项——**个数即序号**，
+   所以不需要先播一遍完整音型做前奏。音区（八度）负责进位：
+   项 1~5 用低八度那组，项 6 起换高八度那组。 */
 static void StepCue(uint8_t step)
 {
     uint8_t zone;
@@ -1137,23 +1162,50 @@ static void StepCue(uint8_t step)
     count = (uint8_t)((step - 1) % CUE_ZONE_SPAN + 1);
     for (i = 0; i < count; i++)
     {
-        Beep(zone ? CUE_ZONE_HIGH : CUE_ZONE_LOW, CUE_UNIT_MS);
+        Beep(MotifNote(i, zone), CUE_UNIT_MS);
         if (i + 1 < count)
             Ms_Delay(CUE_GAP_MS);
     }
 }
 
-/* 全部完成：全方案唯一从低音区起音的旋律，与步兵/工程启动曲同音，
-   配合尾音加长与每 2 秒循环形成独立于步骤音的辨识点。 */
+/* 步骤完成：步序音型的对称回落——从步序落音**下面**开始往回走。
+   必须跳过步序落音本身，否则交界处会出现同音高的两声连读，
+   分不出「步序结束」和「回落开始」。回落只落在步序音之内，
+   所以结束区总比步序区短，听感上清清楚楚是「向上走、再退回来」。
+   项 1 的步序只有一个音，跳过落音后为空，回落到音型首音本身。 */
+static void DoneCue(uint8_t step)
+{
+    uint8_t zone;
+    uint8_t count;
+    uint8_t i;
+
+    zone = (uint8_t)((step - 1) / CUE_ZONE_SPAN);
+    count = (uint8_t)((step - 1) % CUE_ZONE_SPAN + 1);
+    if (count == 1)
+    {
+        /* 项 1：跳过落音后为空，回到音型首音，完成「上行一个音 → 回落一个音」。 */
+        Beep(MotifNote(0, zone), CUE_EVENT_DONE_MS);
+        return;
+    }
+    /* 回落 = 音型第 count-2 个音一路降到第 0 个音，共 count-1 个音。
+       索引从 count-2 开始，天然跳过步序落音（音型第 count-1 个音），
+       所以交界处不会出现同音高的两声连读。 */
+    for (i = (uint8_t)(count - 2); i > 0; i--)
+    {
+        Beep(MotifNote(i, zone), CUE_EVENT_DONE_MS);
+        Ms_Delay(CUE_EVENT_GAP_MS);
+    }
+    Beep(MotifNote(0, zone), CUE_EVENT_DONE_MS);
+}
+
+/* 全部完成：播放《卡农》主题（MIDI 第一音轨）的完整旋律。
+   逐项提示是三条「上去、回来」的短乐句，这里接一段完整正曲，
+   长度和复杂度完全不同量级，一耳朵就能分辨。
+   音高/时值逐音写死：曲谱是固定数据，展开比宏更清楚，也避开 SDCC
+   对「数组 + 变址」取错字节的问题（见 ExpansionBoradControl 的注释）。 */
 static void AllDoneCue(void)
 {
-    Beep(CUE_C5, CUE_ALLDONE_NOTE_MS);
-    Ms_Delay(CUE_EVENT_GAP_MS);
-    Beep(CUE_E5, CUE_ALLDONE_NOTE_MS);
-    Ms_Delay(CUE_EVENT_GAP_MS);
-    Beep(CUE_G5, CUE_ALLDONE_NOTE_MS);
-    Ms_Delay(CUE_EVENT_GAP_MS);
-    Beep(CUE_C6, CUE_ALLDONE_TAIL_MS);
+$allDoneBodyText
 }
 
 static void ExpansionBoradControl(uint8_t command,
@@ -1254,7 +1306,7 @@ ${commands.join('\n\n')}
     ExpansionBoradControl(Duty_Change_Order, 0, 0, 0, 0, 0, 0, 0, 0);
     while (1) {
         AllDoneCue();
-        Ms_Delay(2000);
+        Ms_Delay(CUE_ALLDONE_REPEAT_MS);
     }
 }
 ''';
