@@ -133,16 +133,28 @@ void ExpansionBoradControl(uint8_t command,
     uint16_t p74, uint16_t p75, uint16_t p76, uint16_t p77)
 {
     uint8_t i;
-    uint16_t values[8];
-    values[0] = p60; values[1] = p62; values[2] = p64; values[3] = p66;
-    values[4] = p74; values[5] = p75; values[6] = p76; values[7] = p77;
     control_frame_pack[0] = COMM_HEADER_1;
     control_frame_pack[1] = COMM_HEADER_2;
     control_frame_pack[2] = command;
-    for (i = 0; i < 8; i++) {
-        control_frame_pack[3 + i * 2] = (uint8_t)(values[i] >> 8);
-        control_frame_pack[4 + i * 2] = (uint8_t)(values[i] & 0xff);
-    }
+    /* 逐字展开落帧，与《RM电控指南》的参考实现一致：SDCC 对
+       "values[] 数组 + 3+i*2 变址" 的写法会取错字节（低字节位置被写成高字节，
+       即 10000 发成 0x2727、500 发成 0x0101），这里直接从形参取高/低字节。 */
+    control_frame_pack[3] = (uint8_t)((p60 >> 8) & 0xFF);
+    control_frame_pack[4] = (uint8_t)(p60 & 0xFF);
+    control_frame_pack[5] = (uint8_t)((p62 >> 8) & 0xFF);
+    control_frame_pack[6] = (uint8_t)(p62 & 0xFF);
+    control_frame_pack[7] = (uint8_t)((p64 >> 8) & 0xFF);
+    control_frame_pack[8] = (uint8_t)(p64 & 0xFF);
+    control_frame_pack[9] = (uint8_t)((p66 >> 8) & 0xFF);
+    control_frame_pack[10] = (uint8_t)(p66 & 0xFF);
+    control_frame_pack[11] = (uint8_t)((p74 >> 8) & 0xFF);
+    control_frame_pack[12] = (uint8_t)(p74 & 0xFF);
+    control_frame_pack[13] = (uint8_t)((p75 >> 8) & 0xFF);
+    control_frame_pack[14] = (uint8_t)(p75 & 0xFF);
+    control_frame_pack[15] = (uint8_t)((p76 >> 8) & 0xFF);
+    control_frame_pack[16] = (uint8_t)(p76 & 0xFF);
+    control_frame_pack[17] = (uint8_t)((p77 >> 8) & 0xFF);
+    control_frame_pack[18] = (uint8_t)(p77 & 0xFF);
     control_frame_pack[19] = COMM_END_1;
     control_frame_pack[20] = COMM_END_2;
     for (i = 0; i < 21; i++) {
@@ -1039,16 +1051,28 @@ static void ExpansionBoradControl(uint8_t command,
     uint16_t p74, uint16_t p75, uint16_t p76, uint16_t p77)
 {
     uint8_t i;
-    uint16_t values[8];
-    values[0] = p60; values[1] = p62; values[2] = p64; values[3] = p66;
-    values[4] = p74; values[5] = p75; values[6] = p76; values[7] = p77;
     control_frame_pack[0] = COMM_HEADER_1;
     control_frame_pack[1] = COMM_HEADER_2;
     control_frame_pack[2] = command;
-    for (i = 0; i < 8; i++) {
-        control_frame_pack[3 + i * 2] = (uint8_t)(values[i] >> 8);
-        control_frame_pack[4 + i * 2] = (uint8_t)(values[i] & 0xff);
-    }
+    /* 逐字展开落帧，与《RM电控指南》的参考实现一致：SDCC 对
+       "values[] 数组 + 3+i*2 变址" 的写法会取错字节（低字节位置被写成高字节，
+       即 10000 发成 0x2727、500 发成 0x0101），这里直接从形参取高/低字节。 */
+    control_frame_pack[3] = (uint8_t)((p60 >> 8) & 0xFF);
+    control_frame_pack[4] = (uint8_t)(p60 & 0xFF);
+    control_frame_pack[5] = (uint8_t)((p62 >> 8) & 0xFF);
+    control_frame_pack[6] = (uint8_t)(p62 & 0xFF);
+    control_frame_pack[7] = (uint8_t)((p64 >> 8) & 0xFF);
+    control_frame_pack[8] = (uint8_t)(p64 & 0xFF);
+    control_frame_pack[9] = (uint8_t)((p66 >> 8) & 0xFF);
+    control_frame_pack[10] = (uint8_t)(p66 & 0xFF);
+    control_frame_pack[11] = (uint8_t)((p74 >> 8) & 0xFF);
+    control_frame_pack[12] = (uint8_t)(p74 & 0xFF);
+    control_frame_pack[13] = (uint8_t)((p75 >> 8) & 0xFF);
+    control_frame_pack[14] = (uint8_t)(p75 & 0xFF);
+    control_frame_pack[15] = (uint8_t)((p76 >> 8) & 0xFF);
+    control_frame_pack[16] = (uint8_t)(p76 & 0xFF);
+    control_frame_pack[17] = (uint8_t)((p77 >> 8) & 0xFF);
+    control_frame_pack[18] = (uint8_t)(p77 & 0xFF);
     control_frame_pack[19] = COMM_END_1;
     control_frame_pack[20] = COMM_END_2;
     for (i = 0; i < 21; i++) {
@@ -1058,13 +1082,20 @@ static void ExpansionBoradControl(uint8_t command,
 
 static uint16_t frictionDuty = 0;
 
-/* 只改当前测试那个脚的占空比，其余脚维持 0。 */
+/* 只改当前测试那个脚的占空比，其余脚维持 0。按脚展开写，避免 SDCC 在
+   "values[] + 变址" 上取错字节。 */
 static void FrictionSendDuty(uint8_t slot, uint16_t duty)
 {
-    uint16_t values[8] = {0};
-    values[slot] = duty;
-    ExpansionBoradControl(Duty_Change_Order, values[0], values[1], values[2],
-        values[3], values[4], values[5], values[6], values[7]);
+    switch (slot) {
+    case 0: ExpansionBoradControl(Duty_Change_Order, duty, 0, 0, 0, 0, 0, 0, 0); break;
+    case 1: ExpansionBoradControl(Duty_Change_Order, 0, duty, 0, 0, 0, 0, 0, 0); break;
+    case 2: ExpansionBoradControl(Duty_Change_Order, 0, 0, duty, 0, 0, 0, 0, 0); break;
+    case 3: ExpansionBoradControl(Duty_Change_Order, 0, 0, 0, duty, 0, 0, 0, 0); break;
+    case 4: ExpansionBoradControl(Duty_Change_Order, 0, 0, 0, 0, duty, 0, 0, 0); break;
+    case 5: ExpansionBoradControl(Duty_Change_Order, 0, 0, 0, 0, 0, duty, 0, 0); break;
+    case 6: ExpansionBoradControl(Duty_Change_Order, 0, 0, 0, 0, 0, 0, duty, 0); break;
+    default: ExpansionBoradControl(Duty_Change_Order, 0, 0, 0, 0, 0, 0, 0, duty); break;
+    }
 }
 
 /* 摩擦轮激活：给 500 启动占空比并保持 FRICTION_ACTIVATE_MS 让电调完成激活；
