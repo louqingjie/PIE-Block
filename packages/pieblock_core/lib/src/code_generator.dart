@@ -961,8 +961,8 @@ ${engineerFeedback.isEmpty ? '' : '        UpdateServoFeedback();'}
       }
       final lines = <String>[
         '    /* ${index + 1}. ${item.pin} ${item.driveType!.name} */',
-        '    Beep(BUZZER_FREQ_READY, 200);',
-        '    Ms_Delay(200);',
+        '    ReadyCue();',
+        '    StepCue(${index + 1});',
         if (needInit)
           '    ExpansionBoradControl(Init_Order, ${initValues(slot, frequency)});',
       ];
@@ -1009,7 +1009,7 @@ ${engineerFeedback.isEmpty ? '' : '        UpdateServoFeedback();'}
             '    ExpansionBoradControl(Duty_Change_Order, ${values(slot, 0)});',
           );
       }
-      lines.add('    Beep(BUZZER_FREQ_DONE, 200);');
+      lines.add('    DoneCue();');
       if (index < active.length - 1) lines.add('    Ms_Delay(TEST_GAP_MS);');
       commands.add(lines.join('\n'));
     }
@@ -1017,10 +1017,29 @@ ${engineerFeedback.isEmpty ? '' : '        UpdateServoFeedback();'}
     return '''// 调试测试代码（由 PIE-Block Flutter 配置器自动生成）
 #include "main.h"
 
+/* 提示音方案（详见 docs/design/调试模式提示音方案.md）：
+   轮廓编码事件类型——READY 上行 C6-E6-G6、DONE 下行 G6-C6、
+   全部完成是唯一从低音区起音的长琶音；步序用“音区（八度）+ 点数（<=5）”
+   双通道冗余编码，音区表示十位、点数表示个位。全部音高落在无源蜂鸣器的
+   有效响应区，避开旧版 500Hz 平音所在的弱区。 */
 uint8_t Channal = 36;
 #define BUZZER_CH PWMA_CH4N_P33
-#define BUZZER_FREQ_READY 500
-#define BUZZER_FREQ_DONE 700
+#define BUZZER_DUTY_ON 5000
+/* 静音占位频率：占空比为 0，频率取值不影响是否有声 */
+#define BUZZER_IDLE_FREQ 500
+/* 音高：十二平均律，A4 = 440Hz */
+#define CUE_C5 523
+#define CUE_E5 659
+#define CUE_G5 784
+#define CUE_C6 1047
+#define CUE_E6 1319
+#define CUE_G6 1568
+/* 步序码：八度音区 + 点数单元时值 */
+#define CUE_ZONE_LOW CUE_G5
+#define CUE_ZONE_HIGH CUE_G6
+#define CUE_ZONE_SPAN 5
+#define CUE_UNIT_MS 110
+#define CUE_GAP_MS 70
 #define TEST_GAP_MS 1000
 #define FRICTION_STEP_MS 1500
 #define FRICTION_START_DUTY 500
@@ -1041,9 +1060,61 @@ static uint8_t control_frame_pack[21];
 $_uart1TxQuery
 static void Beep(uint16_t frequency, uint16_t duration)
 {
-    PWM_SET_Frequency(BUZZER_CH, frequency, 5000);
+    PWM_SET_Frequency(BUZZER_CH, frequency, BUZZER_DUTY_ON);
     Ms_Delay(duration);
     PWM_SET_Frequency(BUZZER_CH, frequency, 0);
+}
+
+/* 步骤开始：上行大三和弦分解 C6-E6-G6。轮廓上行表示“开始”，
+   不依赖音高记忆，只听走向就能与 DONE 区分开。 */
+static void ReadyCue(void)
+{
+    Beep(CUE_C6, 90);
+    Ms_Delay(40);
+    Beep(CUE_E6, 90);
+    Ms_Delay(40);
+    Beep(CUE_G6, 90);
+}
+
+/* 步骤完成：下行四度 G6-C6，轮廓下行表示“结束”。 */
+static void DoneCue(void)
+{
+    Beep(CUE_G6, 140);
+    Ms_Delay(50);
+    Beep(CUE_C6, 140);
+}
+
+/* 步序提示：音区（八度）编码十位，点数编码个位。
+   点数封顶 CUE_ZONE_SPAN 是因为人类可靠计数约 4~5 声；
+   八度是最易分辨的音程，比半音/全音阶梯稳健。
+   两个通道互为冗余：数不准就看音区，听不准就数点数。 */
+static void StepCue(uint8_t step)
+{
+    uint8_t zone;
+    uint8_t count;
+    uint8_t i;
+
+    zone = (uint8_t)((step - 1) / CUE_ZONE_SPAN);
+    count = (uint8_t)((step - 1) % CUE_ZONE_SPAN + 1);
+    for (i = 0; i < count; i++)
+    {
+        Beep(zone ? CUE_ZONE_HIGH : CUE_ZONE_LOW, CUE_UNIT_MS);
+        if (i + 1 < count)
+            Ms_Delay(CUE_GAP_MS);
+    }
+}
+
+/* 全部完成：全方案唯一从低音区起音的旋律，与步兵/工程启动曲同音，
+   配合尾音加长与每 2 秒循环形成独立于步骤音的辨识点。 */
+static void AllDoneCue(void)
+{
+    Beep(CUE_C5, 120);
+    Ms_Delay(40);
+    Beep(CUE_E5, 120);
+    Ms_Delay(40);
+    Beep(CUE_G5, 120);
+    Ms_Delay(40);
+    Beep(CUE_C6, 300);
 }
 
 static void ExpansionBoradControl(uint8_t command,
@@ -1104,7 +1175,7 @@ static void FrictionActivate(uint8_t slot)
 {
     frictionDuty = FRICTION_START_DUTY;
     FrictionSendDuty(slot, frictionDuty);
-    PWM_SET_Frequency(BUZZER_CH, BUZZER_FREQ_READY, 0);
+    PWM_SET_Frequency(BUZZER_CH, BUZZER_IDLE_FREQ, 0);
     Ms_Delay(FRICTION_ACTIVATE_MS);
 }
 
@@ -1126,7 +1197,7 @@ static void FrictionRampTo(uint8_t slot, uint16_t target)
         if (frictionDuty)
             PWM_SET_Frequency(BUZZER_CH, frictionDuty, 5000);
         else
-            PWM_SET_Frequency(BUZZER_CH, BUZZER_FREQ_READY, 0);
+            PWM_SET_Frequency(BUZZER_CH, BUZZER_IDLE_FREQ, 0);
         Ms_Delay(FRICTION_RAMP_CYCLE_MS);
     }
 }
@@ -1135,7 +1206,7 @@ void main(void)
 {
     Board_Init();
     UART_Init(UART_1, UART1_RX_P30, UART1_TX_P31, 230400, TIM1);
-    PWM_Init(BUZZER_CH, BUZZER_FREQ_READY, 0);
+    PWM_Init(BUZZER_CH, BUZZER_IDLE_FREQ, 0);
     ExpansionBoradControl(Init_Order, 50, 50, 50, 50, 50, 50, 50, 50);
     Ms_Delay(20);
 
@@ -1143,7 +1214,7 @@ ${commands.join('\n\n')}
 
     ExpansionBoradControl(Duty_Change_Order, 0, 0, 0, 0, 0, 0, 0, 0);
     while (1) {
-        Beep(BUZZER_FREQ_DONE, 500);
+        AllDoneCue();
         Ms_Delay(2000);
     }
 }

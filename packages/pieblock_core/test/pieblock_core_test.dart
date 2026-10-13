@@ -848,7 +848,7 @@ void main() {
       expect(activateBody, contains('frictionDuty = FRICTION_START_DUTY;'));
       expect(
         activateBody,
-        contains('PWM_SET_Frequency(BUZZER_CH, BUZZER_FREQ_READY, 0);'),
+        contains('PWM_SET_Frequency(BUZZER_CH, BUZZER_IDLE_FREQ, 0);'),
       );
       expect(activateBody, isNot(contains('5000')));
       expect(activateBody, contains('Ms_Delay(FRICTION_ACTIVATE_MS);'));
@@ -858,6 +858,67 @@ void main() {
         code.indexOf('FrictionActivate(2);'),
         lessThan(code.indexOf('FrictionRampTo(2, 800);')),
       );
+    });
+
+    test('调试提示音用事件轮廓与步序双通道区分', () {
+      final code = CodeGenerator.generate(completeDebug());
+
+      // 事件层：READY 上行、DONE 下行、全部完成低音区起音。
+      expect(code, contains('#define CUE_C6 1047'));
+      expect(code, contains('#define CUE_G6 1568'));
+      expect(code, contains('#define CUE_G5 784'));
+      expect(
+        code,
+        contains(
+          'Beep(CUE_C6, 90);\n    Ms_Delay(40);\n'
+          '    Beep(CUE_E6, 90);\n    Ms_Delay(40);\n'
+          '    Beep(CUE_G6, 90);',
+        ),
+      );
+      expect(
+        code,
+        contains('Beep(CUE_G6, 140);\n    Ms_Delay(50);\n    Beep(CUE_C6, 140);'),
+      );
+      expect(code, contains('Beep(CUE_C5, 120);'));
+
+      // 步序层：音区八度 + 点数 <= 5，两个通道都写进模板。
+      expect(code, contains('#define CUE_ZONE_LOW CUE_G5'));
+      expect(code, contains('#define CUE_ZONE_HIGH CUE_G6'));
+      expect(code, contains('#define CUE_ZONE_SPAN 5'));
+      expect(
+        code,
+        contains('zone = (uint8_t)((step - 1) / CUE_ZONE_SPAN);'),
+      );
+      expect(
+        code,
+        contains('count = (uint8_t)((step - 1) % CUE_ZONE_SPAN + 1);'),
+      );
+
+      // 每个测试项按顺序播自己的步序码，步号从 1 连续递增。
+      // 统计调用次数时排除函数定义行（'ReadyCue();' 不会匹配到 'static void ReadyCue(void)'）。
+      expect(code, contains('StepCue(1);'));
+      expect(code, contains('StepCue(2);'));
+      expect(code, contains('StepCue(3);'));
+      expect('\n    ReadyCue();'.allMatches(code).length, 3);
+      expect('\n    DoneCue();'.allMatches(code).length, 3);
+      expect(
+        code.indexOf('StepCue(1);'),
+        lessThan(code.indexOf('StepCue(2);')),
+      );
+      expect(
+        code.indexOf('StepCue(2);'),
+        lessThan(code.indexOf('StepCue(3);')),
+      );
+
+      // 结尾进入全部完成循环。
+      expect(
+        code,
+        contains('while (1) {\n        AllDoneCue();\n        Ms_Delay(2000);'),
+      );
+
+      // 旧版两个平音常量不应残留。
+      expect(code, isNot(contains('BUZZER_FREQ_READY')));
+      expect(code, isNot(contains('BUZZER_FREQ_DONE')));
     });
 
     test('电机和舵机仍要求配置方向', () {

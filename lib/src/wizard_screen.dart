@@ -2758,6 +2758,12 @@ class _DebugTestsPage extends ConsumerWidget {
             '完成电调激活（此期间蜂鸣器静音），再按该引脚自己的满油上限把油门比例值换算成目标占空比、'
             '逐周期平滑渐变到位，停留 1.5 秒观察后回零停机；渐变期间蜂鸣频率跟随当前占空比，爬升即为上行扫频。',
           ),
+          const SizedBox(height: 14),
+          _InfoBanner(
+            '每项开始与结束用不同旋律提示：上升音表示开始、下降音表示结束；'
+            '开始后紧跟几声短音表示这是第几项，音高变高一个八度代表进入第 6 项及以后。'
+            '全部测试完成后播放一段从低音起的较长旋律并每 2 秒重复。',
+          ),
           if (frictionPinsUsed.isNotEmpty) ...[
             const SizedBox(height: 14),
             _FormRow(
