@@ -971,6 +971,7 @@ ${engineerFeedback.isEmpty ? '' : '        UpdateServoFeedback();'}
         );
         lines
           ..add('    Ms_Delay(1000);')
+          ..add('    FrictionActivate($slot);')
           ..add('    FrictionRampTo($slot, $targetDuty);')
           ..add('    Ms_Delay(FRICTION_STEP_MS);')
           ..add('    FrictionRampTo($slot, 0);');
@@ -1013,6 +1014,7 @@ uint8_t Channal = 36;
 #define FRICTION_START_DUTY 500
 #define FRICTION_STEP_DUTY 1
 #define FRICTION_RAMP_CYCLE_MS 20
+#define FRICTION_ACTIVATE_MS 500
 #define EXPANSION_FRAME_GAP_MS 5
 #define COMM_HEADER_1 0xAB
 #define COMM_HEADER_2 0xBC
@@ -1056,12 +1058,30 @@ static void ExpansionBoradControl(uint8_t command,
 
 static uint16_t frictionDuty = 0;
 
+/* 只改当前测试那个脚的占空比，其余脚维持 0。 */
+static void FrictionSendDuty(uint8_t slot, uint16_t duty)
+{
+    uint16_t values[8] = {0};
+    values[slot] = duty;
+    ExpansionBoradControl(Duty_Change_Order, values[0], values[1], values[2],
+        values[3], values[4], values[5], values[6], values[7]);
+}
+
+/* 摩擦轮激活：给 500 启动占空比并保持 FRICTION_ACTIVATE_MS 让电调完成激活；
+   这段激活时间不发蜂鸣。 */
+static void FrictionActivate(uint8_t slot)
+{
+    frictionDuty = FRICTION_START_DUTY;
+    FrictionSendDuty(slot, frictionDuty);
+    PWM_SET_Frequency(BUZZER_CH, BUZZER_FREQ_READY, 0);
+    Ms_Delay(FRICTION_ACTIVATE_MS);
+}
+
 /* 摩擦轮斜坡控制与步兵项目同律：静止先跳到启动占空比，其余每周期
    ±FRICTION_STEP_DUTY 渐变；目标为 0 且已降到启动占空比及以下直接停机。
    渐变期间蜂鸣频率等于当前占空比，启动爬升即为上行扫频。 */
 static void FrictionRampTo(uint8_t slot, uint16_t target)
 {
-    uint16_t values[8] = {0};
     while (frictionDuty != target) {
         if (target >= FRICTION_START_DUTY && frictionDuty < FRICTION_START_DUTY)
             frictionDuty = FRICTION_START_DUTY;
@@ -1071,9 +1091,7 @@ static void FrictionRampTo(uint8_t slot, uint16_t target)
             frictionDuty = 0;
         else
             frictionDuty -= FRICTION_STEP_DUTY;
-        values[slot] = frictionDuty;
-        ExpansionBoradControl(Duty_Change_Order, values[0], values[1], values[2],
-            values[3], values[4], values[5], values[6], values[7]);
+        FrictionSendDuty(slot, frictionDuty);
         if (frictionDuty)
             PWM_SET_Frequency(BUZZER_CH, frictionDuty, 5000);
         else

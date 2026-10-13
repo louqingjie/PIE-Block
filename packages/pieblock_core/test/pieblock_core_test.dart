@@ -835,6 +835,31 @@ void main() {
       expect(code, contains('Init_Order, 50, 50, 50, 50, 50, 50, 50, 50'));
     });
 
+    test('摩擦轮测试先做 500 占空比激活 500ms 且期间不发蜂鸣', () {
+      final code = CodeGenerator.generate(completeDebug());
+      expect(code, contains('#define FRICTION_ACTIVATE_MS 500'));
+
+      // 激活函数本体：给 500 启动占空比 → 静音 → 保持 500ms；不含 5000
+      // 占空比（5000 是蜂鸣器发声用的占空比，出现即表示激活期间会响）。
+      final activateBody = code.substring(
+        code.indexOf('static void FrictionActivate'),
+        code.indexOf('static void FrictionRampTo'),
+      );
+      expect(activateBody, contains('frictionDuty = FRICTION_START_DUTY;'));
+      expect(
+        activateBody,
+        contains('PWM_SET_Frequency(BUZZER_CH, BUZZER_FREQ_READY, 0);'),
+      );
+      expect(activateBody, isNot(contains('5000')));
+      expect(activateBody, contains('Ms_Delay(FRICTION_ACTIVATE_MS);'));
+
+      // 每个摩擦轮测试项都先激活，再爬目标。
+      expect(
+        code.indexOf('FrictionActivate(2);'),
+        lessThan(code.indexOf('FrictionRampTo(2, 800);')),
+      );
+    });
+
     test('电机和舵机仍要求配置方向', () {
       final invalid = DebugConfig(
         tests: [
