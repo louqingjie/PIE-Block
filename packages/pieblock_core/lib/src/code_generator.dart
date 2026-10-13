@@ -926,6 +926,7 @@ ${engineerFeedback.isEmpty ? '' : '        UpdateServoFeedback();'}
       final item = active[index];
       final direction = item.direction == Direction.forward ? 1 : 0;
       final slot = expansionPins.indexOf(item.pin);
+      final friction = item.driveType == DebugDriveType.friction;
       final lines = <String>[
         '    /* ${index + 1}. ${item.pin} ${item.driveType!.name} */',
         '    Beep(BUZZER_FREQ_READY, 200);',
@@ -938,7 +939,7 @@ ${engineerFeedback.isEmpty ? '' : '        UpdateServoFeedback();'}
           ..add('    PWM_Init($channel, 50, ${_servoDuty(angle)});')
           ..add('    Ms_Delay(${item.durationMs});')
           ..add('    PWM_SET_Frequency($channel, 50, 0);');
-      } else if (item.driveType == DebugDriveType.friction) {
+      } else if (friction) {
         // 调试曲线与运行控制同律：油门按 20% 一档爬升再回落，
         // 每一档按该引脚自己的满油上限换算成占空比，末尾补一档 0 表示停机。
         const levelStep = 20;
@@ -965,6 +966,13 @@ ${engineerFeedback.isEmpty ? '' : '        UpdateServoFeedback();'}
           lines
             ..add(
               '    ExpansionBoradControl(Duty_Change_Order, ${values(slot, duty)});',
+            )
+            // 蜂鸣频率等于摩擦轮占空比：启动斜坡爬升即上行扫频（与步兵项目一致），
+            // 停机档（duty 0）静音。
+            ..add(
+              duty == 0
+                  ? '    PWM_SET_Frequency(BUZZER_CH, BUZZER_FREQ_READY, 0);'
+                  : '    PWM_SET_Frequency(BUZZER_CH, $duty, 5000);',
             )
             ..add('    Ms_Delay(FRICTION_STEP_MS);');
         }
