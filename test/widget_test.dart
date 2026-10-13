@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pieblock_app/main.dart';
 import 'package:pieblock_app/src/controller.dart';
+import 'package:pieblock_app/src/debug_cue_preview.dart';
 import 'package:pieblock_app/src/deploy_controller.dart';
 import 'package:pieblock_app/src/home_screen.dart';
 import 'package:pieblock_app/src/platform/document_io.dart';
@@ -227,6 +228,27 @@ class _FakeMusicPreview implements MusicPreviewService {
   @override
   Future<void> togglePause() async {
     paused = !paused;
+  }
+}
+
+class _FakeDebugCuePreview implements DebugCuePreviewService {
+  final played = <List<DebugCueNote>>[];
+  int stopCalls = 0;
+  int disposeCalls = 0;
+
+  @override
+  Future<void> play(List<DebugCueNote> notes) async {
+    played.add(notes);
+  }
+
+  @override
+  Future<void> stop() async {
+    stopCalls += 1;
+  }
+
+  @override
+  Future<void> dispose() async {
+    disposeCalls += 1;
   }
 }
 
@@ -618,6 +640,8 @@ void main() {
   });
 
   testWidgets('调试向导展示可排序十路测试和动态摩擦轮字段', (tester) async {
+    // 试听面板默认用 flutter_soloud，测试里没有原生动态库，必须注入假实现。
+    final preview = _FakeDebugCuePreview();
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -628,7 +652,7 @@ void main() {
         ],
         child: MaterialApp(
           theme: ThemeData(useMaterial3: true),
-          home: const WizardScreen(),
+          home: WizardScreen(debugCuePreview: preview),
         ),
       ),
     );
@@ -641,6 +665,31 @@ void main() {
     expect(find.text('P66 最大占空比'), findsOneWidget);
     expect(find.text('测试时长'), findsNothing);
     expect(tester.takeException(), isNull);
+
+    // 「全部完成」把整条曲线交给试听实现，再点一次是停止播放。
+    final allDoneButton = find.widgetWithText(OutlinedButton, '全部完成');
+    await tester.ensureVisible(allDoneButton);
+    await tester.pumpAndSettle();
+    await tester.tap(allDoneButton);
+    await tester.pump();
+    expect(preview.played, hasLength(1));
+    // DebugCueNote 没有值相等语义，按「音高 + 时值」逐段比对同一条曲线。
+    List<(int?, int)> curve(List<DebugCueNote> notes) => [
+      for (final note in notes) (note.frequencyHz, note.durationMs),
+    ];
+    final played = preview.played.single;
+    expect(curve(played), curve(DebugCues.allDone(DebugCueStyle.standard)));
+
+    await tester.tap(allDoneButton);
+    await tester.pump();
+    expect(preview.stopCalls, 1);
+
+    // 等按钮复位的计时器跑完，再离场：退出调试页时释放试听实现。
+    await tester.pump(
+      Duration(milliseconds: DebugCues.durationMs(played) + 200),
+    );
+    await tester.pumpWidget(const SizedBox());
+    expect(preview.disposeCalls, 1);
   });
 
   testWidgets('音乐向导展示原生钢琴卷帘和响应式编辑工具', (tester) async {

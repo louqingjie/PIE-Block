@@ -366,6 +366,7 @@ class _DebugCueAudition extends ConsumerStatefulWidget {
     required this.style,
     required this.enabledCount,
     required this.onStyleChanged,
+    this.preview,
   });
 
   final DebugCueStyle style;
@@ -374,12 +375,16 @@ class _DebugCueAudition extends ConsumerStatefulWidget {
   final int enabledCount;
   final ValueChanged<DebugCueStyle> onStyleChanged;
 
+  /// 试听实现，默认交给 flutter_soloud 出声；测试注入假实现以避开原生库。
+  final DebugCuePreviewService? preview;
+
   @override
   ConsumerState<_DebugCueAudition> createState() => _DebugCueAuditionState();
 }
 
 class _DebugCueAuditionState extends ConsumerState<_DebugCueAudition> {
-  final DebugCuePreview _preview = DebugCuePreview();
+  late final DebugCuePreviewService _preview =
+      widget.preview ?? SoloudDebugCuePreview();
   String? _playing;
 
   @override
@@ -718,7 +723,10 @@ Future<InfantryConfig?> _resolveFrictionModeSelection(
 }
 
 class WizardScreen extends ConsumerWidget {
-  const WizardScreen({super.key});
+  const WizardScreen({super.key, this.debugCuePreview});
+
+  /// 调试提示音试听实现，仅供测试注入；为空时用 flutter_soloud 出声。
+  final DebugCuePreviewService? debugCuePreview;
 
   static const infantrySteps = [
     '遥控器与底盘',
@@ -775,7 +783,7 @@ class WizardScreen extends ConsumerWidget {
         _ => const _DeployPage(),
       },
       ProjectKind.debug => switch (state.step) {
-        0 => const _DebugTestsPage(),
+        0 => _DebugTestsPage(cuePreview: debugCuePreview),
         1 => const _ReviewPage(),
         2 => const _CodePage(),
         _ => const _DeployPage(),
@@ -2916,7 +2924,10 @@ class _ActionRow extends ConsumerWidget {
 }
 
 class _DebugTestsPage extends ConsumerWidget {
-  const _DebugTestsPage();
+  const _DebugTestsPage({this.cuePreview});
+
+  /// 提示音试听实现，透传给试听面板；为空时走 flutter_soloud。
+  final DebugCuePreviewService? cuePreview;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -2956,6 +2967,7 @@ class _DebugTestsPage extends ConsumerWidget {
           _DebugCueAudition(
             style: config.cueStyle,
             enabledCount: config.tests.where((item) => item.enabled).length,
+            preview: cuePreview,
             onStyleChanged: (style) =>
                 controller.updateConfig(config.copyWith(cueStyle: style)),
           ),

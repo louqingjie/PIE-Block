@@ -19,7 +19,9 @@ abstract interface class MusicPreviewService {
 }
 
 class SoloudMusicPreview implements MusicPreviewService {
-  final SoLoud _engine = SoLoud.instance;
+  /// 按需取引擎：`SoLoud.instance` 会立刻加载原生动态库，
+  /// 放在字段初始化器里会让构造对象本身就可能抛异常（测试环境没有该库）。
+  late final SoLoud _engine = SoLoud.instance;
   AudioSource? _source;
   SoundHandle? _handle;
   AudioSource? _pitchSource;

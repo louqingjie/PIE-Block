@@ -5,12 +5,24 @@ import 'package:pieblock_core/pieblock_core.dart';
 
 import 'platform/background_run.dart';
 
-/// 调试提示音试听：按 [DebugCues] 的曲线实时合成方波并播放。
+/// 调试提示音试听服务：按 [DebugCues] 的曲线合成方波并播放。
+///
+/// 抽成接口是为了让 UI 与 flutter_soloud 解耦：控件测试里没有原生动态库，
+/// 注入假实现即可构建面板，不需要真的出声。
+abstract interface class DebugCuePreviewService {
+  Future<void> play(List<DebugCueNote> notes);
+  Future<void> stop();
+  Future<void> dispose();
+}
+
+/// 用 flutter_soloud 播放的试听实现。
 ///
 /// 与固件共用 `DebugCues` 里的音高与时值，因此听到的就是烧录后的效果；
 /// 蜂鸣器是单音方波，这里同样用方波合成，不引入任何音频资源文件。
-class DebugCuePreview {
-  final SoLoud _engine = SoLoud.instance;
+class SoloudDebugCuePreview implements DebugCuePreviewService {
+  /// 按需取引擎：`SoLoud.instance` 会立刻加载原生动态库，
+  /// 放在字段初始化器里会让构造对象本身就可能抛异常（测试环境没有该库）。
+  late final SoLoud _engine = SoLoud.instance;
   AudioSource? _source;
   SoundHandle? _handle;
   Future<void>? _initializing;
@@ -29,6 +41,7 @@ class DebugCuePreview {
     }
   }
 
+  @override
   Future<void> play(List<DebugCueNote> notes) async {
     final request = ++_request;
     await _stop();
@@ -66,11 +79,13 @@ class DebugCuePreview {
     }
   }
 
+  @override
   Future<void> stop() async {
     _request++;
     await _stop();
   }
 
+  @override
   Future<void> dispose() => stop();
 }
 
