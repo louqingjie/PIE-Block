@@ -266,7 +266,7 @@ godot --headless --no-header --path . --script scripts/cli_codegen.gd -- check `
 
 ## 三、配置结构速查
 
-每种 kind 的完整字段定义见 `docs/schemas/*.schema.json`（由 CLI `schema` 命令
+每种 kind 的完整字段定义见 `docs/reference/schemas/*.schema.json`（由 CLI `schema` 命令
 生成，与代码保持同步）。核心字段：
 
 ### infantry（步兵）
@@ -316,7 +316,7 @@ godot --headless --no-header --path . --script scripts/cli_codegen.gd -- check `
 
 ## 四、硬件红线（Agent 必须遵守）
 
-来自 `docs/STC32G固件约束.md` 与 `docs/RM电控指南.md`，违反会烧坏机构或让车失控：
+来自 `docs/reference/STC32G固件约束.md` 与 `docs/guides/RM电控指南.md`，违反会烧坏机构或让车失控：
 
 1. **只烧录主控板**，绝不向机械扩展板烧录程序
 2. **扩展板 IO（P60/P62/P64/P66/P74/P75/P76/P77）只能通过

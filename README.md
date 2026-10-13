@@ -13,7 +13,7 @@ PIE-Block 是面向 W.PIE RoboMaster 校内赛的桌面集成开发环境（Wind
 - 字段范围、引脚占用、按键冲突和跨模式静态检查
 - `.pieproj` 格式 16 项目文件，保存向导进度并以 500ms 防抖自动保存
 - Material 3 浅色、深色和跟随系统主题
-- 只读 C 代码预览、搜索、复制和导出 `main.c`；音乐项目试点可直接生成等价汇编并导出 `main.asm`（详见 `docs/汇编生成器.md`）
+- 只读 C 代码预览、搜索、复制和导出 `main.c`；音乐项目试点可直接生成等价汇编并导出 `main.asm`（详见 `docs/guides/汇编生成器.md`）
 - 随应用发布的离线 SDCC C251，以及可选的本地 Keil C251 全量构建
 - HEX 地址与校验和检查、按内容哈希复用构建结果、导出 HEX
 - STC32G ROM USB-HID 主控板烧录、进度、取消和失败提示
@@ -31,7 +31,7 @@ packages/pieblock_sdcc_native/ Android C ABI 5 与多进程编译桥接
 stc32g/                  STC32G 固件和硬件参考代码
 stc32g_sdcc/             SDCC C251 支持库与离线测试
 keil_server/             独立云编译服务（不由当前应用调用）
-docs/                    硬件与项目格式文档
+docs/                    分类文档（guides / reference / design / releases / pitfall / playbook / legal 等）
 ```
 
 Flutter UI 不包含生成规则。`pieblock_core` 是配置、检查和代码生成的唯一实现（C 与汇编两种输出目标均在此实现）。
@@ -60,8 +60,8 @@ tools/package_flutter_linux.sh    # 校验并打包 build/dist/PIEBlock-<版本>
 
 `flutter build linux --release` 直接产出自包含 bundle（`build/linux/x64/release/bundle/`），`data/pieblock_runtime` 由 `linux/CMakeLists.txt` 在构建时安装，发布时保留整个目录；Linux 端支持 SDCC 离线编译与 USB-HID 烧录，烧录前需安装 udev 规则（`sudo tools/install_udev_rules.sh`，详见烧录指南）。
 
-编译与主控板接线、开关位置和故障排查见 [Flutter 编译与烧录指南](docs/Flutter编译与烧录指南.md)。
-Android 离线 SDCC 的架构、安全门和验收状态见 [Android SDCC 多进程移植](docs/android-sdcc-port.md)。
+编译与主控板接线、开关位置和故障排查见 [Flutter 编译与烧录指南](docs/guides/Flutter编译与烧录指南.md)。
+Android 离线 SDCC 的架构、安全门和验收状态见 [Android SDCC 多进程移植](docs/design/android-sdcc-port.md)。
 
 ## 官网与在线体验
 
@@ -125,7 +125,7 @@ Web 版与桌面版共用同一套代码，差异都由 `lib/src/platform/` 下�
 
 产物保留 14 天，名称为 `PIEBlock-<版本>-windows-setup.exe`（Inno 安装包）与 `PIEBlock-<版本>-windows-x64-release.zip`（免安装 `Release` 目录）。
 
-SDCC 黄金固件比对不在桌面发版流水线里跑：桌面版编固件用的就是随包发布的同一条工具链，跨平台一致性对它不构成风险。该比对只在 Android 验收时按需运行（`tools/run_android_sdcc_ci.ps1` 的无设备验收，以及真机上的黄金矩阵），见 [Android SDCC 多进程移植](docs/android-sdcc-port.md)。
+SDCC 黄金固件比对不在桌面发版流水线里跑：桌面版编固件用的就是随包发布的同一条工具链，跨平台一致性对它不构成风险。该比对只在 Android 验收时按需运行（`tools/run_android_sdcc_ci.ps1` 的无设备验收，以及真机上的黄金矩阵），见 [Android SDCC 多进程移植](docs/design/android-sdcc-port.md)。
 
 推送 `v*` 标签会额外触发 `release` job：校验标签与 `pubspec.yaml` 版本一致后，用该版本的产物创建 GitHub Release。Release 正文优先取 `docs/releases/<版本>.md`，没有该文件时用自动生成的变更说明——发版请同时提交版本说明文件。
 
@@ -140,4 +140,4 @@ Push-Location packages\pieblock_toolchain; dart test; Pop-Location
 
 ## 项目文件
 
-新版继续使用 `.pieproj` 扩展名，但只接受 `format_version: 16`。格式 15 及更早的版本不会自动转换，需在新版中重新创建配置。新项目默认不预填任何必填配置（在新建弹窗显式打开「模板工程」开关除外，模板会一次性预填当前类型的全部机器人字段）；步兵云台轴默认各有一个未填执行器，可增删为多个或留空；调试工程预置十路停用引脚和 3 秒安全时长。音乐工程默认 480 PPQ、120 BPM 和 4/4 拍，可重新导入原始 MIDI。详细结构见 [项目文件格式](docs/Flutter项目文件格式.md)。
+新版继续使用 `.pieproj` 扩展名，但只接受 `format_version: 16`。格式 15 及更早的版本不会自动转换，需在新版中重新创建配置。新项目默认不预填任何必填配置（在新建弹窗显式打开「模板工程」开关除外，模板会一次性预填当前类型的全部机器人字段）；步兵云台轴默认各有一个未填执行器，可增删为多个或留空；调试工程预置十路停用引脚和 3 秒安全时长。音乐工程默认 480 PPQ、120 BPM 和 4/4 拍，可重新导入原始 MIDI。详细结构见 [项目文件格式](docs/reference/Flutter项目文件格式.md)。

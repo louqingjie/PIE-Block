@@ -1,6 +1,6 @@
 ﻿# 一键启动公网编译服务：keil_server（带 API Key 鉴权）+ cloudflared 隧道
 #
-# 前提：已按 docs/公网部署CloudflareTunnel指南.md 完成一次性的
+# 前提：已按 docs/guides/公网部署CloudflareTunnel指南.md 完成一次性的
 #   cloudflared 安装、login、tunnel create，并把
 #   deploy/cloudflared-config.yml.example 复制为 cloudflared-config.yml 填好。
 #

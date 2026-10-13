@@ -1,5 +1,5 @@
 # cloudflared 隧道配置（复制为 cloudflared-config.yml 后填写）
-# 生成方法见 docs/公网部署CloudflareTunnel指南.md
+# 生成方法见 docs/guides/公网部署CloudflareTunnel指南.md
 
 # 隧道 UUID：`cloudflared tunnel create pieblock` 的输出
 tunnel: <TUNNEL-UUID>

@@ -1266,7 +1266,7 @@ void main(void)
   /// 结构与 C 版逐函数对应：Music_Wait / Music_Stop / Music_PlaySegment /
   /// Music_PlayOnce / All_Init / main，数据表改用平行数组存储。
   /// 调用约定实测自 vendored SDCC（-mmcs251 --model-large --stack-auto），
-  /// 结论记录在 docs/汇编生成器.md。
+  /// 结论记录在 docs/guides/汇编生成器.md。
   static String _musicAsm(MusicConfig config) {
     final segments = MusicTimeline.segments(config);
     final frequencies = List.generate(128, (note) {

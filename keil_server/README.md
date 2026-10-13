@@ -236,7 +236,7 @@ python -m keil_server.keys remove alice       # 吊销
 
 > **零成本公网方案（本机 + Cloudflare Tunnel）**：不买云服务器，本机 24h 开着，
 > 用 Cloudflare Tunnel 绑 `build.pieblock.asia`（免费、自动 HTTPS、无需开放端口）。
-> 完整步骤见 `docs/公网部署CloudflareTunnel指南.md`，配套文件在
+> 完整步骤见 `docs/guides/公网部署CloudflareTunnel指南.md`，配套文件在
 > `keil_server/deploy/`（cloudflared 配置模板 + `start_public.ps1` 一键启动）。
 
 ## 配置（环境变量，全部可覆盖）

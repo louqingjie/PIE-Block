@@ -3,7 +3,7 @@
 #
 # 前提：
 #   1. 已下载 NSSM：https://nssm.cc/download （默认放 C:\nssm\nssm.exe）
-#   2. 已按 docs/公网部署CloudflareTunnel指南.md 配好隧道（跳过公网可加 -SkipTunnel）
+#   2. 已按 docs/guides/公网部署CloudflareTunnel指南.md 配好隧道（跳过公网可加 -SkipTunnel）
 #   3. 以「管理员」身份运行 PowerShell
 #
 # 用法（管理员 PowerShell，从项目根）：
