@@ -963,17 +963,10 @@ ${engineerFeedback.isEmpty ? '' : '        UpdateServoFeedback();'}
           )
           ..add('    Ms_Delay(EXPANSION_FRAME_GAP_MS);');
         for (final duty in curve) {
+          // 与步兵项目同律的斜坡控制：每档都逐周期 ±FRICTION_STEP_DUTY 渐变
+          // 逼近，不再直接跳变；到档后停留观察。
           lines
-            ..add(
-              '    ExpansionBoradControl(Duty_Change_Order, ${values(slot, duty)});',
-            )
-            // 蜂鸣频率等于摩擦轮占空比：启动斜坡爬升即上行扫频（与步兵项目一致），
-            // 停机档（duty 0）静音。
-            ..add(
-              duty == 0
-                  ? '    PWM_SET_Frequency(BUZZER_CH, BUZZER_FREQ_READY, 0);'
-                  : '    PWM_SET_Frequency(BUZZER_CH, $duty, 5000);',
-            )
+            ..add('    FrictionRampTo($slot, $duty);')
             ..add('    Ms_Delay(FRICTION_STEP_MS);');
         }
       } else {
@@ -1016,6 +1009,9 @@ uint8_t Channal = 36;
 #define BUZZER_FREQ_DONE 700
 #define TEST_GAP_MS 1000
 #define FRICTION_STEP_MS 1500
+#define FRICTION_START_DUTY 500
+#define FRICTION_STEP_DUTY 1
+#define FRICTION_RAMP_CYCLE_MS 20
 #define EXPANSION_FRAME_GAP_MS 5
 #define COMM_HEADER_1 0xAB
 #define COMM_HEADER_2 0xBC
@@ -1054,6 +1050,34 @@ static void ExpansionBoradControl(uint8_t command,
     control_frame_pack[20] = COMM_END_2;
     for (i = 0; i < 21; i++) {
         Uart1TxQuery(control_frame_pack[i]);
+    }
+}
+
+static uint16_t frictionDuty = 0;
+
+/* 摩擦轮斜坡控制与步兵项目同律：静止先跳到启动占空比，其余每周期
+   ±FRICTION_STEP_DUTY 渐变；目标为 0 且已降到启动占空比及以下直接停机。
+   渐变期间蜂鸣频率等于当前占空比，启动爬升即为上行扫频。 */
+static void FrictionRampTo(uint8_t slot, uint16_t target)
+{
+    uint16_t values[8] = {0};
+    while (frictionDuty != target) {
+        if (target >= FRICTION_START_DUTY && frictionDuty < FRICTION_START_DUTY)
+            frictionDuty = FRICTION_START_DUTY;
+        else if (frictionDuty < target)
+            frictionDuty += FRICTION_STEP_DUTY;
+        else if (target == 0 && frictionDuty <= FRICTION_START_DUTY)
+            frictionDuty = 0;
+        else
+            frictionDuty -= FRICTION_STEP_DUTY;
+        values[slot] = frictionDuty;
+        ExpansionBoradControl(Duty_Change_Order, values[0], values[1], values[2],
+            values[3], values[4], values[5], values[6], values[7]);
+        if (frictionDuty)
+            PWM_SET_Frequency(BUZZER_CH, frictionDuty, 5000);
+        else
+            PWM_SET_Frequency(BUZZER_CH, BUZZER_FREQ_READY, 0);
+        Ms_Delay(FRICTION_RAMP_CYCLE_MS);
     }
 }
 

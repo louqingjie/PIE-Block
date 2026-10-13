@@ -735,15 +735,15 @@ void main() {
       expect(code.indexOf('1. P64'), lessThan(code.indexOf('2. P66')));
       expect(code.indexOf('2. P66'), lessThan(code.indexOf('3. MP03')));
       // P64 上限 800（跨度 300）：油门 0/20/40/60/80/100% → 500/560/620/680/740/800。
-      expect(code, contains('Duty_Change_Order, 0, 0, 500'));
-      expect(code, contains('Duty_Change_Order, 0, 0, 560'));
-      expect(code, contains('Duty_Change_Order, 0, 0, 620'));
-      expect(code, contains('Duty_Change_Order, 0, 0, 740'));
-      expect(code, contains('Duty_Change_Order, 0, 0, 800'));
+      expect(code, contains('FrictionRampTo(2, 500)'));
+      expect(code, contains('FrictionRampTo(2, 560)'));
+      expect(code, contains('FrictionRampTo(2, 620)'));
+      expect(code, contains('FrictionRampTo(2, 740)'));
+      expect(code, contains('FrictionRampTo(2, 800)'));
       // P66 上限 700（跨度 200）：同一油门映射出更低的占空比。
-      expect(code, contains('Duty_Change_Order, 0, 0, 0, 580'));
-      expect(code, contains('Duty_Change_Order, 0, 0, 0, 600'));
-      expect(code, isNot(contains('Duty_Change_Order, 0, 0, 0, 800')));
+      expect(code, contains('FrictionRampTo(3, 580)'));
+      expect(code, contains('FrictionRampTo(3, 600)'));
+      expect(code, isNot(contains('FrictionRampTo(3, 800)')));
       expect(code, contains('Ms_Delay(4200);'));
       expect(code, contains('PWM_SET_Frequency(PWMB_CH4_P03, 50, 0);'));
       expect(code, contains('Ms_Delay(2000);'));
@@ -784,7 +784,7 @@ void main() {
       expect(p64, contains(p64Direction));
       expect(
         p64.indexOf(p64Direction),
-        lessThan(p64.indexOf('Duty_Change_Order, 0, 0, 500')),
+        lessThan(p64.indexOf('FrictionRampTo(2, 500)')),
       );
 
       final p66 = generateFor('P66');
@@ -793,7 +793,7 @@ void main() {
       expect(p66, contains(p66Direction));
       expect(
         p66.indexOf(p66Direction),
-        lessThan(p66.indexOf('Duty_Change_Order, 0, 0, 0, 500')),
+        lessThan(p66.indexOf('FrictionRampTo(3, 500)')),
       );
     });
 
