@@ -132,11 +132,18 @@ jobs:
           key: ${{ env.BOOST_PIN }}-msys2-ucrt64-v1
 
       - name: 准备 MSYS2 UCRT64 构建环境
+        # release: false = 使用镜像预装的 C:\msys64。这是有意为之：
+        # setup-msys2 默认的 release: true 会把 MSYS2 解压到 $RUNNER_TEMP\msys64，
+        # 而 tools/build_android_sdcc_stages.ps1 等脚本与 packages/pieblock_sdcc_native
+        # 的 Gradle 调用都硬编码 C:\msys64（与本地开发机一致），路径错位会导致
+        # 脚本里的 Boost 校验与实际环境对不上（曾校验失败）。固定在 C:\msys64
+        # 后，工作流步骤、Gradle 内调用、阶段编译共用同一套环境。
         # 与 windows.yml 一致：bison/flex/make/python + UCRT64 gcc（toolchain）
-        # 与 zlib。Boost 不从这里装，改由下一步固定到 1.89.0-1。
+        # 与 zlib。Boost 不从这里装，改由后面的步骤固定到 1.89.0-1。
         uses: msys2/setup-msys2@v2
         with:
           msystem: UCRT64
+          release: false
           update: true
           install: >-
             bison
