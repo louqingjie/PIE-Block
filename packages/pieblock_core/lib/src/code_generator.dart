@@ -922,15 +922,37 @@ ${engineerFeedback.isEmpty ? '' : '        UpdateServoFeedback();'}
 
     final commands = <String>[];
     final active = config.tests.where((item) => item.enabled).toList();
+    // 拓展板 Init 只用来设定 PWM 组频率（PWMA：P60/P62/P64/P66，PWMB：P74~P77）：
+    // 电机 10000Hz，舵机与摩擦轮 50Hz。main() 起始已把两组初始化为 50Hz，
+    // 之后只有测试项所需的组频率与当前不同时才重发 Init，不再逐个测试项重复初始化。
+    final groupFrequencies = <int>[50, 50];
     for (var index = 0; index < active.length; index++) {
       final item = active[index];
       final direction = item.direction == Direction.forward ? 1 : 0;
       final slot = expansionPins.indexOf(item.pin);
       final friction = item.driveType == DebugDriveType.friction;
+      final frequency = friction || item.driveType == DebugDriveType.servo
+          ? 50
+          : 10000;
+      var needInit = false;
+      if (slot >= 0) {
+        final desired = slot < 4
+            ? <int>[frequency, 50]
+            : <int>[50, frequency];
+        needInit =
+            groupFrequencies[0] != desired[0] ||
+            groupFrequencies[1] != desired[1];
+        if (needInit) {
+          groupFrequencies[0] = desired[0];
+          groupFrequencies[1] = desired[1];
+        }
+      }
       final lines = <String>[
         '    /* ${index + 1}. ${item.pin} ${item.driveType!.name} */',
         '    Beep(BUZZER_FREQ_READY, 200);',
         '    Ms_Delay(200);',
+        if (needInit)
+          '    ExpansionBoradControl(Init_Order, ${initValues(slot, frequency)});',
       ];
       if (slot < 0) {
         final channel = item.pin == 'MP74' ? 'PWMB_CH1_P74' : 'PWMB_CH4_P03';
@@ -948,9 +970,6 @@ ${engineerFeedback.isEmpty ? '' : '        UpdateServoFeedback();'}
           config.frictionMaxDutyOf(item.pin)!,
         );
         lines
-          ..add(
-            '    ExpansionBoradControl(Init_Order, ${initValues(slot, 50)});',
-          )
           ..add('    Ms_Delay(1000);')
           ..add('    FrictionRampTo($slot, $targetDuty);')
           ..add('    Ms_Delay(FRICTION_STEP_MS);')
@@ -960,11 +979,7 @@ ${engineerFeedback.isEmpty ? '' : '        UpdateServoFeedback();'}
         final duty = servo
             ? _servoDuty(direction == 1 ? item.value! : -item.value!)
             : item.value!;
-        lines
-          ..add(
-            '    ExpansionBoradControl(Init_Order, ${initValues(slot, servo ? 50 : 10000)});',
-          )
-          ..add('    Ms_Delay(20);');
+        if (needInit) lines.add('    Ms_Delay(20);');
         if (!servo) {
           lines
             ..add(

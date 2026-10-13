@@ -791,6 +791,50 @@ void main() {
       );
     });
 
+    test('拓展板 Init 只在 PWM 组频率变化时重发', () {
+      final code = CodeGenerator.generate(
+        DebugConfig(
+          frictionP64MaxDuty: 800,
+          frictionP66MaxDuty: 700,
+          tests: [
+            const DebugTestItem(
+              pin: 'P60',
+              enabled: true,
+              driveType: DebugDriveType.motor,
+              direction: Direction.forward,
+              value: 2000,
+              durationMs: 3000,
+            ),
+            const DebugTestItem(
+              pin: 'P64',
+              enabled: true,
+              driveType: DebugDriveType.friction,
+              value: 100,
+            ),
+            const DebugTestItem(
+              pin: 'P66',
+              enabled: true,
+              driveType: DebugDriveType.friction,
+              value: 50,
+            ),
+            for (final pin in debugPins.where(
+              (pin) => pin != 'P60' && pin != 'P64' && pin != 'P66',
+            ))
+              DebugTestItem(pin: pin),
+          ],
+        ),
+      );
+
+      // P60 要 PWMA=10000Hz，换一次；P64 回到 50Hz，再换一次；P66 与 P64
+      // 同频不重复。加上 main() 起始那次，共 3 次 Init。
+      expect('ExpansionBoradControl(Init_Order, '.allMatches(code).length, 3);
+      expect(
+        code,
+        contains('Init_Order, 10000, 10000, 10000, 10000, 50, 50, 50, 50'),
+      );
+      expect(code, contains('Init_Order, 50, 50, 50, 50, 50, 50, 50, 50'));
+    });
+
     test('电机和舵机仍要求配置方向', () {
       final invalid = DebugConfig(
         tests: [
