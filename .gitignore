@@ -79,6 +79,8 @@ vendor/keil-toolchain/
 vendor/sdcc-toolchain/
 /tmp/
 /output/*.exe
+# 提示音试听 WAV：由 tool/dump_debug_cue_wav.dart 离线渲染，属产物不入库
+/output/试听/
 toolchain/
 
 # btctl (.NET 构建产物；源码 tools/btctl/*.cs / *.csproj 提交，产物不提交)
