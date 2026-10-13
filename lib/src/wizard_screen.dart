@@ -360,7 +360,7 @@ class _InfoBanner extends StatelessWidget {
 /// 调试提示音试听面板：把固件里那套提示音当场播出来，并给出对照表。
 ///
 /// 这是「不同用户辨识难度」里最关键的一环——光看文案记不住旋律，
-/// 必须能听；听熟了以后，赛场噪声里靠轮廓和点数就能定位到第几步。
+/// 必须能听；听熟了以后，赛场噪声里靠上行音数和升降走向就能定位到第几步。
 class _DebugCueAudition extends ConsumerStatefulWidget {
   const _DebugCueAudition({
     required this.style,
@@ -411,8 +411,8 @@ class _DebugCueAuditionState extends ConsumerState<_DebugCueAudition> {
     ];
     return _Section(
       title: '提示音试听',
-      subtitle: '听到的就是烧录后的效果。首次使用建议逐条试听一遍，'
-          '记住「上升=开始、下降=结束」和步序的点数规律。',
+      subtitle: '听到的就是烧录后的效果。每项提示就是「上行几声 → 停一下 → 回落」，'
+          '几声即第几项，听到回落就是这一项结束。',
       children: [
         Wrap(
           spacing: 10,
@@ -432,50 +432,108 @@ class _DebugCueAuditionState extends ConsumerState<_DebugCueAudition> {
                   widget.onStyleChanged(selection.first),
             ),
             OutlinedButton.icon(
-              onPressed: () => _play('ready', DebugCues.ready(widget.style)),
-              icon: Icon(
-                _playing == 'ready' ? Icons.stop : Icons.play_arrow,
-              ),
-              label: const Text('开始提示'),
-            ),
-            OutlinedButton.icon(
-              onPressed: () => _play('done', DebugCues.done(widget.style)),
-              icon: Icon(_playing == 'done' ? Icons.stop : Icons.play_arrow),
-              label: const Text('结束提示'),
-            ),
-            OutlinedButton.icon(
-              onPressed: () => _play('all', DebugCues.allDone(widget.style)),
+              onPressed: () =>
+                  _play('all', DebugCues.allDone(widget.style)),
               icon: Icon(_playing == 'all' ? Icons.stop : Icons.play_arrow),
               label: const Text('全部完成'),
             ),
           ],
         ),
         const SizedBox(height: 14),
-        Text(
-          '步序提示',
-          style: Theme.of(context).textTheme.titleSmall,
+        Row(
+          children: [
+            Text('步序提示', style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(width: 8),
+            Text(
+              '点一下听整项（上行 + 回落）',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 10),
         Wrap(
           spacing: 10,
           runSpacing: 10,
           children: [
             for (final index in steps)
-              SizedBox(
-                width: 132,
-                child: OutlinedButton(
-                  onPressed: () =>
-                      _play('step$index', DebugCues.fullStep(index, widget.style)),
-                  child: Text(
-                    '第 $index 项 · ${index <= DebugCues.zoneSpan ? '低音区' : '高音区'}'
-                    ' ${index <= DebugCues.zoneSpan ? index : index - DebugCues.zoneSpan} 声',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
+              _StepAuditionButton(
+                index: index,
+                playing: _playing == 'step$index',
+                onPressed: () => _play(
+                  'step$index',
+                  DebugCues.fullStep(index, widget.style),
                 ),
               ),
           ],
         ),
       ],
+    );
+  }
+}
+
+/// 单个步序的试听按钮。
+///
+/// 用 [OutlinedButton] 直接包四行文字会挤掉按钮自身的留白与描边，看起来不像按钮；
+/// 这里改成「图标 + 两行小字」的定宽卡片式按钮，靠描边和按压涟漪表明可点击。
+class _StepAuditionButton extends StatelessWidget {
+  const _StepAuditionButton({
+    required this.index,
+    required this.playing,
+    required this.onPressed,
+  });
+
+  final int index;
+  final bool playing;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    // 音区（八度）负责进位：项 1~5 低音区、项 6 起高音区；
+    // 而每一项的「声数」就是它在音区内的序号，也正是上行音型要播的音符数。
+    final inHighZone = (index - 1) ~/ DebugCues.zoneSpan != 0;
+    final count = (index - 1) % DebugCues.zoneSpan + 1;
+    return SizedBox(
+      width: 172,
+      child: OutlinedButton(
+        onPressed: onPressed,
+        style: OutlinedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          foregroundColor: playing ? scheme.primary : null,
+          side: BorderSide(
+            color: playing ? scheme.primary : scheme.outlineVariant,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              playing ? Icons.stop_circle_outlined : Icons.play_circle_outline,
+              size: 20,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '第 $index 项',
+                    style: Theme.of(context).textTheme.labelLarge,
+                  ),
+                  Text(
+                    '${inHighZone ? '高' : '低'}音区 · 上行 $count 声',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -1168,40 +1226,43 @@ class _Section extends StatelessWidget {
   final Widget? trailing;
   final List<Widget> children;
   @override
-  Widget build(BuildContext context) => Card(
-    child: Padding(
-      padding: EdgeInsets.all(_isCompact(context) ? 16 : 24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (trailing == null)
-            Text(
-              title,
-              style: Theme.of(context).textTheme.titleLarge
-                  ?.copyWith(fontWeight: FontWeight.w700),
-            )
-          else
-            SizedBox(
-              width: double.infinity,
-              child: Wrap(
-                alignment: WrapAlignment.spaceBetween,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: 16,
-                runSpacing: 12,
-                children: [
-                  Text(
-                    title,
-                    style: Theme.of(context).textTheme.titleLarge
-                        ?.copyWith(fontWeight: FontWeight.w700),
-                  ),
-                  ?trailing,
-                ],
+  Widget build(BuildContext context) => SizedBox(
+    width: double.infinity,
+    child: Card(
+      child: Padding(
+        padding: EdgeInsets.all(_isCompact(context) ? 16 : 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (trailing == null)
+              Text(
+                title,
+                style: Theme.of(context).textTheme.titleLarge
+                    ?.copyWith(fontWeight: FontWeight.w700),
+              )
+            else
+              SizedBox(
+                width: double.infinity,
+                child: Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 16,
+                  runSpacing: 12,
+                  children: [
+                    Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleLarge
+                          ?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                    ?trailing,
+                  ],
+                ),
               ),
-            ),
-          if (subtitle != null) ...[const SizedBox(height: 5), Text(subtitle!)],
-          const SizedBox(height: 20),
-          ...children,
-        ],
+            if (subtitle != null) ...[const SizedBox(height: 5), Text(subtitle!)],
+            const SizedBox(height: 20),
+            ...children,
+          ],
+        ),
       ),
     ),
   );
@@ -2879,14 +2940,16 @@ class _DebugTestsPage extends ConsumerWidget {
       child: Column(
         children: [
           _InfoBanner(
-            '机械装车前请先完成舵机归中。摩擦轮测试先给 ${Friction.startDuty} 启动占空比并保持 0.5 秒'
+            '机械装车前请先完成舵机归中。摩擦轮测试先给 ${Friction.startDuty} 启动占空比并保持 1 秒'
             '完成电调激活（此期间蜂鸣器静音），再按该引脚自己的满油上限把油门比例值换算成目标占空比、'
             '逐周期平滑渐变到位，停留 1.5 秒观察后回零停机；渐变期间蜂鸣频率跟随当前占空比，爬升即为上行扫频。',
           ),
           const SizedBox(height: 14),
           _InfoBanner(
-            '每项开始与结束用不同旋律提示：上升音表示开始、下降音表示结束；'
-            '开始后紧跟几声短音表示这是第几项，音高变高一个八度代表进入第 6 项及以后。'
+            '每项提示是一句「上去、回来」的短乐句：先上行几声，停一下，再对称回落。'
+            '听到几声就是第几项，听到开始回落就说明这一项做完了；'
+            '整句升高一个八度代表进入第 6 项及以后（项数超过 5 时用音区进位）。'
+            '上行与回落之间有明显停顿，听到「安静一下」就是换段了。'
             '全部测试完成后播放一段从低音起的较长旋律并每 2 秒重复。',
           ),
           const SizedBox(height: 14),

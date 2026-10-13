@@ -46,7 +46,7 @@
 
 调试配置保存 `tests` 数组。数组始终包含 P60、P62、P64、P66、P74、P75、P76、P77、MP03、MP74 十个固定引脚，数组顺序就是固件执行顺序。每项保存 `enabled`、`drive_type` 和 `value`；电机和舵机额外保存 `direction` 与 `duration_ms`，摩擦轮不保存方向与时长，测试期间也不发送方向帧。摩擦轮仅限 P64/P66：先给 `500` 启动占空比保持 1 秒完成电调激活，再按该引脚满油上限把 `value`（0–100 油门百分比）换算成目标占空比、逐周期平滑渐变到位，停留 1.5 秒后归零。
 
-调试配置还保存 `cue_style`，取 `standard` 或 `compact`，决定蜂鸣器提示音的时值松紧；缺字段的旧文件按 `standard` 读取。两者的音高、音区与点数编码完全一致，只压缩单音与间隔时长，因此切换风格不影响辨识逻辑。
+调试配置还保存 `cue_style`，取 `standard` 或 `compact`，决定蜂鸣器提示音的时值松紧；缺字段的旧文件按 `standard` 读取。两者的音高、音区与音数编码完全一致，只压缩单音与间隔时长，因此切换风格不影响辨识逻辑。
 
 音乐配置保存 `ticks_per_quarter`、`source_name`、`track_name`、`notes`、`tempo_events` 和 `time_signature_events`。每个音符保存稳定 `id`、`pitch`、`start_tick`、`duration_ticks` 与 `primary`；相同起始 tick 必须且只能有一个主音，其他音符作为低亮度参考并参与 MIDI 导出。速度事件保存每四分音符微秒数，拍号事件保存分子和分母，两类事件都从 tick 0 开始并严格递增。项目不保存原始 MIDI 字节、力度、乐器、通道或控制器。
 
