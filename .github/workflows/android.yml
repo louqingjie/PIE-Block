@@ -148,6 +148,23 @@ jobs:
             toolchain:p
             zlib:p
 
+      - name: 预热 MSYS2 用户目录
+        # runner 镜像的 MSYS2 从未以 runneradmin 登录过：新版 /etc/post-install/
+        # 05-home-dir.post 会在每次登录 profile 启动时执行 maybe_create_home，
+        # HOME 缺失时把 "Copying skeleton files." 等消息打到 stdout，污染从 pwsh
+        # 捕获 bash 输出的所有调用（曾导致 cygpath 结果变成多行文本、tar 拿到
+        # 消息文本当文件名）。先建好 HOME 目录，后续任何登录 shell 都会跳过
+        # 骨架复制，profile 输出保持干净。
+        run: |
+          $home = & 'C:\msys64\usr\bin\bash.exe' --noprofile --norc -c '
+              home="${HOME:-/home/$(id -un)}"
+              mkdir -p "$home"
+              test -d "$home"
+              printf "%s" "$home"
+          '
+          if ($LASTEXITCODE -ne 0) { throw "无法创建 MSYS2 HOME：$home" }
+          Write-Host "MSYS2 HOME 就绪：$home"
+
       - name: 安装 Android NDK ${{ env.NDK_VERSION }}
         # windows 镜像自带多个 NDK，但没有 28.2.13676358（基线要求），
         # 用 sdkmanager 补装；许可证在镜像里已接受，`yes` 只是兜底。
@@ -196,9 +213,16 @@ jobs:
                   throw 'Boost 包下载失败'
               }
           }
-          $posix = & 'C:\msys64\usr\bin\bash.exe' -lc 'cygpath -u "$1"' _ $pkg
-          & 'C:\msys64\usr\bin\bash.exe' -lc @'
+          $posix = & 'C:\msys64\usr\bin\cygpath.exe' -u $pkg
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($posix)) {
+              throw "cygpath 转换失败：$pkg"
+          }
+          # 注意：这里不能走 bash -lc（登录 shell 会 source /etc/profile）。
+          # runner 上 MSYS2 首次初始化时 profile 会把骨架复制消息打到 stdout，
+          # 混进历史输出会把后续命令的参数污染成多行文本（详见失败日志）。
+          & 'C:\msys64\usr\bin\bash.exe' --noprofile --norc -c @'
           set -euo pipefail
+          export PATH="/usr/bin:/bin:/ucrt64/bin:$PATH"
           rm -rf /tmp/pieblock-boost-x
           mkdir -p /tmp/pieblock-boost-x
           tar -xf "$1" -C /tmp/pieblock-boost-x ucrt64/include/boost
