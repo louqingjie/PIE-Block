@@ -1747,6 +1747,8 @@ void main() {
         completeInfantry(frictionMode: FrictionMode.disabled),
       );
       expect(code, isNot(contains('FRICTION_START_DUTY')));
+      expect(code, isNot(contains('FRICTION_ACTIVATE_MS')));
+      expect(code, isNot(contains('frictionActivateLoops')));
     });
 
     test('摩擦轮启停跳过 0~500 无效区间', () {
@@ -1786,6 +1788,57 @@ void main() {
       // 旧写法只在 duty 恰好为 0 时跳变，关闭途中重新开启会从 0~500 之间
       // 渐变上去，不应再出现
       expect(code, isNot(contains('frictionStartedThisCycle')));
+    });
+
+    test('步兵摩擦轮从静止启动先做 500 占空比激活 1000ms', () {
+      final code = CodeGenerator.generate(completeInfantry());
+      expect(code, contains('#define FRICTION_ACTIVATE_MS 1000'));
+      // 激活按主循环整圈折算：一圈约 FRICTION_LOOP_MS 毫秒，向上取整保证
+      // 实际保持时间不会短于 1000ms
+      expect(code, contains('#define FRICTION_LOOP_MS 20'));
+      expect(
+        code,
+        contains(
+          '#define FRICTION_ACTIVATE_LOOPS ((FRICTION_ACTIVATE_MS + FRICTION_LOOP_MS - 1) / FRICTION_LOOP_MS)',
+        ),
+      );
+      expect(code, contains('uint8_t frictionActivateLoops = 0;'));
+
+      final update = code.substring(
+        code.indexOf('void UpdateWeapons'),
+        code.indexOf('void main'),
+      );
+      // 开关键按下且摩擦轮还停在 0 时触发激活
+      expect(
+        update,
+        contains(
+          'if (frictionEnabled && frictionDutyP64 == 0\n'
+          '        && frictionTargetDutyP64 >= FRICTION_START_DUTY)\n'
+          '        frictionActivateLoops = FRICTION_ACTIVATE_LOOPS;',
+        ),
+      );
+      // 关闭摩擦轮时立刻取消激活残留，直接走停机斜坡
+      expect(
+        update,
+        contains('if (!frictionEnabled) frictionActivateLoops = 0;'),
+      );
+
+      final activate = update.substring(
+        update.indexOf('if (frictionActivateLoops > 0) {'),
+        update.indexOf('    } else {'),
+      );
+      // 激活期间两边都只维持启动占空比，不进 ±1 斜坡
+      expect(activate, contains('frictionDutyP64 = FRICTION_START_DUTY;'));
+      expect(activate, contains('frictionDutyP66 = FRICTION_START_DUTY;'));
+      expect(activate, isNot(contains('FRICTION_STEP_DUTY')));
+      // 激活期间不发蜂鸣，与调试工程的摩擦轮测试一致
+      expect(activate, isNot(contains('BUZZER')));
+      expect(
+        code,
+        contains(
+          'else if (frictionActivateLoops == 0 && (frictionDutyP64 != frictionTargetDutyP64',
+        ),
+      );
     });
 
     test('两侧摩擦轮按各自满油上限映射同一油门比例值', () {

@@ -25,11 +25,11 @@
     "x86_64": "abfd1996a6bdd366aa0b71ea19b7c8d9462ee7e642ddbc843f1d4e2e2b45aee1"
   },
   "windows_golden_sha256": {
-    "infantry_servo_blocking_friction": "aa60cf2ea3cda3934d1c6fd931a01c76c6f0fca77abd323e8a9930c8d399225a",
-    "infantry_motor_visual_no_friction": "ed858c2ed5664481c59bb6fd0272db57321dc1036fbf5d81d8dbb20ff8c7766c",
-    "infantry_shared_chassis_sprint": "91b87388fe58ab833f8557ddc9ad2cc8d696cae825dbd0c9b638e6dbb71648be",
-    "engineer_single_mode": "fbdd8ec076160830d3d2d839c24ea33eb9a5003bc376dbde499fb58194d1d0ed",
-    "engineer_four_mode_cycle": "5f87fb5ecb49f6a610f6990351dbd75fdea1b5e8f5c7115f965577f491707e7a",
-    "engineer_four_mode_direct": "8d7c8dc20da6e1beb2cba08ad5915deed7b670ee40c287a0f468d7896dc0f63d"
+    "infantry_servo_blocking_friction": "4266527f865834983c2edd06fd0a22000ed5a71af446a516fa5748ad6627dc1a",
+    "infantry_motor_visual_no_friction": "5eaa372c1e18f3b1c14416110e5fd30a38a4ef5890b2ec2edbcc594dc80bccce",
+    "infantry_shared_chassis_sprint": "5bc8f0879d9718b8ce668cb83b4bd97fd4c45792dcbeeaa87c305bfbf613f61f",
+    "engineer_single_mode": "06f94f3fcc30f4c1485e7ed4fec3813a96362503989daeaa39240981f031fac1",
+    "engineer_four_mode_cycle": "7246dab98aa35f2e94bbadd0047b956cf3920b01048a759eae6f3fd3ee14dbfa",
+    "engineer_four_mode_direct": "a60d2d9504b86e5a8522c5e8fa2ac1a10422927d2b81426d8e58133bcc022fcc"
   }
 }

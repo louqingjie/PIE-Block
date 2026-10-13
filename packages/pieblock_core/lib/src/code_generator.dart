@@ -321,6 +321,11 @@ $turnReverse    dutyOfMotor[${_slot(c.leftFront.pin)}] = ${_dir(c.leftFront.dire
 #define FRICTION_MAX_DUTY_P64 ${c.frictionP64MaxDuty!}
 #define FRICTION_MAX_DUTY_P66 ${c.frictionP66MaxDuty!}
 #define FRICTION_LEVEL_STEP ${c.frictionLevelStep!}
+/* 主循环一圈约 FRICTION_LOOP_MS 毫秒（Ms_Delay(10) 加两次 5ms 帧间隔），
+   电调激活按整圈数折算，实际保持时间不会短于 FRICTION_ACTIVATE_MS。 */
+#define FRICTION_LOOP_MS 20
+#define FRICTION_ACTIVATE_MS 1000
+#define FRICTION_ACTIVATE_LOOPS ((FRICTION_ACTIVATE_MS + FRICTION_LOOP_MS - 1) / FRICTION_LOOP_MS)
 '''
         : '';
     final frictionGlobals = frictionEnabled
@@ -330,6 +335,7 @@ uint16_t frictionDutyP66 = 0;
 uint16_t frictionTargetDutyP64 = 0;
 uint16_t frictionTargetDutyP66 = 0;
 uint8_t frictionEnabled = 0;
+uint8_t frictionActivateLoops = 0;
 '''
         : '';
     // 比例值是唯一控制量：油门 duty = 500 + 油门/100 * (该侧上限 - 500)。
@@ -342,7 +348,6 @@ uint8_t frictionEnabled = 0;
 '''
         : '';
     String frictionRamp(String pin) => [
-      '',
       '    if (frictionTargetDuty$pin >= FRICTION_START_DUTY && frictionDuty$pin < FRICTION_START_DUTY)',
       '        frictionDuty$pin = FRICTION_START_DUTY;',
       '    else if (frictionDuty$pin < frictionTargetDuty$pin)',
@@ -364,6 +369,8 @@ uint8_t frictionEnabled = 0;
     if (friction && !lastFriction) {
         frictionEnabled = !frictionEnabled;
         frictionLevel = frictionEnabled ? FRICTION_LEVEL_MAX : 0;
+        /* 关闭时立刻取消激活残留，马上走停机斜坡，不停在启动占空比上。 */
+        if (!frictionEnabled) frictionActivateLoops = 0;
     }
     if (frictionEnabled && frictionUp && !lastFrictionUp && !frictionDown) {
         if (frictionLevel < FRICTION_LEVEL_MAX - FRICTION_LEVEL_STEP)
@@ -380,9 +387,23 @@ uint8_t frictionEnabled = 0;
         ? FrictionDutyOfLevel(frictionLevel, FRICTION_MAX_DUTY_P64) : 0;
     frictionTargetDutyP66 = frictionEnabled
         ? FrictionDutyOfLevel(frictionLevel, FRICTION_MAX_DUTY_P66) : 0;
-    /* 指南：启停时 0~5% 区间可以跳过（电机 5% 才起转），
-       因此输出只取 0 或 500~各自上限，中间的 0~500 一律跳变。
-       斜坡跑在占空比上（两侧各自 ±1 duty/周期）， duty 变化率不超过 50/s。 */${frictionRamp('P64')}${frictionRamp('P66')}
+    /* 电调激活：摩擦轮从静止（占空比 0）启动时，先保持 FRICTION_START_DUTY
+       启动占空比 FRICTION_ACTIVATE_MS，让电调完成激活后再爬坡，
+       与调试工程的摩擦轮测试同一套激活流程。 */
+    if (frictionEnabled && frictionDutyP64 == 0
+        && frictionTargetDutyP64 >= FRICTION_START_DUTY)
+        frictionActivateLoops = FRICTION_ACTIVATE_LOOPS;
+    if (frictionActivateLoops > 0) {
+        frictionActivateLoops--;
+        frictionDutyP64 = FRICTION_START_DUTY;
+        frictionDutyP66 = FRICTION_START_DUTY;
+    } else {
+        /* 指南：启停时 0~5% 区间可以跳过（电机 5% 才起转），
+           因此输出只取 0 或 500~各自上限，中间的 0~500 一律跳变。
+           斜坡跑在占空比上（两侧各自 ±1 duty/周期）， duty 变化率不超过 50/s。 */
+${frictionRamp('P64')}
+${frictionRamp('P66')}
+    }
     lastFriction = friction;
     lastFrictionUp = frictionUp;
     lastFrictionDown = frictionDown;
@@ -467,7 +488,7 @@ static void UpdateBuzzerFeedback(void)
 ${feedbackChecks.join('\n')}
     if (!feedbackInitialized) { feedbackInitialized = 1; changed = 0; }
     if (changed) PWM_SET_Frequency(BUZZER_CH, feedbackDuty, 5000);
-${frictionEnabled ? '    else if (frictionDutyP64 != frictionTargetDutyP64 || frictionDutyP66 != frictionTargetDutyP66) PWM_SET_Frequency(BUZZER_CH, frictionDutyP64, 5000);' : ''}
+${frictionEnabled ? '    else if (frictionActivateLoops == 0 && (frictionDutyP64 != frictionTargetDutyP64 || frictionDutyP66 != frictionTargetDutyP66)) PWM_SET_Frequency(BUZZER_CH, frictionDutyP64, 5000);' : ''}
     else PWM_SET_Frequency(BUZZER_CH, 500, 0);
 }
 ''';

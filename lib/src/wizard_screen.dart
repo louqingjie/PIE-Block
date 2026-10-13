@@ -2399,7 +2399,8 @@ class _InfantryControlsPage extends ConsumerWidget {
                   '油门 0~${Friction.levelMax}% 按 '
                   'duty = ${Friction.startDuty} + 油门 ÷ ${Friction.levelMax} × (该侧上限 − ${Friction.startDuty}) '
                   '换算成两侧各自的占空比，'
-                  '${Friction.startDuty} duty 是电调启动信号固定不变，输出逐周期 ±1 平滑变化。',
+                  '${Friction.startDuty} duty 是电调启动信号固定不变，输出逐周期 ±1 平滑变化；'
+                  '按下开关键是先保持 ${Friction.startDuty} duty 1 秒完成电调激活，再爬目标。',
                 ),
               ],
               SwitchListTile(
