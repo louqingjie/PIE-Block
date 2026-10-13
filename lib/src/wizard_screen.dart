@@ -2754,9 +2754,9 @@ class _DebugTestsPage extends ConsumerWidget {
       child: Column(
         children: [
           _InfoBanner(
-            '机械装车前请先完成舵机归中。摩擦轮曲线按 ${Friction.levelMax}% 油门'
-            '每 20% 一档从 ${Friction.startDuty} 爬到目标油门再回落，每档 1.5 秒；'
-            '每一档用该引脚自己的满油上限换算成占空比。',
+            '机械装车前请先完成舵机归中。摩擦轮测试先给 ${Friction.startDuty} 启动占空比并保持 0.5 秒'
+            '完成电调激活（此期间蜂鸣器静音），再按该引脚自己的满油上限把油门比例值换算成目标占空比、'
+            '逐周期平滑渐变到位，停留 1.5 秒观察后回零停机；渐变期间蜂鸣频率跟随当前占空比，爬升即为上行扫频。',
           ),
           if (frictionPinsUsed.isNotEmpty) ...[
             const SizedBox(height: 14),
