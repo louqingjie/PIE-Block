@@ -940,19 +940,12 @@ ${engineerFeedback.isEmpty ? '' : '        UpdateServoFeedback();'}
           ..add('    Ms_Delay(${item.durationMs});')
           ..add('    PWM_SET_Frequency($channel, 50, 0);');
       } else if (friction) {
-        // 调试曲线与运行控制同律：油门按 20% 一档爬升再回落，
-        // 每一档按该引脚自己的满油上限换算成占空比，末尾补一档 0 表示停机。
-        const levelStep = 20;
-        final up = <int>[0];
-        while (up.last < item.value!) {
-          up.add((up.last + levelStep).clamp(0, item.value!));
-        }
-        final maxDuty = config.frictionMaxDutyOf(item.pin)!;
-        final curve = <int>[
-          for (final level in [...up, ...up.reversed.skip(1)])
-            Friction.dutyOfLevel(level, maxDuty),
-          0,
-        ];
+        // 只设一个目标：油门比例值按该引脚自己的满油上限换算成占空比，
+        // 斜坡逐周期逼近到目标即“斜坡结束”；停留观察后再设目标 0 停机。
+        final targetDuty = Friction.dutyOfLevel(
+          item.value!,
+          config.frictionMaxDutyOf(item.pin)!,
+        );
         lines
           ..add(
             '    ExpansionBoradControl(Init_Order, ${initValues(slot, 50)});',
@@ -961,14 +954,10 @@ ${engineerFeedback.isEmpty ? '' : '        UpdateServoFeedback();'}
           ..add(
             '    ExpansionBoradControl(Dir_Change_Order, ${values(slot, 1)});',
           )
-          ..add('    Ms_Delay(EXPANSION_FRAME_GAP_MS);');
-        for (final duty in curve) {
-          // 与步兵项目同律的斜坡控制：每档都逐周期 ±FRICTION_STEP_DUTY 渐变
-          // 逼近，不再直接跳变；到档后停留观察。
-          lines
-            ..add('    FrictionRampTo($slot, $duty);')
-            ..add('    Ms_Delay(FRICTION_STEP_MS);');
-        }
+          ..add('    Ms_Delay(EXPANSION_FRAME_GAP_MS);')
+          ..add('    FrictionRampTo($slot, $targetDuty);')
+          ..add('    Ms_Delay(FRICTION_STEP_MS);')
+          ..add('    FrictionRampTo($slot, 0);');
       } else {
         final servo = item.driveType == DebugDriveType.servo;
         final duty = servo

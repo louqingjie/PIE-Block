@@ -734,15 +734,12 @@ void main() {
       final code = CodeGenerator.generate(completeDebug());
       expect(code.indexOf('1. P64'), lessThan(code.indexOf('2. P66')));
       expect(code.indexOf('2. P66'), lessThan(code.indexOf('3. MP03')));
-      // P64 上限 800（跨度 300）：油门 0/20/40/60/80/100% → 500/560/620/680/740/800。
-      expect(code, contains('FrictionRampTo(2, 500)'));
-      expect(code, contains('FrictionRampTo(2, 560)'));
-      expect(code, contains('FrictionRampTo(2, 620)'));
-      expect(code, contains('FrictionRampTo(2, 740)'));
+      // 每个摩擦轮只设一个目标：油门按各自满油上限换算（P64 100%→800，P66 50%→600），
+      // 斜坡到位后停留观察，再设目标 0 停机。
       expect(code, contains('FrictionRampTo(2, 800)'));
-      // P66 上限 700（跨度 200）：同一油门映射出更低的占空比。
-      expect(code, contains('FrictionRampTo(3, 580)'));
+      expect(code, contains('FrictionRampTo(2, 0)'));
       expect(code, contains('FrictionRampTo(3, 600)'));
+      expect(code, contains('FrictionRampTo(3, 0)'));
       expect(code, isNot(contains('FrictionRampTo(3, 800)')));
       expect(code, contains('Ms_Delay(4200);'));
       expect(code, contains('PWM_SET_Frequency(PWMB_CH4_P03, 50, 0);'));
@@ -784,7 +781,7 @@ void main() {
       expect(p64, contains(p64Direction));
       expect(
         p64.indexOf(p64Direction),
-        lessThan(p64.indexOf('FrictionRampTo(2, 500)')),
+        lessThan(p64.indexOf('FrictionRampTo(2, 800)')),
       );
 
       final p66 = generateFor('P66');
@@ -793,7 +790,7 @@ void main() {
       expect(p66, contains(p66Direction));
       expect(
         p66.indexOf(p66Direction),
-        lessThan(p66.indexOf('FrictionRampTo(3, 500)')),
+        lessThan(p66.indexOf('FrictionRampTo(3, 700)')),
       );
     });
 
