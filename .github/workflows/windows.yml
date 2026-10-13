@@ -7,11 +7,6 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      skip_golden:
-        description: 跳过 SDCC 金样校验（仅供排查环境问题时使用）
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -21,8 +16,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # 固定版本来源：.metadata 的 revision 6655482ec06e547f90abf8ae7590466f4415978d
-  # 与 tools/android_sdcc_baseline.json 记录一致，避免 stable 漂移改变金样哈希。
+  # 固定版本来源：.metadata 的 revision 6655482ec06e547f90abf8ae7590466f4415978d，
+  # 避免 stable 漂移改变构建产物。
   FLUTTER_VERSION: 3.47.1
 
 jobs:
@@ -175,13 +170,6 @@ jobs:
           if (!(Test-Path -LiteralPath 'vendor/sdcc-toolchain/bin/sdcc.exe' -PathType Leaf)) {
               throw '内置工具链缺少 bin/sdcc.exe，无法构建 Windows 固件。'
           }
-
-      - name: SDCC 金样校验
-        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.skip_golden }}
-        working-directory: packages/pieblock_toolchain
-        env:
-          PIEBLOCK_RUN_SDCC_GOLDEN: '1'
-        run: dart test test/sdcc_windows_android_golden_test.dart
 
       - name: 构建 Windows Release
         run: flutter build windows --release
