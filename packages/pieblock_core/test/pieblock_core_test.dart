@@ -754,7 +754,7 @@ void main() {
       );
     });
 
-    test('P64/P66 摩擦轮方向固定为 1 且不要求配置方向', () {
+    test('P64/P66 摩擦轮不发方向帧且不要求配置方向', () {
       String generateFor(String pin, {Direction? legacyDirection}) {
         return CodeGenerator.generate(
           DebugConfig(
@@ -775,21 +775,18 @@ void main() {
         );
       }
 
+      // 摩擦轮方向固定，测试不再发送方向帧：设定频率后直接跑斜坡。
       final p64 = generateFor('P64', legacyDirection: Direction.reverse);
-      const p64Direction =
-          'ExpansionBoradControl(Dir_Change_Order, 0, 0, 1, 0, 0, 0, 0, 0);';
-      expect(p64, contains(p64Direction));
+      expect(p64, isNot(contains('ExpansionBoradControl(Dir_Change_Order')));
       expect(
-        p64.indexOf(p64Direction),
+        p64.indexOf('ExpansionBoradControl(Init_Order'),
         lessThan(p64.indexOf('FrictionRampTo(2, 800)')),
       );
 
       final p66 = generateFor('P66');
-      const p66Direction =
-          'ExpansionBoradControl(Dir_Change_Order, 0, 0, 0, 1, 0, 0, 0, 0);';
-      expect(p66, contains(p66Direction));
+      expect(p66, isNot(contains('ExpansionBoradControl(Dir_Change_Order')));
       expect(
-        p66.indexOf(p66Direction),
+        p66.indexOf('ExpansionBoradControl(Init_Order'),
         lessThan(p66.indexOf('FrictionRampTo(3, 700)')),
       );
     });
