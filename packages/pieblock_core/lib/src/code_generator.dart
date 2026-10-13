@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'debug_cues.dart';
 import 'models.dart';
 import 'music.dart';
 import 'validator.dart';
@@ -934,6 +935,17 @@ ${engineerFeedback.isEmpty ? '' : '        UpdateServoFeedback();'}
 
     final commands = <String>[];
     final active = config.tests.where((item) => item.enabled).toList();
+    // 提示音时值随风格变化，统一从 DebugCues 取，避免固件与 UI 试听两处定义漂移。
+    final style = config.cueStyle;
+    final stepTiming = DebugCues.stepTiming(style);
+    final unitMs = stepTiming.unitMs;
+    final gapMs = stepTiming.gapMs;
+    final eventTiming = DebugCues.eventTiming(style);
+    final eventNoteMs = eventTiming.eventNoteMs;
+    final eventDoneMs = eventTiming.eventDoneMs;
+    final eventGapMs = eventTiming.eventGapMs;
+    final allDoneNoteMs = eventTiming.allDoneNoteMs;
+    final allDoneTailMs = eventTiming.allDoneTailMs;
     // 拓展板 Init 只用来设定 PWM 组频率（PWMA：P60/P62/P64/P66，PWMB：P74~P77）：
     // 电机 10000Hz，舵机与摩擦轮 50Hz。main() 起始已把两组初始化为 50Hz，
     // 之后只有测试项所需的组频率与当前不同时才重发 Init，不再逐个测试项重复初始化。
@@ -1028,24 +1040,30 @@ uint8_t Channal = 36;
 /* 静音占位频率：占空比为 0，频率取值不影响是否有声 */
 #define BUZZER_IDLE_FREQ 500
 /* 音高：十二平均律，A4 = 440Hz */
-#define CUE_C5 523
-#define CUE_E5 659
-#define CUE_G5 784
-#define CUE_C6 1047
-#define CUE_E6 1319
-#define CUE_G6 1568
-/* 步序码：八度音区 + 点数单元时值 */
+#define CUE_C5 ${DebugCues.noteC5}
+#define CUE_E5 ${DebugCues.noteE5}
+#define CUE_G5 ${DebugCues.noteG5}
+#define CUE_C6 ${DebugCues.noteC6}
+#define CUE_E6 ${DebugCues.noteE6}
+#define CUE_G6 ${DebugCues.noteG6}
+/* 步序码：八度音区 + 点数单元时值（时值随「提示音风格」配置渲染） */
 #define CUE_ZONE_LOW CUE_G5
 #define CUE_ZONE_HIGH CUE_G6
-#define CUE_ZONE_SPAN 5
-#define CUE_UNIT_MS 110
-#define CUE_GAP_MS 70
+#define CUE_ZONE_SPAN ${DebugCues.zoneSpan}
+#define CUE_UNIT_MS $unitMs
+#define CUE_GAP_MS $gapMs
+/* 事件音时值 */
+#define CUE_EVENT_NOTE_MS $eventNoteMs
+#define CUE_EVENT_DONE_MS $eventDoneMs
+#define CUE_EVENT_GAP_MS $eventGapMs
+#define CUE_ALLDONE_NOTE_MS $allDoneNoteMs
+#define CUE_ALLDONE_TAIL_MS $allDoneTailMs
 #define TEST_GAP_MS 1000
 #define FRICTION_STEP_MS 1500
 #define FRICTION_START_DUTY 500
 #define FRICTION_STEP_DUTY 1
 #define FRICTION_RAMP_CYCLE_MS 20
-#define FRICTION_ACTIVATE_MS 500
+#define FRICTION_ACTIVATE_MS 1000
 #define EXPANSION_FRAME_GAP_MS 5
 #define COMM_HEADER_1 0xAB
 #define COMM_HEADER_2 0xBC
@@ -1069,19 +1087,19 @@ static void Beep(uint16_t frequency, uint16_t duration)
    不依赖音高记忆，只听走向就能与 DONE 区分开。 */
 static void ReadyCue(void)
 {
-    Beep(CUE_C6, 90);
-    Ms_Delay(40);
-    Beep(CUE_E6, 90);
-    Ms_Delay(40);
-    Beep(CUE_G6, 90);
+    Beep(CUE_C6, CUE_EVENT_NOTE_MS);
+    Ms_Delay(CUE_EVENT_GAP_MS);
+    Beep(CUE_E6, CUE_EVENT_NOTE_MS);
+    Ms_Delay(CUE_EVENT_GAP_MS);
+    Beep(CUE_G6, CUE_EVENT_NOTE_MS);
 }
 
 /* 步骤完成：下行四度 G6-C6，轮廓下行表示“结束”。 */
 static void DoneCue(void)
 {
-    Beep(CUE_G6, 140);
-    Ms_Delay(50);
-    Beep(CUE_C6, 140);
+    Beep(CUE_G6, CUE_EVENT_DONE_MS);
+    Ms_Delay(CUE_EVENT_GAP_MS);
+    Beep(CUE_C6, CUE_EVENT_DONE_MS);
 }
 
 /* 步序提示：音区（八度）编码十位，点数编码个位。
@@ -1108,13 +1126,13 @@ static void StepCue(uint8_t step)
    配合尾音加长与每 2 秒循环形成独立于步骤音的辨识点。 */
 static void AllDoneCue(void)
 {
-    Beep(CUE_C5, 120);
-    Ms_Delay(40);
-    Beep(CUE_E5, 120);
-    Ms_Delay(40);
-    Beep(CUE_G5, 120);
-    Ms_Delay(40);
-    Beep(CUE_C6, 300);
+    Beep(CUE_C5, CUE_ALLDONE_NOTE_MS);
+    Ms_Delay(CUE_EVENT_GAP_MS);
+    Beep(CUE_E5, CUE_ALLDONE_NOTE_MS);
+    Ms_Delay(CUE_EVENT_GAP_MS);
+    Beep(CUE_G5, CUE_ALLDONE_NOTE_MS);
+    Ms_Delay(CUE_EVENT_GAP_MS);
+    Beep(CUE_C6, CUE_ALLDONE_TAIL_MS);
 }
 
 static void ExpansionBoradControl(uint8_t command,

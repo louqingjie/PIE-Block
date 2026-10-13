@@ -835,11 +835,11 @@ void main() {
       expect(code, contains('Init_Order, 50, 50, 50, 50, 50, 50, 50, 50'));
     });
 
-    test('摩擦轮测试先做 500 占空比激活 500ms 且期间不发蜂鸣', () {
+    test('摩擦轮测试先做 500 占空比激活 1000ms 且期间不发蜂鸣', () {
       final code = CodeGenerator.generate(completeDebug());
-      expect(code, contains('#define FRICTION_ACTIVATE_MS 500'));
+      expect(code, contains('#define FRICTION_ACTIVATE_MS 1000'));
 
-      // 激活函数本体：给 500 启动占空比 → 静音 → 保持 500ms；不含 5000
+      // 激活函数本体：给 500 启动占空比 → 静音 → 保持 1000ms；不含 5000
       // 占空比（5000 是蜂鸣器发声用的占空比，出现即表示激活期间会响）。
       final activateBody = code.substring(
         code.indexOf('static void FrictionActivate'),
@@ -864,27 +864,38 @@ void main() {
       final code = CodeGenerator.generate(completeDebug());
 
       // 事件层：READY 上行、DONE 下行、全部完成低音区起音。
+      // 时值统一走宏，宏值随提示音风格渲染，这里断言标准风格的取值。
       expect(code, contains('#define CUE_C6 1047'));
       expect(code, contains('#define CUE_G6 1568'));
       expect(code, contains('#define CUE_G5 784'));
+      expect(code, contains('#define CUE_EVENT_NOTE_MS 90'));
+      expect(code, contains('#define CUE_EVENT_DONE_MS 140'));
+      expect(code, contains('#define CUE_EVENT_GAP_MS 40'));
+      expect(code, contains('#define CUE_ALLDONE_NOTE_MS 120'));
+      expect(code, contains('#define CUE_ALLDONE_TAIL_MS 300'));
       expect(
         code,
         contains(
-          'Beep(CUE_C6, 90);\n    Ms_Delay(40);\n'
-          '    Beep(CUE_E6, 90);\n    Ms_Delay(40);\n'
-          '    Beep(CUE_G6, 90);',
+          'Beep(CUE_C6, CUE_EVENT_NOTE_MS);\n    Ms_Delay(CUE_EVENT_GAP_MS);\n'
+          '    Beep(CUE_E6, CUE_EVENT_NOTE_MS);\n    Ms_Delay(CUE_EVENT_GAP_MS);\n'
+          '    Beep(CUE_G6, CUE_EVENT_NOTE_MS);',
         ),
       );
       expect(
         code,
-        contains('Beep(CUE_G6, 140);\n    Ms_Delay(50);\n    Beep(CUE_C6, 140);'),
+        contains(
+          'Beep(CUE_G6, CUE_EVENT_DONE_MS);\n    Ms_Delay(CUE_EVENT_GAP_MS);\n'
+          '    Beep(CUE_C6, CUE_EVENT_DONE_MS);',
+        ),
       );
-      expect(code, contains('Beep(CUE_C5, 120);'));
+      expect(code, contains('Beep(CUE_C5, CUE_ALLDONE_NOTE_MS);'));
 
       // 步序层：音区八度 + 点数 <= 5，两个通道都写进模板。
       expect(code, contains('#define CUE_ZONE_LOW CUE_G5'));
       expect(code, contains('#define CUE_ZONE_HIGH CUE_G6'));
       expect(code, contains('#define CUE_ZONE_SPAN 5'));
+      expect(code, contains('#define CUE_UNIT_MS 110'));
+      expect(code, contains('#define CUE_GAP_MS 70'));
       expect(
         code,
         contains('zone = (uint8_t)((step - 1) / CUE_ZONE_SPAN);'),
@@ -919,6 +930,95 @@ void main() {
       // 旧版两个平音常量不应残留。
       expect(code, isNot(contains('BUZZER_FREQ_READY')));
       expect(code, isNot(contains('BUZZER_FREQ_DONE')));
+    });
+
+    test('紧凑提示音风格压缩全部时值宏', () {
+      final code = CodeGenerator.generate(
+        completeDebug().copyWith(cueStyle: DebugCueStyle.compact),
+      );
+
+      expect(code, contains('#define CUE_UNIT_MS 60'));
+      expect(code, contains('#define CUE_GAP_MS 30'));
+      expect(code, contains('#define CUE_EVENT_NOTE_MS 60'));
+      expect(code, contains('#define CUE_EVENT_DONE_MS 70'));
+      expect(code, contains('#define CUE_EVENT_GAP_MS 20'));
+      expect(code, contains('#define CUE_ALLDONE_TAIL_MS 200'));
+      // 音高与编码方式不随风格变化。
+      expect(code, contains('#define CUE_C6 1047'));
+      expect(code, contains('#define CUE_ZONE_SPAN 5'));
+      expect(code, isNot(contains('#define CUE_UNIT_MS 110')));
+    });
+
+    test('提示音风格随项目文件往返且旧文件回落标准', () {
+      final compact = completeDebug().copyWith(cueStyle: DebugCueStyle.compact);
+      expect(compact.toJson()['cue_style'], 'compact');
+      expect(DebugConfig.fromJson(compact.toJson()).cueStyle,
+          DebugCueStyle.compact);
+
+      // 早期项目文件没有 cue_style 字段，应回落到标准而不是抛异常。
+      final legacy = completeDebug().toJson()..remove('cue_style');
+      expect(DebugConfig.fromJson(legacy).cueStyle, DebugCueStyle.standard);
+      expect(DebugCues.styleByName(null), DebugCueStyle.standard);
+      expect(DebugCues.styleByName('compact'), DebugCueStyle.compact);
+    });
+
+    test('提示音曲谱的步序映射符合音区与点数双通道', () {
+      for (final style in DebugCues.styles) {
+        // 步 1~5 低音区，步 6 起高音区（正好差一个八度）。
+        for (var index = 1; index <= 5; index++) {
+          final notes = DebugCues.step(index, style)
+              .where((note) => note.frequencyHz != null)
+              .toList();
+          expect(notes.length, index, reason: '步 $index 应有 $index 声');
+          expect(
+            notes.every((note) => note.frequencyHz == DebugCues.zoneLow),
+            isTrue,
+          );
+        }
+        for (var index = 6; index <= 10; index++) {
+          final notes = DebugCues.step(index, style)
+              .where((note) => note.frequencyHz != null)
+              .toList();
+          expect(notes.length, index - 5);
+          expect(
+            notes.every((note) => note.frequencyHz == DebugCues.zoneHigh),
+            isTrue,
+          );
+        }
+        expect(DebugCues.zoneHigh, DebugCues.zoneLow * 2);
+
+        // 越界序号不抛异常，按最后一段处理。
+        expect(DebugCues.step(0, style), isNotEmpty);
+        expect(DebugCues.step(-3, style), isNotEmpty);
+        expect(DebugCues.step(99, style), isNotEmpty);
+      }
+
+      // 事件音轮廓：READY 音高递增、DONE 递减、全部完成从最低音起。
+      int? last;
+      final ready = DebugCues.ready(DebugCueStyle.standard)
+          .where((note) => note.frequencyHz != null)
+          .map((note) => note.frequencyHz!)
+          .toList();
+      for (final frequency in ready) {
+        if (last != null) expect(frequency > last, isTrue);
+        last = frequency;
+      }
+      expect(
+        DebugCues.done(DebugCueStyle.standard).last.frequencyHz,
+        DebugCues.noteC6,
+      );
+      expect(
+        DebugCues.allDone(DebugCueStyle.standard).first.frequencyHz,
+        DebugCues.noteC5,
+      );
+
+      // 紧凑风格整体短于标准风格。
+      expect(
+        DebugCues.durationMs(DebugCues.fullStep(5, DebugCueStyle.compact)),
+        lessThan(
+          DebugCues.durationMs(DebugCues.fullStep(5, DebugCueStyle.standard)),
+        ),
+      );
     });
 
     test('电机和舵机仍要求配置方向', () {

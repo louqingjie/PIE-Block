@@ -14,6 +14,7 @@ import 'package:re_highlight/styles/atom-one-light.dart';
 
 import 'as251_highlight_mode.dart';
 import 'controller.dart';
+import 'debug_cue_preview.dart';
 import 'deploy_controller.dart';
 import 'platform/file_export.dart';
 import 'platform/keil_discovery.dart';
@@ -354,6 +355,129 @@ class _InfoBanner extends StatelessWidget {
       ],
     ),
   );
+}
+
+/// 调试提示音试听面板：把固件里那套提示音当场播出来，并给出对照表。
+///
+/// 这是「不同用户辨识难度」里最关键的一环——光看文案记不住旋律，
+/// 必须能听；听熟了以后，赛场噪声里靠轮廓和点数就能定位到第几步。
+class _DebugCueAudition extends ConsumerStatefulWidget {
+  const _DebugCueAudition({
+    required this.style,
+    required this.enabledCount,
+    required this.onStyleChanged,
+  });
+
+  final DebugCueStyle style;
+
+  /// 当前启用的测试项数，决定试听面板列出几步。
+  final int enabledCount;
+  final ValueChanged<DebugCueStyle> onStyleChanged;
+
+  @override
+  ConsumerState<_DebugCueAudition> createState() => _DebugCueAuditionState();
+}
+
+class _DebugCueAuditionState extends ConsumerState<_DebugCueAudition> {
+  final DebugCuePreview _preview = DebugCuePreview();
+  String? _playing;
+
+  @override
+  void dispose() {
+    _preview.dispose();
+    super.dispose();
+  }
+
+  Future<void> _play(String label, List<DebugCueNote> notes) async {
+    final next = _playing == label ? null : label;
+    setState(() => _playing = next);
+    if (next == null) {
+      await _preview.stop();
+      return;
+    }
+    await _preview.play(notes);
+    if (!mounted) return;
+    // 播完把按钮复位。留一点余量，避免尾部静音导致过早复位。
+    final ms = DebugCues.durationMs(notes) + 120;
+    await Future<void>.delayed(Duration(milliseconds: ms));
+    if (mounted && _playing == label) setState(() => _playing = null);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final steps = [
+      for (var index = 1; index <= widget.enabledCount.clamp(1, 10); index++)
+        index,
+    ];
+    return _Section(
+      title: '提示音试听',
+      subtitle: '听到的就是烧录后的效果。首次使用建议逐条试听一遍，'
+          '记住「上升=开始、下降=结束」和步序的点数规律。',
+      children: [
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            SegmentedButton<DebugCueStyle>(
+              segments: [
+                for (final style in DebugCues.styles)
+                  ButtonSegment(
+                    value: style,
+                    label: Text(style.label),
+                  ),
+              ],
+              selected: {widget.style},
+              onSelectionChanged: (selection) =>
+                  widget.onStyleChanged(selection.first),
+            ),
+            OutlinedButton.icon(
+              onPressed: () => _play('ready', DebugCues.ready(widget.style)),
+              icon: Icon(
+                _playing == 'ready' ? Icons.stop : Icons.play_arrow,
+              ),
+              label: const Text('开始提示'),
+            ),
+            OutlinedButton.icon(
+              onPressed: () => _play('done', DebugCues.done(widget.style)),
+              icon: Icon(_playing == 'done' ? Icons.stop : Icons.play_arrow),
+              label: const Text('结束提示'),
+            ),
+            OutlinedButton.icon(
+              onPressed: () => _play('all', DebugCues.allDone(widget.style)),
+              icon: Icon(_playing == 'all' ? Icons.stop : Icons.play_arrow),
+              label: const Text('全部完成'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        Text(
+          '步序提示',
+          style: Theme.of(context).textTheme.titleSmall,
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            for (final index in steps)
+              SizedBox(
+                width: 132,
+                child: OutlinedButton(
+                  onPressed: () =>
+                      _play('step$index', DebugCues.fullStep(index, widget.style)),
+                  child: Text(
+                    '第 $index 项 · ${index <= DebugCues.zoneSpan ? '低音区' : '高音区'}'
+                    ' ${index <= DebugCues.zoneSpan ? index : index - DebugCues.zoneSpan} 声',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
 }
 
 /// 复核页里单个调试项的一句话摘要。摩擦轮额外换算出实际占空比，
@@ -2763,6 +2887,13 @@ class _DebugTestsPage extends ConsumerWidget {
             '每项开始与结束用不同旋律提示：上升音表示开始、下降音表示结束；'
             '开始后紧跟几声短音表示这是第几项，音高变高一个八度代表进入第 6 项及以后。'
             '全部测试完成后播放一段从低音起的较长旋律并每 2 秒重复。',
+          ),
+          const SizedBox(height: 14),
+          _DebugCueAudition(
+            style: config.cueStyle,
+            enabledCount: config.tests.where((item) => item.enabled).length,
+            onStyleChanged: (style) =>
+                controller.updateConfig(config.copyWith(cueStyle: style)),
           ),
           if (frictionPinsUsed.isNotEmpty) ...[
             const SizedBox(height: 14),
