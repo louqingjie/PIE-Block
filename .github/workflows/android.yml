@@ -156,14 +156,15 @@ jobs:
         # 消息文本当文件名）。先建好 HOME 目录，后续任何登录 shell 都会跳过
         # 骨架复制，profile 输出保持干净。
         run: |
-          $home = & 'C:\msys64\usr\bin\bash.exe' --noprofile --norc -c '
+          # 注意：变量名不能叫 $home——PowerShell 的 $HOME 是只读自动变量。
+          $msysHome = & 'C:\msys64\usr\bin\bash.exe' --noprofile --norc -c '
               home="${HOME:-/home/$(id -un)}"
               mkdir -p "$home"
               test -d "$home"
               printf "%s" "$home"
           '
-          if ($LASTEXITCODE -ne 0) { throw "无法创建 MSYS2 HOME：$home" }
-          Write-Host "MSYS2 HOME 就绪：$home"
+          if ($LASTEXITCODE -ne 0) { throw "无法创建 MSYS2 HOME：$msysHome" }
+          Write-Host "MSYS2 HOME 就绪：$msysHome"
 
       - name: 安装 Android NDK ${{ env.NDK_VERSION }}
         # windows 镜像自带多个 NDK，但没有 28.2.13676358（基线要求），
