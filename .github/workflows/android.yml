@@ -1,0 +1,530 @@
+# Android 构建与打包
+#
+# 与 windows.yml / linux.yml 同构：push / PR 到 main、v* 标签与手动触发时
+# 构建并校验 Android Release 产物，打 v* 标签时发布 GitHub Release。
+#
+# 为什么跑在 windows-latest：
+#   - packages/pieblock_sdcc_native 的原生编译把 SDCC 编译器以「阶段对象」形式
+#     链接进 libpieblock_sdcc_native.so，工具链脚本 tools/build_android_sdcc_stages.ps1
+#     与 tools/link_android_sdcc_probe.ps1 只支持 MSYS2 UCRT64 + windows-x86_64 NDK
+#     工具链（tools/run_android_sdcc_ci.ps1 也是按 C:\flutter / C:\android / C:\msys64
+#     编写的）。
+#   - 产物安全门 tools/android_sdcc_baseline.json 的阶段对象哈希就是在这种环境下
+#     记录的，Linux/macOS 上的编译器、路径与 Boost 版本都无法复现同一份 .so。
+#
+# 关键可复现性约束（对应基线安全门）：
+#   - 固定 Flutter 3.47.1（与 .metadata / android_sdcc_baseline.json 一致）；
+#   - MSYS2 UCRT64 内必须提供 Boost 1.89.0 头文件（build_android_sdcc_stages.ps1
+#     硬校验 BOOST_VERSION 108900），CI 从 repo.msys2.org 拉取固定的
+#     mingw-w64-ucrt-x86_64-boost-1.89.0-1 包解出头文件，与本地开发机一致；
+#   - 阶段对象缓存键含 sdcc-c251 子模块提交、脚本哈希与 Boost 固定版本；
+#   - 构建后 tools/verify_android_package.ps1 校验 .so 内嵌的 stage-object 哈希
+#     必须与基线一致，否则直接失败（编译器漂移会被安全门挡住）。
+#
+# 与 windows.yml 的差异（有意为之）：
+#   - 不使用 sdcc-windows-* 缓存键，避免两个工作流同一 ref 并发写同一个缓存
+#     键互相踩踏；本工作流自用 sdcc-android-* 前缀，首次冷缓存会各自编译一次
+#     Windows 工具链（编译一次约 20 分钟，之后都由缓存命中）。
+#   - 不跑 SDCC 黄金矩阵（PIEBLOCK_RUN_SDCC_GOLDEN）：按 docs/design/android-sdcc-port.md
+#     的决策，黄金比对只在 Android 验收时按需运行，不挂 GitHub Actions 门禁；
+#     本工作流用阶段对象基线哈希 + Windows 工具链哈希清单保证编译器可复现。
+#   - 静态分析与单元测试由 windows.yml 的 quality job 覆盖，这里不重复跑。
+#
+# 签名：
+#   - 配置 ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS /
+#     ANDROID_KEY_PASSWORD 四个 Secrets 后构建已签名 Release 产物；
+#   - 未配置时产物为未签名（仅用于验收与存档，不可安装/上架），并且打 v* 标签
+#     发版会被强制拦截，避免把装不了的包发到公开 Release。
+
+name: Android 构建
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # 与 windows.yml / linux.yml 保持一致：固定 .metadata 对应的 stable 版本，
+  # 避免漂移改变构建产物。
+  FLUTTER_VERSION: 3.47.1
+  NDK_VERSION: 28.2.13676358
+  # 阶段对象的可复现性依赖这套固定环境，缓存键与消息里都要用它。
+  BOOST_PIN: boost-1.89.0-1
+
+jobs:
+  android:
+    name: Android 构建与打包
+    runs-on: windows-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: 检出代码（含 sdcc-c251 子模块）
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: 记录 sdcc-c251 子模块版本
+        id: sdcc
+        run: |
+          $sha = (git -C sdcc-c251 rev-parse HEAD).Trim()
+          if ([string]::IsNullOrWhiteSpace($sha)) {
+              throw '无法读取 sdcc-c251 子模块提交，请确认子模块已检出。'
+          }
+          "sha=$sha" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: 安装 JDK 17
+        # AGP 9.1 / Gradle 9.3.1 要求 JDK 17+，而 windows 镜像默认的 JAVA_HOME
+        # 指向 JDK 8，必须显式切换；gradle 缓存让依赖下载只发生一次。
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: 安装 Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: 缓存 pub 依赖
+        uses: actions/cache@v4
+        with:
+          path: ~/AppData/Local/Pub/Cache
+          key: pub-android-${{ hashFiles('pubspec.lock') }}
+          restore-keys: pub-android-
+
+      - name: 缓存内置 Windows SDCC 工具链
+        id: toolchain
+        uses: actions/cache@v4
+        with:
+          path: vendor/sdcc-toolchain
+          key: sdcc-android-${{ steps.sdcc.outputs.sha }}-${{ hashFiles('tools/prepare_sdcc_toolchain.ps1', 'tools/build_sdcc_windows_package.sh') }}
+
+      - name: 缓存 Android SDCC 阶段对象
+        id: stages
+        uses: actions/cache@v4
+        with:
+          # Gradle 侧（packages/pieblock_sdcc_native/android/build.gradle）固定从
+          # %LOCALAPPDATA%\PIE-Block\android-sdcc-stages 取阶段对象，必须与它一致。
+          path: ${{ env.LOCALAPPDATA }}\PIE-Block\android-sdcc-stages
+          key: android-stages-${{ steps.sdcc.outputs.sha }}-${{ env.BOOST_PIN }}-${{ hashFiles('tools/build_android_sdcc_stages.ps1', 'tools/link_android_sdcc_probe.ps1') }}
+
+      - name: 缓存固定 Boost 1.89.0 头文件
+        id: boostheaders
+        uses: actions/cache@v4
+        with:
+          path: C:\msys64\ucrt64\include\boost
+          key: ${{ env.BOOST_PIN }}-msys2-ucrt64-v1
+
+      - name: 准备 MSYS2 UCRT64 构建环境
+        # 与 windows.yml 一致：bison/flex/make/python + UCRT64 gcc（toolchain）
+        # 与 zlib。Boost 不从这里装，改由下一步固定到 1.89.0-1。
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            bison
+            flex
+            git
+            make
+            python
+          pacboy: >-
+            toolchain:p
+            zlib:p
+
+      - name: 安装 Android NDK ${{ env.NDK_VERSION }}
+        # windows 镜像自带多个 NDK，但没有 28.2.13676358（基线要求），
+        # 用 sdkmanager 补装；许可证在镜像里已接受，`yes` 只是兜底。
+        run: |
+          $sdkmanager = Join-Path $env:ANDROID_HOME 'cmdline-tools\latest\bin\sdkmanager.bat'
+          if (-not (Test-Path -LiteralPath $sdkmanager -PathType Leaf)) {
+              throw "未找到 sdkmanager：$sdkmanager"
+          }
+          $ndkRoot = Join-Path $env:ANDROID_HOME "ndk\$env:NDK_VERSION"
+          if (Test-Path -LiteralPath (Join-Path $ndkRoot 'source.properties') -PathType Leaf) {
+              Write-Host 'NDK 已存在，跳过安装。'
+              exit 0
+          }
+          Write-Host "安装 NDK $env:NDK_VERSION（首次约 3-6 分钟）……"
+          $log = Join-Path $env:RUNNER_TEMP 'sdkmanager-ndk.log'
+          ('yes' * 30) | & $sdkmanager --install "ndk;$env:NDK_VERSION" *> $log
+          if ($LASTEXITCODE -ne 0) {
+              Get-Content -LiteralPath $log -Tail 30
+              throw "NDK 安装失败，退出码 $LASTEXITCODE"
+          }
+          if (-not (Test-Path -LiteralPath (Join-Path $ndkRoot 'source.properties') -PathType Leaf)) {
+              throw 'NDK 安装后缺少 source.properties'
+          }
+          Write-Host "NDK 就绪：$ndkRoot"
+
+      - name: 安装固定 Boost 1.89.0-1 头文件
+        id: install-boost
+        # 阶段编译把 Boost 头文件真正编译进 cc1 产物，版本漂移会改变 stage-object
+        # 哈希、被基线安全门拦下。这里直接从 MSYS2 仓库下载与本地开发机一致的
+        # mingw-w64-ucrt-x86_64-boost 1.89.0-1 包，只解出头文件覆盖安装。
+        # 无条件执行（内部自愈）：上方缓存命中时版本已正确、秒退；而 MSYS2
+        # 全量更新（update: true）可能把缓存恢复的头文件升级成新版本，需要重装。
+        run: |
+          $versionFile = 'C:\msys64\ucrt64\include\boost\version.hpp'
+          if ((Test-Path -LiteralPath $versionFile -PathType Leaf) -and
+              (Select-String -LiteralPath $versionFile -Quiet -Pattern 'BOOST_VERSION 108900')) {
+              Write-Host 'Boost 头文件已是 1.89.0-1，跳过。'
+              exit 0
+          }
+          $pkg = Join-Path $env:RUNNER_TEMP 'boost-1.89.0-1.pkg.tar.zst'
+          if (-not (Test-Path -LiteralPath $pkg -PathType Leaf)) {
+              $url = 'https://repo.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-boost-1.89.0-1-any.pkg.tar.zst'
+              Write-Host "下载 $url ……"
+              Invoke-WebRequest -Uri $url -OutFile $pkg
+              if (-not (Test-Path -LiteralPath $pkg -PathType Leaf)) {
+                  throw 'Boost 包下载失败'
+              }
+          }
+          $posix = & 'C:\msys64\usr\bin\bash.exe' -lc 'cygpath -u "$1"' _ $pkg
+          & 'C:\msys64\usr\bin\bash.exe' -lc @'
+          set -euo pipefail
+          rm -rf /tmp/pieblock-boost-x
+          mkdir -p /tmp/pieblock-boost-x
+          tar -xf "$1" -C /tmp/pieblock-boost-x ucrt64/include/boost
+          grep -q 'define BOOST_VERSION 108900' /tmp/pieblock-boost-x/ucrt64/include/boost/version.hpp || {
+            echo "解出的 Boost 版本不是 1.89.0（108900）" >&2; exit 1
+          }
+          test -f /tmp/pieblock-boost-x/ucrt64/include/boost/graph/adjacency_list.hpp
+          rm -rf /ucrt64/include/boost
+          mv /tmp/pieblock-boost-x/ucrt64/include/boost /ucrt64/include/boost
+          rm -rf /tmp/pieblock-boost-x
+          '@ _ $posix
+          if ($LASTEXITCODE -ne 0) { throw '解包 Boost 头文件失败' }
+          Write-Host 'Boost 1.89.0-1 头文件已安装。'
+
+      - name: 保存 Boost 头文件缓存
+        if: always() && steps.boostheaders.outputs.cache-hit != 'true' && steps.install-boost.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: C:\msys64\ucrt64\include\boost
+          key: ${{ env.BOOST_PIN }}-msys2-ucrt64-v1
+
+      - name: 校验 Boost 头文件版本
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          grep -m1 '#define BOOST_VERSION ' /ucrt64/include/boost/version.hpp
+          grep -q 'BOOST_VERSION 108900' /ucrt64/include/boost/version.hpp || {
+            echo "Boost 版本不符合要求（需要 108900）" >&2; exit 1
+          }
+          test -f /ucrt64/include/boost/graph/adjacency_list.hpp
+
+      - name: 编译 Windows SDCC 工具链
+        if: steps.toolchain.outputs.cache-hit != 'true'
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          command -v bison flex make gcc
+          bison --version | head -1
+          flex --version
+          gcc --version | head -1
+          ./tools/build_sdcc_windows_package.sh \
+            "$PWD/sdcc-c251" \
+            "$PWD/tmp/pie-block-sdcc-windows-build" \
+            "$PWD/tmp/pie-block-sdcc-windows-install"
+
+      - name: 暂存并校验内置 Windows SDCC 工具链
+        id: stage-toolchain
+        if: steps.toolchain.outputs.cache-hit != 'true'
+        run: ./tools/prepare_sdcc_toolchain.ps1 -PackageOnly
+
+      - name: 保存工具链缓存
+        # 编译一次约 20 分钟，后续步骤失败也要把工具链存进缓存，
+        # 否则每次重试都得重编（缓存的默认保存行为要求整个 job 成功）。
+        if: always() && steps.toolchain.outputs.cache-hit != 'true' && steps.stage-toolchain.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: vendor/sdcc-toolchain
+          key: sdcc-android-${{ steps.sdcc.outputs.sha }}-${{ hashFiles('tools/prepare_sdcc_toolchain.ps1', 'tools/build_sdcc_windows_package.sh') }}
+
+      - name: 校验内置工具链平台
+        run: |
+          $manifest = Get-Content -LiteralPath 'vendor\sdcc-toolchain\bundle_manifest.json' -Raw | ConvertFrom-Json
+          if ($manifest.platform -ne 'windows-x64') {
+              throw "内置工具链平台不是 windows-x64：$($manifest.platform)"
+          }
+          if (-not (Test-Path -LiteralPath 'vendor\sdcc-toolchain\bin\sdcc.exe' -PathType Leaf)) {
+              throw '内置工具链缺少 bin\sdcc.exe'
+          }
+          Write-Host "SDCC 工具链：$($manifest.source_commit)"
+
+      - name: 编译 Android SDCC 阶段对象
+        # 把 SDCC 四个阶段编译进 libpieblock_sdcc_native.so（首次约 20-25 分钟，
+        # 之后由缓存命中，脚本内部也会按 cache_key + sha256 复用）。
+        id: prepare-stages
+        if: steps.stages.outputs.cache-hit != 'true'
+        run: |
+          ./tools/build_android_sdcc_stages.ps1 `
+            -OutputRoot (Join-Path $env:LOCALAPPDATA 'PIE-Block\android-sdcc-stages') `
+            -Abi all `
+            -NdkRoot (Join-Path $env:ANDROID_HOME "ndk\$env:NDK_VERSION")
+
+      - name: 保存阶段对象缓存
+        if: always() && steps.stages.outputs.cache-hit != 'true' && steps.prepare-stages.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.LOCALAPPDATA }}\PIE-Block\android-sdcc-stages
+          key: android-stages-${{ steps.sdcc.outputs.sha }}-${{ env.BOOST_PIN }}-${{ hashFiles('tools/build_android_sdcc_stages.ps1', 'tools/link_android_sdcc_probe.ps1') }}
+
+      - name: 校验阶段对象哈希与基线一致
+        # 提前把关：编译器或头文件漂移会让 stage-object 哈希偏离固定基线，
+        # 在进入 30 分钟的 Flutter/Gradle 构建前就失败，而不是等包校验兜底。
+        run: |
+          $baseline = Get-Content -Raw -LiteralPath 'tools\android_sdcc_baseline.json' | ConvertFrom-Json
+          foreach ($abi in @('arm64-v8a', 'x86_64')) {
+              $manifest = Get-Content -Raw -LiteralPath (
+                  Join-Path $env:LOCALAPPDATA "PIE-Block\android-sdcc-stages\$abi\stage_manifest.json"
+              ) | ConvertFrom-Json
+              if ($manifest.sha256 -ne $baseline.stage_object_sha256.$abi) {
+                  throw "$abi 阶段对象哈希 $($manifest.sha256) 与基线 $($baseline.stage_object_sha256.$abi) 不一致，请检查编译器与 Boost 版本是否可复现。"
+              }
+              Write-Host "$abi 阶段对象哈希与基线一致：$($manifest.sha256)"
+          }
+
+      - name: 把 NDK 挂到工具脚本默认路径
+        # packages/pieblock_sdcc_native/android/build.gradle 调 build_android_sdcc_stages.ps1
+        # 时未传 -NdkRoot，脚本默认 C:\android\ndk\<版本>（与本地开发机布局一致）；
+        # CI 的 SDK 在 C:\Android\android-sdk，这里建一个目录联接对齐，避免改仓库代码。
+        run: |
+          $realNdk = Join-Path $env:ANDROID_HOME "ndk\$env:NDK_VERSION"
+          if (-not (Test-Path -LiteralPath (Join-Path $realNdk 'toolchains\llvm\prebuilt\windows-x86_64\bin\clang++.exe') -PathType Leaf)) {
+              throw "NDK 工具链不完整：$realNdk"
+          }
+          New-Item -ItemType Directory -Force -Path 'C:\android\ndk' | Out-Null
+          $link = "C:\android\ndk\$env:NDK_VERSION"
+          New-Item -ItemType Junction -Path $link -Target $realNdk | Out-Null
+          if (-not (Test-Path -LiteralPath (Join-Path $link 'toolchains\llvm\prebuilt\windows-x86_64\bin\clang++.exe') -PathType Leaf)) {
+              throw "目录联接 $link 未生效"
+          }
+          Write-Host "NDK 目录联接就绪：$link -> $realNdk"
+
+      - name: 调低 CI 上的 Gradle 内存上限
+        # android/gradle.properties 默认 -Xmx8G -XX:MaxMetaspaceSize=4G，在
+        # GitHub 托管 windows 运行器（约 7-8GB 内存）上容易直接 OOM；CI 单独
+        # 调低，本地开发不受影响（本步骤只改已检出副本，release job 会重新检出）。
+        run: |
+          $path = 'android\gradle.properties'
+          $text = Get-Content -Raw -LiteralPath $path
+          $tuned = [regex]::Replace(
+              $text,
+              '(?m)^org\.gradle\.jvmargs=.*$',
+              'org.gradle.jvmargs=-Xmx4G -XX:MaxMetaspaceSize=2G -XX:ReservedCodeCacheSize=256m -XX:+HeapDumpOnOutOfMemoryError',
+              [Text.RegularExpressions.RegexOptions]::None
+          )
+          [IO.File]::WriteAllText((Join-Path (Get-Location) $path), $tuned, [Text.UTF8Encoding]::new($false))
+          Select-String -LiteralPath $path -Pattern 'org.gradle.jvmargs' | ForEach-Object { Write-Host $_.Line }
+
+      - name: 检查发布签名配置（打标签时必选）
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          $required = @(
+              'ANDROID_KEYSTORE_BASE64',
+              'ANDROID_KEYSTORE_PASSWORD',
+              'ANDROID_KEY_ALIAS',
+              'ANDROID_KEY_PASSWORD'
+          )
+          $missing = @($required | Where-Object {
+              [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($_))
+          })
+          if ($missing.Count -gt 0) {
+              throw "发布签名配置缺失：$($missing -join ', ')。请先在仓库 Secrets 配置这四个变量再打标签发版。"
+          }
+          Write-Host '发布签名配置齐全。'
+
+      - name: 写入 Android 签名配置
+        if: env.ANDROID_KEYSTORE_BASE64 != ''
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          $required = @(
+              'ANDROID_KEYSTORE_BASE64', 'ANDROID_KEYSTORE_PASSWORD',
+              'ANDROID_KEY_ALIAS', 'ANDROID_KEY_PASSWORD'
+          )
+          $missing = @($required | Where-Object {
+              [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($_))
+          })
+          if ($missing.Count -gt 0) {
+              throw "签名 Secrets 不完整：$($missing -join ', ')"
+          }
+          $jks = Join-Path $env:RUNNER_TEMP 'pieblock-release.jks'
+          [IO.File]::WriteAllBytes($jks, [Convert]::FromBase64String($env:ANDROID_KEYSTORE_BASE64))
+          # storeFile 用正斜杠，避免 java.util.Properties 把 \r \n \t 等反斜杠转义。
+          @"
+          storePassword=$env:ANDROID_KEYSTORE_PASSWORD
+          keyPassword=$env:ANDROID_KEY_PASSWORD
+          keyAlias=$env:ANDROID_KEY_ALIAS
+          storeFile=$($jks.Replace('\', '/'))
+          "@ | Set-Content -Encoding ascii -LiteralPath 'android\key.properties'
+          Write-Host "已写入 android\key.properties（密钥库：$jks）"
+
+      - name: 提示未签名构建
+        if: env.ANDROID_KEYSTORE_BASE64 == ''
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          Write-Host "::warning::未配置 ANDROID_KEYSTORE_* Secrets，本次产物为未签名（不可直接安装/上架），仅用于验收与存档。"
+          "Android 产物未签名：未配置 ANDROID_KEYSTORE_* Secrets，仅用于验收与存档。" |
+            Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+
+      - name: 拉取依赖
+        run: flutter pub get
+
+      - name: 构建 Release AAB
+        run: flutter build appbundle --release
+
+      - name: 构建 Release APK
+        # 通用包（同时含 arm64-v8a 与 x86_64 两套 ABI），verify 脚本要求
+        # 两套 ABI 的原生库都在同一个包里，拆分包无法通过校验。
+        run: flutter build apk --release
+
+      - name: 校验 Android 包完整性
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\tools\verify_android_package.ps1 `
+              -PackagePath 'build\app\outputs\bundle\release\app-release.aab'
+          & .\tools\verify_android_package.ps1 `
+              -PackagePath 'build\app\outputs\flutter-apk\app-release.apk'
+
+      - name: 校验 APK 签名
+        if: env.ANDROID_KEYSTORE_BASE64 != ''
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          $buildTools = Get-ChildItem (Join-Path $env:ANDROID_HOME 'build-tools') -Directory |
+              Sort-Object Name -Descending | Select-Object -First 1
+          $apksigner = Join-Path $buildTools.FullName 'apksigner.bat'
+          & $apksigner verify --print-certs 'build\app\outputs\flutter-apk\app-release.apk'
+          if ($LASTEXITCODE -ne 0) { throw 'APK 签名校验失败' }
+
+      - name: 整理 Android 产物
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          $pubspec = Get-Content -Raw -LiteralPath 'pubspec.yaml'
+          $versionMatch = [regex]::Match($pubspec, '(?m)^version:\s*(\d+\.\d+\.\d+)')
+          if (!$versionMatch.Success) { throw '无法从 pubspec.yaml 解析 version 行。' }
+          $version = $versionMatch.Groups[1].Value
+          New-Item -ItemType Directory -Force -Path 'output' | Out-Null
+          Copy-Item -LiteralPath 'build\app\outputs\bundle\release\app-release.aab' `
+              -Destination "output\PIEBlock-$version-android.aab" -Force
+          Copy-Item -LiteralPath 'build\app\outputs\flutter-apk\app-release.apk' `
+              -Destination "output\PIEBlock-$version-android.apk" -Force
+          Get-ChildItem -LiteralPath 'output' -Filter 'PIEBlock-*-android.*' |
+              ForEach-Object { Write-Host ('{0}  {1:N1} MB' -f $_.Name, ($_.Length / 1MB)) }
+          $signed = [Environment]::GetEnvironmentVariable('ANDROID_KEYSTORE_BASE64') -ne ''
+          @"
+          ## Android 构建产物
+          - 版本：$version
+          - AAB：PIEBlock-$version-android.aab（上架 Google Play 用）
+          - APK：PIEBlock-$version-android.apk（通用包，含 arm64-v8a 与 x86_64）
+          - 签名：$(if ($signed) { '已用仓库 Secrets 签名' } else { '未签名（仅验收/存档）' })
+          "@ | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: PIEBlock-android
+          path: |
+            output/PIEBlock-*-android.apk
+            output/PIEBlock-*-android.aab
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: 发布 GitHub Release
+    needs: android
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 校验标签与 pubspec 版本一致
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(grep -m1 -oP '^version:\s*\K[0-9]+\.[0-9]+\.[0-9]+' pubspec.yaml)"
+          if [ "$tag" != "$version" ]; then
+            echo "::error::标签 $GITHUB_REF_NAME 与 pubspec.yaml 的 $version 不一致，请先提升版本号再打标签。"
+            exit 1
+          fi
+          echo "版本校验通过：$version"
+
+      - name: 下载构建产物
+        uses: actions/download-artifact@v4
+        with:
+          name: PIEBlock-android
+          path: artifacts
+
+      - name: 补一个稳定命名的 Android 包
+        run: |
+          set -euo pipefail
+          # 预留给官网后续的 Android 下载直链
+          #（/releases/latest/download/PIEBlock-android.apk，不随版本号变化）；
+          # Release 若被标记为 prerelease，latest 不会指向它，直链会 404。
+          apk="$(ls artifacts/PIEBlock-*-android.apk)"
+          aab="$(ls artifacts/PIEBlock-*-android.aab)"
+          cp "$apk" artifacts/PIEBlock-android.apk
+          cp "$aab" artifacts/PIEBlock-android.aab
+          ls -lh artifacts/PIEBlock-android.apk artifacts/PIEBlock-android.aab
+
+      - name: 上传产物到 Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          notes="docs/releases/$version.md"
+          arguments=(--verify-tag --title "PIE-Block $version")
+          if [ -f "$notes" ]; then
+            arguments+=(--notes-file "$notes")
+          else
+            arguments+=(--generate-notes)
+          fi
+          ls -lh artifacts
+          # linux.yml / windows.yml 在同一 tag 上并行发布，Release 可能已被创建；
+          # 幂等处理：已存在则补传，不存在才创建。
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" \
+              artifacts/PIEBlock-*-android.apk \
+              artifacts/PIEBlock-*-android.aab \
+              artifacts/PIEBlock-android.apk \
+              artifacts/PIEBlock-android.aab --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "${arguments[@]}" \
+              artifacts/PIEBlock-*-android.apk \
+              artifacts/PIEBlock-*-android.aab \
+              artifacts/PIEBlock-android.apk \
+              artifacts/PIEBlock-android.aab
+          fi
