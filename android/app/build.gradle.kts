@@ -135,8 +135,13 @@ android {
 
     buildTypes {
         release {
-            if (keystorePropertiesFile.isFile) {
-                signingConfig = signingConfigs.getByName("release")
+            signingConfig = if (keystorePropertiesFile.isFile) {
+                signingConfigs.getByName("release")
+            } else {
+                // 未配置发布密钥（本地未放 key.properties 或 CI 未提供 Secrets）时，
+                // 按 Flutter 模板惯例退回 debug 签名，保证仍能产出可安装的
+                // app-release.aab / app-release.apk；正式发布请配置正式密钥。
+                signingConfigs.getByName("debug")
             }
         }
     }
