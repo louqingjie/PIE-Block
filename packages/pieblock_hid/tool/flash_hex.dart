@@ -25,6 +25,8 @@ Future<void> main(List<String> arguments) async {
   }
   final stopwatch = Stopwatch()..start();
   String stamp() => '${(stopwatch.elapsedMilliseconds / 1000).toStringAsFixed(2)}s';
+  // 分块速率只从第一块写开始算，否则会把握手/擦除的一秒多摊进每块时间里。
+  int? writeStarted;
   final HidTransport transport;
   try {
     transport = HidFlasher.desktopTransport();
@@ -45,7 +47,8 @@ Future<void> main(List<String> arguments) async {
       if (current == null || total == null) {
         stdout.writeln('[${stamp().padLeft(7)}] $message');
       } else if (current % 25 == 0 || current == total) {
-        final perBlock = stopwatch.elapsedMilliseconds / current;
+        final started = writeStarted ??= stopwatch.elapsedMilliseconds;
+        final perBlock = (stopwatch.elapsedMilliseconds - started) / current;
         stdout.writeln(
           '[${stamp().padLeft(7)}] $current/$total $message（${perBlock.toStringAsFixed(0)}ms/块）',
         );
