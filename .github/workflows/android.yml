@@ -85,6 +85,16 @@ jobs:
           }
           "sha=$sha" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
+      - name: 导出阶段对象目录
+        # GitHub 表达式的 env 上下文不包含 runner 的系统环境变量，
+        # ${{ env.LOCALAPPDATA }} 会展开为空串、导致缓存与 artifact 的 path
+        # 失效（曾出现 "Path Validation Error" 且缓存从未真正生效）。
+        # 这里把实际路径写入 GITHUB_ENV，后续步骤用 ${{ env.STAGE_ROOT }} 引用。
+        run: |
+          $stageRoot = Join-Path $env:LOCALAPPDATA 'PIE-Block\android-sdcc-stages'
+          "STAGE_ROOT=$stageRoot" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "阶段对象目录：$stageRoot"
+
       - name: 安装 JDK 17
         # AGP 9.1 / Gradle 9.3.1 要求 JDK 17+，而 windows 镜像默认的 JAVA_HOME
         # 指向 JDK 8，必须显式切换；gradle 缓存让依赖下载只发生一次。
@@ -121,7 +131,7 @@ jobs:
         with:
           # Gradle 侧（packages/pieblock_sdcc_native/android/build.gradle）固定从
           # %LOCALAPPDATA%\PIE-Block\android-sdcc-stages 取阶段对象，必须与它一致。
-          path: ${{ env.LOCALAPPDATA }}\PIE-Block\android-sdcc-stages
+          path: ${{ env.STAGE_ROOT }}
           key: android-stages-${{ steps.sdcc.outputs.sha }}-${{ env.BOOST_PIN }}-${{ hashFiles('tools/build_android_sdcc_stages.ps1', 'tools/link_android_sdcc_probe.ps1') }}
 
       - name: 缓存固定 Boost 1.89.0 头文件
@@ -316,22 +326,29 @@ jobs:
         if: always() && steps.stages.outputs.cache-hit != 'true' && steps.prepare-stages.outcome == 'success'
         uses: actions/cache/save@v4
         with:
-          path: ${{ env.LOCALAPPDATA }}\PIE-Block\android-sdcc-stages
+          path: ${{ env.STAGE_ROOT }}
           key: android-stages-${{ steps.sdcc.outputs.sha }}-${{ env.BOOST_PIN }}-${{ hashFiles('tools/build_android_sdcc_stages.ps1', 'tools/link_android_sdcc_probe.ps1') }}
 
       - name: 校验阶段对象哈希与基线一致
         # 提前把关：编译器或头文件漂移会让 stage-object 哈希偏离固定基线，
         # 在进入 30 分钟的 Flutter/Gradle 构建前就失败，而不是等包校验兜底。
+        # 两个 ABI 的实测哈希都会打印（无论是否匹配），便于刷新基线。
         run: |
           $baseline = Get-Content -Raw -LiteralPath 'tools\android_sdcc_baseline.json' | ConvertFrom-Json
+          $mismatches = @()
           foreach ($abi in @('arm64-v8a', 'x86_64')) {
               $manifest = Get-Content -Raw -LiteralPath (
-                  Join-Path $env:LOCALAPPDATA "PIE-Block\android-sdcc-stages\$abi\stage_manifest.json"
+                  Join-Path $env:STAGE_ROOT "$abi\stage_manifest.json"
               ) | ConvertFrom-Json
-              if ($manifest.sha256 -ne $baseline.stage_object_sha256.$abi) {
-                  throw "$abi 阶段对象哈希 $($manifest.sha256) 与基线 $($baseline.stage_object_sha256.$abi) 不一致，请检查编译器与 Boost 版本是否可复现。"
+              $expected = $baseline.stage_object_sha256.$abi
+              $state = if ($manifest.sha256 -eq $expected) { '一致' } else { '不一致' }
+              Write-Host "$abi 阶段对象哈希 $($manifest.sha256) 与基线 $expected $state"
+              if ($manifest.sha256 -ne $expected) {
+                  $mismatches += $abi
               }
-              Write-Host "$abi 阶段对象哈希与基线一致：$($manifest.sha256)"
+          }
+          if ($mismatches.Count -gt 0) {
+              throw "阶段对象哈希与基线不一致（$($mismatches -join '、')），请检查编译器与 Boost 版本是否可复现，并刷新 tools/android_sdcc_baseline.json。"
           }
 
       - name: 诊断阶段对象差异（仅失败时）
@@ -341,7 +358,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Continue'
           foreach ($abi in @('arm64-v8a', 'x86_64')) {
-              $path = Join-Path $env:LOCALAPPDATA "PIE-Block\android-sdcc-stages\$abi\pieblock_sdcc_stages.o"
+              $path = Join-Path $env:STAGE_ROOT "$abi\pieblock_sdcc_stages.o"
               if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
                   Write-Host "[$abi] 产物缺失：$path"
                   continue
@@ -367,8 +384,8 @@ jobs:
         with:
           name: pieblock-stages-evidence
           path: |
-            ${{ env.LOCALAPPDATA }}\PIE-Block\android-sdcc-stages\**\pieblock_sdcc_stages.o
-            ${{ env.LOCALAPPDATA }}\PIE-Block\android-sdcc-stages\**\stage_manifest.json
+            ${{ env.STAGE_ROOT }}\**\pieblock_sdcc_stages.o
+            ${{ env.STAGE_ROOT }}\**\stage_manifest.json
           if-no-files-found: warn
           retention-days: 3
 
