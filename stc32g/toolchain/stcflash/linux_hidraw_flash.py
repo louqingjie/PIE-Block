@@ -5,11 +5,19 @@
 Linux 端只有应用内的 hidraw 传输层，出了问题要重新构建才能复测。本脚本直接用
 /dev/hidraw* + ioctl 说话，零第三方依赖，用来：
 
-1. **做受控实验**：报告间隔、写重试窗口、起始块都能从命令行调，用来区分
-   「跟时间/块数有关的墙」和「跟应用特有的传输实现有关的墙」；
-2. **断点续烧**：设备在写到一半时沉默后，断电重新上电进 ISP，用
+1. **做受控实验**：报告间隔、写重试窗口、起始块都能从命令行调。实测结论
+   （2026-10-14，见 docs/pitfall/HID烧录写块无响应.md）：STC32G ROM ISP 的
+   **帧到达速率超过它的 flash 编程能力**时会先丢帧、随后整块失联——设备仍挂在
+   总线上但不再回任何包，只能断电重新上电。`--report-gap-ms 1`（应用当时的值）
+   约 91 块/秒，写约 130 块后卡死；`--report-gap-ms 20` 约 18 块/秒，连写 200 块
+   无一次失败。默认值因此取 20。
+2. **断点续烧**：设备卡死后，断电重新上电进 ISP，用
    `--no-erase --start-block N` 从断点继续，已写入的块不会被擦掉；
 3. **探活**：`--probe-only` 只发 info，判断板子当前是否还在 ISP 并且会回话。
+
+**不要靠关闭 hidraw 句柄来「重开会话」**：这个 ISP 固件要求主机保持常驻的 IN
+轮询会话，实测写到一半关闭并重开会让设备立刻失联（与 Android 侧记录过的
+「端点 STALL 退回用户程序」同源）。
 
 协议（严格对齐 packages/pieblock_hid/lib/src/protocol.dart 与
 stc32g/toolchain/stcflash/HID_PROTOCOL.md）：
@@ -24,10 +32,6 @@ stc32g/toolchain/stcflash/HID_PROTOCOL.md）：
     0xFF0000 区 [02 <addr2> 5a a5 <128B>] -> 02 54
     复位   [ff]
 
-4. **分批绕墙**：若设备每隔约 130 块就沉默（疑似会话级失效），
-   `--blocks-per-session 100` 会在写到 100 块时主动关闭并重开会话（不擦除）继续，
-   往往能把整份固件写完。
-
 用法：
     # 只看板子在不在、回不回话（只读，不发任何破坏性命令）
     python3 linux_hidraw_flash.py --probe-only
@@ -35,14 +39,14 @@ stc32g/toolchain/stcflash/HID_PROTOCOL.md）：
     # 打印烧录计划（不发任何 USB 数据，可与 dump_block_plan.dart 对拍）
     python3 linux_hidraw_flash.py firmware.hex --dry-run
 
-    # 完整烧录（--erase 必须显式给，否则只在保护已有内容的前提下续写）
-    python3 linux_hidraw_flash.py firmware.hex --erase
+    # 完整烧录（默认 20ms 报告间隔；--erase 必须显式给）
+    python3 linux_hidraw_flash.py firmware.hex --erase --reset
 
-    # 分批绕墙：每 100 块重开一次会话
-    python3 linux_hidraw_flash.py firmware.hex --erase --blocks-per-session 100 --reset
+    # 提速尝试：逐步减小间隔，确认设备能稳住（失败需要断电重新上电）
+    python3 linux_hidraw_flash.py firmware.hex --erase --report-gap-ms 10 --reset
 
-    # 断点续烧：断电重新上电进 ISP 后，从第 129 块（0-based 索引）继续
-    python3 linux_hidraw_flash.py firmware.hex --no-erase --start-block 129
+    # 断点续烧：断电重新上电进 ISP 后，从第 130 块（0-based 索引）继续
+    python3 linux_hidraw_flash.py firmware.hex --no-erase --start-block 130
 """
 from __future__ import annotations
 
@@ -97,7 +101,14 @@ def split_reports(packet: bytes) -> list[bytes]:
 
 def find_device() -> str | None:
     """枚举 /dev/hidraw*，返回匹配 STC USB-ISP 的节点路径。"""
-    matches = []
+    matches = [path for path, vendor, product in _probe_nodes()
+               if (vendor, product) == (VID, PID)]
+    return matches[0] if len(matches) == 1 else None
+
+
+def _probe_nodes() -> list[tuple[str, int, int]]:
+    """逐个只读探测 /dev/hidraw*，返回 [(path, vendor, product)]，打不开的跳过。"""
+    found = []
     for path in sorted(glob.glob("/dev/hidraw*")):
         try:
             fd = os.open(path, os.O_RDONLY)
@@ -107,13 +118,37 @@ def find_device() -> str | None:
             info = bytearray(8)
             fcntl.ioctl(fd, HIDIOCGRAWINFO, info, True)
             _, vendor, product = struct.unpack("=IHH", bytes(info))
-            if vendor == VID and product == PID:
-                matches.append(path)
+            found.append((path, vendor, product))
         except OSError:
             pass
         finally:
             os.close(fd)
-    return matches[0] if len(matches) == 1 else None
+    return found
+
+
+def describe_nodes() -> str:
+    """打印每个 HID 节点的状态；看不到 34BF:1001 有两种可能：设备掉线，
+    或者设备卡死后连打开/ioctl 都失败（实测卡死态就是这样）。"""
+    lines = []
+    for path in sorted(glob.glob("/dev/hidraw*")):
+        try:
+            fd = os.open(path, os.O_RDONLY)
+        except OSError as error:
+            lines.append(f"  {path}: 打不开（{error}）")
+            continue
+        try:
+            info = bytearray(8)
+            fcntl.ioctl(fd, HIDIOCGRAWINFO, info, True)
+            _, vendor, product = struct.unpack("=IHH", bytes(info))
+            mark = "  <== STC USB-ISP" if (vendor, product) == (VID, PID) else ""
+            lines.append(f"  {path}: vid={vendor:04x} pid={product:04x}{mark}")
+        except OSError as error:
+            lines.append(f"  {path}: ioctl 失败（{error}）")
+        finally:
+            os.close(fd)
+    if not lines:
+        lines.append("  （没有 /dev/hidraw* 节点）")
+    return "\n".join(lines)
 
 
 def load_hex(path: str) -> dict[int, int]:
@@ -268,6 +303,7 @@ def connect(args: argparse.Namespace, *, erase: bool) -> Session:
 def flash(args: argparse.Namespace, blocks: list[tuple[int, int, bytes]]) -> int:
     started = time.monotonic()
     written = 0
+    write_started: float | None = None
     session: Session | None = None
     try:
         session = connect(args, erase=args.erase)
@@ -280,31 +316,21 @@ def flash(args: argparse.Namespace, blocks: list[tuple[int, int, bytes]]) -> int
             if args.limit and written >= args.limit:
                 log(f"已达 --limit {args.limit}，停在块索引 {index}")
                 break
-            # 主动分批：写到 --blocks-per-session 块就关掉重开会话（不擦除），
-            # 用来验证/规避「会话级」的失效墙。
-            if (
-                args.blocks_per_session
-                and written
-                and written % args.blocks_per_session == 0
-            ):
-                session.close()
-                session = connect(args, erase=False)
-                log(
-                    f"[{time.monotonic() - started:6.2f}s] 已写 {written} 块，"
-                    f"重开会话继续（不擦除）"
-                )
             command, address, data = blocks[index]
             label = f"块 {index} @0x{address:04x}"
+            if write_started is None:
+                write_started = time.monotonic()
             session.expect_ack(
                 bytes([command, (address >> 8) & 0xFF, address & 0xFF, 0x5A, 0xA5]) + data,
                 label, 0x02, args.timeout_ms, expect=0x54,
             )
             written += 1
             if written % 25 == 0 or index + 1 == len(blocks) or args.limit:
-                rate = written / max(time.monotonic() - started, 1e-6)
+                # 按写入阶段计时，别把会话建立的 1 秒多算进去。
+                per_block = (time.monotonic() - write_started) * 1000 / written
                 log(
                     f"[{time.monotonic() - started:6.2f}s] {index + 1}/{len(blocks)} "
-                    f"{label} 写入中（{rate:.0f} 块/秒）"
+                    f"{label} 写入中（{per_block:.0f}ms/块）"
                 )
         if args.reset:
             for report in split_reports(build_packet(bytes([0xFF]))):
@@ -318,7 +344,7 @@ def flash(args: argparse.Namespace, blocks: list[tuple[int, int, bytes]]) -> int
         log(f"已写入 {written} 块（下一个待写块索引约为 {args.start_block + written}）")
         if session is not None:
             session.close()
-        _diagnose_reopen(args)
+        _diagnose_after_failure()
         log(
             "续烧：给主控板断电几秒后重新上电（保持 ISP），再执行\n"
             f"  python3 {os.path.basename(__file__)} {args.hex} "
@@ -330,24 +356,16 @@ def flash(args: argparse.Namespace, blocks: list[tuple[int, int, bytes]]) -> int
             session.close()
 
 
-def _diagnose_reopen(args: argparse.Namespace) -> None:
-    """关掉句柄重开一次再发 info：区分「设备已经不在总线上/不回应」与
-    「只是这条 hidraw 会话的管道卡住」。"""
-    log("诊断：关闭并重开 hidraw 会话后重试 info…")
-    try:
-        session = Session(find_device() or "", args.report_gap_ms, args.write_retry_ms)
-    except Exception as error:  # noqa: BLE001
-        log(f"  重开失败：{error}（设备可能已重新枚举或掉线）")
-        return
-    try:
-        started = time.monotonic()
-        session.expect_ack(INFO, "info", 0x01, args.timeout_ms)
-        log(f"  重开后 info 成功（{(time.monotonic() - started) * 1000:.0f}ms）："
-            "设备仍在 ISP，只是原会话的管道卡住了")
-    except Exception as error:  # noqa: BLE001
-        log(f"  重开后 info 仍失败：{error}（设备已不响应，需要断电重新上电）")
-    finally:
-        session.close()
+def _diagnose_after_failure() -> None:
+    """卡死后只报当前 HID 节点状态，**不要**去关闭重开会话：实测这个 ISP
+    固件要求主机保持常驻 IN 轮询，中途关闭句柄会让它立刻失联。"""
+    log("诊断：当前 HID 节点状态")
+    for line in describe_nodes().splitlines():
+        log(line)
+    log(
+        "  卡死态的特征：设备仍挂在总线上（dmesg 无断开），但连 open/ioctl 都可能失败；"
+        "此时只能给主控板断电几秒后重新上电，重启会话不能恢复。"
+    )
 
 
 def main() -> int:
@@ -361,14 +379,13 @@ def main() -> int:
     parser.add_argument("--erase", action="store_true", help="烧录前擦除程序区（破坏性，需显式给出）")
     parser.add_argument("--start-block", type=int, default=0, help="从第 N 块开始（断点续烧）")
     parser.add_argument("--limit", type=int, default=0, help="最多写 N 块后停下")
-    parser.add_argument(
-        "--blocks-per-session",
-        type=int,
-        default=0,
-        help="每写 N 块就关闭并重开会话（不擦除）继续，用来规避/验证会话级失效墙",
-    )
     parser.add_argument("--reset", action="store_true", help="写完后发送复位")
-    parser.add_argument("--report-gap-ms", type=float, default=1.0, help="帧内报告间隔（默认 1，同应用）")
+    parser.add_argument(
+        "--report-gap-ms",
+        type=float,
+        default=20.0,
+        help="帧内报告间隔（默认 20：实测连写 200 块无失败；1 约 130 块后卡死）",
+    )
     parser.add_argument("--write-retry-ms", type=float, default=2000.0, help="写报告忙重试窗口（默认 2000，同应用）")
     parser.add_argument("--timeout-ms", type=int, default=3000, help="读响应超时（默认 3000，同应用）")
     args = parser.parse_args()
