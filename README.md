@@ -134,7 +134,7 @@ SDCC 黄金固件比对不在桌面发版流水线里跑：桌面版编固件用
 1. **Android 构建与打包**：用 `sdkmanager` 补装基线要求的 NDK 28.2.13676358；在 MSYS2 UCRT64 里固定 Boost 1.89.0-1 头文件（`build_android_sdcc_stages.ps1` 硬校验 `BOOST_VERSION 108900`，头文件随 `sdcc-c251` 提交与脚本哈希一起缓存），按 windows.yml 同样流程准备 `vendor/sdcc-toolchain`（Android 资源包只收头文件与运行库，不收编译器可执行文件），再编译两个 ABI 的 SDCC 阶段对象（编译参数用 `-ffile-prefix-map` 归一化临时构建路径，保证跨机器可复现）并核对 `tools/android_sdcc_baseline.json` 的阶段对象哈希；随后构建 Release AAB 与通用 APK，用 `tools/verify_android_package.ps1` 校验包内 `.so` 的 `stage-object` 哈希、许可证与资源清单。产物保留 14 天，名称为 `PIEBlock-<版本>-android.aab` 与 `PIEBlock-<版本>-android.apk`。
 2. **发布 GitHub Release**：与桌面版同一 tag 幂等协作，同时提供稳定命名副本 `PIEBlock-android.aab` / `PIEBlock-android.apk`（预留给官网直链）。
 
-Android 签名走仓库 Secrets（`ANDROID_KEYSTORE_BASE64` / `ANDROID_KEYSTORE_PASSWORD` / `ANDROID_KEY_ALIAS` / `ANDROID_KEY_PASSWORD`）：配置后产物为已签名 Release 包；未配置时仅产出未签名验收包，且 `v*` 标签发版会被强制拦截。
+Android 签名走仓库 Secrets（`ANDROID_KEYSTORE_BASE64` / `ANDROID_KEYSTORE_PASSWORD` / `ANDROID_KEY_ALIAS` / `ANDROID_KEY_PASSWORD`）：配置后产物为正式签名 Release 包；未配置时按 Flutter 模板惯例退回 debug 签名（可安装验收、不可上架），且 `v*` 标签发版会被强制拦截。
 
 本地复现 CI 的检查：
 

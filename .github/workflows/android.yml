@@ -36,9 +36,9 @@
 #
 # 签名：
 #   - 配置 ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS /
-#     ANDROID_KEY_PASSWORD 四个 Secrets 后构建已签名 Release 产物；
-#   - 未配置时产物为未签名（仅用于验收与存档，不可安装/上架），并且打 v* 标签
-#     发版会被强制拦截，避免把装不了的包发到公开 Release。
+#     ANDROID_KEY_PASSWORD 四个 Secrets 后构建正式签名 Release 产物；
+#   - 未配置时按 Flutter 模板惯例退回 debug 签名（可安装验收、不可上架），
+#     并且打 v* 标签发版会被强制拦截，避免把非正式签名的包发到公开 Release。
 
 name: Android 构建
 
@@ -507,13 +507,13 @@ jobs:
           "@ | Set-Content -Encoding ascii -LiteralPath 'android\key.properties'
           Write-Host "已写入 android\key.properties（密钥库：$jks）"
 
-      - name: 提示未签名构建
+      - name: 提示未配置发布签名
         if: env.ANDROID_KEYSTORE_BASE64 == ''
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
-          Write-Host "::warning::未配置 ANDROID_KEYSTORE_* Secrets，本次产物为未签名（不可直接安装/上架），仅用于验收与存档。"
-          "Android 产物未签名：未配置 ANDROID_KEYSTORE_* Secrets，仅用于验收与存档。" |
+          Write-Host "::warning::未配置 ANDROID_KEYSTORE_* Secrets，本次产物使用 debug 签名（可安装验收、不可上架）。"
+          "Android 产物使用 debug 签名：未配置 ANDROID_KEYSTORE_* Secrets，仅用于验收与存档。" |
             Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
 
       - name: 拉取依赖
@@ -586,7 +586,7 @@ jobs:
           - 版本：$version
           - AAB：PIEBlock-$version-android.aab（上架 Google Play 用）
           - APK：PIEBlock-$version-android.apk（通用包，含 arm64-v8a 与 x86_64）
-          - 签名：$(if ($signed) { '已用仓库 Secrets 签名' } else { '未签名（仅验收/存档）' })
+          - 签名：$(if ($signed) { '已用仓库 Secrets 正式签名' } else { 'debug 签名（仅验收/存档）' })
           "@ | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
 
       - name: 上传构建产物
