@@ -18,7 +18,9 @@ import 'debug_cue_preview.dart';
 import 'deploy_controller.dart';
 import 'platform/file_export.dart';
 import 'platform/keil_discovery.dart';
+import 'platform/udev_rule.dart';
 import 'music_editor.dart';
+import 'udev_rule_controller.dart';
 
 final _fieldAnchors = <String, GlobalKey>{};
 final _fieldFocusNodes = <String, FocusNode>{};
@@ -3892,7 +3894,11 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
       deployControllerProvider.select((s) => s.events),
       (previous, next) => _followLogToBottom(),
     );
-    WidgetsBinding.instance.addPostFrameCallback((_) => _prepare());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // 进入页面时重新检查 udev 规则是否已安装（用户可能在应用外装过）。
+      ref.read(udevRuleControllerProvider.notifier).refresh();
+      _prepare();
+    });
     // 安卓同样需要周期检测：UsbHidBridge 检测到板子的瞬间会自动授权并
     // 打开保持（防止 STC ISP 固件因总线空闲跳回用户程序）。
     _deviceTimer = Timer.periodic(
@@ -4113,6 +4119,63 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
     await ref.read(deployControllerProvider.notifier).exportHex(location.path);
   }
 
+  /// 通过 pkexec 弹出系统授权对话框安装 udev 规则（Linux 桌面版）。
+  Future<void> _installUdevRule() async {
+    if (ref.read(udevRuleControllerProvider).installing) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('安装 udev 规则'),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: const Text(
+            '将把 hidraw 设备授权规则写入 /etc/udev/rules.d/70-pieblock-hid.rules 并重载 udev。'
+            '接下来会弹出系统授权对话框，请输入管理员密码确认；应用不会接触或保存密码。',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('安装'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final result = await ref
+        .read(udevRuleControllerProvider.notifier)
+        .install();
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(_udevResultMessage(result))));
+    if (result.ok) {
+      await ref.read(deployControllerProvider.notifier).refreshDevices();
+    }
+  }
+
+  String _udevResultMessage(UdevInstallResult result) {
+    return switch (result.outcome) {
+      UdevInstallOutcome.success =>
+        'udev 规则已安装。若主控板已插上，请拔出后重新插入（或断电重新上电进 ISP）再检测。',
+      UdevInstallOutcome.installedNoUdevadm =>
+        '规则已安装，但未找到 udevadm（可能是非 systemd 环境）。请手动重载 udev 或重新插拔设备。',
+      UdevInstallOutcome.canceled => '已取消安装（未通过系统授权）。',
+      UdevInstallOutcome.notAuthorized =>
+        '系统授权失败或不可用：可能缺少 polkit 认证代理，或在无图形会话中运行。可改用命令行：sudo tools/install_udev_rules.sh',
+      UdevInstallOutcome.pkexecMissing =>
+        '未找到 pkexec，无法弹出系统授权对话框。请安装 polkit，或改用命令行：sudo tools/install_udev_rules.sh',
+      UdevInstallOutcome.timedOut => '系统授权超时，未安装 udev 规则。',
+      UdevInstallOutcome.failed => result.exitCode != null
+          ? '安装 udev 规则失败（退出码 ${result.exitCode}）：${result.stderrText}'
+          : '安装 udev 规则失败：${result.stderrText}',
+    };
+  }
+
   Future<void> _applyLicense() async {
     final key = TextEditingController();
     final submitted = await showDialog<String>(
@@ -4182,6 +4245,7 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
     if (kIsWeb) return const _WebDeployNotice();
     final app = ref.watch(appControllerProvider);
     final deploy = ref.watch(deployControllerProvider);
+    final udev = ref.watch(udevRuleControllerProvider);
     final artifact = deploy.artifact;
     final deviceText = switch (deploy.deviceCount) {
       0 => '未检测到 ISP 主控板',
@@ -4361,9 +4425,14 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
                       tooltip: '重新检测',
                       onPressed: deploy.busy
                           ? null
-                          : ref
-                                .read(deployControllerProvider.notifier)
-                                .refreshDevices,
+                          : () {
+                              ref
+                                  .read(deployControllerProvider.notifier)
+                                  .refreshDevices();
+                              ref
+                                  .read(udevRuleControllerProvider.notifier)
+                                  .refresh();
+                            },
                       icon: const Icon(Icons.refresh),
                     ),
                   ],
@@ -4373,9 +4442,22 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
                   _isAndroid
                       ? '通过 OTG 转接线连接主控板；首次烧录会请求 USB 权限。请先将主控板断电再重新上电进入 ISP 模式；烧录成功后 HID 设备自动消失是正常现象。'
                       : _isLinux
-                      ? '首次使用需安装 udev 规则以获得 hidraw 设备权限（sudo tools/install_udev_rules.sh，详见烧录指南）。未检测到时，请关闭四个供电开关，将主控板断电后重新连接 USB；烧录成功后 HID 设备自动消失是正常现象。'
+                      ? (udev.installed
+                            ? '已安装 udev 规则。未检测到时，请关闭四个供电开关，将主控板断电后重新连接 USB；烧录成功后 HID 设备自动消失是正常现象。'
+                            : '尚未安装 udev 规则，应用无法访问 hidraw 设备。请点击下方「安装 udev 规则」，通过系统授权对话框完成安装（等价于 sudo tools/install_udev_rules.sh，详见烧录指南）。')
                       : '未检测到时，请关闭四个供电开关，将主控板断电后重新连接 USB。烧录成功后 HID 设备自动消失是正常现象。',
                 ),
+                if (_isLinux && !udev.installed) ...[
+                  const SizedBox(height: 10),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: OutlinedButton.icon(
+                      onPressed: udev.installing ? null : _installUdevRule,
+                      icon: const Icon(Icons.shield_outlined),
+                      label: Text(udev.installing ? '正在安装…' : '安装 udev 规则'),
+                    ),
+                  ),
+                ],
               ],
             ),
           ],

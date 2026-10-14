@@ -79,6 +79,9 @@ flutter:
     - assets/images/switch_main.png
     - assets/images/switch_expend.png
     - assets/templates/
+    # 与 tools/install_udev_rules.sh、tools/package_flutter_linux.sh 共用同一份规则文件：
+    # Linux 桌面版用它在应用内通过 pkexec 安装 hidraw 授权规则。
+    - linux/udev/70-pieblock-hid.rules
 
   fonts:
     - family: PieBlockSans
