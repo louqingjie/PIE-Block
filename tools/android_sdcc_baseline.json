@@ -18,11 +18,11 @@
     "ffi": 5,
     "coordinator_protocol": 2,
     "worker_protocol": 1,
-    "stage_layout": 6
+    "stage_layout": 7
   },
   "stage_object_sha256": {
-    "arm64-v8a": "cdd5c2215be882967e4702946b9f37d6e26e63f00e14f97175fc3474ebd416b9",
-    "x86_64": "e5e833926f2b506cf516120b954281e53c8cfaa306955e78b55c1f62e394b828"
+    "arm64-v8a": "43c2c511354572822feb46c682981812c7c74ed4921e5de3906e816c0b425479",
+    "x86_64": "bea77f4300aaee84987700c7adc6807b500b9f6491b450828bea052bd2920704"
   },
   "windows_golden_sha256": {
     "infantry_servo_blocking_friction": "4266527f865834983c2edd06fd0a22000ed5a71af446a516fa5748ad6627dc1a",

@@ -63,6 +63,33 @@ function Get-FilePrefixMapArguments([string]$TemporaryRoot) {
     return $arguments
 }
 
+function Normalize-ResidualStageObjectPaths([string]$Path) {
+    # 少数路径经 -D 宏（如 SDCC 的 SRCDIR）注入产物，不经过 -ffile-prefix-map，
+    # 残留的临时目录含随机 GUID 与用户名，会让同一环境重编也产生不同字节。
+    # 这里对链接后的阶段对象做等长字节替换：把残留的临时路径前缀统一归一化为
+    # /pb-stage 前缀（与编译器映射一致），多余长度用斜杠补齐，保持 ELF 布局
+    # 不变。被替换的都是构建路径，设备上本就不存在，不影响运行时行为。
+    $bytes = [IO.File]::ReadAllBytes($Path)
+    $text = [Text.Encoding]::Latin1.GetString($bytes)
+    $pattern = '(?:[A-Za-z]:)?[\\/](?:[^\\/\x00]+[\\/])*pieblock-sdcc-stage-(?:arm64-v8a|x86_64)-[0-9a-f]{32}'
+    if (-not [regex]::IsMatch($text, $pattern)) {
+        return $false
+    }
+    $evaluator = [System.Text.RegularExpressions.MatchEvaluator] {
+        param($match)
+        return '/pb-stage' + ('/' * ($match.Length - '/pb-stage'.Length))
+    }
+    $normalized = [regex]::Replace($text, $pattern, $evaluator)
+    if ($normalized.Length -ne $text.Length) {
+        throw '残留路径归一化改变了字节长度'
+    }
+    if ([regex]::IsMatch($normalized, 'pieblock-sdcc-stage-')) {
+        throw '残留路径归一化后仍有临时目录前缀'
+    }
+    [IO.File]::WriteAllBytes($Path, [Text.Encoding]::Latin1.GetBytes($normalized))
+    return $true
+}
+
 function Get-Sha256([string]$Path) {
     $stream = [IO.File]::OpenRead($Path)
     $algorithm = [Security.Cryptography.SHA256]::Create()
@@ -97,7 +124,7 @@ function Build-StageObject([string]$TargetAbi) {
     $destination = [IO.Path]::GetFullPath((Join-Path $OutputRoot $TargetAbi))
     $manifestPath = Join-Path $destination 'stage_manifest.json'
     $stagePath = Join-Path $destination 'pieblock_sdcc_stages.o'
-    $cacheKey = "$expectedCommit|$TargetAbi|android24|ndk-28.2.13676358|ffi-5|stage-layout-6"
+    $cacheKey = "$expectedCommit|$TargetAbi|android24|ndk-28.2.13676358|ffi-5|stage-layout-7"
     if ((Test-Path -LiteralPath $manifestPath) -and (Test-Path -LiteralPath $stagePath)) {
         $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
         $actualHash = Get-Sha256 $stagePath
@@ -245,6 +272,12 @@ function Build-StageObject([string]$TargetAbi) {
             -OutputDirectory $linkRoot `
             -NdkRoot $resolvedNdk
         if ($LASTEXITCODE -ne 0) { throw '无法生成命名空间隔离的阶段对象' }
+
+        # 链接产物里仍可能有极少数经 -D 宏注入的临时路径，统一归一化。
+        $linkedStageObject = Join-Path $linkRoot 'pieblock_sdcc_stages.o'
+        if (Normalize-ResidualStageObjectPaths $linkedStageObject) {
+            Write-Output "$TargetAbi 阶段对象残留临时路径已归一化"
+        }
 
         New-Item -ItemType Directory -Force -Path $destination | Out-Null
         Copy-Item -LiteralPath (Join-Path $linkRoot 'pieblock_sdcc_stages.o') `
