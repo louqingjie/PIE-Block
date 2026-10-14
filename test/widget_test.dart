@@ -12,9 +12,11 @@ import 'package:pieblock_app/src/debug_cue_preview.dart';
 import 'package:pieblock_app/src/deploy_controller.dart';
 import 'package:pieblock_app/src/home_screen.dart';
 import 'package:pieblock_app/src/platform/document_io.dart';
+import 'package:pieblock_app/src/platform/udev_rule.dart';
 import 'package:pieblock_app/src/music_editor.dart';
 import 'package:pieblock_app/src/music_preview.dart';
 import 'package:pieblock_app/src/project_templates.dart';
+import 'package:pieblock_app/src/udev_rule_controller.dart';
 import 'package:pieblock_app/src/wizard_screen.dart';
 import 'package:pieblock_core/pieblock_core.dart';
 import 'package:pieblock_toolchain/pieblock_toolchain.dart';
@@ -181,6 +183,26 @@ class _FakeDeployController extends DeployController {
 
   @override
   void cancelAll() {}
+}
+
+class _FakeUdevRuleController extends UdevRuleController {
+  _FakeUdevRuleController({required this.installed});
+
+  bool installed;
+
+  @override
+  UdevRuleState build() => UdevRuleState(installed: installed);
+
+  @override
+  void refresh() {}
+
+  @override
+  Future<UdevInstallResult> install() async {
+    installed = true;
+    const result = UdevInstallResult(UdevInstallOutcome.success);
+    state = const UdevRuleState(installed: true, lastResult: result);
+    return result;
+  }
 }
 
 class _FakeMusicPreview implements MusicPreviewService {
@@ -2479,5 +2501,63 @@ void main() {
         }
       }
     }
+  });
+
+  testWidgets('Linux 缺 udev 规则时显示安装入口，安装成功后消失', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _StaticProjectController(_infantryDocument(), 5),
+          ),
+          deployControllerProvider.overrideWith(_FakeDeployController.new),
+          udevRuleControllerProvider.overrideWith(
+            () => _FakeUdevRuleController(installed: false),
+          ),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final installButton = find.widgetWithText(OutlinedButton, '安装 udev 规则');
+    await tester.ensureVisible(installButton);
+    expect(installButton, findsOneWidget);
+
+    await tester.tap(installButton);
+    await tester.pumpAndSettle();
+    // 确认对话框
+    final confirm = find.widgetWithText(FilledButton, '安装');
+    expect(confirm, findsOneWidget);
+    await tester.tap(confirm);
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('udev 规则已安装'), findsOneWidget);
+    expect(find.widgetWithText(OutlinedButton, '安装 udev 规则'), findsNothing);
+    expect(tester.takeException(), isNull);
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  testWidgets('非 Linux 平台不显示 udev 安装入口', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _StaticProjectController(_infantryDocument(), 5),
+          ),
+          deployControllerProvider.overrideWith(_FakeDeployController.new),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('安装 udev 规则'), findsNothing);
+    expect(tester.takeException(), isNull);
+    debugDefaultTargetPlatformOverride = null;
   });
 }
