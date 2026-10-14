@@ -432,6 +432,30 @@ jobs:
           Select-String -LiteralPath $path -Pattern 'org.gradle.jvmargs|kotlin.incremental' |
               ForEach-Object { Write-Host $_.Line }
 
+      - name: 准备 debug keystore（无发布密钥时的兜底签名）
+        # android/app/build.gradle.kts 在未配置发布密钥时按 Flutter 模板惯例用
+        # debug 签名；全新 runner 上并不存在 ~/.android/debug.keystore，AGP 9
+        # 不会自动生成，会因签名缺失而产不出 app-release.aab（flutter 报
+        # "couldn't find .aab"）。这里预生成 AGP 默认的 debug keystore
+        # （标准别名 androiddebugkey / 密码 android），与本地开发机行为一致。
+        run: |
+          $keyStore = Join-Path $env:USERPROFILE '.android\debug.keystore'
+          if (Test-Path -LiteralPath $keyStore) {
+              Write-Host 'debug keystore 已存在，跳过。'
+              exit 0
+          }
+          New-Item -ItemType Directory -Force -Path (Split-Path -Parent $keyStore) | Out-Null
+          & "$env:JAVA_HOME\bin\keytool.exe" -genkeypair `
+              -keystore $keyStore -storepass android `
+              -alias androiddebugkey -keypass android `
+              -keyalg RSA -keysize 2048 -validity 10000 `
+              -dname 'CN=Android Debug,O=Android,C=US'
+          if ($LASTEXITCODE -ne 0) { throw '生成 debug keystore 失败' }
+          if (-not (Test-Path -LiteralPath $keyStore -PathType Leaf)) {
+              throw '生成后仍找不到 debug keystore'
+          }
+          Write-Host "已生成 debug keystore：$keyStore"
+
       - name: 检查发布签名配置（打标签时必选）
         if: startsWith(github.ref, 'refs/tags/v')
         env:
