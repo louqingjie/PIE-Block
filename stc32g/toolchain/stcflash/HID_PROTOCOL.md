@@ -29,6 +29,9 @@
   设备在刚回完上一块 ACK、正在编程 flash 时会丢掉紧跟其后的整帧；Dart 移植一度
   删掉了这个间隔，表现为首块 0x0000 正常、第二块 0x0080 完全没有响应
   （详见 [docs/pitfall/HID烧录写块无响应.md](../../../docs/pitfall/HID烧录写块无响应.md)）
+- **写一份报告≠设备已收到**：Linux hidraw 的写是异步的，设备忙时 `::write` 返回
+  `-EBUSY` 且报告不会发出，因此写侧必须像 Windows 的 `WaitForSingleObject` 那样
+  对忙错误做有界退让重试（见 `packages/pieblock_hid/src/pieblock_hid_hidraw.cpp`）
 
 ## 3. 命令表
 
