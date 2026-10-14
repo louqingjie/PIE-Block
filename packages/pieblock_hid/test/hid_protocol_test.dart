@@ -11,6 +11,9 @@ class _FakeTransport implements HidTransport {
   final writes = <Uint8List>[];
   final responses = <Uint8List?>[];
 
+  /// 从第 N 份报告起让 write 返回失败（模拟 Linux hidraw 的 OUT URB 忙）。
+  int? failWriteFrom;
+
   /// 每次 write 相对构造时刻的耗时，用于断言帧内报告间隔。
   final Stopwatch clock = Stopwatch()..start();
   final writeTimes = <Duration>[];
@@ -47,6 +50,8 @@ class _FakeTransport implements HidTransport {
   Future<bool> write(Uint8List report) async {
     writes.add(report);
     writeTimes.add(clock.elapsed);
+    final limit = failWriteFrom;
+    if (limit != null && writes.length > limit) return false;
     return true;
   }
 }
@@ -311,6 +316,34 @@ void main() {
       result.message,
       '烧录中断：擦除程序区（erase）无响应，请断电重新上电后重试',
     );
+  });
+
+  test('写报告失败时给出块号与断电提示而非裸错误', () async {
+    final transport = _FakeTransport();
+    transport.responses.addAll([
+      _ack(0x01),
+      _ack(0x05),
+      _ack(0x03),
+      _ack(0x02, [0x54]),
+    ]);
+    // info(1)+unlock(1)+erase(1)+块0(3)=6 份报告成功后，第二块的报告写不进去
+    // （等价 Linux hidraw 设备忙时 ::write 返回 -EBUSY）。
+    transport.failWriteFrom = 6;
+    final events = <String>[];
+    final result = await HidFlasher.flashWithTransport(
+      HexImage({0xfe0000: 1, 0xfe0080: 2}),
+      transport,
+      (stage, message, {current, total}) => events.add(message),
+      reportGap: Duration.zero,
+      retryBackoff: Duration.zero,
+      probeTimeout: Duration.zero,
+    );
+    expect(result.success, isFalse);
+    expect(result.stage, FlashStage.programming);
+    expect(result.message, contains('第 2/2 块'));
+    expect(result.message, contains('写入 0x0080：写入报告失败'));
+    expect(result.message, contains('断电重新上电'));
+    expect(events.join('\n'), contains('写入中断，烧录中断'));
   });
 
   test('整条烧录的帧序列（命令 + 地址 + 报告尺寸）与改造前一致', () async {

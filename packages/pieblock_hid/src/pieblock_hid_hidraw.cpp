@@ -19,6 +19,7 @@
 #include <linux/hidraw.h>
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <mutex>
@@ -32,6 +33,20 @@ constexpr uint16_t kPid = 0x1001;
 //（byte0 为 report ID 槽，Dart 侧 protocol.dart 恒填 0x00）。
 constexpr int kReportWireSize = 64;
 constexpr int kTransferSize = 65;
+
+// 与 Windows 侧等价的「写一份报告」等待窗口（pb_hid_write 的
+// WaitForSingleObject(overlapped.hEvent, 2000)）。hidraw 的写是异步的：
+// ::write 只把报告交给 usbhid 的中断 OUT URB，设备还在忙（上一份报告尚未被
+// 收下，正在编程 flash）时内核立刻返回 -EBUSY，报告根本不会发出去。没有这
+// 个退让重试，"写成功"就不等于"设备收下了报告"，大帧的中间报告会被静默丢
+// 掉（实测：整帧从此失去响应，且随后的重发直接 -EBUSY 报失败）。
+constexpr int kWriteTimeoutMilliseconds = 2000;
+constexpr int kWriteRetryIntervalMicroseconds = 1000;
+
+bool IsTransientWriteError(int error) {
+  return error == EBUSY || error == EAGAIN || error == EINTR ||
+         error == ETIMEDOUT;
+}
 
 std::mutex g_mutex;
 int g_fd = -1;
@@ -118,10 +133,19 @@ extern "C" int32_t pb_hid_write(const uint8_t* data, int32_t length) {
   const int body = length - 1;
   if (body > kReportWireSize) return 0;
   if (body > 0) std::memcpy(buffer, data + 1, static_cast<size_t>(body));
-  // 内核对中断 OUT 有缓冲，write 常规立即返回；Windows 侧的 2000ms 超时
-  // 对应的失败模式（设备不收）在这里表现为 write 报错返回 0。
-  const ssize_t written = ::write(fd, buffer, kReportWireSize);
-  return written == kReportWireSize ? 1 : 0;
+  // 内核对中断 OUT 有缓冲，write 常规立即返回；设备忙时返回 -EBUSY（此时报告
+  // 没有发出去）。按 Windows 的 2000ms 等待语义做有界退让重试：只有报告被内核
+  // 收下（等价于上一份报告已上总线）才返回成功。锁已在上面释放，重试不持锁。
+  const auto deadline = std::chrono::steady_clock::now() +
+                        std::chrono::milliseconds(kWriteTimeoutMilliseconds);
+  for (;;) {
+    const ssize_t written = ::write(fd, buffer, kReportWireSize);
+    if (written == kReportWireSize) return 1;
+    // 部分写或设备已消失/端点停住等不可恢复错误：立即失败，交给上层报错。
+    if (written >= 0 || !IsTransientWriteError(errno)) return 0;
+    if (std::chrono::steady_clock::now() >= deadline) return 0;
+    usleep(kWriteRetryIntervalMicroseconds);
+  }
 }
 
 extern "C" int32_t pb_hid_read(uint8_t* destination, int32_t capacity,

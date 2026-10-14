@@ -428,18 +428,22 @@ class HidFlasher {
         stage: FlashStage.done,
         message: '烧录完成',
       );
-    } on HidNoResponseException catch (error) {
-      return _reportNoResponse(
-        error,
-        transport,
-        activeStage,
-        blockIndex: blockIndex,
-        blockTotal: blockTotal,
-        writeAttempts: writeAttempts,
-        probeTimeout: probeTimeout,
-        onEvent: onEvent,
-      );
     } catch (error) {
+      // 写块阶段（以及连接/擦除阶段的设备静默）统一走探活 + 操作指引：
+      // 在 Linux 上写报告本身也可能失败（hidraw 的 OUT URB 忙），只报
+      // 「写入报告失败」用户看不懂下一步该做什么。
+      if (error is HidNoResponseException || blockIndex >= 0) {
+        return _reportInterruption(
+          error,
+          transport,
+          activeStage,
+          blockIndex: blockIndex,
+          blockTotal: blockTotal,
+          writeAttempts: writeAttempts,
+          probeTimeout: probeTimeout,
+          onEvent: onEvent,
+        );
+      }
       final message = _errorText(error);
       onEvent(activeStage, message);
       return FlashResult(success: false, stage: activeStage, message: message);
@@ -448,11 +452,11 @@ class HidFlasher {
     }
   }
 
-  /// 设备连续无响应时的收尾：先用只读的 `info` 探活，再按「仍在 ISP 模式」
-  /// 与「已退出/掉线」两种情况给出不同的操作指引。状态栏只有一行，完整指引
-  /// 写进日志区。
-  static Future<FlashResult> _reportNoResponse(
-    HidNoResponseException error,
+  /// 烧录中断的收尾：先用只读的 `info` 探活，再按「仍在 ISP 模式」与
+  /// 「已退出/掉线」两种情况给出不同的操作指引。状态栏只有一行，完整指引写进
+  /// 日志区。
+  static Future<FlashResult> _reportInterruption(
+    Object error,
     HidTransport transport,
     FlashStage stage, {
     required int blockIndex,
@@ -462,11 +466,19 @@ class HidFlasher {
     required void Function(FlashStage, String, {int? current, int? total})
     onEvent,
   }) async {
+    final noResponse = error is HidNoResponseException;
+    final label = error is HidNoResponseException
+        ? error.label
+        : _errorText(error);
     final where = blockIndex < 0
-        ? '${_stageText(stage)}（${error.label}）'
-        : '第 ${blockIndex + 1}/$blockTotal 块（${error.label}）';
-    onEvent(stage, '$where：连续 $writeAttempts 次无响应，烧录中断');
+        ? '${_stageText(stage)}（$label）'
+        : '第 ${blockIndex + 1}/$blockTotal 块（$label）';
+    onEvent(
+      stage,
+      '$where：${noResponse ? '连续 $writeAttempts 次无响应' : '写入中断'}，烧录中断',
+    );
     final alive = await _probeAlive(transport, probeTimeout);
+    final reason = noResponse ? '无响应' : '';
     if (alive) {
       onEvent(
         stage,
@@ -475,7 +487,7 @@ class HidFlasher {
       return FlashResult(
         success: false,
         stage: stage,
-        message: '烧录中断：$where无响应，设备仍在 ISP 模式，可直接重试',
+        message: '烧录中断：$where$reason，设备仍在 ISP 模式，可直接重试',
       );
     }
     onEvent(
@@ -486,7 +498,7 @@ class HidFlasher {
     return FlashResult(
       success: false,
       stage: stage,
-      message: '烧录中断：$where无响应，请断电重新上电后重试',
+      message: '烧录中断：$where$reason，请断电重新上电后重试',
     );
   }
 
