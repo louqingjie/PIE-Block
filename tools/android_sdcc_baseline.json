@@ -21,8 +21,8 @@
     "stage_layout": 7
   },
   "stage_object_sha256": {
-    "arm64-v8a": "43c2c511354572822feb46c682981812c7c74ed4921e5de3906e816c0b425479",
-    "x86_64": "bea77f4300aaee84987700c7adc6807b500b9f6491b450828bea052bd2920704"
+    "arm64-v8a": "ba40851ca797db3f7bf7dadfe7cf0c4adca433aa5d825e1bfe9aa7dabc2b7950",
+    "x86_64": "644a1a45df00281667a3f512f1d1ce0dda343f04bfa2f5342a9377f4bf1dfffb"
   },
   "windows_golden_sha256": {
     "infantry_servo_blocking_friction": "4266527f865834983c2edd06fd0a22000ed5a71af446a516fa5748ad6627dc1a",

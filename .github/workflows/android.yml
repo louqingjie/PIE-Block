@@ -18,6 +18,10 @@
 #     硬校验 BOOST_VERSION 108900），CI 从 repo.msys2.org 拉取固定的
 #     mingw-w64-ucrt-x86_64-boost-1.89.0-1 包解出头文件，与本地开发机一致；
 #   - 阶段对象缓存键含 sdcc-c251 子模块提交、脚本哈希与 Boost 固定版本；
+#   - 阶段对象里的 GUID 与用户名路径已通过 -ffile-prefix-map 与链接后的等长
+#     归一化全部消除（诊断步骤确认残留 0 处）；跨构建重编时仍可能出现 bison
+#     生成路径（SDCC.y）在字符串表中的位置漂移，此时按诊断输出的实测哈希
+#     刷新 tools/android_sdcc_baseline.json；
 #   - 构建后 tools/verify_android_package.ps1 校验 .so 内嵌的 stage-object 哈希
 #     必须与基线一致，否则直接失败（编译器漂移会被安全门挡住）。
 #
