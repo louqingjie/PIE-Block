@@ -10,6 +10,27 @@ const flashBlockSize = 128;
 const _codeBase = 0xfe0000;
 const _highBase = 0xff0000;
 
+/// 同一帧拆出的相邻 HID 报告之间的间隔。
+///
+/// 已验证的参考实现（`stc32g/toolchain/stcflash/pie_block_hid.py`）在每个
+/// 64 字节报告之间留 1ms：设备固件按帧长度字段跨报告重组，报告贴得太紧时
+/// 会丢帧。实测现象是首块（0x0000）正常返回 `02 54`，紧接着的下一块
+/// （0x0080）完全没有响应。Dart 移植时漏掉了这一间隔，这里补回来；单帧只
+/// 多出几毫秒。
+const hidReportGap = Duration(milliseconds: 1);
+
+/// 设备在超时时间内没有返回任何报告。
+///
+/// 与「帧头异常 / 响应命令异常」区分开：只有这一类失败才适合原样重发
+/// （按地址写块是幂等的），调用方据此决定重试，或给用户可操作的提示。
+class HidNoResponseException implements Exception {
+  const HidNoResponseException(this.label);
+  final String label;
+
+  @override
+  String toString() => '$label：设备无响应';
+}
+
 class FlashBlock {
   const FlashBlock({
     required this.address,
@@ -97,15 +118,21 @@ abstract final class HidProtocol {
     int commandOffset = 0,
     required int command,
     int timeoutMilliseconds = 3000,
+    Duration reportGap = hidReportGap,
   }) async {
     final packet = buildPacket(payload);
+    var firstReport = true;
     for (final report in splitReports(packet)) {
+      if (!firstReport && reportGap > Duration.zero) {
+        await Future<void>.delayed(reportGap);
+      }
+      firstReport = false;
       if (!await transport.write(report)) {
         throw StateError('$label：写入报告失败');
       }
     }
     final response = await transport.read(timeoutMilliseconds);
-    if (response.isEmpty) throw StateError('$label：设备无响应');
+    if (response.isEmpty) throw HidNoResponseException(label);
     if (response.length < 6 ||
         response[0] != 0x46 ||
         response[1] != 0xb9 ||

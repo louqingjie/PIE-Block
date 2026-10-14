@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:isolate';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:pieblock_toolchain/pieblock_toolchain.dart';
@@ -51,6 +52,17 @@ class FlashOperation {
 class HidFlasher {
   HidFlasher({HidTransport Function()? transport, this.useIsolate = true})
     : _transportFactory = transport ?? NativeHidTransport.new;
+
+  /// 写块无响应时的最大尝试次数。设备在编程 flash 时会丢弃紧跟 ACK 的下一帧
+  /// （实测首块 0x0000 正常、第二块 0x0080 完全无响应），按地址原样重发同一块
+  /// 是幂等的，能直接救回中断的烧录。
+  static const defaultWriteAttempts = 3;
+
+  /// 重发前的退避：给设备留出完成 flash 编程的时间。
+  static const defaultRetryBackoff = Duration(milliseconds: 50);
+
+  /// 失败后探活（`info`）的超时。
+  static const defaultProbeTimeout = Duration(milliseconds: 800);
 
   final HidTransport Function() _transportFactory;
   final bool useIsolate;
@@ -176,7 +188,7 @@ class HidFlasher {
         value = FlashResult(
           success: false,
           stage: FlashStage.preparing,
-          message: '$error',
+          message: _errorText(error),
         );
       } finally {
         await transport.close();
@@ -238,10 +250,15 @@ class HidFlasher {
     final file = File(path);
     emit(FlashStage.preparing, '正在校验待烧录固件…');
     if (!await file.exists() || await _normalizedHexSha(file) != expected) {
-      throw StateError('HEX 已丢失或内容发生变化，请重新编译');
+      const message = 'HEX 已丢失或内容发生变化，请重新编译';
+      emit(FlashStage.preparing, message);
+      throw StateError(message);
     }
     final validation = await IntelHexValidator.validateApplication(path);
-    if (!validation.ok) throw StateError(validation.message);
+    if (!validation.ok) {
+      emit(FlashStage.preparing, validation.message);
+      throw StateError(validation.message);
+    }
     return flashWithTransport(validation.image!, transport, emit);
   }
 
@@ -287,7 +304,7 @@ class HidFlasher {
       result = FlashResult(
         success: false,
         stage: FlashStage.preparing,
-        message: '$error',
+        message: _errorText(error),
       );
     }
     send.send({
@@ -302,8 +319,12 @@ class HidFlasher {
   static Future<FlashResult> flashWithTransport(
     HexImage image,
     HidTransport transport,
-    void Function(FlashStage, String, {int? current, int? total}) onEvent,
-  ) async {
+    void Function(FlashStage, String, {int? current, int? total}) onEvent, {
+    Duration reportGap = hidReportGap,
+    int writeAttempts = defaultWriteAttempts,
+    Duration retryBackoff = defaultRetryBackoff,
+    Duration probeTimeout = defaultProbeTimeout,
+  }) async {
     final deviceCount = await transport.countDevices();
     if (deviceCount != 1) {
       return FlashResult(
@@ -320,6 +341,8 @@ class HidFlasher {
       );
     }
     var activeStage = FlashStage.connecting;
+    var blockIndex = -1;
+    var blockTotal = 0;
     try {
       onEvent(FlashStage.connecting, '正在连接主控板引导程序…');
       await HidProtocol.expectAck(
@@ -327,12 +350,14 @@ class HidFlasher {
         const [0x01, 0, 0, 0, 0, 0, 0, 0x80, 0],
         'info',
         command: 0x01,
+        reportGap: reportGap,
       );
       await HidProtocol.expectAck(
         transport,
         const [0x05, 0, 0, 0x5a, 0xa5],
         'unlock',
         command: 0x05,
+        reportGap: reportGap,
       );
       activeStage = FlashStage.erasing;
       onEvent(activeStage, '正在擦除主控板程序区…');
@@ -341,26 +366,46 @@ class HidFlasher {
         const [0x03, 0, 0, 0x5a, 0xa5],
         'erase',
         command: 0x03,
+        reportGap: reportGap,
       );
       final blocks = HidProtocol.buildWriteBlocks(image);
+      blockTotal = blocks.length;
       activeStage = FlashStage.programming;
       for (var index = 0; index < blocks.length; index++) {
+        blockIndex = index;
         final block = blocks[index];
-        final response = await HidProtocol.expectAck(
-          transport,
-          [
-            block.command,
-            (block.address >> 8) & 0xff,
-            block.address & 0xff,
-            0x5a,
-            0xa5,
-            ...block.data,
-          ],
-          '写入 0x${block.address.toRadixString(16).padLeft(4, '0')}',
-          command: 0x02,
-        );
+        final label =
+            '写入 0x${block.address.toRadixString(16).padLeft(4, '0')}';
+        final payload = <int>[
+          block.command,
+          (block.address >> 8) & 0xff,
+          block.address & 0xff,
+          0x5a,
+          0xa5,
+          ...block.data,
+        ];
+        Uint8List? response;
+        for (var attempt = 1; ; attempt++) {
+          try {
+            response = await HidProtocol.expectAck(
+              transport,
+              payload,
+              label,
+              command: 0x02,
+              reportGap: reportGap,
+            );
+            break;
+          } on HidNoResponseException {
+            if (attempt >= writeAttempts) rethrow;
+            onEvent(
+              activeStage,
+              '$label 无响应，正在重发（第 ${attempt + 1}/$writeAttempts 次）',
+            );
+            await Future<void>.delayed(retryBackoff);
+          }
+        }
         if (response.length < 7 || response[6] != 0x54) {
-          throw StateError('写入 0x${block.address.toRadixString(16)} 未确认成功');
+          throw StateError('$label 未确认成功');
         }
         onEvent(
           activeStage,
@@ -383,10 +428,100 @@ class HidFlasher {
         stage: FlashStage.done,
         message: '烧录完成',
       );
+    } on HidNoResponseException catch (error) {
+      return _reportNoResponse(
+        error,
+        transport,
+        activeStage,
+        blockIndex: blockIndex,
+        blockTotal: blockTotal,
+        writeAttempts: writeAttempts,
+        probeTimeout: probeTimeout,
+        onEvent: onEvent,
+      );
     } catch (error) {
-      return FlashResult(success: false, stage: activeStage, message: '$error');
+      final message = _errorText(error);
+      onEvent(activeStage, message);
+      return FlashResult(success: false, stage: activeStage, message: message);
     } finally {
       await transport.close();
     }
   }
+
+  /// 设备连续无响应时的收尾：先用只读的 `info` 探活，再按「仍在 ISP 模式」
+  /// 与「已退出/掉线」两种情况给出不同的操作指引。状态栏只有一行，完整指引
+  /// 写进日志区。
+  static Future<FlashResult> _reportNoResponse(
+    HidNoResponseException error,
+    HidTransport transport,
+    FlashStage stage, {
+    required int blockIndex,
+    required int blockTotal,
+    required int writeAttempts,
+    required Duration probeTimeout,
+    required void Function(FlashStage, String, {int? current, int? total})
+    onEvent,
+  }) async {
+    final where = blockIndex < 0
+        ? '${_stageText(stage)}（${error.label}）'
+        : '第 ${blockIndex + 1}/$blockTotal 块（${error.label}）';
+    onEvent(stage, '$where：连续 $writeAttempts 次无响应，烧录中断');
+    final alive = await _probeAlive(transport, probeTimeout);
+    if (alive) {
+      onEvent(
+        stage,
+        '主控板仍在 ISP 模式：直接点「烧录当前固件」重试即可，无需重新编译。',
+      );
+      return FlashResult(
+        success: false,
+        stage: stage,
+        message: '烧录中断：$where无响应，设备仍在 ISP 模式，可直接重试',
+      );
+    }
+    onEvent(
+      stage,
+      '主控板已无响应：请关闭四个开关，给主控板断电几秒后重新上电，'
+      '再点「烧录当前固件」用同一份固件重试，无需重新编译。',
+    );
+    return FlashResult(
+      success: false,
+      stage: stage,
+      message: '烧录中断：$where无响应，请断电重新上电后重试',
+    );
+  }
+
+  /// 写块失败后的探活：`info` 是只读命令，能在不改变设备状态的前提下判断
+  /// 主控板是否还停在 ISP 模式。
+  static Future<bool> _probeAlive(
+    HidTransport transport,
+    Duration timeout,
+  ) async {
+    try {
+      await HidProtocol.expectAck(
+        transport,
+        const [0x01, 0, 0, 0, 0, 0, 0, 0x80, 0],
+        'info',
+        command: 0x01,
+        timeoutMilliseconds: timeout.inMilliseconds,
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// 界面可见的失败文案：StateError 只取 message，避免状态栏出现
+  /// `Bad state: ` 这类 Dart 运行时前缀。
+  static String _errorText(Object error) =>
+      error is StateError ? error.message.toString() : error.toString();
+
+  static String _stageText(FlashStage stage) => switch (stage) {
+    FlashStage.connecting => '连接引导程序',
+    FlashStage.erasing => '擦除程序区',
+    FlashStage.programming => '写入固件',
+    FlashStage.resetting => '复位主控板',
+    FlashStage.preparing => '校验固件',
+    FlashStage.done => '烧录',
+    FlashStage.canceled => '烧录',
+  };
 }
