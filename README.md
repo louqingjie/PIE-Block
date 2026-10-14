@@ -58,7 +58,7 @@ flutter build linux --release     # CMake 会把工具链与固件模板装进 b
 tools/package_flutter_linux.sh    # 校验并打包 build/dist/PIEBlock-<版本>-linux-x64.tar.gz
 ```
 
-`flutter build linux --release` 直接产出自包含 bundle（`build/linux/x64/release/bundle/`），`data/pieblock_runtime` 由 `linux/CMakeLists.txt` 在构建时安装，发布时保留整个目录；Linux 端支持 SDCC 离线编译与 USB-HID 烧录，烧录前需安装 udev 规则（`sudo tools/install_udev_rules.sh`，详见烧录指南）。
+`flutter build linux --release` 直接产出自包含 bundle（`build/linux/x64/release/bundle/`），`data/pieblock_runtime` 由 `linux/CMakeLists.txt` 在构建时安装，发布时保留整个目录；Linux 端支持 SDCC 离线编译与 USB-HID 烧录，烧录前需安装 udev 规则（可在「编译与烧录」页一键安装，走系统授权对话框；或命令行 `sudo tools/install_udev_rules.sh`，详见烧录指南）。
 
 编译与主控板接线、开关位置和故障排查见 [Flutter 编译与烧录指南](docs/guides/Flutter编译与烧录指南.md)。
 Android 离线 SDCC 的架构、安全门和验收状态见 [Android SDCC 多进程移植](docs/design/android-sdcc-port.md)。
