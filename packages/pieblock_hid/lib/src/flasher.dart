@@ -64,6 +64,24 @@ class HidFlasher {
   /// 失败后探活（`info`）的超时。
   static const defaultProbeTimeout = Duration(milliseconds: 800);
 
+  /// Linux 上实测需要的帧内报告间隔。
+  ///
+  /// STC32G ROM ISP 的 flash 编程速度跟不上主机推帧速度时，会先丢一帧、随后
+  /// 整块失联：设备仍挂在总线上但不回任何包，只能断电重新上电。同一块板子、
+  /// 同一份 414 块固件实测（见 docs/pitfall/HID烧录写块无响应.md）：
+  ///
+  /// - 报告间隔 1ms（≈91 块/秒）→ 第 130 块失联；
+  /// - 报告间隔 20ms（≈20 块/秒、49ms/块）→ 414 块全部写完并复位，21.4 秒。
+  ///
+  /// Windows 的 `WriteFile` 每份报告自带驱动往返延迟，1ms 间隔已经够用，
+  /// 因此只放大 Linux 侧，不拖慢本来正常的 Windows 烧录。
+  static const linuxReportGap = Duration(milliseconds: 20);
+
+  /// 按平台解析的帧内报告间隔：显式传入优先，否则 Linux 用
+  /// [linuxReportGap]、其它平台用参考实现的 [hidReportGap]。
+  static Duration get defaultReportGap =>
+      Platform.isLinux ? linuxReportGap : hidReportGap;
+
   final HidTransport Function() _transportFactory;
   final bool useIsolate;
   HidTransport? _activeTransport;
@@ -320,11 +338,12 @@ class HidFlasher {
     HexImage image,
     HidTransport transport,
     void Function(FlashStage, String, {int? current, int? total}) onEvent, {
-    Duration reportGap = hidReportGap,
+    Duration? reportGap,
     int writeAttempts = defaultWriteAttempts,
     Duration retryBackoff = defaultRetryBackoff,
     Duration probeTimeout = defaultProbeTimeout,
   }) async {
+    final gap = reportGap ?? defaultReportGap;
     final deviceCount = await transport.countDevices();
     if (deviceCount != 1) {
       return FlashResult(
@@ -350,14 +369,14 @@ class HidFlasher {
         const [0x01, 0, 0, 0, 0, 0, 0, 0x80, 0],
         'info',
         command: 0x01,
-        reportGap: reportGap,
+        reportGap: gap,
       );
       await HidProtocol.expectAck(
         transport,
         const [0x05, 0, 0, 0x5a, 0xa5],
         'unlock',
         command: 0x05,
-        reportGap: reportGap,
+        reportGap: gap,
       );
       activeStage = FlashStage.erasing;
       onEvent(activeStage, '正在擦除主控板程序区…');
@@ -366,7 +385,7 @@ class HidFlasher {
         const [0x03, 0, 0, 0x5a, 0xa5],
         'erase',
         command: 0x03,
-        reportGap: reportGap,
+        reportGap: gap,
       );
       final blocks = HidProtocol.buildWriteBlocks(image);
       blockTotal = blocks.length;
@@ -392,7 +411,7 @@ class HidFlasher {
               payload,
               label,
               command: 0x02,
-              reportGap: reportGap,
+              reportGap: gap,
             );
             break;
           } on HidNoResponseException {
