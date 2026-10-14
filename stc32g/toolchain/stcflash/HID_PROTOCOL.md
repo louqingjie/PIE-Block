@@ -33,9 +33,14 @@
   驱动往返延迟）。Dart 移植一度把间隔删成 0，表现为首块 0x0000 正常、第二块 0x0080
   就完全没有响应（详见
   [docs/pitfall/HID烧录写块无响应.md](../../../docs/pitfall/HID烧录写块无响应.md)）
+- **报告必须带 report ID 槽原样写 65 字节**：hidraw 会把用户缓冲整块交给 usbhid，
+  **内核不会替你剥 ID 槽**；设备固件按 HID 约定剥掉每笔传输的首字节再取 64 字节报告。
+  只写 64 字节本体时设备会剥掉帧首的 `0x46`、整帧错位：前 ~129 块还能 ACK，随后
+  失联并退出 ISP（必须断电重上电）。实机 A/B：65 字节写法 414/414 块通过，64 字节
+  写法第 129 块失联（见 `packages/pieblock_hid/src/pieblock_hid_hidraw.cpp` 注释）
 - **写一份报告≠设备已收到**：Linux hidraw 的写是异步的，设备忙时 `::write` 返回
   `-EBUSY` 且报告不会发出，写侧必须像 Windows 的 `WaitForSingleObject` 那样对忙错误
-  做有界退让重试（见 `packages/pieblock_hid/src/pieblock_hid_hidraw.cpp`）
+  做有界退让重试
 - **不要在烧录中途关闭 hidraw 句柄**：该固件要求主机保持常驻 IN 轮询会话，实测关闭
   并重开会立刻失联
 - 卡死后断点续烧：闪存内容非易失，断电重新上电进 ISP 后用 `--no-erase --start-block N`

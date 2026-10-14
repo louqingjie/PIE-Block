@@ -5,12 +5,14 @@
 Linux 端只有应用内的 hidraw 传输层，出了问题要重新构建才能复测。本脚本直接用
 /dev/hidraw* + ioctl 说话，零第三方依赖，用来：
 
-1. **做受控实验**：报告间隔、写重试窗口、起始块都能从命令行调。实测结论
-   （2026-10-14，见 docs/pitfall/HID烧录写块无响应.md）：STC32G ROM ISP 的
-   **帧到达速率超过它的 flash 编程能力**时会先丢帧、随后整块失联——设备仍挂在
-   总线上但不再回任何包，只能断电重新上电。`--report-gap-ms 1`（应用当时的值）
-   约 91 块/秒，写约 130 块后卡死；`--report-gap-ms 20` 约 18 块/秒，连写 200 块
-   无一次失败。默认值因此取 20。
+1. **做受控实验**：报告间隔、写重试窗口、起始块、报告的申报写法都能从命令行调。
+   实测结论（2026-10-14，见 docs/pitfall/HID烧录写块无响应.md）：
+
+   - **报告必须原样带 report ID 槽写 65 字节**（默认行为，与 hidapi/Windows
+     一致）：414 块整份写入 + 复位，21.4 秒，两次复现零失败；
+   - `--wire-strip-report-id`（剥掉前导 0x00、只写 64 字节，即修复前应用原生层
+     的写法）：第 129 块 @0x4080 失联、设备退出 ISP，必须断电重上电。这个开关
+     留着是为了复现/验证那个 bug，不要用在正常烧录上。
 2. **断点续烧**：设备卡死后，断电重新上电进 ISP，用
    `--no-erase --start-block N` 从断点继续，已写入的块不会被擦掉；
 3. **探活**：`--probe-only` 只发 info，判断板子当前是否还在 ISP 并且会回话。
@@ -41,6 +43,9 @@ stc32g/toolchain/stcflash/HID_PROTOCOL.md）：
 
     # 完整烧录（默认 20ms 报告间隔；--erase 必须显式给）
     python3 linux_hidraw_flash.py firmware.hex --erase --reset
+
+    # A/B：复现修复前原生层的错误报告写法（第 129 块会失联，需断电重上电）
+    python3 linux_hidraw_flash.py firmware.hex --erase --wire-strip-report-id
 
     # 提速尝试：逐步减小间隔，确认设备能稳住（失败需要断电重新上电）
     python3 linux_hidraw_flash.py firmware.hex --erase --report-gap-ms 10 --reset
@@ -198,10 +203,12 @@ def build_blocks(memory: dict[int, int]) -> list[tuple[int, int, bytes]]:
 class Session:
     """一次 ISP 会话：打开节点、按需读写报告。"""
 
-    def __init__(self, path: str, report_gap_ms: float, write_retry_ms: float):
+    def __init__(self, path: str, report_gap_ms: float, write_retry_ms: float,
+                 strip_report_id: bool = False):
         self.path = path
         self.report_gap = report_gap_ms / 1000.0
         self.write_retry = write_retry_ms / 1000.0
+        self.strip_report_id = strip_report_id
         self.fd = os.open(path, os.O_RDWR)
 
     def close(self) -> None:
@@ -211,7 +218,14 @@ class Session:
 
     def write_report(self, wire: bytes) -> None:
         """写一份报告；设备忙（-EBUSY）时在有界窗口内退让重试，与 Windows
-        侧 pb_hid_write 的 2000ms 等待、以及应用内 hidraw 实现保持一致。"""
+        侧 pb_hid_write 的 2000ms 等待、以及应用内 hidraw 实现保持一致。
+
+        wire 以 report ID 槽开头（hidapi 语义，写 65 字节，与已验证的
+        pie_block_hid.py 一致）；--wire-strip-report-id 改成应用原生层的写法：
+        剥掉首字节、固定写 64 字节报告本体。"""
+        if self.strip_report_id:
+            body = wire[1:]
+            wire = body + b"\x00" * (REPORT_SIZE - len(body))
         deadline = time.monotonic() + self.write_retry
         while True:
             try:
@@ -266,7 +280,7 @@ def probe_only(args: argparse.Namespace) -> int:
     if path is None:
         log("未找到处于 ISP 模式的主控板（VID 34BF / PID 1001）")
         return 2
-    session = Session(path, args.report_gap_ms, args.write_retry_ms)
+    session = Session(path, args.report_gap_ms, args.write_retry_ms, args.wire_strip_report_id)
     started = time.monotonic()
     try:
         session.expect_ack(INFO, "info", 0x01, args.timeout_ms)
@@ -292,7 +306,7 @@ def connect(args: argparse.Namespace, *, erase: bool) -> Session:
     path = find_device()
     if path is None:
         raise SystemExit("未找到处于 ISP 模式的主控板（VID 34BF / PID 1001）：请断电几秒后重新上电")
-    session = Session(path, args.report_gap_ms, args.write_retry_ms)
+    session = Session(path, args.report_gap_ms, args.write_retry_ms, args.wire_strip_report_id)
     session.expect_ack(INFO, "info", 0x01, args.timeout_ms)
     session.expect_ack(UNLOCK, "unlock", 0x05, args.timeout_ms)
     if erase:
@@ -385,6 +399,11 @@ def main() -> int:
         type=float,
         default=20.0,
         help="帧内报告间隔（默认 20：实测连写 200 块无失败；1 约 130 块后卡死）",
+    )
+    parser.add_argument(
+        "--wire-strip-report-id",
+        action="store_true",
+        help="复现修复前原生层的错误写法：剥掉前导 0x00、只写 64 字节（正常烧录不要用）",
     )
     parser.add_argument("--write-retry-ms", type=float, default=2000.0, help="写报告忙重试窗口（默认 2000，同应用）")
     parser.add_argument("--timeout-ms", type=int, default=3000, help="读响应超时（默认 3000，同应用）")

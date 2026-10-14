@@ -31,7 +31,7 @@ constexpr uint16_t kVid = 0x34BF;
 constexpr uint16_t kPid = 0x1001;
 // 设备报告本体 64 字节；传输缓冲沿用 Windows 侧的 65 字节
 //（byte0 为 report ID 槽，Dart 侧 protocol.dart 恒填 0x00）。
-constexpr int kReportWireSize = 64;
+// 注意：这个 ID 槽必须原样写给内核，不能剥（见 pb_hid_write 注释）。
 constexpr int kTransferSize = 65;
 
 // 与 Windows 侧等价的「写一份报告」等待窗口（pb_hid_write 的
@@ -127,20 +127,24 @@ extern "C" int32_t pb_hid_write(const uint8_t* data, int32_t length) {
   if (fd < 0 || data == nullptr || length <= 0 || length > kTransferSize) {
     return 0;
   }
-  // data[0] 是 report ID 槽（恒 0x00）：hidraw 对无 report ID 设备直接发
-  // 64 字节本体，与 Windows 写 65 字节（内核剥离 ID 槽）在总线上等价。
-  uint8_t buffer[kReportWireSize] = {};
-  const int body = length - 1;
-  if (body > kReportWireSize) return 0;
-  if (body > 0) std::memcpy(buffer, data + 1, static_cast<size_t>(body));
+  // 必须**原样**把这 65/65/64 字节写下去：Dart 侧每份报告都带 report ID 槽
+  // （首字节恒 0x00），hidraw 会把整个缓冲交给 usbhid，设备固件按 HID 约定剥掉
+  // 首字节再收 64 字节报告本体——与 Windows 的 WriteFile / hidapi 写 65 字节
+  // 完全等价。
+  //
+  // 曾经在这里"好心"剥掉 data[0]、只写 64 字节本体，结果设备把 0x46 当成 report
+  // ID 剥掉，整帧错位：前 ~129 块还能 ACK，随后失联并退出 ISP（必须断电重上电）。
+  // 实机 A/B：同一份固件、同一 20ms 节奏下，65 字节写 414/414 块通过，64 字节写
+  // 第 129 块后失联（见 docs/pitfall/HID烧录写块无响应.md）。
+  //
   // 内核对中断 OUT 有缓冲，write 常规立即返回；设备忙时返回 -EBUSY（此时报告
   // 没有发出去）。按 Windows 的 2000ms 等待语义做有界退让重试：只有报告被内核
   // 收下（等价于上一份报告已上总线）才返回成功。锁已在上面释放，重试不持锁。
   const auto deadline = std::chrono::steady_clock::now() +
                         std::chrono::milliseconds(kWriteTimeoutMilliseconds);
   for (;;) {
-    const ssize_t written = ::write(fd, buffer, kReportWireSize);
-    if (written == kReportWireSize) return 1;
+    const ssize_t written = ::write(fd, data, static_cast<size_t>(length));
+    if (written == length) return 1;
     // 部分写或设备已消失/端点停住等不可恢复错误：立即失败，交给上层报错。
     if (written >= 0 || !IsTransientWriteError(errno)) return 0;
     if (std::chrono::steady_clock::now() >= deadline) return 0;
