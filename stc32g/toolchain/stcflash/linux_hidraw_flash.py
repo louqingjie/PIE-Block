@@ -24,6 +24,10 @@ stc32g/toolchain/stcflash/HID_PROTOCOL.md）：
     0xFF0000 区 [02 <addr2> 5a a5 <128B>] -> 02 54
     复位   [ff]
 
+4. **分批绕墙**：若设备每隔约 130 块就沉默（疑似会话级失效），
+   `--blocks-per-session 100` 会在写到 100 块时主动关闭并重开会话（不擦除）继续，
+   往往能把整份固件写完。
+
 用法：
     # 只看板子在不在、回不回话（只读，不发任何破坏性命令）
     python3 linux_hidraw_flash.py --probe-only
@@ -33,6 +37,9 @@ stc32g/toolchain/stcflash/HID_PROTOCOL.md）：
 
     # 完整烧录（--erase 必须显式给，否则只在保护已有内容的前提下续写）
     python3 linux_hidraw_flash.py firmware.hex --erase
+
+    # 分批绕墙：每 100 块重开一次会话
+    python3 linux_hidraw_flash.py firmware.hex --erase --blocks-per-session 100 --reset
 
     # 断点续烧：断电重新上电进 ISP 后，从第 129 块（0-based 索引）继续
     python3 linux_hidraw_flash.py firmware.hex --no-erase --start-block 129
@@ -245,29 +252,47 @@ def dry_run(blocks: list[tuple[int, int, bytes]]) -> int:
     return 0
 
 
-def flash(args: argparse.Namespace, blocks: list[tuple[int, int, bytes]]) -> int:
+def connect(args: argparse.Namespace, *, erase: bool) -> Session:
+    """建立一次 ISP 会话：打开节点 → info → unlock（→ 可选 erase）。"""
     path = find_device()
     if path is None:
-        log("未找到处于 ISP 模式的主控板（VID 34BF / PID 1001）：请断电几秒后重新上电")
-        return 2
+        raise SystemExit("未找到处于 ISP 模式的主控板（VID 34BF / PID 1001）：请断电几秒后重新上电")
     session = Session(path, args.report_gap_ms, args.write_retry_ms)
-    log(f"设备 {path}：报告间隔 {args.report_gap_ms}ms，写重试窗口 {args.write_retry_ms}ms")
+    session.expect_ack(INFO, "info", 0x01, args.timeout_ms)
+    session.expect_ack(UNLOCK, "unlock", 0x05, args.timeout_ms)
+    if erase:
+        session.expect_ack(ERASE, "erase", 0x03, args.timeout_ms)
+    return session
+
+
+def flash(args: argparse.Namespace, blocks: list[tuple[int, int, bytes]]) -> int:
     started = time.monotonic()
     written = 0
+    session: Session | None = None
     try:
-        session.expect_ack(INFO, "info", 0x01, args.timeout_ms)
-        log(f"[{time.monotonic() - started:6.2f}s] info OK")
-        session.expect_ack(UNLOCK, "unlock", 0x05, args.timeout_ms)
-        log(f"[{time.monotonic() - started:6.2f}s] unlock OK")
-        if args.erase:
-            session.expect_ack(ERASE, "erase", 0x03, args.timeout_ms)
-            log(f"[{time.monotonic() - started:6.2f}s] erase OK")
-        else:
-            log("跳过 erase（--no-erase）：只续写，不擦除已有内容")
+        session = connect(args, erase=args.erase)
+        log(
+            f"[{time.monotonic() - started:6.2f}s] 会话建立：{session.path}，"
+            f"报告间隔 {args.report_gap_ms}ms，写重试窗口 {args.write_retry_ms}ms，"
+            f"erase={'是' if args.erase else '否'}"
+        )
         for index in range(args.start_block, len(blocks)):
             if args.limit and written >= args.limit:
                 log(f"已达 --limit {args.limit}，停在块索引 {index}")
                 break
+            # 主动分批：写到 --blocks-per-session 块就关掉重开会话（不擦除），
+            # 用来验证/规避「会话级」的失效墙。
+            if (
+                args.blocks_per_session
+                and written
+                and written % args.blocks_per_session == 0
+            ):
+                session.close()
+                session = connect(args, erase=False)
+                log(
+                    f"[{time.monotonic() - started:6.2f}s] 已写 {written} 块，"
+                    f"重开会话继续（不擦除）"
+                )
             command, address, data = blocks[index]
             label = f"块 {index} @0x{address:04x}"
             session.expect_ack(
@@ -291,7 +316,9 @@ def flash(args: argparse.Namespace, blocks: list[tuple[int, int, bytes]]) -> int
         elapsed = time.monotonic() - started
         log(f"[{elapsed:6.2f}s] 中断：{type(error).__name__}: {error}")
         log(f"已写入 {written} 块（下一个待写块索引约为 {args.start_block + written}）")
-        _diagnose_reopen(path, args)
+        if session is not None:
+            session.close()
+        _diagnose_reopen(args)
         log(
             "续烧：给主控板断电几秒后重新上电（保持 ISP），再执行\n"
             f"  python3 {os.path.basename(__file__)} {args.hex} "
@@ -299,16 +326,17 @@ def flash(args: argparse.Namespace, blocks: list[tuple[int, int, bytes]]) -> int
         )
         return 3
     finally:
-        session.close()
+        if session is not None:
+            session.close()
 
 
-def _diagnose_reopen(path: str, args: argparse.Namespace) -> None:
+def _diagnose_reopen(args: argparse.Namespace) -> None:
     """关掉句柄重开一次再发 info：区分「设备已经不在总线上/不回应」与
     「只是这条 hidraw 会话的管道卡住」。"""
     log("诊断：关闭并重开 hidraw 会话后重试 info…")
     try:
-        session = Session(path, args.report_gap_ms, args.write_retry_ms)
-    except OSError as error:
+        session = Session(find_device() or "", args.report_gap_ms, args.write_retry_ms)
+    except Exception as error:  # noqa: BLE001
         log(f"  重开失败：{error}（设备可能已重新枚举或掉线）")
         return
     try:
@@ -333,6 +361,12 @@ def main() -> int:
     parser.add_argument("--erase", action="store_true", help="烧录前擦除程序区（破坏性，需显式给出）")
     parser.add_argument("--start-block", type=int, default=0, help="从第 N 块开始（断点续烧）")
     parser.add_argument("--limit", type=int, default=0, help="最多写 N 块后停下")
+    parser.add_argument(
+        "--blocks-per-session",
+        type=int,
+        default=0,
+        help="每写 N 块就关闭并重开会话（不擦除）继续，用来规避/验证会话级失效墙",
+    )
     parser.add_argument("--reset", action="store_true", help="写完后发送复位")
     parser.add_argument("--report-gap-ms", type=float, default=1.0, help="帧内报告间隔（默认 1，同应用）")
     parser.add_argument("--write-retry-ms", type=float, default=2000.0, help="写报告忙重试窗口（默认 2000，同应用）")
