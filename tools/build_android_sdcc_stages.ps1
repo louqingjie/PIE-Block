@@ -38,6 +38,31 @@ function Convert-ToMsysPath([string]$Path) {
     return '/' + $Matches[1].ToLowerInvariant() + '/' + $Matches[2].Replace('\', '/')
 }
 
+function Get-FilePrefixMapArguments([string]$TemporaryRoot) {
+    # 编译产物会通过 __FILE__（断言与诊断消息）嵌入源文件的绝对路径。
+    # 临时构建目录名含随机 GUID，父路径还随机器变化（用户名、盘符、%TEMP%），
+    # 不处理的话同一份源码在不同机器/不同次构建上会产出不同字节，基线哈希
+    # 永远无法复现。这里把临时目录前缀统一映射为固定串，让阶段对象变成
+    # 跨机器逐字节可复现（其余输入固定：NDK、Boost 版本、子模块提交）。
+    $forms = New-Object System.Collections.Generic.List[string]
+    # 编译器实际看到的是 msys2 转写过的 Windows 正斜杠形式（C:/Users/...）；
+    # msys 形式（/c/Users/...）也一并提供，覆盖不同转写路径。
+    $forms.Add(($TemporaryRoot -replace '\\', '/'))
+    $forms.Add((Convert-ToMsysPath $TemporaryRoot))
+    $short = & cmd.exe /d /c "for %I in (""$TemporaryRoot"") do @echo %~sI" 2>$null
+    if ($LASTEXITCODE -eq 0 -and $short) {
+        $forms.Add(($short.Trim() -replace '\\', '/'))
+    }
+    $arguments = @()
+    foreach ($form in ($forms | Select-Object -Unique)) {
+        if ($form -match '\s') {
+            throw "临时目录路径含空白，无法安全传入 -ffile-prefix-map：$form"
+        }
+        $arguments += "-ffile-prefix-map=$form=/pb-stage"
+    }
+    return $arguments
+}
+
 function Get-Sha256([string]$Path) {
     $stream = [IO.File]::OpenRead($Path)
     $algorithm = [Security.Cryptography.SHA256]::Create()
@@ -72,7 +97,7 @@ function Build-StageObject([string]$TargetAbi) {
     $destination = [IO.Path]::GetFullPath((Join-Path $OutputRoot $TargetAbi))
     $manifestPath = Join-Path $destination 'stage_manifest.json'
     $stagePath = Join-Path $destination 'pieblock_sdcc_stages.o'
-    $cacheKey = "$expectedCommit|$TargetAbi|android24|ndk-28.2.13676358|ffi-5|stage-layout-5"
+    $cacheKey = "$expectedCommit|$TargetAbi|android24|ndk-28.2.13676358|ffi-5|stage-layout-6"
     if ((Test-Path -LiteralPath $manifestPath) -and (Test-Path -LiteralPath $stagePath)) {
         $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
         $actualHash = Get-Sha256 $stagePath
@@ -166,6 +191,11 @@ function Build-StageObject([string]$TargetAbi) {
         $strip = Convert-ToMsysPath (Join-Path $toolRoot 'llvm-strip.exe')
         $configure = Convert-ToMsysPath (Join-Path $sourceCopy 'configure')
         $build = Convert-ToMsysPath $buildRoot
+        # 阶段对象必须跨机器可复现（基线安全门按字节哈希校验），编译参数里
+        # 统一加临时目录前缀映射，见 Get-FilePrefixMapArguments 的说明。
+        $prefixMaps = @(Get-FilePrefixMapArguments $temporaryRoot)
+        $cflags = (@('-std=gnu17', '-fPIC') + $prefixMaps) -join ' '
+        $cxxflags = (@('-std=gnu++17', '-fPIC') + $prefixMaps) -join ' '
         $disabledPorts = @(
             'mcs51', 'z80', 'z180', 'r2k', 'r2ka', 'r3ka', 'r4k', 'r5k',
             'r6k', 'sm83', 'tlcs90', 'ez80', 'z80n', 'r800', 'ds390',
@@ -186,8 +216,8 @@ function Build-StageObject([string]$TargetAbi) {
             "AR='$ar'",
             "RANLIB='$ranlib'",
             "STRIP='$strip'",
-            "CFLAGS='-std=gnu17 -fPIC'",
-            "CXXFLAGS='-std=gnu++17 -fPIC'",
+            "CFLAGS='$cflags'",
+            "CXXFLAGS='$cxxflags'",
             "CPPFLAGS='-I$build/include'",
             '--enable-mcs251-port'
         ) + $disabledPorts + @(
@@ -203,7 +233,7 @@ function Build-StageObject([string]$TargetAbi) {
             "mkdir -p '$libibertyBuild' && cd '$libibertyBuild' && " +
             "'$libibertySource' --host=$targetHost --build=x86_64-pc-msys " +
             "CC='$compiler' AR='$ar' RANLIB='$ranlib' " +
-            "CFLAGS='-std=gnu17 -fPIC' CPPFLAGS='-I$build/include' " +
+            "CFLAGS='$cflags' CPPFLAGS='-I$build/include' " +
             '--disable-shared --enable-static'
         )
         Invoke-Msys "cd '$libibertyBuild' && make -j4 libiberty.a"
