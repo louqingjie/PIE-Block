@@ -1055,8 +1055,9 @@ ${engineerFeedback.isEmpty ? '' : '        UpdateServoFeedback();'}
       commands.add(lines.join('\n'));
     }
 
-    // 全部完成旋律：《卡农》主题的逐音渲染。
-    // 408 个音，每个音一行 Beep，静默一段一行 Ms_Delay——
+    // 全部完成旋律：《帕赫贝尔D大调卡农》的逐音渲染。
+    // 854 个音，每个音一行 Beep，静默一段一行 Ms_Delay（当前曲谱连续发声、
+    // 无静默，但保留该分支以免日后换曲时漏掉）——
     // 数据源是 DebugCues.allDone()，与 UI 试听完全同源，不会漂移。
     final allDoneBody = <String>[];
     for (final note in allDoneNotes) {
@@ -1075,8 +1076,9 @@ ${engineerFeedback.isEmpty ? '' : '        UpdateServoFeedback();'}
    步序用一条上行音型 C6-E6-G6-C7-E7 的前 N 个音表示第 N 项
    （个数即序号，不单独播一遍完整音型做前奏），结束用同一音型跳过步序
    落音后对称回落，构成一句「上去、回来」的乐句。音区（八度）负责进位：
-   项 1~5 低八度，项 6 起高八度。全部完成播放《卡农》主题（MIDI 第一
-   音轨）的完整旋律，与逐项短乐句形成长度与复杂度双重隔离。 */
+   项 1~5 低八度，项 6 起高八度。全部完成播放《帕赫贝尔D大调卡农》
+   （多声部归并为单音线后的完整旋律），与逐项短乐句形成长度与复杂度
+   双重隔离。 */
 uint8_t Channal = 36;
 #define BUZZER_CH PWMA_CH4N_P33
 #define BUZZER_DUTY_ON 5000
@@ -1198,9 +1200,11 @@ static void DoneCue(uint8_t step)
     Beep(MotifNote(0, zone), CUE_EVENT_DONE_MS);
 }
 
-/* 全部完成：播放《卡农》主题（MIDI 第一音轨）的完整旋律。
+/* 全部完成：播放《帕赫贝尔D大调卡农》的完整旋律（854 个音、约 5 分钟）。
    逐项提示是三条「上去、回来」的短乐句，这里接一段完整正曲，
    长度和复杂度完全不同量级，一耳朵就能分辨。
+   原曲是多声部，已按「同 tick 和弦取最高音 + 异步重叠时新音打断旧音」
+   归并成单音线，见 DebugCues._canonTheme。
    音高/时值逐音写死：曲谱是固定数据，展开比宏更清楚，也避开 SDCC
    对「数组 + 变址」取错字节的问题（见 ExpansionBoradControl 的注释）。 */
 static void AllDoneCue(void)

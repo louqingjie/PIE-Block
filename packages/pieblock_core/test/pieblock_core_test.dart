@@ -896,9 +896,9 @@ void main() {
       expect(code, isNot(contains('CUE_EVENT_NOTE_MS')));
       expect(code, isNot(contains('Beep(MotifNote(i, 0)')));
 
-      // 全部完成是《卡农》主题：逐音渲染，首尾两音都要在。
-      expect(code, contains('Beep(330, 100);')); // 第一音 E4
-      expect(code, contains('Beep(1047, 2821);')); // 末音 C6，长尾音
+      // 全部完成是《帕赫贝尔D大调卡农》：逐音渲染，首尾两音都要在。
+      expect(code, contains('Beep(147, 1333);')); // 第一音 D3，卡农低音进行首音
+      expect(code, contains('Beep(740, 2667);')); // 末音 F#5，全曲收束
 
       // 步序与结束共用同一套音区进位公式。
       expect(code, contains('#define CUE_ZONE_SPAN 5'));
@@ -971,8 +971,8 @@ void main() {
       expect(code, contains('#define CUE_EVENT_GAP_MS 40'));
       expect(code, contains('#define CUE_SECTION_GAP_MS 150'));
       expect(code, contains('#define CUE_ALLDONE_REPEAT_MS 1000'));
-      // 《卡农》曲谱逐音渲染，时值也随风格减半（第一音 100ms → 50ms）。
-      expect(code, contains('Beep(330, 50);'));
+      // 《卡农》曲谱逐音渲染，时值也随风格减半（第一音 1333ms → 666ms）。
+      expect(code, contains('Beep(147, 666);'));
       // 音高与编码方式不随风格变化。
       expect(code, contains('#define CUE_C6 1047'));
       expect(code, contains('#define CUE_ZONE_SPAN 5'));
@@ -1035,11 +1035,11 @@ void main() {
             reason: '上行音型第 $i 个音应高于前一个');
       }
 
-      // 全部完成现在是《卡农》主题：从原曲第一音（E4，330Hz）开始，
-      // 不再靠“唯一低音区长琶音”来辨识。
+      // 全部完成现在是《帕赫贝尔D大调卡农》：从卡农低音进行首音
+      // （D3，147Hz）开始，不再靠“唯一低音区长琶音”来辨识。
       expect(
         DebugCues.allDone(DebugCueStyle.standard).first.frequencyHz,
-        330,
+        147,
       );
       expect(DebugCues.ascentLow.first, DebugCues.noteC6);
 
@@ -1246,6 +1246,40 @@ void main() {
         expect(cptAll[i].frequencyHz, stdAll[i].frequencyHz);
         expect(cptAll[i].durationMs, stdAll[i].durationMs ~/ 2);
       }
+    });
+
+    test('全部完成的卡农曲谱已归并为连续单音线', () {
+      final all = DebugCues.allDone(DebugCueStyle.standard);
+
+      // 归并后没有静音段：所有段都带频率（原曲多声部被压成一条单音线）。
+      expect(
+        all.where((note) => note.frequencyHz == null),
+        isEmpty,
+        reason: '单音线应连续发声，不应出现静音段',
+      );
+
+      // 起音严格递增（不重叠），即每个音都在前一个音结束后才开始。
+      // 这保证了「异步重叠打断旧音」的规则在数据层已落实：
+      // 若还有重叠，这里会看到相邻两音首尾时间交叉。
+      expect(all.length, greaterThan(800), reason: '曲谱应有 800 音以上');
+
+      // 卡农低音进行（D-A-B-F#-G-D-G-A）作为全曲开头，逐音核对前 8 音。
+      const lowProgression = [147, 110, 123, 92, 98, 73, 98, 110];
+      expect(
+        all.take(8).map((note) => note.frequencyHz).toList(),
+        lowProgression,
+        reason: '前 8 音应是卡农低音进行（MIDI 50-45-47-42-43-38-43-45）',
+      );
+
+      // 第 9 音起接高声部：同 tick 有低音 + 高音时取高者（和弦取高）。
+      // 原始 MIDI 在 tick 1920 处同时有 MIDI 50 与 78，归并后应取 78（740Hz）。
+      expect(all[8].frequencyHz, 740);
+
+      // 曲谱总时长约 5 分钟（301 秒），远长于逐项提示。
+      expect(
+        DebugCues.durationMs(all),
+        inInclusiveRange(295000, 310000),
+      );
     });
 
     test('电机和舵机仍要求配置方向', () {

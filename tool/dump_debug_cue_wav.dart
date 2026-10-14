@@ -86,7 +86,7 @@ void main() {
       'fullStep3': DebugCues.fullStep(3, style),
       // 进位后的整项：音区升八度，个数重新从 1 开始。
       'fullStep6': DebugCues.fullStep(6, style),
-      // 全部完成 = 《卡农》主题全曲（约 3 分钟，文件较大）。
+      // 全部完成 = 《帕赫贝尔D大调卡农》全曲（约 5 分钟，文件较大）。
       'allDone': allDone,
       // 前 60 秒节选：便于快速试听旋律，不用等完整曲。
       'allDoneHead':
