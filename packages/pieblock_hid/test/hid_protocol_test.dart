@@ -312,4 +312,59 @@ void main() {
       '烧录中断：擦除程序区（erase）无响应，请断电重新上电后重试',
     );
   });
+
+  test('整条烧录的帧序列（命令 + 地址 + 报告尺寸）与改造前一致', () async {
+    // 这条用例锁住跨平台共享的那份字节流：Windows 的 pieblock_hid.dll 与
+    // Linux 的 libpieblock_hid.so 收到的报告序列必须完全相同。
+    final transport = _FakeTransport();
+    transport.responses.addAll([
+      _ack(0x01),
+      _ack(0x05),
+      _ack(0x03),
+      _ack(0x02, [0x54]),
+      _ack(0x02, [0x54]),
+      _ack(0x02, [0x54]),
+      _ack(0x02, [0x54]),
+    ]);
+    final result = await HidFlasher.flashWithTransport(
+      HexImage({0xfe0000: 1, 0xfe0080: 2, 0xff0000: 3, 0xff0100: 4}),
+      transport,
+      (stage, message, {current, total}) {},
+      reportGap: Duration.zero,
+    );
+    expect(result.success, isTrue);
+    // 每帧的首个报告：[reportID, 46, b9, 6a, len_hi, len_lo, payload0, ...]，
+    // 因此命令在 report[6]，两字节地址在 report[7..8]。
+    final heads = transport.writes
+        .where(
+          (report) =>
+              report.length > 9 &&
+              report[1] == 0x46 &&
+              report[2] == 0xb9 &&
+              report[3] == 0x6a,
+        )
+        .map((report) => (report[6], (report[7] << 8) | report[8]))
+        .toList();
+    expect(heads.map((head) => head.$1).toList(), [
+      0x01, // info
+      0x05, // unlock
+      0x03, // erase
+      0x32, // 用户区首块
+      0x12, // 用户区后续块
+      0x02, // 0xFF0000 区
+      0x02,
+      0xff, // 复位
+    ]);
+    expect(
+      heads
+          .where((head) => const [0x32, 0x12, 0x02].contains(head.$1))
+          .map((head) => head.$2)
+          .toList(),
+      [0x0000, 0x0080, 0x0000, 0x0100],
+    );
+    // 报告契约：首字节恒为 report ID 槽 0x00；Windows 侧 pb_hid_write 要求
+    // length ≤ OutputReportByteLength（65），Linux 侧固定 64 字节本体。
+    expect(transport.writes.every((report) => report[0] == 0), isTrue);
+    expect(transport.writes.map((report) => report.length).toSet(), {64, 65});
+  });
 }
