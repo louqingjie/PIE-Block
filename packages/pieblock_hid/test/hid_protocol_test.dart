@@ -188,12 +188,6 @@ void main() {
   test('帧内相邻报告按 hidReportGap 留出间隔', () async {
     // 参考实现 pie_block_hid.py 在报告之间保留 1ms，Dart 移植曾丢掉这个间隔。
     expect(hidReportGap, const Duration(milliseconds: 1));
-    // 单板实测（docs/pitfall/HID烧录写块无响应.md）：Linux 侧 1ms 会在约
-    // 130 块后把设备压垮，20ms 能整份写完 414 块并复位。这里是防回退下限。
-    expect(
-      HidFlasher.linuxReportGap,
-      greaterThanOrEqualTo(const Duration(milliseconds: 15)),
-    );
     final transport = _FakeTransport()..responses.add(_ack(0x02, [0x54]));
     const gap = Duration(milliseconds: 25);
     await HidProtocol.expectAck(
@@ -369,7 +363,7 @@ void main() {
     );
     expect(
       events,
-      contains('帧内报告间隔 ${HidFlasher.defaultReportGap.inMilliseconds}ms'),
+      contains('帧内报告间隔 ${hidReportGap.inMilliseconds}ms'),
     );
   });
 

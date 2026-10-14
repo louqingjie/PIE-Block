@@ -64,24 +64,6 @@ class HidFlasher {
   /// 失败后探活（`info`）的超时。
   static const defaultProbeTimeout = Duration(milliseconds: 800);
 
-  /// Linux 上实测需要的帧内报告间隔。
-  ///
-  /// STC32G ROM ISP 的 flash 编程速度跟不上主机推帧速度时，会先丢一帧、随后
-  /// 整块失联：设备仍挂在总线上但不回任何包，只能断电重新上电。同一块板子、
-  /// 同一份 414 块固件实测（见 docs/pitfall/HID烧录写块无响应.md）：
-  ///
-  /// - 报告间隔 1ms（≈91 块/秒）→ 第 130 块失联；
-  /// - 报告间隔 20ms（≈20 块/秒、49ms/块）→ 414 块全部写完并复位，21.4 秒。
-  ///
-  /// Windows 的 `WriteFile` 每份报告自带驱动往返延迟，1ms 间隔已经够用，
-  /// 因此只放大 Linux 侧，不拖慢本来正常的 Windows 烧录。
-  static const linuxReportGap = Duration(milliseconds: 20);
-
-  /// 按平台解析的帧内报告间隔：显式传入优先，否则 Linux 用
-  /// [linuxReportGap]、其它平台用参考实现的 [hidReportGap]。
-  static Duration get defaultReportGap =>
-      Platform.isLinux ? linuxReportGap : hidReportGap;
-
   final HidTransport Function() _transportFactory;
   final bool useIsolate;
   HidTransport? _activeTransport;
@@ -343,7 +325,11 @@ class HidFlasher {
     Duration retryBackoff = defaultRetryBackoff,
     Duration probeTimeout = defaultProbeTimeout,
   }) async {
-    final gap = reportGap ?? defaultReportGap;
+    // 节奏用参考实现的 1ms（见 protocol.dart 的 hidReportGap）。曾经有过一段
+    // 「Linux 放大到 20ms」的保守值，后来定位到真正的坑是 Linux 原生层剥掉了
+    // report ID 槽（docs/pitfall/HID烧录写块无响应.md 第五轮）；写法修好后实测
+    // 1ms 在同一块板子上写完 414 块只用 5.66 秒，20ms 纯属多余。
+    final gap = reportGap ?? hidReportGap;
     final deviceCount = await transport.countDevices();
     if (deviceCount != 1) {
       return FlashResult(
