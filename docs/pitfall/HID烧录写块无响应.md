@@ -136,6 +136,11 @@ OUT URB；设备还在忙（正在编程 flash、上一份报告还没被收下�
 - 新增 `packages/pieblock_hid/tool/dump_block_plan.dart`：打印 HEX 的烧录计划
   （索引/命令/地址/块数据 sha1），已与上述脚本 `--dry-run` 对拍过 52392 字节
   的步兵固件，414 块逐行一致。
+- 新增 `packages/pieblock_hid/tool/flash_hex.dart`：不启动 GUI，直接用应用同一条
+  Dart 链路（`HidFlasher.flashWithTransport` + 原生 hidraw 传输层）烧录，用于验证
+  应用本身；开发机上需 `PIEBLOCK_HID_DLL=<bundle>/lib/libpieblock_hid.so`。
+- 烧录日志新增一行「帧内报告间隔 Xms」：节奏改过而日志数值没变，就说明跑的是旧
+  构建（Dart 改动要重新运行或热重启，原生 `.so` 改动要重新构建）。
 - 下一步取证：失败瞬间的 `sudo dmesg -T | tail -50`（是否出现 USB 断开/重枚举）
   与失败后立刻 `lsusb -d 34bf:1001`（设备是否还在总线上）；必要时用 `usbmon`
   抓包（仓库现有 `analyze_capture.py` 只认 Windows 的 USBPcap 格式）。

@@ -352,6 +352,27 @@ void main() {
     expect(events.join('\n'), contains('写入中断，烧录中断'));
   });
 
+  test('烧录日志标明生效的帧内报告间隔（便于识别旧构建）', () async {
+    final transport = _FakeTransport();
+    transport.responses.addAll([
+      _ack(0x01),
+      _ack(0x05),
+      _ack(0x03),
+      _ack(0x02, [0x54]),
+      _ack(0x02, [0x54]),
+    ]);
+    final events = <String>[];
+    await HidFlasher.flashWithTransport(
+      HexImage({0xfe0000: 1, 0xff0000: 2}),
+      transport,
+      (stage, message, {current, total}) => events.add(message),
+    );
+    expect(
+      events,
+      contains('帧内报告间隔 ${HidFlasher.defaultReportGap.inMilliseconds}ms'),
+    );
+  });
+
   test('整条烧录的帧序列（命令 + 地址 + 报告尺寸）与改造前一致', () async {
     // 这条用例锁住跨平台共享的那份字节流：Windows 的 pieblock_hid.dll 与
     // Linux 的 libpieblock_hid.so 收到的报告序列必须完全相同。

@@ -51,6 +51,8 @@ PIE-Block 始终调用 Keil 的 `-r` 全量重建，避免不同机器人配置�
 
 主控板 ROM ISP 的 flash 编程速度有限，主机推帧过快会让它丢帧并最终卡死（设备还在 USB 上但不再回包，只能断电重新上电）。因此 Linux 版按设备可持续速率节流：帧内报告间隔 20ms，一份 414 块的步兵固件约 22 秒烧完（仍在 90 秒上限内）；Windows 版保持 1ms，不受影响。实测数据与排查过程见 [HID 烧录写块无响应](../pitfall/HID烧录写块无响应.md)。
 
+烧录日志第二行会打印当前生效的「帧内报告间隔」：Linux 应为 `20ms`、Windows 为 `1ms`。如果改过节奏但日志里的数值没变，说明应用跑的还是旧构建（Dart 改动需要重新运行或热重启 `flutter run`，原生 `.so` 改动需要重新构建）。
+
 ## Linux 端烧录
 
 Linux 版使用同一 USB-HID ISP 协议与流程，传输层为内核 hidraw 驱动（`pieblock_hid_hidraw.cpp`）。

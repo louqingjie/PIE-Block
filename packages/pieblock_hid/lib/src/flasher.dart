@@ -364,6 +364,8 @@ class HidFlasher {
     var blockTotal = 0;
     try {
       onEvent(FlashStage.connecting, '正在连接主控板引导程序…');
+      // 把生效的节奏写进日志：排查时一眼就能看出跑的是不是带节流修复的构建。
+      onEvent(FlashStage.connecting, '帧内报告间隔 ${gap.inMilliseconds}ms');
       await HidProtocol.expectAck(
         transport,
         const [0x01, 0, 0, 0, 0, 0, 0, 0x80, 0],
