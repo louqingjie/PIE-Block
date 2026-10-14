@@ -25,13 +25,21 @@
   大端
 - HID 传输：每报告前加 `0x00` report-id，**大帧拆成多个 64 字节报告发送**，
   设备按长度字段跨报告重组（实测：141 字节写帧拆 64/64/13 三个报告）
-- **报告之间要留间隔**：参考实现的 `send_frame` 在每个报告之间 `sleep(0.001)`。
-  设备在刚回完上一块 ACK、正在编程 flash 时会丢掉紧跟其后的整帧；Dart 移植一度
-  删掉了这个间隔，表现为首块 0x0000 正常、第二块 0x0080 完全没有响应
-  （详见 [docs/pitfall/HID烧录写块无响应.md](../../../docs/pitfall/HID烧录写块无响应.md)）
+- **主机必须按设备可持续的速率推帧（报告之间要留间隔）**：设备每收一帧就编程
+  128 字节 flash，推帧速率高于它的编程速率时会先丢帧、随后整块卡死（设备不下总线、
+  不复位，但再也不回包，只能断电重新上电）。同一块板子、同一份 414 块固件实测：
+  报告间隔 1ms（≈91 块/秒）→ 第 130 块卡死；20ms（≈20 块/秒）→ 414 块全部写完 +
+  复位，21.4 秒。Linux 传输层默认 20ms/报告，Windows 侧 1ms 够用（`WriteFile` 自带
+  驱动往返延迟）。Dart 移植一度把间隔删成 0，表现为首块 0x0000 正常、第二块 0x0080
+  就完全没有响应（详见
+  [docs/pitfall/HID烧录写块无响应.md](../../../docs/pitfall/HID烧录写块无响应.md)）
 - **写一份报告≠设备已收到**：Linux hidraw 的写是异步的，设备忙时 `::write` 返回
-  `-EBUSY` 且报告不会发出，因此写侧必须像 Windows 的 `WaitForSingleObject` 那样
-  对忙错误做有界退让重试（见 `packages/pieblock_hid/src/pieblock_hid_hidraw.cpp`）
+  `-EBUSY` 且报告不会发出，写侧必须像 Windows 的 `WaitForSingleObject` 那样对忙错误
+  做有界退让重试（见 `packages/pieblock_hid/src/pieblock_hid_hidraw.cpp`）
+- **不要在烧录中途关闭 hidraw 句柄**：该固件要求主机保持常驻 IN 轮询会话，实测关闭
+  并重开会立刻失联
+- 卡死后断点续烧：闪存内容非易失，断电重新上电进 ISP 后用 `--no-erase --start-block N`
+  继续写剩余块即可，不需要重新擦除
 
 ## 3. 命令表
 
