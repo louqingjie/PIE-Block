@@ -59,6 +59,19 @@ Android 编译器指纹包含 SDCC 提交、ABI 5、Coordinator 协议 2、Worke
 阶段对象哈希、原生库哈希、目标 ABI、资源包哈希、调度版本和源码规范化版本。
 任一项变化都会使旧缓存失效。
 
+阶段对象由 `tools/build_android_sdcc_stages.ps1` 按固定流程编译，编译参数里的
+`-ffile-prefix-map` 会把含随机 GUID 的临时构建目录映射为固定前缀 `/pb-stage`，
+消除 `__FILE__`（断言与诊断消息）嵌入的路径差异，因此 `stage_object_sha256`
+在本地与 CI 上跨机器逐字节可复现（其余输入固定：`sdcc-c251` 提交、NDK
+28.2.13676358、Boost 1.89.0-1 头文件）。重刷流程：删除
+`%LOCALAPPDATA%\PIE-Block\android-sdcc-stages` 下相应 ABI 的
+`stage_manifest.json` 与 `pieblock_sdcc_stages.o`，运行
+`tools/build_android_sdcc_stages.ps1 -Abi all`，再把两个 ABI 的新 SHA-256
+填回 `tools/android_sdcc_baseline.json` 的 `stage_object_sha256`，并同步递增
+脚本 `cache_key` 里的 `stage-layout-N` 与该文件的 `stage_layout`（缓存键变化会
+强制本地与 CI 重新编译）。它不涉及固件输出，`windows_golden_sha256` 无需因此
+重刷。
+
 ## 安全门与验证状态
 
 `pb_sdcc_is_available()` 只表示单阶段 Worker 具备执行能力。正式 Release 还必须
