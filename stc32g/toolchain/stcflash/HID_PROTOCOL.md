@@ -79,6 +79,10 @@ start(00 00) → 56B 状态包 → info → unlock → erase
 ## 6. 工具
 
 - `pie_block_hid.py`：主烧录器。`python pie_block_hid.py <hex> [--no-reset]`
+- `linux_hidraw_flash.py`：Linux 免依赖（hidraw + ioctl，不需要 hidapi）烧录器，
+  支持 `--probe-only` 探活、`--dry-run` 打印计划（与
+  `packages/pieblock_hid/tool/dump_block_plan.dart` 逐行对拍）、`--report-gap-ms`
+  调报告间隔、`--no-erase --start-block N` 断点续烧
 - `enumerate_hid.py`：枚举确认设备
 - `probe_hid.py` / `seq_hid.py` / `write_hid.py`：协议探测
 - `analyze_capture.py`：解析 USBPcap 抓包提取 STC 帧
