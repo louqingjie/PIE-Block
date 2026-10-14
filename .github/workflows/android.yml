@@ -334,6 +334,44 @@ jobs:
               Write-Host "$abi 阶段对象哈希与基线一致：$($manifest.sha256)"
           }
 
+      - name: 诊断阶段对象差异（仅失败时）
+        # 基线校验失败时打印关键字符串统计，先判断 -ffile-prefix-map 是否
+        # 完整生效（是否仍有机器路径残留），产物由下一步上传供字节级对比。
+        if: failure()
+        run: |
+          $ErrorActionPreference = 'Continue'
+          foreach ($abi in @('arm64-v8a', 'x86_64')) {
+              $path = Join-Path $env:LOCALAPPDATA "PIE-Block\android-sdcc-stages\$abi\pieblock_sdcc_stages.o"
+              if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+                  Write-Host "[$abi] 产物缺失：$path"
+                  continue
+              }
+              $bytes = [IO.File]::ReadAllBytes($path)
+              $text = [Text.Encoding]::Latin1.GetString($bytes)
+              $checks = [ordered]@{
+                  '归一化前缀 /pb-stage/' = ([regex]::Matches($text, '/pb-stage/')).Count
+                  '临时目录前缀残留'       = ([regex]::Matches($text, 'pieblock-sdcc-stage-')).Count
+                  'D 盘路径'               = ([regex]::Matches($text, 'D:/|D:\\')).Count
+                  'runneradmin'            = ([regex]::Matches($text, 'runneradmin')).Count
+                  'a/_temp 或 a\\\\_temp'  = ([regex]::Matches($text, 'a/_temp|a\\_temp')).Count
+              }
+              Write-Host "[$abi] 大小=$($bytes.Length)"
+              foreach ($key in $checks.Keys) {
+                  Write-Host ("[$abi] {0}: {1}" -f $key, $checks[$key])
+              }
+          }
+
+      - name: 上传阶段对象证据（仅失败时）
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pieblock-stages-evidence
+          path: |
+            ${{ env.LOCALAPPDATA }}\PIE-Block\android-sdcc-stages\**\pieblock_sdcc_stages.o
+            ${{ env.LOCALAPPDATA }}\PIE-Block\android-sdcc-stages\**\stage_manifest.json
+          if-no-files-found: warn
+          retention-days: 3
+
       - name: 把 NDK 挂到工具脚本默认路径
         # packages/pieblock_sdcc_native/android/build.gradle 调 build_android_sdcc_stages.ps1
         # 时未传 -NdkRoot，脚本默认 C:\android\ndk\<版本>（与本地开发机布局一致）；
