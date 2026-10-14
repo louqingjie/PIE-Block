@@ -498,6 +498,25 @@ jobs:
       - name: 构建 Release AAB
         run: flutter build appbundle --release
 
+      - name: 诊断构建产物目录（仅失败时）
+        # Gradle 构建失败或 flutter 找不到产物时，列出构建输出目录帮助定位。
+        if: failure()
+        run: |
+          foreach ($root in @('build', 'android\app\build')) {
+              Write-Host "=== $root（深度 4 的文件）==="
+              if (Test-Path -LiteralPath $root) {
+                  Get-ChildItem -LiteralPath $root -Recurse -Depth 4 -File -ErrorAction SilentlyContinue |
+                      Select-Object -First 60 | ForEach-Object { Write-Host ('  ' + $_.FullName) }
+              } else {
+                  Write-Host '  （不存在）'
+              }
+          }
+          Write-Host '=== 查找 *.aab / *.apk ==='
+          foreach ($pattern in @('*.aab', '*.apk')) {
+              Get-ChildItem -Path 'build', 'android' -Recurse -Depth 8 -Filter $pattern -File -ErrorAction SilentlyContinue |
+                  Select-Object -First 10 | ForEach-Object { Write-Host ('  ' + $_.FullName) }
+          }
+
       - name: 构建 Release APK
         # 通用包（同时含 arm64-v8a 与 x86_64 两套 ABI），verify 脚本要求
         # 两套 ABI 的原生库都在同一个包里，拆分包无法通过校验。
