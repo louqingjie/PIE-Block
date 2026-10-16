@@ -1,6 +1,7 @@
 library;
 
 export 'src/artifact_repository.dart';
+export 'src/asm_listing.dart';
 export 'src/builder.dart';
 export 'src/compiler_backend.dart';
 export 'src/hex_validator.dart';

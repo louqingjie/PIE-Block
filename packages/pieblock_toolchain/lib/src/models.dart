@@ -15,7 +15,6 @@ class BuildRequest {
     required this.compiler,
     required this.compilerFingerprint,
     this.keilRoot,
-    this.outputTarget = OutputTarget.c,
   });
 
   final ProjectKind projectKind;
@@ -23,10 +22,6 @@ class BuildRequest {
   final CompilerKind compiler;
   final String compilerFingerprint;
   final String? keilRoot;
-
-  /// 源码的输出目标：C 直接交给 sdcc；汇编交给 sdas251 汇编后链接。
-  /// 汇编输出目前仅音乐项目试点支持。
-  final OutputTarget outputTarget;
 }
 
 class BuildEvent {

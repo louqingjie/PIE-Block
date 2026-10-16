@@ -164,8 +164,6 @@ class ToolchainDiscovery {
 class FirmwareBuilder {
   static String get _sdccExecutable =>
       Platform.isWindows ? 'sdcc.exe' : 'sdcc';
-  static String get _sdasExecutable =>
-      Platform.isWindows ? 'sdas251.exe' : 'sdas251';
   FirmwareBuilder({
     BuildArtifactRepository? artifacts,
     String? runtimeRoot,
@@ -210,7 +208,6 @@ class FirmwareBuilder {
               request.projectKind.name,
               request.compiler.name,
               request.compilerFingerprint,
-              request.outputTarget.name,
               sourceHash,
             ].join('|'),
           ),
@@ -259,6 +256,118 @@ class FirmwareBuilder {
       unawaited(
         Process.run('taskkill.exe', ['/T', '/F', '/PID', '${process.pid}']),
       );
+    }
+  }
+
+  /// 把生成的 main.c 用内置 SDCC 编译成汇编文本，供 C/汇编对照阅读。
+  ///
+  /// 只做「主源文件 → .asm」这一步：不编译其余源文件、不链接、不产 HEX。
+  /// Android 内嵌后端不支持该能力，会直接返回失败说明。
+  Future<AsmPreviewResult> previewAssembly({
+    required ProjectKind projectKind,
+    required String sourceCode,
+  }) async {
+    if (_sdccBackend != null) {
+      return const AsmPreviewResult(
+        success: false,
+        message: '本平台暂不提供汇编对照，请在桌面版查看',
+      );
+    }
+    final logs = <String>[];
+    void emit(
+      BuildStage stage,
+      String message, {
+      BuildEventLevel level = BuildEventLevel.info,
+      int? current,
+      int? total,
+    }) {
+      logs.add(message);
+    }
+
+    final work = Directory(
+      p.join(_workRoot, 'asm-${DateTime.now().microsecondsSinceEpoch}'),
+    );
+    await work.create(recursive: true);
+    try {
+      final assets = await _locateAssets();
+      final deployed = await _deploySdcc(assets, emit);
+      final manifest =
+          (jsonDecode(
+                await File(
+                  p.join(deployed.firmware, 'build_manifest.json'),
+                ).readAsString(),
+              )
+              as Map)
+              .cast<String, Object?>();
+      final project = firmwareProjectFor(projectKind, CompilerKind.sdcc);
+      final sources = _sourcesFor(manifest, project);
+      final mainPath = p.join(work.path, 'main.c');
+      await File(mainPath).writeAsString(sourceCode, flush: true);
+      final interruptHeader = p.join(
+        work.path,
+        'generated_interrupt_declarations.h',
+      );
+      await _writeInterruptHeader(
+        deployed.firmware,
+        sources,
+        mainPath,
+        interruptHeader,
+        project,
+      );
+      final asmPath = p.join(work.path, 'main.asm');
+      final args = <String>[
+        for (final flag in (manifest['compile_flags']! as List))
+          // 编译到目标文件用的是 -c，这里换成 -S 只产出汇编。
+          if ('$flag' != '-c') '$flag',
+        ..._includeArgs(deployed, manifest, project),
+        // SDCC 默认不把 C 源码写进汇编注释，打开它才有源码行锚点。
+        '--c-code-in-asm',
+        '-S',
+        '--include',
+        interruptHeader,
+        '-o',
+        asmPath,
+        mainPath,
+      ];
+      final run = await _run(
+        p.join(deployed.toolchain, 'bin', _sdccExecutable),
+        args,
+        emit,
+        BuildStage.compiling,
+      );
+      if (run.exitCode != 0 || _canceled) {
+        return AsmPreviewResult(
+          success: false,
+          log: logs.join('\n'),
+          message: 'SDCC 编译失败，请查看编译日志',
+        );
+      }
+      final asmFile = File(asmPath);
+      if (!await asmFile.exists()) {
+        return AsmPreviewResult(
+          success: false,
+          log: logs.join('\n'),
+          message: 'SDCC 未产出汇编文件',
+        );
+      }
+      return AsmPreviewResult(
+        success: true,
+        assembly: await asmFile.readAsString(),
+        log: logs.join('\n'),
+      );
+    } catch (error) {
+      return AsmPreviewResult(
+        success: false,
+        log: logs.join('\n'),
+        message: '$error',
+      );
+    } finally {
+      _process = null;
+      if (await work.exists()) {
+        try {
+          await work.delete(recursive: true);
+        } catch (_) {}
+      }
     }
   }
 
@@ -372,10 +481,6 @@ class FirmwareBuilder {
   ) async {
     final backend = _sdccBackend;
     if (backend == null) return _buildSdcc(request, work, emit);
-    if (request.outputTarget == OutputTarget.asm) {
-      // Android 内嵌管线尚未放行 sdas251，汇编输出试点仅支持桌面子进程路径。
-      throw StateError('当前平台不支持汇编输出构建，请使用桌面端 SDCC 工具链。');
-    }
     final result = await backend.build(request, work, emit);
     var success = result.success;
     if (success && result.hexPath != null && result.mapPath != null) {
@@ -439,8 +544,7 @@ class FirmwareBuilder {
     final sources = _sourcesFor(manifest, project);
     final output = Directory(p.join(work, 'output'))
       ..createSync(recursive: true);
-    final isAsm = request.outputTarget == OutputTarget.asm;
-    final mainPath = p.join(work, isAsm ? 'main.asm' : 'main.c');
+    final mainPath = p.join(work, 'main.c');
     await File(mainPath).writeAsString(request.sourceCode);
     final interruptHeader = p.join(
       output.path,
@@ -453,13 +557,7 @@ class FirmwareBuilder {
       interruptHeader,
       project,
     );
-    final includeArgs = <String>[
-      '-I${p.join(deployed.toolchain, 'include')}',
-      '-I${p.join(deployed.toolchain, 'include', 'mcs51')}',
-      for (final dir in (manifest['include_dirs']! as List))
-        '-I${p.join(deployed.firmware, '$dir')}',
-      '-I${p.join(deployed.firmware, 'projects', project, 'inc')}',
-    ];
+    final includeArgs = _includeArgs(deployed, manifest, project);
     final directObjects = <String>[];
     final libraryObjects = <String>[];
     final librarySources = sources.$2.toSet();
@@ -467,7 +565,6 @@ class FirmwareBuilder {
     for (var index = 0; index < sources.$1.length; index++) {
       final relative = sources.$1[index];
       final isMain = relative.endsWith('/src/main.c');
-      final assembleMain = isMain && isAsm;
       final source = isMain
           ? mainPath
           : p.join(deployed.firmware, relative.replaceAll('/', p.separator));
@@ -477,25 +574,21 @@ class FirmwareBuilder {
       );
       emit(
         BuildStage.compiling,
-        '[${index + 1}/${sources.$1.length}] ${assembleMain ? '汇编' : '编译'} $relative',
+        '[${index + 1}/${sources.$1.length}] 编译 $relative',
         current: index + 1,
         total: sources.$1.length,
       );
       final args = <String>[
         for (final flag in (manifest['compile_flags']! as List)) '$flag',
         ...includeArgs,
-        if (isMain && !assembleMain) ...['--include', interruptHeader],
+        if (isMain) ...['--include', interruptHeader],
         '-o',
         object,
         source,
       ];
       final run = await _run(
-        p.join(
-          deployed.toolchain,
-          'bin',
-          assembleMain ? _sdasExecutable : _sdccExecutable,
-        ),
-        assembleMain ? <String>['-l', '-o', object, source] : args,
+        p.join(deployed.toolchain, 'bin', _sdccExecutable),
+        args,
         emit,
         BuildStage.compiling,
       );
@@ -707,6 +800,19 @@ class FirmwareBuilder {
     return _RunResult(exitCode, output.toString());
   }
 
+  /// 编译与汇编预览共用的头文件与库搜索路径参数。
+  static List<String> _includeArgs(
+    _DeployedSdcc deployed,
+    Map<String, Object?> manifest,
+    String project,
+  ) => <String>[
+    '-I${p.join(deployed.toolchain, 'include')}',
+    '-I${p.join(deployed.toolchain, 'include', 'mcs51')}',
+    for (final dir in (manifest['include_dirs']! as List))
+      '-I${p.join(deployed.firmware, '$dir')}',
+    '-I${p.join(deployed.firmware, 'projects', project, 'inc')}',
+  ];
+
   static (List<String>, List<String>) _sourcesFor(
     Map<String, Object?> manifest,
     String project,
@@ -902,6 +1008,21 @@ class FirmwareBuilder {
       }
     }
   }
+}
+
+/// 汇编预览编译的结果：成功时带 SDCC 产出的 .asm 原文。
+class AsmPreviewResult {
+  const AsmPreviewResult({
+    required this.success,
+    this.assembly,
+    this.log = '',
+    this.message,
+  });
+
+  final bool success;
+  final String? assembly;
+  final String log;
+  final String? message;
 }
 
 class _RunResult {
