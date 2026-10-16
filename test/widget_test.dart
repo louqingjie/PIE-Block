@@ -2326,7 +2326,7 @@ void main() {
     debugDefaultTargetPlatformOverride = null;
   });
 
-  testWidgets('生成代码页展示 C 与汇编对照并联动高亮', (tester) async {
+  testWidgets('生成代码页展示 C 与汇编对照且两侧选中范围互不耦合', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1600, 900);
@@ -2375,25 +2375,49 @@ void main() {
     expect(blockRow, greaterThan(0));
     expect(asmLines[blockRow + 1], contains('ecall   _Board_Init'));
 
-    // 点选 C 行：右栏高亮并选中对应的整段汇编。
+    // 选中范围两侧互不耦合：点选 C 行不会改动右侧汇编的选中范围。
+    final asmSelectionBefore = asmEditor.controller!.selection;
     cEditor.controller!.selection = CodeLineSelection.collapsed(
       index: blockRow,
       offset: 0,
     );
     await tester.pump();
     await tester.pump();
-    final asmSelection = asmEditor.controller!.selection;
-    expect(asmSelection.baseIndex, blockRow);
-    expect(asmSelection.extentIndex, blockRow + 1);
+    expect(cEditor.controller!.selection.startIndex, blockRow);
+    expect(asmEditor.controller!.selection, asmSelectionBefore);
 
-    // 点选汇编块的续行：左栏回到同一个 C 行。
+    // 反过来点选汇编块，左栏 C 的选中范围同样保持不变。
+    final cSelection = cEditor.controller!.selection;
     asmEditor.controller!.selection = CodeLineSelection.collapsed(
       index: blockRow + 1,
       offset: 0,
     );
     await tester.pump();
     await tester.pump();
-    expect(cEditor.controller!.selection.startIndex, blockRow);
+    expect(asmEditor.controller!.selection.startIndex, blockRow + 1);
+    expect(cEditor.controller!.selection, cSelection);
+
+    // 真实键盘交互也不串联：在左栏移动光标，右栏选中范围保持不变。
+    cEditor.focusNode!.requestFocus();
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pump();
+    expect(cEditor.controller!.selection.startIndex, greaterThan(blockRow));
+    expect(asmEditor.controller!.selection.startIndex, blockRow + 1);
+
+    // 鼠标拖选（用户实际场景）同样不串联：右栏选中范围保持不动。
+    // 用显式时长推进，flush 掉 re_editor 手势里的零延时定时器。
+    final cRect = tester.getRect(
+      find.byKey(const ValueKey('generated-code-editor')),
+    );
+    await tester.dragFrom(
+      cRect.topLeft + const Offset(60, 12),
+      const Offset(140, 44),
+    );
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(cEditor.controller!.selection.startIndex, lessThan(blockRow));
+    expect(asmEditor.controller!.selection.startIndex, blockRow + 1);
     expect(tester.takeException(), isNull);
     debugDefaultTargetPlatformOverride = null;
   });

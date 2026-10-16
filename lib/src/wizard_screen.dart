@@ -3600,8 +3600,6 @@ class _CodeCompareViewState extends State<_CodeCompareView> {
     );
     _sourceFocusNode = FocusNode(debugLabel: 'code-compare-source');
     _asmFocusNode = FocusNode(debugLabel: 'code-compare-asm');
-    _sourceController.addListener(_onSourceSelectionChanged);
-    _asmController.addListener(_onAsmSelectionChanged);
     _sourceVertical.addListener(_onSourceScrolled);
     _asmVertical.addListener(_onAsmScrolled);
   }
@@ -3614,7 +3612,7 @@ class _CodeCompareViewState extends State<_CodeCompareView> {
       return;
     }
     _pair = widget.listing.alignWith(widget.sourceCode);
-    // 换文本会顺带重置选择，先屏蔽一次联动回调。
+    // 换文本会顺带重置滚动位置，先屏蔽一次联动回调。
     _applyingRemote = true;
     _sourceController.text = _pair.codeText;
     _asmController.text = _pair.asmText;
@@ -3623,8 +3621,6 @@ class _CodeCompareViewState extends State<_CodeCompareView> {
 
   @override
   void dispose() {
-    _sourceController.removeListener(_onSourceSelectionChanged);
-    _asmController.removeListener(_onAsmSelectionChanged);
     _sourceVertical.removeListener(_onSourceScrolled);
     _asmVertical.removeListener(_onAsmScrolled);
     _sourceController.dispose();
@@ -3640,8 +3636,9 @@ class _CodeCompareViewState extends State<_CodeCompareView> {
     super.dispose();
   }
 
-  /// 联动动作放到帧后执行：滚动与选择的回填会在 build 期间同步触发对侧重建，
+  /// 联动动作放到帧后执行：滚动回填会在 build 期间同步触发对侧重建，
   /// 直接在监听回调里改对侧状态会撞上「setState during build」。
+  /// 注意：两侧的选中范围互不影响，只有滚动位置联动。
   void _applyRemote(VoidCallback action) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -3669,43 +3666,6 @@ class _CodeCompareViewState extends State<_CodeCompareView> {
   void _onAsmScrolled() {
     if (_applyingRemote) return;
     _mirrorScroll(_asmVertical, _sourceVertical);
-  }
-
-  void _onSourceSelectionChanged() {
-    if (_applyingRemote || !mounted) return;
-    final row = _sourceController.selection.startIndex;
-    if (row < 0 || row >= _pair.rowCount) return;
-    final end = _pair.asmBlockEndAt(row);
-    final extentOffset = _pair.asmLines[end].length;
-    _applyRemote(() {
-      _asmController.selection = CodeLineSelection(
-        baseIndex: row,
-        baseOffset: 0,
-        extentIndex: end,
-        extentOffset: extentOffset,
-      );
-      _asmScroll.makeCenterIfInvisible(
-        CodeLinePosition(index: row, offset: 0),
-      );
-    });
-  }
-
-  void _onAsmSelectionChanged() {
-    if (_applyingRemote || !mounted) return;
-    final row = _pair.asmBlockStartAt(_asmController.selection.startIndex);
-    if (row < 0 || row >= _pair.rowCount) return;
-    final extentOffset = _pair.codeLines[row].length;
-    _applyRemote(() {
-      _sourceController.selection = CodeLineSelection(
-        baseIndex: row,
-        baseOffset: 0,
-        extentIndex: row,
-        extentOffset: extentOffset,
-      );
-      _sourceScroll.makeCenterIfInvisible(
-        CodeLinePosition(index: row, offset: 0),
-      );
-    });
   }
 
   @override
@@ -3814,7 +3774,8 @@ class _GeneratedCodePreview extends StatefulWidget {
   /// 为空时按行序编号。
   final List<int?>? lineNumberLabels;
 
-  /// 对照视图里由外层持有，用于两栏联动；为空时本组件自建。
+  /// 对照视图里由外层持有，用于两栏滚动同步；选中范围互不联动。
+  /// 为空时本组件自建。
   final CodeLineEditingController? controller;
   final CodeScrollController? scrollController;
   final FocusNode? focusNode;
