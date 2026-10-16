@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pieblock_app/main.dart';
+import 'package:pieblock_app/src/asm_preview_controller.dart';
 import 'package:pieblock_app/src/controller.dart';
 import 'package:pieblock_app/src/debug_cue_preview.dart';
 import 'package:pieblock_app/src/deploy_controller.dart';
@@ -183,6 +184,44 @@ class _FakeDeployController extends DeployController {
 
   @override
   void cancelAll() {}
+}
+
+/// 汇编对照的固定样例：锚点落在生成代码的行号上，不触发真实 SDCC 编译。
+const _asmSample = '''
+        .module main
+        .optsdcc -mmcs251 --model-large
+;       C:\\tmp\\main.c:5: void main(void) {
+        .area HOME    (CODE)
+_main:
+        ar7 = 0x07
+;       C:\\tmp\\main.c:9: Board_Init();
+        mov     dpl,#0x01
+        ecall   _Board_Init
+;       C:\\tmp\\main.c:13: while (1) ;
+00101\$:
+        sjmp    00101\$
+''';
+
+AsmPreviewState _readyAsmState(String code) => AsmPreviewState(
+  activity: AsmPreviewActivity.ready,
+  sourceCode: code,
+  cLineCount: code.split('\n').length,
+  listing: AsmListing.parse(_asmSample),
+);
+
+class _FakeAsmPreviewController extends AsmPreviewController {
+  _FakeAsmPreviewController(this.initial);
+
+  final AsmPreviewState initial;
+
+  @override
+  AsmPreviewState build() => initial;
+
+  @override
+  Future<void> ensure(ProjectConfig config) async {}
+
+  @override
+  Future<void> recompile(ProjectConfig config) async {}
 }
 
 class _FakeUdevRuleController extends UdevRuleController {
@@ -2203,6 +2242,14 @@ void main() {
       ProviderScope(
         overrides: [
           appControllerProvider.overrideWith(_GeneratedCodeController.new),
+          asmPreviewControllerProvider.overrideWith(
+            () => _FakeAsmPreviewController(
+              _readyAsmState(
+                CodeGenerator.generate(_infantryDocument().config),
+              ),
+            ),
+          ),
+          deployControllerProvider.overrideWith(_FakeDeployController.new),
         ],
         child: const MaterialApp(home: WizardScreen()),
       ),
@@ -2279,7 +2326,63 @@ void main() {
     debugDefaultTargetPlatformOverride = null;
   });
 
-  testWidgets('IDE 代码预览汇编输出切换 AS251 高亮', (tester) async {
+  testWidgets('生成代码页展示 C 与汇编对照并联动高亮', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1600, 900);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    final document = _musicDocument();
+    final code = CodeGenerator.generate(document.config);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _GeneratedCodeController(document: document),
+          ),
+          asmPreviewControllerProvider.overrideWith(
+            () => _FakeAsmPreviewController(_readyAsmState(code)),
+          ),
+          deployControllerProvider.overrideWith(_FakeDeployController.new),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('main.c'), findsOneWidget);
+    expect(find.text('main.asm'), findsOneWidget);
+    final cEditor = tester.widget<CodeEditor>(
+      find.byKey(const ValueKey('generated-code-editor')),
+    );
+    final asmEditor = tester.widget<CodeEditor>(
+      find.byKey(const ValueKey('generated-asm-editor')),
+    );
+    expect(cEditor.style!.codeTheme!.languages, contains('c'));
+    expect(asmEditor.style!.codeTheme!.languages, contains('asm'));
+    expect(asmEditor.controller!.text, contains('ecall'));
+    expect(find.textContaining('覆盖 3/'), findsOneWidget);
+
+    // 点选 C 第 9 行：右栏选中并高亮对应的汇编块（C 一句对汇编 N 句）。
+    cEditor.controller!.selection = const CodeLineSelection.collapsed(
+      index: 8,
+      offset: 0,
+    );
+    await tester.pump();
+    await tester.pump();
+    final selection = asmEditor.controller!.selection;
+    expect(selection.baseIndex, lessThan(selection.extentIndex));
+    expect(
+      asmEditor.controller!.text.split('\n')[selection.baseIndex],
+      contains('L9:'),
+    );
+    expect(tester.takeException(), isNull);
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  testWidgets('汇编编译中显示全屏等待遮罩', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
     addTearDown(() => debugDefaultTargetPlatformOverride = null);
     await tester.pumpWidget(
@@ -2288,32 +2391,95 @@ void main() {
           appControllerProvider.overrideWith(
             () => _GeneratedCodeController(document: _musicDocument()),
           ),
+          asmPreviewControllerProvider.overrideWith(
+            () => _FakeAsmPreviewController(
+              const AsmPreviewState(activity: AsmPreviewActivity.compiling),
+            ),
+          ),
+          deployControllerProvider.overrideWith(_FakeDeployController.new),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('正在编译为汇编…'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  testWidgets('汇编编译失败时降级为只有 C 栏并可重新编译', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1600, 900);
+    addTearDown(() {
+      debugDefaultTargetPlatformOverride = null;
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _GeneratedCodeController(document: _musicDocument()),
+          ),
+          asmPreviewControllerProvider.overrideWith(
+            () => _FakeAsmPreviewController(
+              const AsmPreviewState(
+                activity: AsmPreviewActivity.failed,
+                message: '本平台暂不提供汇编对照，请在桌面版查看',
+              ),
+            ),
+          ),
+          deployControllerProvider.overrideWith(_FakeDeployController.new),
         ],
         child: const MaterialApp(home: WizardScreen()),
       ),
     );
     await tester.pumpAndSettle();
 
-    final editorFinder = find.byKey(const ValueKey('generated-code-editor'));
-    CodeEditor editor = tester.widget<CodeEditor>(editorFinder);
-    expect(editor.style!.codeTheme!.languages, contains('c'));
+    expect(find.text('本平台暂不提供汇编对照，请在桌面版查看'), findsOneWidget);
+    expect(find.text('重新编译'), findsOneWidget);
+    expect(find.byKey(const ValueKey('generated-code-editor')), findsOneWidget);
+    expect(find.byKey(const ValueKey('generated-asm-editor')), findsNothing);
+    expect(tester.takeException(), isNull);
+    debugDefaultTargetPlatformOverride = null;
+  });
 
-    // 切到汇编：语言主题换成 as251，不再按 C 着色。
+  testWidgets('窄屏下 C 与汇编对照退化为单栏切换', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(560, 800);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    final document = _musicDocument();
+    final code = CodeGenerator.generate(document.config);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _GeneratedCodeController(document: document),
+          ),
+          asmPreviewControllerProvider.overrideWith(
+            () => _FakeAsmPreviewController(_readyAsmState(code)),
+          ),
+          deployControllerProvider.overrideWith(_FakeDeployController.new),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 默认显示 C 栏，点「汇编」切到汇编栏。
+    expect(find.byKey(const ValueKey('generated-code-editor')), findsOneWidget);
+    expect(find.byKey(const ValueKey('generated-asm-editor')), findsNothing);
     await tester.tap(find.text('汇编'));
     await tester.pumpAndSettle();
-
-    editor = tester.widget<CodeEditor>(editorFinder);
-    expect(editor.style!.codeTheme!.languages, contains('asm'));
-    expect(editor.style!.codeTheme!.languages, isNot(contains('c')));
-    expect(editor.controller!.text, contains('ecall'));
-
-    // 切回 C：恢复 C 模式。
-    await tester.tap(find.text('C 代码'));
-    await tester.pumpAndSettle();
-
-    editor = tester.widget<CodeEditor>(editorFinder);
-    expect(editor.style!.codeTheme!.languages, contains('c'));
-    expect(editor.style!.codeTheme!.languages, isNot(contains('asm')));
+    expect(find.byKey(const ValueKey('generated-asm-editor')), findsOneWidget);
+    expect(find.byKey(const ValueKey('generated-code-editor')), findsNothing);
+    expect(tester.takeException(), isNull);
     debugDefaultTargetPlatformOverride = null;
   });
 
@@ -2324,6 +2490,14 @@ void main() {
       ProviderScope(
         overrides: [
           appControllerProvider.overrideWith(_GeneratedCodeController.new),
+          asmPreviewControllerProvider.overrideWith(
+            () => _FakeAsmPreviewController(
+              _readyAsmState(
+                CodeGenerator.generate(_infantryDocument().config),
+              ),
+            ),
+          ),
+          deployControllerProvider.overrideWith(_FakeDeployController.new),
         ],
         child: const MaterialApp(home: WizardScreen()),
       ),
@@ -2362,6 +2536,8 @@ void main() {
       tester.view.resetDevicePixelRatio();
     });
     tester.view.devicePixelRatio = 1;
+    final document = _musicDocument();
+    final code = CodeGenerator.generate(document.config);
     for (final size in const [
       Size(1600, 900),
       Size(1100, 700),
@@ -2373,10 +2549,15 @@ void main() {
         tester.view.physicalSize = size;
         await tester.pumpWidget(
           ProviderScope(
+            key: ValueKey('${size.width}-${brightness.name}'),
             overrides: [
               appControllerProvider.overrideWith(
-                () => _StaticProjectController(_musicDocument(), 2),
+                () => _StaticProjectController(document, 2),
               ),
+              asmPreviewControllerProvider.overrideWith(
+                () => _FakeAsmPreviewController(_readyAsmState(code)),
+              ),
+              deployControllerProvider.overrideWith(_FakeDeployController.new),
             ],
             child: MaterialApp(
               theme: ThemeData(brightness: brightness, useMaterial3: true),
@@ -2385,23 +2566,20 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        expect(find.byType(CodeEditor), findsOneWidget);
-        expect(tester.takeException(), isNull);
-        await tester.ensureVisible(find.text('C 代码'));
-        await tester.tap(find.text('C 代码'));
-        await tester.pumpAndSettle();
+        expect(find.byType(CodeEditor), findsWidgets);
         expect(find.text('main.c'), findsOneWidget);
-        final cCode = tester
-            .widget<CodeEditor>(find.byType(CodeEditor))
-            .controller!
-            .text;
-        await tester.tap(find.text('汇编'));
-        await tester.pumpAndSettle();
-        expect(find.text('main.asm'), findsOneWidget);
-        expect(
-          tester.widget<CodeEditor>(find.byType(CodeEditor)).controller!.text,
-          isNot(cCode),
-        );
+        expect(tester.takeException(), isNull);
+        // 宽屏双栏同时可见；窄屏是「C 代码 / 汇编」切换。
+        final toggle = find.text('汇编');
+        if (toggle.evaluate().isNotEmpty) {
+          await tester.tap(toggle);
+          await tester.pumpAndSettle();
+          expect(find.text('main.asm'), findsOneWidget);
+          expect(find.text('main.c'), findsNothing);
+        } else {
+          expect(find.text('main.asm'), findsOneWidget);
+        }
+        expect(find.byType(CodeEditor), findsWidgets);
         expect(tester.takeException(), isNull);
       }
     }
@@ -2455,7 +2633,7 @@ void main() {
       (engineer, 1, 'PWM 与引脚角色'),
       (engineer, 3, '动作映射'),
       (infantry, 3, '检查与配置摘要'),
-      (infantry, 5, '编译与烧录'),
+      (infantry, 5, '烧录'),
     ];
 
     for (final brightness in Brightness.values) {
@@ -2479,7 +2657,7 @@ void main() {
         expect(find.text(page.$3), findsWidgets);
         expect(find.byType(DropdownButtonFormField<int>), findsWidgets);
         expect(tester.takeException(), isNull);
-        if (page.$3 == '编译与烧录') {
+        if (page.$3 == '烧录') {
           // USB-HID 烧录入口目前仅在 Windows/Android 提供（Linux 见
           // wizard_screen 的平台门控），其余平台断言“仅编译”入口存在。
           if (Platform.isWindows || Platform.isAndroid) {
