@@ -65,6 +65,21 @@ class DeployState {
   );
 }
 
+/// 桌面端（非 Android）的固件构建器。
+///
+/// 烧录与「生成代码」页的汇编对照共用同一份运行时目录（内置 SDCC 只部署一次）。
+Future<FirmwareBuilder> createDesktopFirmwareBuilder() async {
+  final support = await getApplicationSupportDirectory();
+  final cache = await getTemporaryDirectory();
+  final runtime = Directory(p.join(support.path, 'runtime'));
+  await runtime.create(recursive: true);
+  return FirmwareBuilder(
+    artifacts: BuildArtifactRepository(root: p.join(support.path, 'builds')),
+    runtimeRoot: runtime.path,
+    workRoot: p.join(cache.path, 'builds'),
+  );
+}
+
 final deployControllerProvider =
     NotifierProvider<DeployController, DeployState>(DeployController.new);
 
@@ -96,17 +111,9 @@ class DeployController extends Notifier<DeployState> {
   static Future<FirmwareBuilder> _createBuilder() async {
     final support = await getApplicationSupportDirectory();
     final cache = await getTemporaryDirectory();
+    if (!Platform.isAndroid) return createDesktopFirmwareBuilder();
     final runtime = Directory(p.join(support.path, 'runtime'));
     await runtime.create(recursive: true);
-    if (!Platform.isAndroid) {
-      return FirmwareBuilder(
-        artifacts: BuildArtifactRepository(
-          root: p.join(support.path, 'builds'),
-        ),
-        runtimeRoot: runtime.path,
-        workRoot: p.join(cache.path, 'builds'),
-      );
-    }
     const platform = MethodChannel('cn.edu.cnu.pieblock/documents');
     final nativeInfo = await platform.invokeMapMethod<String, String>(
       'getSdccNativeInfo',

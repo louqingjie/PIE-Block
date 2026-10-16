@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:pieblock_core/pieblock_core.dart';
+import 'package:pieblock_toolchain/asm_listing.dart';
 import 'package:pieblock_toolchain/models.dart';
 import 'package:re_editor/re_editor.dart';
 import 'package:re_highlight/languages/c.dart';
@@ -13,6 +14,7 @@ import 'package:re_highlight/styles/atom-one-dark.dart';
 import 'package:re_highlight/styles/atom-one-light.dart';
 
 import 'as251_highlight_mode.dart';
+import 'asm_preview_controller.dart';
 import 'controller.dart';
 import 'debug_cue_preview.dart';
 import 'deploy_controller.dart';
@@ -736,7 +738,7 @@ class WizardScreen extends ConsumerWidget {
     '控制与摩擦轮',
     '检查与摘要',
     '生成代码',
-    '编译与烧录',
+    '烧录',
   ];
   static const engineerSteps = [
     '遥控器与底盘',
@@ -745,10 +747,10 @@ class WizardScreen extends ConsumerWidget {
     '动作映射',
     '检查与摘要',
     '生成代码',
-    '编译与烧录',
+    '烧录',
   ];
-  static const debugSteps = ['测试序列', '检查与摘要', '生成代码', '编译与烧录'];
-  static const musicSteps = ['钢琴卷帘', '检查与摘要', '生成代码', '编译与烧录'];
+  static const debugSteps = ['测试序列', '检查与摘要', '生成代码', '烧录'];
+  static const musicSteps = ['钢琴卷帘', '检查与摘要', '生成代码', '烧录'];
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -804,6 +806,7 @@ class WizardScreen extends ConsumerWidget {
       });
     }
     final deploy = ref.watch(deployControllerProvider);
+    final asmPreview = ref.watch(asmPreviewControllerProvider);
     final compact = _isCompact(context);
     return Scaffold(
       appBar: AppBar(
@@ -870,19 +873,30 @@ class WizardScreen extends ConsumerWidget {
                   duration: const Duration(milliseconds: 180),
                   child: KeyedSubtree(key: ValueKey(state.step), child: page),
                 );
+                // 生成代码页正在编译汇编时，用全屏遮罩挡住整个内容区。
+                Widget withCompileOverlay(Widget child) => Stack(
+                  children: [
+                    child,
+                    if (asmPreview.compiling)
+                      const Positioned.fill(child: _AsmCompilingOverlay()),
+                  ],
+                );
                 if (!wide) {
-                  return Column(
-                    children: [
-                      _CompactStepPicker(
-                        steps: steps,
-                        selected: state.step,
-                        busy: deploy.busy,
-                      ),
-                      Expanded(child: content),
-                    ],
+                  return withCompileOverlay(
+                    Column(
+                      children: [
+                        _CompactStepPicker(
+                          steps: steps,
+                          selected: state.step,
+                          busy: deploy.busy,
+                        ),
+                        Expanded(child: content),
+                      ],
+                    ),
                   );
                 }
-                return Row(
+                return withCompileOverlay(
+                  Row(
                   children: [
                     SizedBox(
                       width: 260,
@@ -918,7 +932,8 @@ class WizardScreen extends ConsumerWidget {
                     ),
                     Expanded(child: content),
                   ],
-                );
+                ),
+              );
               },
             ),
           ),
@@ -970,10 +985,10 @@ class WizardScreen extends ConsumerWidget {
                               state.step == controller.reviewStep(document.kind)
                               ? '生成代码'
                               : state.step == controller.codeStep(document.kind)
-                              ? '编译与烧录'
+                              ? '烧录'
                               : state.step ==
                                     controller.deployStep(document.kind)
-                              ? '编译与烧录'
+                              ? '烧录'
                               : '下一步',
                           icon: const Icon(Icons.arrow_forward),
                         )
@@ -988,10 +1003,10 @@ class WizardScreen extends ConsumerWidget {
                                 ? '生成代码'
                                 : state.step ==
                                       controller.codeStep(document.kind)
-                                ? '编译与烧录'
+                                ? '烧录'
                                 : state.step ==
                                       controller.deployStep(document.kind)
-                                ? '编译并烧录'
+                                ? '烧录'
                                 : '下一步',
                           ),
                         ),
@@ -3428,7 +3443,25 @@ class _CodePage extends ConsumerStatefulWidget {
 }
 
 class _CodePageState extends ConsumerState<_CodePage> {
-  OutputTarget _target = OutputTarget.c;
+  /// 进入本页即编译一次汇编；源码没变时控制器直接复用上次结果。
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final controller = ref.read(appControllerProvider.notifier);
+      if (controller.issues.any(
+        (issue) => issue.severity == IssueSeverity.error,
+      )) {
+        return;
+      }
+      final config = ref.read(appControllerProvider).document?.config;
+      if (config == null) return;
+      unawaited(
+        ref.read(asmPreviewControllerProvider.notifier).ensure(config),
+      );
+    });
+  }
 
   Future<void> _export(String code, String fileName) async {
     await exportGeneratedText(
@@ -3445,14 +3478,13 @@ class _CodePageState extends ConsumerState<_CodePage> {
         config = ref.watch(appControllerProvider).document!.config,
         issues = ctrl.issues;
     final blocked = issues.any((i) => i.severity == IssueSeverity.error);
-    // 汇编输出处于试点阶段，仅部分项目类型支持；不支持时固定回落 C。
-    final asmAvailable = !blocked && CodeGenerator.asmSupported(config.kind);
-    final target = asmAvailable ? _target : OutputTarget.c;
-    final fileName = target == OutputTarget.asm ? 'main.asm' : 'main.c';
-    final code = blocked ? '' : CodeGenerator.generate(config, target: target);
+    final asm = ref.watch(asmPreviewControllerProvider);
+    final code = blocked ? '' : CodeGenerator.generate(config);
     return _PageFrame(
       title: '生成代码',
-      subtitle: blocked ? '仍有错误，返回检查页修正后才能生成。' : '代码根据项目配置实时生成，只读且不会写回项目文件。',
+      subtitle: blocked
+          ? '仍有错误，返回检查页修正后才能生成。'
+          : '代码根据项目配置实时生成，只读且不会写回项目文件；右侧汇编由内置 SDCC 现场编译。',
       child: blocked
           ? _Section(
               title: '无法生成',
@@ -3465,80 +3497,328 @@ class _CodePageState extends ConsumerState<_CodePage> {
               ],
             )
           : _Section(
-              title: fileName,
-              trailing: asmAvailable
-                  ? _OutputLanguageSwitch(
-                      target: target,
-                      onChanged: (value) => setState(() => _target = value),
-                    )
-                  : null,
+              title: '生成代码对照',
+              subtitle: asm.ready || asm.message != null
+                  ? (asm.ready ? asm.coverageText : asm.message)
+                  : '正在准备汇编编译…',
+              trailing: OutlinedButton.icon(
+                onPressed: asm.compiling
+                    ? null
+                    : () => unawaited(
+                        ref
+                            .read(asmPreviewControllerProvider.notifier)
+                            .recompile(config),
+                      ),
+                icon: const Icon(Icons.refresh),
+                label: const Text('重新编译'),
+              ),
               children: [
-                _GeneratedCodePreview(
-                  code: code,
-                  onExport: () => _export(code, fileName),
-                  fileName: fileName,
-                ),
+                if (asm.ready)
+                  _CodeCompareView(
+                    sourceCode: code,
+                    listing: asm.listing!,
+                    onExportCode: () => _export(code, 'main.c'),
+                    onExportAsm: () => _export(
+                      asm.listing!.lines.join('\n'),
+                      'main.asm',
+                    ),
+                  )
+                else
+                  _GeneratedCodePreview(
+                    code: code,
+                    fileName: 'main.c',
+                    onExport: () => _export(code, 'main.c'),
+                  ),
               ],
             ),
     );
   }
 }
 
-class _OutputLanguageSwitch extends StatelessWidget {
-  const _OutputLanguageSwitch({required this.target, required this.onChanged});
+/// 代码栏的字号与行高，滚动同步按同一条换算（见 [_CodeCompareView]）。
+const double _codeFontSize = 13;
+const double _codeLineHeightFactor = 1.45;
+const double _codeLineHeight = _codeFontSize * _codeLineHeightFactor;
+const EdgeInsets _codeEditorPadding = EdgeInsets.symmetric(
+  horizontal: 14,
+  vertical: 12,
+);
 
-  final OutputTarget target;
-  final ValueChanged<OutputTarget> onChanged;
+/// 双栏对照的最小宽度：再窄就退化成「C 代码 / 汇编」单栏切换。
+const double _codeCompareMinWidth = 860;
+
+/// C 与汇编的左右对照：点选一句 C 就高亮对应汇编块，滚动也按锚点互相跟随。
+class _CodeCompareView extends StatefulWidget {
+  const _CodeCompareView({
+    required this.sourceCode,
+    required this.listing,
+    required this.onExportCode,
+    required this.onExportAsm,
+  });
+
+  final String sourceCode;
+  final AsmListing listing;
+  final VoidCallback onExportCode;
+  final VoidCallback onExportAsm;
+
+  @override
+  State<_CodeCompareView> createState() => _CodeCompareViewState();
+}
+
+class _CodeCompareViewState extends State<_CodeCompareView> {
+  late List<String> _sourceLines;
+  late List<String> _asmLines;
+  late final CodeLineEditingController _sourceController;
+  late final CodeLineEditingController _asmController;
+  late final ScrollController _sourceVertical;
+  late final ScrollController _sourceHorizontal;
+  late final ScrollController _asmVertical;
+  late final ScrollController _asmHorizontal;
+  late final CodeScrollController _sourceScroll;
+  late final CodeScrollController _asmScroll;
+  late final FocusNode _sourceFocusNode;
+  late final FocusNode _asmFocusNode;
+  var _showAsm = false;
+  var _applyingRemoteScroll = false;
+  var _applyingRemoteSelection = false;
+  Timer? _scrollGuard;
+
+  @override
+  void initState() {
+    super.initState();
+    _sourceLines = widget.sourceCode.split('\n');
+    _asmLines = widget.listing.lines;
+    _sourceController = CodeLineEditingController.fromText(widget.sourceCode);
+    _asmController = CodeLineEditingController.fromText(_asmLines.join('\n'));
+    _sourceVertical = ScrollController();
+    _sourceHorizontal = ScrollController();
+    _asmVertical = ScrollController();
+    _asmHorizontal = ScrollController();
+    _sourceScroll = CodeScrollController(
+      verticalScroller: _sourceVertical,
+      horizontalScroller: _sourceHorizontal,
+    );
+    _asmScroll = CodeScrollController(
+      verticalScroller: _asmVertical,
+      horizontalScroller: _asmHorizontal,
+    );
+    _sourceFocusNode = FocusNode(debugLabel: 'code-compare-source');
+    _asmFocusNode = FocusNode(debugLabel: 'code-compare-asm');
+    _sourceController.addListener(_onSourceSelectionChanged);
+    _asmController.addListener(_onAsmSelectionChanged);
+    _sourceVertical.addListener(_onSourceScrolled);
+    _asmVertical.addListener(_onAsmScrolled);
+  }
+
+  @override
+  void didUpdateWidget(covariant _CodeCompareView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.sourceCode != widget.sourceCode) {
+      _sourceLines = widget.sourceCode.split('\n');
+      _sourceController.text = widget.sourceCode;
+    }
+    if (!identical(oldWidget.listing, widget.listing)) {
+      _asmLines = widget.listing.lines;
+      _asmController.text = _asmLines.join('\n');
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollGuard?.cancel();
+    _sourceController.removeListener(_onSourceSelectionChanged);
+    _asmController.removeListener(_onAsmSelectionChanged);
+    _sourceVertical.removeListener(_onSourceScrolled);
+    _asmVertical.removeListener(_onAsmScrolled);
+    _sourceController.dispose();
+    _asmController.dispose();
+    _sourceScroll.dispose();
+    _asmScroll.dispose();
+    _sourceVertical.dispose();
+    _sourceHorizontal.dispose();
+    _asmVertical.dispose();
+    _asmHorizontal.dispose();
+    _sourceFocusNode.dispose();
+    _asmFocusNode.dispose();
+    super.dispose();
+  }
+
+  int _topLine(ScrollController controller) {
+    if (!controller.hasClients) return 0;
+    final value =
+        ((controller.offset - _codeEditorPadding.top) / _codeLineHeight).floor();
+    return value < 0 ? 0 : value;
+  }
+
+  void _scrollTo(ScrollController controller, int line) {
+    if (!controller.hasClients) return;
+    final target = (line * _codeLineHeight + _codeEditorPadding.top).clamp(
+      0.0,
+      controller.position.maxScrollExtent,
+    );
+    _applyingRemoteScroll = true;
+    controller.jumpTo(target);
+    _scrollGuard?.cancel();
+    _scrollGuard = Timer(const Duration(milliseconds: 140), () {
+      _applyingRemoteScroll = false;
+    });
+  }
+
+  /// 联动动作放到帧后执行：滚动/选择的回填会在 build 期间同步触发对侧重建，
+  /// 直接在监听回调里改对侧状态会撞上「setState during build」。
+  void _applyRemote(VoidCallback action) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      action();
+    });
+  }
+
+  void _onSourceScrolled() {
+    if (_applyingRemoteScroll) return;
+    final cLine = _topLine(_sourceVertical) + 1;
+    final mapped = widget.listing.nearestMappedCLineAtOrBefore(cLine);
+    if (mapped == null) return;
+    final anchors = widget.listing.anchorsForCLine(mapped);
+    if (anchors.isEmpty) return;
+    final target = anchors.first.asmStart;
+    _applyRemote(() => _scrollTo(_asmVertical, target));
+  }
+
+  void _onAsmScrolled() {
+    if (_applyingRemoteScroll) return;
+    final asmLine = _topLine(_asmVertical);
+    final cLine = _cLineAtOrBeforeAsm(asmLine);
+    if (cLine == null) return;
+    _applyRemote(() => _scrollTo(_sourceVertical, cLine - 1));
+  }
+
+  int? _cLineAtOrBeforeAsm(int asmLine) {
+    for (
+      var index = asmLine.clamp(0, _asmLines.length - 1);
+      index >= 0;
+      index -= 1
+    ) {
+      final cLine = widget.listing.cLineForAsmLine(index);
+      if (cLine != null) return cLine;
+    }
+    return null;
+  }
+
+  void _setSelection(
+    CodeLineEditingController controller,
+    CodeLineSelection selection,
+  ) {
+    _applyingRemoteSelection = true;
+    controller.selection = selection;
+    _applyingRemoteSelection = false;
+  }
+
+  void _onSourceSelectionChanged() {
+    if (_applyingRemoteSelection || !mounted) return;
+    final cLine = _sourceController.selection.startIndex + 1;
+    final anchors = widget.listing.anchorsForCLine(cLine);
+    if (anchors.isEmpty) return;
+    final anchor = anchors.first;
+    final extentOffset = _asmLines[anchor.asmEnd].length;
+    _applyRemote(() {
+      _setSelection(
+        _asmController,
+        CodeLineSelection(
+          baseIndex: anchor.asmStart,
+          baseOffset: 0,
+          extentIndex: anchor.asmEnd,
+          extentOffset: extentOffset,
+        ),
+      );
+      _asmScroll.makeCenterIfInvisible(
+        CodeLinePosition(index: anchor.asmStart, offset: 0),
+      );
+    });
+  }
+
+  void _onAsmSelectionChanged() {
+    if (_applyingRemoteSelection || !mounted) return;
+    final cLine = _cLineAtOrBeforeAsm(_asmController.selection.startIndex);
+    if (cLine == null) return;
+    final extentOffset = _sourceLines[cLine - 1].length;
+    _applyRemote(() {
+      _setSelection(
+        _sourceController,
+        CodeLineSelection(
+          baseIndex: cLine - 1,
+          baseOffset: 0,
+          extentIndex: cLine - 1,
+          extentOffset: extentOffset,
+        ),
+      );
+      _sourceScroll.makeCenterIfInvisible(
+        CodeLinePosition(index: cLine - 1, offset: 0),
+      );
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Semantics(
-      label: '输出语言',
-      child: Container(
-        padding: const EdgeInsets.all(4),
-        decoration: BoxDecoration(
-          color: colors.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: SegmentedButton<OutputTarget>(
-          showSelectedIcon: false,
-          style: ButtonStyle(
-            side: const WidgetStatePropertyAll(BorderSide.none),
-            shape: WidgetStatePropertyAll(
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final sideBySide = constraints.maxWidth >= _codeCompareMinWidth;
+        if (sideBySide) {
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: _pane(source: true)),
+              const SizedBox(width: 12),
+              Expanded(child: _pane(source: false)),
+            ],
+          );
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SegmentedButton<bool>(
+              showSelectedIcon: false,
+              segments: const [
+                ButtonSegment(
+                  value: false,
+                  icon: Icon(Icons.code, size: 18),
+                  label: Text('C 代码'),
+                ),
+                ButtonSegment(
+                  value: true,
+                  icon: Icon(Icons.memory, size: 18),
+                  label: Text('汇编'),
+                ),
+              ],
+              selected: {_showAsm},
+              onSelectionChanged: (selection) =>
+                  setState(() => _showAsm = selection.first),
             ),
-            backgroundColor: WidgetStateProperty.resolveWith(
-              (states) => states.contains(WidgetState.selected)
-                  ? colors.secondaryContainer
-                  : Colors.transparent,
-            ),
-            foregroundColor: WidgetStateProperty.resolveWith(
-              (states) => states.contains(WidgetState.selected)
-                  ? colors.onSecondaryContainer
-                  : colors.onSurfaceVariant,
-            ),
-          ),
-          segments: const [
-            ButtonSegment(
-              value: OutputTarget.c,
-              icon: Icon(Icons.code, size: 18),
-              label: Text('C 代码'),
-              tooltip: '输出 C 代码',
-            ),
-            ButtonSegment(
-              value: OutputTarget.asm,
-              icon: Icon(Icons.memory, size: 18),
-              label: Text('汇编'),
-              tooltip: '输出汇编代码',
-            ),
+            const SizedBox(height: 12),
+            _pane(source: !_showAsm),
           ],
-          selected: {target},
-          onSelectionChanged: (selection) => onChanged(selection.first),
-        ),
-      ),
+        );
+      },
     );
   }
+
+  Widget _pane({required bool source}) => _GeneratedCodePreview(
+    code: source ? widget.sourceCode : _asmLines.join('\n'),
+    fileName: source ? 'main.c' : 'main.asm',
+    onExport: source ? widget.onExportCode : widget.onExportAsm,
+    editorKey: ValueKey(source ? 'generated-code-editor' : 'generated-asm-editor'),
+    lineNumberKey: ValueKey(
+      source ? 'generated-code-line-numbers' : 'generated-asm-line-numbers',
+    ),
+    searchKey: ValueKey(source ? 'code-search-field' : 'asm-search-field'),
+    countKey: ValueKey(source ? 'code-search-count' : 'asm-search-count'),
+    languages: source
+        ? {'c': CodeHighlightThemeMode(mode: langC)}
+        : {'asm': CodeHighlightThemeMode(mode: langAs251)},
+    controller: source ? _sourceController : _asmController,
+    scrollController: source ? _sourceScroll : _asmScroll,
+    focusNode: source ? _sourceFocusNode : _asmFocusNode,
+    showFileName: true,
+  );
 }
 
 const _codeFontFallbacks = <String>[
@@ -3553,11 +3833,35 @@ class _GeneratedCodePreview extends StatefulWidget {
     required this.code,
     required this.onExport,
     this.fileName = 'main.c',
+    this.editorKey = const ValueKey('generated-code-editor'),
+    this.searchKey = const ValueKey('code-search-field'),
+    this.countKey = const ValueKey('code-search-count'),
+    this.lineNumberKey = const ValueKey('generated-code-line-numbers'),
+    this.languages,
+    this.controller,
+    this.scrollController,
+    this.focusNode,
+    this.showFileName = false,
   });
 
   final String code;
   final VoidCallback onExport;
   final String fileName;
+  final Key editorKey;
+  final Key searchKey;
+  final Key countKey;
+  final Key lineNumberKey;
+
+  /// 为空时按 [fileName] 后缀选语言（.asm 走 AS251）。
+  final Map<String, CodeHighlightThemeMode>? languages;
+
+  /// 对照视图里由外层持有，用于两栏联动；为空时本组件自建。
+  final CodeLineEditingController? controller;
+  final CodeScrollController? scrollController;
+  final FocusNode? focusNode;
+
+  /// 双栏对照时每栏显示自己的文件名。
+  final bool showFileName;
 
   @override
   State<_GeneratedCodePreview> createState() => _GeneratedCodePreviewState();
@@ -3567,32 +3871,46 @@ class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
   late final CodeLineEditingController _editingController;
   late final TextEditingController _searchController;
   late final FocusNode _searchFocusNode;
-  late final ScrollController _verticalScroller;
-  late final ScrollController _horizontalScroller;
+  ScrollController? _verticalScroller;
+  ScrollController? _horizontalScroller;
   late final CodeScrollController _scrollController;
   late final FocusNode _editorFocusNode;
+  bool _ownsEditingController = false;
+  bool _ownsScrollController = false;
+  bool _ownsFocusNode = false;
   List<CodeLineSelection> _matches = const [];
   int _matchIndex = -1;
 
   @override
   void initState() {
     super.initState();
-    _editingController = CodeLineEditingController.fromText(widget.code);
+    _ownsEditingController = widget.controller == null;
+    _editingController =
+        widget.controller ?? CodeLineEditingController.fromText(widget.code);
     _searchController = TextEditingController();
     _searchFocusNode = FocusNode(debugLabel: 'code-search');
-    _verticalScroller = ScrollController();
-    _horizontalScroller = ScrollController();
-    _scrollController = CodeScrollController(
-      verticalScroller: _verticalScroller,
-      horizontalScroller: _horizontalScroller,
-    );
-    _editorFocusNode = FocusNode(debugLabel: 'generated-code-editor');
+    _ownsScrollController = widget.scrollController == null;
+    if (_ownsScrollController) {
+      final vertical = ScrollController();
+      final horizontal = ScrollController();
+      _verticalScroller = vertical;
+      _horizontalScroller = horizontal;
+      _scrollController = CodeScrollController(
+        verticalScroller: vertical,
+        horizontalScroller: horizontal,
+      );
+    } else {
+      _scrollController = widget.scrollController!;
+    }
+    _ownsFocusNode = widget.focusNode == null;
+    _editorFocusNode =
+        widget.focusNode ?? FocusNode(debugLabel: 'generated-code-editor');
   }
 
   @override
   void didUpdateWidget(covariant _GeneratedCodePreview oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.code != widget.code) {
+    if (_ownsEditingController && oldWidget.code != widget.code) {
       _editingController.text = widget.code;
       _updateSearch(_searchController.text);
     }
@@ -3639,11 +3957,11 @@ class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
   void dispose() {
     _searchController.dispose();
     _searchFocusNode.dispose();
-    _editingController.dispose();
-    _scrollController.dispose();
-    _verticalScroller.dispose();
-    _horizontalScroller.dispose();
-    _editorFocusNode.dispose();
+    if (_ownsEditingController) _editingController.dispose();
+    if (_ownsScrollController) _scrollController.dispose();
+    _verticalScroller?.dispose();
+    _horizontalScroller?.dispose();
+    if (_ownsFocusNode) _editorFocusNode.dispose();
     super.dispose();
   }
 
@@ -3659,7 +3977,7 @@ class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
     };
     final compact = _isCompact(context);
     final search = TextField(
-      key: const ValueKey('code-search-field'),
+      key: widget.searchKey,
       controller: _searchController,
       focusNode: _searchFocusNode,
       onChanged: _updateSearch,
@@ -3672,7 +3990,7 @@ class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
       width: 58,
       child: Text(
         '${_matchIndex < 0 ? 0 : _matchIndex + 1} / ${_matches.length}',
-        key: const ValueKey('code-search-count'),
+        key: widget.countKey,
         textAlign: TextAlign.center,
       ),
     );
@@ -3708,7 +4026,18 @@ class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
           );
 
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (widget.showFileName) ...[
+          Text(
+            widget.fileName,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontFamily: 'PieBlockMono',
+              fontFamilyFallback: _codeFontFallbacks,
+            ),
+          ),
+          const SizedBox(height: 10),
+        ],
         if (compact) ...[
           search,
           const SizedBox(height: 8),
@@ -3737,7 +4066,7 @@ class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
         SizedBox(
           height: (MediaQuery.sizeOf(context).height * .55).clamp(280, 560),
           child: CodeEditor(
-            key: const ValueKey('generated-code-editor'),
+            key: widget.editorKey,
             controller: _editingController,
             scrollController: _scrollController,
             focusNode: _editorFocusNode,
@@ -3757,7 +4086,7 @@ class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
                 },
               ),
             },
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            padding: _codeEditorPadding,
             borderRadius: BorderRadius.circular(12),
             clipBehavior: Clip.antiAlias,
             border: Border.all(
@@ -3772,30 +4101,30 @@ class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
                     Padding(
                       padding: const EdgeInsets.only(left: 10, right: 8),
                       child: DefaultCodeLineNumber(
-                        key: const ValueKey('generated-code-line-numbers'),
+                        key: widget.lineNumberKey,
                         controller: editingController,
                         notifier: notifier,
                         textStyle: TextStyle(
                           color: gutter,
                           fontFamily: 'PieBlockMono',
                           fontFamilyFallback: _codeFontFallbacks,
-                          fontSize: 13,
-                          height: 1.45,
+                          fontSize: _codeFontSize,
+                          height: _codeLineHeightFactor,
                         ),
                         focusedTextStyle: TextStyle(
                           color: Theme.of(context).colorScheme.primary,
                           fontFamily: 'PieBlockMono',
                           fontFamilyFallback: _codeFontFallbacks,
-                          fontSize: 13,
-                          height: 1.45,
+                          fontSize: _codeFontSize,
+                          height: _codeLineHeightFactor,
                         ),
                       ),
                     ),
             style: CodeEditorStyle(
               fontFamily: 'PieBlockMono',
               fontFamilyFallback: _codeFontFallbacks,
-              fontSize: 13,
-              fontHeight: 1.45,
+              fontSize: _codeFontSize,
+              fontHeight: _codeLineHeightFactor,
               textColor: foreground,
               backgroundColor: background,
               selectionColor: const Color(0xff02acc0).withValues(alpha: .34),
@@ -3805,9 +4134,10 @@ class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
                   .withValues(alpha: .07),
               codeTheme: CodeHighlightTheme(
                 // 按输出文件选语言；保持单条目，re_editor 才走确定性高亮。
-                languages: widget.fileName.endsWith('.asm')
-                    ? {'asm': CodeHighlightThemeMode(mode: langAs251)}
-                    : {'c': CodeHighlightThemeMode(mode: langC)},
+                languages: widget.languages ??
+                    (widget.fileName.endsWith('.asm')
+                        ? {'asm': CodeHighlightThemeMode(mode: langAs251)}
+                        : {'c': CodeHighlightThemeMode(mode: langC)}),
                 theme: syntaxTheme,
               ),
             ),
@@ -3818,7 +4148,44 @@ class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
   }
 }
 
-/// 网页版的「编译与烧录」：功能不存在，但也不能留一个空页——
+/// 生成代码页正在把 main.c 编译成汇编时的全屏等待遮罩。
+class _AsmCompilingOverlay extends StatelessWidget {
+  const _AsmCompilingOverlay();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return AbsorbPointer(
+      child: ColoredBox(
+        color: colors.surface.withValues(alpha: .9),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(
+                width: 38,
+                height: 38,
+                child: CircularProgressIndicator(strokeWidth: 3),
+              ),
+              const SizedBox(height: 18),
+              Text(
+                '正在编译为汇编…',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '用内置 SDCC C251 编译 main.c，首次使用需要先部署工具链。',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 网页版的「烧录」：功能不存在，但也不能留一个空页——
 /// 说清楚为什么、以及要去哪里完成，顺带把下载链接给出去。
 class _WebDeployNotice extends StatelessWidget {
   const _WebDeployNotice();
@@ -3828,13 +4195,13 @@ class _WebDeployNotice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => _PageFrame(
-    title: '编译与烧录',
-    subtitle: '网页版负责配置与生成代码，编译和烧录请在桌面版完成。',
+    title: '烧录',
+    subtitle: '网页版负责配置与生成代码，汇编对照与烧录请在桌面版完成。',
     child: _Section(
-      title: '这两步需要本机环境',
+      title: '这一步需要本机环境',
       children: [
         const _InfoBanner(
-          '编译要调用本机的 SDCC / Keil 工具链，烧录要直接访问 USB-HID 设备，'
+          '汇编对照要用本机的内置 SDCC 工具链编译，烧录要直接访问 USB-HID 设备，'
           '浏览器里都做不到。项目配置与生成的 C 代码不受影响，可以照常导出。',
         ),
         const SizedBox(height: 16),
@@ -4253,7 +4620,7 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
       _ => '检测到 ${deploy.deviceCount} 块主控板，请只保留一块',
     };
     return _PageFrame(
-      title: '编译与烧录',
+      title: '烧录',
       subtitle: _isAndroid
           ? deploy.compilerAvailable
                 ? '使用内置 SDCC 离线编译 STC32G12K128 固件，并通过 OTG USB-HID 写入主控板。'
