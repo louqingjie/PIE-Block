@@ -2519,6 +2519,50 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('generated-asm-editor')), findsOneWidget);
     expect(find.byKey(const ValueKey('generated-code-editor')), findsNothing);
+
+    // 切栏必须整栏换掉：内容和行号都得是汇编自己的，不能沿用 C 栏的编辑器状态。
+    final pair = AsmListing.parse(_asmSample).alignWith(code);
+    final asmEditor = tester.widget<CodeEditor>(
+      find.byKey(const ValueKey('generated-asm-editor')),
+    );
+    expect(asmEditor.controller!.text, pair.asmText);
+    expect(asmEditor.controller!.text, contains('ecall'));
+    expect(asmEditor.controller!.text, isNot(contains('#include')));
+    final asmNumbers = tester.widget<DefaultCodeLineNumber>(
+      find.byKey(const ValueKey('generated-asm-line-numbers')),
+    );
+    expect(
+      [for (var row = 0; row < pair.rowCount; row += 1)
+        asmNumbers.customLineIndex2Text!(row)],
+      [
+        for (var row = 0; row < pair.rowCount; row += 1)
+          pair.asmLineNumbers[row]?.toString() ?? '',
+      ],
+    );
+    expect(asmNumbers.customLineIndex2Text!(0), isEmpty);
+    expect(
+      asmNumbers.customLineIndex2Text!(pair.asmLineNumbers.indexOf(1)),
+      '1',
+    );
+
+    // 切回 C 栏同样要还原 C 的文本与行号。
+    await tester.tap(find.text('C 代码'));
+    await tester.pumpAndSettle();
+    final cEditor = tester.widget<CodeEditor>(
+      find.byKey(const ValueKey('generated-code-editor')),
+    );
+    expect(cEditor.controller!.text, pair.codeText);
+    final cNumbers = tester.widget<DefaultCodeLineNumber>(
+      find.byKey(const ValueKey('generated-code-line-numbers')),
+    );
+    expect([for (var row = 0; row < pair.rowCount; row += 1)
+      cNumbers.customLineIndex2Text!(row)],
+      [
+        for (var row = 0; row < pair.rowCount; row += 1)
+          pair.codeLineNumbers[row]?.toString() ?? '',
+      ],
+    );
+    expect(cNumbers.customLineIndex2Text!(0), '1');
     expect(tester.takeException(), isNull);
     debugDefaultTargetPlatformOverride = null;
   });

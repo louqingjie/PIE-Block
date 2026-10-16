@@ -3711,7 +3711,11 @@ class _CodeCompareViewState extends State<_CodeCompareView> {
     );
   }
 
+  /// 单栏切换时两栏复用同一个组件位置，必须用 key 区分：否则 Flutter 会复用同
+  /// 一个 State，`_editingController` 是 initState 里按 `controller` 定的，切栏后
+  /// 汇编栏会继续显示 C 的文本与行号。
   Widget _pane({required bool source}) => _GeneratedCodePreview(
+    key: ValueKey(source ? 'generated-code-pane' : 'generated-asm-pane'),
     code: source ? _pair.codeText : _pair.asmText,
     fileName: source ? 'main.c' : 'main.asm',
     onExport: source ? widget.onExportCode : widget.onExportAsm,
@@ -3744,6 +3748,7 @@ const _codeFontFallbacks = <String>[
 
 class _GeneratedCodePreview extends StatefulWidget {
   const _GeneratedCodePreview({
+    super.key,
     required this.code,
     required this.onExport,
     this.fileName = 'main.c',
