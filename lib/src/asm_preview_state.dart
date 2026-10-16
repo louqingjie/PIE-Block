@@ -25,11 +25,14 @@ class AsmPreviewState {
 
   bool get ready => activity == AsmPreviewActivity.ready && listing != null;
 
-  /// 对照视图标题下的说明：覆盖率即「能生成汇编的 C 行」占比。
+  /// 对照视图标题下的说明：覆盖率即「能生成汇编的 C 行」占比；
+  /// 两侧逐行严格对齐、较短的一侧补空行，行号列各自独立。
   String get coverageText {
     final value = listing;
     if (value == null || cLineCount == 0) return '汇编由内置 SDCC C251 生成';
     return '汇编由内置 SDCC C251 生成 · 覆盖 ${value.mappedCLineCount}/$cLineCount 行 C 代码'
-        '（其余为预处理、注释与纯声明）';
+        ' · 两侧逐行对齐、多出的部分补空行'
+        '（左栏为 C 行号、右栏为汇编行号，补空行的行留空；'
+        '预处理、注释与纯声明不产生汇编）';
   }
 }

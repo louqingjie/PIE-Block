@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -3535,10 +3535,9 @@ class _CodePageState extends ConsumerState<_CodePage> {
   }
 }
 
-/// 代码栏的字号与行高，滚动同步按同一条换算（见 [_CodeCompareView]）。
+/// 代码栏的字号与行高：两栏文本行数严格相等，滚动只需同步同一个偏移量。
 const double _codeFontSize = 13;
 const double _codeLineHeightFactor = 1.45;
-const double _codeLineHeight = _codeFontSize * _codeLineHeightFactor;
 const EdgeInsets _codeEditorPadding = EdgeInsets.symmetric(
   horizontal: 14,
   vertical: 12,
@@ -3547,7 +3546,8 @@ const EdgeInsets _codeEditorPadding = EdgeInsets.symmetric(
 /// 双栏对照的最小宽度：再窄就退化成「C 代码 / 汇编」单栏切换。
 const double _codeCompareMinWidth = 860;
 
-/// C 与汇编的左右对照：点选一句 C 就高亮对应汇编块，滚动也按锚点互相跟随。
+/// C 与汇编的左右对照：两侧逐行严格对齐（多出的部分补空行），
+/// 点选一行即高亮同一行块，滚动按同一个偏移量跟随。
 class _CodeCompareView extends StatefulWidget {
   const _CodeCompareView({
     required this.sourceCode,
@@ -3566,8 +3566,7 @@ class _CodeCompareView extends StatefulWidget {
 }
 
 class _CodeCompareViewState extends State<_CodeCompareView> {
-  late List<String> _sourceLines;
-  late List<String> _asmLines;
+  late AlignedCodePair _pair;
   late final CodeLineEditingController _sourceController;
   late final CodeLineEditingController _asmController;
   late final ScrollController _sourceVertical;
@@ -3579,17 +3578,14 @@ class _CodeCompareViewState extends State<_CodeCompareView> {
   late final FocusNode _sourceFocusNode;
   late final FocusNode _asmFocusNode;
   var _showAsm = false;
-  var _applyingRemoteScroll = false;
-  var _applyingRemoteSelection = false;
-  Timer? _scrollGuard;
+  var _applyingRemote = false;
 
   @override
   void initState() {
     super.initState();
-    _sourceLines = widget.sourceCode.split('\n');
-    _asmLines = widget.listing.lines;
-    _sourceController = CodeLineEditingController.fromText(widget.sourceCode);
-    _asmController = CodeLineEditingController.fromText(_asmLines.join('\n'));
+    _pair = widget.listing.alignWith(widget.sourceCode);
+    _sourceController = CodeLineEditingController.fromText(_pair.codeText);
+    _asmController = CodeLineEditingController.fromText(_pair.asmText);
     _sourceVertical = ScrollController();
     _sourceHorizontal = ScrollController();
     _asmVertical = ScrollController();
@@ -3613,19 +3609,20 @@ class _CodeCompareViewState extends State<_CodeCompareView> {
   @override
   void didUpdateWidget(covariant _CodeCompareView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.sourceCode != widget.sourceCode) {
-      _sourceLines = widget.sourceCode.split('\n');
-      _sourceController.text = widget.sourceCode;
+    if (oldWidget.sourceCode == widget.sourceCode &&
+        identical(oldWidget.listing, widget.listing)) {
+      return;
     }
-    if (!identical(oldWidget.listing, widget.listing)) {
-      _asmLines = widget.listing.lines;
-      _asmController.text = _asmLines.join('\n');
-    }
+    _pair = widget.listing.alignWith(widget.sourceCode);
+    // 换文本会顺带重置选择，先屏蔽一次联动回调。
+    _applyingRemote = true;
+    _sourceController.text = _pair.codeText;
+    _asmController.text = _pair.asmText;
+    _applyingRemote = false;
   }
 
   @override
   void dispose() {
-    _scrollGuard?.cancel();
     _sourceController.removeListener(_onSourceSelectionChanged);
     _asmController.removeListener(_onAsmSelectionChanged);
     _sourceVertical.removeListener(_onSourceScrolled);
@@ -3643,116 +3640,70 @@ class _CodeCompareViewState extends State<_CodeCompareView> {
     super.dispose();
   }
 
-  int _topLine(ScrollController controller) {
-    if (!controller.hasClients) return 0;
-    final value =
-        ((controller.offset - _codeEditorPadding.top) / _codeLineHeight).floor();
-    return value < 0 ? 0 : value;
-  }
-
-  void _scrollTo(ScrollController controller, int line) {
-    if (!controller.hasClients) return;
-    final target = (line * _codeLineHeight + _codeEditorPadding.top).clamp(
-      0.0,
-      controller.position.maxScrollExtent,
-    );
-    _applyingRemoteScroll = true;
-    controller.jumpTo(target);
-    _scrollGuard?.cancel();
-    _scrollGuard = Timer(const Duration(milliseconds: 140), () {
-      _applyingRemoteScroll = false;
-    });
-  }
-
-  /// 联动动作放到帧后执行：滚动/选择的回填会在 build 期间同步触发对侧重建，
+  /// 联动动作放到帧后执行：滚动与选择的回填会在 build 期间同步触发对侧重建，
   /// 直接在监听回调里改对侧状态会撞上「setState during build」。
   void _applyRemote(VoidCallback action) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      _applyingRemote = true;
       action();
+      _applyingRemote = false;
+    });
+  }
+
+  /// 两侧文本行数严格相等，所以同一个偏移量就是同一行。
+  void _mirrorScroll(ScrollController from, ScrollController to) {
+    if (!from.hasClients || !to.hasClients) return;
+    final target = from.offset.clamp(0.0, to.position.maxScrollExtent);
+    _applyRemote(() {
+      if (!to.hasClients) return;
+      to.jumpTo(target);
     });
   }
 
   void _onSourceScrolled() {
-    if (_applyingRemoteScroll) return;
-    final cLine = _topLine(_sourceVertical) + 1;
-    final mapped = widget.listing.nearestMappedCLineAtOrBefore(cLine);
-    if (mapped == null) return;
-    final anchors = widget.listing.anchorsForCLine(mapped);
-    if (anchors.isEmpty) return;
-    final target = anchors.first.asmStart;
-    _applyRemote(() => _scrollTo(_asmVertical, target));
+    if (_applyingRemote) return;
+    _mirrorScroll(_sourceVertical, _asmVertical);
   }
 
   void _onAsmScrolled() {
-    if (_applyingRemoteScroll) return;
-    final asmLine = _topLine(_asmVertical);
-    final cLine = _cLineAtOrBeforeAsm(asmLine);
-    if (cLine == null) return;
-    _applyRemote(() => _scrollTo(_sourceVertical, cLine - 1));
-  }
-
-  int? _cLineAtOrBeforeAsm(int asmLine) {
-    for (
-      var index = asmLine.clamp(0, _asmLines.length - 1);
-      index >= 0;
-      index -= 1
-    ) {
-      final cLine = widget.listing.cLineForAsmLine(index);
-      if (cLine != null) return cLine;
-    }
-    return null;
-  }
-
-  void _setSelection(
-    CodeLineEditingController controller,
-    CodeLineSelection selection,
-  ) {
-    _applyingRemoteSelection = true;
-    controller.selection = selection;
-    _applyingRemoteSelection = false;
+    if (_applyingRemote) return;
+    _mirrorScroll(_asmVertical, _sourceVertical);
   }
 
   void _onSourceSelectionChanged() {
-    if (_applyingRemoteSelection || !mounted) return;
-    final cLine = _sourceController.selection.startIndex + 1;
-    final anchors = widget.listing.anchorsForCLine(cLine);
-    if (anchors.isEmpty) return;
-    final anchor = anchors.first;
-    final extentOffset = _asmLines[anchor.asmEnd].length;
+    if (_applyingRemote || !mounted) return;
+    final row = _sourceController.selection.startIndex;
+    if (row < 0 || row >= _pair.rowCount) return;
+    final end = _pair.asmBlockEndAt(row);
+    final extentOffset = _pair.asmLines[end].length;
     _applyRemote(() {
-      _setSelection(
-        _asmController,
-        CodeLineSelection(
-          baseIndex: anchor.asmStart,
-          baseOffset: 0,
-          extentIndex: anchor.asmEnd,
-          extentOffset: extentOffset,
-        ),
+      _asmController.selection = CodeLineSelection(
+        baseIndex: row,
+        baseOffset: 0,
+        extentIndex: end,
+        extentOffset: extentOffset,
       );
       _asmScroll.makeCenterIfInvisible(
-        CodeLinePosition(index: anchor.asmStart, offset: 0),
+        CodeLinePosition(index: row, offset: 0),
       );
     });
   }
 
   void _onAsmSelectionChanged() {
-    if (_applyingRemoteSelection || !mounted) return;
-    final cLine = _cLineAtOrBeforeAsm(_asmController.selection.startIndex);
-    if (cLine == null) return;
-    final extentOffset = _sourceLines[cLine - 1].length;
+    if (_applyingRemote || !mounted) return;
+    final row = _pair.asmBlockStartAt(_asmController.selection.startIndex);
+    if (row < 0 || row >= _pair.rowCount) return;
+    final extentOffset = _pair.codeLines[row].length;
     _applyRemote(() {
-      _setSelection(
-        _sourceController,
-        CodeLineSelection(
-          baseIndex: cLine - 1,
-          baseOffset: 0,
-          extentIndex: cLine - 1,
-          extentOffset: extentOffset,
-        ),
+      _sourceController.selection = CodeLineSelection(
+        baseIndex: row,
+        baseOffset: 0,
+        extentIndex: row,
+        extentOffset: extentOffset,
       );
       _sourceScroll.makeCenterIfInvisible(
-        CodeLinePosition(index: cLine - 1, offset: 0),
+        CodeLinePosition(index: row, offset: 0),
       );
     });
   }
@@ -3761,8 +3712,7 @@ class _CodeCompareViewState extends State<_CodeCompareView> {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final sideBySide = constraints.maxWidth >= _codeCompareMinWidth;
-        if (sideBySide) {
+        if (constraints.maxWidth >= _codeCompareMinWidth) {
           return Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -3802,10 +3752,12 @@ class _CodeCompareViewState extends State<_CodeCompareView> {
   }
 
   Widget _pane({required bool source}) => _GeneratedCodePreview(
-    code: source ? widget.sourceCode : _asmLines.join('\n'),
+    code: source ? _pair.codeText : _pair.asmText,
     fileName: source ? 'main.c' : 'main.asm',
     onExport: source ? widget.onExportCode : widget.onExportAsm,
-    editorKey: ValueKey(source ? 'generated-code-editor' : 'generated-asm-editor'),
+    editorKey: ValueKey(
+      source ? 'generated-code-editor' : 'generated-asm-editor',
+    ),
     lineNumberKey: ValueKey(
       source ? 'generated-code-line-numbers' : 'generated-asm-line-numbers',
     ),
@@ -3814,6 +3766,8 @@ class _CodeCompareViewState extends State<_CodeCompareView> {
     languages: source
         ? {'c': CodeHighlightThemeMode(mode: langC)}
         : {'asm': CodeHighlightThemeMode(mode: langAs251)},
+    // 两侧行号各自独立：左栏是真实 C 行号，右栏是汇编自身行号，补齐行留空。
+    lineNumberLabels: source ? _pair.codeLineNumbers : _pair.asmLineNumbers,
     controller: source ? _sourceController : _asmController,
     scrollController: source ? _sourceScroll : _asmScroll,
     focusNode: source ? _sourceFocusNode : _asmFocusNode,
@@ -3838,6 +3792,7 @@ class _GeneratedCodePreview extends StatefulWidget {
     this.countKey = const ValueKey('code-search-count'),
     this.lineNumberKey = const ValueKey('generated-code-line-numbers'),
     this.languages,
+    this.lineNumberLabels,
     this.controller,
     this.scrollController,
     this.focusNode,
@@ -3854,6 +3809,10 @@ class _GeneratedCodePreview extends StatefulWidget {
 
   /// 为空时按 [fileName] 后缀选语言（.asm 走 AS251）。
   final Map<String, CodeHighlightThemeMode>? languages;
+
+  /// 行号列的自定义文案（逐行对应真实 C 行号，补齐行为 `null` 表示留空）；
+  /// 为空时按行序编号。
+  final List<int?>? lineNumberLabels;
 
   /// 对照视图里由外层持有，用于两栏联动；为空时本组件自建。
   final CodeLineEditingController? controller;
@@ -4104,6 +4063,16 @@ class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
                         key: widget.lineNumberKey,
                         controller: editingController,
                         notifier: notifier,
+                        customLineIndex2Text: widget.lineNumberLabels == null
+                            ? null
+                            : (index) {
+                                final labels = widget.lineNumberLabels!;
+                                if (index < 0 || index >= labels.length) {
+                                  return '';
+                                }
+                                final value = labels[index];
+                                return value == null ? '' : '$value';
+                              },
                         textStyle: TextStyle(
                           color: gutter,
                           fontFamily: 'PieBlockMono',

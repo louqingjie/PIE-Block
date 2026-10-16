@@ -2365,19 +2365,35 @@ void main() {
     expect(asmEditor.controller!.text, contains('ecall'));
     expect(find.textContaining('覆盖 3/'), findsOneWidget);
 
-    // 点选 C 第 9 行：右栏选中并高亮对应的汇编块（C 一句对汇编 N 句）。
-    cEditor.controller!.selection = const CodeLineSelection.collapsed(
-      index: 8,
+    // 严格逐行对齐：两侧行数必须相等，多出的部分补空行。
+    final cLines = cEditor.controller!.text.split('\n');
+    final asmLines = asmEditor.controller!.text.split('\n');
+    expect(asmLines.length, cLines.length);
+
+    // 样例里 C 第 9 行（Board_Init）对应两行汇编，块首行为 'mov dpl,#0x01'。
+    final blockRow = asmLines.indexOf('        mov     dpl,#0x01');
+    expect(blockRow, greaterThan(0));
+    expect(asmLines[blockRow + 1], contains('ecall   _Board_Init'));
+
+    // 点选 C 行：右栏高亮并选中对应的整段汇编。
+    cEditor.controller!.selection = CodeLineSelection.collapsed(
+      index: blockRow,
       offset: 0,
     );
     await tester.pump();
     await tester.pump();
-    final selection = asmEditor.controller!.selection;
-    expect(selection.baseIndex, lessThan(selection.extentIndex));
-    expect(
-      asmEditor.controller!.text.split('\n')[selection.baseIndex],
-      contains('L9:'),
+    final asmSelection = asmEditor.controller!.selection;
+    expect(asmSelection.baseIndex, blockRow);
+    expect(asmSelection.extentIndex, blockRow + 1);
+
+    // 点选汇编块的续行：左栏回到同一个 C 行。
+    asmEditor.controller!.selection = CodeLineSelection.collapsed(
+      index: blockRow + 1,
+      offset: 0,
     );
+    await tester.pump();
+    await tester.pump();
+    expect(cEditor.controller!.selection.startIndex, blockRow);
     expect(tester.takeException(), isNull);
     debugDefaultTargetPlatformOverride = null;
   });

@@ -32,6 +32,61 @@ class AsmAnchor {
   String toString() => 'AsmAnchor(C$cLine → 汇编 $asmStart..$asmEnd)';
 }
 
+/// 严格对齐的一对文本：两侧行数相等，每条 C 语句与它的汇编行块同处一块，
+/// 较短的一侧用空行补齐。
+class AlignedCodePair {
+  const AlignedCodePair({
+    required this.codeLines,
+    required this.asmLines,
+    required this.codeLineNumbers,
+    required this.asmLineNumbers,
+    required this.asmBlockStarts,
+    required this.asmBlockEnds,
+  });
+
+  /// 左栏 C 文本（C 语句之后多出的部分为空行）。
+  final List<String> codeLines;
+
+  /// 右栏汇编文本（与 [codeLines] 等长，没有汇编的行是空行）。
+  final List<String> asmLines;
+
+  /// 每一行对应的真实 C 行号（左栏行号）：语句行与它汇编块的首行为行号，
+  /// 补齐行与汇编块的续行为 `null`（界面上显示为空号）。
+  final List<int?> codeLineNumbers;
+
+  /// 每一行对应的汇编自身行号（右栏行号，从左栏之外的独立计数）：
+  /// 汇编块的行依次编号，补齐行为 `null`（界面上显示为空号）。
+  final List<int?> asmLineNumbers;
+
+  /// [asmLines] 每行所属汇编块的起始行下标。
+  final List<int> asmBlockStarts;
+
+  /// [asmLines] 每行所属汇编块的结束行下标（含）。
+  final List<int> asmBlockEnds;
+
+  int get rowCount => codeLines.length;
+
+  /// 两侧行数必须严格相等，否则对齐失败。
+  bool get aligned =>
+      codeLines.length == asmLines.length &&
+      codeLineNumbers.length == codeLines.length &&
+      asmLineNumbers.length == codeLines.length &&
+      asmBlockStarts.length == codeLines.length &&
+      asmBlockEnds.length == codeLines.length;
+
+  String get codeText => codeLines.join('\n');
+
+  String get asmText => asmLines.join('\n');
+
+  int _clampRow(int row) => row.clamp(0, rowCount == 0 ? 0 : rowCount - 1);
+
+  /// [asmLines] 第 [row] 行所属汇编块的起始行（含）。
+  int asmBlockStartAt(int row) => asmBlockStarts[_clampRow(row)];
+
+  /// [asmLines] 第 [row] 行所属汇编块的结束行（含）。
+  int asmBlockEndAt(int row) => asmBlockEnds[_clampRow(row)];
+}
+
 /// 一份可供对照阅读的汇编列表。
 class AsmListing {
   AsmListing({
@@ -48,12 +103,6 @@ class AsmListing {
 
   final String mainFileName;
 
-  /// 展示文本行号（0 基）→ 其所属区间的 C 行号；用于「点右栏高亮左栏」。
-  final Map<int, int> _cLineByAsmLine = {};
-
-  /// 升序的已映射 C 行号，供滚动同步做二分查找。
-  List<int> _sortedCLines = const [];
-
   /// 源文件路径里形如 `;<路径>:<行号>: <C 原文>` 的锚点注释。
   static final RegExp _anchorPattern = RegExp(r'^\s*;\s+(.*?):(\d+):(.*)$');
 
@@ -62,7 +111,6 @@ class AsmListing {
     final rawLines = const LineSplitter().convert(rawAsm);
     final display = <String>[];
     final anchors = <int, List<AsmAnchor>>{};
-    final cLineByAsmLine = <int, int>{};
 
     var firstIndex = -1;
     for (var index = 0; index < rawLines.length; index += 1) {
@@ -90,9 +138,6 @@ class AsmListing {
       (anchors[cLine] ??= []).add(
         AsmAnchor(cLine: cLine, asmStart: activeStart, asmEnd: end),
       );
-      for (var line = activeStart; line <= end; line += 1) {
-        cLineByAsmLine[line] = cLine;
-      }
     }
 
     for (var index = firstIndex; index < rawLines.length; index += 1) {
@@ -118,41 +163,76 @@ class AsmListing {
     }
     closeActive();
 
-    final listing = AsmListing(
+    return AsmListing(
       lines: display,
       anchorsByCLine: anchors,
       mainFileName: mainFileName,
     );
-    listing._cLineByAsmLine.addAll(cLineByAsmLine);
-    listing._sortedCLines = anchors.keys.toList()..sort();
-    return listing;
+  }
+
+  /// 把 C 源码与汇编排成严格逐行对齐的一对文本：每条 C 语句占一行，
+  /// 它对应的 N 行汇编紧贴在同一行块里，较短的一侧用空行补齐。
+  ///
+  /// 两侧的行数因此相等、滚动只需同步同一个偏移量；但两侧的行号各自独立：
+  /// 左栏是真实 C 行号，右栏是汇编自身的行号，补齐行都不编号。
+  AlignedCodePair alignWith(String sourceCode) {
+    final sourceLines = const LineSplitter().convert(sourceCode);
+    final codeLines = <String>[];
+    final asmLines = <String>[];
+    final codeLineNumbers = <int?>[];
+    final asmLineNumbers = <int?>[];
+    final asmBlockStarts = <int>[];
+    final asmBlockEnds = <int>[];
+    var asmLine = 0;
+
+    for (var index = 0; index < sourceLines.length; index += 1) {
+      final cLine = index + 1;
+      final instructions = <String>[];
+      for (final anchor in anchorsForCLine(cLine)) {
+        for (var line = anchor.asmStart + 1; line <= anchor.asmEnd; line += 1) {
+          instructions.add(lines[line]);
+        }
+      }
+
+      final start = asmLines.length;
+      codeLines.add(sourceLines[index]);
+      codeLineNumbers.add(cLine);
+      if (instructions.isEmpty) {
+        // 不产生汇编的 C 行（预处理、注释、空行、纯声明）右侧补一行空行。
+        asmLines.add('');
+        asmLineNumbers.add(null);
+      } else {
+        for (final instruction in instructions) {
+          asmLine += 1;
+          asmLines.add(instruction);
+          asmLineNumbers.add(asmLine);
+          if (asmLines.length - 1 > start) {
+            codeLines.add('');
+            codeLineNumbers.add(null);
+          }
+        }
+      }
+      // 行块内每一行都指向同一段区间，点选任意一行都能高亮整块。
+      final end = asmLines.length - 1;
+      for (var row = start; row <= end; row += 1) {
+        asmBlockStarts.add(start);
+        asmBlockEnds.add(end);
+      }
+    }
+
+    return AlignedCodePair(
+      codeLines: codeLines,
+      asmLines: asmLines,
+      codeLineNumbers: codeLineNumbers,
+      asmLineNumbers: asmLineNumbers,
+      asmBlockStarts: asmBlockStarts,
+      asmBlockEnds: asmBlockEnds,
+    );
   }
 
   /// 命中 C 行的锚点（可能多条：同一行被重复生成的循环条件等）。
   List<AsmAnchor> anchorsForCLine(int cLine) =>
       anchorsByCLine[cLine] ?? const <AsmAnchor>[];
-
-  /// 汇编行所属的 C 行号；区间之外返回 `null`。
-  int? cLineForAsmLine(int asmLine) => _cLineByAsmLine[asmLine];
-
-  /// ≤ [cLine] 的最近一个已映射 C 行；没有则返回 `null`。
-  int? nearestMappedCLineAtOrBefore(int cLine) {
-    final lines = _sortedCLines;
-    if (lines.isEmpty) return null;
-    var low = 0;
-    var high = lines.length - 1;
-    int? found;
-    while (low <= high) {
-      final mid = (low + high) >> 1;
-      if (lines[mid] <= cLine) {
-        found = lines[mid];
-        low = mid + 1;
-      } else {
-        high = mid - 1;
-      }
-    }
-    return found;
-  }
 
   /// 已映射的 C 行数量，用于「覆盖 x/y 行」文案。
   int get mappedCLineCount => anchorsByCLine.length;
