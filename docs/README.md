@@ -33,7 +33,6 @@
 - [机械拓展板使用指南](guides/机械拓展板使用指南%20.md)
 - [RM 电控指南](guides/RM电控指南.md)
 - [代码生成器 CLI 与 MCP 接入指南](guides/代码生成器CLI与MCP接入指南.md)
-- [汇编生成器](guides/汇编生成器.md)
 - [公网部署 Cloudflare Tunnel 指南](guides/公网部署CloudflareTunnel指南.md)
 - [服务器新机部署指南](guides/服务器新机部署指南.md)
 - [智能交互手柄](guides/智能交互手柄.md)

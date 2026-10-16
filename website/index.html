@@ -212,8 +212,9 @@
               <p>前面填的每一项都会落到同一份 main.c 上：引脚与 PWM 角色、按键映射、速度区间按你的硬件方案展开，生成规则集中在一处，配置和代码一一对应。</p>
               <ul class="detail__points">
                 <li>只读实时生成，带行号与 C 语法高亮，可搜索、可整段复制</li>
+                <li>右侧是内置 SDCC 现场编译出的汇编，按源码行锚点与 C 语句逐句对照</li>
                 <li>一键导出 main.c，直接拿进 Keil 或其它工程</li>
-                <li>编译与烧录需要本机工具链与 USB-HID，在桌面版完成</li>
+                <li>烧录需要 USB-HID，在桌面版完成</li>
               </ul>
             </div>
           </div>
@@ -265,7 +266,7 @@
               <span class="chip">控制与摩擦轮</span>
               <span class="chip">检查与摘要</span>
               <span class="chip">生成代码</span>
-              <span class="chip">编译与烧录</span>
+              <span class="chip">烧录</span>
             </div>
             <p class="kind__note">四轮底盘、云台轴、拨弹电机与摩擦轮一页配完，PWM 与引脚角色由配置自动推导。</p>
           </div>
@@ -282,7 +283,7 @@
               <span class="chip">动作映射</span>
               <span class="chip">检查与摘要</span>
               <span class="chip">生成代码</span>
-              <span class="chip">编译与烧录</span>
+              <span class="chip">烧录</span>
             </div>
             <p class="kind__note">支持 1–4 组独立控制模式，可为每组模式单独编排动作映射与切换按键。</p>
           </div>
@@ -296,7 +297,7 @@
               <span class="chip">测试序列</span>
               <span class="chip">检查与摘要</span>
               <span class="chip">生成代码</span>
-              <span class="chip">编译与烧录</span>
+              <span class="chip">烧录</span>
             </div>
             <p class="kind__note">固定的十路启停测试序列，按顺序验证电机与舵机接线，带默认 3 秒安全时长。</p>
           </div>
@@ -310,7 +311,7 @@
               <span class="chip">钢琴卷帘</span>
               <span class="chip">检查与摘要</span>
               <span class="chip">生成代码</span>
-              <span class="chip">编译与烧录</span>
+              <span class="chip">烧录</span>
             </div>
             <p class="kind__note">原生钢琴卷帘编排旋律，导入导出 MIDI，生成 P33 无源蜂鸣器的单音固件。</p>
           </div>

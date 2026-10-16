@@ -1,4 +1,4 @@
-# PIE-Block
+﻿# PIE-Block
 
 PIE-Block 是面向 W.PIE RoboMaster 校内赛的桌面集成开发环境（Windows / Linux）。新版使用 Flutter 构建，通过分步向导帮助没有编程经验的同学完成机器人配置、生成代码、编译并烧录 STC32G 主控板。
 
@@ -13,18 +13,18 @@ PIE-Block 是面向 W.PIE RoboMaster 校内赛的桌面集成开发环境（Wind
 - 字段范围、引脚占用、按键冲突和跨模式静态检查
 - `.pieproj` 格式 16 项目文件，保存向导进度并以 500ms 防抖自动保存
 - Material 3 浅色、深色和跟随系统主题
-- 只读 C 代码预览、搜索、复制和导出 `main.c`；音乐项目试点可直接生成等价汇编并导出 `main.asm`（详见 `docs/guides/汇编生成器.md`）
+- 只读 C 代码预览、搜索、复制和导出 `main.c`；右侧并排显示内置 SDCC 现场编译出的汇编，按源码行锚点与 C 语句逐句对照，并可导出 `main.asm`
 - 随应用发布的离线 SDCC C251，以及可选的本地 Keil C251 全量构建
 - HEX 地址与校验和检查、按内容哈希复用构建结果、导出 HEX
 - STC32G ROM USB-HID 主控板烧录、进度、取消和失败提示
 
-暂不提供云端编译、串口/蓝牙烧录、AI 编辑、3D 仿真、CLI 或 MCP。官网嵌了一个 Web 版（只读暗色、默认打开），可以配置项目、看生成的 C 代码，编译与烧录仍然只能在桌面版完成——浏览器里既没有本地工具链也访问不到 USB-HID。Web 版的项目存在浏览器 localStorage 里，导入导出走文件上传下载。USB-HID 烧录在 Windows 直接可用，Linux 需先安装 udev 规则（见烧录指南）；Android 可配置、编辑、预览和编译音乐项目，烧录受固件入场时序限制暂不可用（见 Android 移植文档），步兵/工程离线 SDCC 正在进行多进程真机黄金验证，Release 安全门通过前不对用户开放。
+暂不提供云端编译、串口/蓝牙烧录、AI 编辑、3D 仿真、CLI 或 MCP。官网嵌了一个 Web 版（只读暗色、默认打开），可以配置项目、看生成的 C 代码与汇编对照，烧录仍然只能在桌面版完成——浏览器里既没有本地工具链也访问不到 USB-HID。Web 版的项目存在浏览器 localStorage 里，导入导出走文件上传下载。USB-HID 烧录在 Windows 直接可用，Linux 需先安装 udev 规则（见烧录指南）；Android 可配置、编辑、预览和编译音乐项目，烧录受固件入场时序限制暂不可用（见 Android 移植文档），步兵/工程离线 SDCC 正在进行多进程真机黄金验证，Release 安全门通过前不对用户开放。
 
 ## 项目结构
 
 ```text
 ./                       Flutter 应用（pubspec.yaml 位于仓库根目录）
-packages/pieblock_core/  纯 Dart 项目模型、校验器与 C/汇编生成器
+packages/pieblock_core/  纯 Dart 项目模型、校验器与 C 代码生成器
 packages/pieblock_toolchain/ Dart SDCC/Keil 构建、HEX 校验与产物缓存
 packages/pieblock_hid/   Dart 烧录协议与 Windows 原生 HID 传输
 packages/pieblock_sdcc_native/ Android C ABI 5 与多进程编译桥接
@@ -34,7 +34,7 @@ keil_server/             独立云编译服务（不由当前应用调用）
 docs/                    分类文档（guides / reference / design / releases / pitfall / playbook / legal 等）
 ```
 
-Flutter UI 不包含生成规则。`pieblock_core` 是配置、检查和代码生成的唯一实现（C 与汇编两种输出目标均在此实现）。
+Flutter UI 不包含生成规则。`pieblock_core` 是配置、检查和 C 代码生成的唯一实现；`pieblock_toolchain` 负责把生成的 C 编译成固件，并提供 C/汇编对照所需的汇编预览与锚点解析。
 
 ## 开发
 
@@ -58,7 +58,7 @@ flutter build linux --release     # CMake 会把工具链与固件模板装进 b
 tools/package_flutter_linux.sh    # 校验并打包 build/dist/PIEBlock-<版本>-linux-x64.tar.gz
 ```
 
-`flutter build linux --release` 直接产出自包含 bundle（`build/linux/x64/release/bundle/`），`data/pieblock_runtime` 由 `linux/CMakeLists.txt` 在构建时安装，发布时保留整个目录；Linux 端支持 SDCC 离线编译与 USB-HID 烧录，烧录前需安装 udev 规则（可在「编译与烧录」页一键安装，走系统授权对话框；或命令行 `sudo tools/install_udev_rules.sh`，详见烧录指南）。
+`flutter build linux --release` 直接产出自包含 bundle（`build/linux/x64/release/bundle/`），`data/pieblock_runtime` 由 `linux/CMakeLists.txt` 在构建时安装，发布时保留整个目录；Linux 端支持 SDCC 离线编译与 USB-HID 烧录，烧录前需安装 udev 规则（可在「烧录」页一键安装，走系统授权对话框；或命令行 `sudo tools/install_udev_rules.sh`，详见烧录指南）。
 
 编译与主控板接线、开关位置和故障排查见 [Flutter 编译与烧录指南](docs/guides/Flutter编译与烧录指南.md)。
 Android 离线 SDCC 的架构、安全门和验收状态见 [Android SDCC 多进程移植](docs/design/android-sdcc-port.md)。
@@ -103,7 +103,7 @@ wrangler deploy
 摩擦轮满油占空比不是整百值、死区超建议值），问题列表才有内容——四份 JSON 由
 `packages/pieblock_core` 的模型构造，改完模型可以照着重生成。
 
-「编译与烧录」没有真图：Web 版的这一步是「请用桌面版」引导页，而桌面端的烧录
+「烧录」没有真图：Web 版的这一步是「请用桌面版」引导页，而桌面端的烧录
 进行中状态需要插着真实主控板才出现。所以第三块的配图是生成代码页，文案也相应
 改成了讲代码生成，编译烧录缩成一条「在桌面版完成」。
 
