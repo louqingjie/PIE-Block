@@ -950,10 +950,6 @@ ${engineerFeedback.isEmpty ? '' : '        UpdateServoFeedback();'}
     final eventDoneMs = eventTiming.eventDoneMs;
     final eventGapMs = eventTiming.eventGapMs;
     final sectionGapMs = eventTiming.sectionGapMs;
-    // 全部完成是《卡农》主题：逐音渲染，时值随风格缩放，
-    // 与 UI 试听共用 DebugCues.allDone 这一份数据源。
-    final allDoneNotes = DebugCues.allDone(style);
-    final allDoneRepeatMs = DebugCues.allDoneRepeatMs(style);
     // 拓展板 Init 只用来设定 PWM 组频率（PWMA：P60/P62/P64/P66，PWMB：P74~P77）：
     // 电机 10000Hz，舵机与摩擦轮 50Hz。main() 起始已把两组初始化为 50Hz，
     // 之后只有测试项所需的组频率与当前不同时才重发 Init，不再逐个测试项重复初始化。
@@ -1036,23 +1032,19 @@ ${engineerFeedback.isEmpty ? '' : '        UpdateServoFeedback();'}
       lines
         ..add('    Ms_Delay(CUE_SECTION_GAP_MS);')
         ..add('    DoneCue(${index + 1});');
-      if (index < active.length - 1) lines.add('    Ms_Delay(TEST_GAP_MS);');
+      // 每个测试项之后都留同样的间隔（含最后一项）：最后一项之后的这一秒
+      // 就是循环边界，让「回到第 1 项」和普通的项间切换听感一致。
+      lines.add('    Ms_Delay(TEST_GAP_MS);');
       commands.add(lines.join('\n'));
     }
 
-    // 全部完成旋律：《帕赫贝尔D大调卡农》的逐音渲染。
-    // 854 个音，每个音一行 Beep，静默一段一行 Ms_Delay（当前曲谱连续发声、
-    // 无静默，但保留该分支以免日后换曲时漏掉）——
-    // 数据源是 DebugCues.allDone()，与 UI 试听完全同源，不会漂移。
-    final allDoneBody = <String>[];
-    for (final note in allDoneNotes) {
-      if (note.frequencyHz == null) {
-        allDoneBody.add('    Ms_Delay(${note.durationMs});');
-      } else {
-        allDoneBody.add('    Beep(${note.frequencyHz}, ${note.durationMs});');
-      }
-    }
-    final allDoneBodyText = allDoneBody.join('\n');
+    // 测试项整体缩进一层：它们已经是 while (1) 循环体的一部分。
+    final loopBody = commands
+        .map(
+          (command) =>
+              command.split('\n').map((line) => '    $line').join('\n'),
+        )
+        .join('\n\n');
 
     return '''// 调试测试代码（由 PIE-Block Flutter 配置器自动生成）
 #include "main.h"
@@ -1061,9 +1053,9 @@ ${engineerFeedback.isEmpty ? '' : '        UpdateServoFeedback();'}
    步序用一条上行音型 C6-E6-G6-C7-E7 的前 N 个音表示第 N 项
    （个数即序号，不单独播一遍完整音型做前奏），结束用同一音型跳过步序
    落音后对称回落，构成一句「上去、回来」的乐句。音区（八度）负责进位：
-   项 1~5 低八度，项 6 起高八度。全部完成播放《帕赫贝尔D大调卡农》
-   （多声部归并为单音线后的完整旋律），与逐项短乐句形成长度与复杂度
-   双重隔离。 */
+   项 1~5 低八度，项 6 起高八度。
+   整段测试序列放在 while (1) 里循环执行：跑完最后一项自动回到第 1 项，
+   没有「全部完成」的收尾旋律。 */
 uint8_t Channal = 36;
 #define BUZZER_CH PWMA_CH4N_P33
 #define BUZZER_DUTY_ON 5000
@@ -1091,9 +1083,7 @@ uint8_t Channal = 36;
 /* 分区停顿：步序音与测试动作、测试动作与回落之间的静默，
    必须明显长于 CUE_GAP_MS，否则去回两段会连成一个乐句，听不出边界。 */
 #define CUE_SECTION_GAP_MS $sectionGapMs
-/* 全部完成旋律（《卡农》主题）的音高、时值全部逐音写在 AllDoneCue 里，
-   不再用宏概括——曲谱是固定数据，宏只会掩盖它。这里只留循环间隔。 */
-#define CUE_ALLDONE_REPEAT_MS $allDoneRepeatMs
+/* 项间与循环边界的静默：跑完最后一项后同样等这么久再回到第 1 项。 */
 #define TEST_GAP_MS 1000
 #define FRICTION_STEP_MS 1500
 #define FRICTION_START_DUTY 500
@@ -1183,18 +1173,6 @@ static void DoneCue(uint8_t step)
         Ms_Delay(CUE_EVENT_GAP_MS);
     }
     Beep(MotifNote(0, zone), CUE_EVENT_DONE_MS);
-}
-
-/* 全部完成：播放《帕赫贝尔D大调卡农》的完整旋律（854 个音、约 5 分钟）。
-   逐项提示是三条「上去、回来」的短乐句，这里接一段完整正曲，
-   长度和复杂度完全不同量级，一耳朵就能分辨。
-   原曲是多声部，已按「同 tick 和弦取最高音 + 异步重叠时新音打断旧音」
-   归并成单音线，见 DebugCues._canonTheme。
-   音高/时值逐音写死：曲谱是固定数据，展开比宏更清楚，也避开 SDCC
-   对「数组 + 变址」取错字节的问题（见 ExpansionBoradControl 的注释）。 */
-static void AllDoneCue(void)
-{
-$allDoneBodyText
 }
 
 static void ExpansionBoradControl(uint8_t command,
@@ -1287,15 +1265,20 @@ void main(void)
     Board_Init();
     UART_Init(UART_1, UART1_RX_P30, UART1_TX_P31, 230400, TIM1);
     PWM_Init(BUZZER_CH, BUZZER_IDLE_FREQ, 0);
-    ExpansionBoradControl(Init_Order, 50, 50, 50, 50, 50, 50, 50, 50);
-    Ms_Delay(20);
 
-${commands.join('\n\n')}
+    /* 整段测试序列循环执行：跑完最后一项自动回到第 1 项。 */
+    while (1)
+    {
+        /* 每轮开头先把两组 PWM 复位到 main 起始的 50Hz。逐项那条 Init 是
+           生成期按「上一项之后」的静态状态决定要不要发的，只有每轮都从
+           同一个状态起步，这条静态判断在第二轮及以后才继续成立。 */
+        ExpansionBoradControl(Init_Order, 50, 50, 50, 50, 50, 50, 50, 50);
+        Ms_Delay(20);
 
-    ExpansionBoradControl(Duty_Change_Order, 0, 0, 0, 0, 0, 0, 0, 0);
-    while (1) {
-        AllDoneCue();
-        Ms_Delay(CUE_ALLDONE_REPEAT_MS);
+$loopBody
+
+        /* 一轮结束：八路输出全部归零，随后回到第 1 项。 */
+        ExpansionBoradControl(Duty_Change_Order, 0, 0, 0, 0, 0, 0, 0, 0);
     }
 }
 ''';

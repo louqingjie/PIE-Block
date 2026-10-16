@@ -440,12 +440,6 @@ class _DebugCueAuditionState extends ConsumerState<_DebugCueAudition> {
               onSelectionChanged: (selection) =>
                   widget.onStyleChanged(selection.first),
             ),
-            OutlinedButton.icon(
-              onPressed: () =>
-                  _play('all', DebugCues.allDone(widget.style)),
-              icon: Icon(_playing == 'all' ? Icons.stop : Icons.play_arrow),
-              label: const Text('全部完成'),
-            ),
           ],
         ),
         const SizedBox(height: 14),
@@ -2963,7 +2957,8 @@ class _DebugTestsPage extends ConsumerWidget {
 
     return _PageFrame(
       title: '调试测试序列',
-      subtitle: '启用需要测试的引脚并拖动排序。固件会按此顺序逐项执行，完成后保持停机。',
+      subtitle: '启用需要测试的引脚并拖动排序。固件会按此顺序逐项执行，'
+          '跑完最后一项自动回到第 1 项，如此循环。',
       stepId: 'tests',
       child: Column(
         children: [
@@ -2978,7 +2973,8 @@ class _DebugTestsPage extends ConsumerWidget {
             '听到几声就是第几项，听到开始回落就说明这一项做完了；'
             '整句升高一个八度代表进入第 6 项及以后（项数超过 5 时用音区进位）。'
             '上行与回落之间有明显停顿，听到「安静一下」就是换段了。'
-            '全部测试完成后播放一段从低音起的较长旋律并每 2 秒重复。',
+            '整段序列循环执行：跑完最后一项会自动回到第 1 项重新开始，'
+            '每轮之间同样安静 1 秒。',
           ),
           const SizedBox(height: 14),
           _DebugCueAudition(
@@ -3362,7 +3358,7 @@ class _ReviewPage extends ConsumerWidget {
                   title: Text(
                     '已启用 ${config.tests.where((item) => item.enabled).length} / ${config.tests.length} 项测试',
                   ),
-                  subtitle: const Text('全部完成后输出归零，并周期鸣响完成提示'),
+                  subtitle: const Text('每轮结束输出归零，随后自动回到第 1 项循环执行'),
                 ),
                 for (final entry in config.tests.indexed.where(
                   (entry) => entry.$2.enabled,

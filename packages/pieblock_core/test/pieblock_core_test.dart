@@ -743,7 +743,6 @@ void main() {
       expect(code, isNot(contains('FrictionRampTo(3, 800)')));
       expect(code, contains('Ms_Delay(4200);'));
       expect(code, contains('PWM_SET_Frequency(PWMB_CH4_P03, 50, 0);'));
-      expect(code, contains('Ms_Delay(CUE_ALLDONE_REPEAT_MS);'));
       expect(code, contains('static void Uart1TxQuery(uint8_t dat)'));
       expect(code, contains('Uart1TxQuery(control_frame_pack[i])'));
       expect(code, isNot(contains('Uart1SendFrameQuery')));
@@ -826,7 +825,7 @@ void main() {
       );
 
       // P60 要 PWMA=10000Hz，换一次；P64 回到 50Hz，再换一次；P66 与 P64
-      // 同频不重复。加上 main() 起始那次，共 3 次 Init。
+      // 同频不重复。加上循环开头那次复位，共 3 次 Init。
       expect('ExpansionBoradControl(Init_Order, '.allMatches(code).length, 3);
       expect(
         code,
@@ -876,7 +875,10 @@ void main() {
       expect(code, contains('#define CUE_EVENT_DONE_MS 280'));
       expect(code, contains('#define CUE_EVENT_GAP_MS 80'));
       expect(code, contains('#define CUE_SECTION_GAP_MS 300'));
-      expect(code, contains('#define CUE_ALLDONE_REPEAT_MS 2000'));
+
+      // 收尾旋律（《卡农》全部完成音）与它的循环宏已移除：没有「全部完成」这一档。
+      expect(code, isNot(contains('AllDoneCue')));
+      expect(code, isNot(contains('CUE_ALLDONE_REPEAT_MS')));
 
       // 全部完成改为《卡农》曲谱后，旧的琶音时值宏应被收敛掉。
       expect(code, isNot(contains('CUE_ALLDONE_NOTE_MS')));
@@ -896,9 +898,9 @@ void main() {
       expect(code, isNot(contains('CUE_EVENT_NOTE_MS')));
       expect(code, isNot(contains('Beep(MotifNote(i, 0)')));
 
-      // 全部完成是《帕赫贝尔D大调卡农》：逐音渲染，首尾两音都要在。
-      expect(code, contains('Beep(147, 1333);')); // 第一音 D3，卡农低音进行首音
-      expect(code, contains('Beep(740, 2667);')); // 末音 F#5，全曲收束
+      // 全部完成是《卡农》：这条收尾旋律已随循环调试一并移除。
+      expect(code, isNot(contains('Beep(147, 1333);')));
+      expect(code, isNot(contains('Beep(740, 2667);')));
 
       // 步序与结束共用同一套音区进位公式。
       expect(code, contains('#define CUE_ZONE_SPAN 5'));
@@ -916,11 +918,11 @@ void main() {
       // 分区停顿：步序区之后、结束区之前各一处。
       expect(
         code,
-        contains('    StepCue(1);\n    Ms_Delay(CUE_SECTION_GAP_MS);'),
+        contains('        StepCue(1);\n        Ms_Delay(CUE_SECTION_GAP_MS);'),
       );
       expect(
         code,
-        contains('    Ms_Delay(CUE_SECTION_GAP_MS);\n    DoneCue('),
+        contains('        Ms_Delay(CUE_SECTION_GAP_MS);\n        DoneCue('),
       );
       // 每一项都应有 2 处分区停顿（步序区后、结束区前）。
       expect('Ms_Delay(CUE_SECTION_GAP_MS);'.allMatches(code).length, 6);
@@ -946,13 +948,12 @@ void main() {
         lessThan(code.indexOf('DoneCue(1);')),
       );
 
-      // 结尾进入全部完成循环，重复间隔同样走宏。
-      expect(
-        code,
-        contains(
-          'while (1) {\n        AllDoneCue();\n        Ms_Delay(CUE_ALLDONE_REPEAT_MS);',
-        ),
-      );
+      // 整段序列改为循环执行：测试项只写一遍，全部包在 while (1) 里。
+      const loopHead = '\n    while (1)\n    {';
+      expect(loopHead.allMatches(code).length, 1);
+      expect(code.indexOf(loopHead), lessThan(code.indexOf('StepCue(1);')));
+      expect(code, isNot(contains('AllDoneCue')));
+      expect(code, isNot(contains('CUE_ALLDONE_REPEAT_MS')));
 
       // 旧版两个平音常量不应残留。
       expect(code, isNot(contains('BUZZER_FREQ_READY')));
@@ -970,9 +971,6 @@ void main() {
       expect(code, contains('#define CUE_EVENT_DONE_MS 140'));
       expect(code, contains('#define CUE_EVENT_GAP_MS 40'));
       expect(code, contains('#define CUE_SECTION_GAP_MS 150'));
-      expect(code, contains('#define CUE_ALLDONE_REPEAT_MS 1000'));
-      // 《卡农》曲谱逐音渲染，时值也随风格减半（第一音 1333ms → 666ms）。
-      expect(code, contains('Beep(147, 666);'));
       // 音高与编码方式不随风格变化。
       expect(code, contains('#define CUE_C6 1047'));
       expect(code, contains('#define CUE_ZONE_SPAN 5'));
@@ -1035,21 +1033,8 @@ void main() {
             reason: '上行音型第 $i 个音应高于前一个');
       }
 
-      // 全部完成现在是《帕赫贝尔D大调卡农》：从卡农低音进行首音
-      // （D3，147Hz）开始，不再靠“唯一低音区长琶音”来辨识。
-      expect(
-        DebugCues.allDone(DebugCueStyle.standard).first.frequencyHz,
-        147,
-      );
+      // 上行音型的第一个音仍是整条方案的音高基准。
       expect(DebugCues.ascentLow.first, DebugCues.noteC6);
-
-      // 《卡农》曲谱长度远超逐项提示，长度本身就是最强的辨识特征。
-      expect(
-        DebugCues.durationMs(DebugCues.allDone(DebugCueStyle.standard)),
-        greaterThan(
-          DebugCues.durationMs(DebugCues.fullStep(5, DebugCueStyle.standard)),
-        ),
-      );
 
       // 紧凑风格整体短于标准风格。
       expect(
@@ -1223,11 +1208,6 @@ void main() {
       expect(cptEvent.eventGapMs, stdEvent.eventGapMs ~/ 2);
       expect(cptEvent.sectionGapMs, stdEvent.sectionGapMs ~/ 2);
 
-      expect(
-        DebugCues.allDoneRepeatMs(compact),
-        DebugCues.allDoneRepeatMs(standard) ~/ 2,
-      );
-
       // 同一条曲线的总时长也应严格减半，避免某个时值漏乘。
       for (var index = 1; index <= 10; index++) {
         expect(
@@ -1236,50 +1216,47 @@ void main() {
           reason: '步 $index 的完整提示应精确减半',
         );
       }
-
-      // 全部完成的《卡农》曲谱也走同一套缩放：结构完全一致，
-      // 每个音的时值都是标准风格的一半（向下取整）。
-      final stdAll = DebugCues.allDone(standard);
-      final cptAll = DebugCues.allDone(compact);
-      expect(cptAll.length, stdAll.length, reason: '曲线结构不应因风格改变');
-      for (var i = 0; i < stdAll.length; i++) {
-        expect(cptAll[i].frequencyHz, stdAll[i].frequencyHz);
-        expect(cptAll[i].durationMs, stdAll[i].durationMs ~/ 2);
-      }
     });
 
-    test('全部完成的卡农曲谱已归并为连续单音线', () {
-      final all = DebugCues.allDone(DebugCueStyle.standard);
+    test('调试序列跑完最后一项后自动回到第 1 项', () {
+      final code = CodeGenerator.generate(completeDebug());
 
-      // 归并后没有静音段：所有段都带频率（原曲多声部被压成一条单音线）。
+      // 测试项只写一遍，整段包在 while (1) 里循环执行；没有收尾旋律。
+      // 按「换行 + 缩进 + while (1)」匹配，避开文件头注释里提到的同名文字。
+      const loopHead = '\n    while (1)\n    {';
+      expect(loopHead.allMatches(code).length, 1);
+      expect(code.indexOf(loopHead), lessThan(code.indexOf('StepCue(1);')));
+      expect('StepCue(1);'.allMatches(code).length, 1);
+      expect('DoneCue(3);'.allMatches(code).length, 1);
+      expect(code, isNot(contains('AllDoneCue')));
+      expect(code, isNot(contains('CUE_ALLDONE_REPEAT_MS')));
+
+      // 每轮开头把 PWM 组频率复位到 main 起始的 50Hz：逐项那条 Init 是生成期
+      // 按静态顺序算出来的，只有每轮都从这个状态起步，第二轮及以后才继续成立。
       expect(
-        all.where((note) => note.frequencyHz == null),
-        isEmpty,
-        reason: '单音线应连续发声，不应出现静音段',
+        code,
+        contains(
+          'ExpansionBoradControl(Init_Order, 50, 50, 50, 50, 50, 50, 50, 50);'
+          '\n        Ms_Delay(20);',
+        ),
+      );
+      expect(
+        code.indexOf(
+          'ExpansionBoradControl(Init_Order, 50, 50, 50, 50, 50, 50, 50, 50);',
+        ),
+        lessThan(code.indexOf('StepCue(1);')),
       );
 
-      // 起音严格递增（不重叠），即每个音都在前一个音结束后才开始。
-      // 这保证了「异步重叠打断旧音」的规则在数据层已落实：
-      // 若还有重叠，这里会看到相邻两音首尾时间交叉。
-      expect(all.length, greaterThan(800), reason: '曲谱应有 800 音以上');
-
-      // 卡农低音进行（D-A-B-F#-G-D-G-A）作为全曲开头，逐音核对前 8 音。
-      const lowProgression = [147, 110, 123, 92, 98, 73, 98, 110];
-      expect(
-        all.take(8).map((note) => note.frequencyHz).toList(),
-        lowProgression,
-        reason: '前 8 音应是卡农低音进行（MIDI 50-45-47-42-43-38-43-45）',
+      // 最后一项之后同样留出项间间隔，再八路归零，然后才回到第 1 项。
+      final lastGap = code.lastIndexOf('Ms_Delay(TEST_GAP_MS);');
+      expect(lastGap, greaterThan(code.indexOf('DoneCue(3);')));
+      final zeroAt = code.indexOf(
+        'ExpansionBoradControl(Duty_Change_Order, 0, 0, 0, 0, 0, 0, 0, 0);',
+        lastGap,
       );
-
-      // 第 9 音起接高声部：同 tick 有低音 + 高音时取高者（和弦取高）。
-      // 原始 MIDI 在 tick 1920 处同时有 MIDI 50 与 78，归并后应取 78（740Hz）。
-      expect(all[8].frequencyHz, 740);
-
-      // 曲谱总时长约 5 分钟（301 秒），远长于逐项提示。
-      expect(
-        DebugCues.durationMs(all),
-        inInclusiveRange(295000, 310000),
-      );
+      expect(zeroAt, greaterThan(lastGap));
+      // 归零就是循环体末尾：其后只有循环体的收尾。
+      expect(code.substring(zeroAt), isNot(contains('StepCue(')));
     });
 
     test('电机和舵机仍要求配置方向', () {

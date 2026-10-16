@@ -727,11 +727,16 @@ void main() {
     expect(find.text('测试时长'), findsNothing);
     expect(tester.takeException(), isNull);
 
-    // 「全部完成」把整条曲线交给试听实现，再点一次是停止播放。
-    final allDoneButton = find.widgetWithText(OutlinedButton, '全部完成');
-    await tester.ensureVisible(allDoneButton);
+    // 收尾旋律与它的「全部完成」按钮已移除；风格开关与逐项试听按钮保留。
+    expect(find.widgetWithText(OutlinedButton, '全部完成'), findsNothing);
+    expect(find.text('标准'), findsOneWidget);
+    expect(find.text('紧凑'), findsOneWidget);
+
+    // 「第 1 项」把整条曲线交给试听实现，再点一次是停止播放。
+    final stepButton = find.widgetWithText(OutlinedButton, '第 1 项');
+    await tester.ensureVisible(stepButton);
     await tester.pumpAndSettle();
-    await tester.tap(allDoneButton);
+    await tester.tap(stepButton);
     await tester.pump();
     expect(preview.played, hasLength(1));
     // DebugCueNote 没有值相等语义，按「音高 + 时值」逐段比对同一条曲线。
@@ -739,9 +744,9 @@ void main() {
       for (final note in notes) (note.frequencyHz, note.durationMs),
     ];
     final played = preview.played.single;
-    expect(curve(played), curve(DebugCues.allDone(DebugCueStyle.standard)));
+    expect(curve(played), curve(DebugCues.fullStep(1, DebugCueStyle.standard)));
 
-    await tester.tap(allDoneButton);
+    await tester.tap(stepButton);
     await tester.pump();
     expect(preview.stopCalls, 1);
 

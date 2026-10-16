@@ -64,33 +64,17 @@ Uint8List _renderWav(List<DebugCueNote> notes, String label) {
 int _ms(List<DebugCueNote> notes) =>
     notes.fold(0, (total, note) => total + note.durationMs);
 
-/// 取足够覆盖 [targetMs] 的前缀段数，用于生成节选试听文件。
-int _prefixForDuration(List<DebugCueNote> notes, int targetMs) {
-  var total = 0;
-  for (var index = 0; index < notes.length; index++) {
-    total += notes[index].durationMs;
-    if (total >= targetMs) return index + 1;
-  }
-  return notes.length;
-}
-
 void main() {
   final outputDir = Directory('output/试听');
   if (!outputDir.existsSync()) outputDir.createSync(recursive: true);
 
   for (final style in DebugCueStyle.values) {
     stdout.writeln('${style.label}风格：');
-    final allDone = DebugCues.allDone(style);
     final curves = <String, List<DebugCueNote>>{
       // 整项 = 上行 N 音 + 停顿 + 对称回落，固件里听到的就是这个。
       'fullStep3': DebugCues.fullStep(3, style),
       // 进位后的整项：音区升八度，个数重新从 1 开始。
       'fullStep6': DebugCues.fullStep(6, style),
-      // 全部完成 = 《帕赫贝尔D大调卡农》全曲（约 5 分钟，文件较大）。
-      'allDone': allDone,
-      // 前 60 秒节选：便于快速试听旋律，不用等完整曲。
-      'allDoneHead':
-          allDone.take(_prefixForDuration(allDone, 60000)).toList(),
     };
     for (final entry in curves.entries) {
       final name = 'cue_${entry.key}_${style.name}.wav';
