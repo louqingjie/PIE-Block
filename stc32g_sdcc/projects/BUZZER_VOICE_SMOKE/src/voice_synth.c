@@ -382,7 +382,7 @@ uint8_t VoiceSynth_NextSample(void)
         out = 0;
     else if (out > 255)
         out = 255;
-    return (uint8_t)out;
+    return voiceCompressionTable[(uint8_t)out];
 }
 
 uint8_t VoiceSynth_IsActive(void)

@@ -25,6 +25,9 @@
 /* 增益字节 -> 线性增益（8*残差 RMS 的开方压扩），由参数生成器产出。 */
 extern const uint16_t VOICE_CODE voiceGainTable[256];
 
+/* 输出压缩曲线（幂函数）：峰值不动、抬高平均电平，补偿压电片效率低导致的听感偏轻。 */
+extern const uint8_t VOICE_CODE voiceCompressionTable[256];
+
 /* 开始播放一段参数表；frame_count 为 0 表示保持静音。 */
 void VoiceSynth_Start(const uint8_t VOICE_CODE *frames, uint16_t frame_count);
 /* 取下一个 8 位 PWM 样本（0..255）。非阻塞，供定时器中断按采样率调用。 */

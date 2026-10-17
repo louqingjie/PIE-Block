@@ -37,8 +37,8 @@ PEAK_PREFERENCE = 0.85
 SILENCE_RMS = 8.0
 # 参考音归一化峰值：留 0.93 满量程，避免 TTS 输出本身贴顶。
 NORMALIZE_PEAK = 0.93
-# 合成输出峰值目标（0.85 满量程）；校准量直接吸收进增益满量程。
-TARGET_PEAK = 27853.0
+# 合成输出峰值目标（0.96 满量程）；压缩曲线会把平均电平抬上去，所以峰值可以用满。
+TARGET_PEAK = 31211.0
 # 增益满量程上限：voiceGainTable 是 uint16。
 GAIN_SCALE_LIMIT = 65535
 # 帧表尾部补的淡出帧数（每帧 10ms），随后是 1 帧终止帧。
@@ -404,6 +404,7 @@ def emit_header(path: Path, utterances, gain_scale: int, sample_rate: float) -> 
         f"#define VOICE_GAIN_FULL_SCALE {gain_scale}",
         "",
         "extern const uint16_t voiceGainTable[256];",
+        "extern const uint8_t voiceCompressionTable[256];",
     ]
     for name, frames in utterances:
         count = len(frames) // vm.FRAME_BYTES
@@ -414,7 +415,7 @@ def emit_header(path: Path, utterances, gain_scale: int, sample_rate: float) -> 
     path.write_text("\n".join(body), encoding="utf-8")
 
 
-def emit_source(path: Path, utterances, gain_table) -> None:
+def emit_source(path: Path, utterances, gain_table, sample_gamma: float) -> None:
     body = [
         "/* 由 stc32g_sdcc/tools/voice/make_voice_params.py 生成，请勿手工修改。 */",
         "",
@@ -422,6 +423,9 @@ def emit_source(path: Path, utterances, gain_table) -> None:
         "",
         "/* 增益字节 -> 线性增益（8*残差 RMS）的开方压扩表，替代运行时除法。 */",
         c_word_array("voiceGainTable", gain_table),
+        "",
+        f"/* 输出压缩曲线（幂函数，指数 {vm.COMPRESSION_GAMMA}）：峰值不动、抬高平均电平。 */",
+        c_byte_array("voiceCompressionTable", bytes(vm.build_compression_table(sample_gamma))),
         "",
     ]
     for name, frames in utterances:
@@ -435,12 +439,14 @@ def emit_source(path: Path, utterances, gain_table) -> None:
 
 # ------------------------------------------------------------------------------ 主流程
 
-def render_peak(frames_list: list[bytes], gain_table) -> float | None:
+def render_peak(frames_list: list[bytes], gain_table,
+                compression_gamma: float | None = None) -> float | None:
     """渲染并返回峰值；格型定点越界时返回 None（调用方据此降电平）。"""
     peak = 0.0
     for frames in frames_list:
         try:
-            idle = vm.render(frames, gain_table, tilt=True)
+            idle = vm.render(frames, gain_table, tilt=True,
+                             compression_gamma=compression_gamma)
         except AssertionError:
             return None
         peak = max(peak, float(np.max(np.abs(np.array(idle) - vm.PWM_IDLE))) * 256.0)
@@ -460,6 +466,10 @@ def main() -> int:
     config = json.loads(args.config.read_text(encoding="utf-8"))
     reference_rate = int(config.get("reference_sample_rate", 8000))
     rate = int(config.get("sample_rate_hz", reference_rate))
+    # 响度与可懂度的取舍：指数越小越响、失真越大。实机听感偏轻时先调这里。
+    sample_gamma = float(config.get("compression_gamma", vm.COMPRESSION_GAMMA))
+    gain_gamma = float(config.get("gain_compression_gamma", vm.GAIN_COMPRESSION_GAMMA))
+    print(f"[配置] 采样压缩 γ={sample_gamma}，帧增益压缩 γ={gain_gamma}")
 
     analyzed: dict[str, list[dict]] = {}
     references: dict[str, np.ndarray] = {}
@@ -490,7 +500,7 @@ def main() -> int:
             return None
         calibration = gain_scale / base_scale
         tables = [build_table(analyzed[name], gain_scale, calibration)[0] for name in analyzed]
-        peak = render_peak(tables, vm.build_gain_table(gain_scale))
+        peak = render_peak(tables, vm.build_gain_table(gain_scale, gain_gamma), sample_gamma)
         if peak is None or peak > TARGET_PEAK:
             return None
         return gain_scale, calibration, peak
@@ -517,7 +527,7 @@ def main() -> int:
         raise SystemExit(f"激励幅度 {headroom:.0f} 超过上限 {limit:.0f}，请提高 EXC_SHIFT")
     print(f"[量化] 最大激励 = {headroom:.0f} / 上限 {limit:.0f}")
 
-    gain_table = vm.build_gain_table(gain_scale)
+    gain_table = vm.build_gain_table(gain_scale, gain_gamma)
     utterances: list[tuple[str, bytes]] = []
     params: dict = {
         "format_version": 1,
@@ -526,6 +536,9 @@ def main() -> int:
         "hop_samples": vm.HOP_SAMPLES,
         "gain_full_scale": gain_scale,
         "gain_table": gain_table,
+        "compression_table": vm.build_compression_table(sample_gamma),
+        "compression_gamma": sample_gamma,
+        "gain_compression_gamma": gain_gamma,
         "utterances": [],
     }
     for utterance in config["utterances"]:
@@ -549,7 +562,7 @@ def main() -> int:
               f"{len(frames) // vm.FRAME_BYTES * vm.HOP_SAMPLES / rate:.2f}s)")
 
     emit_header(args.out_h, utterances, gain_scale, rate)
-    emit_source(args.out_c, utterances, gain_table)
+    emit_source(args.out_c, utterances, gain_table, sample_gamma)
     args.params_json.parent.mkdir(parents=True, exist_ok=True)
     args.params_json.write_text(json.dumps(params, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"[写出] {args.out_h.name} / {args.out_c.name} / {args.params_json.name}")
@@ -557,7 +570,7 @@ def main() -> int:
     if args.preview_dir:
         args.preview_dir.mkdir(parents=True, exist_ok=True)
     for name, frames in utterances:
-        idle = vm.render(frames, gain_table, tilt=True)
+        idle = vm.render(frames, gain_table, tilt=True, compression_gamma=sample_gamma)
         plain = (np.array(idle, dtype=np.float64) - vm.PWM_IDLE) * 256.0
         reference = references[name]
         clipped = int(np.count_nonzero((np.array(idle) == 0) | (np.array(idle) == 255)))

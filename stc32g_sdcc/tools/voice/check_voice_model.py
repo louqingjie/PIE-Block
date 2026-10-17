@@ -163,9 +163,10 @@ def check_lattice() -> None:
 
 def check_tables(params: dict) -> None:
     gain_table = params["gain_table"]
+    gamma = params.get("compression_gamma")
     for utterance in params["utterances"]:
         frames = bytes.fromhex(utterance["frames_hex"])
-        idle = vm.render(frames, gain_table, tilt=True)
+        idle = vm.render(frames, gain_table, tilt=True, compression_gamma=gamma)
         values = np.array(idle) - vm.PWM_IDLE
         peak = int(np.max(np.abs(values)))
         clipped = int(np.count_nonzero((np.array(idle) == 0) | (np.array(idle) == 255)))
@@ -203,6 +204,13 @@ def check_c_equivalence(params: dict, project_inc: Path, work_dir: Path) -> None
         chunk = gain_table[start:start + 12]
         data_lines.append("    " + " ".join(f"{value}," for value in chunk))
     data_lines.append("};")
+    data_lines.append("const uint8_t voiceCompressionTable[256] =")
+    data_lines.append("{")
+    compression = params["compression_table"]
+    for start in range(0, 256, 16):
+        chunk = compression[start:start + 16]
+        data_lines.append("    " + " ".join(f"{value}," for value in chunk))
+    data_lines.append("};")
     data_source = work_dir / "host_check_data.c"
     data_source.write_text("\n".join(data_lines) + "\n", encoding="utf-8")
 
@@ -225,7 +233,8 @@ def check_c_equivalence(params: dict, project_inc: Path, work_dir: Path) -> None
     if run.returncode != 0:
         raise SystemExit("主机侧程序退出码非零：" + run.stderr)
     c_samples = [int(line) for line in run.stdout.split()]
-    python_samples = vm.render(frames, gain_table, tilt=True)
+    python_samples = vm.render(frames, gain_table, tilt=True,
+                               compression_gamma=params.get("compression_gamma"))
     if len(c_samples) != len(python_samples):
         raise SystemExit(f"样本数不一致：C {len(c_samples)} vs Python {len(python_samples)}")
     mismatches = [index for index, (a, b) in enumerate(zip(c_samples, python_samples)) if a != b]

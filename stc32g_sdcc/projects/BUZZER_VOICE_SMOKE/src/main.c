@@ -14,8 +14,11 @@
 #include "voice_data.h"
 
 #define VOICE_BUZZER_CH PWMB_CH3_P33
-/* FOSC / 129600 = 256，正好给出 8 位占空比分辨率。 */
-#define VOICE_CARRIER_HZ 129600UL
+/* FOSC / 64800 = 512，占空比分辨率 9 位。
+ * 载波从 129.6kHz 降到 64.8kHz 是为了响度：压电片是容性负载（约 15nF），
+ * 129.6kHz 时容抗只有 ~80Ω，与引脚内阻分压后加到压电片上的电压只剩六成左右；
+ * 降一半载波让容抗翻倍，分压损失明显减小，同时仍远高于音频带。 */
+#define VOICE_CARRIER_HZ 64800UL
 /* PWM_Init 的占空比单位是万分之一：5000 = 50%。 */
 #define VOICE_DUTY_IDLE 5000UL
 /* Timer0 1T 模式（AUXR.7=1，计数频率 = FOSC）：65536-4608 = 60928，
@@ -30,9 +33,9 @@
  * HSPWM 的比较值寄存器必须经异步窗口写：这与 CNU_PIE_PWM.c 里的
  * PWM_WriteB() 完全一致（该函数是 static，这里复制同一套时序）。
  * PWMB_CH3 的 CCR 地址来自 PWM_CCR_ADDR[PWMB_CH3_P33 >> 4] = 0x7efef9，
- * 异步窗口只取低 8 位，即 0xF9/0xFA。样本只有 8 位，高字节恒为 0，
- * 所以每个采样周期只写低字节，避免高/低字节不同步造成的一次占空比毛刺。
+ * 异步窗口只取低 8 位，即 0xF9/0xFA。
  */
+#define VOICE_CCR3H_ADDR 0xF9
 #define VOICE_CCR3L_ADDR 0xFA
 
 static void VoicePwmWriteB(uint8_t address, uint8_t value)
@@ -46,7 +49,10 @@ static void VoicePwmWriteB(uint8_t address, uint8_t value)
 
 void VoiceTimerTick(void)
 {
-    VoicePwmWriteB(VOICE_CCR3L_ADDR, VoiceSynth_NextSample());
+    /* 8 位样本 -> 9 位比较值（ARR = 511），先写高字节再写低字节。 */
+    uint16_t compare = (uint16_t)((uint16_t)VoiceSynth_NextSample() << 1);
+    VoicePwmWriteB(VOICE_CCR3H_ADDR, (uint8_t)(compare >> 8));
+    VoicePwmWriteB(VOICE_CCR3L_ADDR, (uint8_t)(compare & 0x00FF));
 }
 
 static void VoiceTimerInit(void)
