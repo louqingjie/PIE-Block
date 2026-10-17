@@ -106,7 +106,11 @@
     "BUZZER_MUSIC_SMOKE": {"library_groups": ["pwm"]},
     "BUZZER_MUSIC_SONG_SMOKE": {"library_groups": ["pwm"]},
     "BUZZER_MUSIC_GENERATED": {"library_groups": ["pwm"]},
-    "BUZZER_VOICE_SMOKE": {"library_groups": ["pwm", "timer", "voice"]},
+    "BUZZER_VOICE_SMOKE": {
+      "library_groups": ["pwm", "timer", "voice"],
+      "comment": "语音合成是每 125us 一次的中断，按速度而不是体积优化",
+      "compile_flags": ["-mmcs251", "--model-large", "--stack-auto", "--opt-code-speed", "--constseg", "CSEG", "-c"]
+    },
     "DELAY_SMOKE": {"library_groups": ["gpio"]},
     "FRICTION_CALIBRATION": {"library_groups": ["boards", "drivers"]},
     "LCD_SPI_SMOKE": {"library_groups": ["lcd"]},

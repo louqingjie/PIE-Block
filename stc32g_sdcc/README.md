@@ -103,7 +103,8 @@ pwsh .\stc32g_sdcc\build_voice.ps1 `
 
 脚本依次用系统中文 TTS 生成参考音、做 LPC-10 分析并量化成 13 字节/帧的参数表、
 校验定点模型（含把 `voice_synth.c` 编成原生程序与 Python 定点模型逐样本比对），
-最后调用 `build.ps1` 出 HEX。语料在 `projects/BUZZER_VOICE_SMOKE/voice.json`，
+调用 `build.ps1` 出 HEX，最后再扫一遍汇编做中断预算检查（热路径不允许出现
+32 位乘除运行库调用）。语料在 `projects/BUZZER_VOICE_SMOKE/voice.json`，
 设计与验证细节见 `docs/design/蜂鸣器LPC语音合成示例固件.md`。
 
 ### 通过代码生成器直接构建 SDCC 音乐 HEX

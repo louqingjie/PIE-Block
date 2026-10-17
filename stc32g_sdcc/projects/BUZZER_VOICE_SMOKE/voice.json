@@ -3,6 +3,8 @@
   "comment": "BUZZER_VOICE_SMOKE 的朗诵语料。参考音由 tools/voice/render_reference.ps1 用系统中文 TTS 生成，再经 tools/voice/make_voice_params.py 做 LPC-10 分析。P60 按引脚命名逐位读作 P六零；另一份 P六十 用于对比两种读法。",
   "voice_culture": "zh-CN",
   "reference_sample_rate": 8000,
+  "sample_rate_hz": 7200,
+  "comment_rate": "合成采样率 7.2kHz：10 阶格型在 8kHz 下每样本要 130us，超过 125us 中断预算；7.2kHz 下预算 139us，留出余量。参考音由 SAPI 以 8kHz 生成后重采样。",
   "utterances": [
     {
       "name": "PLiuling",

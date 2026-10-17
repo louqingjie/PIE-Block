@@ -70,3 +70,7 @@ if (![string]::IsNullOrWhiteSpace($LibDir)) { $buildArgs['LibDir'] = $LibDir }
 if (![string]::IsNullOrWhiteSpace($StdInclude)) { $buildArgs['StdInclude'] = $StdInclude }
 & (Join-Path $root 'build.ps1') @buildArgs
 if ($LASTEXITCODE -ne 0) { throw "SDCC 构建失败，退出码 $LASTEXITCODE" }
+
+# 中断预算检查必须在构建之后：它读的是刚生成的 voice_synth.asm。
+& $Python (Join-Path $root 'tools\voice\check_voice_model.py') --params-json $paramsJson --asm-only
+if ($LASTEXITCODE -ne 0) { throw "中断预算检查失败，退出码 $LASTEXITCODE" }

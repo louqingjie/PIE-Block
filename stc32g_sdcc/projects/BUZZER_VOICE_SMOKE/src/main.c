@@ -18,9 +18,9 @@
 #define VOICE_CARRIER_HZ 129600UL
 /* PWM_Init 的占空比单位是万分之一：5000 = 50%。 */
 #define VOICE_DUTY_IDLE 5000UL
-/* Timer0 1T 模式（AUXR.7=1，计数频率 = FOSC）：65536-4147 = 61389，
- * 中断频率 = 33177600/4147 = 8000.5Hz。 */
-#define VOICE_TIMER_RELOAD 61389U
+/* Timer0 1T 模式（AUXR.7=1，计数频率 = FOSC）：65536-4608 = 60928，
+ * 中断频率 = 33177600/4608 = 7200Hz（正好整除）。 */
+#define VOICE_TIMER_RELOAD 60928U
 #define VOICE_GAP_MS 800U
 #define VOICE_LED_PORT GPIO_P3
 #define VOICE_LED_A GPIO_Pin_5

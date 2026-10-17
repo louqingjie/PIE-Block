@@ -79,10 +79,17 @@ foreach ($relativeInclude in @($manifest.include_dirs)) {
 
 $sourceMap = @{}
 $librarySourceMap = @{}
+$projectCompileFlags = @{}
 foreach ($name in $projectNames) {
     $spec = $manifest.projects.$name
     if ($null -eq $spec) {
         throw "SDCC 构建清单缺少项目: $name"
+    }
+    # 项目可以在清单里自带 compile_flags（例如语音合成工程按速度而非体积优化）。
+    $projectCompileFlags[$name] = if ($spec.compile_flags) {
+        @($spec.compile_flags)
+    } else {
+        @($manifest.compile_flags)
     }
     $librarySources = @()
     foreach ($groupName in @($spec.library_groups)) {
@@ -174,7 +181,7 @@ function Invoke-ProjectBuild([string]$Name) {
         if ([IO.Path]::GetFullPath($source) -eq [IO.Path]::GetFullPath((Join-Path $projectRoot 'src\main.c'))) {
             $compileExtraArgs = @('--include', $generatedInterruptHeader)
         }
-        $compileArgs = @($manifest.compile_flags) + $includeArgs + $projectIncludeArgs + $compileExtraArgs + @('-o', $object, $source)
+        $compileArgs = @($projectCompileFlags[$Name]) + $includeArgs + $projectIncludeArgs + $compileExtraArgs + @('-o', $object, $source)
         Invoke-Sdcc $compileArgs
         if ($libraryRelativeSources -contains $relativeSource) {
             $libraryObjects += $object

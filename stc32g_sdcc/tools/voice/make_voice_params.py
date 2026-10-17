@@ -304,20 +304,30 @@ def build_table(frames: list[dict], gain_scale: int,
     return bytes(packed), report
 
 
-def upsample_2x(samples: np.ndarray) -> np.ndarray:
-    """零插值 + 窗函数 sinc 低通，8kHz -> 16kHz。
+def resample(samples: np.ndarray, source_rate: int, target_rate: int) -> np.ndarray:
+    """窗函数 sinc 插值重采样。
 
-    只为喂给 SAPI 识别器（它的前端按 16kHz 处理，喂 8kHz 会得到完全错误的
-    结果）；不参与固件，也不影响试听用的 8kHz 预览。
+    用来把 SAPI 的 8kHz 参考音搬到固件的目标采样率，以及把预览音升到识别器
+    要求的 16kHz。不参与固件。
     """
-    taps = 65
-    offset = (taps - 1) / 2.0
-    index = np.arange(taps) - offset
-    kernel = np.sinc(index / 2.0) * np.hamming(taps)
-    kernel /= kernel.sum()
-    upsampled = np.zeros(samples.size * 2)
-    upsampled[::2] = samples
-    return np.convolve(upsampled, kernel, mode="same") * 2.0
+    if source_rate == target_rate:
+        return samples
+    ratio = target_rate / float(source_rate)
+    count = int(round(samples.size * ratio))
+    taps = 33
+    half = (taps - 1) // 2
+    offsets = np.arange(-half, half + 1)
+    window = np.hamming(taps)
+    output = np.zeros(count)
+    for index in range(count):
+        center = index / ratio
+        base = int(math.floor(center))
+        positions = base + offsets
+        weights = np.sinc(positions - center) * window
+        valid = (positions >= 0) & (positions < samples.size)
+        output[index] = float(np.sum(samples[positions[valid]] * weights[valid])
+                              / np.sum(weights[valid]))
+    return output
 
 
 # ------------------------------------------------------------------------ 压电片模型
@@ -390,8 +400,6 @@ def emit_header(path: Path, utterances, gain_scale: int, sample_rate: float) -> 
         "#include <stdint.h>",
         "",
         "/* 由 stc32g_sdcc/tools/voice/make_voice_params.py 生成，请勿手工修改。 */",
-        f"#define VOICE_FRAME_BYTES {vm.FRAME_BYTES}",
-        f"#define VOICE_HOP_SAMPLES {vm.HOP_SAMPLES}",
         f"#define VOICE_SAMPLE_RATE_HZ {int(round(sample_rate))}",
         f"#define VOICE_GAIN_FULL_SCALE {gain_scale}",
         "",
@@ -450,7 +458,8 @@ def main() -> int:
     args = parser.parse_args()
 
     config = json.loads(args.config.read_text(encoding="utf-8"))
-    rate = int(config.get("reference_sample_rate", 8000))
+    reference_rate = int(config.get("reference_sample_rate", 8000))
+    rate = int(config.get("sample_rate_hz", reference_rate))
 
     analyzed: dict[str, list[dict]] = {}
     references: dict[str, np.ndarray] = {}
@@ -459,8 +468,10 @@ def main() -> int:
         if not reference.exists():
             raise SystemExit(f"缺少参考音 {reference}；先运行 render_reference.ps1 或 build_voice.ps1")
         samples, wav_rate = read_wav(reference)
-        if wav_rate != rate:
-            raise SystemExit(f"{reference}: 期望 {rate}Hz，实际 {wav_rate}Hz")
+        if wav_rate != reference_rate:
+            raise SystemExit(f"{reference}: 期望 {reference_rate}Hz，实际 {wav_rate}Hz")
+        if rate != reference_rate:
+            samples = resample(samples, reference_rate, rate)
         peak = float(np.max(np.abs(samples))) if samples.size else 0.0
         references[utterance["name"]] = samples * (NORMALIZE_PEAK * 32767.0 / peak) if peak else samples
         frames = trim_silence(analyze_utterance(samples, rate))
@@ -555,7 +566,9 @@ def main() -> int:
               f"峰值={np.max(np.abs(plain)):6.0f} 削顶={clipped * 100.0 / len(idle):.2f}%")
         if args.preview_dir:
             write_wav(args.preview_dir / f"{name}_synth.wav", plain, rate)
-            write_wav(args.preview_dir / f"{name}_16k.wav", upsample_2x(plain), rate * 2)
+            # 识别器前端按 16kHz 处理，喂低采样率会得到完全错误的结果。
+            write_wav(args.preview_dir / f"{name}_16k.wav",
+                      resample(plain, rate, 16000), 16000)
             write_wav(args.preview_dir / f"{name}_piezo.wav",
                       piezo_response(plain, rate), rate)
     if args.preview_dir:

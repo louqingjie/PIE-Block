@@ -11,8 +11,12 @@
 #define VOICE_CODE __code
 #endif
 
-#define VOICE_FRAME_BYTES 13
-#define VOICE_HOP_SAMPLES 80
+#define VOICE_ORDER 10
+/* 帧格式：周期 + 混合比 + 增益 + ORDER 个反射系数。
+ * 必须与 tools/voice/voice_model.py 的 FRAME_BYTES 一致（逐样本比对会验证）。 */
+#define VOICE_FRAME_BYTES (3 + VOICE_ORDER)
+/* 帧率 100 帧/秒；采样率 7.2kHz（Timer0 重载 60928 = 65536-4608）-> 每帧 72 样本。 */
+#define VOICE_HOP_SAMPLES 72
 #define VOICE_INTERP_STEPS 8
 #define VOICE_SAMPLES_PER_STEP (VOICE_HOP_SAMPLES / VOICE_INTERP_STEPS)
 /* 无声样本值：50% 占空比。0 和 255 是直流，同样无声，但 128 是线性中点。 */
