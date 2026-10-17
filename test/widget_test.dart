@@ -1241,6 +1241,89 @@ void main() {
     debugDefaultTargetPlatformOverride = null;
   });
 
+  testWidgets('新建项目时项目名称与文件名双向同步', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    final dialogs = _FakeProjectFileDialogs(
+      savePath: r'C:\projects\射手.pieproj',
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(home: HomeScreen(fileDialogs: dialogs)),
+      ),
+    );
+    await tester.tap(find.text('新建项目'));
+    await tester.pumpAndSettle();
+
+    final nameField = find.byType(TextField).at(0);
+    final pathField = find.byType(TextField).at(1);
+
+    // 改保存位置里的文件名，项目名称跟着变。
+    await tester.enterText(pathField, r'C:\projects\old.pieproj');
+    await tester.pump();
+    expect(tester.widget<TextField>(nameField).controller!.text, 'old');
+
+    // 改项目名称，保存位置里的文件名跟着变，目录保持不变。
+    await tester.enterText(nameField, '我的机器人');
+    await tester.pump();
+    expect(
+      tester.widget<TextField>(pathField).controller!.text,
+      r'C:\projects\我的机器人.pieproj',
+    );
+
+    // 通过「浏览」选定的文件也会把名称同步回来。
+    await tester.tap(find.text('浏览'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(nameField).controller!.text, '射手');
+    expect(
+      tester.widget<TextField>(pathField).controller!.text,
+      r'C:\projects\射手.pieproj',
+    );
+
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  testWidgets('Android 选中文档后名称回填，改名不改系统文档引用', (tester) async {
+    // Android 的保存位置来自只读的系统文档选择器，不能按文本框内容重命名。
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    final dialogs = _FakeProjectFileDialogs(
+      savePath: 'content://documents/robot.pieproj',
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(home: HomeScreen(fileDialogs: dialogs)),
+      ),
+    );
+    await tester.tap(find.text('新建项目'));
+    await tester.pumpAndSettle();
+
+    final nameField = find.byType(TextField).at(0);
+    final pathField = find.byType(TextField).at(1);
+    await tester.tap(find.text('浏览'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(nameField).controller!.text, 'robot');
+    expect(
+      tester.widget<TextField>(pathField).controller!.text,
+      'robot.pieproj',
+    );
+
+    await tester.enterText(nameField, '新名字');
+    await tester.pump();
+    expect(
+      tester.widget<TextField>(pathField).controller!.text,
+      'robot.pieproj',
+    );
+
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    debugDefaultTargetPlatformOverride = null;
+  });
+
   testWidgets('模板工程开关默认关闭，打开前必须先确认', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
     addTearDown(() => debugDefaultTargetPlatformOverride = null);
@@ -1251,7 +1334,9 @@ void main() {
             () => _CapturingCreateController(),
           ),
         ],
-        child: MaterialApp(home: HomeScreen(fileDialogs: _FakeProjectFileDialogs())),
+        child: MaterialApp(
+          home: HomeScreen(fileDialogs: _FakeProjectFileDialogs()),
+        ),
       ),
     );
     await tester.tap(find.text('新建项目'));
@@ -1295,7 +1380,9 @@ void main() {
             () => controller = _CapturingCreateController(),
           ),
         ],
-        child: MaterialApp(home: HomeScreen(fileDialogs: _FakeProjectFileDialogs())),
+        child: MaterialApp(
+          home: HomeScreen(fileDialogs: _FakeProjectFileDialogs()),
+        ),
       ),
     );
     await tester.tap(find.text('新建项目'));
@@ -1395,9 +1482,8 @@ void main() {
     final template = controller.template;
     expect(template, isA<DebugConfig>());
     expect(
-      ProjectValidator.validate(template!).where(
-        (issue) => issue.severity == IssueSeverity.error,
-      ),
+      ProjectValidator.validate(template!)
+          .where((issue) => issue.severity == IssueSeverity.error),
       isEmpty,
     );
     expect(tester.takeException(), isNull);
@@ -2489,7 +2575,10 @@ void main() {
     );
     expect(listingEditor.style!.codeTheme!.languages, contains('asm'));
     expect(listingEditor.controller!.text, _rstSample);
-    expect(listingEditor.controller!.text, contains(r'ecall\t_main'.replaceAll(r'\t', '\t')));
+    expect(
+      listingEditor.controller!.text,
+      contains(r'ecall\t_main'.replaceAll(r'\t', '\t')),
+    );
     expect(listingEditor.controller!.text, contains(';'));
 
     // 切回 C 不触发新编译；再切回汇编命中的是已有结果，同样不再编译。
@@ -2499,7 +2588,9 @@ void main() {
     expect(find.text('main.c'), findsOneWidget);
     expect(
       tester
-          .widget<CodeEditor>(find.byKey(const ValueKey('generated-code-editor')))
+          .widget<CodeEditor>(
+            find.byKey(const ValueKey('generated-code-editor')),
+          )
           .controller!
           .text,
       code,
@@ -2575,14 +2666,19 @@ void main() {
     await _pumpFrames(tester);
     expect(exported, isTrue);
     expect(dialogs.lastWritePath, target);
-    expect(utf8.decode(dialogs.lastWriteBytes!), 'int main(void) { return 0; }\n');
+    expect(
+      utf8.decode(dialogs.lastWriteBytes!),
+      'int main(void) { return 0; }\n',
+    );
     expect(find.text('导出 main.c'), findsNothing);
     debugDefaultTargetPlatformOverride = null;
   });
 
   testWidgets('Android 的导出走系统文档选择器直接落盘', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
-    final dialogs = _FakeExportDocumentIo(savePath: 'content://documents/main.c');
+    final dialogs = _FakeExportDocumentIo(
+      savePath: 'content://documents/main.c',
+    );
     bool? exported;
     await tester.pumpWidget(
       MaterialApp(

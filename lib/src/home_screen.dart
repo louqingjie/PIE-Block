@@ -12,6 +12,35 @@ import 'project_templates.dart';
 
 const _brandCyan = Color(0xff02acc0);
 const _brandCoral = Color(0xffef685d);
+const _projectFileSuffix = '.pieproj';
+
+/// 路径中最后一个目录分隔符的位置，-1 表示没有分隔符。
+///
+/// 用户可能粘贴 Windows 或 POSIX 风格的路径，两种分隔符都要认。
+int _lastDirectorySeparator(String path) {
+  final slash = path.lastIndexOf('/');
+  final backslash = path.lastIndexOf('\\');
+  return slash > backslash ? slash : backslash;
+}
+
+/// 项目名称 → 文件名；名称已经带 .pieproj 后缀时不再重复追加。
+String _projectFileName(String projectName) {
+  final trimmed = projectName.trim();
+  return trimmed.toLowerCase().endsWith(_projectFileSuffix)
+      ? trimmed
+      : '$trimmed$_projectFileSuffix';
+}
+
+/// 保存位置路径 → 项目名称；路径末尾没有文件名时返回 null。
+String? _projectNameFromPath(String path) {
+  final trimmed = path.trim();
+  if (trimmed.isEmpty) return null;
+  final fileName = trimmed.substring(_lastDirectorySeparator(trimmed) + 1);
+  if (fileName.isEmpty) return null;
+  return fileName.toLowerCase().endsWith(_projectFileSuffix)
+      ? fileName.substring(0, fileName.length - _projectFileSuffix.length)
+      : fileName;
+}
 
 class ProjectFileDialogs {
   const ProjectFileDialogs({this.documentIo = const AppDocumentIo()});
@@ -88,6 +117,32 @@ class HomeScreen extends ConsumerWidget {
     var kind = ProjectKind.infantry;
     var useTemplate = false;
     final android = !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+    // 项目名称与保存位置里的文件名双向同步：改一处，另一处同时跟着变。
+    // Web 没有保存位置输入框；Android 的保存位置来自只读的系统文档选择器，
+    // 只能由选中的文件回填名称，不能反过来重命名文件。
+    var syncingFileName = false;
+    name.addListener(() {
+      if (syncingFileName || kIsWeb || android) return;
+      final current = path.text;
+      if (current.trim().isEmpty) return;
+      final directory = current.substring(
+        0,
+        _lastDirectorySeparator(current) + 1,
+      );
+      syncingFileName = true;
+      path.text = name.text.trim().isEmpty
+          ? directory
+          : '$directory${_projectFileName(name.text)}';
+      syncingFileName = false;
+    });
+    path.addListener(() {
+      if (syncingFileName) return;
+      final projectName = _projectNameFromPath(path.text);
+      if (projectName == null || projectName == name.text) return;
+      syncingFileName = true;
+      name.text = projectName;
+      syncingFileName = false;
+    });
     // 弹窗存续期间不再碰 ref：创建按钮的回调里有 await，届时外层弹窗可能已经
     // 不在挂载状态。这里一次性取出控制器和提示偏好快照供整个弹窗使用。
     final appController = ref.read(appControllerProvider.notifier);
@@ -163,8 +218,9 @@ class HomeScreen extends ConsumerWidget {
                             final currentPath = path.text.trim();
                             final selected = await _chooseSavePath(
                               context,
-                              suggestedName:
-                                  '${name.text.trim().isEmpty ? '我的机器人' : name.text.trim()}.pieproj',
+                              suggestedName: _projectFileName(
+                                name.text.trim().isEmpty ? '我的机器人' : name.text,
+                              ),
                               initialDirectory: currentPath.isEmpty
                                   ? desktop
                                   : android
