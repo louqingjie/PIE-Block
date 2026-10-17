@@ -413,19 +413,6 @@ class _DebugCueAuditionState extends ConsumerState<_DebugCueAudition> {
     return _Section(
       title: '提示音试听',
       children: [
-        Row(
-          children: [
-            Text('步序提示', style: Theme.of(context).textTheme.titleSmall),
-            const SizedBox(width: 8),
-            Text(
-              '点一下听这一项的提示音（上行 N 声）',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
         Wrap(
           spacing: 10,
           runSpacing: 10,
