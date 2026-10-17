@@ -385,7 +385,8 @@ class StaffRenderer {
           : accidental == 'flat'
           ? flatGlyph
           : naturalGlyph;
-      _blitAccidental(frame, glyph, x - 7, y);
+      // 临时记号右沿统一落在 x-4，和符头（左沿 x-2）之间留 1px 空隙。
+      _blitAccidental(frame, glyph, x - glyph.width - 3, y);
     }
 
     final stemUp = halfSpaceOffset(pitch, clef) < 0;

@@ -125,7 +125,7 @@ void main() {
       final x = renderer.layoutX(0)[0].round();
       final y = pitchY(78, 'treble', 6, 14);
       expect(y, 14, reason: 'F#5 在顶线上，临时升号会压在谱线上');
-      final left = x - 7;
+      final left = x - sharpGlyph.width - 3;
       final top = y - sharpGlyph.height ~/ 2;
       // 第 3 行是 '.#.#.'：两根竖线保留、三处空心全黑，
       // 说明谱线像素被擦掉，没有把洞填成“日”。
@@ -141,15 +141,15 @@ void main() {
       }
     });
 
-    test('还原号是标准 ♮ 形状（上右竖线、下左竖线）', () {
+    test('还原号是紧凑 ♮ 形状（中间只留 1px 空洞）', () {
       expect(naturalGlyph.rows, <String>[
-        '..#.',
-        '..#.',
-        '####',
-        '#..#',
-        '####',
-        '#...',
-        '#...',
+        '#..',
+        '#..',
+        '###',
+        '#.#',
+        '###',
+        '..#',
+        '..#',
       ]);
       final config = MusicConfig(
         notes: <MusicNote>[
@@ -170,19 +170,23 @@ void main() {
       final x = renderer.layoutX(1)[1].round();
       final y = pitchY(77, 'treble', 6, 14);
       expect(y, 14);
-      final left = x - 7;
+      final left = x - naturalGlyph.width - 3;
       final top = y - naturalGlyph.height ~/ 2;
-      // 上段只有右竖线，下段只有左竖线。
-      expect(frame.pixel(left + 2, top), isTrue, reason: '右上竖线缺失');
-      expect(frame.pixel(left, top), isFalse);
-      expect(frame.pixel(left, top + 6), isTrue, reason: '左下竖线缺失');
-      expect(frame.pixel(left + 2, top + 6), isFalse);
-      // 中性行（压在谱线上）：两根竖线保留，中间两格谱线被擦掉。
+      // 上段只有左竖线，下段只有右竖线。
+      expect(frame.pixel(left, top), isTrue, reason: '左上竖线缺失');
+      expect(frame.pixel(left + 1, top), isFalse);
+      expect(frame.pixel(left + 2, top + 6), isTrue, reason: '右下竖线缺失');
+      expect(frame.pixel(left, top + 6), isFalse);
+      // 中性行（压在谱线上，字形第 4 行 '#.#'）：
+      // 两根竖线保留、中间 1px 空洞不被谱线填充。
       final middle = y;
       expect(frame.pixel(left, middle), isTrue);
-      expect(frame.pixel(left + 3, middle), isTrue);
-      expect(frame.pixel(left + 1, middle), isFalse, reason: '还原号内部被谱线填充');
-      expect(frame.pixel(left + 2, middle), isFalse);
+      expect(frame.pixel(left + 2, middle), isTrue);
+      expect(
+        frame.pixel(left + 1, middle),
+        isFalse,
+        reason: '还原号中间 1px 空洞被谱线填充',
+      );
     });
   });
 
