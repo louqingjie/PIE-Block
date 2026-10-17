@@ -1199,6 +1199,33 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
                               ),
                             ),
                           ),
+                          Tooltip(
+                            message: '调号：固件五线谱左端显示的调号（也影响升降号拼写位置）',
+                            child: DropdownButton<int>(
+                              key: const ValueKey('music-key-signature'),
+                              value: config.keySignatureFifths,
+                              items: [
+                                for (final option in staffKeySignatureOptions)
+                                  DropdownMenuItem(
+                                    value: option.fifths,
+                                    child: Text(
+                                      compactToolbar
+                                          ? option.label.split(' / ').first
+                                          : option.label,
+                                    ),
+                                  ),
+                              ],
+                              onChanged: (value) {
+                                if (value == null ||
+                                    value == config.keySignatureFifths) {
+                                  return;
+                                }
+                                _commit(
+                                  _config.copyWith(keySignatureFifths: value),
+                                );
+                              },
+                            ),
+                          ),
                           if (_resolutionOverlaps > 0)
                             Tooltip(
                               message:

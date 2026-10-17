@@ -409,4 +409,21 @@ void main() {
       expect(find.byTooltip('继续'), findsNothing);
     });
   });
+
+  group('调号', () {
+    testWidgets('工具栏调号下拉更新配置并进入生成代码', (tester) async {
+      final editor = await _pumpEditor(tester, _spreadNotes());
+      expect(editor.config.keySignatureFifths, 0);
+
+      await tester.tap(find.byKey(const ValueKey('music-key-signature')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('G 大调 / E 小调').last);
+      await tester.pumpAndSettle();
+
+      expect(editor.config.keySignatureFifths, 1);
+      final code = CodeGenerator.generate(editor.config);
+      expect(code, contains('STAFF_KEY_COUNT 1'));
+      expect(code, contains('staffKeyStepsTreble'));
+    });
+  });
 }

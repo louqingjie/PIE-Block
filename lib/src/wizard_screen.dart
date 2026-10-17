@@ -4370,6 +4370,18 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
                   const SizedBox(height: 10),
                   Text(app.keilPath ?? '尚未指定 Keil 安装目录'),
                 ],
+                if (app.document?.config.kind == ProjectKind.music &&
+                    app.compiler == CompilerKind.keil) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Keil 音乐构建只播放声音，不包含 OLED 五线谱显示；'
+                    '需要屏幕显示请切换为内置 SDCC C251。',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
               ],
             ],
           ),
