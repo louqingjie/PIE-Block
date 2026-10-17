@@ -68,6 +68,15 @@ class Bitmap {
     }
   }
 
+  /// 把矩形区域清成“不着墨”，用于左端固定/禁区区域重绘。
+  void clearRect(int x, int y, int w, int h) {
+    for (var yy = y; yy < y + h; yy++) {
+      for (var xx = x; xx < x + w; xx++) {
+        setPixel(xx, yy, false);
+      }
+    }
+  }
+
   void strokeRect(int x, int y, int w, int h) {
     hLine(x, x + w - 1, y);
     hLine(x, x + w - 1, y + h - 1);

@@ -210,6 +210,29 @@ void main() {
       expect(renderer.clefPerEvent.every((clef) => clef == 'treble'), isTrue);
     });
 
+    test('左端固定区是禁区：滚动内容不得侵入', () {
+      List<int> panelPixels(StaffRenderer renderer, Bitmap frame) => <int>[
+        for (var x = 0; x < renderer.panelWidth; x++)
+          for (var y = 0; y < screenHeight; y++)
+            frame.pixel(x, y) ? 1 : 0,
+      ];
+      for (final demo in <String>['twinkle', 'wide', 'bass']) {
+        final renderer = StaffRenderer(
+          config: demoConfig(demo),
+          options: const RenderOptions(),
+        );
+        final frames = renderer.renderAll();
+        final reference = panelPixels(renderer, frames.first);
+        for (var i = 1; i < frames.length; i++) {
+          expect(
+            panelPixels(renderer, frames[i]),
+            reference,
+            reason: '$demo frame $i 的固定区被滚动内容覆盖',
+          );
+        }
+      }
+    });
+
     test('每帧都是 1024 字节且确定性', () {
       final renderer = StaffRenderer(
         config: twinkle(),

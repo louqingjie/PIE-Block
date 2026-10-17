@@ -155,16 +155,13 @@ class StaffRenderer {
 
   Bitmap renderFrame(int index) {
     final frame = Bitmap(screenWidth, screenHeight);
-    final clef = clefPerEvent[index];
     _drawStaff(frame);
-    _drawClef(frame, clef, 1);
-    _drawKeySignature(frame, clef);
-    _drawTimeSignature(frame);
     final xs = layoutX(index);
     _drawBarLines(frame, index);
+    // 先画滚动内容（可以越过固定区边界，随后由固定区重绘截断）。
     for (var i = 0; i < events.length; i++) {
       final x = xs[i].round();
-      if (x < panelWidth - 18 || x > screenWidth + 18) continue;
+      if (x < -20 || x > screenWidth + 18) continue;
       final event = events[i];
       final noteClef = clefPerEvent[i];
       if (event.isRest) {
@@ -180,8 +177,22 @@ class StaffRenderer {
       }
       _drawNote(frame, i, x, noteClef);
     }
+    // 谱号/调号/拍号所在的左端固定区是禁区：清空后只重绘固定内容，
+    // 滚动音符最多被截断在禁区边界，绝不会出现在禁区里。
+    _drawFixedPanel(frame, clefPerEvent[index]);
     _drawCursorMarker(frame);
     return frame;
+  }
+
+  /// 重绘左端固定区（谱号 + 调号 + 拍号 + 谱线），并清掉滚动内容。
+  void _drawFixedPanel(Bitmap frame, String clef) {
+    frame.clearRect(0, 0, panelWidth, screenHeight);
+    for (var line = 0; line <= 4; line++) {
+      frame.hLine(0, panelWidth - 1, staffTop + line * space);
+    }
+    _drawClef(frame, clef, 1);
+    _drawKeySignature(frame, clef);
+    _drawTimeSignature(frame);
   }
 
   /// 当前播放位置的上方小三角（代替给音符套方框，避免遮住符头/符干）。
