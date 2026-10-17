@@ -1212,9 +1212,17 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
                                 label: Text('$_resolutionOverlaps 处重叠'),
                               ),
                             ),
+                          // 播放/暂停合并成一个键：停止时是“播放”，播放中是“暂停”，
+                          // 暂停后仍由同一个键“继续”，不再出现两个播放按钮。
                           IconButton(
-                            onPressed: _play,
-                            tooltip: '播放',
+                            onPressed: _isLoading
+                                ? null
+                                : _isPlaying
+                                ? _togglePause
+                                : _play,
+                            tooltip: _isPlaying
+                                ? (_isPaused ? '继续' : '暂停')
+                                : '播放',
                             icon: _isLoading
                                 ? const SizedBox.square(
                                     dimension: 20,
@@ -1222,14 +1230,11 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
                                       strokeWidth: 2,
                                     ),
                                   )
-                                : const Icon(Icons.play_arrow),
-                          ),
-                          IconButton(
-                            onPressed: _isPlaying ? _togglePause : null,
-                            tooltip: '暂停/继续',
-                            icon: Icon(
-                              _isPaused ? Icons.play_arrow : Icons.pause,
-                            ),
+                                : Icon(
+                                    _isPlaying && !_isPaused
+                                        ? Icons.pause
+                                        : Icons.play_arrow,
+                                  ),
                           ),
                           IconButton(
                             onPressed: _stop,

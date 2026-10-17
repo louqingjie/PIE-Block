@@ -370,4 +370,43 @@ void main() {
       await editor.clearSnackBars();
     });
   });
+
+  group('播放控制', () {
+    testWidgets('播放与暂停合并为一个键：暂停后同一按钮变为“继续”', (tester) async {
+      final editor = await _pumpEditor(tester, _spreadNotes());
+      expect(find.byTooltip('播放'), findsOneWidget);
+      expect(find.byTooltip('继续'), findsNothing);
+
+      // 停止状态：按一次开始播放，按钮变成“暂停”。
+      await tester.tap(find.byTooltip('播放'));
+      await tester.pump();
+      expect(editor.preview.playing, isTrue);
+      expect(find.byTooltip('暂停'), findsOneWidget);
+      expect(
+        find.byTooltip('播放'),
+        findsNothing,
+        reason: '播放中不应再出现第二个播放键',
+      );
+
+      // 播放中：按同一个键暂停，按钮变成“继续”。
+      await tester.tap(find.byTooltip('暂停'));
+      await tester.pump();
+      expect(editor.preview.paused, isTrue);
+      expect(find.byTooltip('继续'), findsOneWidget);
+      expect(find.byTooltip('播放'), findsNothing);
+
+      // 暂停状态：按同一个键继续播放，按钮变回“暂停”。
+      await tester.tap(find.byTooltip('继续'));
+      await tester.pump();
+      expect(editor.preview.paused, isFalse);
+      expect(find.byTooltip('暂停'), findsOneWidget);
+
+      // 停止后回到初始的“播放”，且开始键仍从停止态可用。
+      await tester.tap(find.byTooltip('停止'));
+      await tester.pump();
+      expect(editor.preview.playing, isFalse);
+      expect(find.byTooltip('播放'), findsOneWidget);
+      expect(find.byTooltip('继续'), findsNothing);
+    });
+  });
 }
