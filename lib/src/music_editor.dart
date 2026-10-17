@@ -16,9 +16,14 @@ enum _MusicTool { select, pencil, erase, pan }
 enum MusicViewportMode { fixed, paged, anchored }
 
 class MusicEditorPage extends ConsumerStatefulWidget {
-  MusicEditorPage({super.key, MusicPreviewService? previewService})
-    : previewService = previewService ?? SoloudMusicPreview();
-  final MusicPreviewService previewService;
+  const MusicEditorPage({super.key, this.previewService});
+
+  /// 测试注入用；正式运行时为 null，由 State 在 initState 创建并持有。
+  /// 不能在这里直接 `?? SoloudMusicPreview()`：父级（向导页）每次 rebuild 都会
+  /// 构造新的 MusicEditorPage，而 Flutter 会复用同一个 State。若 service 跟着
+  /// widget 走，播放中调参数/改窗口大小就会把 State 的引用换成新实例，旧实例
+  /// 没人 dispose，声音会一直响，停止键也只能停掉新实例。
+  final MusicPreviewService? previewService;
 
   @override
   ConsumerState<MusicEditorPage> createState() => _MusicEditorPageState();
@@ -79,6 +84,9 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
   double? _lastViewportWidth;
   int? _auditionPointer, _auditionPitch;
 
+  /// 播放器生命周期跟随 State，而不是跟随会频繁重建的 widget。
+  late final MusicPreviewService _preview;
+
   MusicConfig get _config =>
       ref.read(appControllerProvider).document!.config as MusicConfig;
   double get _pixelsPerQuarter => 120 * _zoom;
@@ -87,12 +95,18 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
       : math.max(1, (_config.ticksPerQuarter / _snapDivisor).round());
 
   @override
+  void initState() {
+    super.initState();
+    _preview = widget.previewService ?? SoloudMusicPreview();
+  }
+
+  @override
   void dispose() {
     _transportRequest++;
     _positionTimer?.cancel();
     _horizontalScroll.dispose();
     _verticalScroll.dispose();
-    unawaited(widget.previewService.dispose());
+    unawaited(_preview.dispose());
     super.dispose();
   }
 
@@ -591,9 +605,9 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
     if (_viewportMode == MusicViewportMode.anchored) {
       _captureFollowAnchor();
     }
-    await widget.previewService.play(_config, looping: _loopPreview);
+    await _preview.play(_config, looping: _loopPreview);
     if (!mounted || request != _transportRequest) return;
-    if (!widget.previewService.playing) {
+    if (!_preview.playing) {
       setState(() => _isLoading = false);
       return;
     }
@@ -605,7 +619,7 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
     _positionTimer?.cancel();
     _positionTimer = Timer.periodic(const Duration(milliseconds: 50), (_) {
       if (!mounted) return;
-      if (!widget.previewService.playing) {
+      if (!_preview.playing) {
         _positionTimer?.cancel();
         setState(() {
           _isPlaying = false;
@@ -613,7 +627,7 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
         });
         return;
       }
-      final micros = widget.previewService.position.inMicroseconds;
+      final micros = _preview.position.inMicroseconds;
       final previous = _playheadTick;
       final next = _tickAtMicros(micros);
       setState(() => _playheadTick = next);
@@ -623,9 +637,9 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
 
   Future<void> _togglePause() async {
     if (!_isPlaying) return;
-    await widget.previewService.togglePause();
+    await _preview.togglePause();
     if (!mounted) return;
-    setState(() => _isPaused = widget.previewService.paused);
+    setState(() => _isPaused = _preview.paused);
   }
 
   int _tickAtMicros(int micros) {
@@ -661,7 +675,7 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
         if (mounted) _followPlayhead(previousTick: null);
       });
     }
-    await widget.previewService.stop();
+    await _preview.stop();
   }
 
   void _setViewportMode(MusicViewportMode mode) {
@@ -760,7 +774,7 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
     final pitch = _pitchAtPianoPosition(localY);
     if (pitch == _auditionPitch) return;
     setState(() => _auditionPitch = pitch);
-    unawaited(widget.previewService.startPitch(pitch));
+    unawaited(_preview.startPitch(pitch));
   }
 
   void _pianoUp(PointerEvent event) {
@@ -769,7 +783,7 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
       _auditionPointer = null;
       _auditionPitch = null;
     });
-    unawaited(widget.previewService.stopPitch());
+    unawaited(_preview.stopPitch());
   }
 
   Widget _rollViewport(MusicConfig config, Size timelineSize) {

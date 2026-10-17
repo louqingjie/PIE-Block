@@ -180,6 +180,28 @@ class _Editor {
   }
 }
 
+/// 模拟“向导页 rebuild 时重新构造 MusicEditorPage”：同一个 State 收到新 widget，
+/// 但注入的 previewService 变了。用于回归“停止键停不掉旧播放器”。
+class _RebuildHost extends StatefulWidget {
+  const _RebuildHost({super.key, required this.initialPreview});
+  final MusicPreviewService initialPreview;
+
+  @override
+  State<_RebuildHost> createState() => _RebuildHostState();
+}
+
+class _RebuildHostState extends State<_RebuildHost> {
+  late MusicPreviewService _preview = widget.initialPreview;
+
+  void swapPreview(MusicPreviewService next) {
+    setState(() => _preview = next);
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      Scaffold(body: MusicEditorPage(previewService: _preview));
+}
+
 Future<_Editor> _pumpEditor(WidgetTester tester, List<MusicNote> notes) async {
   addTearDown(() {
     tester.view.resetPhysicalSize();
@@ -424,6 +446,48 @@ void main() {
       final code = CodeGenerator.generate(editor.config);
       expect(code, contains('STAFF_KEY_COUNT 1'));
       expect(code, contains('staffKeyStepsTreble'));
+    });
+  });
+
+  group('播放器生命周期', () {
+    testWidgets('播放中父级重建，停止键仍停掉最初的声音', (tester) async {
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1400, 900);
+      final first = _FakeMusicPreview();
+      final second = _FakeMusicPreview();
+      final hostKey = GlobalKey<_RebuildHostState>();
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appControllerProvider.overrideWith(
+              () => _StaticProjectController(_document(_spreadNotes())),
+            ),
+          ],
+          child: MaterialApp(
+            theme: ThemeData(useMaterial3: true),
+            home: _RebuildHost(key: hostKey, initialPreview: first),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('播放'));
+      await tester.pump();
+      expect(first.playing, isTrue);
+
+      // 父级 rebuild：同一个 State 收到新 widget，注入的播放器换成 second。
+      hostKey.currentState!.swapPreview(second);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('停止'));
+      await tester.pump();
+      expect(first.playing, isFalse, reason: '停止必须作用于 State 持有的最初播放器');
+      expect(second.playing, isFalse, reason: '新注入的播放器从未开始播放');
     });
   });
 }
