@@ -11,7 +11,7 @@ import 'compiler_backend.dart';
 import 'hex_validator.dart';
 import 'models.dart';
 
-const _buildSchemaVersion = 'flutter_build_v2';
+const _buildSchemaVersion = 'flutter_build_v3';
 
 String firmwareProjectFor(ProjectKind kind, CompilerKind compiler) =>
     switch (compiler) {

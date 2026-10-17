@@ -18,16 +18,15 @@ pwsh .\stc32g_sdcc\build.ps1 -All -Sdcc .\path\to\sdcc.exe
 pwsh .\stc32g_sdcc\build.ps1 -SmokeTest -Sdcc .\path\to\sdcc.exe
 ```
 
-布局固定为：复位/中断向量 `0xFF0000-0xFF0FFF`，**应用代码放低 64K**
-`0xFE0000-0xFEFFFF`，**只读常量和 XINIT 放高 64K 窗口的** `0xFF1000-0xFFFFFF`
-（约 60KB，`-Wl-b CONST=0xff1000`）；片内 EDATA `0x0000-0x0FFF`，XRAM
-`0x010000-0x011FFF`。`tools/check_layout.py` 会在每次链接后检查这些区域以及
-SDCC 原生启动符号。
+布局固定为：复位/中断向量 `0xFF0000`，应用代码和常量 `0xFE0000` 起，片内
+EDATA `0x0000-0x0FFF`，XRAM `0x010000-0x011FFF`。`tools/check_layout.py`
+会在每次链接后检查这些区域以及 SDCC 原生启动符号。应用代码和只读常量都留在
+低 64KB，不要依赖 `0xFF1000` 之后的高区：ROM USB-ISP 对高区的擦除/写入不可靠，
+多次烧录后可能读到旧数据。
 
 构建时会把共享板级/驱动模块写入工程输出目录的 `stc32g_shared.lib`，由链接器按
-引用按需提取，避免未使用的 Keil 工程模块占满代码区。链接器把 `GSINIT` 和用户
-代码放低 64K `CSEG`，只读常量和初始化数据放 `CONST`/`XINIT`（高 64K），因此
-128KB Flash 除了 `0xFF0000-0xFF0FFF` 向量区外都能用上。
+引用按需提取，避免未使用的 Keil 工程模块占满代码区。链接器还将 `GSINIT`、用户
+代码和只读常量统一放入应用代码区 `CSEG`，并保留 `0xFF0000` 以上的向量空间。
 
 ## 最小功能测试与仿真
 

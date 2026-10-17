@@ -26,7 +26,7 @@
     "--stack-auto",
     "--opt-code-size",
     "--constseg",
-    "CONST",
+    "CSEG",
     "-c"
   ],
   "link_flags": [
@@ -44,8 +44,7 @@
     "0x2000",
     "--code-loc",
     "0xff0000",
-    "-Wl-b GSINIT0=0xfe0000",
-    "-Wl-b CONST=0xff1000"
+    "-Wl-b GSINIT0=0xfe0000"
   ],
   "source_groups": {
     "common": [
@@ -115,7 +114,7 @@
     "BUZZER_VOICE_SMOKE": {
       "library_groups": ["pwm", "timer", "voice"],
       "comment": "语音合成是每 125us 一次的中断，按速度而不是体积优化",
-      "compile_flags": ["-mmcs251", "--model-large", "--stack-auto", "--opt-code-speed", "--constseg", "CONST", "-c"]
+      "compile_flags": ["-mmcs251", "--model-large", "--stack-auto", "--opt-code-speed", "--constseg", "CSEG", "-c"]
     },
     "DELAY_SMOKE": {"library_groups": ["gpio"]},
     "FRICTION_CALIBRATION": {"library_groups": ["boards", "drivers"]},

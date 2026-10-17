@@ -192,9 +192,6 @@ MusicConfig → buildStaffSong()（pieblock_core）
 
 ### 10.2 构建与验证
 
-- 链接布局：代码留在低 64K（`0xFE0000-0xFEFFFF`），`_music` 生成的大块只读数据
-  随全局 `--constseg CONST` + `-Wl-b CONST=0xff1000` 落到高 64K 窗口；
-  这样 128KB Flash 除 `0xFF0000-0xFF0FFF` 向量区外都能用上。
 - `build_manifest.json` 新增 `staff` 源组；三个音乐工程的 `library_groups` 为
   `["pwm","lcd","staff"]`。Android/Windows/Linux 的资源打包会自动带上
   `libraries/**`，不需要改打包脚本。
@@ -223,7 +220,11 @@ pwsh stc32g_sdcc/build.ps1 -Project BUZZER_MUSIC_GENERATED `
 - 只显示第一个拍号事件；中途变拍号仍按第一拍号画小节线。
 - 整屏软件 SPI 刷新在每事件开头统一增加数毫秒延迟，节奏整体平移但不改变相对时值；
   若实机明显需要优化，再做按页差量刷新。
-- 固件使用 128KB Flash 的两个 64K 窗口：低 64K 放代码，高 64K 的 `0xFF1000` 之后放只读常量/五线谱数据（约 60KB）。曲目过长逼近常量区上限时校验器会告警。
+- 应用数据只放低 64KB（`0xFE0000-0xFEFFFF`）。曾尝试把只读常量搬到高 64KB
+  `0xFF1000` 之后（`--constseg CONST` + `-Wl-b CONST=0xff1000`）来获得约 60KB
+  额外空间，但 ROM USB-ISP 对高区的擦除/写入在多次烧录后不可靠：实测重烧后
+  开机 logo 图案异常、五线谱卡在首帧（高区常量读回为旧数据/无效值）。因此
+  回退了该方案，只读常量继续放低 64KB `CSEG`，校验器按低 64KB 总量给出预算告警。
 
 ## 11. 后续可选
 

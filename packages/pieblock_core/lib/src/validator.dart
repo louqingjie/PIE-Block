@@ -370,17 +370,16 @@ abstract final class ProjectValidator {
     if (duration > 20 * 60 * 1000) {
       issue(IssueSeverity.error, 'music.notes', '音乐总时长不能超过 20 分钟', 'music');
     }
-    // 固件五线谱显示会把每个显示事件预先算成约 11 字节常量，放在 0xFF1000
-    // 之后的高 64K 常量区（约 60KB 可用）；超过预算时告警，不阻塞生成，
-    // 极端情况由编译器/布局校验兜底。
+    // 音乐固件只用低 64KB 应用区：基础代码+常量约 49KB，剩余给显示事件表
+    // （约 11 字节/事件）。超过预算时告警（不阻塞生成，编译器/布局校验兜底）。
     final staffSong = buildStaffSong(config);
-    final estimatedBytes = staffSong.events.length * 11 + 4096;
-    if (estimatedBytes > 52 * 1024) {
+    final estimatedBytes = 49 * 1024 + staffSong.events.length * 11;
+    if (estimatedBytes > 61 * 1024) {
       issue(
         IssueSeverity.warning,
         'music.notes',
-        '曲目较长：五线谱显示数据约 ${(estimatedBytes / 1024).round()}KB，'
-            '接近 STC32G 常量区（0xFF1000 起约 60KB）上限，建议缩短曲目或减少音符',
+        '曲目较长：五线谱固件预计约占 ${(estimatedBytes / 1024).round()}KB，'
+            '接近 STC32G 低 64KB 应用区上限，建议缩短曲目或减少音符',
         'music',
       );
     }
