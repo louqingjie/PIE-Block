@@ -45,7 +45,7 @@ abstract final class Friction {
 
   /// 摩擦轮目标占空比低于这个值时给提醒（调试项目用它做测试项下限提醒）：
   /// 占空比太低时摩擦轮可能带不动，测试观察不到有效结论。
-  static const lowDutyWarning = 600;
+  static const lowDutyWarning = 650;
 
   /// 摩擦轮允许占用的引脚。
   static const pins = EngineerPinCapabilities.frictionPins;

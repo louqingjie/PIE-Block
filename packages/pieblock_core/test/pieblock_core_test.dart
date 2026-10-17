@@ -1071,7 +1071,7 @@ void main() {
       expect(code.substring(zeroAt), isNot(contains('StepCue(')));
     });
 
-    test('摩擦轮目标占空比限定 500–800，低于 600 只给提醒', () {
+    test('摩擦轮目标占空比限定 500–800，低于 650 只给提醒', () {
       DebugConfig withDuty(int? duty) => DebugConfig(
         tests: [
           DebugTestItem(
@@ -1100,19 +1100,23 @@ void main() {
           IssueSeverity.error,
         );
       }
-      // 500 合法但偏低：只给提醒，不是错误。
-      final low = issues(500);
-      final lowIssue = low.firstWhere((i) => i.fieldPath == 'tests.0.value');
-      expect(lowIssue.severity, IssueSeverity.warning);
-      expect(lowIssue.message, contains('低于 600'));
-      expect(
-        low.where(
-          (i) => i.fieldPath == 'tests.0.value' && i.severity == IssueSeverity.error,
-        ),
-        isEmpty,
-      );
-      // 600 起不再提醒，800 也干净。
-      for (final duty in const [600, 800]) {
+      // 500 / 600 合法但偏低：只给提醒，不是错误。
+      for (final duty in const [500, 600]) {
+        final low = issues(duty);
+        final lowIssue = low.firstWhere((i) => i.fieldPath == 'tests.0.value');
+        expect(lowIssue.severity, IssueSeverity.warning);
+        expect(lowIssue.message, contains('低于 650'));
+        expect(
+          low.where(
+            (i) =>
+                i.fieldPath == 'tests.0.value' &&
+                i.severity == IssueSeverity.error,
+          ),
+          isEmpty,
+        );
+      }
+      // 650 起不再提醒，700 / 800 也干净。
+      for (final duty in const [650, 700, 800]) {
         expect(
           messages(duty).where((message) => message.contains('摩擦轮')),
           isEmpty,

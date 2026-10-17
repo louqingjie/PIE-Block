@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "Flutter 调试项目配置：按 tests 数组顺序逐项测试固定引脚。摩擦轮测试项直接填目标占空比（500–800），低于 600 给提醒，不再走「油门 → 满油上限」换算。",
+  "description": "Flutter 调试项目配置：按 tests 数组顺序逐项测试固定引脚。摩擦轮测试项直接填目标占空比（500–800），低于 650 给提醒，不再走「油门 → 满油上限」换算。",
   "properties": {
     "tests": {
       "description": "固定十路引脚的可排序测试序列",
@@ -45,7 +45,7 @@
             "type": "string"
           },
           "value": {
-            "description": "电机速度、舵机角度，或摩擦轮的目标占空比（500–800，低于 600 给提醒）",
+            "description": "电机速度、舵机角度，或摩擦轮的目标占空比（500–800，低于 650 给提醒）",
             "maximum": 10000,
             "minimum": 0,
             "type": ["integer", "null"]
