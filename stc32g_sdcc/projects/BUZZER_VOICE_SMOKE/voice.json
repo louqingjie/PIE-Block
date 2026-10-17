@@ -5,9 +5,9 @@
   "reference_sample_rate": 8000,
   "sample_rate_hz": 7200,
   "comment_rate": "合成采样率 7.2kHz：10 阶格型在 8kHz 下每样本要 130us，超过 125us 中断预算；7.2kHz 下预算 139us，留出余量。参考音由 SAPI 以 8kHz 生成后重采样。",
-  "comment_loudness": "压电片只在 2~4kHz 谐振带效率高、语音能量却集中在低频，加上单端驱动电压受限，实机听感偏轻。这两个指数是响度与可懂度的取舍：越小越响、失真越大。实测（压电域 RMS）0.85/0.85 约 +3dB、0.7/0.75 约 +4.8dB，但后者会让约束识别从 0.99 掉到拒识。",
-  "compression_gamma": 0.85,
-  "gain_compression_gamma": 0.85,
+  "comment_loudness": "压电片只在 2~4kHz 谐振带效率高、语音能量却集中在低频，加上单端驱动电压受限，实机听感偏轻。这两个指数是响度与可懂度的取舍：越小越响、失真越大。压电域 RMS 实测：无压缩 3312、0.85/0.85 为 4797（+3.2dB）、0.70/0.75 为 5821（+4.9dB）；再往下（0.6/0.65、0.5/0.55）每档只多约 0.5dB 而失真明显上升。",
+  "compression_gamma": 0.7,
+  "gain_compression_gamma": 0.75,
   "utterances": [
     {
       "name": "PLiuling",
