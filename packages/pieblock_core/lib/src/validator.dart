@@ -255,11 +255,11 @@ abstract final class ProjectValidator {
         'music',
       );
     }
-    if (config.notes.isEmpty || !config.notes.any((note) => note.primary)) {
+    if (config.notes.isEmpty) {
       issue(
         IssueSeverity.error,
         'music.notes',
-        '至少添加一个主旋律音符',
+        '至少添加一个音符',
         'music',
         ValidationIssueKind.required,
       );
@@ -268,7 +268,6 @@ abstract final class ProjectValidator {
       issue(IssueSeverity.error, 'music.notes', 'MIDI 音符总数不能超过 32768', 'music');
     }
     final ids = <String>{};
-    final groups = <int, List<MusicNote>>{};
     for (var index = 0; index < config.notes.length; index++) {
       final note = config.notes[index];
       final path = 'music.notes.$index';
@@ -299,17 +298,17 @@ abstract final class ProjectValidator {
           'music',
         );
       }
-      groups.putIfAbsent(note.startTick, () => []).add(note);
     }
-    for (final entry in groups.entries) {
-      if (entry.value.where((note) => note.primary).length != 1) {
-        issue(
-          IssueSeverity.error,
-          'music.notes',
-          '起始 tick ${entry.key} 必须且只能选择一个主旋律音符',
-          'music',
-        );
-      }
+    // 重叠是允许的：只提醒会按当前策略裁决成单音，不阻止生成/烧录。
+    final overlaps = MusicTimeline.overlapCount(config);
+    if (overlaps > 0) {
+      issue(
+        IssueSeverity.warning,
+        'music.notes',
+        '检测到 $overlaps 处音符重叠，将按「${config.overlapMode.label}」只发声一个；'
+            '可在钢琴卷帘工具栏调整重叠处理',
+        'music',
+      );
     }
     _orderedEvents(
       config.tempoEvents.map((event) => event.tick).toList(),

@@ -6,13 +6,7 @@ MusicConfig musicConfig() => MusicConfig(
   trackName: '主旋律',
   notes: const [
     MusicNote(id: 'a', pitch: 60, startTick: 0, durationTicks: 480),
-    MusicNote(
-      id: 'a-ref',
-      pitch: 67,
-      startTick: 0,
-      durationTicks: 960,
-      primary: false,
-    ),
+    MusicNote(id: 'a-ref', pitch: 67, startTick: 0, durationTicks: 960),
     MusicNote(id: 'b', pitch: 62, startTick: 480, durationTicks: 480),
   ],
   tempoEvents: const [
@@ -23,7 +17,7 @@ MusicConfig musicConfig() => MusicConfig(
 
 void main() {
   group('音乐项目', () {
-    test('创建、JSON 往返和主音切换', () {
+    test('创建、JSON 往返与重叠设置默认值', () {
       final document = ProjectDocument.create(
         '音乐测试',
         ProjectKind.music,
@@ -32,19 +26,41 @@ void main() {
       expect(restored.kind, ProjectKind.music);
       final config = restored.config as MusicConfig;
       expect(config.ticksPerQuarter, 480);
-      expect(config.tempoEvents, hasLength(2));
+      expect(config.notes, hasLength(3));
+      expect(config.overlapMode, MusicOverlapMode.nearest);
+      expect(config.newNoteInterrupts, isTrue);
+      expect(config.toJson()['overlap_mode'], 'nearest');
+      expect(config.toJson()['new_note_interrupts'], isTrue);
       expect(
-        config
-            .promote('a-ref')
-            .notes
-            .singleWhere((n) => n.id == 'a-ref')
-            .primary,
-        isTrue,
+        config.notes.map((note) => note.toJson().keys),
+        everyElement(isNot(contains('primary'))),
+        reason: 'primary 概念已移除，不再写回工程文件',
       );
-      expect(
-        config.promote('a-ref').notes.singleWhere((n) => n.id == 'a').primary,
-        isFalse,
-      );
+    });
+
+    test('旧工程 JSON 里的 primary 被忽略、新字段取默认值', () {
+      final restored = MusicConfig.fromJson({
+        'ticks_per_quarter': 480,
+        'notes': [
+          {
+            'id': 'a',
+            'pitch': 60,
+            'start_tick': 0,
+            'duration_ticks': 480,
+            'primary': true,
+          },
+        ],
+        'tempo_events': [
+          {'tick': 0, 'microseconds_per_quarter': 500000},
+        ],
+        'time_signature_events': [
+          {'tick': 0, 'numerator': 4, 'denominator': 4},
+        ],
+      });
+      expect(restored.notes.single.pitch, 60);
+      expect(restored.notes.single.durationTicks, 480);
+      expect(restored.overlapMode, MusicOverlapMode.nearest);
+      expect(restored.newNoteInterrupts, isTrue);
     });
 
     test('tempo map 累计、休止和重叠截断准确', () {
@@ -69,12 +85,9 @@ void main() {
       expect(midi.timeSignatureEvents.single.denominator, 4);
       final selected = midi.selectTrack(0, sourceName: 'roundtrip.mid');
       expect(selected.notes, hasLength(3));
-      expect(selected.notes.where((note) => note.primary), hasLength(2));
       expect(
-        selected.notes
-            .firstWhere((note) => note.startTick == 0 && note.primary)
-            .pitch,
-        67,
+        selected.notes.map((note) => (note.pitch, note.startTick)),
+        containsAll(const [(60, 0), (67, 0), (62, 480)]),
       );
     });
 
@@ -134,28 +147,31 @@ void main() {
       expect(midi.tracks[1].notes.single.durationTicks, 480);
     });
 
-    test('最近音高选择平局时选择较高音', () {
+    test('MIDI 导入保留和弦/重叠音并透传重叠策略', () {
       final source = MusicConfig(
         notes: const [
           MusicNote(id: 'a', pitch: 67, startTick: 0, durationTicks: 120),
           MusicNote(id: 'b', pitch: 65, startTick: 120, durationTicks: 120),
-          MusicNote(
-            id: 'c',
-            pitch: 69,
-            startTick: 120,
-            durationTicks: 120,
-            primary: false,
-          ),
+          MusicNote(id: 'c', pitch: 69, startTick: 120, durationTicks: 120),
         ],
       );
-      final imported = MidiCodec.parse(MidiCodec.write(source)).selectTrack(0);
+      final imported = MidiCodec.parse(MidiCodec.write(source)).selectTrack(
+        0,
+        overlapMode: MusicOverlapMode.lowest,
+        newNoteInterrupts: false,
+      );
+      expect(imported.notes, hasLength(3), reason: '和弦不再被丢弃');
+      expect(imported.overlapMode, MusicOverlapMode.lowest);
+      expect(imported.newNoteInterrupts, isFalse);
       expect(
-        imported.notes.firstWhere((n) => n.startTick == 120 && n.primary).pitch,
-        69,
+        imported.notes
+            .where((note) => note.startTick == 120)
+            .map((note) => note.pitch),
+        containsAll(const [65, 69]),
       );
     });
 
-    test('校验空音乐、重复主音和非法事件', () {
+    test('校验空音乐、非法音符与重叠警告', () {
       expect(ProjectValidator.validate(MusicConfig()), isNotEmpty);
       final invalid = MusicConfig(
         notes: const [
@@ -167,9 +183,28 @@ void main() {
       final messages = ProjectValidator.validate(invalid)
           .map((i) => i.message)
           .join('\n');
-      expect(messages, contains('只能选择一个'));
       expect(messages, contains('音高'));
       expect(messages, contains('tick 0'));
+
+      // 重叠只是 warning，不阻止生成/烧录。
+      final overlapped = MusicConfig(
+        notes: const [
+          MusicNote(id: 'a', pitch: 60, startTick: 0, durationTicks: 960),
+          MusicNote(id: 'b', pitch: 64, startTick: 480, durationTicks: 960),
+        ],
+      );
+      final issues = ProjectValidator.validate(overlapped);
+      expect(
+        issues.where((issue) => issue.severity == IssueSeverity.error),
+        isEmpty,
+      );
+      expect(
+        issues
+            .where((issue) => issue.severity == IssueSeverity.warning)
+            .single
+            .message,
+        contains('1 处音符重叠'),
+      );
     });
 
     test('生成单音固件且没有伪复音轮询', () {

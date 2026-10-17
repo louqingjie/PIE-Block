@@ -3,10 +3,12 @@
   "source_name": "旋律.mid",
   "track_name": "主旋律",
   "notes": [
-    {"id": "m0", "pitch": 64, "start_tick": 0, "duration_ticks": 480, "primary": true},
-    {"id": "m1", "pitch": 60, "start_tick": 0, "duration_ticks": 480, "primary": false},
-    {"id": "m2", "pitch": 67, "start_tick": 480, "duration_ticks": 480, "primary": true}
+    {"id": "m0", "pitch": 64, "start_tick": 0, "duration_ticks": 480},
+    {"id": "m1", "pitch": 60, "start_tick": 0, "duration_ticks": 480},
+    {"id": "m2", "pitch": 67, "start_tick": 480, "duration_ticks": 480}
   ],
+  "overlap_mode": "nearest",
+  "new_note_interrupts": true,
   "tempo_events": [
     {"tick": 0, "microseconds_per_quarter": 500000}
   ],

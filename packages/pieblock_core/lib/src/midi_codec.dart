@@ -37,7 +37,12 @@ class MidiFileData {
   final List<TempoEvent> tempoEvents;
   final List<TimeSignatureEvent> timeSignatureEvents;
 
-  MusicConfig selectTrack(int index, {String? sourceName}) {
+  MusicConfig selectTrack(
+    int index, {
+    String? sourceName,
+    MusicOverlapMode overlapMode = MusicOverlapMode.nearest,
+    bool newNoteInterrupts = true,
+  }) {
     if (index < 0 || index >= tracks.length || !tracks[index].playable) {
       throw const FormatException('请选择包含旋律音符的 MIDI 轨道');
     }
@@ -47,40 +52,25 @@ class MidiFileData {
             final tick = a.startTick.compareTo(b.startTick);
             return tick != 0 ? tick : b.pitch.compareTo(a.pitch);
           });
-    final grouped = <int, List<MidiSourceNote>>{};
-    for (final note in source) {
-      grouped.putIfAbsent(note.startTick, () => []).add(note);
-    }
-    int? previousPitch;
+    // 不再在导入阶段丢弃和弦/重叠音：全部旋律音符都保留为发声候选，
+    // 由 MusicTimeline 按工程里的重叠策略裁决哪一个真正发声。
     var serial = 0;
-    final notes = <MusicNote>[];
-    for (final entry in grouped.entries) {
-      final candidates = entry.value;
-      candidates.sort((a, b) {
-        if (previousPitch == null) return b.pitch.compareTo(a.pitch);
-        final ad = (a.pitch - previousPitch).abs();
-        final bd = (b.pitch - previousPitch).abs();
-        return ad != bd ? ad.compareTo(bd) : b.pitch.compareTo(a.pitch);
-      });
-      final selected = candidates.first;
-      previousPitch = selected.pitch;
-      for (final note in candidates) {
-        notes.add(
-          MusicNote(
-            id: 'm${serial++}',
-            pitch: note.pitch,
-            startTick: note.startTick,
-            durationTicks: note.durationTicks,
-            primary: identical(note, selected),
-          ),
-        );
-      }
-    }
+    final notes = <MusicNote>[
+      for (final note in source)
+        MusicNote(
+          id: 'm${serial++}',
+          pitch: note.pitch,
+          startTick: note.startTick,
+          durationTicks: note.durationTicks,
+        ),
+    ];
     return MusicConfig(
       ticksPerQuarter: ticksPerQuarter,
       sourceName: sourceName,
       trackName: tracks[index].name,
       notes: notes,
+      overlapMode: overlapMode,
+      newNoteInterrupts: newNoteInterrupts,
       tempoEvents: tempoEvents.isEmpty
           ? const [TempoEvent(tick: 0, microsecondsPerQuarter: 500000)]
           : tempoEvents,

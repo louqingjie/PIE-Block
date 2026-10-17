@@ -46,7 +46,7 @@
 
 调试配置保存 `tests` 数组。数组始终包含 P60、P62、P64、P66、P74、P75、P76、P77、MP03、MP74 十个固定引脚，数组顺序就是固件执行顺序。每项保存 `enabled`、`drive_type` 和 `value`；电机和舵机额外保存 `direction` 与 `duration_ms`，摩擦轮不保存方向与时长，测试期间也不发送方向帧。摩擦轮仅限 P64/P66：`value` 就是**目标占空比**本身（500–800，写成这张卡实测想跑的占空比），先给 `500` 启动占空比保持 1 秒完成电调激活，再逐周期平滑渐变到该目标，停留 1.5 秒后归零；低于 `600` 时只给一条提醒（可能带不动摩擦轮）。调试项目不再保存 `friction_*_max_duty`，也不再做「油门 → 满油上限」换算。
 
-音乐配置保存 `ticks_per_quarter`、`source_name`、`track_name`、`notes`、`tempo_events` 和 `time_signature_events`。每个音符保存稳定 `id`、`pitch`、`start_tick`、`duration_ticks` 与 `primary`；相同起始 tick 必须且只能有一个主音，其他音符作为低亮度参考并参与 MIDI 导出。速度事件保存每四分音符微秒数，拍号事件保存分子和分母，两类事件都从 tick 0 开始并严格递增。项目不保存原始 MIDI 字节、力度、乐器、通道或控制器。
+音乐配置保存 `ticks_per_quarter`、`source_name`、`track_name`、`notes`、`overlap_mode`、`new_note_interrupts`、`tempo_events` 和 `time_signature_events`。每个音符保存稳定 `id`、`pitch`、`start_tick` 和 `duration_ticks`，音符之间允许重叠。P33 蜂鸣器同时只能发一个音，因此按 `overlap_mode` 做单音裁决：`highest` 取高音、`lowest` 取低音、`nearest` 取最接近上一个有效发声音高的音符（曲首没有参照时取最高音）；`new_note_interrupts` 为真时后起始的音符会打断仍在发声的音符（被打断的尾巴不发声，卷帘里显示为灰色）。同一 tick 起始的一组音符按同一策略挑一个发声，其余整段不发声。不发声的音符/片段在卷帘里变灰，但数据仍完整保留并参与 MIDI 导出。速度事件保存每四分音符微秒数，拍号事件保存分子和分母，两类事件都从 tick 0 开始并严格递增。项目不保存原始 MIDI 字节、力度、乐器、通道或控制器。
 
 ## 摩擦轮的比例值控制
 

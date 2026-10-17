@@ -19,101 +19,89 @@
         "id": "n1",
         "pitch": 60,
         "start_tick": 0,
-        "duration_ticks": 480,
-        "primary": true
+        "duration_ticks": 480
       },
       {
         "id": "n2",
         "pitch": 60,
         "start_tick": 480,
-        "duration_ticks": 480,
-        "primary": true
+        "duration_ticks": 480
       },
       {
         "id": "n3",
         "pitch": 67,
         "start_tick": 960,
-        "duration_ticks": 480,
-        "primary": true
+        "duration_ticks": 480
       },
       {
         "id": "n4",
         "pitch": 67,
         "start_tick": 1440,
-        "duration_ticks": 480,
-        "primary": true
+        "duration_ticks": 480
       },
       {
         "id": "n5",
         "pitch": 69,
         "start_tick": 1920,
-        "duration_ticks": 480,
-        "primary": true
+        "duration_ticks": 480
       },
       {
         "id": "n6",
         "pitch": 69,
         "start_tick": 2400,
-        "duration_ticks": 480,
-        "primary": true
+        "duration_ticks": 480
       },
       {
         "id": "n7",
         "pitch": 67,
         "start_tick": 2880,
-        "duration_ticks": 960,
-        "primary": true
+        "duration_ticks": 960
       },
       {
         "id": "n8",
         "pitch": 65,
         "start_tick": 3840,
-        "duration_ticks": 480,
-        "primary": true
+        "duration_ticks": 480
       },
       {
         "id": "n9",
         "pitch": 65,
         "start_tick": 4320,
-        "duration_ticks": 480,
-        "primary": true
+        "duration_ticks": 480
       },
       {
         "id": "n10",
         "pitch": 64,
         "start_tick": 4800,
-        "duration_ticks": 480,
-        "primary": true
+        "duration_ticks": 480
       },
       {
         "id": "n11",
         "pitch": 64,
         "start_tick": 5280,
-        "duration_ticks": 480,
-        "primary": true
+        "duration_ticks": 480
       },
       {
         "id": "n12",
         "pitch": 62,
         "start_tick": 5760,
-        "duration_ticks": 480,
-        "primary": true
+        "duration_ticks": 480
       },
       {
         "id": "n13",
         "pitch": 62,
         "start_tick": 6240,
-        "duration_ticks": 480,
-        "primary": true
+        "duration_ticks": 480
       },
       {
         "id": "n14",
         "pitch": 60,
         "start_tick": 6720,
-        "duration_ticks": 960,
-        "primary": true
+        "duration_ticks": 960
       }
     ],
+    "overlap_mode": "nearest",
+    "new_note_interrupts": true,
     "tempo_events": [
       {
         "tick": 0,

@@ -397,18 +397,37 @@ class DebugConfig extends ProjectConfig {
   }
 }
 
+/// 重叠音符的单音裁决策略。
+///
+/// P33 蜂鸣器同时只能发一个音，重叠只能保留一个发声：下面三个策略决定
+/// 重叠时哪一个音符生效，其余音符（或音符被打断后的尾巴）在卷帘里变灰。
+enum MusicOverlapMode {
+  /// 取音高最高的音符发声。
+  highest,
+
+  /// 取音高最低的音符发声。
+  lowest,
+
+  /// 取音高最接近“上一个有效发声音高”的音符发声；曲首没有参照时取最高音。
+  nearest;
+
+  String get label => switch (this) {
+    MusicOverlapMode.highest => '取高音',
+    MusicOverlapMode.lowest => '取低音',
+    MusicOverlapMode.nearest => '取最近音阶',
+  };
+}
+
 class MusicNote {
   const MusicNote({
     required this.id,
     required this.pitch,
     required this.startTick,
     required this.durationTicks,
-    this.primary = true,
   });
 
   final String id;
   final int pitch, startTick, durationTicks;
-  final bool primary;
   int get endTick => startTick + durationTicks;
 
   MusicNote copyWith({
@@ -416,13 +435,11 @@ class MusicNote {
     int? pitch,
     int? startTick,
     int? durationTicks,
-    bool? primary,
   }) => MusicNote(
     id: id ?? this.id,
     pitch: pitch ?? this.pitch,
     startTick: startTick ?? this.startTick,
     durationTicks: durationTicks ?? this.durationTicks,
-    primary: primary ?? this.primary,
   );
 
   Map<String, Object?> toJson() => {
@@ -430,7 +447,6 @@ class MusicNote {
     'pitch': pitch,
     'start_tick': startTick,
     'duration_ticks': durationTicks,
-    'primary': primary,
   };
 
   factory MusicNote.fromJson(Map<String, Object?> json) => MusicNote(
@@ -438,7 +454,6 @@ class MusicNote {
     pitch: (json['pitch'] as num?)?.toInt() ?? 60,
     startTick: (json['start_tick'] as num?)?.toInt() ?? 0,
     durationTicks: (json['duration_ticks'] as num?)?.toInt() ?? 1,
-    primary: json['primary'] as bool? ?? true,
   );
 }
 
@@ -483,6 +498,8 @@ class MusicConfig extends ProjectConfig {
     this.sourceName,
     this.trackName,
     List<MusicNote> notes = const [],
+    this.overlapMode = MusicOverlapMode.nearest,
+    this.newNoteInterrupts = true,
     List<TempoEvent>? tempoEvents,
     List<TimeSignatureEvent>? timeSignatureEvents,
   }) : notes = List.unmodifiable(notes),
@@ -498,6 +515,13 @@ class MusicConfig extends ProjectConfig {
   final int ticksPerQuarter;
   final String? sourceName, trackName;
   final List<MusicNote> notes;
+
+  /// 重叠音符的单音裁决策略，见 [MusicOverlapMode]。
+  final MusicOverlapMode overlapMode;
+
+  /// 勾选后，后起始的音符会打断仍在发声的音符（被打断的尾巴不发声）。
+  final bool newNoteInterrupts;
+
   final List<TempoEvent> tempoEvents;
   final List<TimeSignatureEvent> timeSignatureEvents;
 
@@ -509,6 +533,8 @@ class MusicConfig extends ProjectConfig {
     Object? sourceName = _unset,
     Object? trackName = _unset,
     List<MusicNote>? notes,
+    MusicOverlapMode? overlapMode,
+    bool? newNoteInterrupts,
     List<TempoEvent>? tempoEvents,
     List<TimeSignatureEvent>? timeSignatureEvents,
   }) => MusicConfig(
@@ -520,25 +546,11 @@ class MusicConfig extends ProjectConfig {
         ? this.trackName
         : trackName as String?,
     notes: notes ?? this.notes,
+    overlapMode: overlapMode ?? this.overlapMode,
+    newNoteInterrupts: newNoteInterrupts ?? this.newNoteInterrupts,
     tempoEvents: tempoEvents ?? this.tempoEvents,
     timeSignatureEvents: timeSignatureEvents ?? this.timeSignatureEvents,
   );
-
-  MusicConfig promote(String noteId) {
-    MusicNote? target;
-    for (final note in notes) {
-      if (note.id == noteId) target = note;
-    }
-    if (target == null) return this;
-    return copyWith(
-      notes: [
-        for (final note in notes)
-          note.startTick == target.startTick
-              ? note.copyWith(primary: note.id == noteId)
-              : note,
-      ],
-    );
-  }
 
   @override
   Map<String, Object?> toJson() => {
@@ -546,6 +558,8 @@ class MusicConfig extends ProjectConfig {
     'source_name': sourceName,
     'track_name': trackName,
     'notes': notes.map((note) => note.toJson()).toList(),
+    'overlap_mode': overlapMode.name,
+    'new_note_interrupts': newNoteInterrupts,
     'tempo_events': tempoEvents.map((event) => event.toJson()).toList(),
     'time_signature_events': timeSignatureEvents
         .map((event) => event.toJson())
@@ -560,6 +574,12 @@ class MusicConfig extends ProjectConfig {
       for (final raw in json['notes'] as List? ?? const [])
         if (raw is Map) MusicNote.fromJson(Map<String, Object?>.from(raw)),
     ],
+    overlapMode: enumValue(
+      MusicOverlapMode.values,
+      json['overlap_mode'],
+      MusicOverlapMode.nearest,
+    ),
+    newNoteInterrupts: json['new_note_interrupts'] as bool? ?? true,
     tempoEvents: [
       for (final raw in json['tempo_events'] as List? ?? const [])
         if (raw is Map) TempoEvent.fromJson(Map<String, Object?>.from(raw)),
