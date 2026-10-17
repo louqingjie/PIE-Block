@@ -69,10 +69,10 @@ void main() {
   if (!outputDir.existsSync()) outputDir.createSync(recursive: true);
 
   final curves = <String, List<DebugCueNote>>{
-    // 整项 = 上行 N 音 + 停顿 + 对称回落，固件里听到的就是这个。
-    'fullStep3': DebugCues.fullStep(3),
-    // 进位后的整项：音区升八度，个数重新从 1 开始。
-    'fullStep6': DebugCues.fullStep(6),
+    // 第 N 项的提示就是上行音型的前 N 个音，固件里听到的就是这个。
+    'step3': DebugCues.step(3),
+    // 进位后：音区升八度，个数重新从 1 开始。
+    'step6': DebugCues.step(6),
   };
   for (final entry in curves.entries) {
     final name = 'cue_${entry.key}.wav';
@@ -87,11 +87,7 @@ void main() {
       .where((note) => note.frequencyHz != null)
       .map((note) => note.frequencyHz!)
       .toList();
-  final done3 = DebugCues.stepDone(3)
-      .where((note) => note.frequencyHz != null)
-      .map((note) => note.frequencyHz!)
-      .toList();
-  assert(step3.length == 3 && done3.length == 2, '第 3 项应为上行 3 声、回落 2 声');
-  assert(step3.last != done3.first, '交界处不应同音高');
-  stdout.writeln('自检通过：第 3 项 上行$step3 → 回落$done3');
+  assert(step3.length == 3, '第 3 项应为上行 3 声');
+  assert(step3.first < step3.last, '第 3 项应是上行');
+  stdout.writeln('自检通过：第 3 项 上行$step3');
 }

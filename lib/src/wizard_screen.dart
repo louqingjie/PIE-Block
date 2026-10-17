@@ -418,7 +418,7 @@ class _DebugCueAuditionState extends ConsumerState<_DebugCueAudition> {
             Text('步序提示', style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(width: 8),
             Text(
-              '点一下听整项（上行 + 回落）',
+              '点一下听这一项的提示音（上行 N 声）',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
@@ -434,7 +434,7 @@ class _DebugCueAuditionState extends ConsumerState<_DebugCueAudition> {
               _StepAuditionButton(
                 index: index,
                 playing: _playing == 'step$index',
-                onPressed: () => _play('step$index', DebugCues.fullStep(index)),
+                onPressed: () => _play('step$index', DebugCues.step(index)),
               ),
           ],
         ),

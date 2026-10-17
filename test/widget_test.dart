@@ -749,7 +749,7 @@ void main() {
       for (final note in notes) (note.frequencyHz, note.durationMs),
     ];
     final played = preview.played.single;
-    expect(curve(played), curve(DebugCues.fullStep(1)));
+    expect(curve(played), curve(DebugCues.step(1)));
 
     await tester.tap(stepButton);
     await tester.pump();

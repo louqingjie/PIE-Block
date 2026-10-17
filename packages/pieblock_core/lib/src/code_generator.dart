@@ -944,8 +944,6 @@ ${engineerFeedback.isEmpty ? '' : '        UpdateServoFeedback();'}
     // 提示音时值统一从 DebugCues 取，避免固件与 UI 试听两处定义漂移。
     final unitMs = DebugCues.unitMs;
     final gapMs = DebugCues.gapMs;
-    final eventDoneMs = DebugCues.eventDoneMs;
-    final eventGapMs = DebugCues.eventGapMs;
     final sectionGapMs = DebugCues.sectionGapMs;
     // 拓展板 Init 只用来设定 PWM 组频率（PWMA：P60/P62/P64/P66，PWMB：P74~P77）：
     // 电机 10000Hz，舵机与摩擦轮 50Hz。main() 起始已把两组初始化为 50Hz，
@@ -1025,10 +1023,6 @@ ${engineerFeedback.isEmpty ? '' : '        UpdateServoFeedback();'}
             '    ExpansionBoradControl(Duty_Change_Order, ${values(slot, 0)});',
           );
       }
-      // 测试动作与结束区之间的停顿，作用与步序区那处一致。
-      lines
-        ..add('    Ms_Delay(CUE_SECTION_GAP_MS);')
-        ..add('    DoneCue(${index + 1});');
       // 每个测试项之后都留同样的间隔（含最后一项）：最后一项之后的这一秒
       // 就是循环边界，让「回到第 1 项」和普通的项间切换听感一致。
       lines.add('    Ms_Delay(TEST_GAP_MS);');
@@ -1048,9 +1042,8 @@ ${engineerFeedback.isEmpty ? '' : '        UpdateServoFeedback();'}
 
 /* 提示音方案（详见 docs/design/调试模式提示音方案.md）：
    步序用一条上行音型 C6-E6-G6-C7-E7 的前 N 个音表示第 N 项
-   （个数即序号，不单独播一遍完整音型做前奏），结束用同一音型跳过步序
-   落音后对称回落，构成一句「上去、回来」的乐句。音区（八度）负责进位：
-   项 1~5 低八度，项 6 起高八度。
+   （个数即序号，不单独播一遍完整音型做前奏，也没有结束区的回落乐句）。
+   音区（八度）负责进位：项 1~5 低八度，项 6 起高八度。
    整段测试序列放在 while (1) 里循环执行：跑完最后一项自动回到第 1 项，
    没有「全部完成」的收尾旋律。 */
 uint8_t Channal = 36;
@@ -1068,17 +1061,14 @@ uint8_t Channal = 36;
 #define CUE_C7 ${DebugCues.noteC7}
 #define CUE_E7 ${DebugCues.noteE7}
 /* 上行音型：C6-E6-G6-C7-E7。步序用它的前 N 个音表示第 N 项（个数即序号），
-   回落用跳过步序落音后倒序，所以步序和结束是同一句旋律的一去一回。 */
+   音型本身不单独播放。 */
 #define CUE_MOTIF_LEN ${DebugCues.zoneSpan}
 /* 步序码：八度音区进位（项 1~5 低八度，项 6 起高八度） */
 #define CUE_ZONE_SPAN ${DebugCues.zoneSpan}
 #define CUE_UNIT_MS $unitMs
 #define CUE_GAP_MS $gapMs
-/* 回落音时值 */
-#define CUE_EVENT_DONE_MS $eventDoneMs
-#define CUE_EVENT_GAP_MS $eventGapMs
-/* 分区停顿：步序音与测试动作、测试动作与回落之间的静默，
-   必须明显长于 CUE_GAP_MS，否则去回两段会连成一个乐句，听不出边界。 */
+/* 分区停顿：步序音与随后的测试动作之间的静默，
+   必须明显长于 CUE_GAP_MS，否则动作噪音会盖掉步序音。 */
 #define CUE_SECTION_GAP_MS $sectionGapMs
 /* 项间与循环边界的静默：跑完最后一项后同样等这么久再回到第 1 项。 */
 #define TEST_GAP_MS 1000
@@ -1124,8 +1114,8 @@ static uint16_t MotifNote(uint8_t index, uint8_t high)
 }
 
 /* 步序提示：用上行音型的前 count 个音表示第 count 项——**个数即序号**，
-   所以不需要先播一遍完整音型做前奏。音区（八度）负责进位：
-   项 1~5 用低八度那组，项 6 起换高八度那组。 */
+   所以不需要先播一遍完整音型做前奏，也没有结束区的回落乐句。
+   音区（八度）负责进位：项 1~5 用低八度那组，项 6 起换高八度那组。 */
 static void StepCue(uint8_t step)
 {
     uint8_t zone;
@@ -1140,36 +1130,6 @@ static void StepCue(uint8_t step)
         if (i + 1 < count)
             Ms_Delay(CUE_GAP_MS);
     }
-}
-
-/* 步骤完成：步序音型的对称回落——从步序落音**下面**开始往回走。
-   必须跳过步序落音本身，否则交界处会出现同音高的两声连读，
-   分不出「步序结束」和「回落开始」。回落只落在步序音之内，
-   所以结束区总比步序区短，听感上清清楚楚是「向上走、再退回来」。
-   项 1 的步序只有一个音，跳过落音后为空，回落到音型首音本身。 */
-static void DoneCue(uint8_t step)
-{
-    uint8_t zone;
-    uint8_t count;
-    uint8_t i;
-
-    zone = (uint8_t)((step - 1) / CUE_ZONE_SPAN);
-    count = (uint8_t)((step - 1) % CUE_ZONE_SPAN + 1);
-    if (count == 1)
-    {
-        /* 项 1：跳过落音后为空，回到音型首音，完成「上行一个音 → 回落一个音」。 */
-        Beep(MotifNote(0, zone), CUE_EVENT_DONE_MS);
-        return;
-    }
-    /* 回落 = 音型第 count-2 个音一路降到第 0 个音，共 count-1 个音。
-       索引从 count-2 开始，天然跳过步序落音（音型第 count-1 个音），
-       所以交界处不会出现同音高的两声连读。 */
-    for (i = (uint8_t)(count - 2); i > 0; i--)
-    {
-        Beep(MotifNote(i, zone), CUE_EVENT_DONE_MS);
-        Ms_Delay(CUE_EVENT_GAP_MS);
-    }
-    Beep(MotifNote(0, zone), CUE_EVENT_DONE_MS);
 }
 
 static void ExpansionBoradControl(uint8_t command,
