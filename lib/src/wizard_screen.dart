@@ -232,7 +232,7 @@ String _fieldLabel(String path) {
     'modes.count': '模式数量',
     'modes.switch_strategy': '切换策略',
     'modes.switch_key': '切换按键',
-    'music.notes': '主旋律',
+    'music.notes': '音符',
     'music.tempo_events': '速度事件',
     'music.time_signature_events': '拍号事件',
   };
@@ -3268,7 +3268,7 @@ class _ReviewPage extends ConsumerWidget {
                 ListTile(
                   leading: const Icon(Icons.piano),
                   title: Text(
-                    '${config.notes.where((note) => note.primary).length} 个主旋律音符 · ${config.notes.where((note) => !note.primary).length} 个参考音符',
+                    '${config.notes.length} 个音符 · ${MusicTimeline.overlapCount(config)} 处重叠',
                   ),
                   subtitle: Text(
                     '${config.ticksPerQuarter} PPQ · ${config.tempoEvents.length} 个速度事件 · ${config.timeSignatureEvents.length} 个拍号事件',
@@ -3280,10 +3280,14 @@ class _ReviewPage extends ConsumerWidget {
                     title: Text('来源：${config.sourceName}'),
                     subtitle: Text('轨道：${config.trackName ?? '未命名'}'),
                   ),
-                const ListTile(
-                  leading: Icon(Icons.volume_up_outlined),
-                  title: Text('P33 无源蜂鸣器单音播放'),
-                  subtitle: Text('参考音符只参与 MIDI 导出，固件播放完立即循环'),
+                ListTile(
+                  leading: const Icon(Icons.volume_up_outlined),
+                  title: const Text('P33 无源蜂鸣器单音播放'),
+                  subtitle: Text(
+                    '重叠时按「${config.overlapMode.label}」只发声一个'
+                    '${config.newNoteInterrupts ? '，新音符打断前一个' : ''}；'
+                    '不发声的音符/片段在卷帘里显示为灰色，固件播放完立即循环',
+                  ),
                 ),
               ],
             ],

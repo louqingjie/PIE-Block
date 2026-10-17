@@ -48,32 +48,24 @@ double _y(int pitch) => (127 - pitch) * _rowHeight + _rowHeight / 2;
 
 Offset _pt(int tick, int pitch) => Offset(_x(tick), _y(pitch));
 
-MusicNote _n(
-  String id,
-  int pitch,
-  int startTick,
-  int durationTicks, {
-  bool primary = true,
-}) => MusicNote(
-  id: id,
-  pitch: pitch,
-  startTick: startTick,
-  durationTicks: durationTicks,
-  primary: primary,
-);
+MusicNote _n(String id, int pitch, int startTick, int durationTicks) =>
+    MusicNote(
+      id: id,
+      pitch: pitch,
+      startTick: startTick,
+      durationTicks: durationTicks,
+    );
 
 /// 主文档。
-///   a   p60  1920..2400  主音符，右邻 b
-///   b   p64  2400..2880  主音符（与 a 只隔 0 tick，用来验证“撞组外音符”）
+///   a   p60  1920..2400  与 b 首尾相接
+///   b   p64  2400..2880  与 a 只隔 0 tick
 ///   s   p55   960..990   短音符：duration 30 tick = 7.5px，靠 max(8, …) 画成 8px 宽
 ///   o   p50  5760..6240  远端障碍音符（组平移撞它用）
-///   ref p50  1920..2400  参考音符（非主旋律，用于提升回归）
 List<MusicNote> _base() => [
   _n('a', 60, 1920, 480),
   _n('b', 64, 2400, 480),
   _n('s', 55, 960, 30),
   _n('o', 50, 5760, 480),
-  _n('ref', 50, 1920, 480, primary: false),
 ];
 
 /// 最小 MusicPreviewService 实现，避免测试碰原生音频引擎。
@@ -214,6 +206,14 @@ class _Editor {
     await tester.tapAt(gridOrigin + point, kind: PointerDeviceKind.mouse);
     await tester.pump();
   }
+
+  /// 重叠提示会留下 SnackBar 计时器：测试结束前清掉，避免 pending timer 失败。
+  Future<void> clearSnackBars() async {
+    tester
+        .state<ScaffoldMessengerState>(find.byType(ScaffoldMessenger))
+        .clearSnackBars();
+    await tester.pump();
+  }
 }
 
 Future<_Editor> _pumpEditor(WidgetTester tester, List<MusicNote> notes) async {
@@ -321,25 +321,25 @@ void main() {
       expect(editor.note('b').durationTicks, 480);
     });
 
-    testWidgets('C6 组平移撞组外主音符时整组不动，同一次手势后续可越过', (tester) async {
+    testWidgets('C6 组平移允许压住组外音符：整组到位并提示重叠', (tester) async {
       final editor = await _pumpEditor(tester, _base());
       await _marqueeAB(editor);
 
-      // 先到 +960px：a → 5760..6240 正好压住 o（5760..6240）→ 本帧不动。
-      // 再到 +1080px：a → 6240..6720，与 o 仅边界相接 → 允许。
-      await editor.dragPath(_pt(1920, 60) + const Offset(1, 0), const [
-        Offset(960, 0),
-        Offset(1080, 0),
-      ]);
+      // 整组右移 960px = 3840 tick：a → 5760..6240 与 o(5760..6240) 完全重叠。
+      await editor.drag(_pt(1920, 60) + const Offset(1, 0), const Offset(960, 0));
 
       expect(editor.note('o').startTick, 5760, reason: '组外音符不得被推动');
-      expect(editor.note('a').startTick, 6240, reason: '越过障碍位置后整组应到位');
-      expect(editor.note('b').startTick, 6720, reason: '组内相对相位保持不变');
+      expect(editor.note('a').startTick, 5760, reason: '允许重叠后位移应生效');
+      expect(editor.note('b').startTick, 6240, reason: '组内相对相位保持不变');
       expect(editor.note('a').durationTicks, 480);
       expect(editor.note('b').durationTicks, 480);
+      expect(
+        find.textContaining('已允许重叠'),
+        findsOneWidget,
+        reason: '产生重叠后要给一条提示',
+      );
+      await editor.clearSnackBars();
 
-      // 被拒绝的中间帧不得产生额外历史：一次撤销应回到原位并让按钮变灰。
-      expect(editor.undoButton.onPressed, isNotNull);
       await tester.tap(find.byTooltip('撤销 Ctrl+Z'));
       await tester.pumpAndSettle();
       expect(editor.note('a').startTick, 1920);
@@ -451,7 +451,7 @@ void main() {
         const Offset(250, 0),
       );
 
-      expect(editor.noteCount, 5, reason: '画笔拖动已选中音符不得新建音符');
+      expect(editor.noteCount, 4, reason: '画笔拖动已选中音符不得新建音符');
       expect(editor.note('a').startTick, 2880, reason: '整组平移');
       expect(editor.note('b').startTick, 3360, reason: '多选未被清空');
     });
@@ -462,7 +462,7 @@ void main() {
 
       // (tick 2880, pitch 62) 是空白。
       await editor.tapContent(_pt(2880, 62));
-      expect(editor.noteCount, 6, reason: '画笔点空白应新建一个音符');
+      expect(editor.noteCount, 5, reason: '画笔点空白应新建一个音符');
       final created = editor.config.notes.last;
       expect(created.startTick, 2880);
       expect(created.pitch, 62);
@@ -473,7 +473,7 @@ void main() {
         const Offset(120, 0),
       );
 
-      expect(editor.noteCount, 6, reason: '拖动新建的实现不应再产生第二个音符');
+      expect(editor.noteCount, 5, reason: '拖动新建的实现不应再产生第二个音符');
       expect(editor.config.notes.last.startTick, 3360, reason: '新音符应被平移');
       expect(editor.note('a').startTick, 1920);
     });
@@ -487,7 +487,7 @@ void main() {
         const Offset(250, 0),
       );
 
-      expect(editor.noteCount, 5);
+      expect(editor.noteCount, 4);
       expect(editor.note('b').startTick, 2400, reason: '未选中音符不得被画笔拖动');
       expect(editor.note('b').pitch, 64);
     });
@@ -510,18 +510,26 @@ void main() {
       );
     });
 
-    testWidgets('C16 被重叠拒绝的拖动不留撤销记录', (tester) async {
+    testWidgets('C16 与其它音符重叠的拖动照常生效、只留一条撤销并提示', (tester) async {
       final editor = await _pumpEditor(tester, _base());
 
-      // a 右移 480 tick 后与 b（2400..2880）重叠 → 整段手势都被拒绝。
+      // a 右移 480 tick 后与 b（2400..2880）重叠 → 允许，按策略只发声一个。
       await editor.drag(
         _pt(1920, 60) + const Offset(1, 0),
         const Offset(120, 0),
       );
 
-      expect(editor.note('a').startTick, 1920, reason: '与主音符重叠的位移应被拒绝');
+      expect(editor.note('a').startTick, 2400, reason: '允许重叠后位移应生效');
       expect(editor.note('a').pitch, 60);
-      expect(editor.undoButton.onPressed, isNull, reason: '未真正改数据不得记历史');
+      expect(editor.note('a').durationTicks, 480);
+      expect(editor.undoButton.onPressed, isNotNull);
+      expect(find.textContaining('已允许重叠'), findsOneWidget);
+      await editor.clearSnackBars();
+
+      await tester.tap(find.byTooltip('撤销 Ctrl+Z'));
+      await tester.pumpAndSettle();
+      expect(editor.note('a').startTick, 1920);
+      expect(editor.undoButton.onPressed, isNull, reason: '一次拖动只留一条历史');
     });
 
     testWidgets('C17 多帧拖动只留一条撤销，撤销后完全回到原位', (tester) async {
@@ -543,30 +551,28 @@ void main() {
       expect(editor.undoButton.onPressed, isNull, reason: '只应有一条历史');
     });
 
-    testWidgets('C18 参考音符提升：同 tick 主音符被降级，降级音符不可拖动', (tester) async {
-      final editor = await _pumpEditor(tester, _base());
+    testWidgets('C18 任意音符都可点选/拖动，点选本身不算数据修改', (tester) async {
+      final editor = await _pumpEditor(tester, [
+        _n('a', 60, 1920, 480),
+        _n('b', 64, 2400, 480),
+      ]);
 
-      await editor.tapContent(_pt(1920, 50) + const Offset(1, 0));
+      // 点选不是数据修改：不得产生撤销历史。
+      await editor.tapContent(_pt(1920, 60) + const Offset(1, 0));
+      expect(editor.undoButton.onPressed, isNull, reason: '点选不应写撤销历史');
 
-      expect(editor.note('ref').primary, isTrue, reason: '选择模式点参考音符应提升为主旋律');
-      expect(editor.note('a').primary, isFalse, reason: '同 tick 的原主音符应被降级');
-      expect(editor.note('b').primary, isTrue, reason: '其它 tick 的主音符不受影响');
-      expect(editor.undoButton.onPressed, isNotNull, reason: '提升是一次可撤销的提交');
-
-      await editor.drag(
-        _pt(1920, 50) + const Offset(1, 0),
-        const Offset(250, 0),
-      );
-      expect(editor.note('ref').startTick, 2880, reason: '提升后的音符可拖动');
-      expect(editor.note('a').startTick, 1920, reason: '被降级的音符不得随组移动');
-
-      // 降级音符（参考音符）不可拖动，也不应被这次拖动静默提升。
+      // 被点选的音符可拖动，未选中的音符不受影响。
       await editor.drag(
         _pt(1920, 60) + const Offset(1, 0),
         const Offset(250, 0),
       );
-      expect(editor.note('a').startTick, 1920, reason: '参考音符只读，拖动不得移动它');
-      expect(editor.note('a').primary, isFalse, reason: '拖动不应隐式提升参考音符');
+      expect(editor.note('a').startTick, 2880, reason: '任意音符都应可拖动');
+      expect(editor.note('b').startTick, 2400, reason: '未选中的音符不得随组移动');
+
+      await tester.tap(find.byTooltip('撤销 Ctrl+Z'));
+      await tester.pumpAndSettle();
+      expect(editor.note('a').startTick, 1920);
+      expect(editor.undoButton.onPressed, isNull);
     });
 
     testWidgets('C19 删除工具：点击删除音符，撤销可恢复', (tester) async {
@@ -576,7 +582,7 @@ void main() {
       await editor.tapContent(_pt(1920, 60) + const Offset(1, 0));
 
       expect(editor.has('a'), isFalse, reason: '删除工具点音符应把它删掉');
-      expect(editor.noteCount, 4);
+      expect(editor.noteCount, 3);
       expect(editor.undoButton.onPressed, isNotNull);
 
       await tester.tap(find.byTooltip('撤销 Ctrl+Z'));
@@ -627,30 +633,34 @@ void main() {
       expect(editor.undoButton.onPressed, isNull, reason: '一次调时值只应有一条历史');
     });
 
-    testWidgets('C22 调时值被重叠拒绝后，继续左拖仍能恢复（且只留一条历史）', (tester) async {
+    testWidgets('C22 调时值先拉长压住相邻音符（允许），继续左拖仍能缩短且只留一条历史', (tester) async {
       final editor = await _pumpEditor(tester, [
         _n('a', 60, 1920, 480),
         _n('b', 64, 2400, 480),
       ]);
 
-      // 第 1 帧 +70px：a 会被拉到 720 tick（1920..2640）压住 b → 拒绝，不提交。
-      // 第 2 帧回到 -120px：时长 120 tick（1920..2040）合法 → 必须仍能生效。
+      // 第 1 帧 +70px：时长 720（1920..2640）压住 b —— 允许重叠，照常提交。
+      // 第 2 帧回到 -120px：时长 120 tick（1920..2040）→ 必须仍能生效。
       final gesture = await editor.press(Offset(_x(2400) - 1, _y(60)));
       await gesture.moveBy(const Offset(70, 0));
       await tester.pump();
-      expect(editor.note('a').durationTicks, 480, reason: '越界帧应被拒绝，不得先把 a 拉长');
-      expect(editor.undoButton.onPressed, isNull, reason: '被拒绝的帧不得写历史');
+      expect(
+        editor.note('a').durationTicks,
+        720,
+        reason: '允许重叠后压住相邻音符的调时值应生效',
+      );
+      expect(editor.undoButton.onPressed, isNotNull, reason: '真实改数据后应有撤销历史');
 
       await gesture.moveBy(const Offset(-190, 0));
       await tester.pump();
-      expect(editor.note('a').durationTicks, 120, reason: '被拒绝的帧不得锁死后续合法帧');
+      expect(editor.note('a').durationTicks, 120, reason: '允许重叠后继续缩短应生效');
       await gesture.up();
       await tester.pump();
+      await editor.clearSnackBars();
 
       expect(editor.note('a').startTick, 1920, reason: '调时值期间不应移动');
       expect(editor.note('a').pitch, 60);
       expect(editor.note('b').durationTicks, 480, reason: 'b 不应被改动');
-      expect(editor.undoButton.onPressed, isNotNull);
 
       await tester.tap(find.byTooltip('撤销 Ctrl+Z'));
       await tester.pumpAndSettle();
@@ -658,22 +668,23 @@ void main() {
       expect(
         editor.undoButton.onPressed,
         isNull,
-        reason: '被拒绝的帧不得写历史，整段手势只应有一条',
+        reason: '整段手势只应有一条历史',
       );
     });
 
-    testWidgets('C23 调时值整段手势都非法时：时长不变、不写历史', (tester) async {
+    testWidgets('C23 调时值多帧都停在原时长：不写历史', (tester) async {
       final editor = await _pumpEditor(tester, [
         _n('a', 60, 1920, 480),
         _n('b', 64, 2400, 480),
       ]);
 
+      // 两帧都吸附回原时长 480 tick（±15px 内）：从未真正改数据。
       await editor.dragPath(Offset(_x(2400) - 1, _y(60)), const [
-        Offset(70, 0),
-        Offset(40, 0),
+        Offset(10, 0),
+        Offset(15, 0),
       ]);
 
-      expect(editor.note('a').durationTicks, 480, reason: '两帧都压住 b，应全程拒绝');
+      expect(editor.note('a').durationTicks, 480, reason: '吸附回原时长，不应变化');
       expect(editor.note('a').startTick, 1920);
       expect(editor.undoButton.onPressed, isNull, reason: '未真正改数据不得留下撤销记录');
     });
@@ -725,32 +736,34 @@ void main() {
       );
     });
 
-    testWidgets('C26 调时值可扩到相邻主音符边界，越界帧被拒且不回滚已生效值', (tester) async {
+    testWidgets('C26 调时值允许越过相邻音符边界（不再拒绝越界帧）', (tester) async {
       final editor = await _pumpEditor(tester, [
         _n('a', 60, 1920, 480),
         _n('b', 64, 2760, 480),
       ]);
 
-      // a 左缘 x=480。第 1 帧光标 x=690 → 时长 840（a 结束于 2760，正好贴住 b）→ 允许。
-      // 第 2 帧光标 x=710 → 时长 960（结束 2880 > 2760）→ 拒绝，且不得回滚 840。
+      // a 左缘 x=480。第 1 帧光标 x=690 → 时长 840（a 结束于 2760，正好贴住 b）。
+      // 第 2 帧光标 x=710 → 时长 960（结束 2880 > 2760）→ 允许，且压住 b。
       final gesture = await editor.press(Offset(_x(2400) - 5, _y(60)));
       await gesture.moveBy(const Offset(95, 0));
       await tester.pump();
-      expect(editor.note('a').durationTicks, 840, reason: '刚好贴住相邻音符的时长应被允许');
+      expect(editor.note('a').durationTicks, 840, reason: '贴住相邻音符的时长应被允许');
 
       await gesture.moveBy(const Offset(20, 0));
       await tester.pump();
       expect(
         editor.note('a').durationTicks,
-        840,
-        reason: '越界帧应被拒绝且不得回滚已生效的 840',
+        960,
+        reason: '允许重叠：越过 b 边界的时长也应生效',
       );
       await gesture.up();
       await tester.pump();
 
-      expect(editor.note('a').endTick, 2760);
+      expect(editor.note('a').endTick, 2880);
       expect(editor.note('a').startTick, 1920);
       expect(editor.note('b').startTick, 2760, reason: 'b 不应被推动');
+      expect(find.textContaining('已允许重叠'), findsOneWidget);
+      await editor.clearSnackBars();
 
       await tester.tap(find.byTooltip('撤销 Ctrl+Z'));
       await tester.pumpAndSettle();
@@ -790,31 +803,27 @@ void main() {
       expect(editor.has('s'), isTrue, reason: '第二次撤销恢复删除');
     });
 
-    testWidgets('C28 调时值可与参考音符重叠——与新建/粘贴同规则，不得过度拦截', (tester) async {
+    testWidgets('C28 调时值可与任意音符重叠（不再区分主/参考音符）', (tester) async {
       final editor = await _pumpEditor(tester, [
         _n('a', 60, 1920, 480),
-        _n('ref', 50, 2400, 480, primary: false),
+        _n('other', 50, 2400, 480),
       ]);
 
-      // a 右缘 x=600，右移 70px → 时长 720（a 结束 2640）会盖住参考音符 ref(2400..2880)。
-      // 新建/粘贴只受主旋律约束（_overlapsPrimary），调时值也应如此。
+      // a 右缘 x=600，右移 70px → 时长 720（a 结束 2640）会盖住 other(2400..2880)。
       await editor.drag(Offset(_x(2400) - 1, _y(60)), const Offset(70, 0));
 
-      expect(
-        editor.note('a').durationTicks,
-        720,
-        reason: '参考音符不参与主旋律重叠约束，不得拦截',
-      );
+      expect(editor.note('a').durationTicks, 720, reason: '重叠不再被拒绝');
       expect(editor.note('a').endTick, 2640);
       expect(editor.note('a').startTick, 1920);
-      expect(editor.note('ref').startTick, 2400, reason: '参考音符不得被改动');
+      expect(editor.note('other').startTick, 2400, reason: '其它音符不得被改动');
       expect(editor.undoButton.onPressed, isNotNull);
+      expect(find.textContaining('已允许重叠'), findsOneWidget);
+      await editor.clearSnackBars();
     });
 
-    testWidgets('C29 【记录用】既有重叠文档（MIDI 导入）下拖出去回不到原点', (tester) async {
+    testWidgets('C29 既有重叠文档：拖出去再拖回原点可以恢复', (tester) async {
       final editor = await _pumpEditor(tester, [
-        // MidiCodec.selectTrack 按 start tick 各选一个主音符，但保留原时长，
-        // 因此导入的工程里主音符区间可以本来就重叠。
+        // MIDI 导入会保留原时长，导入的工程里区间可以本来就重叠。
         _n('x', 60, 1920, 960), // 1920..2880
         _n('y', 64, 2400, 480), // 2400..2880，与 x 重叠
       ]);
@@ -824,18 +833,13 @@ void main() {
       await tester.pump();
       expect(editor.note('x').startTick, 2880, reason: '前置条件：脱离重叠后可以移动');
 
-      // 指针回到按下点：候选 x(1920..2880) 与 y 重叠 → 本帧被拒。
+      // 指针回到按下点：允许重叠后必须能拖回原点（原「已知限制」已消除）。
       await gesture.moveBy(const Offset(-248, 0));
       await tester.pump();
-      expect(
-        editor.note('x').startTick,
-        2880,
-        reason:
-            '已知限制：原点本身是既有重叠状态，_overlapsOthers 先于“回到原位”判断，'
-            '所以拖出去后拖不回来（§4.3 已把“非法落点静默冻结、松手不回弹”列为同类问题）',
-      );
+      expect(editor.note('x').startTick, 1920, reason: '允许重叠后拖回原点应生效');
       await gesture.up();
       await tester.pump();
+      expect(editor.undoButton.onPressed, isNotNull);
     });
   });
 
@@ -877,29 +881,29 @@ void main() {
       );
     });
 
-    testWidgets('X2 右缘调时值不得与组外主音符重叠', (tester) async {
+    testWidgets('X2 右缘调时值允许与其它音符重叠，裁决结果与灰色显示一致', (tester) async {
       final editor = await _pumpEditor(tester, _base());
 
       // 按在 a 右缘内 1px（命中区 10px），右移 70px。
       await editor.drag(Offset(_x(2400) - 1, _y(60)), const Offset(70, 0));
 
       final a = editor.note('a');
-      final b = editor.note('b');
-      final segments = MusicTimeline.segments(editor.config)
-          .map((segment) => '${segment.pitch ?? '-'}:${segment.durationMs}ms')
-          .join(', ');
       expect(a.startTick, 1920, reason: '调时值不应改 startTick');
       expect(a.pitch, 60, reason: '调时值不应改 pitch');
+      expect(a.durationTicks, 720, reason: '允许重叠，调时值照常生效');
+      expect(MusicTimeline.overlapCount(editor.config), 1);
+      // 界面显示 a 到 2640，但单音裁决只让 b 在 2400 接管：
+      // a 的 2400..2640 在卷帘里显示为灰色（不发声），播放/生成代码也一致。
+      final spans = MusicTimeline.soundingSpans(editor.config);
+      final aSpan = spans.firstWhere((span) => span.noteId == 'a');
+      expect(aSpan.startTick, 1920);
+      expect(aSpan.endTick, 2400, reason: 'a 被 b 打断，发声到 b 的起点为止');
       expect(
-        a.endTick <= b.startTick,
-        isTrue,
-        reason:
-            '调时值把 a 拉到 ${a.durationTicks} tick 后与 b 重叠：'
-            'a=${a.startTick}..${a.endTick}，b=${b.startTick}..${b.endTick}。'
-            '改动前的实现用 _overlapsPrimary 拒绝这种候选，新建/粘贴也仍会拒绝；'
-            '重叠的主旋律在 MusicTimeline.segments 里会被静默截断（music.dart:62），'
-            '该配置生成的片段为 [$segments]，即“界面显示的时长”与“播放/生成代码的时长”不一致',
+        spans.where((span) => span.noteId == 'b').single.startTick,
+        2400,
       );
+      expect(find.textContaining('已允许重叠'), findsOneWidget);
+      await editor.clearSnackBars();
     });
 
     testWidgets('X3 指针被系统取消后不得残留拖动状态', (tester) async {

@@ -563,11 +563,10 @@ ProjectDocument _musicDocument() {
       notes: const [
         MusicNote(id: 'main', pitch: 60, startTick: 0, durationTicks: 480),
         MusicNote(
-          id: 'reference',
+          id: 'overlap',
           pitch: 67,
           startTick: 0,
           durationTicks: 480,
-          primary: false,
         ),
         MusicNote(id: 'later', pitch: 64, startTick: 5760, durationTicks: 480),
       ],

@@ -204,6 +204,14 @@ class _Editor {
     await tester.tapAt(gridOrigin + point);
     await tester.pump();
   }
+
+  /// 重叠提示会留下 SnackBar 计时器：测试结束前清掉，避免 pending timer 失败。
+  Future<void> clearSnackBars() async {
+    tester
+        .state<ScaffoldMessengerState>(find.byType(ScaffoldMessenger))
+        .clearSnackBars();
+    await tester.pump();
+  }
 }
 
 IconButton _undoButton(WidgetTester tester) => tester.widget<IconButton>(
@@ -349,16 +357,19 @@ void main() {
     expect(editor.note('c').durationTicks, 480);
   });
 
-  testWidgets('T5d 拖到其他主音符所在时段时本帧不动', (tester) async {
+  testWidgets('T5d 拖到其他音符所在时段时允许重叠并给提示', (tester) async {
     final editor = await _pumpEditor(tester);
 
-    // a(1920..2400) 右移 480 tick 后正好是 b(2400..2880)，与主音符重叠应被拒绝。
+    // a(1920..2400) 右移 480 tick 后与 b(2400..2880) 重叠：允许，按策略只发声一个。
     await editor.drag(_gridPoint(1920, 60), const Offset(120, 0));
 
-    expect(editor.note('a').startTick, 1920, reason: '与主音符重叠的位移应被拒绝');
+    expect(editor.note('a').startTick, 2400, reason: '允许重叠后位移应生效');
     expect(editor.note('a').pitch, 60);
+    expect(editor.note('a').durationTicks, 480);
     expect(editor.note('b').startTick, 2400);
     expect(editor.noteCount, 3);
+    expect(find.textContaining('已允许重叠'), findsOneWidget);
+    await editor.clearSnackBars();
   });
 
   testWidgets('T6 一次拖动只产生一条撤销历史，撤销后回到原位', (tester) async {

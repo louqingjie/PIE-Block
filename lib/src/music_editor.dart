@@ -55,7 +55,21 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
   /// undo 快照延后到本次拖动首次真正改变数据时再记录：按住音符只是选中、
   /// 或抖动一两个像素就松手时，不再留下一条“撤销了什么都没发生”的历史。
   bool _dragHistoryPending = false;
-  MusicNote? _clipboard;
+
+  /// 多选剪贴板：保存相对最小时刻归一化后的音符，粘贴时整块落到播放头。
+  List<MusicNote> _clipboard = const [];
+
+  /// 本次拖动开始时的重叠处数：松手后只在重叠处数变多时提示一次。
+  int _overlapAtPointerDown = 0;
+
+  /// 本次手势是否真的在拖动音符（框选/平移不参与重叠提示）。
+  bool _overlapTracked = false;
+
+  /// 单音裁决结果缓存：配置对象不变时（同一帧内的多次读取）不重复计算。
+  MusicConfig? _resolutionConfig;
+  List<MusicSoundingSpan> _resolutionSpans = const [];
+  int _resolutionOverlaps = 0;
+
   Timer? _positionTimer;
   int _playheadTick = 0;
   int _transportRequest = 0;
@@ -98,6 +112,7 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
     _redo.add(_config);
     final value = _undo.removeLast();
     ref.read(appControllerProvider.notifier).updateConfig(value);
+    _pruneSelection(value);
     setState(() {});
   }
 
@@ -106,11 +121,46 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
     _undo.add(_config);
     final value = _redo.removeLast();
     ref.read(appControllerProvider.notifier).updateConfig(value);
+    _pruneSelection(value);
     setState(() {});
+  }
+
+  /// 撤销/重做后把选区里已经不存在的音符 id 清掉：否则后续 Delete/拖动会
+  /// 对着空气提交一条内容不变的撤销记录，还会顺带清空重做栈。
+  void _pruneSelection(MusicConfig config) {
+    final ids = {for (final note in config.notes) note.id};
+    _selected.removeWhere((id) => !ids.contains(id));
   }
 
   int _snap(int tick) =>
       _snapDivisor == 0 ? tick : (tick / _snapTicks).round() * _snapTicks;
+
+  /// 按当前配置算一次单音裁决结果与重叠处数（两者都要遍历音符，一起算）。
+  void _resolve() {
+    final config = _config;
+    if (identical(config, _resolutionConfig)) return;
+    _resolutionConfig = config;
+    _resolutionSpans = MusicTimeline.soundingSpans(config);
+    _resolutionOverlaps = MusicTimeline.overlapCount(config);
+  }
+
+  String get _overlapLabel => _config.overlapMode.label;
+
+  /// 本次操作把重叠处数变多时提示一次；没有新增重叠就不打扰。
+  void _warnOverlapSince(int before) {
+    if (!mounted) return;
+    _resolve();
+    final after = _resolutionOverlaps;
+    if (after <= before) return;
+    _overlapWarning('已允许重叠：现在共 $after 处重叠，将按「$_overlapLabel」只发声一个');
+  }
+
+  void _overlapWarning(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
 
   Rect _noteRect(MusicNote note) => Rect.fromLTWH(
     note.startTick / _config.ticksPerQuarter * _pixelsPerQuarter,
@@ -133,32 +183,11 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
 
   int _pitchAtY(double y) => (127 - (y / _rowHeight).floor()).clamp(1, 127);
 
-  bool _overlapsPrimary(MusicNote candidate) {
-    return _config.notes.any(
-      (note) =>
-          note.primary &&
-          note.id != candidate.id &&
-          candidate.startTick < note.endTick &&
-          candidate.endTick > note.startTick,
-    );
-  }
-
   void _tap(TapDownDetails details) {
     if (_tool == _MusicTool.pan) return;
     final hit = _hit(details.localPosition);
     if (hit != null) {
-      if (!hit.primary) {
-        if (_tool == _MusicTool.select) {
-          _commit(_config.promote(hit.id));
-          _selected
-            ..clear()
-            ..add(hit.id);
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('参考音符只读；切换到“选择”后可点击提升为主旋律')),
-          );
-        }
-      } else if (_tool == _MusicTool.erase) {
+      if (_tool == _MusicTool.erase) {
         _commit(
           _config.copyWith(
             notes: _config.notes.where((note) => note.id != hit.id).toList(),
@@ -201,15 +230,13 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
       startTick: tick,
       durationTicks: _snapTicks,
     );
-    if (_overlapsPrimary(note)) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('主旋律只能单音播放，请在空白时段添加音符')));
-      return;
-    }
+    // 允许重叠：只提示「已按策略单音发声」，不再拒绝这次落笔。
+    final before = MusicTimeline.overlapCount(_config);
     _commit(_config.copyWith(notes: [..._config.notes, note]));
     _selected
       ..clear()
       ..add(note.id);
+    _warnOverlapSince(before);
   }
 
   /// 记录本次指针按下前已选中的音符。放在 Listener 里而不是 onTapDown，
@@ -231,9 +258,8 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
       setState(() {});
       return;
     }
-    if (!hit.primary) return;
-    // 选择模式：按住任意主旋律音符即可拖动。画笔模式：只有按住按下前就已经
-    // 选中的音符才拖动（否则它是刚被画笔选中的目标，保持画笔的原有行为）。
+    // 选择模式：按住任意音符即可拖动。画笔模式：只有按住按下前就已经选中的
+    // 音符才拖动（否则它是刚被画笔选中的目标，保持画笔的原有行为）。
     final movable =
         _tool == _MusicTool.select ||
         (_tool == _MusicTool.pencil &&
@@ -248,12 +274,13 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
       ..clear()
       ..addEntries([
         for (final note in _config.notes)
-          if (note.primary && _selected.contains(note.id))
-            MapEntry(note.id, note),
+          if (_selected.contains(note.id)) MapEntry(note.id, note),
       ]);
     _dragOriginals.putIfAbsent(hit.id, () => hit);
     _dragAnchorId = hit.id;
     _dragStart = details.localPosition;
+    _overlapAtPointerDown = MusicTimeline.overlapCount(_config);
+    _overlapTracked = true;
     // 调时值的命中区随音符宽度收缩（下限 3px）：满宽音符仍是右缘 10px，
     // 短音符（最小绘制宽度 8px）左侧始终留得下可拖动的区域。
     final anchorRect = _noteRect(hit);
@@ -293,7 +320,7 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
           ..clear()
           ..addAll(
             _config.notes
-                .where((note) => note.primary && rect.overlaps(_noteRect(note)))
+                .where((note) => rect.overlaps(_noteRect(note)))
                 .map((note) => note.id),
           );
         setState(() {});
@@ -321,8 +348,6 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
         ),
       );
       if (next.durationTicks == anchor.durationTicks) return;
-      // 调时值同样不能把主旋律拉进别的音符里（与新建、粘贴同一条规则）。
-      if (_overlapsPrimary(next)) return;
       _commit(
         _config.copyWith(
           notes: [
@@ -348,7 +373,6 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
           pitch: entry.value.pitch + pitchDelta,
         ),
     };
-    if (_overlapsOthers(moved.values)) return;
     // 早退条件看“结果是否与当前配置一致”，而不是“位移是否为 0”：指针绕回按下
     // 位置附近时位移会吸附回 0，此时必须把音符放回原位，不能停在上一帧的位移上。
     final current = {for (final note in _config.notes) note.id: note};
@@ -386,24 +410,11 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
     return delta.clamp(1 - lowest, 127 - highest);
   }
 
-  /// 被拖动的音符彼此保持原有相对位置，只需要检查它们与组外主音符的重叠。
-  bool _overlapsOthers(Iterable<MusicNote> moved) {
-    final moving = moved.map((note) => note.id).toSet();
-    final others = _config.notes.where(
-      (note) => note.primary && !moving.contains(note.id),
-    );
-    for (final note in moved) {
-      if (!note.primary) continue;
-      for (final other in others) {
-        if (note.startTick < other.endTick && note.endTick > other.startTick) {
-          return true;
-        }
-      }
-    }
-    return false;
-  }
-
   void _panEnd(DragEndDetails details) {
+    final before = _overlapAtPointerDown;
+    final tracked = _overlapTracked;
+    _overlapAtPointerDown = 0;
+    _overlapTracked = false;
     _dragOriginals.clear();
     _dragAnchorId = null;
     _dragStart = null;
@@ -412,40 +423,73 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
     _marqueeStart = null;
     _marqueeEnd = null;
     setState(() {});
+    if (tracked) _warnOverlapSince(before);
   }
 
   void _deleteSelected() {
-    if (_selected.isEmpty) return;
+    final ids = _selected.where((id) => _config.notes.any((n) => n.id == id));
+    if (ids.isEmpty) {
+      if (_selected.isNotEmpty) setState(_selected.clear);
+      return;
+    }
     _commit(
       _config.copyWith(
         notes: _config.notes
-            .where((note) => !_selected.contains(note.id) || !note.primary)
+            .where((note) => !_selected.contains(note.id))
             .toList(),
       ),
     );
     _selected.clear();
   }
 
-  void _copy() {
-    if (_selected.isEmpty) return;
-    final id = _selected.first;
-    for (final note in _config.notes) {
-      if (note.id == id && note.primary) _clipboard = note;
-    }
+  /// 全选（Ctrl+A）：所有音符都是可编辑、可发声候选，不分主次。
+  void _selectAll() {
+    if (_config.notes.isEmpty) return;
+    setState(() {
+      _selected
+        ..clear()
+        ..addAll(_config.notes.map((note) => note.id));
+    });
   }
 
+  /// 复制选中音符（Ctrl+C）：按最小时刻归一化成相对偏移，粘贴时整块落到播放头。
+  void _copy() {
+    final copies = [
+      for (final note in _config.notes)
+        if (_selected.contains(note.id)) note,
+    ];
+    if (copies.isEmpty) return;
+    copies.sort((a, b) {
+      final tick = a.startTick.compareTo(b.startTick);
+      if (tick != 0) return tick;
+      final pitch = b.pitch.compareTo(a.pitch);
+      return pitch != 0 ? pitch : a.id.compareTo(b.id);
+    });
+    final baseTick = copies.first.startTick;
+    _clipboard = [
+      for (final note in copies)
+        note.copyWith(startTick: note.startTick - baseTick),
+    ];
+  }
+
+  /// 粘贴（Ctrl+V）：整块落到播放头（吸附到网格），保持相对时刻与音高。
   void _paste() {
-    final source = _clipboard;
-    if (source == null) return;
-    final note = source.copyWith(
-      id: 'n${DateTime.now().microsecondsSinceEpoch}',
-      startTick: source.endTick,
-    );
-    if (_overlapsPrimary(note)) return;
-    _commit(_config.copyWith(notes: [..._config.notes, note]));
+    if (_clipboard.isEmpty) return;
+    final baseTick = _snap(math.max(0, _playheadTick));
+    final stamp = DateTime.now().microsecondsSinceEpoch;
+    final pasted = [
+      for (final (index, source) in _clipboard.indexed)
+        source.copyWith(
+          id: 'n${stamp}_$index',
+          startTick: baseTick + source.startTick,
+        ),
+    ];
+    final before = MusicTimeline.overlapCount(_config);
+    _commit(_config.copyWith(notes: [..._config.notes, ...pasted]));
     _selected
       ..clear()
-      ..add(note.id);
+      ..addAll(pasted.map((note) => note.id));
+    _warnOverlapSince(before);
   }
 
   Future<void> _importMidi() async {
@@ -476,7 +520,7 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
                     leading: const Icon(Icons.music_note),
                     title: Text(entry.$2.name),
                     subtitle: Text(
-                      '${entry.$2.melodicNoteCount} 个音符${entry.$2.polyphonic ? ' · 包含重叠音，自动提取主旋律' : ''}',
+                      '${entry.$2.melodicNoteCount} 个音符${entry.$2.polyphonic ? ' · 包含重叠音，导入后按重叠处理单音发声' : ''}',
                     ),
                     onTap: () => Navigator.pop(context, entry.$1),
                   ),
@@ -486,7 +530,20 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
         ),
       );
       if (selected != null) {
-        _commit(midi.selectTrack(selected, sourceName: file.name));
+        final imported = midi.selectTrack(
+          selected,
+          sourceName: file.name,
+          overlapMode: _config.overlapMode,
+          newNoteInterrupts: _config.newNoteInterrupts,
+        );
+        _commit(imported);
+        final overlaps = MusicTimeline.overlapCount(imported);
+        if (overlaps > 0) {
+          _overlapWarning(
+            '已导入 ${imported.notes.length} 个音符，检测到 $overlaps 处重叠，'
+            '将按「${imported.overlapMode.label}」只发声一个',
+          );
+        }
       }
     } on FormatException catch (error) {
       if (mounted) {
@@ -830,6 +887,7 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
                                   painter: _PianoRollPainter(
                                     config: config,
                                     selected: Set.of(_selected),
+                                    sounding: _resolutionSpans,
                                     pixelsPerQuarter: _pixelsPerQuarter,
                                     rowHeight: _rowHeight,
                                     playheadTick: _playheadTick,
@@ -979,6 +1037,7 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
   Widget build(BuildContext context) {
     final config =
         ref.watch(appControllerProvider).document!.config as MusicConfig;
+    _resolve();
     final maxTick = config.notes.fold<int>(
       config.ticksPerQuarter * 16,
       (value, note) =>
@@ -999,6 +1058,8 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
             _redoAction,
         const SingleActivator(LogicalKeyboardKey.keyC, control: true): _copy,
         const SingleActivator(LogicalKeyboardKey.keyV, control: true): _paste,
+        const SingleActivator(LogicalKeyboardKey.keyA, control: true):
+            _selectAll,
         const SingleActivator(LogicalKeyboardKey.delete): _deleteSelected,
       },
       child: Focus(
@@ -1103,6 +1164,54 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
                             onChanged: (value) =>
                                 setState(() => _snapDivisor = value ?? 4),
                           ),
+                          if (!compactToolbar) const Text('重叠处理'),
+                          Tooltip(
+                            message: '重叠处理：重叠音符按哪种规则只发声一个',
+                            child: DropdownButton<MusicOverlapMode>(
+                              key: const ValueKey('music-overlap-mode'),
+                              value: config.overlapMode,
+                              items: [
+                                for (final mode in MusicOverlapMode.values)
+                                  DropdownMenuItem(
+                                    value: mode,
+                                    child: Text(mode.label),
+                                  ),
+                              ],
+                              onChanged: (value) {
+                                if (value == null ||
+                                    value == config.overlapMode) {
+                                  return;
+                                }
+                                _commit(
+                                  _config.copyWith(overlapMode: value),
+                                );
+                              },
+                            ),
+                          ),
+                          Tooltip(
+                            message: '勾选后，后起始的音符会打断前一个音符的延音（被打断部分变灰）',
+                            child: FilterChip(
+                              key: const ValueKey('music-new-note-interrupts'),
+                              label: const Text('新音符打断'),
+                              selected: config.newNoteInterrupts,
+                              onSelected: (value) => _commit(
+                                _config.copyWith(newNoteInterrupts: value),
+                              ),
+                            ),
+                          ),
+                          if (_resolutionOverlaps > 0)
+                            Tooltip(
+                              message:
+                                  '灰色为不发声的音符/片段；重叠按「${config.overlapMode.label}」只发声一个',
+                              child: Chip(
+                                key: const ValueKey('music-overlap-warning'),
+                                avatar: const Icon(
+                                  Icons.warning_amber_rounded,
+                                  size: 16,
+                                ),
+                                label: Text('$_resolutionOverlaps 处重叠'),
+                              ),
+                            ),
                           IconButton(
                             onPressed: _play,
                             tooltip: '播放',
@@ -1482,6 +1591,7 @@ class _PianoRollPainter extends CustomPainter {
   const _PianoRollPainter({
     required this.config,
     required this.selected,
+    required this.sounding,
     required this.pixelsPerQuarter,
     required this.rowHeight,
     required this.playheadTick,
@@ -1489,9 +1599,16 @@ class _PianoRollPainter extends CustomPainter {
   });
   final MusicConfig config;
   final Set<String> selected;
+
+  /// 单音裁决后真正发声的区间：不在里面的音符/片段画成灰色。
+  final List<MusicSoundingSpan> sounding;
   final double pixelsPerQuarter, rowHeight;
   final int playheadTick;
   final Rect? marquee;
+
+  static const _muted = Color(0xff59626c);
+  static const _active = Color(0xff02acc0);
+  static const _selectedActive = Color(0xffffc857);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1512,16 +1629,49 @@ class _PianoRollPainter extends CustomPainter {
       );
     }
     _paintTimeGrid(canvas, config, pixelsPerQuarter, size.width, size.height);
-    for (final note in config.notes.where((note) => !note.primary)) {
-      _note(canvas, note, const Color(0x6657c7ff));
+    final byNote = <String, List<MusicSoundingSpan>>{};
+    for (final span in sounding) {
+      byNote.putIfAbsent(span.noteId, () => []).add(span);
     }
-    for (final note in config.notes.where((note) => note.primary)) {
-      _note(
-        canvas,
-        note,
-        selected.contains(note.id)
-            ? const Color(0xffffc857)
-            : const Color(0xff02acc0),
+    // 先铺所有音符的灰色底，再叠发声片段，最后画边框：重叠音符的灰色
+    // 部分不会盖住别的音符正在发声的片段。
+    for (final note in config.notes) {
+      canvas.drawRRect(_body(note), Paint()..color = _muted);
+    }
+    for (final note in config.notes) {
+      final spans = byNote[note.id];
+      if (spans == null) continue;
+      final body = _bodyRect(note);
+      final color = selected.contains(note.id) ? _selectedActive : _active;
+      for (final span in spans) {
+        final left = math.max(
+          body.left,
+          span.startTick / config.ticksPerQuarter * pixelsPerQuarter,
+        );
+        final right = math.min(
+          body.right,
+          span.endTick / config.ticksPerQuarter * pixelsPerQuarter,
+        );
+        if (right <= left) continue;
+        final whole =
+            span.startTick == note.startTick && span.endTick == note.endTick;
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromLTRB(left, body.top, right, body.bottom),
+            Radius.circular(whole ? 3 : 1.5),
+          ),
+          Paint()..color = color,
+        );
+      }
+    }
+    for (final note in config.notes) {
+      final on = selected.contains(note.id);
+      canvas.drawRRect(
+        _body(note),
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..color = on ? Colors.white70 : Colors.white24
+          ..strokeWidth = on ? 1.5 : 1,
       );
     }
     final playheadX = playheadTick / config.ticksPerQuarter * pixelsPerQuarter;
@@ -1543,32 +1693,24 @@ class _PianoRollPainter extends CustomPainter {
     }
   }
 
-  void _note(Canvas canvas, MusicNote note, Color color) {
-    final rect = RRect.fromRectAndRadius(
-      Rect.fromLTWH(
-        note.startTick / config.ticksPerQuarter * pixelsPerQuarter,
-        (127 - note.pitch) * rowHeight + 1,
-        math.max(
-          8,
-          note.durationTicks / config.ticksPerQuarter * pixelsPerQuarter,
-        ),
-        rowHeight - 2,
-      ),
-      const Radius.circular(3),
-    );
-    canvas.drawRRect(rect, Paint()..color = color);
-    canvas.drawRRect(
-      rect,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..color = Colors.white54,
-    );
-  }
+  Rect _bodyRect(MusicNote note) => Rect.fromLTWH(
+    note.startTick / config.ticksPerQuarter * pixelsPerQuarter,
+    (127 - note.pitch) * rowHeight + 1,
+    math.max(
+      8,
+      note.durationTicks / config.ticksPerQuarter * pixelsPerQuarter,
+    ),
+    rowHeight - 2,
+  );
+
+  RRect _body(MusicNote note) =>
+      RRect.fromRectAndRadius(_bodyRect(note), const Radius.circular(3));
 
   @override
   bool shouldRepaint(covariant _PianoRollPainter oldDelegate) =>
       oldDelegate.config != config ||
       oldDelegate.selected != selected ||
+      oldDelegate.sounding != sounding ||
       oldDelegate.pixelsPerQuarter != pixelsPerQuarter ||
       oldDelegate.playheadTick != playheadTick ||
       oldDelegate.marquee != marquee;
