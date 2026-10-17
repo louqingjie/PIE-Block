@@ -90,8 +90,12 @@ class StaffRenderer {
     return x;
   }
 
+  /// 滚动内容从这里开始：固定区外再留 6px 隔离带，避免音符贴着
+  /// 谱号/调号/拍号（隔离带里只有谱线，没有音符）。
+  int get noteAreaStart => panelWidth + 6;
+
   double get cursorX =>
-      panelWidth + (screenWidth - panelWidth) * options.cursorFraction;
+      noteAreaStart + (screenWidth - noteAreaStart) * options.cursorFraction;
 
   double get _pxPerTick => options.pxPerQuarter / config.ticksPerQuarter;
 
@@ -158,12 +162,18 @@ class StaffRenderer {
     _drawStaff(frame);
     final xs = layoutX(index);
     _drawBarLines(frame, index);
-    // 先画滚动内容（可以越过固定区边界，随后由固定区重绘截断）。
+    // 先画滚动内容；固定区 + 隔离带里的内容最后统一清掉。
     for (var i = 0; i < events.length; i++) {
       final x = xs[i].round();
-      if (x < -20 || x > screenWidth + 18) continue;
+      if (x < noteAreaStart - 24 || x > screenWidth + 18) continue;
       final event = events[i];
       final noteClef = clefPerEvent[i];
+      // 音符/休止符必须完整落在禁区外：任何被固定区/隔离带截断的音符不画。
+      // 符头左沿 x-2、加线 x-3、临时记号 x-7；休止符最宽 x-2。
+      final leftExtent = event.isRest
+          ? 2
+          : (_accidentalFor(i) != null ? 7 : 3);
+      if (x - leftExtent < noteAreaStart) continue;
       if (event.isRest) {
         _drawRest(frame, event, x);
         continue;
@@ -171,24 +181,25 @@ class StaffRenderer {
       final y = pitchY(event.pitch!, noteClef, space, staffTop);
       if (y < -2 || y > screenHeight + 1) continue;
       // 换谱号的地方画一个谱号变更符号，旧音符仍按旧谱号绘制；
-      // 变更点被左端固定区挡住时不画（避免和固定谱号叠在一起）。
-      if (i > 0 && noteClef != clefPerEvent[i - 1] && x - 16 >= panelWidth) {
+      // 变更点落在固定区/隔离带里时不画（避免和固定谱号叠在一起）。
+      if (i > 0 && noteClef != clefPerEvent[i - 1] &&
+          x - 16 >= noteAreaStart) {
         _drawClef(frame, noteClef, x - 16);
       }
       _drawNote(frame, i, x, noteClef);
     }
-    // 谱号/调号/拍号所在的左端固定区是禁区：清空后只重绘固定内容，
-    // 滚动音符最多被截断在禁区边界，绝不会出现在禁区里。
+    // 谱号/调号/拍号所在的左端固定区 + 隔离带是禁区：清空后只重绘谱线
+    // 和固定内容，保证滚动内容绝不会贴着固定区。
     _drawFixedPanel(frame, clefPerEvent[index]);
     _drawCursorMarker(frame);
     return frame;
   }
 
-  /// 重绘左端固定区（谱号 + 调号 + 拍号 + 谱线），并清掉滚动内容。
+  /// 重绘左端固定区（谱号 + 调号 + 拍号 + 谱线 + 隔离带）。
   void _drawFixedPanel(Bitmap frame, String clef) {
-    frame.clearRect(0, 0, panelWidth, screenHeight);
+    frame.clearRect(0, 0, noteAreaStart, screenHeight);
     for (var line = 0; line <= 4; line++) {
-      frame.hLine(0, panelWidth - 1, staffTop + line * space);
+      frame.hLine(0, noteAreaStart - 1, staffTop + line * space);
     }
     _drawClef(frame, clef, 1);
     _drawKeySignature(frame, clef);
@@ -332,7 +343,7 @@ class StaffRenderer {
     final lastTick = playTick + (screenWidth / _pxPerTick).ceil();
     for (var tick = firstTick; tick <= lastTick; tick += barTicks) {
       final x = (cursorX + (tick - playTick) * _pxPerTick).round();
-      if (x < panelWidth || x >= screenWidth) continue;
+      if (x < noteAreaStart || x >= screenWidth) continue;
       frame.vLine(x, staffTop, staffBottom);
     }
   }

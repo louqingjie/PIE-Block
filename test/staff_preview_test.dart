@@ -210,16 +210,21 @@ void main() {
       expect(renderer.clefPerEvent.every((clef) => clef == 'treble'), isTrue);
     });
 
-    test('左端固定区是禁区：滚动内容不得侵入', () {
+    test('左端固定区（含隔离带）是禁区：滚动内容不得侵入', () {
       List<int> panelPixels(StaffRenderer renderer, Bitmap frame) => <int>[
-        for (var x = 0; x < renderer.panelWidth; x++)
+        for (var x = 0; x < renderer.noteAreaStart; x++)
           for (var y = 0; y < screenHeight; y++)
             frame.pixel(x, y) ? 1 : 0,
       ];
-      for (final demo in <String>['twinkle', 'wide', 'bass']) {
+      for (final entry in <String, String>{
+        'twinkle': 'C',
+        'wide': 'G',
+        'bass': 'F',
+      }.entries) {
+        final demo = entry.key;
         final renderer = StaffRenderer(
           config: demoConfig(demo),
-          options: const RenderOptions(),
+          options: RenderOptions(key: entry.value),
         );
         final frames = renderer.renderAll();
         final reference = panelPixels(renderer, frames.first);
