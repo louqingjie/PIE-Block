@@ -727,6 +727,11 @@ void main() {
     expect(find.text('测试时长'), findsNothing);
     expect(tester.takeException(), isNull);
 
+    // 页面顶部原有的三条说明 banner 已删除，不再出现这些文案。
+    expect(find.textContaining('机械装车前请先完成舵机归中'), findsNothing);
+    expect(find.textContaining('每项提示是一句'), findsNothing);
+    expect(find.textContaining('至少有一项摩擦轮测试'), findsNothing);
+
     // 收尾旋律与它的「全部完成」按钮已移除；风格开关与逐项试听按钮保留。
     expect(find.widgetWithText(OutlinedButton, '全部完成'), findsNothing);
     expect(find.text('标准'), findsOneWidget);

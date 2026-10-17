@@ -2962,21 +2962,6 @@ class _DebugTestsPage extends ConsumerWidget {
       stepId: 'tests',
       child: Column(
         children: [
-          _InfoBanner(
-            '机械装车前请先完成舵机归中。摩擦轮测试先给 ${Friction.startDuty} 启动占空比并保持 1 秒'
-            '完成电调激活（此期间蜂鸣器静音），再按该引脚自己的满油上限把油门比例值换算成目标占空比、'
-            '逐周期平滑渐变到位，停留 1.5 秒观察后回零停机；渐变期间蜂鸣频率跟随当前占空比，爬升即为上行扫频。',
-          ),
-          const SizedBox(height: 14),
-          _InfoBanner(
-            '每项提示是一句「上去、回来」的短乐句：先上行几声，停一下，再对称回落。'
-            '听到几声就是第几项，听到开始回落就说明这一项做完了；'
-            '整句升高一个八度代表进入第 6 项及以后（项数超过 5 时用音区进位）。'
-            '上行与回落之间有明显停顿，听到「安静一下」就是换段了。'
-            '整段序列循环执行：跑完最后一项会自动回到第 1 项重新开始，'
-            '每轮之间同样安静 1 秒。',
-          ),
-          const SizedBox(height: 14),
           _DebugCueAudition(
             style: config.cueStyle,
             enabledCount: config.tests.where((item) => item.enabled).length,
@@ -3009,12 +2994,6 @@ class _DebugTestsPage extends ConsumerWidget {
                   ),
                 ],
               ],
-            ),
-            const SizedBox(height: 10),
-            _InfoBanner(
-              '至少有一项摩擦轮测试，所以两个引脚的满油上限都需要填写'
-              '（${Friction.minMaxDuty}–${Friction.maxMaxDuty} 的整百值）。'
-              '这与步兵项目里的同名配置含义一致，方便按同一台车的实测数据标定。',
             ),
           ],
           const SizedBox(height: 18),
