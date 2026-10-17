@@ -1,6 +1,6 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
-[ValidateSet('0000.培训模板', '0001.JDY08设置密码', 'BUZZER_MUSIC_SMOKE', 'BUZZER_MUSIC_SONG_SMOKE', 'BUZZER_MUSIC_GENERATED', 'DELAY_SMOKE', 'FRICTION_CALIBRATION', 'LCD_SPI_SMOKE', 'PWM_SMOKE', 'PWM_B_SMOKE', 'TIMER_IRQ_SMOKE', 'UART1_IRQ_SMOKE', 'ROBOMASTER_ENGINEER', 'ROBOMASTER_INFANTRY', 'TEST')]
+[ValidateSet('0000.培训模板', '0001.JDY08设置密码', 'BUZZER_MUSIC_SMOKE', 'BUZZER_MUSIC_SONG_SMOKE', 'BUZZER_MUSIC_GENERATED', 'BUZZER_VOICE_SMOKE', 'DELAY_SMOKE', 'FRICTION_CALIBRATION', 'LCD_SPI_SMOKE', 'PWM_SMOKE', 'PWM_B_SMOKE', 'TIMER_IRQ_SMOKE', 'UART1_IRQ_SMOKE', 'ROBOMASTER_ENGINEER', 'ROBOMASTER_INFANTRY', 'TEST')]
     [string]$Project = 'TEST',
     [switch]$All,
     [switch]$SmokeTest,
@@ -18,6 +18,7 @@ $projectNames = @(
     'BUZZER_MUSIC_SMOKE',
     'BUZZER_MUSIC_SONG_SMOKE',
     'BUZZER_MUSIC_GENERATED',
+    'BUZZER_VOICE_SMOKE',
     'DELAY_SMOKE',
     'FRICTION_CALIBRATION',
     'LCD_SPI_SMOKE',
@@ -70,7 +71,7 @@ if ([string]::IsNullOrWhiteSpace($LibDir)) {
 $LibDir = Resolve-Directory $LibDir 'SDCC MCS-251 large-stack-auto 运行库目录'
 
 $manifestPath = Join-Path $PSScriptRoot 'build_manifest.json'
-$manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+$manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $includePaths = @($StdInclude, (Join-Path $StdInclude 'mcs51'))
 foreach ($relativeInclude in @($manifest.include_dirs)) {
     $includePaths += Join-Path $PSScriptRoot $relativeInclude
@@ -136,7 +137,7 @@ function Invoke-ProjectBuild([string]$Name) {
         if (!(Test-Path -LiteralPath $source -PathType Leaf)) {
             throw "工程源文件缺失: $source"
         }
-        $sourceText = Get-Content -LiteralPath $source -Raw
+        $sourceText = Get-Content -LiteralPath $source -Raw -Encoding UTF8
         $sourceText = [regex]::Replace($sourceText, '(?m)^\s*//.*$', '')
         foreach ($match in [regex]::Matches($sourceText, $interruptPattern)) {
             $handlerName = $match.Groups[1].Value
