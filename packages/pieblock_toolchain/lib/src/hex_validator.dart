@@ -132,6 +132,11 @@ abstract final class IntelHexValidator {
     );
   }
 
+  /// 高 64K 窗口（0xFF0000-0xFFFFFF）里，0xFF0000-0xFF0FFF 是复位/中断向量区，
+  /// 0xFF1000 起用来放只读常量和 XINIT。低 64K（0xFE0000-0xFEFFFF）只放代码。
+  static const _dataBase = 0xff1000;
+  static const _flashLimit = 0x1000000;
+
   /// Validates the linker layout emitted by the bundled C251 SDCC backend.
   /// This is the Dart equivalent of the legacy `check_layout.py`, so release
   /// builds do not depend on Python.
@@ -157,12 +162,6 @@ abstract final class IntelHexValidator {
             '复位向量首字节为 0x${image.bytes[_vectorBase]!.toRadixString(16).padLeft(2, '0')}，应为 LJMP 0x02',
       );
     }
-    final highAddresses = image.bytes.keys
-        .where((address) => address >= _vectorBase)
-        .toList();
-    if (highAddresses.any((address) => address >= _vectorLimit)) {
-      return const HexValidationResult(ok: false, message: '向量区数据越过 0xFF1000');
-    }
 
     final mapFile = File(mapPath);
     if (!await mapFile.exists()) {
@@ -173,35 +172,67 @@ abstract final class IntelHexValidator {
       r'^\s*(HOME|GSINIT|GSFINAL|CSEG|CONST|XINIT|XISEG|DSEG|SSEG|PSEG|XSEG)\s+([0-9A-Fa-f]{8})\s+([0-9A-Fa-f]{8})\s+=',
       multiLine: true,
     );
+    final areas = <({String name, int start, int end})>[];
     for (final match in areaPattern.allMatches(mapText)) {
-      final name = match.group(1)!;
       final start = int.parse(match.group(2)!, radix: 16);
       final length = int.parse(match.group(3)!, radix: 16);
-      final end = start + length;
+      areas.add((
+        name: match.group(1)!,
+        start: start,
+        end: start + length,
+      ));
+    }
+
+    var homeEnd = _vectorLimit;
+    for (final area in areas) {
+      if (area.name == 'HOME') {
+        homeEnd = area.end;
+        break;
+      }
+    }
+
+    // HEX 里 0xFF0000 以上的字节只能落在 HOME 向量区或 0xFF1000 之后的常量区。
+    for (final address in image.bytes.keys) {
+      if (address < _vectorBase) continue;
+      if (address < homeEnd) continue;
+      if (address >= _dataBase && address < _flashLimit) continue;
+      return HexValidationResult(
+        ok: false,
+        message:
+            '向量区数据越界：0x${address.toRadixString(16).padLeft(8, '0')} 不在 HOME 或 0xFF1000 之后',
+      );
+    }
+
+    for (final area in areas) {
+      final name = area.name;
+      final start = area.start;
+      final end = area.end;
+      final length = end - start;
+      final inAppRegion =
+          start >= _applicationBase && start < _vectorBase && end <= _vectorBase;
+      final inDataRegion = start >= _dataBase && end <= _flashLimit;
       String? error;
       if (name == 'HOME') {
         if (start != _vectorBase || end > _vectorLimit) {
           error = 'HOME 超出向量区';
         }
-      } else if ({
-        'GSINIT',
-        'GSFINAL',
-        'CSEG',
-        'CONST',
-        'XINIT',
-      }.contains(name)) {
-        if (length > 0 &&
-            !(start >= _applicationBase &&
-                start < _vectorBase &&
-                end <= _vectorBase)) {
+      } else if ({'GSINIT', 'GSFINAL', 'CSEG'}.contains(name)) {
+        if (length > 0 && !inAppRegion) {
           error = '$name 超出用户程序区';
+        }
+      } else if ({'CONST', 'XINIT'}.contains(name)) {
+        // 只读常量和初始化数据可以放在低 64K，也可以放在 0xFF1000 之后的高 64K 窗口。
+        if (length > 0 && !(inAppRegion || inDataRegion)) {
+          error = '$name 超出用户程序区/常量区';
         }
       } else if ({'XSEG', 'XISEG'}.contains(name)) {
         if (length > 0 && !(start >= _xramBase && end <= _xramLimit)) {
           error = '$name 超出 STC32G XRAM';
         }
-      } else if (length > 0 && !(start >= 0 && end <= _iramLimit)) {
-        error = '$name 超出 STC32G EDATA';
+      } else if ({'DSEG', 'SSEG', 'PSEG'}.contains(name)) {
+        if (length > 0 && !(start >= 0 && end <= _iramLimit)) {
+          error = '$name 超出 STC32G EDATA';
+        }
       }
       if (error != null) {
         return HexValidationResult(

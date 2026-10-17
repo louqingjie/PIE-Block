@@ -72,6 +72,60 @@ void main() {
     );
   });
 
+  test('SDCC 允许常量和 XINIT 放在 0xFF1000 之后的高 64K 窗口', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'pieblock-map-high-const-',
+    );
+    addTearDown(() => directory.delete(recursive: true));
+    final hex = File('${directory.path}/firmware.hex')
+      ..writeAsStringSync(
+        ':0200000400FEFC\n'
+        ':0100000001FE\n'
+        ':0200000400FFFB\n'
+        ':03000000020000FB\n'
+        ':01100000AA45\n'
+        ':00000001FF\n',
+      );
+    final map = File('${directory.path}/firmware.map')
+      ..writeAsStringSync(
+        ' HOME     00FF0000 00000211 =\n'
+        ' GSINIT   00FE0000 00000004 =\n'
+        ' GSFINAL  00FE0004 00000002 =\n'
+        ' CSEG     00FE0006 00001000 =\n'
+        ' CONST    00FF1000 00000010 =\n'
+        ' XINIT    00FF1010 00000005 =\n'
+        ' XSEG     00010000 00000010 =\n'
+        ' DSEG     00000000 00000010 =\n'
+        '__sdcc_mcs251_reset_trampoline\n'
+        '__sdcc_gsinit_startup\n'
+        '_Default_Isr\n',
+      );
+    expect(
+      (await IntelHexValidator.validateSdccLayout(
+        hexPath: hex.path,
+        mapPath: map.path,
+      )).ok,
+      isTrue,
+    );
+
+    // 0xFF1000 之前、HOME 之外的空隙不允许出现数据。
+    hex.writeAsStringSync(
+      ':0200000400FEFC\n'
+      ':0100000001FE\n'
+      ':0200000400FFFB\n'
+      ':03000000020000FB\n'
+      ':01080000AA4D\n'
+      ':00000001FF\n',
+    );
+    expect(
+      (await IntelHexValidator.validateSdccLayout(
+        hexPath: hex.path,
+        mapPath: map.path,
+      )).ok,
+      isFalse,
+    );
+  });
+
   test('Keil 允许在 0xFF1000 之后的应用区放置数据', () async {
     final directory = await Directory.systemTemp.createTemp(
       'pieblock-keil-hex-',

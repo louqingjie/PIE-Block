@@ -12,6 +12,8 @@ from pathlib import Path
 APP_BASE = 0xFE0000
 VECTOR_BASE = 0xFF0000
 VECTOR_LIMIT = 0xFF1000
+DATA_BASE = 0xFF1000
+FLASH_LIMIT = 0x1000000
 XRAM_BASE = 0x010000
 XRAM_LIMIT = 0x012000
 IRAM_LIMIT = 0x1000
@@ -71,21 +73,39 @@ def validate(hex_path: Path, map_path: Path) -> None:
     if image[VECTOR_BASE] != 0x02:
         raise ValueError(f"reset vector opcode is 0x{image[VECTOR_BASE]:02X}, expected LJMP 0x02")
 
+    home_end = VECTOR_LIMIT
+    for name, start, length in areas:
+        if name == "HOME":
+            home_end = start + length
+            break
+
     high_addresses = sorted(address for address in addresses if address >= VECTOR_BASE)
-    if high_addresses and max(high_addresses) >= VECTOR_LIMIT:
-        raise ValueError("non-vector image data crosses 0xFF1000")
+    for address in high_addresses:
+        if address < home_end:
+            continue
+        if DATA_BASE <= address < FLASH_LIMIT:
+            continue
+        raise ValueError(
+            f"non-vector image data at 0x{address:08X} is not inside HOME or above 0xFF1000"
+        )
     app_addresses = [address for address in addresses if APP_BASE <= address < VECTOR_BASE]
     if not app_addresses:
         raise ValueError("no user code/data in 0xFE0000-0xFEFFFF")
 
     for name, start, length in areas:
         end = start + length
+        in_app = APP_BASE <= start < VECTOR_BASE and end <= VECTOR_BASE
+        in_data = DATA_BASE <= start and end <= FLASH_LIMIT
         if name == "HOME":
             if start != VECTOR_BASE or end > VECTOR_LIMIT:
                 raise ValueError(f"HOME area outside vector region: 0x{start:08X}-0x{end:08X}")
-        elif name in {"GSINIT", "GSFINAL", "CSEG", "CONST", "XINIT"}:
-            if length and not (APP_BASE <= start < VECTOR_BASE and end <= VECTOR_BASE):
+        elif name in {"GSINIT", "GSFINAL", "CSEG"}:
+            if length and not in_app:
                 raise ValueError(f"{name} area outside app code region: 0x{start:08X}-0x{end:08X}")
+        elif name in {"CONST", "XINIT"}:
+            # 只读常量和 XINIT 可以放低 64K，也可以放 0xFF1000 之后的高 64K 窗口。
+            if length and not (in_app or in_data):
+                raise ValueError(f"{name} area outside app code/data region: 0x{start:08X}-0x{end:08X}")
         elif name in {"XSEG", "XISEG"}:
             if length and not (XRAM_BASE <= start and end <= XRAM_LIMIT):
                 raise ValueError(f"{name} outside STC32G XRAM: 0x{start:08X}-0x{end:08X}")
@@ -106,7 +126,7 @@ def validate(hex_path: Path, map_path: Path) -> None:
     print(
         f"[PASS] {hex_path.name}: {len(image)} bytes, "
         f"app=0x{min(app_addresses):06X}-0x{max(app_addresses):06X}, "
-        f"vectors=0x{min(high_addresses):06X}-0x{max(high_addresses):06X}"
+        f"high=0x{min(high_addresses):06X}-0x{max(high_addresses):06X}"
     )
 
 
