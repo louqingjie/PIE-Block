@@ -463,13 +463,19 @@ def main() -> int:
     parser.add_argument("--preview-dir", type=Path, default=None)
     args = parser.parse_args()
 
-    config = json.loads(args.config.read_text(encoding="utf-8"))
+    config = json.loads(args.config.read_text(encoding="utf-8-sig"))
     reference_rate = int(config.get("reference_sample_rate", 8000))
     rate = int(config.get("sample_rate_hz", reference_rate))
+    # 分析采样率可以与合成采样率不同：把分析率取得比合成率低，共振峰会整体
+    # 上移（合成时按更高速率重放同一组反射系数），也就是"把语音频谱搬到压电片
+    # 真正能发声的 2.5~4.5kHz"。共振峰之间的相对关系不变，可懂度基本保留。
+    analysis_rate = int(config.get("analysis_sample_rate", rate))
     # 响度与可懂度的取舍：指数越小越响、失真越大。实机听感偏轻时先调这里。
     sample_gamma = float(config.get("compression_gamma", vm.COMPRESSION_GAMMA))
     gain_gamma = float(config.get("gain_compression_gamma", vm.GAIN_COMPRESSION_GAMMA))
-    print(f"[配置] 采样压缩 γ={sample_gamma}，帧增益压缩 γ={gain_gamma}")
+    print(f"[配置] 分析 {analysis_rate}Hz -> 合成 {rate}Hz"
+          f"（共振峰 ×{rate / analysis_rate:.2f}），采样压缩 γ={sample_gamma}，"
+          f"帧增益压缩 γ={gain_gamma}")
 
     analyzed: dict[str, list[dict]] = {}
     references: dict[str, np.ndarray] = {}
@@ -480,11 +486,11 @@ def main() -> int:
         samples, wav_rate = read_wav(reference)
         if wav_rate != reference_rate:
             raise SystemExit(f"{reference}: 期望 {reference_rate}Hz，实际 {wav_rate}Hz")
-        if rate != reference_rate:
-            samples = resample(samples, reference_rate, rate)
+        if analysis_rate != reference_rate:
+            samples = resample(samples, reference_rate, analysis_rate)
         peak = float(np.max(np.abs(samples))) if samples.size else 0.0
         references[utterance["name"]] = samples * (NORMALIZE_PEAK * 32767.0 / peak) if peak else samples
-        frames = trim_silence(analyze_utterance(samples, rate))
+        frames = trim_silence(analyze_utterance(samples, analysis_rate))
         analyzed[utterance["name"]] = frames
         print(f"[分析] {utterance['name']:<10} {samples.size / rate:.2f}s "
               f"{len(frames)} 帧 <- {reference.name}")

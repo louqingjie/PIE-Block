@@ -385,7 +385,7 @@ def main() -> int:
     parser.add_argument("--skip-host-check", action="store_true")
     args = parser.parse_args()
 
-    params = json.loads(args.params_json.read_text(encoding="utf-8"))
+    params = json.loads(args.params_json.read_text(encoding="utf-8-sig"))
     if not args.asm_only:
         check_arithmetic()
         check_second_order()
