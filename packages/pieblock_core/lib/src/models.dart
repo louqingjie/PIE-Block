@@ -43,6 +43,10 @@ abstract final class Friction {
   static const minMaxDuty = 500;
   static const maxMaxDuty = 800;
 
+  /// 摩擦轮目标占空比低于这个值时给提醒（调试项目用它做测试项下限提醒）：
+  /// 占空比太低时摩擦轮可能带不动，测试观察不到有效结论。
+  static const lowDutyWarning = 600;
+
   /// 摩擦轮允许占用的引脚。
   static const pins = EngineerPinCapabilities.frictionPins;
 
@@ -312,6 +316,9 @@ class DebugTestItem {
   final bool enabled;
   final DebugDriveType? driveType;
   final Direction? direction;
+
+  /// 电机项=速度，舵机项=角度，摩擦轮项=目标占空比
+  /// （[Friction.minMaxDuty]–[Friction.maxMaxDuty]，低于 [Friction.lowDutyWarning] 会提醒）。
   final int? value;
   final int durationMs;
 
@@ -362,45 +369,19 @@ class DebugTestItem {
 }
 
 class DebugConfig extends ProjectConfig {
-  DebugConfig({
-    List<DebugTestItem>? tests,
-    this.frictionP64MaxDuty,
-    this.frictionP66MaxDuty,
-  }) : tests = List.unmodifiable(
-         tests ?? [for (final pin in debugPins) DebugTestItem(pin: pin)],
-       );
+  DebugConfig({List<DebugTestItem>? tests})
+    : tests = List.unmodifiable(
+        tests ?? [for (final pin in debugPins) DebugTestItem(pin: pin)],
+      );
   final List<DebugTestItem> tests;
-
-  /// 摩擦轮在 P64/P66 上的满油占空比，调试曲线的比例值按各自上限换算。
-  final int? frictionP64MaxDuty, frictionP66MaxDuty;
-
-  /// 返回 [pin] 的摩擦轮满油占空比，[pin] 不是摩擦轮引脚时返回 null。
-  int? frictionMaxDutyOf(String pin) => switch (pin) {
-    'P64' => frictionP64MaxDuty,
-    'P66' => frictionP66MaxDuty,
-    _ => null,
-  };
 
   @override
   ProjectKind get kind => ProjectKind.debug;
-  DebugConfig copyWith({
-    List<DebugTestItem>? tests,
-    Object? frictionP64MaxDuty = _unset,
-    Object? frictionP66MaxDuty = _unset,
-  }) => DebugConfig(
-    tests: tests ?? this.tests,
-    frictionP64MaxDuty: identical(frictionP64MaxDuty, _unset)
-        ? this.frictionP64MaxDuty
-        : frictionP64MaxDuty as int?,
-    frictionP66MaxDuty: identical(frictionP66MaxDuty, _unset)
-        ? this.frictionP66MaxDuty
-        : frictionP66MaxDuty as int?,
-  );
+  DebugConfig copyWith({List<DebugTestItem>? tests}) =>
+      DebugConfig(tests: tests ?? this.tests);
   @override
   Map<String, Object?> toJson() => {
     'tests': tests.map((item) => item.toJson()).toList(),
-    'friction_p64_max_duty': frictionP64MaxDuty,
-    'friction_p66_max_duty': frictionP66MaxDuty,
   };
   factory DebugConfig.fromJson(Map<String, Object?> json) {
     final tests = <DebugTestItem>[], seen = <String>{};
@@ -412,11 +393,7 @@ class DebugConfig extends ProjectConfig {
     for (final pin in debugPins) {
       if (seen.add(pin)) tests.add(DebugTestItem(pin: pin));
     }
-    return DebugConfig(
-      tests: tests,
-      frictionP64MaxDuty: (json['friction_p64_max_duty'] as num?)?.toInt(),
-      frictionP66MaxDuty: (json['friction_p66_max_duty'] as num?)?.toInt(),
-    );
+    return DebugConfig(tests: tests);
   }
 }
 

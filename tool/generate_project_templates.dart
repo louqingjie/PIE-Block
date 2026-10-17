@@ -242,13 +242,13 @@ ProjectConfig _debug() {
         pin: 'P64',
         enabled: true,
         driveType: DebugDriveType.friction,
-        value: 80,
+        value: 700,
       ),
       const DebugTestItem(
         pin: 'P66',
         enabled: true,
         driveType: DebugDriveType.friction,
-        value: 60,
+        value: 700,
       ),
       motor('P74'),
       motor('P75'),
@@ -271,8 +271,6 @@ ProjectConfig _debug() {
         durationMs: 3000,
       ),
     ],
-    frictionP64MaxDuty: 700,
-    frictionP66MaxDuty: 700,
   );
 }
 

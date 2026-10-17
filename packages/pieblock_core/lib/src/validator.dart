@@ -218,50 +218,31 @@ abstract final class ProjectValidator {
             issue,
           );
         case DebugDriveType.friction:
+          // 调试项的摩擦轮直接给目标占空比，不再走「油门 → 满油上限」换算。
           _range(
             item.value,
-            0,
-            Friction.levelMax,
+            Friction.minMaxDuty,
+            Friction.maxMaxDuty,
             '$base.value',
-            '${item.pin} 摩擦轮油门',
+            '${item.pin} 摩擦轮目标占空比',
             'tests',
             issue,
           );
+          if (item.value != null && item.value! < Friction.lowDutyWarning) {
+            issue(
+              IssueSeverity.warning,
+              '$base.value',
+              '${item.pin} 摩擦轮目标占空比低于 ${Friction.lowDutyWarning}，'
+                  '可能带不动摩擦轮，观察不到有效结论',
+              'tests',
+            );
+          }
         case null:
           break;
       }
     }
     if (seen.length != debugPins.length || !seen.containsAll(debugPins)) {
       issue(IssueSeverity.error, 'tests', '调试序列必须包含全部十个固定引脚', 'tests');
-    }
-    final frictionPinsUsed = {
-      for (final item in config.tests)
-        if (item.driveType == DebugDriveType.friction) item.pin,
-    };
-    for (final maxDuty in [
-      (pin: 'P64', value: config.frictionP64MaxDuty),
-      (pin: 'P66', value: config.frictionP66MaxDuty),
-    ]) {
-      final path = 'tests.friction_${maxDuty.pin.toLowerCase()}_max_duty';
-      final label = '${maxDuty.pin} 摩擦轮最大占空比';
-      _range(
-        maxDuty.value,
-        Friction.minMaxDuty,
-        Friction.maxMaxDuty,
-        path,
-        label,
-        'tests',
-        issue,
-        required: frictionPinsUsed.contains(maxDuty.pin),
-      );
-      if (maxDuty.value != null && maxDuty.value! % 100 != 0) {
-        issue(
-          IssueSeverity.error,
-          path,
-          '$label必须是 ${Friction.minMaxDuty}–${Friction.maxMaxDuty} 内的整百值',
-          'tests',
-        );
-      }
     }
   }
 

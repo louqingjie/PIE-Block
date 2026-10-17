@@ -452,22 +452,20 @@ ProjectDocument _debugDocument() {
           enabled: true,
           driveType: DebugDriveType.friction,
           direction: Direction.forward,
-          value: 100,
+          value: 800,
         ),
         const DebugTestItem(
           pin: 'P66',
           enabled: true,
           driveType: DebugDriveType.friction,
           direction: Direction.forward,
-          value: 50,
+          value: 700,
         ),
         for (final pin in debugPins.where(
           (pin) => pin != 'P64' && pin != 'P66',
         ))
           DebugTestItem(pin: pin),
       ],
-      frictionP64MaxDuty: 800,
-      frictionP66MaxDuty: 700,
     ),
   );
 }
@@ -720,10 +718,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('调试测试序列'), findsOneWidget);
     expect(find.byIcon(Icons.drag_indicator), findsNWidgets(10));
-    // 两个引脚各自一个满油上限，油门值按各自上限换算成占空比
-    expect(find.text('油门'), findsNWidgets(2));
-    expect(find.text('P64 最大占空比'), findsOneWidget);
-    expect(find.text('P66 最大占空比'), findsOneWidget);
+    // 摩擦轮项直接填目标占空比；页面上不再有独立的 P64/P66 满油上限字段。
+    expect(find.text('最大占空比'), findsNWidgets(2));
+    expect(find.text('油门'), findsNothing);
+    expect(find.text('P64 最大占空比'), findsNothing);
+    expect(find.text('P66 最大占空比'), findsNothing);
     expect(find.text('测试时长'), findsNothing);
     expect(tester.takeException(), isNull);
 

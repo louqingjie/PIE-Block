@@ -101,14 +101,14 @@ DebugConfig debug() => DebugConfig(
       enabled: true,
       driveType: DebugDriveType.friction,
       direction: Direction.forward,
-      value: 100,
+      value: 800,
     ),
     const DebugTestItem(
       pin: 'P66',
       enabled: true,
       driveType: DebugDriveType.friction,
       direction: Direction.forward,
-      value: 60,
+      value: 600,
     ),
     const DebugTestItem(
       pin: 'MP03',
@@ -122,8 +122,6 @@ DebugConfig debug() => DebugConfig(
     ))
       DebugTestItem(pin: pin),
   ],
-  frictionP64MaxDuty: 800,
-  frictionP66MaxDuty: 700,
 );
 
 MusicConfig music() => MusicConfig(

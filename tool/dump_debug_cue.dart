@@ -11,14 +11,14 @@ DebugConfig _debugConfig() => DebugConfig(
       enabled: true,
       driveType: DebugDriveType.friction,
       direction: Direction.forward,
-      value: 100,
+      value: 800,
     ),
     const DebugTestItem(
       pin: 'P66',
       enabled: true,
       driveType: DebugDriveType.friction,
       direction: Direction.forward,
-      value: 50,
+      value: 600,
     ),
     const DebugTestItem(
       pin: 'MP03',
@@ -33,13 +33,13 @@ DebugConfig _debugConfig() => DebugConfig(
     ))
       DebugTestItem(pin: pin),
   ],
-  frictionP64MaxDuty: 800,
-  frictionP66MaxDuty: 700,
 );
 
 void main() {
   final code = CodeGenerator.generate(_debugConfig());
-  final file = File('tmp/cue_verify/debug.c');
+  final directory = Directory('tmp/cue_verify');
+  if (!directory.existsSync()) directory.createSync(recursive: true);
+  final file = File('${directory.path}/debug.c');
   file.writeAsStringSync(code);
   stdout.writeln('${file.path} ${code.length} 字节');
 }

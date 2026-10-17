@@ -32,13 +32,13 @@
         "pin": "P64",
         "enabled": true,
         "drive_type": "friction",
-        "value": 80
+        "value": 700
       },
       {
         "pin": "P66",
         "enabled": true,
         "drive_type": "friction",
-        "value": 60
+        "value": 700
       },
       {
         "pin": "P74",
@@ -88,8 +88,6 @@
         "value": 45,
         "duration_ms": 3000
       }
-    ],
-    "friction_p64_max_duty": 700,
-    "friction_p66_max_duty": 700
+    ]
   }
 }

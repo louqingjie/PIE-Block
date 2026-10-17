@@ -228,8 +228,6 @@ String _fieldLabel(String path) {
     'controls.friction_p64_max_duty': 'P64 最大占空比',
     'controls.friction_p66_max_duty': 'P66 最大占空比',
     'controls.friction_level_step': '油门步长',
-    'tests.friction_p64_max_duty': 'P64 最大占空比',
-    'tests.friction_p66_max_duty': 'P66 最大占空比',
     'pwm.pwma': 'PWMA 频率',
     'pwm.pwmb': 'PWMB 频率',
     'modes.count': '模式数量',
@@ -495,22 +493,13 @@ class _StepAuditionButton extends StatelessWidget {
   }
 }
 
-/// 复核页里单个调试项的一句话摘要。摩擦轮额外换算出实际占空比，
-/// 方便核对「多少油门对应多少 duty」。
-String _debugDriveSummary(DebugConfig config, DebugTestItem item) =>
-    switch (item.driveType) {
-      DebugDriveType.motor => '电机 ${item.value ?? '未填写'}',
-      DebugDriveType.servo => '舵机 ${item.value ?? '未填写'}°',
-      DebugDriveType.friction => switch ((
-        item.value,
-        config.frictionMaxDutyOf(item.pin),
-      )) {
-        (final level?, final maxDuty?) =>
-          '摩擦轮油门 $level% → ${Friction.dutyOfLevel(level, maxDuty)}',
-        _ => '摩擦轮油门 ${item.value ?? '未填写'}%',
-      },
-      null => '未选择驱动',
-    };
+/// 复核页里单个调试项的一句话摘要。摩擦轮项直接就是目标占空比。
+String _debugDriveSummary(DebugTestItem item) => switch (item.driveType) {
+  DebugDriveType.motor => '电机 ${item.value ?? '未填写'}',
+  DebugDriveType.servo => '舵机 ${item.value ?? '未填写'}°',
+  DebugDriveType.friction => '摩擦轮目标占空比 ${item.value ?? '未填写'}',
+  null => '未选择驱动',
+};
 
 class _PinOption extends StatelessWidget {
   const _PinOption(this.pin, {this.owner, this.enabled = true});
@@ -2904,11 +2893,6 @@ class _DebugTestsPage extends ConsumerWidget {
       controller.updateConfig(config.copyWith(tests: tests));
     }
 
-    final frictionPinsUsed = {
-      for (final item in config.tests)
-        if (item.driveType == DebugDriveType.friction) item.pin,
-    };
-
     return _PageFrame(
       title: '调试测试序列',
       subtitle: '启用需要测试的引脚并拖动排序。固件会按此顺序逐项执行，'
@@ -2920,33 +2904,6 @@ class _DebugTestsPage extends ConsumerWidget {
             enabledCount: config.tests.where((item) => item.enabled).length,
             preview: cuePreview,
           ),
-          if (frictionPinsUsed.isNotEmpty) ...[
-            const SizedBox(height: 14),
-            _FormRow(
-              fieldPaths: [
-                for (final pin in Friction.pins)
-                  'tests.friction_${pin.toLowerCase()}_max_duty',
-              ],
-              children: [
-                for (final pin in Friction.pins) ...[
-                  if (pin != Friction.pins.first) const SizedBox(width: 12),
-                  Expanded(
-                    child: _NumberField(
-                      label: '$pin 最大占空比',
-                      fieldPath: 'tests.friction_${pin.toLowerCase()}_max_duty',
-                      suffix: 'duty',
-                      value: config.frictionMaxDutyOf(pin),
-                      onChanged: (v) => controller.updateConfig(
-                        pin == 'P64'
-                            ? config.copyWith(frictionP64MaxDuty: v)
-                            : config.copyWith(frictionP66MaxDuty: v),
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ],
           const SizedBox(height: 18),
           _FieldAnchor(
             path: 'tests',
@@ -2980,7 +2937,7 @@ class _DebugTestsPage extends ConsumerWidget {
                 };
                 final valueLabel = switch (item.driveType) {
                   DebugDriveType.servo => '角度',
-                  DebugDriveType.friction => '油门',
+                  DebugDriveType.friction => '最大占空比',
                   _ => '速度',
                 };
                 return Card(
@@ -3099,7 +3056,7 @@ class _DebugTestsPage extends ConsumerWidget {
                                   label: valueLabel,
                                   suffix:
                                       item.driveType == DebugDriveType.friction
-                                      ? '%'
+                                      ? 'duty'
                                       : null,
                                   value: item.value,
                                   fieldPath: '$base.value',
@@ -3300,7 +3257,7 @@ class _ReviewPage extends ConsumerWidget {
                       child: Text('${entry.$1 + 1}'),
                     ),
                     title: Text(
-                      '${entry.$2.pin} · ${_debugDriveSummary(config, entry.$2)}',
+                      '${entry.$2.pin} · ${_debugDriveSummary(entry.$2)}',
                     ),
                   ),
               ],

@@ -79,14 +79,14 @@ DebugConfig completeDebug() => DebugConfig(
       enabled: true,
       driveType: DebugDriveType.friction,
       direction: Direction.forward,
-      value: 100,
+      value: 800,
     ),
     const DebugTestItem(
       pin: 'P66',
       enabled: true,
       driveType: DebugDriveType.friction,
       direction: Direction.forward,
-      value: 50,
+      value: 600,
     ),
     const DebugTestItem(
       pin: 'MP03',
@@ -101,8 +101,6 @@ DebugConfig completeDebug() => DebugConfig(
     ))
       DebugTestItem(pin: pin),
   ],
-  frictionP64MaxDuty: 800,
-  frictionP66MaxDuty: 700,
 );
 
 EngineerConfig advancedEngineer({
@@ -341,11 +339,11 @@ void main() {
       expect(config.tests[2].durationMs, 4200);
       expect(config.tests.first.toJson(), isNot(contains('direction')));
       expect(config.tests.first.toJson(), isNot(contains('duration_ms')));
-      expect(config.frictionP64MaxDuty, 800);
-      expect(config.frictionP66MaxDuty, 700);
-      expect(config.frictionMaxDutyOf('P64'), 800);
-      expect(config.frictionMaxDutyOf('P66'), 700);
-      expect(config.frictionMaxDutyOf('P60'), isNull);
+      // 调试项目的摩擦轮项直接保存目标占空比，不再有独立的上限字段。
+      expect(config.tests.first.value, 800);
+      expect(config.tests[1].value, 600);
+      expect(config.toJson(), isNot(contains('friction_p64_max_duty')));
+      expect(config.toJson(), isNot(contains('friction_p66_max_duty')));
 
       final legacyFriction = DebugTestItem.fromJson({
         ...config.tests.first.toJson(),
@@ -730,12 +728,12 @@ void main() {
       expect(() => CodeGenerator.generate(invalid), throwsStateError);
     });
 
-    test('调试曲线按各引脚自己的满油上限换算比例值', () {
+    test('调试曲线的摩擦轮目标就是配置的占空比', () {
       final code = CodeGenerator.generate(completeDebug());
       expect(code.indexOf('1. P64'), lessThan(code.indexOf('2. P66')));
       expect(code.indexOf('2. P66'), lessThan(code.indexOf('3. MP03')));
-      // 每个摩擦轮只设一个目标：油门按各自满油上限换算（P64 100%→800，P66 50%→600），
-      // 斜坡到位后停留观察，再设目标 0 停机。
+      // 每个摩擦轮只设一个目标，值就是测试项里填的占空比（P64 800、P66 600），
+      // 不再做「油门 → 满油上限」换算；斜坡到位后停留观察，再设目标 0 停机。
       expect(code, contains('FrictionRampTo(2, 800)'));
       expect(code, contains('FrictionRampTo(2, 0)'));
       expect(code, contains('FrictionRampTo(3, 600)'));
@@ -757,15 +755,13 @@ void main() {
       String generateFor(String pin, {Direction? legacyDirection}) {
         return CodeGenerator.generate(
           DebugConfig(
-            frictionP64MaxDuty: 800,
-            frictionP66MaxDuty: 700,
             tests: [
               DebugTestItem(
                 pin: pin,
                 enabled: true,
                 driveType: DebugDriveType.friction,
                 direction: legacyDirection,
-                value: 100,
+                value: pin == 'P64' ? 800 : 700,
               ),
               for (final candidate in debugPins.where((value) => value != pin))
                 DebugTestItem(pin: candidate),
@@ -793,8 +789,6 @@ void main() {
     test('拓展板 Init 只在 PWM 组频率变化时重发', () {
       final code = CodeGenerator.generate(
         DebugConfig(
-          frictionP64MaxDuty: 800,
-          frictionP66MaxDuty: 700,
           tests: [
             const DebugTestItem(
               pin: 'P60',
@@ -808,13 +802,13 @@ void main() {
               pin: 'P64',
               enabled: true,
               driveType: DebugDriveType.friction,
-              value: 100,
+              value: 800,
             ),
             const DebugTestItem(
               pin: 'P66',
               enabled: true,
               driveType: DebugDriveType.friction,
-              value: 50,
+              value: 700,
             ),
             for (final pin in debugPins.where(
               (pin) => pin != 'P60' && pin != 'P64' && pin != 'P66',
@@ -1075,6 +1069,55 @@ void main() {
       expect(zeroAt, greaterThan(lastGap));
       // 归零就是循环体末尾：其后只有循环体的收尾。
       expect(code.substring(zeroAt), isNot(contains('StepCue(')));
+    });
+
+    test('摩擦轮目标占空比限定 500–800，低于 600 只给提醒', () {
+      DebugConfig withDuty(int? duty) => DebugConfig(
+        tests: [
+          DebugTestItem(
+            pin: 'P64',
+            enabled: true,
+            driveType: DebugDriveType.friction,
+            value: duty,
+          ),
+          for (final pin in debugPins.where((pin) => pin != 'P64'))
+            DebugTestItem(pin: pin),
+        ],
+      );
+      List<ValidationIssue> issues(int? duty) =>
+          ProjectValidator.validate(withDuty(duty));
+      List<String> messages(int? duty) =>
+          issues(duty).map((issue) => issue.message).toList();
+
+      // 超出 500–800 是错误。
+      for (final duty in const [400, 900]) {
+        expect(
+          messages(duty),
+          contains(contains('P64 摩擦轮目标占空比必须在 500–800 之间')),
+        );
+        expect(
+          issues(duty).firstWhere((i) => i.fieldPath == 'tests.0.value').severity,
+          IssueSeverity.error,
+        );
+      }
+      // 500 合法但偏低：只给提醒，不是错误。
+      final low = issues(500);
+      final lowIssue = low.firstWhere((i) => i.fieldPath == 'tests.0.value');
+      expect(lowIssue.severity, IssueSeverity.warning);
+      expect(lowIssue.message, contains('低于 600'));
+      expect(
+        low.where(
+          (i) => i.fieldPath == 'tests.0.value' && i.severity == IssueSeverity.error,
+        ),
+        isEmpty,
+      );
+      // 600 起不再提醒，800 也干净。
+      for (final duty in const [600, 800]) {
+        expect(
+          messages(duty).where((message) => message.contains('摩擦轮')),
+          isEmpty,
+        );
+      }
     });
 
     test('电机和舵机仍要求配置方向', () {

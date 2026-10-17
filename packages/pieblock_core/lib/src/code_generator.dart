@@ -989,12 +989,9 @@ ${engineerFeedback.isEmpty ? '' : '        UpdateServoFeedback();'}
           ..add('    PWM_SET_Frequency($channel, 50, 0);');
       } else if (friction) {
         // 摩擦轮方向固定，测试期间不发送方向帧；只设一个目标：
-        // 油门比例值按该引脚自己的满油上限换算成占空比，
+        // 测试项里配的就是**目标占空比**本身（500~800），不再经过油门换算，
         // 斜坡逐周期逼近到目标即“斜坡结束”；停留观察后再设目标 0 停机。
-        final targetDuty = Friction.dutyOfLevel(
-          item.value!,
-          config.frictionMaxDutyOf(item.pin)!,
-        );
+        final targetDuty = item.value!;
         lines
           ..add('    Ms_Delay(1000);')
           ..add('    FrictionActivate($slot);')
