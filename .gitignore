@@ -61,6 +61,8 @@ node_modules/
 .flutter-plugins-dependencies
 **/build/
 **/.packages
+# Flutter 桌面调试运行的崩溃日志（引擎写在当前工作目录，不提交）
+flutter_*.log
 
 dist/
 release/
