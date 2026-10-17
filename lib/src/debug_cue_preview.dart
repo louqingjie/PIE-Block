@@ -1,8 +1,7 @@
-import 'dart:typed_data';
-
 import 'package:flutter_soloud/flutter_soloud.dart';
 import 'package:pieblock_core/pieblock_core.dart';
 
+import 'debug_cue_wav.dart';
 import 'platform/background_run.dart';
 
 /// 调试提示音试听服务：按 [DebugCues] 的曲线合成方波并播放。
@@ -87,52 +86,4 @@ class SoloudDebugCuePreview implements DebugCuePreviewService {
 
   @override
   Future<void> dispose() => stop();
-}
-
-/// 把提示音曲线渲染成 16bit 单声道 WAV（方波，与蜂鸣器一致）。
-Uint8List renderDebugCueWav(List<DebugCueNote> notes) {
-  const sampleRate = 22050;
-  final totalSamples = notes.fold<int>(
-    0,
-    (total, note) => total + (note.durationMs * sampleRate / 1000).round(),
-  );
-  final dataSize = totalSamples * 2;
-  final output = ByteData(44 + dataSize);
-  void ascii(int offset, String value) {
-    for (var index = 0; index < value.length; index++) {
-      output.setUint8(offset + index, value.codeUnitAt(index));
-    }
-  }
-
-  ascii(0, 'RIFF');
-  output.setUint32(4, 36 + dataSize, Endian.little);
-  ascii(8, 'WAVE');
-  ascii(12, 'fmt ');
-  output.setUint32(16, 16, Endian.little);
-  output.setUint16(20, 1, Endian.little);
-  output.setUint16(22, 1, Endian.little);
-  output.setUint32(24, sampleRate, Endian.little);
-  output.setUint32(28, sampleRate * 2, Endian.little);
-  output.setUint16(32, 2, Endian.little);
-  output.setUint16(34, 16, Endian.little);
-  ascii(36, 'data');
-  output.setUint32(40, dataSize, Endian.little);
-
-  var sample = 0;
-  for (final note in notes) {
-    final count = (note.durationMs * sampleRate / 1000).round();
-    final frequency = note.frequencyHz ?? 0;
-    for (var index = 0; index < count; index++) {
-      // 每个音符内部相位从 0 开始，避免音与音之间出现相位跳变导致的咔哒声。
-      final phase = frequency == 0
-          ? 0.0
-          : ((index * frequency / sampleRate) % 1);
-      final value = frequency == 0
-          ? 0
-          : (phase < .5 ? 5200 : -5200);
-      output.setInt16(44 + sample * 2, value, Endian.little);
-      sample++;
-    }
-  }
-  return output.buffer.asUint8List();
 }
