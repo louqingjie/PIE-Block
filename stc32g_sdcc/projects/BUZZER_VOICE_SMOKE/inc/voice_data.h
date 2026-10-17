@@ -5,13 +5,13 @@
 
 /* 由 stc32g_sdcc/tools/voice/make_voice_params.py 生成，请勿手工修改。 */
 #define VOICE_SAMPLE_RATE_HZ 7200
-#define VOICE_GAIN_FULL_SCALE 22067
+#define VOICE_GAIN_FULL_SCALE 17797
 
 extern const uint16_t voiceGainTable[256];
 extern const uint8_t voiceCompressionTable[256];
 extern const uint8_t voiceFramesPLiuling[3315];
 #define VOICE_FRAMES_PLIULING_COUNT 255
-extern const uint8_t voiceFramesPLiushi[3328];
-#define VOICE_FRAMES_PLIUSHI_COUNT 256
+extern const uint8_t voiceFramesPLiushi[3341];
+#define VOICE_FRAMES_PLIUSHI_COUNT 257
 
 #endif /* BUZZER_VOICE_SMOKE_VOICE_DATA_H */

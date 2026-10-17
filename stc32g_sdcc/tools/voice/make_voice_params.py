@@ -492,7 +492,7 @@ def main() -> int:
         references[utterance["name"]] = samples * (NORMALIZE_PEAK * 32767.0 / peak) if peak else samples
         frames = trim_silence(analyze_utterance(samples, analysis_rate))
         analyzed[utterance["name"]] = frames
-        print(f"[分析] {utterance['name']:<10} {samples.size / rate:.2f}s "
+        print(f"[分析] {utterance['name']:<10} {samples.size / analysis_rate:.2f}s "
               f"{len(frames)} 帧 <- {reference.name}")
 
     base_scale = choose_gain_scale(analyzed)
