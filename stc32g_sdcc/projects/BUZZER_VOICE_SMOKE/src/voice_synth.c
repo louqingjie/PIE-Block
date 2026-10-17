@@ -77,7 +77,7 @@ static VOICE_NEAR int16_t voiceImpulseExc;        /* 每子步预计算：脉冲
 static VOICE_NEAR int16_t voiceB[VOICE_ORDER + 1];/* voiceB[0] 是上一个输出样本 */
 static VOICE_NEAR uint16_t voicePhase;
 static VOICE_NEAR uint16_t voiceLfsr;
-static VOICE_NEAR int16_t voiceTiltState;
+static VOICE_NEAR int16_t voiceTiltState[VOICE_TILT_STAGES];
 
 /*
  * 把 (|q| * value) >> 7 展开成宏：格型每级要用同一个 q 乘两次，宏内联可以省掉
@@ -238,7 +238,8 @@ void VoiceSynth_Start(const uint8_t VOICE_CODE *frames, uint16_t frame_count)
     voiceActive = (frame_count > 0) ? 1 : 0;
     voicePhase = 0;
     voiceLfsr = 0xACE1;
-    voiceTiltState = 0;
+    for (i = 0; i < VOICE_TILT_STAGES; i++)
+        voiceTiltState[i] = 0;
     for (i = 0; i <= VOICE_ORDER; i++)
     {
         voiceB[i] = 0;
@@ -343,20 +344,20 @@ static int16_t VoiceSynth_Lattice(int16_t excitation)
     return x;
 }
 
-/* 一阶高频提升，补偿压电片低频滚降（与试听预览用的是同一系数）。
- * 注意用的是**上一个**样本（voiceTiltState），不是当前样本。
- * 3*x>>4 拆成 3*(x>>4) + (3*(x&0xF))>>4：全 16 位精确（48h 能被 16 整除），
- * 且 ×3 用移位加实现，既不碰乘法运行库也不会溢出。 */
+/* 级联一阶高频提升，补偿压电片低频滚降（与试听预览用的是同一组系数）。
+ * 注意每级的记忆是**该级自己的输入**，不是当前样本；
+ * a = 1/2 用一次算术右移实现：既不碰乘法运行库，也不会溢出。 */
 static int16_t VoiceSynth_Tilt(int16_t sample)
 {
-    int16_t previous = voiceTiltState;
-    int16_t high = (int16_t)(previous >> 4);
-    int16_t low = (int16_t)(previous & 0x000F);
-    int16_t scaled = (int16_t)((int16_t)((int16_t)(high << 1) + high)
-                               + (int16_t)((int16_t)((int16_t)(low << 1) + low) >> 4));
-    int16_t out = (int16_t)(sample - scaled);
-    voiceTiltState = sample;
-    return out;
+    int16_t value = sample;
+    uint8_t index;
+    for (index = 0; index < VOICE_TILT_STAGES; index++)
+    {
+        int16_t previous = voiceTiltState[index];
+        voiceTiltState[index] = value;
+        value = (int16_t)(value - (int16_t)(previous >> VOICE_TILT_SHIFT));
+    }
+    return value;
 }
 
 uint8_t VoiceSynth_NextSample(void)

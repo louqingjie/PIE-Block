@@ -30,6 +30,42 @@
 #define VOICE_LED_B GPIO_Pin_6
 
 /*
+ * 谐振探测：上电先放一组离散单音（LED 全灭），人耳判断哪个最响。
+ * 压电片是窄带谐振器，谐振点通常在 2~4kHz，把语音能量往那个频段搬才是提响度的
+ * 正路；不同批次的蜂鸣器谐振点差别很大，所以必须实测而不是猜。置 0 可关闭。
+ */
+#define VOICE_RESONANCE_SWEEP 1
+
+#if VOICE_RESONANCE_SWEEP
+static const uint16_t voiceSweepTones[] =
+{
+    500, 700, 1000, 1300, 1600, 2000, 2400, 2800, 3200, 3600, 4000, 4500
+};
+#define VOICE_SWEEP_TONE_COUNT (sizeof(voiceSweepTones) / sizeof(voiceSweepTones[0]))
+#define VOICE_SWEEP_ON_MS 300U
+#define VOICE_SWEEP_GAP_MS 150U
+
+static void VoiceResonanceSweep(void)
+{
+    uint16_t index;
+    /* 单音测试要独占 PWM：先关采样中断，否则 ISR 会不停改写比较值。 */
+    ET0 = 0;
+    P35 = 1;
+    P36 = 1;
+    for (index = 0; index < VOICE_SWEEP_TONE_COUNT; index++)
+    {
+        PWM_SET_Frequency(VOICE_BUZZER_CH, voiceSweepTones[index], VOICE_DUTY_IDLE);
+        Ms_Delay(VOICE_SWEEP_ON_MS);
+        PWM_SET_Frequency(VOICE_BUZZER_CH, voiceSweepTones[index], 0);
+        Ms_Delay(VOICE_SWEEP_GAP_MS);
+    }
+    /* 恢复音频载波（ARR 回到 511）与静音占空比，再开中断。 */
+    PWM_Init(VOICE_BUZZER_CH, VOICE_CARRIER_HZ, VOICE_DUTY_IDLE);
+    ET0 = 1;
+}
+#endif
+
+/*
  * HSPWM 的比较值寄存器必须经异步窗口写：这与 CNU_PIE_PWM.c 里的
  * PWM_WriteB() 完全一致（该函数是 static，这里复制同一套时序）。
  * PWMB_CH3 的 CCR 地址来自 PWM_CCR_ADDR[PWMB_CH3_P33 >> 4] = 0x7efef9，
@@ -91,6 +127,10 @@ void main(void)
     /* 先把合成器置于静音，避免中断在 Start 之前读到未初始化状态。 */
     VoiceSynth_Start(voiceFramesPLiuling, 0);
     VoiceTimerInit();
+
+#if VOICE_RESONANCE_SWEEP
+    VoiceResonanceSweep();
+#endif
 
     while (1)
     {

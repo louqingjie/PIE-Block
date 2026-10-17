@@ -5,7 +5,7 @@
 
 /* 由 stc32g_sdcc/tools/voice/make_voice_params.py 生成，请勿手工修改。 */
 #define VOICE_SAMPLE_RATE_HZ 7200
-#define VOICE_GAIN_FULL_SCALE 37480
+#define VOICE_GAIN_FULL_SCALE 22067
 
 extern const uint16_t voiceGainTable[256];
 extern const uint8_t voiceCompressionTable[256];

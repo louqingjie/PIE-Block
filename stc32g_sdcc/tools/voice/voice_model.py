@@ -67,11 +67,15 @@ PWM_MAX = 255
 COMPRESSION_GAMMA = 0.7
 # 帧级压缩指数（作用在生成的增益表上，运行时零开销）。
 GAIN_COMPRESSION_GAMMA = 0.75
-# 一阶高频提升（补偿压电片低频滚降）：y = x - (num/den)·x[n-1]。
+# 一阶高频提升的级联（补偿压电片低频滚降）：每级 y = x - (num/den)·x[n-1]。
 # 压电片只在谐振带（约 2~4kHz）效率高，把能量往那边搬比整体加压缩更划算：
-# 线性、不失真、不抬高字间噪声。改这里必须同步 voice_synth.c 的 VoiceSynth_Tilt。
-VOICE_TILT_NUMERATOR = 3
-VOICE_TILT_DENOMINATOR = 16
+# **线性、不失真、不抬高字间噪声**。实测（真实高 Q 压电片模型，压电域 RMS）：
+#   原 3/16 单级 = 基线；1/2 两级 +4.9dB；1/2 三级 +7.8dB。
+# num/den = 1/2 时固件里就是一次右移，几乎零开销。
+# 改这里必须同步 voice_synth.h 的 VOICE_TILT_* 宏与 voice_synth.c 的 VoiceSynth_Tilt。
+VOICE_TILT_NUMERATOR = 1
+VOICE_TILT_DENOMINATOR = 2
+VOICE_TILT_STAGES = 3
 
 
 def build_compression_table(gamma: float | None = None) -> list[int]:
@@ -209,7 +213,7 @@ class VoiceSynth:
         self.b = [0] * (ORDER + 1)  # b[0] 是上一输出样本
         self.phase = 0
         self.lfsr = 0xACE1
-        self.tilt_state = 0
+        self.tilt_state = [0] * VOICE_TILT_STAGES
         self.last_out = PWM_IDLE
         self.compression_table = build_compression_table(compression_gamma)
         self._apply_step(0)
@@ -301,11 +305,14 @@ class VoiceSynth:
         return x
 
     def _tilt_filter(self, sample: int) -> int:
-        """一阶高频提升，补偿压电片低频滚降（见 docs/design 说明）。"""
-        out = _i16(sample - ((self.tilt_state * VOICE_TILT_NUMERATOR)
-                             // VOICE_TILT_DENOMINATOR))
-        self.tilt_state = sample
-        return out
+        """级联一阶高频提升，补偿压电片低频滚降（见 docs/design 说明）。"""
+        value = sample
+        for index in range(VOICE_TILT_STAGES):
+            previous = self.tilt_state[index]
+            self.tilt_state[index] = value
+            value = _i16(value - ((previous * VOICE_TILT_NUMERATOR)
+                                  // VOICE_TILT_DENOMINATOR))
+        return value
 
     def next_sample(self) -> int:
         if not self.active:

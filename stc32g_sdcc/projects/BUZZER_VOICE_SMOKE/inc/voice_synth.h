@@ -19,6 +19,16 @@
 #define VOICE_HOP_SAMPLES 72
 #define VOICE_INTERP_STEPS 8
 #define VOICE_SAMPLES_PER_STEP (VOICE_HOP_SAMPLES / VOICE_INTERP_STEPS)
+
+/*
+ * 一阶高频提升的级联：每级 y = x - (num/den)·x[n-1]。
+ * 压电片只在谐振带（约 2~4kHz）效率高，把语音能量往那边搬比整体压缩更划算——
+ * 线性、不失真、也不抬高字间噪声。1/2 在固件里就是一次算术右移。
+ * 实测（高 Q 压电片模型，压电域 RMS）：原 3/16 单级为基线，1/2 两级 +4.9dB，
+ * 1/2 三级 +7.8dB。必须与 tools/voice/voice_model.py 的同名常量一致。
+ */
+#define VOICE_TILT_STAGES 3
+#define VOICE_TILT_SHIFT 1   /* num/den = 1/2，即右移 1 位 */
 /* 无声样本值：50% 占空比。0 和 255 是直流，同样无声，但 128 是线性中点。 */
 #define VOICE_PWM_IDLE 128
 
