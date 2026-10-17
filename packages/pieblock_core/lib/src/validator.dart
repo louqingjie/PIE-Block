@@ -1,5 +1,6 @@
 import 'models.dart';
 import 'music.dart';
+import 'staff_notation.dart';
 
 typedef _AddIssue = void Function(
   IssueSeverity severity,
@@ -247,6 +248,15 @@ abstract final class ProjectValidator {
   }
 
   static void _music(MusicConfig config, _AddIssue issue) {
+    if (config.keySignatureFifths < staffKeyFifthsMin ||
+        config.keySignatureFifths > staffKeyFifthsMax) {
+      issue(
+        IssueSeverity.error,
+        'music.key_signature_fifths',
+        '调号升降号个数必须在 -7–7 之间',
+        'music',
+      );
+    }
     if (config.ticksPerQuarter < 1 || config.ticksPerQuarter > 0x7fff) {
       issue(
         IssueSeverity.error,
@@ -359,6 +369,19 @@ abstract final class ProjectValidator {
     );
     if (duration > 20 * 60 * 1000) {
       issue(IssueSeverity.error, 'music.notes', '音乐总时长不能超过 20 分钟', 'music');
+    }
+    // 固件五线谱显示会把每个显示事件预先算成约 11 字节常量，放在 64KB 代码区；
+    // 超过预算时给出告警（不阻塞生成，极端情况由编译器/布局校验兜底）。
+    final staffSong = buildStaffSong(config);
+    final estimatedBytes = staffSong.events.length * 11 + 4096;
+    if (estimatedBytes > 48 * 1024) {
+      issue(
+        IssueSeverity.warning,
+        'music.notes',
+        '曲目较长：五线谱显示数据约 ${(estimatedBytes / 1024).round()}KB，'
+            '可能超出 STC32G 的 64KB 代码区，建议缩短曲目或减少音符',
+        'music',
+      );
     }
   }
 

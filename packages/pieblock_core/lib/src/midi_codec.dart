@@ -31,8 +31,12 @@ class MidiFileData {
     required this.tracks,
     required this.tempoEvents,
     required this.timeSignatureEvents,
+    this.keySignatureFifths = 0,
   });
   final int format, ticksPerQuarter;
+
+  /// MIDI 调号 meta（0x59）的升降号个数；0 = C 大调。
+  final int keySignatureFifths;
   final List<MidiTrackData> tracks;
   final List<TempoEvent> tempoEvents;
   final List<TimeSignatureEvent> timeSignatureEvents;
@@ -74,6 +78,7 @@ class MidiFileData {
       tempoEvents: tempoEvents.isEmpty
           ? const [TempoEvent(tick: 0, microsecondsPerQuarter: 500000)]
           : tempoEvents,
+      keySignatureFifths: keySignatureFifths,
       timeSignatureEvents: timeSignatureEvents.isEmpty
           ? const [TimeSignatureEvent(tick: 0, numerator: 4, denominator: 4)]
           : timeSignatureEvents,
@@ -108,6 +113,8 @@ abstract final class MidiCodec {
     final tracks = <MidiTrackData>[];
     final tempos = <TempoEvent>[];
     final meters = <TimeSignatureEvent>[];
+    var keySignatureFifths = 0;
+    var keySignatureFound = false;
     for (var trackIndex = 0; trackIndex < trackCount; trackIndex++) {
       if (reader.ascii(4) != 'MTrk') throw const FormatException('MIDI 轨道块损坏');
       final trackLength = reader.u32();
@@ -141,6 +148,11 @@ abstract final class MidiCodec {
                     (data[0] << 16) | (data[1] << 8) | data[2],
               ),
             );
+          }
+          if (type == 0x59 && data.isNotEmpty && !keySignatureFound) {
+            // MIDI 调号：第一个字节是有符号的升降号个数（-7…7）。
+            keySignatureFifths = data[0] > 127 ? data[0] - 256 : data[0];
+            keySignatureFound = true;
           }
           if (type == 0x58 && data.length >= 2) {
             meters.add(
@@ -198,6 +210,7 @@ abstract final class MidiCodec {
       tracks: List.unmodifiable(tracks),
       tempoEvents: List.unmodifiable(_dedupeTempo(tempos)),
       timeSignatureEvents: List.unmodifiable(_dedupeMeter(meters)),
+      keySignatureFifths: keySignatureFifths,
     );
   }
 
@@ -205,6 +218,9 @@ abstract final class MidiCodec {
     final events = <_WriteEvent>[];
     final name = utf8.encode(config.trackName ?? 'PIE-Block Music');
     events.add(_WriteEvent(0, 0, [0xff, 0x03, ..._vlq(name.length), ...name]));
+    // 调号 meta（0x59）：sf 有符号字节 + 0 表示大调。
+    final keyFifths = config.keySignatureFifths.clamp(-7, 7).toInt();
+    events.add(_WriteEvent(0, 0, [0xff, 0x59, 0x02, keyFifths & 0xff, 0x00]));
     for (final tempo in config.tempoEvents) {
       final value = tempo.microsecondsPerQuarter;
       events.add(

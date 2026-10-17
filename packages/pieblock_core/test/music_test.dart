@@ -210,11 +210,15 @@ void main() {
     test('生成单音固件且没有伪复音轮询', () {
       final code = CodeGenerator.generate(musicConfig());
       expect(code, contains('PWMB_CH3_P33'));
-      expect(code, contains('musicFrequencies[segment->note]'));
+      // Keil 回退分支保留旧的 musicSegments 播放；SDCC 分支改用五线谱事件表。
+      expect(code, contains('musicFrequencies[musicSegments[i].note]'));
+      expect(code, contains('musicFrequencies[staffPitches[i]]'));
       expect(code, contains('while (1)'));
       expect(code, contains('Music_Stop();'));
       expect(code, isNot(contains('Us_Delay')));
       expect(code, isNot(contains('voice_count')));
+      expect(code, contains('#if defined(__SDCC)'));
+      expect(code, contains('OLEDStaff_Show'));
     });
   });
 }

@@ -102,6 +102,7 @@
     ],
     "overlap_mode": "nearest",
     "new_note_interrupts": true,
+    "key_signature_fifths": 0,
     "tempo_events": [
       {
         "tick": 0,

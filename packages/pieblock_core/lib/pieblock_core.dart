@@ -5,6 +5,10 @@ export 'src/debug_cues.dart';
 export 'src/models.dart';
 export 'src/midi_codec.dart';
 export 'src/music.dart';
+export 'src/staff_firmware_c.dart';
+export 'src/staff_glyphs.dart';
+export 'src/staff_layout.dart';
+export 'src/staff_notation.dart';
 // 仓库实现按平台分叉：桌面/移动端落文件，Web 落 localStorage。
 // 这个 barrel 必须保持「Web 上不引入 dart:io」，否则任何引用它的包
 // （例如 pieblock_toolchain）都会连带编译不过。

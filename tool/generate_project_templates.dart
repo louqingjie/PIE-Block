@@ -296,6 +296,7 @@ ProjectConfig _music() {
   }
   return MusicConfig(
     ticksPerQuarter: 480,
+    keySignatureFifths: 0,
     trackName: '一闪一闪亮晶晶',
     notes: notes,
     // 这两个键必须显式给出：fromJson 在键缺失时传空列表而不是 null，

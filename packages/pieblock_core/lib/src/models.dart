@@ -500,6 +500,7 @@ class MusicConfig extends ProjectConfig {
     List<MusicNote> notes = const [],
     this.overlapMode = MusicOverlapMode.nearest,
     this.newNoteInterrupts = true,
+    this.keySignatureFifths = 0,
     List<TempoEvent>? tempoEvents,
     List<TimeSignatureEvent>? timeSignatureEvents,
   }) : notes = List.unmodifiable(notes),
@@ -522,6 +523,9 @@ class MusicConfig extends ProjectConfig {
   /// 勾选后，后起始的音符会打断仍在发声的音符（被打断的尾巴不发声）。
   final bool newNoteInterrupts;
 
+  /// 调号升降号个数（-7…7）；固件五线谱的调号显示用，0 = C 大调。
+  final int keySignatureFifths;
+
   final List<TempoEvent> tempoEvents;
   final List<TimeSignatureEvent> timeSignatureEvents;
 
@@ -535,6 +539,7 @@ class MusicConfig extends ProjectConfig {
     List<MusicNote>? notes,
     MusicOverlapMode? overlapMode,
     bool? newNoteInterrupts,
+    int? keySignatureFifths,
     List<TempoEvent>? tempoEvents,
     List<TimeSignatureEvent>? timeSignatureEvents,
   }) => MusicConfig(
@@ -548,6 +553,7 @@ class MusicConfig extends ProjectConfig {
     notes: notes ?? this.notes,
     overlapMode: overlapMode ?? this.overlapMode,
     newNoteInterrupts: newNoteInterrupts ?? this.newNoteInterrupts,
+    keySignatureFifths: keySignatureFifths ?? this.keySignatureFifths,
     tempoEvents: tempoEvents ?? this.tempoEvents,
     timeSignatureEvents: timeSignatureEvents ?? this.timeSignatureEvents,
   );
@@ -560,6 +566,7 @@ class MusicConfig extends ProjectConfig {
     'notes': notes.map((note) => note.toJson()).toList(),
     'overlap_mode': overlapMode.name,
     'new_note_interrupts': newNoteInterrupts,
+    'key_signature_fifths': keySignatureFifths,
     'tempo_events': tempoEvents.map((event) => event.toJson()).toList(),
     'time_signature_events': timeSignatureEvents
         .map((event) => event.toJson())
@@ -580,6 +587,7 @@ class MusicConfig extends ProjectConfig {
       MusicOverlapMode.nearest,
     ),
     newNoteInterrupts: json['new_note_interrupts'] as bool? ?? true,
+    keySignatureFifths: (json['key_signature_fifths'] as num?)?.toInt() ?? 0,
     tempoEvents: [
       for (final raw in json['tempo_events'] as List? ?? const [])
         if (raw is Map) TempoEvent.fromJson(Map<String, Object?>.from(raw)),

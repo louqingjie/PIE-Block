@@ -3,6 +3,8 @@
 import 'debug_cues.dart';
 import 'models.dart';
 import 'music.dart';
+import 'staff_firmware_c.dart';
+import 'staff_notation.dart';
 import 'validator.dart';
 
 abstract final class CodeGenerator {
@@ -959,9 +961,7 @@ ${engineerFeedback.isEmpty ? '' : '        UpdateServoFeedback();'}
           : 10000;
       var needInit = false;
       if (slot >= 0) {
-        final desired = slot < 4
-            ? <int>[frequency, 50]
-            : <int>[50, frequency];
+        final desired = slot < 4 ? <int>[frequency, 50] : <int>[50, frequency];
         needInit =
             groupFrequencies[0] != desired[0] ||
             groupFrequencies[1] != desired[1];
@@ -1240,6 +1240,7 @@ $loopBody
 
   static String _music(MusicConfig config) {
     final segments = MusicTimeline.segments(config);
+    final staffSong = buildStaffSong(config);
     final frequencies = List.generate(128, (note) {
       if (note == 0) return 1000;
       return (440 * math.pow(2, (note - 69) / 12)).round();
@@ -1255,7 +1256,9 @@ $loopBody
           (segment) => '    {${segment.durationMs}UL, ${segment.pitch ?? 0}},',
         )
         .join('\n');
+    final staffTables = emitStaffFirmwareTables(staffSong, prefix: 'staff');
     return '''// MIDI 单音音乐代码（由 PIE-Block Flutter 配置器自动生成）
+// SDCC 构建额外带 128x64 五线谱滚动显示；Keil 构建保持只播放。
 #include "main.h"
 
 // 步兵 Keil 模板仍链接 nrf24l01.c，保留其所需的通道符号。
@@ -1264,22 +1267,10 @@ uint8_t Channal = 36;
 #define MUSIC_DUTY_ON 5000
 #define MUSIC_DUTY_OFF 0
 
-typedef struct
-{
-    uint32_t duration_ms;
-    uint8_t note;
-} MusicSegment;
-
 static const uint16_t musicFrequencies[128] =
 {
 ${frequencyRows.join('\n')}
 };
-
-static const MusicSegment musicSegments[${segments.length}] =
-{
-$segmentRows
-};
-#define MUSIC_SEGMENT_COUNT ${segments.length}
 
 static void Music_Wait(uint32_t duration_ms)
 {
@@ -1297,29 +1288,65 @@ static void Music_Stop(void)
     PWM_SET_Frequency(MUSIC_BUZZER_CH, 1000, MUSIC_DUTY_OFF);
 }
 
-static void Music_PlaySegment(const MusicSegment *segment)
+#if defined(__SDCC)
+/* 五线谱显示：事件/调号/拍号/字形点阵全部由配置预计算，渲染在固件里完成。 */
+#include "OLED_Staff.h"
+
+$staffTables
+
+static void Music_PlayOnce(void)
 {
-    if (segment->note == 0)
-        Music_Stop();
-    else
-        PWM_SET_Frequency(MUSIC_BUZZER_CH,
-            musicFrequencies[segment->note], MUSIC_DUTY_ON);
-    Music_Wait(segment->duration_ms);
+    uint16_t i;
+    for (i = 0; i < STAFF_EVENT_COUNT; i++)
+    {
+        OLEDStaff_Show(&staffSong, i);
+        if (staffPitches[i] == 0)
+            Music_Stop();
+        else
+            PWM_SET_Frequency(MUSIC_BUZZER_CH,
+                musicFrequencies[staffPitches[i]], MUSIC_DUTY_ON);
+        Music_Wait(staffDurationsMs[i]);
+    }
+    Music_Stop();
 }
+#else
+/* Keil 构建：没有 OLED 五线谱显示，保持原来的蜂鸣器播放行为。 */
+typedef struct
+{
+    uint32_t duration_ms;
+    uint8_t note;
+} MusicSegment;
+
+static const MusicSegment musicSegments[${segments.length}] =
+{
+$segmentRows
+};
+#define MUSIC_SEGMENT_COUNT ${segments.length}
 
 static void Music_PlayOnce(void)
 {
     uint16_t i;
     for (i = 0; i < MUSIC_SEGMENT_COUNT; i++)
-        Music_PlaySegment(&musicSegments[i]);
+    {
+        if (musicSegments[i].note == 0)
+            Music_Stop();
+        else
+            PWM_SET_Frequency(MUSIC_BUZZER_CH,
+                musicFrequencies[musicSegments[i].note], MUSIC_DUTY_ON);
+        Music_Wait(musicSegments[i].duration_ms);
+    }
     Music_Stop();
 }
+#endif
 
 static void All_Init(void)
 {
     Board_Init();
     PWM_Init(MUSIC_BUZZER_CH, 1000, MUSIC_DUTY_OFF);
     Music_Stop();
+#if defined(__SDCC)
+    OLEDStaff_Init();
+#endif
 }
 
 void main(void)
