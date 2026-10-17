@@ -7,11 +7,16 @@
 # 本脚本先把 build\windows 下的构建产物（含 exe）重新标记为 Medium 完整性级别
 # （目录属主即可操作，不需要管理员），再执行 flutter run，让 app 以正常权限启动。
 #
-# 用法：
-#   powershell -ExecutionPolicy Bypass -File tools\run_windows.ps1
-#   powershell -ExecutionPolicy Bypass -File tools\run_windows.ps1 --release
-#   powershell -ExecutionPolicy Bypass -File tools\run_windows.ps1 --profile --verbose
+# 用法（推荐直接跑 .cmd，它会为本次进程临时放开执行策略）：
+#   tools\run_windows.cmd
+#   tools\run_windows.cmd --release
+#   tools\run_windows.cmd --profile --verbose
 # 其余参数原样传给 flutter run；默认补上 -d windows。
+#
+# 直接双击/调用本 .ps1 在本机可能被拒绝加载（提示 "not digitally signed"）：
+# 仓库目录带 Low 完整性标签时 PowerShell 会要求脚本签名，.ps1 本身也没有文件关联。
+# 需要跳过 .cmd 时这样调用：
+#   powershell -ExecutionPolicy Bypass -File tools\run_windows.ps1 [flutter 参数]
 [CmdletBinding()]
 param(
     [Parameter(ValueFromRemainingArguments = $true)]
