@@ -140,6 +140,50 @@ void main() {
         );
       }
     });
+
+    test('还原号是标准 ♮ 形状（上右竖线、下左竖线）', () {
+      expect(naturalGlyph.rows, <String>[
+        '..#.',
+        '..#.',
+        '####',
+        '#..#',
+        '####',
+        '#...',
+        '#...',
+      ]);
+      final config = MusicConfig(
+        notes: <MusicNote>[
+          MusicNote(id: 'n0', pitch: 78, startTick: 0, durationTicks: 480),
+          // 同小节内 F#5 之后再出现 F5：需要还原号取消升号。
+          MusicNote(id: 'n1', pitch: 77, startTick: 480, durationTicks: 480),
+        ],
+        ticksPerQuarter: 480,
+        timeSignatureEvents: const <TimeSignatureEvent>[
+          TimeSignatureEvent(tick: 0, numerator: 4, denominator: 4),
+        ],
+      );
+      final renderer = StaffRenderer(
+        config: config,
+        options: const RenderOptions(),
+      );
+      final frame = renderer.renderFrame(1);
+      final x = renderer.layoutX(1)[1].round();
+      final y = pitchY(77, 'treble', 6, 14);
+      expect(y, 14);
+      final left = x - 7;
+      final top = y - naturalGlyph.height ~/ 2;
+      // 上段只有右竖线，下段只有左竖线。
+      expect(frame.pixel(left + 2, top), isTrue, reason: '右上竖线缺失');
+      expect(frame.pixel(left, top), isFalse);
+      expect(frame.pixel(left, top + 6), isTrue, reason: '左下竖线缺失');
+      expect(frame.pixel(left + 2, top + 6), isFalse);
+      // 中性行（压在谱线上）：两根竖线保留，中间两格谱线被擦掉。
+      final middle = y;
+      expect(frame.pixel(left, middle), isTrue);
+      expect(frame.pixel(left + 3, middle), isTrue);
+      expect(frame.pixel(left + 1, middle), isFalse, reason: '还原号内部被谱线填充');
+      expect(frame.pixel(left + 2, middle), isFalse);
+    });
   });
 
   group('帧缓冲与位序', () {
