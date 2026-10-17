@@ -1,73 +1,89 @@
 // OLED 五线谱模拟器的几何/乐理映射回归测试。
 //
-// 这些断言锁定“后续固件要照抄”的映射表：音高→y、加线数、时值、调号位置、
-// 帧缓冲位序；改字形不影响这些纯数据换算。
+// 新结构下这些断言锁定的是“模拟器与固件共用”的唯一事实来源：
+//   - 乐理/事件/时值/调号拼写 → pieblock_core 的 staff_notation.dart；
+//   - 整数版面（x 布局 / y / 固定区 / 小节线 / 光标）→ staff_layout.dart；
+//   - 字形点阵 → staff_glyphs.dart；
+//   - 模拟器只负责落笔（tool/staff_render.dart）。
+//
+// 与固件的主机对拍 fixture 见 test/staff_fixture_test.dart。
 
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pieblock_core/pieblock_core.dart';
 
-import '../tool/oled_staff_spec.dart';
 import '../tool/render_oled_staff.dart';
 
 MusicConfig twinkle() => demoConfig('twinkle');
 
+MusicConfig configWithNotes(List<MusicNote> notes) => MusicConfig(
+  notes: notes,
+  ticksPerQuarter: 480,
+  timeSignatureEvents: const <TimeSignatureEvent>[
+    TimeSignatureEvent(tick: 0, numerator: 4, denominator: 4),
+  ],
+);
+
 void main() {
-  group('音高映射', () {
-    test('全音阶序号', () {
-      expect(diatonicIndex(60), 28); // C4
-      expect(diatonicIndex(64), 30); // E4
-      expect(diatonicIndex(67), 32); // G4
-      expect(diatonicIndex(71), 34); // B4
-      expect(diatonicIndex(43), 18); // G2
+  group('音高映射（core 单一来源）', () {
+    test('按调号拼写后的全音阶序号 / 谱表步数', () {
+      expect(spelledDiatonicIndex(60, 0), 28); // C4
+      expect(spelledDiatonicIndex(64, 0), 30); // E4
+      expect(spelledDiatonicIndex(43, 0), 18); // G2
+
+      expect(staffStepForPitch(60, 0, 0), -2); // C4 高音谱号下加线
+      expect(staffStepForPitch(64, 0, 0), 0); // E4 底线
+      expect(staffStepForPitch(67, 0, 0), 2); // G4 第 2 线
+      expect(staffStepForPitch(77, 0, 0), 8); // F5 顶线
+      expect(staffStepForPitch(43, 1, 0), 0); // G2 低音谱号底线
+      expect(staffStepForPitch(60, 1, 0), 10); // C4 低音谱号上加线
     });
 
-    test('高音谱号符头 y（space=6, staffTop=14）', () {
-      expect(pitchY(60, 'treble', 6, 14), 44); // C4 加线
-      expect(pitchY(64, 'treble', 6, 14), 38); // E4 底线
-      expect(pitchY(67, 'treble', 6, 14), 32); // G4 第 2 线
-      expect(pitchY(77, 'treble', 6, 14), 14); // F5 顶线
-    });
-
-    test('低音谱号符头 y', () {
-      expect(pitchY(43, 'bass', 6, 14), 38); // G2 底线
-      expect(pitchY(60, 'bass', 6, 14), 8); // C4 上加线
+    test('谱表步数 → 整数 y（staffYForStep = 38 - step*6~/2）', () {
+      expect(staffBottomLineY(), 38);
+      expect(staffYForStep(-2), 44); // C4 高音谱号下加线
+      expect(staffYForStep(0), 38); // E4 底线
+      expect(staffYForStep(2), 32); // G4 第 2 线
+      expect(staffYForStep(8), 14); // F5 顶线
+      expect(staffYForStep(10), 8); // C4 低音谱号上加线
+      expect(staffYForStep(12), 2); // C6 高音谱号上加线
     });
 
     test('加线数量', () {
-      expect(ledgerCountForPitch(60, 'treble'), 1); // C4
-      expect(ledgerCountForPitch(57, 'treble'), 2); // A3
-      expect(ledgerCountForPitch(79, 'treble'), 0); // G5（顶线上方的间）
-      expect(ledgerCountForPitch(81, 'treble'), 1); // A5
-      expect(ledgerCountForPitch(84, 'treble'), 2); // C6
+      expect(staffLedgerCountForStep(-2), 1); // C4
+      expect(staffLedgerCountForStep(-4), 2); // A3
+      expect(staffLedgerCountForStep(9), 0); // G5（顶线上方的间）
+      expect(staffLedgerCountForStep(10), 1); // A5
+      expect(staffLedgerCountForStep(12), 2); // C6
     });
 
     test('符干方向按中线判断', () {
-      expect(halfSpaceOffset(60, 'treble') < 0, isTrue); // C4 中线以下
-      expect(halfSpaceOffset(72, 'treble') > 0, isTrue); // C5 中线以上
-      expect(halfSpaceOffset(71, 'treble'), 0); // B4 中线上
+      expect(staffStemUpForStep(-2), isTrue); // C4 中线以下，符干向上
+      expect(staffStemUpForStep(5), isFalse); // C5 中线以上，符干向下
+      expect(staffStemUpForStep(4), isFalse); // B4 中线上，符干向下
     });
 
     test('按调号拼写定位：Ab4 在 A 间、G#4 在 G 线、Bb4 在 B 线', () {
       // 同一个 MIDI 音高在不同调号下记谱位置不同。
-      expect(spelledPitchY(68, 'treble', -1, 6, 14), 29); // Ab4（A 间）
-      expect(spelledPitchY(68, 'treble', 0, 6, 14), 32); // G#4（G 线）
-      expect(spelledPitchY(70, 'treble', -1, 6, 14), 26); // Bb4（B 线）
-      expect(spelledPitchY(66, 'treble', -1, 6, 14), 32); // Gb4（G 线）
-      expect(spelledPitchY(46, 'bass', -1, 6, 14), 32); // Bb2（低音 B 线）
-      expect(spelledLedgerCountForPitch(68, 'treble', -1), 0);
-      expect(spelledHalfSpaceOffset(68, 'treble', -1), -1); // A 间在中线以下
+      expect(staffYForStep(staffStepForPitch(68, 0, -1)), 29); // Ab4（A 间）
+      expect(staffYForStep(staffStepForPitch(68, 0, 0)), 32); // G#4（G 线）
+      expect(staffYForStep(staffStepForPitch(70, 0, -1)), 26); // Bb4（B 线）
+      expect(staffYForStep(staffStepForPitch(66, 0, -1)), 32); // Gb4（G 线）
+      expect(staffYForStep(staffStepForPitch(46, 1, -1)), 32); // Bb2（低音 B 线）
+      expect(staffLedgerCountForStep(staffStepForPitch(68, 0, -1)), 0);
+      expect(staffStemUpForStep(staffStepForPitch(68, 0, -1)), isTrue);
     });
 
     test('降号演示：Ab4 记在 A 间，降号紧贴符头左侧', () {
-      final renderer = StaffRenderer(
-        config: demoConfig('flats'),
-        options: const RenderOptions(key: 'F'),
-      );
+      final renderer = StaffRenderer(config: demoConfig('flats'));
       final frame = renderer.renderFrame(0);
-      final x = renderer.layoutX(0)[0].round();
-      final y = spelledPitchY(68, 'treble', -1, 6, 14);
+      final song = renderer.song;
+      expect(song.keyFifths, -1);
+      expect(song.events.first.accidental, 2, reason: 'Ab4 需要降号');
+      final x = staffLayoutX(song, 0)[0];
+      final y = staffYForStep(song.events.first.step);
+      expect(x, renderer.cursorX);
       expect(y, 29);
       final left = x - flatGlyph.width - 3;
       final top = y - flatGlyph.height ~/ 2;
@@ -81,9 +97,10 @@ void main() {
     });
   });
 
-  group('时值', () {
+  group('时值（core）', () {
     test('标准时值映射', () {
-      String value(double beats) => noteValueForBeats(beats).value.toString();
+      String value(double beats) =>
+          staffNoteValueForBeats(beats).value.toString();
       expect(value(4), '1/1');
       expect(value(3), '1/2.');
       expect(value(2), '1/2');
@@ -95,20 +112,47 @@ void main() {
     });
 
     test('三连音等非标准时值标记为近似', () {
-      final result = noteValueForBeats(1 / 3);
+      final result = staffNoteValueForBeats(1 / 3);
       expect(result.approx, isTrue);
+    });
+
+    test('时值编码与固件一致（0 全音符 … 8 附点十六分）', () {
+      expect(staffNoteValueForCode(0).denominator, 1);
+      expect(staffNoteValueForCode(1).denominator, 2);
+      expect(staffNoteValueForCode(2).dots, 1);
+      expect(staffNoteValueForCode(3).denominator, 4);
+      expect(staffNoteValueForCode(5).denominator, 8);
+      expect(staffNoteValueForCode(7).denominator, 16);
     });
   });
 
   group('调号', () {
     test('调号升降号个数', () {
-      expect(keyFifths('C'), 0);
-      expect(keyFifths('G'), 1);
-      expect(keyFifths('F'), -1);
-      expect(keyFifths('Bb'), -2);
-      expect(keyFifths('F#'), 6);
-      expect(keyFifths('Am'), 0);
-      expect(() => keyFifths('H'), throwsArgumentError);
+      expect(staffKeyFifths('C'), 0);
+      expect(staffKeyFifths('G'), 1);
+      expect(staffKeyFifths('F'), -1);
+      expect(staffKeyFifths('Bb'), -2);
+      expect(staffKeyFifths('F#'), 6);
+      expect(staffKeyFifths('Am'), 0);
+      expect(() => staffKeyFifths('H'), throwsArgumentError);
+    });
+
+    test('内置示例的调号：wide=G、bass=F、flats=F、sevenSharps=C#，其余 C', () {
+      expect(demoConfig('wide').keySignatureFifths, 1);
+      expect(demoConfig('bass').keySignatureFifths, -1);
+      expect(demoConfig('flats').keySignatureFifths, -1);
+      expect(demoConfig('sevenSharps').keySignatureFifths, 7);
+      for (final demo in <String>[
+        'twinkle',
+        'mixed',
+        'chromatic',
+        'accidentals',
+        'rests',
+      ]) {
+        expect(demoConfig(demo).keySignatureFifths, 0, reason: demo);
+      }
+      expect(staffDemoKeyFifths['wide'], 1);
+      expect(staffDemoKeyFifths['flats'], -1);
     });
 
     test('音名字母的调号升降', () {
@@ -118,43 +162,72 @@ void main() {
     });
 
     test('按调号拼写音名', () {
-      final cSharp = spellPitch(61, 0); // C 调：C#4
-      expect(cSharp.name, 'C#4');
-      final dFlat = spellPitch(61, -1); // F 调：Db4
-      expect(dFlat.name, 'Db4');
+      expect(spellPitch(61, 0).name, 'C#4');
+      expect(spellPitch(61, -1).name, 'Db4');
       expect(spellPitch(70, 0).name, 'A#4');
       expect(spellPitch(70, -1).name, 'Bb4');
       expect(spellPitch(60, 0).name, 'C4');
+      expect(spellPitch(61, 7).name, 'C#4');
     });
 
     test('调号位置表（高音/低音各一套）', () {
-      expect(trebleSharpSteps.first, 8); // F5
-      expect(trebleFlatSteps.first, 4); // B4
-      expect(bassSharpSteps.first, 6); // F3
-      expect(bassFlatSteps.first, 2); // B2
+      expect(staffKeyStepsForClef(1, bass: false), <int>[8]); // F5
+      expect(staffKeyStepsForClef(-1, bass: false), <int>[4]); // B4
+      expect(staffKeyStepsForClef(1, bass: true), <int>[6]); // F3
+      expect(staffKeyStepsForClef(-1, bass: true), <int>[2]); // B2
+      expect(staffKeyStepsForClef(7, bass: false), <int>[8, 5, 9, 6, 3, 7, 4]);
+      expect(staffKeyStepsForClef(-7, bass: true), <int>[2, 5, 1, 4, 0, 3, -1]);
+      expect(staffKeyStepsForClef(0, bass: false), isEmpty);
+    });
+
+    test('key --key 覆盖：wide 默认 G，覆盖成 C/F 后 FIFTHS 变化', () {
+      expect(StaffRenderer(config: demoConfig('wide')).fifths, 1);
+      expect(
+        StaffRenderer(
+          config: demoConfig('wide'),
+          options: const RenderOptions(key: 'C'),
+        ).fifths,
+        0,
+      );
+      expect(
+        StaffRenderer(
+          config: demoConfig('wide'),
+          options: const RenderOptions(key: 'F'),
+        ).fifths,
+        -1,
+      );
+      expect(keyNameForFifths(7), 'C#');
+      expect(keyNameForFifths(-1), 'F');
     });
   });
 
-  group('临时记号字形', () {
+  group('字形与遮罩', () {
+    test('字形表与固件 enum 顺序一致（22 个，行宽 ≤ 16）', () {
+      expect(staffGlyphList, hasLength(staffFirmwareGlyphCount));
+      expect(staffFirmwareGlyphCount, 22);
+      expect(StaffGlyphId.values, hasLength(22));
+      expect(digitGlyphs, hasLength(10));
+      for (final glyph in staffGlyphList) {
+        expect(glyph.height, greaterThan(0));
+        expect(glyph.width, inInclusiveRange(1, 16));
+        for (final row in glyph.rows) {
+          expect(row.length, glyph.width, reason: '字形行宽必须一致');
+        }
+      }
+    });
+
     test('升号完整显示，谱线不会填满中间的空心', () {
       expect(sharpGlyph.width, 5);
       expect(sharpGlyph.height, 7);
-      final config = MusicConfig(
-        notes: <MusicNote>[
-          MusicNote(id: 'n0', pitch: 78, startTick: 0, durationTicks: 480),
-        ],
-        ticksPerQuarter: 480,
-        timeSignatureEvents: const <TimeSignatureEvent>[
-          TimeSignatureEvent(tick: 0, numerator: 4, denominator: 4),
-        ],
-      );
       final renderer = StaffRenderer(
-        config: config,
-        options: const RenderOptions(),
+        config: configWithNotes(<MusicNote>[
+          MusicNote(id: 'n0', pitch: 78, startTick: 0, durationTicks: 480),
+        ]),
       );
       final frame = renderer.renderFrame(0);
-      final x = renderer.layoutX(0)[0].round();
-      final y = pitchY(78, 'treble', 6, 14);
+      final x = staffLayoutX(renderer.song, 0)[0];
+      final step = renderer.song.events.first.step;
+      final y = staffYForStep(step);
       expect(y, 14, reason: 'F#5 在顶线上，临时升号会压在谱线上');
       final left = x - sharpGlyph.width - 3;
       final top = y - sharpGlyph.height ~/ 2;
@@ -182,24 +255,18 @@ void main() {
         '..#',
         '..#',
       ]);
-      final config = MusicConfig(
-        notes: <MusicNote>[
+      final renderer = StaffRenderer(
+        config: configWithNotes(<MusicNote>[
           MusicNote(id: 'n0', pitch: 78, startTick: 0, durationTicks: 480),
           // 同小节内 F#5 之后再出现 F5：需要还原号取消升号。
           MusicNote(id: 'n1', pitch: 77, startTick: 480, durationTicks: 480),
-        ],
-        ticksPerQuarter: 480,
-        timeSignatureEvents: const <TimeSignatureEvent>[
-          TimeSignatureEvent(tick: 0, numerator: 4, denominator: 4),
-        ],
-      );
-      final renderer = StaffRenderer(
-        config: config,
-        options: const RenderOptions(),
+        ]),
       );
       final frame = renderer.renderFrame(1);
-      final x = renderer.layoutX(1)[1].round();
-      final y = pitchY(77, 'treble', 6, 14);
+      expect(renderer.song.events[1].accidental, 3, reason: 'F5 需要还原号');
+      final x = staffLayoutX(renderer.song, 1)[1];
+      expect(x, renderer.cursorX);
+      final y = staffYForStep(renderer.song.events[1].step);
       expect(y, 14);
       final left = x - naturalGlyph.width - 3;
       final top = y - naturalGlyph.height ~/ 2;
@@ -225,6 +292,7 @@ void main() {
     test('页格式字节序（bit0 = 页内最上一行）', () {
       final bitmap = Bitmap(screenWidth, screenHeight);
       expect(bitmap.bytes.length, frameBytes);
+      expect(frameBytes, 1024);
       bitmap.setPixel(0, 0);
       expect(bitmap.bytes[0], 1);
       bitmap.setPixel(0, 7);
@@ -259,64 +327,130 @@ void main() {
     });
   });
 
-  group('乐谱解析与版面', () {
-    test('发声区间 + 休止拆分成事件', () {
-      final twinkleEvents = buildScore(twinkle());
-      expect(twinkleEvents, hasLength(14));
-      expect(twinkleEvents.every((event) => !event.isRest), isTrue);
+  group('乐谱解析与整数版面', () {
+    test('发声区间 + 休止拆分成事件（buildStaffSong）', () {
+      final twinkleSong = buildStaffSong(twinkle());
+      expect(twinkleSong.events, hasLength(14));
+      expect(twinkleSong.events.every((event) => !event.isRest), isTrue);
+      expect(twinkleSong.events.first.pitch, 60);
+      expect(staffStartTickOf(twinkleSong, 13), 6720);
 
-      final restEvents = buildScore(demoConfig('rests'));
-      expect(restEvents, hasLength(8));
-      expect(restEvents.where((event) => event.isRest), hasLength(3));
-      expect(restEvents.first.pitch, 60);
+      final restSong = buildStaffSong(demoConfig('rests'));
+      expect(restSong.events, hasLength(8));
+      expect(restSong.events.where((event) => event.isRest), hasLength(3));
+      expect(restSong.events.first.pitch, 60);
+      expect(restSong.events[1].noteValue.denominator, 4); // 1 拍休止
+      expect(restSong.events[3].noteValue.denominator, 2); // 2 拍休止
+      expect(restSong.events[6].noteValue.denominator, 8); // 半拍休止
     });
 
     test('拍号与小节线', () {
-      final renderer = StaffRenderer(
-        config: twinkle(),
-        options: const RenderOptions(),
-      );
-      expect(renderer.timeSignature.numerator, 4);
-      expect(renderer.timeSignature.denominator, 4);
+      final renderer = StaffRenderer(config: twinkle());
+      expect(renderer.song.timeNumerator, 4);
+      expect(renderer.song.timeDenominator, 4);
       expect(renderer.barTicks, 1920);
-    });
-
-    test('左端固定区宽度随调号数量变化', () {
-      StaffRenderer build(String key) => StaffRenderer(
-        config: demoConfig('twinkle'),
-        options: RenderOptions(key: key),
-      );
-      expect(build('C').panelWidth, 25);
-      expect(build('G').panelWidth, 31);
-      expect(build('D').panelWidth, 37);
-    });
-
-    test('当前音符固定在 cursorX，后续音符按最小间距递增', () {
-      final renderer = StaffRenderer(
-        config: twinkle(),
-        options: const RenderOptions(),
-      );
-      final xs = renderer.layoutX(0);
-      expect(xs[0], renderer.cursorX);
-      for (var i = 1; i < xs.length; i++) {
-        expect(xs[i] - xs[i - 1], greaterThanOrEqualTo(5));
+      final lines = staffBarLineXs(renderer.song, 0);
+      expect(lines, isNotEmpty);
+      for (final x in lines) {
+        expect(x, inInclusiveRange(renderer.noteAreaStart, screenWidth - 1));
+      }
+      // 第 0 帧 playTick=0：第一根可见小节线在 1920 tick 后 = 64px。
+      expect(lines.first, renderer.cursorX + 64);
+      // 每根线间距 = barTicks 对应的像素。
+      for (var i = 1; i < lines.length; i++) {
+        expect(lines[i] - lines[i - 1], 64);
       }
     });
 
-    test('自动谱号：低音旋律用低音谱号，跨音域时切换', () {
-      final mixed = StaffRenderer(
-        config: demoConfig('mixed'),
-        options: const RenderOptions(),
-      );
-      expect(mixed.clefPerEvent.first, 'bass');
-      expect(mixed.clefPerEvent.last, 'treble');
-      expect(mixed.clefPerEvent.toSet(), containsAll(<String>{'bass', 'treble'}));
+    test('整数版面：固定区宽度/隔离带/光标位置', () {
+      int panel(int fifths) =>
+          staffPanelWidth(keyCount: fifths.abs(), timeDigits: 1);
+      expect(panel(0), 25);
+      expect(panel(1), 31);
+      expect(panel(2), 37);
+      expect(panel(7), 67);
+      expect(staffNoteAreaStart(keyCount: 0, timeDigits: 1), 31);
+      expect(staffNoteAreaStart(keyCount: 1, timeDigits: 1), 37);
+      expect(staffCursorX(31), 31 + ((screenWidth - 31) * 3 ~/ 10));
+      expect(staffCursorX(31), 60);
+      expect(staffCursorX(37), 64);
 
-      final twinkleRenderer = StaffRenderer(
-        config: twinkle(),
-        options: const RenderOptions(),
+      final cMajor = StaffRenderer(config: twinkle());
+      expect(cMajor.panelWidth, 25);
+      expect(cMajor.noteAreaStart, 31);
+      expect(cMajor.cursorX, 60);
+      expect(cMajor.fifths, 0);
+
+      final gMajor = StaffRenderer(
+        config: demoConfig('twinkle'),
+        options: const RenderOptions(key: 'G'),
       );
-      expect(twinkleRenderer.clefPerEvent.every((clef) => clef == 'treble'), isTrue);
+      expect(gMajor.panelWidth, 31);
+      expect(gMajor.noteAreaStart, 37);
+      expect(gMajor.cursorX, 64);
+    });
+
+    test('staffRoundDiv 与 Dart double.round 一致（半值远离 0）', () {
+      expect(staffRoundDiv(1, 2), 1);
+      expect(staffRoundDiv(-1, 2), -1);
+      expect(staffRoundDiv(3, 2), 2);
+      expect(staffRoundDiv(-3, 2), -2);
+      expect(staffRoundDiv(2, 3), 1);
+      expect(staffRoundDiv(-2, 3), -1);
+      expect(staffRoundDiv(0, 480), 0);
+      expect(staffRoundDiv(192, 480), 0);
+      expect(staffRoundDiv(240, 480), 1);
+    });
+
+    test('当前音符固定在 cursorX，后续音符按最小间距递增', () {
+      final renderer = StaffRenderer(config: twinkle());
+      final song = renderer.song;
+      final xs = staffLayoutX(song, 0);
+      expect(xs, hasLength(song.events.length));
+      expect(xs[0], renderer.cursorX);
+      for (var i = 1; i < xs.length; i++) {
+        final advance = staffAdvanceFor(
+          song.events[i],
+          clefChange: staffClefChangeAt(song, i),
+        );
+        expect(
+          xs[i] - xs[i - 1],
+          greaterThanOrEqualTo(advance),
+          reason: '事件 $i 的最小间距被破坏',
+        );
+      }
+      // 第 0 帧的右侧没有 16 分音符挤压时，按 tick 比例排列。
+      expect(xs[1] - xs[0], 16);
+      expect(xs[2] - xs[1], 16);
+    });
+
+    test('推进宽度：休止 7 / 音符 6 / 临时记号 +4 / 换谱号 +16', () {
+      final accidentals = buildStaffSong(demoConfig('accidentals'));
+      final first = accidentals.events.first;
+      expect(first.accidental, isNot(0));
+      expect(staffAdvanceFor(first, clefChange: false), staffMinNoteGap + 4);
+      final rests = buildStaffSong(demoConfig('rests'));
+      expect(staffAdvanceFor(rests.events[1], clefChange: false), 7);
+      final mixed = buildStaffSong(demoConfig('mixed'));
+      final clefChangeIndex = List<int>.generate(
+        mixed.events.length,
+        (i) => i,
+      ).firstWhere((i) => staffClefChangeAt(mixed, i), orElse: () => -1);
+      expect(clefChangeIndex, greaterThan(0), reason: 'mixed 应当发生换谱号');
+      expect(
+        staffAdvanceFor(mixed.events[clefChangeIndex], clefChange: true),
+        staffAdvanceFor(mixed.events[clefChangeIndex], clefChange: false) + 16,
+      );
+    });
+
+    test('自动谱号：低音旋律用低音谱号，跨音域时切换', () {
+      final mixed = buildStaffSong(demoConfig('mixed'));
+      expect(mixed.events.first.clef, 1, reason: 'mixed 开头在低音区');
+      expect(mixed.events.last.clef, 0, reason: 'mixed 结尾在高音区');
+      expect(mixed.events.map((event) => event.clef).toSet(), <int>{0, 1});
+
+      final twinkleSong = buildStaffSong(twinkle());
+      expect(twinkleSong.events.every((event) => event.clef == 0), isTrue);
     });
 
     test('强制谱号覆盖自动选择', () {
@@ -324,25 +458,61 @@ void main() {
         config: demoConfig('mixed'),
         options: const RenderOptions(clef: 'treble'),
       );
-      expect(renderer.clefPerEvent.every((clef) => clef == 'treble'), isTrue);
+      expect(renderer.events.every((event) => event.clef == 0), isTrue);
+      expect(
+        renderer.events
+            .where((event) => !event.isRest)
+            .every(
+              (event) =>
+                  event.step ==
+                  staffStepForPitch(event.pitch, 0, renderer.fifths),
+            ),
+        isTrue,
+      );
+      final bass = StaffRenderer(
+        config: demoConfig('mixed'),
+        options: const RenderOptions(clef: 'bass'),
+      );
+      expect(bass.events.every((event) => event.clef == 1), isTrue);
+    });
+
+    test('换谱号处绘制小谱号（落在滚动区内才画）', () {
+      final renderer = StaffRenderer(config: demoConfig('mixed'));
+      final song = renderer.song;
+      final changeIndex = List<int>.generate(
+        song.events.length,
+        (i) => i,
+      ).firstWhere((i) => staffClefChangeAt(song, i));
+      final xs = staffLayoutX(song, changeIndex);
+      final x = xs[changeIndex];
+      expect(x - 16, greaterThanOrEqualTo(renderer.noteAreaStart));
+      final frame = renderer.renderFrame(changeIndex);
+      // 换谱号符号用当前事件的谱号字形画在 x-16。
+      final clef = song.events[changeIndex].clef;
+      final glyph = clef == 1 ? bassClefGlyph : trebleClefGlyph;
+      // 找字形中第一个 '#' 的位置，断言该像素被点亮。
+      var found = false;
+      for (var row = 0; row < glyph.height && !found; row++) {
+        final col = glyph.rows[row].indexOf('#');
+        if (col < 0) continue;
+        final top = clef == 1 ? staffTop + staffSpace - 4 : staffTop - 2;
+        expect(
+          frame.pixel(x - 16 + col, top + row),
+          isTrue,
+          reason: '换谱号字形 (row=$row, col=$col) 未绘制',
+        );
+        found = true;
+      }
+      expect(found, isTrue);
     });
 
     test('左端固定区（含隔离带）是禁区：滚动内容不得侵入', () {
       List<int> panelPixels(StaffRenderer renderer, Bitmap frame) => <int>[
         for (var x = 0; x < renderer.noteAreaStart; x++)
-          for (var y = 0; y < screenHeight; y++)
-            frame.pixel(x, y) ? 1 : 0,
+          for (var y = 0; y < screenHeight; y++) frame.pixel(x, y) ? 1 : 0,
       ];
-      for (final entry in <String, String>{
-        'twinkle': 'C',
-        'wide': 'G',
-        'bass': 'F',
-      }.entries) {
-        final demo = entry.key;
-        final renderer = StaffRenderer(
-          config: demoConfig(demo),
-          options: RenderOptions(key: entry.value),
-        );
+      for (final demo in <String>['twinkle', 'wide', 'bass']) {
+        final renderer = StaffRenderer(config: demoConfig(demo));
         final frames = renderer.renderAll();
         final reference = panelPixels(renderer, frames.first);
         for (var i = 1; i < frames.length; i++) {
@@ -356,10 +526,7 @@ void main() {
     });
 
     test('每帧都是 1024 字节且确定性', () {
-      final renderer = StaffRenderer(
-        config: twinkle(),
-        options: const RenderOptions(),
-      );
+      final renderer = StaffRenderer(config: twinkle());
       final frames = renderer.renderAll();
       expect(frames, hasLength(14));
       for (final frame in frames) {
@@ -370,16 +537,12 @@ void main() {
     });
 
     test('高/低音谱号下示例里的音符都在屏内', () {
-      for (final demo in <String>['twinkle', 'wide', 'bass', 'mixed', 'accidentals', 'flats', 'rests']) {
-        final renderer = StaffRenderer(
-          config: demoConfig(demo),
-          options: const RenderOptions(),
-        );
+      for (final demo in staffDemoNames) {
+        final renderer = StaffRenderer(config: demoConfig(demo));
         for (var i = 0; i < renderer.events.length; i++) {
           final event = renderer.events[i];
           if (event.isRest) continue;
-          final clef = renderer.clefPerEvent[i];
-          final y = pitchY(event.pitch!, clef, 6, 14);
+          final y = staffYForStep(event.step);
           expect(
             y >= 0 && y < screenHeight,
             isTrue,
@@ -387,6 +550,141 @@ void main() {
           );
         }
       }
+    });
+
+    test('frames 选项限制渲染帧数', () {
+      final renderer = StaffRenderer(
+        config: twinkle(),
+        options: const RenderOptions(maxFrames: 3),
+      );
+      expect(renderer.visibleFrameCount, 3);
+      expect(renderer.renderAll(), hasLength(3));
+    });
+
+    test('spec.json 结构包含字形与整数版面信息', () {
+      final renderer = StaffRenderer(
+        config: demoConfig('flats'),
+        options: const RenderOptions(clef: 'auto'),
+      );
+      final spec = renderer.toSpecJson();
+      expect(spec['screen'], isA<Map<String, Object?>>());
+      final options = spec['options']! as Map<String, Object?>;
+      expect(options['key'], 'F');
+      expect(options['fifths'], -1);
+      expect(options['pxPerQuarter'], staffPxPerQuarter);
+      expect(options['minNoteGap'], staffMinNoteGap);
+      expect(spec['panelWidth'], renderer.panelWidth);
+      expect(spec['noteAreaStart'], renderer.noteAreaStart);
+      expect(spec['cursorX'], renderer.cursorX);
+      final glyphs = spec['glyphs']! as Map<String, Object?>;
+      expect(glyphs['trebleClef'], trebleClefGlyph.rows);
+      expect(glyphs['sharp'], sharpGlyph.rows);
+      expect((glyphs['digits']! as Map<String, Object?>), hasLength(10));
+      final events = spec['events']! as List<Object?>;
+      expect(events, hasLength(renderer.events.length));
+      final first = events.first! as Map<String, Object?>;
+      expect(first['pitch'], 68);
+      expect(first['startTick'], 0);
+      expect(first['step'], renderer.events.first.step);
+      expect(first['accidental'], 2);
+      expect(first['clef'], renderer.events.first.clef);
+    });
+  });
+
+  group('CLI 参数', () {
+    test('默认参数与 demo 调号', () {
+      final options = parseArgs(<String>[]);
+      expect(options.demo, isNull);
+      expect(options.render.key, isNull);
+      expect(options.render.clef, 'auto');
+      expect(options.selfCheck, isFalse);
+      expect(options.emitSpec, isFalse);
+      expect(options.outDir, 'tmp/staff_preview');
+      final renderer = StaffRenderer(
+        config: loadConfig(options),
+        options: options.render,
+      );
+      expect(renderer.fifths, 0, reason: '默认 demo twinkle 是 C 调');
+    });
+
+    test('--key 覆盖内置 demo 的调号', () {
+      final options = parseArgs(<String>['--demo', 'wide', '--key', 'C']);
+      final renderer = StaffRenderer(
+        config: loadConfig(options),
+        options: options.render,
+      );
+      expect(renderer.fifths, 0);
+      expect(renderer.panelWidth, 25);
+    });
+
+    test('--frames / --clef / --self-check 解析', () {
+      final options = parseArgs(<String>[
+        '--demo',
+        'mixed',
+        '--frames',
+        '2',
+        '--clef',
+        'bass',
+        '--self-check',
+      ]);
+      expect(options.render.maxFrames, 2);
+      expect(options.render.clef, 'bass');
+      expect(options.selfCheck, isTrue);
+      final renderer = StaffRenderer(
+        config: loadConfig(options),
+        options: options.render,
+      );
+      expect(renderer.renderAll(), hasLength(2));
+      expect(renderer.events.every((event) => event.clef == 1), isTrue);
+    });
+
+    test('整数版面参数只接受固件标准值', () {
+      expect(
+        () => parseArgs(<String>['--space', '7']),
+        throwsA(isA<ArgumentError>()),
+      );
+      expect(
+        () => parseArgs(<String>['--px-per-quarter', '20']),
+        throwsA(isA<ArgumentError>()),
+      );
+      expect(
+        () => parseArgs(<String>['--min-note-gap', '8']),
+        throwsA(isA<ArgumentError>()),
+      );
+      expect(
+        () => parseArgs(<String>['--cursor', '0.5']),
+        throwsA(isA<ArgumentError>()),
+      );
+      // 标准值仍然接受（兼容旧脚本）。
+      final options = parseArgs(<String>[
+        '--space',
+        '$staffSpace',
+        '--px-per-quarter',
+        '$staffPxPerQuarter',
+        '--min-note-gap',
+        '$staffMinNoteGap',
+        '--cursor',
+        '0.30',
+      ]);
+      expect(options.demo, isNull);
+    });
+
+    test('未知参数/非法谱号报错', () {
+      expect(
+        () => parseArgs(<String>['--bogus']),
+        throwsA(isA<ArgumentError>()),
+      );
+      expect(
+        () => StaffRenderer(
+          config: demoConfig('twinkle'),
+          options: const RenderOptions(clef: 'alto'),
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
+      expect(
+        () => StaffRenderer(config: configWithNotes(<MusicNote>[])),
+        throwsA(isA<StateError>()),
+      );
     });
   });
 }

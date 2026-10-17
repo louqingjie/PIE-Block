@@ -19,6 +19,8 @@
 # Keil and embedded build artifacts
 *.axf
 *.bin
+# 五线谱主机对拍的 golden 帧（1024B/帧原始页格式）需要提交，不能当二进制产物忽略
+!stc32g_sdcc/tests/staff/fixtures/golden/*.bin
 *.hex
 *.map
 *.lst
