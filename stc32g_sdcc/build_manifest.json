@@ -79,6 +79,10 @@
       "libraries/drivers/src/CNU_PIE_GPIO.c",
       "libraries/drivers/src/CNU_PIE_PWM.c"
     ],
+    "voice": [
+      "projects/BUZZER_VOICE_SMOKE/src/voice_synth.c",
+      "projects/BUZZER_VOICE_SMOKE/src/voice_data.c"
+    ],
     "timer": [
       "libraries/drivers/src/CNU_PIE_GPIO.c",
       "libraries/drivers/src/CNU_PIE_TIMER.c"
@@ -102,6 +106,7 @@
     "BUZZER_MUSIC_SMOKE": {"library_groups": ["pwm"]},
     "BUZZER_MUSIC_SONG_SMOKE": {"library_groups": ["pwm"]},
     "BUZZER_MUSIC_GENERATED": {"library_groups": ["pwm"]},
+    "BUZZER_VOICE_SMOKE": {"library_groups": ["pwm", "timer", "voice"]},
     "DELAY_SMOKE": {"library_groups": ["gpio"]},
     "FRICTION_CALIBRATION": {"library_groups": ["boards", "drivers"]},
     "LCD_SPI_SMOKE": {"library_groups": ["lcd"]},

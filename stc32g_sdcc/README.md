@@ -88,6 +88,24 @@ pwsh .\stc32g_sdcc\build.ps1 `
 `projects/BUZZER_MUSIC_SONG_SMOKE/music.json`，构建命令只需将工程名改为
 `BUZZER_MUSIC_SONG_SMOKE`。
 
+语音合成示例工程 `BUZZER_VOICE_SMOKE` 把 P33 无源蜂鸣器当扬声器用：PWM 载波
+固定 129.6kHz，逐样本改占空比，播出 10 阶 LPC 格型合成的中文短句
+「这是P六零，电机调试」和「这是P六十，电机调试」。参考音、参数表、试听预览、
+定点校验和固件构建由一条命令串起来：
+
+```powershell
+pwsh .\stc32g_sdcc\build_voice.ps1 `
+  -Python <带 numpy 的 python> `
+  -Sdcc .\path\to\sdcc.exe `
+  -LibDir .\path\to\mcs251-large-stack-auto `
+  -StdInclude .\sdcc-c251\device\include
+```
+
+脚本依次用系统中文 TTS 生成参考音、做 LPC-10 分析并量化成 13 字节/帧的参数表、
+校验定点模型（含把 `voice_synth.c` 编成原生程序与 Python 定点模型逐样本比对），
+最后调用 `build.ps1` 出 HEX。语料在 `projects/BUZZER_VOICE_SMOKE/voice.json`，
+设计与验证细节见 `docs/design/蜂鸣器LPC语音合成示例固件.md`。
+
 ### 通过代码生成器直接构建 SDCC 音乐 HEX
 
 `build_music.ps1` 将 MIDI 解析、音乐 `main.c` 生成和 SDCC 构建串起来，默认使用

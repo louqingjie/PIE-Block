@@ -1,0 +1,16 @@
+{
+  "format_version": 1,
+  "comment": "BUZZER_VOICE_SMOKE 的朗诵语料。参考音由 tools/voice/render_reference.ps1 用系统中文 TTS 生成，再经 tools/voice/make_voice_params.py 做 LPC-10 分析。P60 按引脚命名逐位读作 P六零；另一份 P六十 用于对比两种读法。",
+  "voice_culture": "zh-CN",
+  "reference_sample_rate": 8000,
+  "utterances": [
+    {
+      "name": "PLiuling",
+      "text": "这是P六零，电机调试"
+    },
+    {
+      "name": "PLiushi",
+      "text": "这是P六十，电机调试"
+    }
+  ]
+}
