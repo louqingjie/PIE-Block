@@ -679,3 +679,34 @@ int ledgerCountForPitch(int pitch, String clef) {
 /// 音符相对谱表中线的半格位置（负数=偏下），用于决定符干方向。
 int halfSpaceOffset(int pitch, String clef) =>
     diatonicIndex(pitch) - clefBottomDiatonic(clef) - 4;
+
+// ---------------------------------------------------------------------------
+// 按调号拼写的音名 → 谱表纵坐标
+//
+// 同一个 MIDI 音高在不同调号下可能记成升号或降号拼写：
+// 例如 68 在 C 调记 G#4（G 线），在 F 调记 Ab4（A 间）。
+// 记谱位置必须跟着拼写走，否则降号调里 Bb/Ab 会被画到错线/错间上。
+// ---------------------------------------------------------------------------
+
+int spelledDiatonicIndex(int pitch, int fifths) {
+  final spelling = spellPitch(pitch, fifths);
+  return spelling.octave * 7 + spelling.letter;
+}
+
+/// 按“调号拼写后的音名”计算符头中心 y。
+int spelledPitchY(int pitch, String clef, int fifths, int space, int staffTop) {
+  final step = spelledDiatonicIndex(pitch, fifths) - clefBottomDiatonic(clef);
+  return staffBottomY(staffTop, space) - (step * space ~/ 2);
+}
+
+/// 按拼写计算加线数量。
+int spelledLedgerCountForPitch(int pitch, String clef, int fifths) {
+  final step = spelledDiatonicIndex(pitch, fifths) - clefBottomDiatonic(clef);
+  if (step > 8) return (step - 8) ~/ 2;
+  if (step < 0) return (-step) ~/ 2;
+  return 0;
+}
+
+/// 按拼写判断符干方向（负数=中线以下，符干向上）。
+int spelledHalfSpaceOffset(int pitch, String clef, int fifths) =>
+    spelledDiatonicIndex(pitch, fifths) - clefBottomDiatonic(clef) - 4;

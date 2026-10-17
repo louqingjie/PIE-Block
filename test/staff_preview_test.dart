@@ -48,6 +48,37 @@ void main() {
       expect(halfSpaceOffset(72, 'treble') > 0, isTrue); // C5 中线以上
       expect(halfSpaceOffset(71, 'treble'), 0); // B4 中线上
     });
+
+    test('按调号拼写定位：Ab4 在 A 间、G#4 在 G 线、Bb4 在 B 线', () {
+      // 同一个 MIDI 音高在不同调号下记谱位置不同。
+      expect(spelledPitchY(68, 'treble', -1, 6, 14), 29); // Ab4（A 间）
+      expect(spelledPitchY(68, 'treble', 0, 6, 14), 32); // G#4（G 线）
+      expect(spelledPitchY(70, 'treble', -1, 6, 14), 26); // Bb4（B 线）
+      expect(spelledPitchY(66, 'treble', -1, 6, 14), 32); // Gb4（G 线）
+      expect(spelledPitchY(46, 'bass', -1, 6, 14), 32); // Bb2（低音 B 线）
+      expect(spelledLedgerCountForPitch(68, 'treble', -1), 0);
+      expect(spelledHalfSpaceOffset(68, 'treble', -1), -1); // A 间在中线以下
+    });
+
+    test('降号演示：Ab4 记在 A 间，降号紧贴符头左侧', () {
+      final renderer = StaffRenderer(
+        config: demoConfig('flats'),
+        options: const RenderOptions(key: 'F'),
+      );
+      final frame = renderer.renderFrame(0);
+      final x = renderer.layoutX(0)[0].round();
+      final y = spelledPitchY(68, 'treble', -1, 6, 14);
+      expect(y, 29);
+      final left = x - flatGlyph.width - 3;
+      final top = y - flatGlyph.height ~/ 2;
+      // 4×7 降号：左侧竖线 + 底部闭合圆弧。
+      expect(frame.pixel(left, top), isTrue, reason: '降号竖线顶缺失');
+      expect(frame.pixel(left, top + 4), isTrue, reason: '降号圆弧左上缺失');
+      expect(frame.pixel(left + 1, top + 4), isTrue, reason: '降号圆弧上横缺失');
+      // 和符头（左沿 x-2）之间留 1px 空隙。
+      expect(frame.pixel(left + 4, y), isFalse, reason: '降号与符头之间应有 1px 空隙');
+      expect(frame.pixel(x - 2, y), isTrue, reason: '符头左沿缺失');
+    });
   });
 
   group('时值', () {
@@ -339,7 +370,7 @@ void main() {
     });
 
     test('高/低音谱号下示例里的音符都在屏内', () {
-      for (final demo in <String>['twinkle', 'wide', 'bass', 'mixed', 'accidentals', 'rests']) {
+      for (final demo in <String>['twinkle', 'wide', 'bass', 'mixed', 'accidentals', 'flats', 'rests']) {
         final renderer = StaffRenderer(
           config: demoConfig(demo),
           options: const RenderOptions(),

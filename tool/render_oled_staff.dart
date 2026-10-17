@@ -131,7 +131,10 @@ class StaffRenderer {
       for (var i = index; i < events.length && seen < 3; i++) {
         final event = events[i];
         if (event.isRest) continue;
-        maxLedger = math.max(maxLedger, ledgerCountForPitch(event.pitch!, clef));
+        maxLedger = math.max(
+          maxLedger,
+          spelledLedgerCountForPitch(event.pitch!, clef, fifths),
+        );
         seen++;
       }
       return maxLedger;
@@ -178,7 +181,13 @@ class StaffRenderer {
         _drawRest(frame, event, x);
         continue;
       }
-      final y = pitchY(event.pitch!, noteClef, space, staffTop);
+      final y = spelledPitchY(
+        event.pitch!,
+        noteClef,
+        fifths,
+        space,
+        staffTop,
+      );
       if (y < -2 || y > screenHeight + 1) continue;
       // 换谱号的地方画一个谱号变更符号，旧音符仍按旧谱号绘制；
       // 变更点落在固定区/隔离带里时不画（避免和固定谱号叠在一起）。
@@ -376,7 +385,7 @@ class StaffRenderer {
     final event = events[index];
     final pitch = event.pitch!;
     final noteValue = noteValueForEvent(event, config);
-    final y = pitchY(pitch, clef, space, staffTop);
+    final y = spelledPitchY(pitch, clef, fifths, space, staffTop);
     _drawLedgerLines(frame, pitch, clef, x);
     final accidental = _accidentalFor(index);
     if (accidental != null) {
@@ -389,7 +398,7 @@ class StaffRenderer {
       _blitAccidental(frame, glyph, x - glyph.width - 3, y);
     }
 
-    final stemUp = halfSpaceOffset(pitch, clef) < 0;
+    final stemUp = spelledHalfSpaceOffset(pitch, clef, fifths) < 0;
     final headLeft = x - 2;
     final headTop = y - 1;
     final head = noteValue.hollow ? noteHeadHollow : noteHeadFilled;
@@ -413,7 +422,8 @@ class StaffRenderer {
   }
 
   void _drawLedgerLines(Bitmap frame, int pitch, String clef, int x) {
-    final step = diatonicIndex(pitch) - clefBottomDiatonic(clef);
+    final step = spelledDiatonicIndex(pitch, fifths) -
+        clefBottomDiatonic(clef);
     if (step > 8) {
       for (var lineStep = 10; lineStep <= step; lineStep += 2) {
         final lineY = staffBottom - (lineStep * space ~/ 2);
@@ -574,12 +584,17 @@ MusicConfig demoConfig(String name) {
       (78, 480), (77, 480), (78, 480), (66, 480),
       (65, 480), (73, 480), (61, 480), (62, 960),
     ],
+    'flats' => const <DemoCell>[
+      // 配合 --key F 使用：Ab4（间）、Gb4（线）、Gb5（顶线）、G5 还原…
+      (68, 480), (68, 480), (67, 480), (66, 480),
+      (78, 960), (79, 480), (77, 960),
+    ],
     'rests' => const <DemoCell>[
       (60, 480), (null, 480), (62, 480), (null, 960),
       (64, 480), (65, 480), (null, 240), (67, 960),
     ],
     _ => throw ArgumentError(
-      '未知示例 $name（可用 twinkle/wide/bass/mixed/chromatic/accidentals/rests）',
+      '未知示例 $name（可用 twinkle/wide/bass/mixed/chromatic/accidentals/flats/rests）',
     ),
   };
   var tick = 0;
@@ -726,7 +741,7 @@ void printUsage() {
   dart run tool/render_oled_staff.dart --self-check
 
 参数：
-  --demo twinkle|wide|bass|mixed|chromatic|accidentals|rests  内置示例（默认 twinkle）
+  --demo twinkle|wide|bass|mixed|chromatic|accidentals|flats|rests  内置示例（默认 twinkle）
   --project <path>    读取真实 .pieproj（format_version 16）
   --config <path>     读取单份 MusicConfig JSON
   --key <调号>        C/G/D/A/E/B/F#/C#/F/Bb/Eb/Ab/Db/Gb/Cb（也支持 Am/Em/... 小调）
@@ -877,6 +892,7 @@ Future<int> runSelfCheck() async {
     'mixed',
     'chromatic',
     'accidentals',
+    'flats',
     'rests',
   ]) {
     final config = demoConfig(demo);
@@ -902,7 +918,7 @@ Future<int> runSelfCheck() async {
       final event = renderer.events[i];
       if (event.isRest) continue;
       final clef = renderer.clefForEvent(i);
-      final y = pitchY(event.pitch!, clef, 6, 14);
+      final y = spelledPitchY(event.pitch!, clef, renderer.fifths, 6, 14);
       check(
         y >= 0 && y < screenHeight,
         '$demo frame $i: pitch ${event.pitch} 的 y=$y 超出屏幕',
@@ -914,7 +930,7 @@ Future<int> runSelfCheck() async {
     );
   }
   if (failures == 0) {
-    stdout.writeln('self-check OK：7 个示例全部通过（帧长/确定性/音高在屏内）');
+    stdout.writeln('self-check OK：8 个示例全部通过（帧长/确定性/音高在屏内）');
   } else {
     stderr.writeln('self-check 失败 $failures 项');
   }
