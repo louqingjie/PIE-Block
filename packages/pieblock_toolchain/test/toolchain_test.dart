@@ -82,6 +82,39 @@ void main() {
     expect((await IntelHexValidator.validateApplication(hex.path)).ok, isTrue);
   });
 
+  test('固件内容哈希随源码变化，并忽略 build/生成目录', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'pieblock-fw-hash-',
+    );
+    addTearDown(() => directory.delete(recursive: true));
+    File('${directory.path}/a.c').writeAsStringSync('first');
+    final nested = File('${directory.path}/sub/b.h');
+    nested.createSync(recursive: true);
+    nested.writeAsStringSync('header');
+    final first = await FirmwareBuilder.firmwareContentHash(directory.path);
+    expect(first, hasLength(64));
+    expect(
+      await FirmwareBuilder.firmwareContentHash(directory.path),
+      first,
+      reason: '内容没变时哈希必须稳定',
+    );
+
+    File('${directory.path}/a.c').writeAsStringSync('second');
+    final changed = await FirmwareBuilder.firmwareContentHash(directory.path);
+    expect(changed, isNot(first), reason: '只改实现、不改文件名也要变化');
+
+    // build/ 是生成目录：不参与哈希，否则每次本机构建都会让缓存失效。
+    Directory('${directory.path}/build').createSync();
+    File('${directory.path}/build/firmware.hex').writeAsStringSync('zzz');
+    File('${directory.path}/build/firmware.rel').writeAsBytesSync(
+      List<int>.filled(32, 7),
+    );
+    expect(
+      await FirmwareBuilder.firmwareContentHash(directory.path),
+      changed,
+    );
+  });
+
   test('构建指纹随源码、类型和编译器变化', () {
     BuildFingerprint fingerprint(
       String code,

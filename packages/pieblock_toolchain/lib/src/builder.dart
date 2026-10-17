@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
@@ -11,7 +12,7 @@ import 'compiler_backend.dart';
 import 'hex_validator.dart';
 import 'models.dart';
 
-const _buildSchemaVersion = 'flutter_build_v4';
+const _buildSchemaVersion = 'flutter_build_v5';
 
 String firmwareProjectFor(ProjectKind kind, CompilerKind compiler) =>
     switch (compiler) {
@@ -236,7 +237,10 @@ class FirmwareBuilder {
     final firmware = await File(
       p.join(assets.sdccFirmware, 'build_manifest.json'),
     ).readAsString();
-    return sha256.convert(utf8.encode('$bundle\n$firmware')).toString();
+    final firmwareSources = await firmwareContentHash(assets.sdccFirmware);
+    return sha256
+        .convert(utf8.encode('$bundle\n$firmware\n$firmwareSources'))
+        .toString();
   }
 
   BuildOperation start(BuildRequest request) {
@@ -825,10 +829,13 @@ class FirmwareBuilder {
     final firmwareManifest = File(
       p.join(assets.sdccFirmware, 'build_manifest.json'),
     );
+    final firmwareSources = await firmwareContentHash(assets.sdccFirmware);
     final fingerprintValue = sha256
         .convert(
           utf8.encode(
-            '${await bundleManifest.readAsString()}\n${await firmwareManifest.readAsString()}',
+            '${await bundleManifest.readAsString()}\n'
+            '${await firmwareManifest.readAsString()}\n'
+            '$firmwareSources',
           ),
         )
         .toString();
@@ -911,6 +918,47 @@ class FirmwareBuilder {
       }
     }
     throw StateError('发布包缺少 C251 工具链资源');
+  }
+
+  /// 固件源码树的内容哈希。
+  ///
+  /// 构建缓存和运行时部署不能只看 build_manifest.json：新增源文件会改清单，
+  /// 但像 MusicClock.c/OLED_Staff.c 这种"只改实现、不改清单"的固件修复不会。
+  /// 不把 build/ 等生成目录算进去，避免每次本机构建都让缓存失效。
+  static Future<String> firmwareContentHash(String firmwareRoot) async {
+    final root = Directory(firmwareRoot);
+    final files = <String, File>{};
+    await for (final entity in root.list(recursive: true, followLinks: false)) {
+      if (entity is! File) continue;
+      final relative = p
+          .relative(entity.path, from: root.path)
+          .replaceAll('\\', '/');
+      if (_firmwareHashExcluded(relative)) continue;
+      files[relative] = entity;
+    }
+    final names = files.keys.toList()..sort();
+    final bytes = BytesBuilder(copy: false);
+    for (final name in names) {
+      bytes.add(utf8.encode(name));
+      bytes.addByte(0);
+      bytes.add(await files[name]!.readAsBytes());
+      bytes.addByte(0);
+    }
+    return sha256.convert(bytes.takeBytes()).toString();
+  }
+
+  static bool _firmwareHashExcluded(String relativePath) {
+    for (final segment in relativePath.split('/')) {
+      if (segment == 'build' ||
+          segment == '__pycache__' ||
+          segment == '.git' ||
+          segment == '.dart_tool' ||
+          segment == '.tooling' ||
+          segment == 'tmp') {
+        return true;
+      }
+    }
+    return false;
   }
 
   static Future<void> _copyDirectory(
