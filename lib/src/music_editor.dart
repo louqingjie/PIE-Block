@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -34,9 +35,26 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
   final _horizontalScroll = ScrollController();
   final _verticalScroll = ScrollController();
   final _undo = <MusicConfig>[], _redo = <MusicConfig>[];
-  MusicNote? _dragOriginal;
+
+  /// 本次拖动开始时被移动的音符（按下那一刻的原始值），拖动过程中不改写，
+  /// 这样位移量始终相对按下位置计算，多音符整组平移也不会累积误差。
+  final _dragOriginals = <String, MusicNote>{};
+  String? _dragAnchorId;
+
+  /// 本次指针按下之前就已经选中的音符：画笔模式据此判断「按下已选中的音符」
+  /// 应该拖动整组而不是新建音符。用 Listener 记录，避免 onTapDown 与
+  /// onPanStart 竞争手势竞技场导致快拖时拿不到按下事件。
+  final _selectionAtPointerDown = <String>{};
+
+  /// 本次拖动的起点（按下位置），位移量相对它计算，音符不会在起拖瞬间跳到
+  /// 指针下，多选整组平移也保持抓取点相对音符不动。
+  Offset? _dragStart;
   Offset? _marqueeStart, _marqueeEnd;
   bool _resizing = false, _loopPreview = false;
+
+  /// undo 快照延后到本次拖动首次真正改变数据时再记录：按住音符只是选中、
+  /// 或抖动一两个像素就松手时，不再留下一条“撤销了什么都没发生”的历史。
+  bool _dragHistoryPending = false;
   MusicNote? _clipboard;
   Timer? _positionTimer;
   int _playheadTick = 0;
@@ -147,7 +165,16 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
           ),
         );
         _selected.remove(hit.id);
-      } else {
+      } else if (_tool == _MusicTool.pencil &&
+          !_selectionAtPointerDown.contains(hit.id)) {
+        // 画笔：点到未选中的音符只是把它设为单选，不进入拖动。
+        _selected
+          ..clear()
+          ..add(hit.id);
+        setState(() {});
+      } else if (!_selected.contains(hit.id)) {
+        // 选择模式（以及画笔下按下已选中的音符）：点到未选中的音符替换成单选，
+        // 点到已选中的音符保持整组选中，随后可整组拖动。
         _selected
           ..clear()
           ..add(hit.id);
@@ -185,10 +212,19 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
       ..add(note.id);
   }
 
+  /// 记录本次指针按下前已选中的音符。放在 Listener 里而不是 onTapDown，
+  /// 因为快速拖动时手势竞技场会把 tap 判负，onTapDown 可能根本不触发。
+  void _rememberSelectionOnPointerDown(PointerDownEvent event) {
+    _selectionAtPointerDown
+      ..clear()
+      ..addAll(_selected);
+  }
+
   void _panStart(DragStartDetails details) {
-    if (_tool != _MusicTool.select) return;
+    if (_tool == _MusicTool.pan) return;
     final hit = _hit(details.localPosition);
     if (hit == null) {
+      if (_tool != _MusicTool.select) return;
       _marqueeStart = details.localPosition;
       _marqueeEnd = details.localPosition;
       _selected.clear();
@@ -196,13 +232,36 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
       return;
     }
     if (!hit.primary) return;
-    _dragOriginal = hit;
-    _resizing = (_noteRect(hit).right - details.localPosition.dx).abs() < 10;
-    _undo.add(_config);
-    _redo.clear();
-    _selected
+    // 选择模式：按住任意主旋律音符即可拖动。画笔模式：只有按住按下前就已经
+    // 选中的音符才拖动（否则它是刚被画笔选中的目标，保持画笔的原有行为）。
+    final movable =
+        _tool == _MusicTool.select ||
+        (_tool == _MusicTool.pencil &&
+            _selectionAtPointerDown.contains(hit.id));
+    if (!movable) return;
+    if (!_selected.contains(hit.id)) {
+      _selected
+        ..clear()
+        ..add(hit.id);
+    }
+    _dragOriginals
       ..clear()
-      ..add(hit.id);
+      ..addEntries([
+        for (final note in _config.notes)
+          if (note.primary && _selected.contains(note.id))
+            MapEntry(note.id, note),
+      ]);
+    _dragOriginals.putIfAbsent(hit.id, () => hit);
+    _dragAnchorId = hit.id;
+    _dragStart = details.localPosition;
+    // 调时值的命中区随音符宽度收缩（下限 3px）：满宽音符仍是右缘 10px，
+    // 短音符（最小绘制宽度 8px）左侧始终留得下可拖动的区域。
+    final anchorRect = _noteRect(hit);
+    final resizeZone = math.min(10.0, math.max(3.0, anchorRect.width * 0.25));
+    _resizing =
+        _dragOriginals.length == 1 &&
+        (anchorRect.right - details.localPosition.dx).abs() < resizeZone;
+    _dragHistoryPending = true;
   }
 
   void _panUpdate(DragUpdateDetails details) {
@@ -225,8 +284,8 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
       }
       return;
     }
-    final original = _dragOriginal;
-    if (original == null) {
+    final anchor = _dragOriginals[_dragAnchorId];
+    if (anchor == null) {
       if (_marqueeStart != null) {
         _marqueeEnd = details.localPosition;
         final rect = Rect.fromPoints(_marqueeStart!, _marqueeEnd!);
@@ -241,43 +300,115 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
       }
       return;
     }
+    final start = _dragStart ?? details.localPosition;
+    final anchorLeft = _noteRect(anchor).left;
     final tickDelta = _snap(
-      ((details.localPosition.dx - _noteRect(original).left) /
+      ((details.localPosition.dx - start.dx) /
               _pixelsPerQuarter *
               _config.ticksPerQuarter)
           .round(),
     );
-    MusicNote next;
     if (_resizing) {
-      final duration = _snap(
-        ((details.localPosition.dx - _noteRect(original).left) /
-                _pixelsPerQuarter *
-                _config.ticksPerQuarter)
-            .round(),
+      final next = anchor.copyWith(
+        durationTicks: math.max(
+          _snapTicks,
+          _snap(
+            ((details.localPosition.dx - anchorLeft) /
+                    _pixelsPerQuarter *
+                    _config.ticksPerQuarter)
+                .round(),
+          ),
+        ),
       );
-      next = original.copyWith(durationTicks: math.max(_snapTicks, duration));
-    } else {
-      final pitch = _pitchAtY(details.localPosition.dy);
-      next = original.copyWith(
-        startTick: math.max(0, original.startTick + tickDelta),
-        pitch: pitch,
+      if (next.durationTicks == anchor.durationTicks) return;
+      // 调时值同样不能把主旋律拉进别的音符里（与新建、粘贴同一条规则）。
+      if (_overlapsPrimary(next)) return;
+      _commit(
+        _config.copyWith(
+          notes: [
+            for (final note in _config.notes)
+              if (note.id == next.id) next else note,
+          ],
+        ),
+        history: _dragHistoryPending,
       );
+      _dragHistoryPending = false;
+      _dragOriginals[next.id] = next;
+      return;
     }
-    if (_overlapsPrimary(next)) return;
+    // 整组平移：所有被拖动音符共享同一 (tickDelta, pitchDelta)，时长不变。
+    final pitchDelta = _clampPitchDelta(
+      _pitchAtY(details.localPosition.dy) - _pitchAtY(start.dy),
+    );
+    final startDelta = _clampTickDelta(tickDelta);
+    final moved = <String, MusicNote>{
+      for (final entry in _dragOriginals.entries)
+        entry.key: entry.value.copyWith(
+          startTick: entry.value.startTick + startDelta,
+          pitch: entry.value.pitch + pitchDelta,
+        ),
+    };
+    if (_overlapsOthers(moved.values)) return;
+    // 早退条件看“结果是否与当前配置一致”，而不是“位移是否为 0”：指针绕回按下
+    // 位置附近时位移会吸附回 0，此时必须把音符放回原位，不能停在上一帧的位移上。
+    final current = {for (final note in _config.notes) note.id: note};
+    final unchanged = moved.entries.every((entry) {
+      final note = current[entry.key];
+      return note != null &&
+          note.pitch == entry.value.pitch &&
+          note.startTick == entry.value.startTick &&
+          note.durationTicks == entry.value.durationTicks;
+    });
+    if (unchanged) return;
     _commit(
       _config.copyWith(
-        notes: [
-          for (final note in _config.notes)
-            if (note.id == original.id) next else note,
-        ],
+        notes: [for (final note in _config.notes) moved[note.id] ?? note],
       ),
-      history: false,
+      history: _dragHistoryPending,
     );
-    _dragOriginal = next;
+    _dragHistoryPending = false;
+  }
+
+  int _clampTickDelta(int delta) {
+    final earliest = _dragOriginals.values
+        .map((note) => note.startTick)
+        .reduce(math.min);
+    return math.max(delta, -earliest);
+  }
+
+  int _clampPitchDelta(int delta) {
+    final lowest = _dragOriginals.values
+        .map((note) => note.pitch)
+        .reduce(math.min);
+    final highest = _dragOriginals.values
+        .map((note) => note.pitch)
+        .reduce(math.max);
+    return delta.clamp(1 - lowest, 127 - highest);
+  }
+
+  /// 被拖动的音符彼此保持原有相对位置，只需要检查它们与组外主音符的重叠。
+  bool _overlapsOthers(Iterable<MusicNote> moved) {
+    final moving = moved.map((note) => note.id).toSet();
+    final others = _config.notes.where(
+      (note) => note.primary && !moving.contains(note.id),
+    );
+    for (final note in moved) {
+      if (!note.primary) continue;
+      for (final other in others) {
+        if (note.startTick < other.endTick && note.endTick > other.startTick) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   void _panEnd(DragEndDetails details) {
-    _dragOriginal = null;
+    _dragOriginals.clear();
+    _dragAnchorId = null;
+    _dragStart = null;
+    _dragHistoryPending = false;
+    _resizing = false;
     _marqueeStart = null;
     _marqueeEnd = null;
     setState(() {});
@@ -684,29 +815,33 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
                               notification.metrics.axis == Axis.vertical,
                           child: SingleChildScrollView(
                             controller: _verticalScroll,
-                            child: GestureDetector(
-                              key: const ValueKey('music-note-grid'),
-                              behavior: HitTestBehavior.opaque,
-                              onTapDown: _tap,
-                              onPanStart: _panStart,
-                              onPanUpdate: _panUpdate,
-                              onPanEnd: _panEnd,
-                              child: CustomPaint(
-                                size: timelineSize,
-                                painter: _PianoRollPainter(
-                                  config: config,
-                                  selected: Set.of(_selected),
-                                  pixelsPerQuarter: _pixelsPerQuarter,
-                                  rowHeight: _rowHeight,
-                                  playheadTick: _playheadTick,
-                                  marquee:
-                                      _marqueeStart == null ||
-                                          _marqueeEnd == null
-                                      ? null
-                                      : Rect.fromPoints(
-                                          _marqueeStart!,
-                                          _marqueeEnd!,
-                                        ),
+                            child: Listener(
+                              onPointerDown: _rememberSelectionOnPointerDown,
+                              child: GestureDetector(
+                                key: const ValueKey('music-note-grid'),
+                                behavior: HitTestBehavior.opaque,
+                                dragStartBehavior: DragStartBehavior.down,
+                                onTapDown: _tap,
+                                onPanStart: _panStart,
+                                onPanUpdate: _panUpdate,
+                                onPanEnd: _panEnd,
+                                child: CustomPaint(
+                                  size: timelineSize,
+                                  painter: _PianoRollPainter(
+                                    config: config,
+                                    selected: Set.of(_selected),
+                                    pixelsPerQuarter: _pixelsPerQuarter,
+                                    rowHeight: _rowHeight,
+                                    playheadTick: _playheadTick,
+                                    marquee:
+                                        _marqueeStart == null ||
+                                            _marqueeEnd == null
+                                        ? null
+                                        : Rect.fromPoints(
+                                            _marqueeStart!,
+                                            _marqueeEnd!,
+                                          ),
+                                  ),
                                 ),
                               ),
                             ),
