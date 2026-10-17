@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -13,6 +14,7 @@ import 'package:pieblock_app/src/debug_cue_preview.dart';
 import 'package:pieblock_app/src/deploy_controller.dart';
 import 'package:pieblock_app/src/home_screen.dart';
 import 'package:pieblock_app/src/platform/document_io.dart';
+import 'package:pieblock_app/src/platform/file_export.dart';
 import 'package:pieblock_app/src/platform/udev_rule.dart';
 import 'package:pieblock_app/src/music_editor.dart';
 import 'package:pieblock_app/src/music_preview.dart';
@@ -42,6 +44,52 @@ class _FakeProjectFileDialogs extends ProjectFileDialogs {
     String? initialDirectory,
   }) async {
     saveCalls += 1;
+    return savePath;
+  }
+}
+
+/// 有界推进若干帧。导出对话框里输入框等控件会持续调度帧，`pumpAndSettle`
+/// 可能一直等不到「完全静止」；这里固定推进这么多帧，足够弹窗动画与
+/// 异步写盘完成，又不会把测试拖到超时。
+Future<void> _pumpFrames(WidgetTester tester, {int frames = 12}) async {
+  for (var index = 0; index < frames; index += 1) {
+    await tester.pump(const Duration(milliseconds: 40));
+  }
+}
+
+/// 导出对话框的假文档层：只记录调用，按需返回路径或抛错，避免测试真的写盘。
+class _FakeExportDocumentIo extends AppDocumentIo {
+  _FakeExportDocumentIo({this.savePath, this.error});
+
+  final String? savePath;
+  final Object? error;
+  int createCalls = 0;
+  String? lastSuggestedName;
+  Uint8List? lastBytes;
+  List<String> lastExtensions = const [];
+  String? lastWritePath;
+  Uint8List? lastWriteBytes;
+
+  @override
+  Future<void> write(String reference, Uint8List bytes) async {
+    lastWritePath = reference;
+    lastWriteBytes = bytes;
+  }
+
+  @override
+  Future<String?> create({
+    required String suggestedName,
+    required String mimeType,
+    Uint8List? bytes,
+    String? initialDirectory,
+    List<String> extensions = const [],
+  }) async {
+    createCalls += 1;
+    lastSuggestedName = suggestedName;
+    lastBytes = bytes;
+    lastExtensions = extensions;
+    final failure = error;
+    if (failure != null) throw failure;
     return savePath;
   }
 }
@@ -2415,6 +2463,145 @@ void main() {
     );
     expect(numbers.customLineIndex2Text, isNull);
     expect(tester.takeException(), isNull);
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  testWidgets('导出对话框的「浏览」打开系统文件管理器并回填路径', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    final directory = Directory.systemTemp.createTempSync('pieblock-export-');
+    addTearDown(() {
+      debugDefaultTargetPlatformOverride = null;
+      directory.deleteSync(recursive: true);
+    });
+    final target = '${directory.path}${Platform.pathSeparator}main.c';
+    final dialogs = _FakeExportDocumentIo(savePath: target);
+    bool? exported;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: FilledButton(
+                onPressed: () async {
+                  exported = await exportGeneratedText(
+                    context,
+                    suggestedName: 'main.c',
+                    text: 'int main(void) { return 0; }\n',
+                    documentIo: dialogs,
+                  );
+                },
+                child: const Text('另存为'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('另存为'));
+    await _pumpFrames(tester);
+    expect(find.text('导出 main.c'), findsOneWidget);
+    expect(find.byKey(const ValueKey('export-browse')), findsOneWidget);
+
+    // 点「浏览」：走系统保存对话框，把选中的完整路径回填到输入框。
+    await tester.tap(find.byKey(const ValueKey('export-browse')));
+    await _pumpFrames(tester);
+    expect(dialogs.createCalls, 1);
+    expect(dialogs.lastSuggestedName, 'main.c');
+    expect(dialogs.lastExtensions, ['c']);
+    expect(dialogs.lastBytes, isNull, reason: '桌面只选位置，不在这里写盘');
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const ValueKey('export-path-field')))
+          .controller!
+          .text,
+      target,
+    );
+
+    // 「导出」按回填的路径落盘并关闭对话框。
+    await tester.tap(find.text('导出').last);
+    await _pumpFrames(tester);
+    expect(exported, isTrue);
+    expect(dialogs.lastWritePath, target);
+    expect(utf8.decode(dialogs.lastWriteBytes!), 'int main(void) { return 0; }\n');
+    expect(find.text('导出 main.c'), findsNothing);
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  testWidgets('Android 的导出走系统文档选择器直接落盘', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    final dialogs = _FakeExportDocumentIo(savePath: 'content://documents/main.c');
+    bool? exported;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: FilledButton(
+                onPressed: () async {
+                  exported = await exportGeneratedText(
+                    context,
+                    suggestedName: 'main.c',
+                    text: 'int main(void) { return 0; }\n',
+                    documentIo: dialogs,
+                  );
+                },
+                child: const Text('另存为'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('另存为'));
+    await _pumpFrames(tester);
+    // SAF 没有可输入的路径，输入框只读，两个按钮都走系统选择器。
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const ValueKey('export-path-field')))
+          .readOnly,
+      isTrue,
+    );
+    await tester.tap(find.byKey(const ValueKey('export-browse')));
+    await _pumpFrames(tester);
+    expect(dialogs.createCalls, 1);
+    expect(dialogs.lastBytes, isNotNull, reason: 'SAF 直接写入内容');
+    expect(exported, isTrue);
+    expect(find.text('导出 main.c'), findsNothing);
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  testWidgets('「浏览」打不开文件管理器时给出提示且不关闭对话框', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    final dialogs = _FakeExportDocumentIo(error: StateError('没有可用的文件管理器'));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: FilledButton(
+                onPressed: () => exportGeneratedText(
+                  context,
+                  suggestedName: 'main.c',
+                  text: 'int main(void) {}',
+                  documentIo: dialogs,
+                ),
+                child: const Text('另存为'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('另存为'));
+    await _pumpFrames(tester);
+    await tester.tap(find.byKey(const ValueKey('export-browse')));
+    await _pumpFrames(tester);
+    expect(find.textContaining('无法打开文件管理器'), findsOneWidget);
+    expect(find.text('导出 main.c'), findsOneWidget);
     debugDefaultTargetPlatformOverride = null;
   });
 
