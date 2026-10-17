@@ -11,7 +11,7 @@
 | [`reference/`](reference/) | 规范与字段定义 | [项目文件格式](reference/Flutter项目文件格式.md) |
 | [`reference/schemas/`](reference/schemas/) | 各项目类型的 JSON Schema（由 CLI `schema` 命令生成，与代码同步） | [infantry.schema.json](reference/schemas/infantry.schema.json) |
 | [`design/`](design/) | 实现说明与技术报告 | [Android SDCC 多进程移植](design/android-sdcc-port.md) |
-| [`releases/`](releases/) | 发布说明（发版时 CI 取 `docs/releases/<版本>.md` 作为 Release 正文） | [1.3.0](releases/1.3.0.md) |
+| [`releases/`](releases/) | 发布说明（发版时 CI 取 `docs/releases/<版本>.md` 作为 Release 正文） | [1.4.0](releases/1.4.0.md) |
 | [`pitfall/`](pitfall/) | 具体故障案例（绑定到出现该问题的版本） | [SDCC 组帧低字节丢失](pitfall/sdcc-组帧低字节丢失.md)、[HID 烧录写块无响应](pitfall/HID烧录写块无响应.md) |
 | [`playbook/`](playbook/) | 可复用的排障流程 | [拓展板通信排障](playbook/拓展板通信排障.md) |
 | [`legal/`](legal/) | 第三方声明与许可证 | [第三方声明](legal/THIRD_PARTY_NOTICES.md) |
@@ -54,6 +54,7 @@
 - [1.2.0](releases/1.2.0.md)
 - [1.2.1](releases/1.2.1.md)
 - [1.3.0](releases/1.3.0.md)
+- [1.4.0](releases/1.4.0.md)
 
 ## pitfall（故障案例）
 
