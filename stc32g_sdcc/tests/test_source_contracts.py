@@ -234,28 +234,37 @@ class StaffDisplayContractTests(unittest.TestCase):
                 f"staff 源组里的文件不存在: {relative_source}",
             )
 
-    def test_music_clock_uses_free_running_timer0(self) -> None:
-        """播放节奏补偿依赖 Timer0 自由计数，且不能被改成重装初值的写法。"""
+    def test_music_clock_polls_free_running_timer0(self) -> None:
+        """播放节奏补偿用无中断的 Timer0 轮询，避免 ISR 破坏 DPXL/DPTR。"""
         header = (
             ROOT / "libraries" / "boards" / "inc" / "MusicClock.h"
         ).read_text(encoding="utf-8")
         source = (
             ROOT / "libraries" / "boards" / "src" / "MusicClock.c"
         ).read_text(encoding="utf-8")
+        oled_staff = (
+            ROOT / "libraries" / "boards" / "src" / "OLED_Staff.c"
+        ).read_text(encoding="utf-8")
         for symbol in (
             "MusicClock_Init",
+            "MusicClock_Poll",
             "MusicClock_Reset",
             "MusicClock_WaitDeadline",
             "MusicClock_Advance",
         ):
             self.assertIn(symbol, header)
-        self.assertIn("__interrupt (TMR0_VECTOR)", source)
-        self.assertIn("TF0 = 0;", source)
-        self.assertIn("musicClockTicks += 0x10000UL;", source)
-        # 重装初值会在中断响应期间丢计数，必须保持自由计数。
-        self.assertNotIn("TH0 = time_reg", source)
-        self.assertNotIn("PIT_Timer_Ms", source)
-        self.assertIn("MUSIC_CLOCK_TICKS_PER_MS", source)
+        # 不允许再出现定时器中断：SDCC 的 ISR 不保存 DPXL，会打断 MOVC/@DPX。
+        self.assertNotIn("__interrupt", source)
+        self.assertNotIn("TMR0_VECTOR", source)
+        self.assertNotIn("ET0 = 1", source)
+        # 自由计数 + 差值累加 + 上电校准 + 计时器失效时回退 Ms_Delay。
+        self.assertIn("musicClockTicks += (uint32_t)delta;", source)
+        self.assertIn("MUSIC_CLOCK_CALIBRATION_SAMPLES", source)
+        self.assertIn("musicClockTicksPerMs", source)
+        self.assertIn("MusicClock_DelayMs", source)
+        # 渲染/刷屏之间必须补采样，保证采样间隔 < 23.7ms 的 16-bit 溢出周期。
+        self.assertIn("MusicClock_Poll();", oled_staff)
+        self.assertGreaterEqual(oled_staff.count("MusicClock_Poll();"), 2)
 
     def test_music_project_sources_all_exist(self) -> None:
         """按 build.ps1 的解析规则展开 music 工程源码，确认没有缺失文件。"""

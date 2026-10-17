@@ -92,10 +92,12 @@ SDCC 音乐工程（`BUZZER_MUSIC_GENERATED` 等）生成的 `main.c` 在 `#if d
 固件用 `StaffRender.c`（纯 C，可主机 gcc 编译）绘制，`OLED_Staff.c` 维护 XRAM 帧缓冲，
 `LCD_Frame.c` 用软件 SPI 整屏刷新。Keil 构建走 `#else` 分支，保持只播放。
 
-播放节奏由 `MusicClock.c` 的 Timer0 1ms 时基调度：每次事件到期先发声，再做
+播放节奏由 `MusicClock.c` 的 Timer0 轮询时基调度：每次事件到期先发声，再做
 整屏刷新（刷新时间与当前音符重叠），然后推进到下一个累计时值，因此刷屏不再
-拖慢整曲速度；`MusicClock.c` 属于 `staff` 源组，只有链接 `staff` 的音乐工程
-会带上它。
+拖慢整曲速度。时钟刻意不使用定时器中断（SDCC 的 ISR 不保存 DPXL，可能破坏主
+循环的 MOVC/@DPX 访问）；上电会用 `Ms_Delay(10)` 校准 ticks/ms，计时器失效时
+退回旧的 `Ms_Delay` 节奏。`MusicClock.c` 属于 `staff` 源组，只有链接 `staff`
+的音乐工程会带上它。
 
 重新生成 `BUZZER_MUSIC_GENERATED/src/main.c` 并本地构建：
 
