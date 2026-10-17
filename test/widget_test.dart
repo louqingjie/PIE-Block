@@ -19,6 +19,7 @@ import 'package:pieblock_app/src/platform/udev_rule.dart';
 import 'package:pieblock_app/src/music_editor.dart';
 import 'package:pieblock_app/src/music_preview.dart';
 import 'package:pieblock_app/src/project_templates.dart';
+import 'package:pieblock_app/src/recent_project.dart';
 import 'package:pieblock_app/src/udev_rule_controller.dart';
 import 'package:pieblock_app/src/wizard_screen.dart';
 import 'package:pieblock_core/pieblock_core.dart';
@@ -200,6 +201,30 @@ class _StaticProjectController extends AppController {
     step: step,
     maxVisitedStep: step,
     saveStatus: SaveStatus.saved,
+  );
+}
+
+/// 首页「最近项目」的静态夹具：每条记录携带项目类型，最后一条模拟类型
+/// 未知的旧数据（补读失败），应退回通用文档图标。
+class _RecentProjectsController extends AppController {
+  @override
+  AppState build() => const AppState(
+    recentProjects: [
+      RecentProject(path: r'C:\projects\1.pieproj', kind: ProjectKind.infantry),
+      RecentProject(
+        path: r'C:\projects\engineer.pieproj',
+        kind: ProjectKind.engineer,
+      ),
+      RecentProject(
+        path: r'C:\projects\debug.pieproj',
+        kind: ProjectKind.debug,
+      ),
+      RecentProject(
+        path: r'C:\projects\music.pieproj',
+        kind: ProjectKind.music,
+      ),
+      RecentProject(path: r'C:\projects\unknown.pieproj'),
+    ],
   );
 }
 
@@ -1392,6 +1417,33 @@ void main() {
 
     expect(dialogs.openCalls, 1);
     expect(find.byType(AlertDialog), findsNothing);
+  });
+
+  testWidgets('最近项目按项目类型显示对应图标', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(_RecentProjectsController.new),
+        ],
+        child: const MaterialApp(home: HomeScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 与「新建项目」分段按钮同一套图标：步兵游戏手柄、工程机械臂、调试
+    // 烧杯、音乐钢琴；类型未知的旧数据退回通用文档图标。
+    expect(find.byIcon(Icons.sports_esports), findsOneWidget);
+    expect(find.byIcon(Icons.precision_manufacturing), findsOneWidget);
+    expect(find.byIcon(Icons.science_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.piano), findsOneWidget);
+    expect(find.byIcon(Icons.description_outlined), findsOneWidget);
+    final recentCard = find.byKey(const ValueKey('home.recent-projects'));
+    expect(recentCard, findsOneWidget);
+    expect(
+      find.descendant(of: recentCard, matching: find.byType(ListTile)),
+      findsNWidgets(5),
+    );
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('步兵向导含编译烧录步骤且配置页不显示主题按钮', (tester) async {

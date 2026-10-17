@@ -7,6 +7,7 @@ import 'package:pieblock_core/pieblock_core.dart';
 import 'controller.dart';
 import 'platform/document_io.dart';
 import 'platform/paths.dart';
+import 'project_kind_ui.dart';
 import 'project_templates.dart';
 
 const _brandCyan = Color(0xff02acc0);
@@ -105,27 +106,13 @@ class HomeScreen extends ConsumerWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   SegmentedButton<ProjectKind>(
-                    segments: const [
-                      ButtonSegment(
-                        value: ProjectKind.infantry,
-                        icon: Icon(Icons.sports_esports),
-                        label: Text('步兵'),
-                      ),
-                      ButtonSegment(
-                        value: ProjectKind.engineer,
-                        icon: Icon(Icons.precision_manufacturing),
-                        label: Text('工程'),
-                      ),
-                      ButtonSegment(
-                        value: ProjectKind.debug,
-                        icon: Icon(Icons.science_outlined),
-                        label: Text('调试'),
-                      ),
-                      ButtonSegment(
-                        value: ProjectKind.music,
-                        icon: Icon(Icons.piano),
-                        label: Text('音乐'),
-                      ),
+                    segments: [
+                      for (final projectKind in ProjectKind.values)
+                        ButtonSegment(
+                          value: projectKind,
+                          icon: Icon(projectKind.icon),
+                          label: Text(projectKind.label),
+                        ),
                     ],
                     selected: {kind},
                     onSelectionChanged: (v) => setState(() => kind = v.first),
@@ -368,6 +355,7 @@ class HomeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(appControllerProvider);
+    final recentProjects = state.recentProjects;
     final colors = Theme.of(context).colorScheme;
     final dark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
@@ -484,7 +472,8 @@ class HomeScreen extends ConsumerWidget {
                         ),
                         const SizedBox(height: 12),
                         Card(
-                          child: state.recentPaths.isEmpty
+                          key: const ValueKey('home.recent-projects'),
+                          child: recentProjects.isEmpty
                               ? const Padding(
                                   padding: EdgeInsets.all(28),
                                   child: Row(
@@ -497,17 +486,18 @@ class HomeScreen extends ConsumerWidget {
                                 )
                               : Column(
                                   children: [
-                                    for (final entry
-                                        in state.recentPaths.indexed)
+                                    for (final entry in recentProjects.indexed)
                                       ListTile(
-                                        leading: const Icon(
-                                          Icons.description_outlined,
+                                        leading: Icon(
+                                          recentProjectIcon(entry.$2.kind),
                                         ),
                                         title: Text(
-                                          AppDocumentIo.displayName(entry.$2),
+                                          AppDocumentIo.displayName(
+                                            entry.$2.path,
+                                          ),
                                         ),
                                         subtitle: Text(
-                                          entry.$2,
+                                          entry.$2.path,
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                         ),
@@ -521,7 +511,7 @@ class HomeScreen extends ConsumerWidget {
                                                 : Radius.zero,
                                             bottom:
                                                 entry.$1 ==
-                                                    state.recentPaths.length - 1
+                                                    recentProjects.length - 1
                                                 ? const Radius.circular(18)
                                                 : Radius.zero,
                                           ),
@@ -530,7 +520,7 @@ class HomeScreen extends ConsumerWidget {
                                             .read(
                                               appControllerProvider.notifier,
                                             )
-                                            .openProject(entry.$2),
+                                            .openProject(entry.$2.path),
                                       ),
                                   ],
                                 ),

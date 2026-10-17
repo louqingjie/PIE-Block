@@ -9,6 +9,7 @@ import 'package:pieblock_toolchain/models.dart';
 
 import 'platform/document_io.dart';
 import 'platform/settings_store.dart';
+import 'recent_project.dart';
 
 enum SaveStatus { idle, saving, saved, failed }
 
@@ -23,7 +24,7 @@ class AppState {
     this.pendingFieldPath,
     this.validationAttemptedStepIds = const {},
     this.themeMode = ThemeMode.system,
-    this.recentPaths = const [],
+    this.recentProjects = const [],
     this.compiler = CompilerKind.sdcc,
     this.keilPath,
     this.suppressFlashGuide = false,
@@ -37,7 +38,9 @@ class AppState {
   final String? pendingFieldPath;
   final Set<String> validationAttemptedStepIds;
   final ThemeMode themeMode;
-  final List<String> recentPaths;
+
+  /// 最近打开的项目，最近打开的排在最前面。
+  final List<RecentProject> recentProjects;
   final CompilerKind compiler;
   final String? keilPath;
   final bool suppressFlashGuide;
@@ -55,7 +58,7 @@ class AppState {
     Set<String>? validationAttemptedStepIds,
     bool clearValidationAttempts = false,
     ThemeMode? themeMode,
-    List<String>? recentPaths,
+    List<RecentProject>? recentProjects,
     CompilerKind? compiler,
     String? keilPath,
     bool clearKeilPath = false,
@@ -76,7 +79,7 @@ class AppState {
         ? const {}
         : validationAttemptedStepIds ?? this.validationAttemptedStepIds,
     themeMode: themeMode ?? this.themeMode,
-    recentPaths: recentPaths ?? this.recentPaths,
+    recentProjects: recentProjects ?? this.recentProjects,
     compiler: compiler ?? this.compiler,
     keilPath: clearKeilPath ? null : keilPath ?? this.keilPath,
     suppressFlashGuide: suppressFlashGuide ?? this.suppressFlashGuide,
@@ -94,6 +97,9 @@ class AppController extends Notifier<AppState> {
   final _documentIo = const AppDocumentIo();
   Timer? _saveTimer;
 
+  /// 设置写盘队列：保证多次保存按调用顺序落地，后触发的快照不会先写完。
+  Future<void> _settingsWrite = Future<void>.value();
+
   /// Web 上没有编译器，Android 只有内置 SDCC —— 这两种情况都不给选。
   bool get _forcesBuiltInCompiler =>
       kIsWeb || defaultTargetPlatform == TargetPlatform.android;
@@ -105,21 +111,41 @@ class AppController extends Notifier<AppState> {
   @override
   AppState build() {
     ref.onDispose(() => _saveTimer?.cancel());
-    Future.microtask(_loadSettings);
+    Future.microtask(loadSettings);
     return const AppState();
   }
 
-  Future<void> _loadSettings() async {
+  /// 恢复主题、编译器和最近项目；旧版最近项目还会补读项目类型并回写设置。
+  ///
+  /// 正常由 [build] 在首帧后触发；测试可以直接 await，不用猜微任务时序。
+  Future<void> loadSettings() async {
+    final initial = state;
     try {
-      final json = await readSettings();
+      final json = await readStoredSettings();
       if (json == null) return;
       // 最近项目里可能有已经不在的条目（桌面是文件被删了，Web 是浏览器
       // 存储被清了），逐个确认；content:// 引用没法判断，先留着。
-      final recent = <String>[];
+      final recent = <RecentProject>[];
+      var migrated = false;
       for (final entry in (json['recent'] as List? ?? []).take(8)) {
-        final path = entry.toString();
-        if (_isContentUri(path) || await _repository.exists(path)) {
-          recent.add(path);
+        final project = RecentProject.fromSetting(entry);
+        if (project == null) continue;
+        if (!_isContentUri(project.path) &&
+            !await _repository.exists(project.path)) {
+          continue;
+        }
+        if (project.kind != null) {
+          recent.add(project);
+          continue;
+        }
+        // 旧版设置只存路径：补读一次项目文件把类型迁移进来，写回后下次启动
+        // 就不必再读盘。读不到（文件损坏、content:// 权限失效）就保留通用图标。
+        final kind = await _readProjectKind(project.path);
+        if (kind == null) {
+          recent.add(project);
+        } else {
+          migrated = true;
+          recent.add(project.withKind(kind));
         }
       }
       final mode =
@@ -133,26 +159,84 @@ class AppController extends Notifier<AppState> {
       final compiler = _forcesBuiltInCompiler
           ? CompilerKind.sdcc
           : storedCompiler;
+      // 加载期间用户可能已经改过主题或新建/打开过项目：只覆盖没有被用户改
+      // 过的字段，最近项目与内存里的条目合并，避免迟到的设置快照回退状态。
       state = state.copyWith(
-        recentPaths: recent,
-        themeMode: mode,
-        compiler: compiler,
-        keilPath: json['keil_path']?.toString(),
-        suppressFlashGuide: json['suppress_flash_guide'] == true,
-        suppressTemplateGuide: json['suppress_template_guide'] == true,
+        recentProjects: _mergeRecent(state.recentProjects, recent),
+        themeMode: state.themeMode == initial.themeMode
+            ? mode
+            : state.themeMode,
+        compiler: state.compiler == initial.compiler
+            ? compiler
+            : state.compiler,
+        keilPath: state.keilPath == initial.keilPath
+            ? json['keil_path']?.toString()
+            : state.keilPath,
+        suppressFlashGuide:
+            state.suppressFlashGuide == initial.suppressFlashGuide
+            ? json['suppress_flash_guide'] == true
+            : state.suppressFlashGuide,
+        suppressTemplateGuide:
+            state.suppressTemplateGuide == initial.suppressTemplateGuide
+            ? json['suppress_template_guide'] == true
+            : state.suppressTemplateGuide,
       );
+      if (migrated) unawaited(_saveSettings());
     } catch (_) {}
   }
 
-  Future<void> _saveSettings() async {
-    await writeSettings({
+  /// 合并最近项目：加载期间新建/打开的项目排在前面，按路径去重，最多 8 条。
+  static List<RecentProject> _mergeRecent(
+    List<RecentProject> current,
+    List<RecentProject> loaded,
+  ) {
+    final seen = <String>{};
+    return [
+      for (final project in [...current, ...loaded])
+        if (seen.add(project.path)) project,
+    ].take(8).toList();
+  }
+
+  /// 设置读写入口：默认落到 platform 层，测试可覆写后换用内存存储。
+  @protected
+  Future<Map<String, Object?>?> readStoredSettings() => readSettings();
+
+  @protected
+  Future<void> writeStoredSettings(Map<String, Object?> values) =>
+      writeSettings(values);
+
+  /// 读项目文件里声明的类型，供旧版设置里只有路径的最近项目补全图标。
+  ///
+  /// 类型字段缺失或非法时 [ProjectDocument.fromJson] 会按步兵解析，这里沿用
+  /// 打开项目时的结果，保证列表图标和打开后的项目类型一致。
+  Future<ProjectKind?> _readProjectKind(String reference) async {
+    try {
+      final document = _isContentUri(reference)
+          ? _decodeDocument(await _documentIo.read(reference))
+          : await _repository.open(reference);
+      return document.kind;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 保存设置。多次触发时按调用顺序串行写盘：启动迁移与用户操作可能同时
+  /// 触发保存，并发的整文件覆盖会让先前的旧快照把新内容盖掉。
+  Future<void> _saveSettings() {
+    final snapshot = <String, Object?>{
       'theme': state.themeMode.name,
-      'recent': state.recentPaths,
+      'recent': [
+        for (final project in state.recentProjects) project.toSetting(),
+      ],
       'compiler': state.compiler.name,
       if (state.keilPath != null) 'keil_path': state.keilPath,
       'suppress_flash_guide': state.suppressFlashGuide,
       'suppress_template_guide': state.suppressTemplateGuide,
-    });
+    };
+    _settingsWrite = _settingsWrite
+        .then((_) => writeStoredSettings(snapshot))
+        .catchError((Object _) {});
+    return _settingsWrite;
   }
 
   void cycleTheme() {
@@ -192,10 +276,12 @@ class AppController extends Notifier<AppState> {
     ProjectConfig? template,
   }) async {
     try {
-      final isContentUri = Uri.tryParse(path)?.scheme == 'content';
-      final normalized = isContentUri || path.toLowerCase().endsWith('.pieproj')
-          ? path
-          : '$path.pieproj';
+      final trimmed = path.trim();
+      final isContentUri = Uri.tryParse(trimmed)?.scheme == 'content';
+      final normalized =
+          isContentUri || trimmed.toLowerCase().endsWith('.pieproj')
+          ? trimmed
+          : '$trimmed.pieproj';
       final created = ProjectDocument.create(name.trim(), kind);
       // 模板只替换 config：名称、时间戳和引导进度都按本次创建重新生成，
       // 项目文件里也不留任何「来自模板」的痕迹。
@@ -232,16 +318,18 @@ class AppController extends Notifier<AppState> {
   }
 
   Future<bool> openProject(String path) async {
+    final reference = path.trim();
     try {
-      final reference = path.trim();
       final document = Uri.tryParse(reference)?.scheme == 'content'
           ? _decodeDocument(await _documentIo.read(reference))
           : await _repository.open(reference);
       _adopt(document, reference);
       return true;
     } catch (error) {
-      final recent = [...state.recentPaths]..remove(path);
-      state = state.copyWith(message: '打开失败：$error', recentPaths: recent);
+      final recent = state.recentProjects
+          .where((project) => project.path != reference)
+          .toList();
+      state = state.copyWith(message: '打开失败：$error', recentProjects: recent);
       unawaited(_saveSettings());
       return false;
     }
@@ -254,8 +342,8 @@ class AppController extends Notifier<AppState> {
         .map(ids.indexOf)
         .where((index) => index >= 0);
     final recent = [
-      path,
-      ...state.recentPaths.where((item) => item != path),
+      RecentProject(path: path, kind: document.kind),
+      ...state.recentProjects.where((project) => project.path != path),
     ].take(8).toList();
     state = state.copyWith(
       document: document,
@@ -271,7 +359,7 @@ class AppController extends Notifier<AppState> {
         for (var index = 0; index < current && index < ids.length; index += 1)
           ids[index],
       },
-      recentPaths: recent,
+      recentProjects: recent,
     );
     unawaited(_saveSettings());
   }
