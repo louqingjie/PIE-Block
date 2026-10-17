@@ -29,7 +29,7 @@
 | 屏幕 | 128×64 | 1bit，白=1 |
 | 五线谱线距 `space` | 6px | 5 条 1px 线，谱表高 24px |
 | 谱表顶线 `staffTop` | 14 | 线在 y=14/20/26/32/38 |
-| 左端固定区 | 25px（C 调）+ 6px 隔离带 | 谱号 13 + 调号每个升降号 4 + 拍号 7；隔离带内只有谱线 |
+| 左端固定区 | 25px（C 调）+ 6px 隔离带 | 谱号 13 + 调号每个升降号 6 + 拍号 7；隔离带内只有谱线 |
 | 横向比例 `pxPerQuarter` | 16px | 4/4 下一小节 64px，约 1.7 小节可见 |
 | 音符最小间距 | 6px | 防止 16 分音符符头重叠 |
 | 当前音符位置 | 滚动区 30% | `noteAreaStart = panelWidth+6`，`cursorX = noteAreaStart + (128-noteAreaStart)*0.30` |
@@ -72,9 +72,13 @@ space=7 时 C6 会顶出屏幕上沿，space=5 时字形过小；pxPerQuarter �
 
 - 调号由 `--key` 指定（15 个大调 + 相对小调），按标准顺序画在固定区：
   - 升号顺序 F C G D A E B；降号顺序 B E A D G C F；
-  - 高音、低音谱号各一套标准线/间位置（`trebleSharpSteps` 等表）。
+  - 高音、低音谱号各一套标准线/间位置（`trebleSharpSteps` 等表）；
+  - 调号里每个升降号占 6px（5px 字形 + 1px 间距）。
 - 临时记号按小节维护状态：调号之外才画 ♯/♭；同音高在本小节内延续，跨小节复位，
   取消升降时画还原号。
+- **升号必须完整可辨**：字形 5×7（两根竖线 + 两根横线，见第 7 节）；绘制时先擦掉
+  字形包围盒内的谱线像素再落点阵，否则压在谱线上的升号其中心空洞会被谱线填成实心，
+  看起来像“工/日”。还原号同理。
 - 拍号取工程第一个 `TimeSignatureEvent`（默认 4/4），数字 7×8 点阵上下排列（跨第 1–2 线 / 第 3–4 线）。
 - 小节线为 1px 竖线，按 `ticksPerQuarter*4/denominator*numerator` 从 tick 0 计算。
 
@@ -122,6 +126,9 @@ space=7 时 C6 会顶出屏幕上沿，space=5 时字形过小；pxPerQuarter �
 dart run tool/render_oled_staff.dart --demo twinkle --key C --out tmp/staff_preview/twinkle
 dart run tool/render_oled_staff.dart --demo wide --key G
 dart run tool/render_oled_staff.dart --demo bass --key F
+
+# 升号/还原号特写（F#5 压在顶线、F5 还原）
+dart run tool/render_oled_staff.dart --demo accidentals --out tmp/staff_preview/accidentals
 
 # 真实工程
 dart run tool/render_oled_staff.dart --project path/to/music.pieproj --key G

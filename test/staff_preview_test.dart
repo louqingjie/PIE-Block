@@ -104,6 +104,44 @@ void main() {
     });
   });
 
+  group('临时记号字形', () {
+    test('升号完整显示，谱线不会填满中间的空心', () {
+      expect(sharpGlyph.width, 5);
+      expect(sharpGlyph.height, 7);
+      final config = MusicConfig(
+        notes: <MusicNote>[
+          MusicNote(id: 'n0', pitch: 78, startTick: 0, durationTicks: 480),
+        ],
+        ticksPerQuarter: 480,
+        timeSignatureEvents: const <TimeSignatureEvent>[
+          TimeSignatureEvent(tick: 0, numerator: 4, denominator: 4),
+        ],
+      );
+      final renderer = StaffRenderer(
+        config: config,
+        options: const RenderOptions(),
+      );
+      final frame = renderer.renderFrame(0);
+      final x = renderer.layoutX(0)[0].round();
+      final y = pitchY(78, 'treble', 6, 14);
+      expect(y, 14, reason: 'F#5 在顶线上，临时升号会压在谱线上');
+      final left = x - 7;
+      final top = y - sharpGlyph.height ~/ 2;
+      // 第 3 行是 '.#.#.'：两根竖线保留、三处空心全黑，
+      // 说明谱线像素被擦掉，没有把洞填成“日”。
+      final middle = top + 3;
+      expect(frame.pixel(left + 1, middle), isTrue, reason: '左竖线缺失');
+      expect(frame.pixel(left + 3, middle), isTrue, reason: '右竖线缺失');
+      for (final col in <int>[0, 2, 4]) {
+        expect(
+          frame.pixel(left + col, middle),
+          isFalse,
+          reason: '升号空心列 $col 被谱线填充',
+        );
+      }
+    });
+  });
+
   group('帧缓冲与位序', () {
     test('页格式字节序（bit0 = 页内最上一行）', () {
       final bitmap = Bitmap(screenWidth, screenHeight);
@@ -170,8 +208,8 @@ void main() {
         options: RenderOptions(key: key),
       );
       expect(build('C').panelWidth, 25);
-      expect(build('G').panelWidth, 29);
-      expect(build('D').panelWidth, 33);
+      expect(build('G').panelWidth, 31);
+      expect(build('D').panelWidth, 37);
     });
 
     test('当前音符固定在 cursorX，后续音符按最小间距递增', () {
@@ -253,7 +291,7 @@ void main() {
     });
 
     test('高/低音谱号下示例里的音符都在屏内', () {
-      for (final demo in <String>['twinkle', 'wide', 'bass', 'mixed', 'rests']) {
+      for (final demo in <String>['twinkle', 'wide', 'bass', 'mixed', 'accidentals', 'rests']) {
         final renderer = StaffRenderer(
           config: demoConfig(demo),
           options: const RenderOptions(),

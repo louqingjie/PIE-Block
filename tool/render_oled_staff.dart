@@ -81,7 +81,7 @@ class StaffRenderer {
   /// 左端固定区宽度：谱号 + 调号 + 拍号。
   int get panelWidth {
     var x = 1 + trebleClefGlyph.width + 1;
-    x += fifths.abs() * 4;
+    x += fifths.abs() * 6; // 升/降号字形 5px 宽 + 1px 间距
     final digitCount = math.max(
       '${timeSignature.numerator}'.length,
       '${timeSignature.denominator}'.length,
@@ -242,9 +242,31 @@ class StaffRenderer {
     var x = 1 + trebleClefGlyph.width + 1;
     for (var i = 0; i < fifths.abs(); i++) {
       final y = staffBottom - (steps[i] * space ~/ 2);
-      glyph.blit(frame, x, y - glyph.height ~/ 2);
-      x += 4;
+      _blitAccidental(frame, glyph, x, y);
+      x += 6;
     }
+  }
+
+  /// 画升/降/还原号：先擦掉字形包围盒内的谱线像素，再落点阵。
+  /// 升号中间的空心如果被谱线穿过会被填成实心，看起来像“工/日”；
+  /// 擦除后升号两根竖线、两根横线和中间的洞都能看清。
+  void _blitAccidental(Bitmap frame, Glyph glyph, int x, int centerY) {
+    final top = centerY - glyph.height ~/ 2;
+    for (var row = 0; row < glyph.height; row++) {
+      final py = top + row;
+      if (!_isStaffLineRow(py)) continue;
+      for (var col = 0; col < glyph.width; col++) {
+        if (glyph.rows[row][col] != '#') frame.setPixel(x + col, py, false);
+      }
+    }
+    glyph.blit(frame, x, top);
+  }
+
+  bool _isStaffLineRow(int y) {
+    for (var line = 0; line <= 4; line++) {
+      if (y == staffTop + line * space) return true;
+    }
+    return false;
   }
 
   void _drawTimeSignature(Bitmap frame) {
@@ -363,7 +385,7 @@ class StaffRenderer {
           : accidental == 'flat'
           ? flatGlyph
           : naturalGlyph;
-      glyph.blit(frame, x - 7, y - glyph.height ~/ 2);
+      _blitAccidental(frame, glyph, x - 7, y);
     }
 
     final stemUp = halfSpaceOffset(pitch, clef) < 0;
@@ -546,12 +568,17 @@ MusicConfig demoConfig(String name) {
       (66, 480), (67, 240), (65, 240), (64, 480),
       (70, 240), (69, 240), (67, 960),
     ],
+    'accidentals' => const <DemoCell>[
+      // F#5 在顶线上（升号压在谱线上）、F5 还原、F#4 在间里、C#5、C#4…
+      (78, 480), (77, 480), (78, 480), (66, 480),
+      (65, 480), (73, 480), (61, 480), (62, 960),
+    ],
     'rests' => const <DemoCell>[
       (60, 480), (null, 480), (62, 480), (null, 960),
       (64, 480), (65, 480), (null, 240), (67, 960),
     ],
     _ => throw ArgumentError(
-      '未知示例 $name（可用 twinkle/wide/bass/mixed/chromatic/rests）',
+      '未知示例 $name（可用 twinkle/wide/bass/mixed/chromatic/accidentals/rests）',
     ),
   };
   var tick = 0;
@@ -698,7 +725,7 @@ void printUsage() {
   dart run tool/render_oled_staff.dart --self-check
 
 参数：
-  --demo twinkle|wide|bass|mixed|chromatic|rests  内置示例（默认 twinkle）
+  --demo twinkle|wide|bass|mixed|chromatic|accidentals|rests  内置示例（默认 twinkle）
   --project <path>    读取真实 .pieproj（format_version 16）
   --config <path>     读取单份 MusicConfig JSON
   --key <调号>        C/G/D/A/E/B/F#/C#/F/Bb/Eb/Ab/Db/Gb/Cb（也支持 Am/Em/... 小调）
@@ -848,6 +875,7 @@ Future<int> runSelfCheck() async {
     'bass',
     'mixed',
     'chromatic',
+    'accidentals',
     'rests',
   ]) {
     final config = demoConfig(demo);
@@ -885,7 +913,7 @@ Future<int> runSelfCheck() async {
     );
   }
   if (failures == 0) {
-    stdout.writeln('self-check OK：6 个示例全部通过（帧长/确定性/音高在屏内）');
+    stdout.writeln('self-check OK：7 个示例全部通过（帧长/确定性/音高在屏内）');
   } else {
     stderr.writeln('self-check 失败 $failures 项');
   }
