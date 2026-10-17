@@ -25,7 +25,7 @@ BOARDS_INC = ROOT / "libraries" / "boards" / "inc"
 DRIVERS_INC = ROOT / "libraries" / "drivers" / "inc"
 DEVICE_INC = ROOT / "include"
 
-STAFF_SOURCES = ("StaffRender.c", "OLED_Staff.c", "LCD_Frame.c")
+STAFF_SOURCES = ("StaffRender.c", "OLED_Staff.c", "LCD_Frame.c", "MusicClock.c")
 STAFF_FIXTURES = ROOT / "tests" / "staff" / "fixtures"
 STAFF_FIXTURE_HEADER = STAFF_FIXTURES / "staff_fixture.h"
 STAFF_FIXTURE_GOLDEN = STAFF_FIXTURES / "golden"

@@ -243,6 +243,36 @@ void main() {
       expect(code, contains('#define MUSIC_SEGMENT_COUNT '));
       expect(code, contains('STAFF_EVENT_COUNT 14'));
       expect(code, contains('PWMB_CH3_P33'));
+      expect(code, contains('MusicClock_Init();'));
+    });
+
+    test('SDCC 播放循环用 MusicClock 截止时间调度，刷屏与发声重叠', () {
+      final code = CodeGenerator.generate(_twinkle());
+      final sdccStart = code.indexOf('#if defined(__SDCC)');
+      final elseAt = code.indexOf('#else');
+      expect(sdccStart, greaterThanOrEqualTo(0));
+      expect(elseAt, greaterThan(sdccStart));
+      final sdccBranch = code.substring(sdccStart, elseAt);
+
+      expect(sdccBranch, contains('#include "MusicClock.h"'));
+      expect(sdccBranch, contains('MusicClock_Reset();'));
+      final wait = sdccBranch.indexOf('MusicClock_WaitDeadline();');
+      final pwm = sdccBranch.indexOf('PWM_SET_Frequency(MUSIC_BUZZER_CH,');
+      final show = sdccBranch.indexOf('OLEDStaff_Show(&staffSong, i);');
+      final advance = sdccBranch.indexOf(
+        'MusicClock_Advance(staffDurationsMs[i]);',
+      );
+      expect(wait, greaterThanOrEqualTo(0));
+      expect(pwm, greaterThan(wait), reason: '到期先发声，再刷新画面');
+      expect(show, greaterThan(pwm));
+      expect(advance, greaterThan(show), reason: '本值播完后推进下一截止时间');
+      expect(sdccBranch, isNot(contains('Music_Wait(')));
+
+      final keilEnd = code.indexOf('#endif', elseAt);
+      expect(keilEnd, greaterThan(elseAt));
+      final keilBranch = code.substring(elseAt, keilEnd);
+      expect(keilBranch, contains('Music_Wait('));
+      expect(keilBranch, isNot(contains('MusicClock_')));
     });
 
     test('代码生成器发射的字形行/事件数与模型一致', () {

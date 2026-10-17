@@ -99,7 +99,8 @@
     "staff": [
       "libraries/boards/src/OLED_Staff.c",
       "libraries/boards/src/StaffRender.c",
-      "libraries/boards/src/LCD_Frame.c"
+      "libraries/boards/src/LCD_Frame.c",
+      "libraries/boards/src/MusicClock.c"
     ],
     "gpio": [
       "libraries/drivers/src/CNU_PIE_GPIO.c"

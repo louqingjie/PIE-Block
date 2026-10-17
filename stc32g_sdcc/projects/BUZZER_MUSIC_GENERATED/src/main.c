@@ -28,17 +28,6 @@ static const uint16_t musicFrequencies[128] =
     8372, 8870, 9397, 9956, 10548, 11175, 11840, 12544
 };
 
-static void Music_Wait(uint32_t duration_ms)
-{
-    while (duration_ms > 65535UL)
-    {
-        Ms_Delay((uint16_t)65535);
-        duration_ms -= 65535UL;
-    }
-    if (duration_ms > 0UL)
-        Ms_Delay((uint16_t)duration_ms);
-}
-
 static void Music_Stop(void)
 {
     PWM_SET_Frequency(MUSIC_BUZZER_CH, 1000, MUSIC_DUTY_OFF);
@@ -47,6 +36,7 @@ static void Music_Stop(void)
 #if defined(__SDCC)
 /* 五线谱显示：事件/调号/拍号/字形点阵全部由配置预计算，渲染在固件里完成。 */
 #include "OLED_Staff.h"
+#include "MusicClock.h"
 
 /* ---- 五线谱显示数据（由 Pie-Block 代码生成器自动生成）---- */
 #define STAFF_EVENT_COUNT 14
@@ -160,16 +150,19 @@ static const StaffSong staffSong =
 static void Music_PlayOnce(void)
 {
     uint16_t i;
+    MusicClock_Reset();
     for (i = 0; i < STAFF_EVENT_COUNT; i++)
     {
-        OLEDStaff_Show(&staffSong, i);
+        MusicClock_WaitDeadline();
         if (staffPitches[i] == 0)
             Music_Stop();
         else
             PWM_SET_Frequency(MUSIC_BUZZER_CH,
                 musicFrequencies[staffPitches[i]], MUSIC_DUTY_ON);
-        Music_Wait(staffDurationsMs[i]);
+        OLEDStaff_Show(&staffSong, i);
+        MusicClock_Advance(staffDurationsMs[i]);
     }
+    MusicClock_WaitDeadline();
     Music_Stop();
 }
 #else
@@ -193,6 +186,17 @@ static const MusicSegment musicSegments[8] =
 };
 #define MUSIC_SEGMENT_COUNT 8
 
+static void Music_Wait(uint32_t duration_ms)
+{
+    while (duration_ms > 65535UL)
+    {
+        Ms_Delay((uint16_t)65535);
+        duration_ms -= 65535UL;
+    }
+    if (duration_ms > 0UL)
+        Ms_Delay((uint16_t)duration_ms);
+}
+
 static void Music_PlayOnce(void)
 {
     uint16_t i;
@@ -215,6 +219,7 @@ static void All_Init(void)
     PWM_Init(MUSIC_BUZZER_CH, 1000, MUSIC_DUTY_OFF);
     Music_Stop();
 #if defined(__SDCC)
+    MusicClock_Init();
     OLEDStaff_Init();
 #endif
 }

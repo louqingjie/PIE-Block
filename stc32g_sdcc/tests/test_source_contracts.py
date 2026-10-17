@@ -192,10 +192,10 @@ class FirmwareSafetyContractTests(unittest.TestCase):
 class StaffDisplayContractTests(unittest.TestCase):
     """OLED 五线谱显示的构建清单/源码契约。
 
-    显示链路只允许新增 OLED_Staff.c / StaffRender.c / LCD_Frame.c；厂商文件
-    LCD.c / LCD.h（以及 OLED.c / OLED.h）保持原样，避免固件升级时和上游
-    CNU_PIE 库产生冲突。若确实需要改厂商文件，请同步更新下面的 SHA-256
-    并在改动说明里写清原因。
+    显示链路只允许新增 OLED_Staff.c / StaffRender.c / LCD_Frame.c /
+    MusicClock.c；厂商文件 LCD.c / LCD.h（以及 OLED.c / OLED.h）保持原样，
+    避免固件升级时和上游 CNU_PIE 库产生冲突。若确实需要改厂商文件，请同步
+    更新下面的 SHA-256 并在改动说明里写清原因。
     """
 
     VENDOR_FILE_SHA256 = {
@@ -225,6 +225,7 @@ class StaffDisplayContractTests(unittest.TestCase):
             "libraries/boards/src/OLED_Staff.c",
             "libraries/boards/src/StaffRender.c",
             "libraries/boards/src/LCD_Frame.c",
+            "libraries/boards/src/MusicClock.c",
         }
         self.assertEqual(expected, set(manifest["source_groups"]["staff"]))
         for relative_source in expected:
@@ -232,6 +233,29 @@ class StaffDisplayContractTests(unittest.TestCase):
                 (ROOT / relative_source).is_file(),
                 f"staff 源组里的文件不存在: {relative_source}",
             )
+
+    def test_music_clock_uses_free_running_timer0(self) -> None:
+        """播放节奏补偿依赖 Timer0 自由计数，且不能被改成重装初值的写法。"""
+        header = (
+            ROOT / "libraries" / "boards" / "inc" / "MusicClock.h"
+        ).read_text(encoding="utf-8")
+        source = (
+            ROOT / "libraries" / "boards" / "src" / "MusicClock.c"
+        ).read_text(encoding="utf-8")
+        for symbol in (
+            "MusicClock_Init",
+            "MusicClock_Reset",
+            "MusicClock_WaitDeadline",
+            "MusicClock_Advance",
+        ):
+            self.assertIn(symbol, header)
+        self.assertIn("__interrupt (TMR0_VECTOR)", source)
+        self.assertIn("TF0 = 0;", source)
+        self.assertIn("musicClockTicks += 0x10000UL;", source)
+        # 重装初值会在中断响应期间丢计数，必须保持自由计数。
+        self.assertNotIn("TH0 = time_reg", source)
+        self.assertNotIn("PIT_Timer_Ms", source)
+        self.assertIn("MUSIC_CLOCK_TICKS_PER_MS", source)
 
     def test_music_project_sources_all_exist(self) -> None:
         """按 build.ps1 的解析规则展开 music 工程源码，确认没有缺失文件。"""

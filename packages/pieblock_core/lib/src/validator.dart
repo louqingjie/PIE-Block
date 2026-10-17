@@ -370,10 +370,10 @@ abstract final class ProjectValidator {
     if (duration > 20 * 60 * 1000) {
       issue(IssueSeverity.error, 'music.notes', '音乐总时长不能超过 20 分钟', 'music');
     }
-    // 音乐固件只用低 64KB 应用区：基础代码+常量约 49KB，剩余给显示事件表
-    // （约 11 字节/事件）。超过预算时告警（不阻塞生成，编译器/布局校验兜底）。
+    // 音乐固件只用低 64KB 应用区：基础代码+常量约 50KB（含 MusicClock），
+    // 剩余给显示事件表（约 11 字节/事件）。超过预算时告警（不阻塞生成）。
     final staffSong = buildStaffSong(config);
-    final estimatedBytes = 49 * 1024 + staffSong.events.length * 11;
+    final estimatedBytes = 50 * 1024 + staffSong.events.length * 11;
     if (estimatedBytes > 61 * 1024) {
       issue(
         IssueSeverity.warning,

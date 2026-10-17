@@ -179,11 +179,17 @@ MusicConfig → buildStaffSong()（pieblock_core）
   · staffTickDurations/staffDurationsMs/staffPitches/staffSteps/staffFlags
   · staffKeyStepsTreble/staffKeyStepsBass
   · staffSong（指向上述表的只读结构体）
-→ 固件循环：OLEDStaff_Show(&staffSong, i) → 发声/停 → Music_Wait(durationsMs[i])
+→ 固件循环（MusicClock 调度）：
+  MusicClock_WaitDeadline() → 发声/停 → OLEDStaff_Show(i) → MusicClock_Advance(durationsMs[i])
 ```
 
 - 事件表用 SoA（避免结构体对齐浪费 flash），事件首尾相接，C 侧累加
   `tickDurations` 得到 `startTick`。
+- 播放节奏用 `MusicClock.c`（Timer0 16-bit 自由计数 + 溢出中断扩展成 32-bit
+  ticks）做绝对截止时间调度：每事件的开始时刻由累计时值决定，发声在到期时
+  立即开始，整屏刷新与当前音符的持续时间重叠，因此刷屏耗时不再叠加到乐曲
+  时长上；最后一个音符会等满时值再停。若某帧绘制超过当前时值，后续事件立即
+  开始并在后面的长音/休止中追回落后的时间。
 - 渲染器 `StaffRender.c` 是纯 C（只依赖 `stdint.h`/`string.h`），可在 PC 上用 gcc
   编译，和 Dart 模拟器逐帧对拍；板级胶水 `OLED_Staff.c` 负责 XRAM 帧缓冲与
   `LCD_WriteFrame`（新增文件实现软件 SPI 整屏写，不修改厂商 `LCD.c`）。
@@ -218,8 +224,10 @@ pwsh stc32g_sdcc/build.ps1 -Project BUZZER_MUSIC_GENERATED `
 - 只有 SDCC 构建包含五线谱显示；Keil 音乐构建保持原蜂鸣器播放（main.c 用
   `#if defined(__SDCC)` 隔离，部署页会提示）。
 - 只显示第一个拍号事件；中途变拍号仍按第一拍号画小节线。
-- 整屏软件 SPI 刷新在每事件开头统一增加数毫秒延迟，节奏整体平移但不改变相对时值；
-  若实机明显需要优化，再做按页差量刷新。
+- 整屏软件 SPI 刷新约需数毫秒；现在刷新发生在当前音符的发声期内，配合
+  `MusicClock` 的绝对截止时间调度，不再拖慢整曲节奏。若某帧渲染超过当前
+  音符时值，会挤压该音符的实际发声长度，但后续长音/休止会追回落后的时间；
+  极端快速曲目仍可再做按页差量刷新或提速 SPI。
 - 应用数据只放低 64KB（`0xFE0000-0xFEFFFF`）。曾尝试把只读常量搬到高 64KB
   `0xFF1000` 之后（`--constseg CONST` + `-Wl-b CONST=0xff1000`）来获得约 60KB
   额外空间，但 ROM USB-ISP 对高区的擦除/写入在多次烧录后不可靠：实测重烧后
