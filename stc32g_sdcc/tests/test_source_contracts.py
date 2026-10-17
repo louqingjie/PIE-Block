@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import unittest
 import re
 import json
@@ -135,7 +136,8 @@ class FirmwareSafetyContractTests(unittest.TestCase):
     def test_diagnostics_and_guide_use_bytewise_uart_query(self) -> None:
         paths = (
             ROOT.parent / "tools" / "diagnostics" / "friction_wheel_diagnostic.c",
-            ROOT.parent / "docs" / "RM电控指南.md",
+            # 指南已按 docs/README.md 的分类目录整理到 docs/guides/。
+            ROOT.parent / "docs" / "guides" / "RM电控指南.md",
         )
         for path in paths:
             source = path.read_text(encoding="utf-8")
@@ -187,5 +189,116 @@ class FirmwareSafetyContractTests(unittest.TestCase):
         self.assertAlmostEqual(actual_frequency, requested_frequency, delta=0.001)
 
 
+class StaffDisplayContractTests(unittest.TestCase):
+    """OLED 五线谱显示的构建清单/源码契约。
+
+    显示链路只允许新增 OLED_Staff.c / StaffRender.c / LCD_Frame.c；厂商文件
+    LCD.c / LCD.h（以及 OLED.c / OLED.h）保持原样，避免固件升级时和上游
+    CNU_PIE 库产生冲突。若确实需要改厂商文件，请同步更新下面的 SHA-256
+    并在改动说明里写清原因。
+    """
+
+    VENDOR_FILE_SHA256 = {
+        "libraries/boards/src/LCD.c": "e1290f55bc18a64ca2846de301307ec50eedc6601b42e3dfd5449de606fd1d8e",
+        "libraries/boards/inc/LCD.h": "e9abb88537524d9cca37f9c5ce1573075c784104ea7c8bc0f92300f245b262c5",
+        "libraries/boards/src/OLED.c": "c1c53164b7e595ef919deb29a2a824688aacb6306add876c34286e8e4df1347d",
+        "libraries/boards/inc/OLED.h": "d75e5eebac4b79272ff5cd1b491555f97d112d8bb107612336caeb6eee3bd5cb",
+    }
+
+    def test_music_projects_link_lcd_and_staff_groups(self) -> None:
+        manifest = json.loads((ROOT / "build_manifest.json").read_text(encoding="utf-8"))
+        for project in (
+            "BUZZER_MUSIC_GENERATED",
+            "BUZZER_MUSIC_SMOKE",
+            "BUZZER_MUSIC_SONG_SMOKE",
+        ):
+            groups = list(manifest["projects"][project]["library_groups"])
+            self.assertIn("pwm", groups, project)
+            self.assertIn("lcd", groups, project)
+            self.assertIn("staff", groups, project)
+            # 顺序固定：PWM 发声 + LCD 驱动 + 五线谱渲染，便于 diff 时保持稳定。
+            self.assertEqual(["pwm", "lcd", "staff"], groups, project)
+
+    def test_staff_source_group_lists_existing_sources(self) -> None:
+        manifest = json.loads((ROOT / "build_manifest.json").read_text(encoding="utf-8"))
+        expected = {
+            "libraries/boards/src/OLED_Staff.c",
+            "libraries/boards/src/StaffRender.c",
+            "libraries/boards/src/LCD_Frame.c",
+        }
+        self.assertEqual(expected, set(manifest["source_groups"]["staff"]))
+        for relative_source in expected:
+            self.assertTrue(
+                (ROOT / relative_source).is_file(),
+                f"staff 源组里的文件不存在: {relative_source}",
+            )
+
+    def test_music_project_sources_all_exist(self) -> None:
+        """按 build.ps1 的解析规则展开 music 工程源码，确认没有缺失文件。"""
+        manifest = json.loads((ROOT / "build_manifest.json").read_text(encoding="utf-8"))
+        for project in (
+            "BUZZER_MUSIC_GENERATED",
+            "BUZZER_MUSIC_SMOKE",
+            "BUZZER_MUSIC_SONG_SMOKE",
+        ):
+            resolved = list(manifest["source_groups"]["common"])
+            resolved.append(f"projects/{project}/src/isr.c")
+            resolved.append(f"projects/{project}/src/main.c")
+            for group in manifest["projects"][project]["library_groups"]:
+                resolved.extend(manifest["source_groups"][group])
+            for relative_source in dict.fromkeys(resolved):
+                self.assertTrue(
+                    (ROOT / relative_source).is_file(),
+                    f"{project}: 构建清单展开后缺少源文件 {relative_source}",
+                )
+
+    def test_staff_renderer_uses_page_format_frame_buffer(self) -> None:
+        header = (
+            ROOT / "libraries" / "boards" / "inc" / "StaffRender.h"
+        ).read_text(encoding="utf-8")
+        renderer = (
+            ROOT / "libraries" / "boards" / "src" / "StaffRender.c"
+        ).read_text(encoding="utf-8")
+        oled_staff = (
+            ROOT / "libraries" / "boards" / "src" / "OLED_Staff.c"
+        ).read_text(encoding="utf-8")
+        lcd_frame = (
+            ROOT / "libraries" / "boards" / "src" / "LCD_Frame.c"
+        ).read_text(encoding="utf-8")
+        for symbol in (
+            "STAFF_FRAME_BYTES",
+            "StaffRender_DrawFrame",
+            "StaffRender_PanelWidth",
+            "StaffRender_NoteAreaStart",
+            "StaffRender_CursorX",
+            "StaffSong",
+        ):
+            self.assertIn(symbol, header)
+        # 帧缓冲 1024B 必须是 static 数组（大模型下进 XSEG），不能放栈上。
+        self.assertIn("static uint8_t staffFrame[STAFF_FRAME_BYTES];", oled_staff)
+        self.assertIn("OLEDStaff_Init", oled_staff)
+        self.assertIn("LCD_WriteFrame", oled_staff)
+        # 整屏写命令序列与 LCD.c 的 LCD_Fill 一致。
+        self.assertIn("0xB0u + page", lcd_frame)
+        self.assertIn("LCD_FrameWriteByte(0x01u, 0u)", lcd_frame)
+        self.assertIn("LCD_FrameWriteByte(0x10u, 0u)", lcd_frame)
+        # 渲染器先清零再绘制。
+        self.assertIn("memset(frame1024, 0, STAFF_FRAME_BYTES)", renderer)
+
+    def test_vendor_lcd_and_oled_sources_are_unmodified(self) -> None:
+        for relative_path, expected_hash in self.VENDOR_FILE_SHA256.items():
+            with self.subTest(path=relative_path):
+                path = ROOT / relative_path
+                self.assertTrue(path.is_file(), f"厂商文件缺失: {relative_path}")
+                actual = hashlib.sha256(path.read_bytes()).hexdigest()
+                self.assertEqual(
+                    expected_hash,
+                    actual,
+                    f"{relative_path} 被修改了；五线谱写屏请用新增的 "
+                    "LCD_Frame.c/OLED_Staff.c 实现，不要改厂商文件。",
+                )
+
+
 if __name__ == "__main__":
     unittest.main()
+

@@ -1,22 +1,13 @@
-// MIDI 音乐代码（由 Pie-Block 配置生成器自动生成）
+// MIDI 单音音乐代码（由 PIE-Block Flutter 配置器自动生成）
+// SDCC 构建额外带 128x64 五线谱滚动显示；Keil 构建保持只播放。
 #include "main.h"
-// 模板仍链接 nrf24l01.c，保留其所需的通道符号；音乐模式不启动遥控器。
+
+// 步兵 Keil 模板仍链接 nrf24l01.c，保留其所需的通道符号。
 uint8_t Channal = 36;
-
 #define MUSIC_BUZZER_CH PWMB_CH3_P33
-#define MUSIC_DUTY_ON  5000
+#define MUSIC_DUTY_ON 5000
 #define MUSIC_DUTY_OFF 0
-#define MUSIC_MAX_VOICES 4
-#define MUSIC_VOICE_SWITCH_US 1UL
 
-typedef struct
-{
-    uint32_t duration_ms;
-    uint8_t voice_count;
-    uint8_t notes[MUSIC_MAX_VOICES];
-} MusicSegment;
-
-// MIDI 音符编号 -> PWM 整数频率，索引 0 仅作安全占位，不播放频率 0。
 static const uint16_t musicFrequencies[128] =
 {
     1000, 9, 9, 10, 10, 11, 12, 12,
@@ -37,95 +28,6 @@ static const uint16_t musicFrequencies[128] =
     8372, 8870, 9397, 9956, 10548, 11175, 11840, 12544
 };
 
-static const MusicSegment musicSegments[83] =
-{
-    {602UL, 1, {60, 0, 0, 0}},
-    {30UL, 1, {52, 0, 0, 0}},
-    {602UL, 1, {60, 0, 0, 0}},
-    {30UL, 0, {0, 0, 0, 0}},
-    {602UL, 1, {67, 0, 0, 0}},
-    {30UL, 1, {60, 0, 0, 0}},
-    {602UL, 1, {67, 0, 0, 0}},
-    {30UL, 0, {0, 0, 0, 0}},
-    {602UL, 1, {69, 0, 0, 0}},
-    {30UL, 1, {60, 0, 0, 0}},
-    {602UL, 1, {69, 0, 0, 0}},
-    {30UL, 0, {0, 0, 0, 0}},
-    {1201UL, 1, {67, 0, 0, 0}},
-    {62UL, 0, {0, 0, 0, 0}},
-    {602UL, 1, {65, 0, 0, 0}},
-    {30UL, 1, {57, 0, 0, 0}},
-    {602UL, 1, {65, 0, 0, 0}},
-    {30UL, 0, {0, 0, 0, 0}},
-    {602UL, 1, {64, 0, 0, 0}},
-    {30UL, 1, {55, 0, 0, 0}},
-    {602UL, 1, {64, 0, 0, 0}},
-    {30UL, 0, {0, 0, 0, 0}},
-    {602UL, 1, {62, 0, 0, 0}},
-    {30UL, 1, {55, 0, 0, 0}},
-    {602UL, 1, {62, 0, 0, 0}},
-    {30UL, 0, {0, 0, 0, 0}},
-    {1201UL, 1, {60, 0, 0, 0}},
-    {62UL, 0, {0, 0, 0, 0}},
-    {602UL, 1, {67, 0, 0, 0}},
-    {30UL, 1, {60, 0, 0, 0}},
-    {602UL, 1, {67, 0, 0, 0}},
-    {30UL, 0, {0, 0, 0, 0}},
-    {602UL, 1, {65, 0, 0, 0}},
-    {30UL, 1, {57, 0, 0, 0}},
-    {602UL, 1, {65, 0, 0, 0}},
-    {30UL, 0, {0, 0, 0, 0}},
-    {602UL, 1, {64, 0, 0, 0}},
-    {30UL, 1, {55, 0, 0, 0}},
-    {602UL, 1, {64, 0, 0, 0}},
-    {30UL, 0, {0, 0, 0, 0}},
-    {1201UL, 1, {62, 0, 0, 0}},
-    {62UL, 0, {0, 0, 0, 0}},
-    {602UL, 1, {67, 0, 0, 0}},
-    {30UL, 1, {60, 0, 0, 0}},
-    {602UL, 1, {67, 0, 0, 0}},
-    {30UL, 0, {0, 0, 0, 0}},
-    {602UL, 1, {65, 0, 0, 0}},
-    {30UL, 1, {57, 0, 0, 0}},
-    {602UL, 1, {65, 0, 0, 0}},
-    {30UL, 0, {0, 0, 0, 0}},
-    {602UL, 1, {64, 0, 0, 0}},
-    {30UL, 1, {55, 0, 0, 0}},
-    {602UL, 1, {64, 0, 0, 0}},
-    {30UL, 0, {0, 0, 0, 0}},
-    {1201UL, 1, {62, 0, 0, 0}},
-    {62UL, 0, {0, 0, 0, 0}},
-    {602UL, 1, {60, 0, 0, 0}},
-    {30UL, 1, {52, 0, 0, 0}},
-    {602UL, 1, {60, 0, 0, 0}},
-    {30UL, 0, {0, 0, 0, 0}},
-    {602UL, 1, {67, 0, 0, 0}},
-    {30UL, 1, {60, 0, 0, 0}},
-    {602UL, 1, {67, 0, 0, 0}},
-    {30UL, 0, {0, 0, 0, 0}},
-    {602UL, 1, {69, 0, 0, 0}},
-    {30UL, 1, {60, 0, 0, 0}},
-    {602UL, 1, {69, 0, 0, 0}},
-    {30UL, 0, {0, 0, 0, 0}},
-    {1201UL, 1, {67, 0, 0, 0}},
-    {62UL, 0, {0, 0, 0, 0}},
-    {602UL, 1, {65, 0, 0, 0}},
-    {30UL, 1, {57, 0, 0, 0}},
-    {602UL, 1, {65, 0, 0, 0}},
-    {30UL, 0, {0, 0, 0, 0}},
-    {602UL, 1, {64, 0, 0, 0}},
-    {30UL, 1, {55, 0, 0, 0}},
-    {602UL, 1, {64, 0, 0, 0}},
-    {30UL, 0, {0, 0, 0, 0}},
-    {602UL, 1, {62, 0, 0, 0}},
-    {30UL, 1, {55, 0, 0, 0}},
-    {602UL, 1, {62, 0, 0, 0}},
-    {30UL, 0, {0, 0, 0, 0}},
-    {1201UL, 1, {60, 0, 0, 0}},
-};
-#define MUSIC_SEGMENT_COUNT 83
-
-// Ms_Delay 的参数是 uint16_t，长音符拆成多个安全延时。
 static void Music_Wait(uint32_t duration_ms)
 {
     while (duration_ms > 65535UL)
@@ -139,58 +41,182 @@ static void Music_Wait(uint32_t duration_ms)
 
 static void Music_Stop(void)
 {
-    // 关闭时仍传入有效频率，避免 PWM_SET_Frequency 除零。
     PWM_SET_Frequency(MUSIC_BUZZER_CH, 1000, MUSIC_DUTY_OFF);
 }
 
-static void Music_PlaySegment(const MusicSegment *segment)
+#if defined(__SDCC)
+/* 五线谱显示：事件/调号/拍号/字形点阵全部由配置预计算，渲染在固件里完成。 */
+#include "OLED_Staff.h"
+
+/* ---- 五线谱显示数据（由 Pie-Block 代码生成器自动生成）---- */
+#define STAFF_EVENT_COUNT 14
+#define STAFF_GLYPH_COUNT 22
+#define STAFF_KEY_COUNT 0
+#define STAFF_EVENT_STORAGE 14
+
+static const uint16_t staffGlyphRows[] =
 {
-    uint32_t remaining_ms = segment->duration_ms;
-    uint32_t remaining_us = segment->duration_ms * 1000UL;
-    uint8_t voice = 0;
-    uint32_t switch_us;
-    if (segment->voice_count == 0)
+    0x00C0, 0x01E0, 0x0120, 0x0120, 0x0120, 0x0120, 0x00E0, 0x00E0, 0x0070, 0x007C, 0x005C, 0x004E,
+    0x03C6, 0x07E3, 0x0FF1, 0x08B1, 0x0891, 0x0893, 0x0902, 0x0504, 0x03F8, 0x0100, 0x0100, 0x0330,
+    0x0370, 0x0170, 0x00E0, 0x0000, 0x0078, 0x00CE, 0x0D86, 0x0D82, 0x018E, 0x019E, 0x0D8C, 0x0C80,
+    0x00C0, 0x0070, 0x001E, 0x000A, 0x000A, 0x001F, 0x000A, 0x001F, 0x000A, 0x000A, 0x0001, 0x0001,
+    0x0001, 0x0001, 0x0007, 0x0009, 0x0007, 0x0001, 0x0001, 0x0007, 0x0005, 0x0007, 0x0004, 0x0004,
+    0x0006, 0x000F, 0x0006, 0x0006, 0x0009, 0x0006, 0x001F, 0x001F, 0x001F, 0x001F, 0x0006, 0x0001,
+    0x0002, 0x0004, 0x0002, 0x0001, 0x0002, 0x0001, 0x0002, 0x0002, 0x0002, 0x0001, 0x0002, 0x0002,
+    0x0002, 0x001C, 0x0026, 0x0062, 0x007A, 0x006F, 0x0066, 0x0022, 0x001C, 0x001C, 0x001A, 0x0018,
+    0x0018, 0x0018, 0x0018, 0x0018, 0x003E, 0x001C, 0x0032, 0x0020, 0x0030, 0x0018, 0x000C, 0x0006,
+    0x007E, 0x000F, 0x0018, 0x0018, 0x000E, 0x0018, 0x0010, 0x0018, 0x000F, 0x0038, 0x0038, 0x0034,
+    0x0036, 0x0032, 0x007F, 0x0030, 0x0030, 0x001F, 0x0001, 0x0001, 0x000F, 0x0018, 0x0010, 0x0018,
+    0x000F, 0x0038, 0x0006, 0x0002, 0x003E, 0x0026, 0x0062, 0x0026, 0x001C, 0x003E, 0x0020, 0x0030,
+    0x0010, 0x0018, 0x0008, 0x000C, 0x0004, 0x003C, 0x0022, 0x0036, 0x001C, 0x0036, 0x0022, 0x0022,
+    0x003C, 0x001C, 0x0022, 0x0022, 0x0032, 0x003E, 0x0020, 0x0030, 0x001E
+};
+
+static const StaffGlyph staffGlyphDescs[] =
+{
+    {13, 27, 0},
+    {12, 12, 27},
+    {5, 7, 39},
+    {4, 7, 46},
+    {3, 7, 53},
+    {4, 3, 60},
+    {4, 3, 63},
+    {5, 2, 66},
+    {5, 2, 68},
+    {3, 6, 70},
+    {2, 4, 76},
+    {2, 5, 80},
+    {7, 8, 85},
+    {7, 8, 93},
+    {7, 8, 101},
+    {6, 8, 109},
+    {7, 8, 117},
+    {6, 8, 125},
+    {7, 8, 133},
+    {7, 8, 141},
+    {7, 8, 149},
+    {7, 8, 157}
+};
+
+static const StaffGlyphSet staffGlyphSet =
+    {22, staffGlyphRows, staffGlyphDescs};
+
+static const uint32_t staffTickDurations[] =
+{
+    480UL, 480UL, 480UL, 480UL, 480UL, 480UL, 960UL, 480UL,
+    480UL, 480UL, 480UL, 480UL, 480UL, 960UL
+};
+
+static const uint32_t staffDurationsMs[] =
+{
+    500UL, 500UL, 500UL, 500UL, 500UL, 500UL, 1000UL, 500UL,
+    500UL, 500UL, 500UL, 500UL, 500UL, 1000UL
+};
+
+static const uint8_t staffPitches[] =
+{
+    0x3C, 0x3C, 0x43, 0x43, 0x45, 0x45, 0x43, 0x41, 0x41, 0x40, 0x40, 0x3E, 0x3E, 0x3C
+};
+
+static const uint8_t staffFlags[] =
+{
+    0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x08, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x08
+};
+
+static const int8_t staffSteps[] =
+{
+    -0x02, -0x02, 0x02, 0x02, 0x03, 0x03, 0x02, 0x01, 0x01, 0x00, 0x00, -0x01, -0x01, -0x02
+};
+
+static const int8_t staffKeyStepsTreble[] =
+{
+    0x00
+};
+
+static const int8_t staffKeyStepsBass[] =
+{
+    0x00
+};
+
+static const StaffSong staffSong =
+{
+    14,
+    480,
+    4,
+    4,
+    0,
+    1,
+    staffTickDurations,
+    staffDurationsMs,
+    staffPitches,
+    staffSteps,
+    staffFlags,
+    staffKeyStepsTreble,
+    staffKeyStepsBass,
+    &staffGlyphSet
+};
+
+
+static void Music_PlayOnce(void)
+{
+    uint16_t i;
+    for (i = 0; i < STAFF_EVENT_COUNT; i++)
     {
-        Music_Stop();
-        Music_Wait(remaining_ms);
-        return;
+        OLEDStaff_Show(&staffSong, i);
+        if (staffPitches[i] == 0)
+            Music_Stop();
+        else
+            PWM_SET_Frequency(MUSIC_BUZZER_CH,
+                musicFrequencies[staffPitches[i]], MUSIC_DUTY_ON);
+        Music_Wait(staffDurationsMs[i]);
     }
-    if (segment->voice_count == 1)
-    {
-        PWM_SET_Frequency(MUSIC_BUZZER_CH,
-            musicFrequencies[segment->notes[0]], MUSIC_DUTY_ON);
-        Music_Wait(remaining_ms);
-        return;
-    }
-    // 伪复音：以 Us_Delay 的最小 1us 时间片轮换声部，不延长整体节奏。
-    while (remaining_us > 0UL)
-    {
-        switch_us = remaining_us > MUSIC_VOICE_SWITCH_US
-            ? MUSIC_VOICE_SWITCH_US : remaining_us;
-        PWM_SET_Frequency(MUSIC_BUZZER_CH,
-            musicFrequencies[segment->notes[voice]], MUSIC_DUTY_ON);
-        Us_Delay(switch_us);
-        remaining_us -= switch_us;
-        voice++;
-        if (voice >= segment->voice_count)
-            voice = 0;
-    }
+    Music_Stop();
 }
+#else
+/* Keil 构建：没有 OLED 五线谱显示，保持原来的蜂鸣器播放行为。 */
+typedef struct
+{
+    uint32_t duration_ms;
+    uint8_t note;
+} MusicSegment;
+
+static const MusicSegment musicSegments[8] =
+{
+    {1000UL, 60},
+    {1000UL, 67},
+    {1000UL, 69},
+    {1000UL, 67},
+    {1000UL, 65},
+    {1000UL, 64},
+    {1000UL, 62},
+    {1000UL, 60},
+};
+#define MUSIC_SEGMENT_COUNT 8
 
 static void Music_PlayOnce(void)
 {
     uint16_t i;
     for (i = 0; i < MUSIC_SEGMENT_COUNT; i++)
-        Music_PlaySegment(&musicSegments[i]);
+    {
+        if (musicSegments[i].note == 0)
+            Music_Stop();
+        else
+            PWM_SET_Frequency(MUSIC_BUZZER_CH,
+                musicFrequencies[musicSegments[i].note], MUSIC_DUTY_ON);
+        Music_Wait(musicSegments[i].duration_ms);
+    }
     Music_Stop();
 }
+#endif
 
 static void All_Init(void)
 {
     Board_Init();
-    // P33 蜂鸣器必须先 PWM_Init，再通过 PWM_SET_Frequency 改音高。
     PWM_Init(MUSIC_BUZZER_CH, 1000, MUSIC_DUTY_OFF);
     Music_Stop();
+#if defined(__SDCC)
+    OLEDStaff_Init();
+#endif
 }
 
 void main(void)

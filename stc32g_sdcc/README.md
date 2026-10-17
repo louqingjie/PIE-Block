@@ -83,6 +83,27 @@ pwsh .\stc32g_sdcc\build.ps1 `
   -LibDir .\path\to\mcs251-large-stack-auto
 ```
 
+#### 音乐固件里的 OLED 五线谱显示
+
+SDCC 音乐工程（`BUZZER_MUSIC_GENERATED` 等）生成的 `main.c` 在 `#if defined(__SDCC)`
+分支里带 128×64 五线谱滚动显示：事件/调号/拍号/字形由 `pieblock_core` 预先算好，
+固件用 `StaffRender.c`（纯 C，可主机 gcc 编译）绘制，`OLED_Staff.c` 维护 XRAM 帧缓冲，
+`LCD_Frame.c` 用软件 SPI 整屏刷新。Keil 构建走 `#else` 分支，保持只播放。
+
+重新生成 `BUZZER_MUSIC_GENERATED/src/main.c` 并本地构建：
+
+```powershell
+dart run tool/generate_firmware_main.dart --project assets/templates/music.pieproj `
+  --out stc32g_sdcc/projects/BUZZER_MUSIC_GENERATED/src/main.c
+pwsh .\stc32g_sdcc\build.ps1 -Project BUZZER_MUSIC_GENERATED `
+  -Sdcc .\vendor\sdcc-toolchain\bin\sdcc.exe `
+  -LibDir .\vendor\sdcc-toolchain\lib\mcs251-large-stack-auto `
+  -StdInclude .\vendor\sdcc-toolchain\include
+```
+
+主机对拍：`stc32g_sdcc/tests/test_staff_render_host.py`（需要 gcc）会把 C 渲染器
+逐帧与 Dart 模拟器 golden 帧比较，并用 SDCC 编译 `StaffRender.c` 检查 C251 兼容性。
+
 `BUZZER_MUSIC_SONG_SMOKE` 使用已有音乐项目中保存的 MIDI 解析结果，生成并播放
 “【何玉】大东北我的家乡 - 原琴.mid”。其配置保存在
 `projects/BUZZER_MUSIC_SONG_SMOKE/music.json`，构建命令只需将工程名改为

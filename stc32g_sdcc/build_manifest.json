@@ -96,6 +96,11 @@
       "libraries/boards/src/Font.c",
       "libraries/drivers/src/CNU_PIE_GPIO.c"
     ],
+    "staff": [
+      "libraries/boards/src/OLED_Staff.c",
+      "libraries/boards/src/StaffRender.c",
+      "libraries/boards/src/LCD_Frame.c"
+    ],
     "gpio": [
       "libraries/drivers/src/CNU_PIE_GPIO.c"
     ]
@@ -103,9 +108,9 @@
   "projects": {
     "0000.培训模板": {"library_groups": ["boards", "radio", "drivers"]},
     "0001.JDY08设置密码": {"library_groups": ["boards", "radio", "drivers"]},
-    "BUZZER_MUSIC_SMOKE": {"library_groups": ["pwm"]},
-    "BUZZER_MUSIC_SONG_SMOKE": {"library_groups": ["pwm"]},
-    "BUZZER_MUSIC_GENERATED": {"library_groups": ["pwm"]},
+    "BUZZER_MUSIC_SMOKE": {"library_groups": ["pwm", "lcd", "staff"]},
+    "BUZZER_MUSIC_SONG_SMOKE": {"library_groups": ["pwm", "lcd", "staff"]},
+    "BUZZER_MUSIC_GENERATED": {"library_groups": ["pwm", "lcd", "staff"]},
     "BUZZER_VOICE_SMOKE": {
       "library_groups": ["pwm", "timer", "voice"],
       "comment": "语音合成是每 125us 一次的中断，按速度而不是体积优化",
