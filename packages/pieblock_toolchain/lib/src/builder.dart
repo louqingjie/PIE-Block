@@ -259,118 +259,6 @@ class FirmwareBuilder {
     }
   }
 
-  /// 把生成的 main.c 用内置 SDCC 编译成汇编文本，供 C/汇编对照阅读。
-  ///
-  /// 只做「主源文件 → .asm」这一步：不编译其余源文件、不链接、不产 HEX。
-  /// Android 内嵌后端不支持该能力，会直接返回失败说明。
-  Future<AsmPreviewResult> previewAssembly({
-    required ProjectKind projectKind,
-    required String sourceCode,
-  }) async {
-    if (_sdccBackend != null) {
-      return const AsmPreviewResult(
-        success: false,
-        message: '本平台暂不提供汇编对照，请在桌面版查看',
-      );
-    }
-    final logs = <String>[];
-    void emit(
-      BuildStage stage,
-      String message, {
-      BuildEventLevel level = BuildEventLevel.info,
-      int? current,
-      int? total,
-    }) {
-      logs.add(message);
-    }
-
-    final work = Directory(
-      p.join(_workRoot, 'asm-${DateTime.now().microsecondsSinceEpoch}'),
-    );
-    await work.create(recursive: true);
-    try {
-      final assets = await _locateAssets();
-      final deployed = await _deploySdcc(assets, emit);
-      final manifest =
-          (jsonDecode(
-                await File(
-                  p.join(deployed.firmware, 'build_manifest.json'),
-                ).readAsString(),
-              )
-              as Map)
-              .cast<String, Object?>();
-      final project = firmwareProjectFor(projectKind, CompilerKind.sdcc);
-      final sources = _sourcesFor(manifest, project);
-      final mainPath = p.join(work.path, 'main.c');
-      await File(mainPath).writeAsString(sourceCode, flush: true);
-      final interruptHeader = p.join(
-        work.path,
-        'generated_interrupt_declarations.h',
-      );
-      await _writeInterruptHeader(
-        deployed.firmware,
-        sources,
-        mainPath,
-        interruptHeader,
-        project,
-      );
-      final asmPath = p.join(work.path, 'main.asm');
-      final args = <String>[
-        for (final flag in (manifest['compile_flags']! as List))
-          // 编译到目标文件用的是 -c，这里换成 -S 只产出汇编。
-          if ('$flag' != '-c') '$flag',
-        ..._includeArgs(deployed, manifest, project),
-        // SDCC 默认不把 C 源码写进汇编注释，打开它才有源码行锚点。
-        '--c-code-in-asm',
-        '-S',
-        '--include',
-        interruptHeader,
-        '-o',
-        asmPath,
-        mainPath,
-      ];
-      final run = await _run(
-        p.join(deployed.toolchain, 'bin', _sdccExecutable),
-        args,
-        emit,
-        BuildStage.compiling,
-      );
-      if (run.exitCode != 0 || _canceled) {
-        return AsmPreviewResult(
-          success: false,
-          log: logs.join('\n'),
-          message: 'SDCC 编译失败，请查看编译日志',
-        );
-      }
-      final asmFile = File(asmPath);
-      if (!await asmFile.exists()) {
-        return AsmPreviewResult(
-          success: false,
-          log: logs.join('\n'),
-          message: 'SDCC 未产出汇编文件',
-        );
-      }
-      return AsmPreviewResult(
-        success: true,
-        assembly: await asmFile.readAsString(),
-        log: logs.join('\n'),
-      );
-    } catch (error) {
-      return AsmPreviewResult(
-        success: false,
-        log: logs.join('\n'),
-        message: '$error',
-      );
-    } finally {
-      _process = null;
-      if (await work.exists()) {
-        try {
-          await work.delete(recursive: true);
-        } catch (_) {}
-      }
-    }
-  }
-
   Future<BuildResult> _build(
     BuildRequest request,
     StreamController<BuildEvent> events,
@@ -460,6 +348,7 @@ class FirmwareBuilder {
         artifact: artifact,
         log: logs.join('\n'),
         exitCode: 0,
+        listing: raw.listing,
       );
     } catch (error) {
       emit(BuildStage.done, '编译失败：$error', level: BuildEventLevel.error);
@@ -649,12 +538,42 @@ class FirmwareBuilder {
         );
       }
     }
+    // 列表文件由链接器在 .lst 上回写（`ASlink >> -r`），所以只有链接成功才有；
+    // 必须在 finally 删掉工作目录之前读出来。
+    final success = link.exitCode == 0 && await File(hexPath).exists();
+    final listing = success ? await _readListing(output.path) : null;
+    if (success && listing == null) {
+      emit(
+        BuildStage.validating,
+        'SDCC 未产出列表文件（main_*.rst）',
+        level: BuildEventLevel.warning,
+      );
+    }
     return _RawBuildResult(
-      link.exitCode == 0 && await File(hexPath).exists(),
+      success,
       exitCode: link.exitCode,
       hexPath: hexPath,
       warningCount: warningCount,
+      listing: listing,
     );
+  }
+
+  /// 读回生成模块的列表文件：目标文件按 `<源名>_<序号>` 命名，
+  /// 所以链接后产出的是 `main_<序号>.rst`（地址 + 机器码 + 指令周期 + C 锚点）。
+  Future<String?> _readListing(String outputDirectory) async {
+    final directory = Directory(outputDirectory);
+    if (!await directory.exists()) return null;
+    final candidates = <File>[];
+    await for (final entity in directory.list()) {
+      if (entity is! File) continue;
+      final name = p.basename(entity.path);
+      if (name.startsWith('main_') && name.endsWith('.rst')) {
+        candidates.add(entity);
+      }
+    }
+    if (candidates.isEmpty) return null;
+    candidates.sort((a, b) => a.path.compareTo(b.path));
+    return candidates.first.readAsString();
   }
 
   Future<_RawBuildResult> _buildKeil(
@@ -1010,21 +929,6 @@ class FirmwareBuilder {
   }
 }
 
-/// 汇编预览编译的结果：成功时带 SDCC 产出的 .asm 原文。
-class AsmPreviewResult {
-  const AsmPreviewResult({
-    required this.success,
-    this.assembly,
-    this.log = '',
-    this.message,
-  });
-
-  final bool success;
-  final String? assembly;
-  final String log;
-  final String? message;
-}
-
 class _RunResult {
   const _RunResult(this.exitCode, this.output);
   final int exitCode;
@@ -1038,12 +942,14 @@ class _RawBuildResult {
     this.hexPath,
     this.warningCount = 0,
     this.licenseFailure = false,
+    this.listing,
   });
   final bool success;
   final int? exitCode;
   final String? hexPath;
   final int warningCount;
   final bool licenseFailure;
+  final String? listing;
 }
 
 class _ToolchainAssets {

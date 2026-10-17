@@ -7,9 +7,15 @@ import 'package:re_highlight/re_highlight.dart';
 /// 按生成器实际的指令集定制。scope 键与 atom-one 主题已有的样式
 /// （keyword/built_in/meta/comment/number/symbol/title/string）一一
 /// 对应，无需扩充主题。
-final langAs251 = Mode(
+///
+/// [listing] 为真时用于链接器产出的列表文件（`main.rst`）：它的每行前面
+/// 还有四列列表机信息——地址、机器码字节、指令周期 `[n]` 与 asm 行号，
+/// 加起来固定占前 40 列，之后才是汇编正文（注释行则是第 41 列上的 `;`）。
+/// 这四列用弱色（comment）整体吃掉，免得 6 位地址、`7E 71 82` 这些字节和
+/// `[12]` 被当成数字或关键字着色，正文仍按下面的 as251 规则高亮。
+Mode as251Mode({bool listing = false}) => Mode(
   refs: {},
-  name: 'SDCC AS251 Assembly',
+  name: listing ? 'SDCC AS251 Assembly Listing' : 'SDCC AS251 Assembly',
   caseInsensitive: true,
   disableAutodetect: true,
   keywords: {
@@ -30,6 +36,9 @@ final langAs251 = Mode(
         '.set .title',
   },
   contains: <Mode>[
+    // 列表文件的前 40 列：地址 + 机器码 + [周期] + 行号（+ 行号后的空白）。
+    if (listing)
+      Mode(scope: 'comment', begin: r'^.{0,40}(?=\t|;|$)', relevance: 0),
     // 行尾注释，生成器产出大量中文注释。
     Mode(scope: 'comment', begin: ';', end: r'$', relevance: 0),
     // SDCC 约定标签顶格书写，`::` 表示跨模块导出的符号。
@@ -43,3 +52,9 @@ final langAs251 = Mode(
     APOS_STRING_MODE,
   ],
 );
+
+/// `-S --c-code-in-asm` 产出的汇编文本用这个模式。
+final langAs251 = as251Mode();
+
+/// 链接器产出的列表文件（`main.rst`）用这个模式。
+final langAs251Listing = as251Mode(listing: true);

@@ -128,6 +128,7 @@ class BuildResult {
     this.exitCode,
     this.canceled = false,
     this.licenseFailure = false,
+    this.listing,
   });
 
   final bool success;
@@ -136,6 +137,11 @@ class BuildResult {
   final int? exitCode;
   final bool canceled;
   final bool licenseFailure;
+
+  /// 链接后产出的列表文件（`main_<序号>.rst`）原文：带地址、机器码、
+  /// 指令周期与 C 源码锚点，供「生成代码」页的汇编栏直接展示。
+  /// 链接失败、取消或 Keil/Android 路径下为 null。
+  final String? listing;
 }
 
 class BuildOperation {

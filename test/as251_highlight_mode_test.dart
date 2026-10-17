@@ -89,4 +89,45 @@ __sdcc_mcs251_reset_trampoline::
     expect(html, contains('__sdcc_gsinit_startup'));
     expect(html, isNot(contains('hljs-keyword">__sdcc_gsinit_startup')));
   });
+
+  group('列表文件（main.rst）', () {
+    final listing = Highlight()..registerLanguage('rst', langAs251Listing);
+    String listingToHtml(String code) =>
+        listing.highlight(code: code, language: 'rst').toHtml();
+
+    // 前 40 列是地址 + 机器码 + [周期] + 行号，正文从第 41 列开始。
+    const code = '''
+                                      1 ;--------------------------------------------------------
+                                      5 \t.module main
+      FE008C 7E 71 82         [12]  158 \tmov\tr7, dpl
+                                    200 ;\tC:\\\\tmp\\\\main.c:66: PWM_SET_Frequency(BUZZER_CH, frequency, BUZZER_DUTY_ON);
+      FF0007 9A FE 08 5F      [12]  131 \tecall\t_main
+''';
+
+    test('机器码与周期列被弱化，不再当成数字着色', () {
+      final html = listingToHtml(code);
+
+      // 前缀列整段吃成 comment：地址、字节、[12]、行号都不再是数字。
+      expect(html, contains('hljs-comment">                                      1'));
+      expect(html, isNot(contains('hljs-number">12')));
+      expect(html, isNot(contains('hljs-number">158')));
+      expect(html, isNot(contains('hljs-number">131')));
+      expect(html, isNot(contains('hljs-number">7E')));
+      expect(html, isNot(contains('hljs-number">0x')));
+    });
+
+    test('正文仍按 as251 着色，C 锚点整行是注释', () {
+      final html = listingToHtml(code);
+
+      expect(html, contains('<span class="hljs-keyword">mov</span>'));
+      expect(html, contains('<span class="hljs-built_in">r7</span>'));
+      expect(html, contains('<span class="hljs-built_in">dpl</span>'));
+      expect(html, contains('<span class="hljs-meta">.module</span>'));
+      expect(html, contains('<span class="hljs-keyword">ecall</span>'));
+      expect(html, contains('_main'));
+      // C 锚点行：前 40 列弱化，`;` 之后整行是注释。
+      expect(html, contains('hljs-comment">;'));
+      expect(html, contains('main.c:66: PWM_SET_Frequency'));
+    });
+  });
 }

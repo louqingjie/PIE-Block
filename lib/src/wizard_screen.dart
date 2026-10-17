@@ -6,7 +6,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:pieblock_core/pieblock_core.dart';
-import 'package:pieblock_toolchain/asm_listing.dart';
 import 'package:pieblock_toolchain/models.dart';
 import 'package:re_editor/re_editor.dart';
 import 'package:re_highlight/languages/c.dart';
@@ -810,12 +809,16 @@ class WizardScreen extends ConsumerWidget {
                   duration: const Duration(milliseconds: 180),
                   child: KeyedSubtree(key: ValueKey(state.step), child: page),
                 );
-                // 生成代码页正在编译汇编时，用全屏遮罩挡住整个内容区。
+                // 生成代码页正在构建汇编列表时，用全屏遮罩挡住整个内容区。
                 Widget withCompileOverlay(Widget child) => Stack(
                   children: [
                     child,
                     if (asmPreview.compiling)
-                      const Positioned.fill(child: _AsmCompilingOverlay()),
+                      Positioned.fill(
+                        child: _AsmCompilingOverlay(
+                          progress: asmPreview.progress,
+                        ),
+                      ),
                   ],
                 );
                 if (!wide) {
@@ -3326,25 +3329,9 @@ class _CodePage extends ConsumerStatefulWidget {
 }
 
 class _CodePageState extends ConsumerState<_CodePage> {
-  /// 进入本页即编译一次汇编；源码没变时控制器直接复用上次结果。
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final controller = ref.read(appControllerProvider.notifier);
-      if (controller.issues.any(
-        (issue) => issue.severity == IssueSeverity.error,
-      )) {
-        return;
-      }
-      final config = ref.read(appControllerProvider).document?.config;
-      if (config == null) return;
-      unawaited(
-        ref.read(asmPreviewControllerProvider.notifier).ensure(config),
-      );
-    });
-  }
+  /// 当前展示哪一个视图：默认只看 C，**进入页面不编译**。
+  /// 只有切到「汇编」且还没有结果时才发起一次完整构建。
+  bool _showListing = false;
 
   Future<void> _export(String code, String fileName) async {
     await exportGeneratedText(
@@ -3355,6 +3342,16 @@ class _CodePageState extends ConsumerState<_CodePage> {
     );
   }
 
+  /// 切到「汇编」时：已有**同一份源码**的列表就直接显示，否则发起构建
+  /// （配置改动后 sourceCode 会变，这里会重新编译而不是显示过期列表）。
+  void _selectListing(bool listing, ProjectConfig config, String code) {
+    setState(() => _showListing = listing);
+    if (!listing) return;
+    final cached = ref.read(asmPreviewControllerProvider);
+    if (cached.listing != null && cached.sourceCode == code) return;
+    unawaited(ref.read(asmPreviewControllerProvider.notifier).compile(config));
+  }
+
   @override
   Widget build(BuildContext context) {
     final ctrl = ref.read(appControllerProvider.notifier),
@@ -3363,11 +3360,13 @@ class _CodePageState extends ConsumerState<_CodePage> {
     final blocked = issues.any((i) => i.severity == IssueSeverity.error);
     final asm = ref.watch(asmPreviewControllerProvider);
     final code = blocked ? '' : CodeGenerator.generate(config);
+    final showListing = _showListing && !blocked;
+    final listing = asm.listing;
     return _PageFrame(
       title: '生成代码',
       subtitle: blocked
           ? '仍有错误，返回检查页修正后才能生成。'
-          : '代码根据项目配置实时生成，只读且不会写回项目文件；右侧汇编由内置 SDCC 现场编译。',
+          : '代码根据项目配置实时生成，只读且不会写回项目文件。',
       child: blocked
           ? _Section(
               title: '无法生成',
@@ -3380,40 +3379,142 @@ class _CodePageState extends ConsumerState<_CodePage> {
               ],
             )
           : _Section(
-              title: '生成代码对照',
-              subtitle: asm.ready || asm.message != null
-                  ? (asm.ready ? asm.coverageText : asm.message)
-                  : '正在准备汇编编译…',
-              trailing: OutlinedButton.icon(
-                onPressed: asm.compiling
-                    ? null
-                    : () => unawaited(
-                        ref
-                            .read(asmPreviewControllerProvider.notifier)
-                            .recompile(config),
-                      ),
-                icon: const Icon(Icons.refresh),
-                label: const Text('重新编译'),
+              title: showListing ? 'main.rst' : 'main.c',
+              // 窄屏（360 逻辑像素）放不下切换器 + 重新编译并排，交给 Wrap 换行。
+              trailing: Wrap(
+                spacing: 12,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  _CodeOutputSwitch(
+                    listing: showListing,
+                    onChanged: (value) => _selectListing(value, config, code),
+                  ),
+                  if (showListing)
+                    OutlinedButton.icon(
+                      onPressed: asm.compiling
+                          ? null
+                          : () => unawaited(
+                              ref
+                                  .read(asmPreviewControllerProvider.notifier)
+                                  .recompile(config),
+                            ),
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('重新编译'),
+                    ),
+                ],
               ),
               children: [
-                if (asm.ready)
-                  _CodeCompareView(
-                    sourceCode: code,
-                    listing: asm.listing!,
-                    onExportCode: () => _export(code, 'main.c'),
-                    onExportAsm: () => _export(
-                      asm.listing!.lines.join('\n'),
-                      'main.asm',
-                    ),
-                  )
-                else
+                if (!showListing)
                   _GeneratedCodePreview(
                     code: code,
                     fileName: 'main.c',
                     onExport: () => _export(code, 'main.c'),
+                  )
+                else if (asm.ready)
+                  _GeneratedCodePreview(
+                    code: listing!,
+                    fileName: 'main.rst',
+                    onExport: () => _export(listing, 'main.rst'),
+                    languages: {
+                      'asm': CodeHighlightThemeMode(mode: langAs251Listing),
+                    },
+                  )
+                else
+                  _ListingPlaceholder(
+                    compiling: asm.compiling,
+                    message: asm.message,
+                    progress: asm.progress,
                   ),
               ],
             ),
+    );
+  }
+}
+
+/// 代码区右上角的「C 代码 / 汇编」切换器。
+class _CodeOutputSwitch extends StatelessWidget {
+  const _CodeOutputSwitch({required this.listing, required this.onChanged});
+
+  final bool listing;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    label: '输出语言',
+    child: SegmentedButton<bool>(
+      showSelectedIcon: false,
+      segments: const [
+        ButtonSegment(
+          value: false,
+          icon: Icon(Icons.code, size: 18),
+          label: Text('C 代码'),
+        ),
+        ButtonSegment(
+          value: true,
+          icon: Icon(Icons.memory, size: 18),
+          label: Text('汇编'),
+        ),
+      ],
+      selected: {listing},
+      onSelectionChanged: (selection) => onChanged(selection.first),
+    ),
+  );
+}
+
+/// 汇编栏还没就绪时的占位：编译中显示阶段进度，失败或降级时显示原因。
+class _ListingPlaceholder extends StatelessWidget {
+  const _ListingPlaceholder({
+    required this.compiling,
+    this.message,
+    this.progress,
+  });
+
+  final bool compiling;
+  final String? message, progress;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 26),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        children: [
+          if (compiling) ...[
+            const SizedBox(
+              width: 30,
+              height: 30,
+              child: CircularProgressIndicator(strokeWidth: 3),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              '正在用内置 SDCC C251 构建 main.c…',
+              style: theme.textTheme.titleSmall,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              progress ?? '编译全部源文件并链接后才会产出带机器码的 main.rst。',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall,
+            ),
+          ] else ...[
+            Icon(
+              Icons.info_outline,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              message ?? '还没有汇编列表，点「重新编译」再试一次。',
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
@@ -3425,203 +3526,6 @@ const EdgeInsets _codeEditorPadding = EdgeInsets.symmetric(
   horizontal: 14,
   vertical: 12,
 );
-
-/// 双栏对照的最小宽度：再窄就退化成「C 代码 / 汇编」单栏切换。
-const double _codeCompareMinWidth = 860;
-
-/// C 与汇编的左右对照：两侧逐行严格对齐（多出的部分补空行），
-/// 点选一行即高亮同一行块，滚动按同一个偏移量跟随。
-class _CodeCompareView extends StatefulWidget {
-  const _CodeCompareView({
-    required this.sourceCode,
-    required this.listing,
-    required this.onExportCode,
-    required this.onExportAsm,
-  });
-
-  final String sourceCode;
-  final AsmListing listing;
-  final VoidCallback onExportCode;
-  final VoidCallback onExportAsm;
-
-  @override
-  State<_CodeCompareView> createState() => _CodeCompareViewState();
-}
-
-class _CodeCompareViewState extends State<_CodeCompareView> {
-  late AlignedCodePair _pair;
-  late final CodeLineEditingController _sourceController;
-  late final CodeLineEditingController _asmController;
-  late final ScrollController _sourceVertical;
-  late final ScrollController _sourceHorizontal;
-  late final ScrollController _asmVertical;
-  late final ScrollController _asmHorizontal;
-  late final CodeScrollController _sourceScroll;
-  late final CodeScrollController _asmScroll;
-  late final FocusNode _sourceFocusNode;
-  late final FocusNode _asmFocusNode;
-  var _showAsm = false;
-  var _applyingRemote = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _pair = widget.listing.alignWith(widget.sourceCode);
-    _sourceController = CodeLineEditingController.fromText(_pair.codeText);
-    _asmController = CodeLineEditingController.fromText(_pair.asmText);
-    _sourceVertical = ScrollController();
-    _sourceHorizontal = ScrollController();
-    _asmVertical = ScrollController();
-    _asmHorizontal = ScrollController();
-    _sourceScroll = CodeScrollController(
-      verticalScroller: _sourceVertical,
-      horizontalScroller: _sourceHorizontal,
-    );
-    _asmScroll = CodeScrollController(
-      verticalScroller: _asmVertical,
-      horizontalScroller: _asmHorizontal,
-    );
-    _sourceFocusNode = FocusNode(debugLabel: 'code-compare-source');
-    _asmFocusNode = FocusNode(debugLabel: 'code-compare-asm');
-    _sourceVertical.addListener(_onSourceScrolled);
-    _asmVertical.addListener(_onAsmScrolled);
-  }
-
-  @override
-  void didUpdateWidget(covariant _CodeCompareView oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.sourceCode == widget.sourceCode &&
-        identical(oldWidget.listing, widget.listing)) {
-      return;
-    }
-    _pair = widget.listing.alignWith(widget.sourceCode);
-    // 换文本会顺带重置滚动位置，先屏蔽一次联动回调。
-    _applyingRemote = true;
-    _sourceController.text = _pair.codeText;
-    _asmController.text = _pair.asmText;
-    _applyingRemote = false;
-  }
-
-  @override
-  void dispose() {
-    _sourceVertical.removeListener(_onSourceScrolled);
-    _asmVertical.removeListener(_onAsmScrolled);
-    _sourceController.dispose();
-    _asmController.dispose();
-    _sourceScroll.dispose();
-    _asmScroll.dispose();
-    _sourceVertical.dispose();
-    _sourceHorizontal.dispose();
-    _asmVertical.dispose();
-    _asmHorizontal.dispose();
-    _sourceFocusNode.dispose();
-    _asmFocusNode.dispose();
-    super.dispose();
-  }
-
-  /// 联动动作放到帧后执行：滚动回填会在 build 期间同步触发对侧重建，
-  /// 直接在监听回调里改对侧状态会撞上「setState during build」。
-  /// 注意：两侧的选中范围互不影响，只有滚动位置联动。
-  void _applyRemote(VoidCallback action) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _applyingRemote = true;
-      action();
-      _applyingRemote = false;
-    });
-  }
-
-  /// 两侧文本行数严格相等，所以同一个偏移量就是同一行。
-  void _mirrorScroll(ScrollController from, ScrollController to) {
-    if (!from.hasClients || !to.hasClients) return;
-    final target = from.offset.clamp(0.0, to.position.maxScrollExtent);
-    _applyRemote(() {
-      if (!to.hasClients) return;
-      to.jumpTo(target);
-    });
-  }
-
-  void _onSourceScrolled() {
-    if (_applyingRemote) return;
-    _mirrorScroll(_sourceVertical, _asmVertical);
-  }
-
-  void _onAsmScrolled() {
-    if (_applyingRemote) return;
-    _mirrorScroll(_asmVertical, _sourceVertical);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        if (constraints.maxWidth >= _codeCompareMinWidth) {
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: _pane(source: true)),
-              const SizedBox(width: 12),
-              Expanded(child: _pane(source: false)),
-            ],
-          );
-        }
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SegmentedButton<bool>(
-              showSelectedIcon: false,
-              segments: const [
-                ButtonSegment(
-                  value: false,
-                  icon: Icon(Icons.code, size: 18),
-                  label: Text('C 代码'),
-                ),
-                ButtonSegment(
-                  value: true,
-                  icon: Icon(Icons.memory, size: 18),
-                  label: Text('汇编'),
-                ),
-              ],
-              selected: {_showAsm},
-              onSelectionChanged: (selection) =>
-                  setState(() => _showAsm = selection.first),
-            ),
-            const SizedBox(height: 12),
-            _pane(source: !_showAsm),
-          ],
-        );
-      },
-    );
-  }
-
-  /// 单栏切换时两栏复用同一个组件位置，必须用 key 区分：否则 Flutter 会复用同
-  /// 一个 State，`_editingController` 是 initState 里按 `controller` 定的，切栏后
-  /// 汇编栏会继续显示 C 的文本与行号。
-  Widget _pane({required bool source}) => _GeneratedCodePreview(
-    key: ValueKey(source ? 'generated-code-pane' : 'generated-asm-pane'),
-    code: source ? _pair.codeText : _pair.asmText,
-    fileName: source ? 'main.c' : 'main.asm',
-    onExport: source ? widget.onExportCode : widget.onExportAsm,
-    editorKey: ValueKey(
-      source ? 'generated-code-editor' : 'generated-asm-editor',
-    ),
-    lineNumberKey: ValueKey(
-      source ? 'generated-code-line-numbers' : 'generated-asm-line-numbers',
-    ),
-    searchKey: ValueKey(source ? 'code-search-field' : 'asm-search-field'),
-    countKey: ValueKey(source ? 'code-search-count' : 'asm-search-count'),
-    languages: source
-        ? {'c': CodeHighlightThemeMode(mode: langC)}
-        : {'asm': CodeHighlightThemeMode(mode: langAs251)},
-    // 两侧行号各自独立：左栏是真实 C 行号，右栏是汇编自身行号，补齐行留空。
-    lineNumberLabels: source ? _pair.codeLineNumbers : _pair.asmLineNumbers,
-    controller: source ? _sourceController : _asmController,
-    scrollController: source ? _sourceScroll : _asmScroll,
-    focusNode: source ? _sourceFocusNode : _asmFocusNode,
-    showFileName: true,
-  );
-}
-
 const _codeFontFallbacks = <String>[
   'PieBlockSans',
   'Noto Sans CJK SC',
@@ -3631,45 +3535,18 @@ const _codeFontFallbacks = <String>[
 
 class _GeneratedCodePreview extends StatefulWidget {
   const _GeneratedCodePreview({
-    super.key,
     required this.code,
     required this.onExport,
     this.fileName = 'main.c',
-    this.editorKey = const ValueKey('generated-code-editor'),
-    this.searchKey = const ValueKey('code-search-field'),
-    this.countKey = const ValueKey('code-search-count'),
-    this.lineNumberKey = const ValueKey('generated-code-line-numbers'),
     this.languages,
-    this.lineNumberLabels,
-    this.controller,
-    this.scrollController,
-    this.focusNode,
-    this.showFileName = false,
   });
 
   final String code;
   final VoidCallback onExport;
   final String fileName;
-  final Key editorKey;
-  final Key searchKey;
-  final Key countKey;
-  final Key lineNumberKey;
 
-  /// 为空时按 [fileName] 后缀选语言（.asm 走 AS251）。
+  /// 为空时按 [fileName] 后缀选语言（.asm / .rst 走 AS251）。
   final Map<String, CodeHighlightThemeMode>? languages;
-
-  /// 行号列的自定义文案（逐行对应真实 C 行号，补齐行为 `null` 表示留空）；
-  /// 为空时按行序编号。
-  final List<int?>? lineNumberLabels;
-
-  /// 对照视图里由外层持有，用于两栏滚动同步；选中范围互不联动。
-  /// 为空时本组件自建。
-  final CodeLineEditingController? controller;
-  final CodeScrollController? scrollController;
-  final FocusNode? focusNode;
-
-  /// 双栏对照时每栏显示自己的文件名。
-  final bool showFileName;
 
   @override
   State<_GeneratedCodePreview> createState() => _GeneratedCodePreviewState();
@@ -3683,42 +3560,30 @@ class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
   ScrollController? _horizontalScroller;
   late final CodeScrollController _scrollController;
   late final FocusNode _editorFocusNode;
-  bool _ownsEditingController = false;
-  bool _ownsScrollController = false;
-  bool _ownsFocusNode = false;
   List<CodeLineSelection> _matches = const [];
   int _matchIndex = -1;
 
   @override
   void initState() {
     super.initState();
-    _ownsEditingController = widget.controller == null;
-    _editingController =
-        widget.controller ?? CodeLineEditingController.fromText(widget.code);
+    _editingController = CodeLineEditingController.fromText(widget.code);
     _searchController = TextEditingController();
     _searchFocusNode = FocusNode(debugLabel: 'code-search');
-    _ownsScrollController = widget.scrollController == null;
-    if (_ownsScrollController) {
-      final vertical = ScrollController();
-      final horizontal = ScrollController();
-      _verticalScroller = vertical;
-      _horizontalScroller = horizontal;
-      _scrollController = CodeScrollController(
-        verticalScroller: vertical,
-        horizontalScroller: horizontal,
-      );
-    } else {
-      _scrollController = widget.scrollController!;
-    }
-    _ownsFocusNode = widget.focusNode == null;
-    _editorFocusNode =
-        widget.focusNode ?? FocusNode(debugLabel: 'generated-code-editor');
+    final vertical = ScrollController();
+    final horizontal = ScrollController();
+    _verticalScroller = vertical;
+    _horizontalScroller = horizontal;
+    _scrollController = CodeScrollController(
+      verticalScroller: vertical,
+      horizontalScroller: horizontal,
+    );
+    _editorFocusNode = FocusNode(debugLabel: 'generated-code-editor');
   }
 
   @override
   void didUpdateWidget(covariant _GeneratedCodePreview oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (_ownsEditingController && oldWidget.code != widget.code) {
+    if (oldWidget.code != widget.code) {
       _editingController.text = widget.code;
       _updateSearch(_searchController.text);
     }
@@ -3765,11 +3630,11 @@ class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
   void dispose() {
     _searchController.dispose();
     _searchFocusNode.dispose();
-    if (_ownsEditingController) _editingController.dispose();
-    if (_ownsScrollController) _scrollController.dispose();
+    _editingController.dispose();
+    _scrollController.dispose();
     _verticalScroller?.dispose();
     _horizontalScroller?.dispose();
-    if (_ownsFocusNode) _editorFocusNode.dispose();
+    _editorFocusNode.dispose();
     super.dispose();
   }
 
@@ -3785,7 +3650,7 @@ class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
     };
     final compact = _isCompact(context);
     final search = TextField(
-      key: widget.searchKey,
+      key: const ValueKey('code-search-field'),
       controller: _searchController,
       focusNode: _searchFocusNode,
       onChanged: _updateSearch,
@@ -3798,7 +3663,7 @@ class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
       width: 58,
       child: Text(
         '${_matchIndex < 0 ? 0 : _matchIndex + 1} / ${_matches.length}',
-        key: widget.countKey,
+        key: const ValueKey('code-search-count'),
         textAlign: TextAlign.center,
       ),
     );
@@ -3836,16 +3701,6 @@ class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (widget.showFileName) ...[
-          Text(
-            widget.fileName,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              fontFamily: 'PieBlockMono',
-              fontFamilyFallback: _codeFontFallbacks,
-            ),
-          ),
-          const SizedBox(height: 10),
-        ],
         if (compact) ...[
           search,
           const SizedBox(height: 8),
@@ -3874,7 +3729,7 @@ class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
         SizedBox(
           height: (MediaQuery.sizeOf(context).height * .55).clamp(280, 560),
           child: CodeEditor(
-            key: widget.editorKey,
+            key: const ValueKey('generated-code-editor'),
             controller: _editingController,
             scrollController: _scrollController,
             focusNode: _editorFocusNode,
@@ -3909,19 +3764,9 @@ class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
                     Padding(
                       padding: const EdgeInsets.only(left: 10, right: 8),
                       child: DefaultCodeLineNumber(
-                        key: widget.lineNumberKey,
+                        key: const ValueKey('generated-code-line-numbers'),
                         controller: editingController,
                         notifier: notifier,
-                        customLineIndex2Text: widget.lineNumberLabels == null
-                            ? null
-                            : (index) {
-                                final labels = widget.lineNumberLabels!;
-                                if (index < 0 || index >= labels.length) {
-                                  return '';
-                                }
-                                final value = labels[index];
-                                return value == null ? '' : '$value';
-                              },
                         textStyle: TextStyle(
                           color: gutter,
                           fontFamily: 'PieBlockMono',
@@ -3952,9 +3797,12 @@ class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
                   .withValues(alpha: .07),
               codeTheme: CodeHighlightTheme(
                 // 按输出文件选语言；保持单条目，re_editor 才走确定性高亮。
-                languages: widget.languages ??
+                languages:
+                    widget.languages ??
                     (widget.fileName.endsWith('.asm')
                         ? {'asm': CodeHighlightThemeMode(mode: langAs251)}
+                        : widget.fileName.endsWith('.rst')
+                        ? {'asm': CodeHighlightThemeMode(mode: langAs251Listing)}
                         : {'c': CodeHighlightThemeMode(mode: langC)}),
                 theme: syntaxTheme,
               ),
@@ -3968,7 +3816,10 @@ class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
 
 /// 生成代码页正在把 main.c 编译成汇编时的全屏等待遮罩。
 class _AsmCompilingOverlay extends StatelessWidget {
-  const _AsmCompilingOverlay();
+  const _AsmCompilingOverlay({this.progress});
+
+  /// 当前构建阶段文案（准备工具链 / 编译 x/y / 链接…），可能为空。
+  final String? progress;
 
   @override
   Widget build(BuildContext context) {
@@ -3987,12 +3838,13 @@ class _AsmCompilingOverlay extends StatelessWidget {
               ),
               const SizedBox(height: 18),
               Text(
-                '正在编译为汇编…',
+                '正在构建汇编列表…',
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               const SizedBox(height: 6),
               Text(
-                '用内置 SDCC C251 编译 main.c，首次使用需要先部署工具链。',
+                progress ?? '用内置 SDCC C251 完整构建 main.c，首次使用需要先部署工具链。',
+                textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ],

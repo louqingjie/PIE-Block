@@ -186,42 +186,53 @@ class _FakeDeployController extends DeployController {
   void cancelAll() {}
 }
 
-/// 汇编对照的固定样例：锚点落在生成代码的行号上，不触发真实 SDCC 编译。
-const _asmSample = '''
-        .module main
-        .optsdcc -mmcs251 --model-large
-;       C:\\tmp\\main.c:5: void main(void) {
-        .area HOME    (CODE)
-_main:
-        ar7 = 0x07
-;       C:\\tmp\\main.c:9: Board_Init();
-        mov     dpl,#0x01
-        ecall   _Board_Init
-;       C:\\tmp\\main.c:13: while (1) ;
-00101\$:
-        sjmp    00101\$
+/// 链接后列表文件（`main.rst`）的固定样例：前 40 列是地址 / 机器码 / 周期 /
+/// 行号，之后才是汇编正文或 C 锚点。用它可以断言不改动前缀列。
+const _rstSample = '''
+                                      1 ;--------------------------------------------------------
+                                      5 \t.module main
+      FE008C 7E 71 82         [12]  158 \tmov\tr7, dpl
+                                    200 ;\tC:\\tmp\\main.c:66: PWM_SET_Frequency(BUZZER_CH, frequency, BUZZER_DUTY_ON);
+      FF0007 9A FE 08 5F      [12]  131 \tecall\t_main
 ''';
 
-AsmPreviewState _readyAsmState(String code) => AsmPreviewState(
-  activity: AsmPreviewActivity.ready,
-  sourceCode: code,
-  cLineCount: code.split('\n').length,
-  listing: AsmListing.parse(_asmSample),
-);
+AsmPreviewState _readyAsmState(String code) =>
+    AsmPreviewState(
+      activity: AsmPreviewActivity.ready,
+      sourceCode: code,
+      listing: _rstSample,
+    );
 
+/// 记录调用次数的假控制器：用来断言「进页面不编译、只有点汇编才编译」。
 class _FakeAsmPreviewController extends AsmPreviewController {
-  _FakeAsmPreviewController(this.initial);
+  _FakeAsmPreviewController(this.initial, {this.listing = _rstSample});
 
   final AsmPreviewState initial;
+
+  /// compile / recompile 之后进入的「已就绪」内容。
+  final String? listing;
+  int compileCount = 0;
+  int recompileCount = 0;
 
   @override
   AsmPreviewState build() => initial;
 
   @override
-  Future<void> ensure(ProjectConfig config) async {}
+  Future<void> compile(ProjectConfig config) async {
+    compileCount += 1;
+    final value = listing;
+    if (value == null) return;
+    state = AsmPreviewState(
+      activity: AsmPreviewActivity.ready,
+      sourceCode: CodeGenerator.generate(config),
+      listing: value,
+    );
+  }
 
   @override
-  Future<void> recompile(ProjectConfig config) async {}
+  Future<void> recompile(ProjectConfig config) async {
+    recompileCount += 1;
+  }
 }
 
 class _FakeUdevRuleController extends UdevRuleController {
@@ -2252,11 +2263,7 @@ void main() {
         overrides: [
           appControllerProvider.overrideWith(_GeneratedCodeController.new),
           asmPreviewControllerProvider.overrideWith(
-            () => _FakeAsmPreviewController(
-              _readyAsmState(
-                CodeGenerator.generate(_infantryDocument().config),
-              ),
-            ),
+            () => _FakeAsmPreviewController(const AsmPreviewState()),
           ),
           deployControllerProvider.overrideWith(_FakeDeployController.new),
         ],
@@ -2335,25 +2342,25 @@ void main() {
     debugDefaultTargetPlatformOverride = null;
   });
 
-  testWidgets('生成代码页展示 C 与汇编对照且两侧选中范围互不耦合', (tester) async {
+  testWidgets('生成代码页默认只有 C，点「汇编」才构建并显示 main.rst', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1600, 900);
     addTearDown(() {
       tester.view.resetPhysicalSize();
       tester.view.resetDevicePixelRatio();
+      debugDefaultTargetPlatformOverride = null;
     });
     final document = _musicDocument();
     final code = CodeGenerator.generate(document.config);
+    final fake = _FakeAsmPreviewController(const AsmPreviewState());
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           appControllerProvider.overrideWith(
             () => _GeneratedCodeController(document: document),
           ),
-          asmPreviewControllerProvider.overrideWith(
-            () => _FakeAsmPreviewController(_readyAsmState(code)),
-          ),
+          asmPreviewControllerProvider.overrideWith(() => fake),
           deployControllerProvider.overrideWith(_FakeDeployController.new),
         ],
         child: const MaterialApp(home: WizardScreen()),
@@ -2361,77 +2368,57 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    // 进页面只有 C，一次编译都没发起。
     expect(find.text('main.c'), findsOneWidget);
-    expect(find.text('main.asm'), findsOneWidget);
+    expect(find.text('main.rst'), findsNothing);
+    expect(fake.compileCount, 0);
     final cEditor = tester.widget<CodeEditor>(
       find.byKey(const ValueKey('generated-code-editor')),
     );
-    final asmEditor = tester.widget<CodeEditor>(
-      find.byKey(const ValueKey('generated-asm-editor')),
-    );
     expect(cEditor.style!.codeTheme!.languages, contains('c'));
-    expect(asmEditor.style!.codeTheme!.languages, contains('asm'));
-    expect(asmEditor.controller!.text, contains('ecall'));
-    expect(find.textContaining('覆盖 3/'), findsOneWidget);
+    expect(cEditor.controller!.text, code);
 
-    // 严格逐行对齐：两侧行数必须相等，多出的部分补空行。
-    final cLines = cEditor.controller!.text.split('\n');
-    final asmLines = asmEditor.controller!.text.split('\n');
-    expect(asmLines.length, cLines.length);
-
-    // 样例里 C 第 9 行（Board_Init）对应两行汇编，块首行为 'mov dpl,#0x01'。
-    final blockRow = asmLines.indexOf('        mov     dpl,#0x01');
-    expect(blockRow, greaterThan(0));
-    expect(asmLines[blockRow + 1], contains('ecall   _Board_Init'));
-
-    // 选中范围两侧互不耦合：点选 C 行不会改动右侧汇编的选中范围。
-    final asmSelectionBefore = asmEditor.controller!.selection;
-    cEditor.controller!.selection = CodeLineSelection.collapsed(
-      index: blockRow,
-      offset: 0,
-    );
-    await tester.pump();
-    await tester.pump();
-    expect(cEditor.controller!.selection.startIndex, blockRow);
-    expect(asmEditor.controller!.selection, asmSelectionBefore);
-
-    // 反过来点选汇编块，左栏 C 的选中范围同样保持不变。
-    final cSelection = cEditor.controller!.selection;
-    asmEditor.controller!.selection = CodeLineSelection.collapsed(
-      index: blockRow + 1,
-      offset: 0,
-    );
-    await tester.pump();
-    await tester.pump();
-    expect(asmEditor.controller!.selection.startIndex, blockRow + 1);
-    expect(cEditor.controller!.selection, cSelection);
-
-    // 真实键盘交互也不串联：在左栏移动光标，右栏选中范围保持不变。
-    cEditor.focusNode!.requestFocus();
-    await tester.pump();
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-    await tester.pump();
-    expect(cEditor.controller!.selection.startIndex, greaterThan(blockRow));
-    expect(asmEditor.controller!.selection.startIndex, blockRow + 1);
-
-    // 鼠标拖选（用户实际场景）同样不串联：右栏选中范围保持不动。
-    // 用显式时长推进，flush 掉 re_editor 手势里的零延时定时器。
-    final cRect = tester.getRect(
+    // 点右上角「汇编」才编译，并展示链接后的列表原文。
+    await tester.tap(find.text('汇编'));
+    await tester.pumpAndSettle();
+    expect(fake.compileCount, 1);
+    expect(find.text('main.rst'), findsOneWidget);
+    expect(find.text('main.c'), findsNothing);
+    final listingEditor = tester.widget<CodeEditor>(
       find.byKey(const ValueKey('generated-code-editor')),
     );
-    await tester.dragFrom(
-      cRect.topLeft + const Offset(60, 12),
-      const Offset(140, 44),
+    expect(listingEditor.style!.codeTheme!.languages, contains('asm'));
+    expect(listingEditor.controller!.text, _rstSample);
+    expect(listingEditor.controller!.text, contains(r'ecall\t_main'.replaceAll(r'\t', '\t')));
+    expect(listingEditor.controller!.text, contains(';'));
+
+    // 切回 C 不触发新编译；再切回汇编命中的是已有结果，同样不再编译。
+    await tester.tap(find.text('C 代码'));
+    await tester.pumpAndSettle();
+    expect(fake.compileCount, 1);
+    expect(find.text('main.c'), findsOneWidget);
+    expect(
+      tester
+          .widget<CodeEditor>(find.byKey(const ValueKey('generated-code-editor')))
+          .controller!
+          .text,
+      code,
     );
-    await tester.pump(const Duration(milliseconds: 200));
-    expect(cEditor.controller!.selection.startIndex, lessThan(blockRow));
-    expect(asmEditor.controller!.selection.startIndex, blockRow + 1);
+    await tester.tap(find.text('汇编'));
+    await tester.pumpAndSettle();
+    expect(fake.compileCount, 1);
+    expect(find.text('main.rst'), findsOneWidget);
+
+    // 行号回到 1..N：不再有对照视图那套「补空行 + 真实行号」。
+    final numbers = tester.widget<DefaultCodeLineNumber>(
+      find.byKey(const ValueKey('generated-code-line-numbers')),
+    );
+    expect(numbers.customLineIndex2Text, isNull);
     expect(tester.takeException(), isNull);
     debugDefaultTargetPlatformOverride = null;
   });
 
-  testWidgets('汇编编译中显示全屏等待遮罩', (tester) async {
+  testWidgets('汇编构建中显示全屏等待遮罩与阶段文案', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
     addTearDown(() => debugDefaultTargetPlatformOverride = null);
     await tester.pumpWidget(
@@ -2442,7 +2429,10 @@ void main() {
           ),
           asmPreviewControllerProvider.overrideWith(
             () => _FakeAsmPreviewController(
-              const AsmPreviewState(activity: AsmPreviewActivity.compiling),
+              const AsmPreviewState(
+                activity: AsmPreviewActivity.compiling,
+                progress: '正在链接 BUZZER_MUSIC_GENERATED.hex…',
+              ),
             ),
           ),
           deployControllerProvider.overrideWith(_FakeDeployController.new),
@@ -2452,12 +2442,13 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('正在编译为汇编…'), findsOneWidget);
+    expect(find.text('正在构建汇编列表…'), findsOneWidget);
+    expect(find.text('正在链接 BUZZER_MUSIC_GENERATED.hex…'), findsOneWidget);
     expect(tester.takeException(), isNull);
     debugDefaultTargetPlatformOverride = null;
   });
 
-  testWidgets('汇编编译失败时降级为只有 C 栏并可重新编译', (tester) async {
+  testWidgets('汇编列表构建失败时汇编栏给出原因并可重新编译', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1600, 900);
@@ -2466,20 +2457,20 @@ void main() {
       tester.view.resetPhysicalSize();
       tester.view.resetDevicePixelRatio();
     });
+    final fake = _FakeAsmPreviewController(
+      const AsmPreviewState(
+        activity: AsmPreviewActivity.failed,
+        message: '网页版不提供汇编列表，请在桌面版查看',
+      ),
+      listing: null,
+    );
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           appControllerProvider.overrideWith(
             () => _GeneratedCodeController(document: _musicDocument()),
           ),
-          asmPreviewControllerProvider.overrideWith(
-            () => _FakeAsmPreviewController(
-              const AsmPreviewState(
-                activity: AsmPreviewActivity.failed,
-                message: '本平台暂不提供汇编对照，请在桌面版查看',
-              ),
-            ),
-          ),
+          asmPreviewControllerProvider.overrideWith(() => fake),
           deployControllerProvider.overrideWith(_FakeDeployController.new),
         ],
         child: const MaterialApp(home: WizardScreen()),
@@ -2487,15 +2478,26 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('本平台暂不提供汇编对照，请在桌面版查看'), findsOneWidget);
-    expect(find.text('重新编译'), findsOneWidget);
+    // C 栏照常可用，且没有发起编译。
+    expect(fake.compileCount, 0);
     expect(find.byKey(const ValueKey('generated-code-editor')), findsOneWidget);
-    expect(find.byKey(const ValueKey('generated-asm-editor')), findsNothing);
+
+    // 切到汇编：显示失败原因，并给「重新编译」入口。
+    await tester.tap(find.text('汇编'));
+    await tester.pumpAndSettle();
+    expect(fake.compileCount, 1);
+    expect(find.text('网页版不提供汇编列表，请在桌面版查看'), findsOneWidget);
+    expect(find.text('重新编译'), findsOneWidget);
+    expect(find.byKey(const ValueKey('generated-code-editor')), findsNothing);
+
+    await tester.tap(find.text('重新编译'));
+    await tester.pumpAndSettle();
+    expect(fake.recompileCount, 1);
     expect(tester.takeException(), isNull);
     debugDefaultTargetPlatformOverride = null;
   });
 
-  testWidgets('窄屏下 C 与汇编对照退化为单栏切换', (tester) async {
+  testWidgets('窄屏下 C 与汇编同样在单栏里切换，文本与行号整栏换掉', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(560, 800);
@@ -2521,57 +2523,32 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // 默认显示 C 栏，点「汇编」切到汇编栏。
+    // 默认显示 C，点「汇编」切到列表；结果已在缓存里，不再编译。
     expect(find.byKey(const ValueKey('generated-code-editor')), findsOneWidget);
-    expect(find.byKey(const ValueKey('generated-asm-editor')), findsNothing);
+    expect(find.text('main.rst'), findsNothing);
     await tester.tap(find.text('汇编'));
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('generated-asm-editor')), findsOneWidget);
-    expect(find.byKey(const ValueKey('generated-code-editor')), findsNothing);
+    expect(find.text('main.rst'), findsOneWidget);
 
-    // 切栏必须整栏换掉：内容和行号都得是汇编自己的，不能沿用 C 栏的编辑器状态。
-    final pair = AsmListing.parse(_asmSample).alignWith(code);
-    final asmEditor = tester.widget<CodeEditor>(
-      find.byKey(const ValueKey('generated-asm-editor')),
+    // 切栏必须整栏换掉：内容和行号都是列表自己的，不能沿用 C 栏的编辑器状态。
+    final listingEditor = tester.widget<CodeEditor>(
+      find.byKey(const ValueKey('generated-code-editor')),
     );
-    expect(asmEditor.controller!.text, pair.asmText);
-    expect(asmEditor.controller!.text, contains('ecall'));
-    expect(asmEditor.controller!.text, isNot(contains('#include')));
-    final asmNumbers = tester.widget<DefaultCodeLineNumber>(
-      find.byKey(const ValueKey('generated-asm-line-numbers')),
+    expect(listingEditor.controller!.text, _rstSample);
+    expect(listingEditor.controller!.text, contains('ecall'));
+    expect(listingEditor.controller!.text, isNot(contains('#include')));
+    final numbers = tester.widget<DefaultCodeLineNumber>(
+      find.byKey(const ValueKey('generated-code-line-numbers')),
     );
-    expect(
-      [for (var row = 0; row < pair.rowCount; row += 1)
-        asmNumbers.customLineIndex2Text!(row)],
-      [
-        for (var row = 0; row < pair.rowCount; row += 1)
-          pair.asmLineNumbers[row]?.toString() ?? '',
-      ],
-    );
-    expect(asmNumbers.customLineIndex2Text!(0), isEmpty);
-    expect(
-      asmNumbers.customLineIndex2Text!(pair.asmLineNumbers.indexOf(1)),
-      '1',
-    );
+    expect(numbers.customLineIndex2Text, isNull);
 
-    // 切回 C 栏同样要还原 C 的文本与行号。
+    // 切回 C 同样要还原 C 的文本。
     await tester.tap(find.text('C 代码'));
     await tester.pumpAndSettle();
     final cEditor = tester.widget<CodeEditor>(
       find.byKey(const ValueKey('generated-code-editor')),
     );
-    expect(cEditor.controller!.text, pair.codeText);
-    final cNumbers = tester.widget<DefaultCodeLineNumber>(
-      find.byKey(const ValueKey('generated-code-line-numbers')),
-    );
-    expect([for (var row = 0; row < pair.rowCount; row += 1)
-      cNumbers.customLineIndex2Text!(row)],
-      [
-        for (var row = 0; row < pair.rowCount; row += 1)
-          pair.codeLineNumbers[row]?.toString() ?? '',
-      ],
-    );
-    expect(cNumbers.customLineIndex2Text!(0), '1');
+    expect(cEditor.controller!.text, code);
     expect(tester.takeException(), isNull);
     debugDefaultTargetPlatformOverride = null;
   });
@@ -2584,11 +2561,7 @@ void main() {
         overrides: [
           appControllerProvider.overrideWith(_GeneratedCodeController.new),
           asmPreviewControllerProvider.overrideWith(
-            () => _FakeAsmPreviewController(
-              _readyAsmState(
-                CodeGenerator.generate(_infantryDocument().config),
-              ),
-            ),
+            () => _FakeAsmPreviewController(const AsmPreviewState()),
           ),
           deployControllerProvider.overrideWith(_FakeDeployController.new),
         ],
@@ -2662,16 +2635,13 @@ void main() {
         expect(find.byType(CodeEditor), findsWidgets);
         expect(find.text('main.c'), findsOneWidget);
         expect(tester.takeException(), isNull);
-        // 宽屏双栏同时可见；窄屏是「C 代码 / 汇编」切换。
+        // 任何宽度都只有一个代码区，右上角是「C 代码 / 汇编」切换器。
         final toggle = find.text('汇编');
-        if (toggle.evaluate().isNotEmpty) {
-          await tester.tap(toggle);
-          await tester.pumpAndSettle();
-          expect(find.text('main.asm'), findsOneWidget);
-          expect(find.text('main.c'), findsNothing);
-        } else {
-          expect(find.text('main.asm'), findsOneWidget);
-        }
+        expect(toggle, findsOneWidget);
+        await tester.tap(toggle);
+        await tester.pumpAndSettle();
+        expect(find.text('main.rst'), findsOneWidget);
+        expect(find.text('main.c'), findsNothing);
         expect(find.byType(CodeEditor), findsWidgets);
         expect(tester.takeException(), isNull);
       }

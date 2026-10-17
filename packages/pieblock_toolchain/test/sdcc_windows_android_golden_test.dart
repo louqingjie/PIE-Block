@@ -59,6 +59,14 @@ void main() {
           '${golden.id}: windowsSha256=${artifact.hexSha256}, '
           'bytes=${artifact.byteCount}',
         );
+        // 链接后应带回生成模块的列表文件（main_<序号>.rst），供「生成代码」页
+        // 的汇编栏展示：地址 + 机器码 + [周期] + 行号 + 汇编，C 源码带锚点。
+        final listing = result.listing;
+        expect(listing, isNotNull, reason: '构建结果应带回 main_*.rst');
+        expect(listing, contains('.module'));
+        expect(listing, matches(RegExp(r'[0-9A-F]{6} [0-9A-F]{2} ')));
+        expect(listing, contains('main.c:'));
+        stdout.writeln('${golden.id}: listingBytes=${listing!.length}');
         if (golden.expectedHexSha256.isNotEmpty) {
           expect(artifact.hexSha256, golden.expectedHexSha256);
         }
