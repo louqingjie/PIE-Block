@@ -1,5 +1,3 @@
-import 'debug_cues.dart';
-
 enum ProjectKind { infantry, engineer, debug, music }
 
 enum Direction { forward, reverse }
@@ -368,7 +366,6 @@ class DebugConfig extends ProjectConfig {
     List<DebugTestItem>? tests,
     this.frictionP64MaxDuty,
     this.frictionP66MaxDuty,
-    this.cueStyle = DebugCueStyle.standard,
   }) : tests = List.unmodifiable(
          tests ?? [for (final pin in debugPins) DebugTestItem(pin: pin)],
        );
@@ -376,9 +373,6 @@ class DebugConfig extends ProjectConfig {
 
   /// 摩擦轮在 P64/P66 上的满油占空比，调试曲线的比例值按各自上限换算。
   final int? frictionP64MaxDuty, frictionP66MaxDuty;
-
-  /// 提示音时值风格。durationMs 调得很短时选紧凑，避免提示音喧宾夺主。
-  final DebugCueStyle cueStyle;
 
   /// 返回 [pin] 的摩擦轮满油占空比，[pin] 不是摩擦轮引脚时返回 null。
   int? frictionMaxDutyOf(String pin) => switch (pin) {
@@ -393,7 +387,6 @@ class DebugConfig extends ProjectConfig {
     List<DebugTestItem>? tests,
     Object? frictionP64MaxDuty = _unset,
     Object? frictionP66MaxDuty = _unset,
-    DebugCueStyle? cueStyle,
   }) => DebugConfig(
     tests: tests ?? this.tests,
     frictionP64MaxDuty: identical(frictionP64MaxDuty, _unset)
@@ -402,14 +395,12 @@ class DebugConfig extends ProjectConfig {
     frictionP66MaxDuty: identical(frictionP66MaxDuty, _unset)
         ? this.frictionP66MaxDuty
         : frictionP66MaxDuty as int?,
-    cueStyle: cueStyle ?? this.cueStyle,
   );
   @override
   Map<String, Object?> toJson() => {
     'tests': tests.map((item) => item.toJson()).toList(),
     'friction_p64_max_duty': frictionP64MaxDuty,
     'friction_p66_max_duty': frictionP66MaxDuty,
-    'cue_style': cueStyle.name,
   };
   factory DebugConfig.fromJson(Map<String, Object?> json) {
     final tests = <DebugTestItem>[], seen = <String>{};
@@ -425,7 +416,6 @@ class DebugConfig extends ProjectConfig {
       tests: tests,
       frictionP64MaxDuty: (json['friction_p64_max_duty'] as num?)?.toInt(),
       frictionP66MaxDuty: (json['friction_p66_max_duty'] as num?)?.toInt(),
-      cueStyle: DebugCues.styleByName(json['cue_style'] as String?),
     );
   }
 }

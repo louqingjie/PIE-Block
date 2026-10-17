@@ -68,29 +68,26 @@ void main() {
   final outputDir = Directory('output/试听');
   if (!outputDir.existsSync()) outputDir.createSync(recursive: true);
 
-  for (final style in DebugCueStyle.values) {
-    stdout.writeln('${style.label}风格：');
-    final curves = <String, List<DebugCueNote>>{
-      // 整项 = 上行 N 音 + 停顿 + 对称回落，固件里听到的就是这个。
-      'fullStep3': DebugCues.fullStep(3, style),
-      // 进位后的整项：音区升八度，个数重新从 1 开始。
-      'fullStep6': DebugCues.fullStep(6, style),
-    };
-    for (final entry in curves.entries) {
-      final name = 'cue_${entry.key}_${style.name}.wav';
-      File('${outputDir.path}/$name').writeAsBytesSync(
-        _renderWav(entry.value, name),
-      );
-    }
+  final curves = <String, List<DebugCueNote>>{
+    // 整项 = 上行 N 音 + 停顿 + 对称回落，固件里听到的就是这个。
+    'fullStep3': DebugCues.fullStep(3),
+    // 进位后的整项：音区升八度，个数重新从 1 开始。
+    'fullStep6': DebugCues.fullStep(6),
+  };
+  for (final entry in curves.entries) {
+    final name = 'cue_${entry.key}.wav';
+    File('${outputDir.path}/$name').writeAsBytesSync(
+      _renderWav(entry.value, name),
+    );
   }
   stdout.writeln('\n输出目录：${outputDir.path}');
 
   // 自检：渲染出来的音符数与音高必须和模型一致，防止渲染端悄悄漂移。
-  final step3 = DebugCues.step(3, DebugCueStyle.standard)
+  final step3 = DebugCues.step(3)
       .where((note) => note.frequencyHz != null)
       .map((note) => note.frequencyHz!)
       .toList();
-  final done3 = DebugCues.stepDone(3, DebugCueStyle.standard)
+  final done3 = DebugCues.stepDone(3)
       .where((note) => note.frequencyHz != null)
       .map((note) => note.frequencyHz!)
       .toList();

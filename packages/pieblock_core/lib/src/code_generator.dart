@@ -941,15 +941,12 @@ ${engineerFeedback.isEmpty ? '' : '        UpdateServoFeedback();'}
 
     final commands = <String>[];
     final active = config.tests.where((item) => item.enabled).toList();
-    // 提示音时值随风格变化，统一从 DebugCues 取，避免固件与 UI 试听两处定义漂移。
-    final style = config.cueStyle;
-    final stepTiming = DebugCues.stepTiming(style);
-    final unitMs = stepTiming.unitMs;
-    final gapMs = stepTiming.gapMs;
-    final eventTiming = DebugCues.eventTiming(style);
-    final eventDoneMs = eventTiming.eventDoneMs;
-    final eventGapMs = eventTiming.eventGapMs;
-    final sectionGapMs = eventTiming.sectionGapMs;
+    // 提示音时值统一从 DebugCues 取，避免固件与 UI 试听两处定义漂移。
+    final unitMs = DebugCues.unitMs;
+    final gapMs = DebugCues.gapMs;
+    final eventDoneMs = DebugCues.eventDoneMs;
+    final eventGapMs = DebugCues.eventGapMs;
+    final sectionGapMs = DebugCues.sectionGapMs;
     // 拓展板 Init 只用来设定 PWM 组频率（PWMA：P60/P62/P64/P66，PWMB：P74~P77）：
     // 电机 10000Hz，舵机与摩擦轮 50Hz。main() 起始已把两组初始化为 50Hz，
     // 之后只有测试项所需的组频率与当前不同时才重发 Init，不再逐个测试项重复初始化。

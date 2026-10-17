@@ -38,12 +38,8 @@ DebugConfig _debugConfig() => DebugConfig(
 );
 
 void main() {
-  for (final style in DebugCueStyle.values) {
-    final code = CodeGenerator.generate(
-      _debugConfig().copyWith(cueStyle: style),
-    );
-    final file = File('tmp/cue_verify/debug_${style.name}.c');
-    file.writeAsStringSync(code);
-    stdout.writeln('${file.path} ${code.length} 字节');
-  }
+  final code = CodeGenerator.generate(_debugConfig());
+  final file = File('tmp/cue_verify/debug.c');
+  file.writeAsStringSync(code);
+  stdout.writeln('${file.path} ${code.length} 字节');
 }

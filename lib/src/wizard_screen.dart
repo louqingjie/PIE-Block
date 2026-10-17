@@ -366,18 +366,10 @@ class _InfoBanner extends StatelessWidget {
 /// 这是「不同用户辨识难度」里最关键的一环——光看文案记不住旋律，
 /// 必须能听；听熟了以后，赛场噪声里靠上行音数和升降走向就能定位到第几步。
 class _DebugCueAudition extends ConsumerStatefulWidget {
-  const _DebugCueAudition({
-    required this.style,
-    required this.enabledCount,
-    required this.onStyleChanged,
-    this.preview,
-  });
-
-  final DebugCueStyle style;
+  const _DebugCueAudition({required this.enabledCount, this.preview});
 
   /// 当前启用的测试项数，决定试听面板列出几步。
   final int enabledCount;
-  final ValueChanged<DebugCueStyle> onStyleChanged;
 
   /// 试听实现，默认交给 flutter_soloud 出声；测试注入假实现以避开原生库。
   final DebugCuePreviewService? preview;
@@ -420,29 +412,7 @@ class _DebugCueAuditionState extends ConsumerState<_DebugCueAudition> {
     ];
     return _Section(
       title: '提示音试听',
-      subtitle: '听到的就是烧录后的效果。每项提示就是「上行几声 → 停一下 → 回落」，'
-          '几声即第几项，听到回落就是这一项结束。',
       children: [
-        Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            SegmentedButton<DebugCueStyle>(
-              segments: [
-                for (final style in DebugCues.styles)
-                  ButtonSegment(
-                    value: style,
-                    label: Text(style.label),
-                  ),
-              ],
-              selected: {widget.style},
-              onSelectionChanged: (selection) =>
-                  widget.onStyleChanged(selection.first),
-            ),
-          ],
-        ),
-        const SizedBox(height: 14),
         Row(
           children: [
             Text('步序提示', style: Theme.of(context).textTheme.titleSmall),
@@ -464,10 +434,7 @@ class _DebugCueAuditionState extends ConsumerState<_DebugCueAudition> {
               _StepAuditionButton(
                 index: index,
                 playing: _playing == 'step$index',
-                onPressed: () => _play(
-                  'step$index',
-                  DebugCues.fullStep(index, widget.style),
-                ),
+                onPressed: () => _play('step$index', DebugCues.fullStep(index)),
               ),
           ],
         ),
@@ -2963,11 +2930,8 @@ class _DebugTestsPage extends ConsumerWidget {
       child: Column(
         children: [
           _DebugCueAudition(
-            style: config.cueStyle,
             enabledCount: config.tests.where((item) => item.enabled).length,
             preview: cuePreview,
-            onStyleChanged: (style) =>
-                controller.updateConfig(config.copyWith(cueStyle: style)),
           ),
           if (frictionPinsUsed.isNotEmpty) ...[
             const SizedBox(height: 14),

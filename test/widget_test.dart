@@ -732,10 +732,10 @@ void main() {
     expect(find.textContaining('每项提示是一句'), findsNothing);
     expect(find.textContaining('至少有一项摩擦轮测试'), findsNothing);
 
-    // 收尾旋律与它的「全部完成」按钮已移除；风格开关与逐项试听按钮保留。
+    // 收尾旋律与它的「全部完成」按钮已移除，也没有风格开关；逐项试听按钮保留。
     expect(find.widgetWithText(OutlinedButton, '全部完成'), findsNothing);
-    expect(find.text('标准'), findsOneWidget);
-    expect(find.text('紧凑'), findsOneWidget);
+    expect(find.text('标准'), findsNothing);
+    expect(find.text('紧凑'), findsNothing);
 
     // 「第 1 项」把整条曲线交给试听实现，再点一次是停止播放。
     final stepButton = find.widgetWithText(OutlinedButton, '第 1 项');
@@ -749,7 +749,7 @@ void main() {
       for (final note in notes) (note.frequencyHz, note.durationMs),
     ];
     final played = preview.played.single;
-    expect(curve(played), curve(DebugCues.fullStep(1, DebugCueStyle.standard)));
+    expect(curve(played), curve(DebugCues.fullStep(1)));
 
     await tester.tap(stepButton);
     await tester.pump();

@@ -22,23 +22,6 @@ class DebugCueNote {
   final int durationMs;
 }
 
-/// 提示音风格。[standard] 是默认；[compact] 把标准风格的时值整体减半，
-/// 供 durationMs 很短的调试序列使用，避免提示音喧宾夺主。
-enum DebugCueStyle {
-  standard('标准', 1),
-  compact('紧凑', 2);
-
-  const DebugCueStyle(this.label, this._speedDivisor);
-
-  final String label;
-
-  /// 相对标准风格的加速倍数：标准为 1，紧凑把每个时值除以 2（即快一倍）。
-  final int _speedDivisor;
-
-  /// 把标准风格的时值换算成本风格的时值，向下取整到毫秒。
-  int scale(int standardMs) => standardMs ~/ _speedDivisor;
-}
-
 abstract final class DebugCues {
   /// 单个音区覆盖的项数：即上行音型的音数，也是每项上行音的个数上限。
   ///
@@ -88,32 +71,25 @@ abstract final class DebugCues {
     return <int>[scale.first];
   }
 
-  // 以下 *_STD 常量是标准风格的时值基准，也是唯一需要修改的时值来源：
-  // 紧凑风格一律由 DebugCueStyle.scale 折算，不要再单独写一套数值。
-  static const int _unitStd = 220;
-  static const int _gapStd = 140;
-  static const int _eventDoneStd = 280;
-  static const int _eventGapStd = 80;
+  // 时值只有一套，就是下面这组常量：提示音不再提供风格切换，
+  // 要整体加速/放慢直接改这几个数值即可。
+  /// 步序码单元（一个音的发声时长）。
+  static const int unitMs = 220;
 
-  /// 分区停顿：步序音与测试动作之间、测试动作与回落之间的静默，
-  /// 标准风格下 300ms。
+  /// 步序码内部各音之间的间隔。
+  static const int gapMs = 140;
+
+  /// 回落音的发声时长。
+  static const int eventDoneMs = 280;
+
+  /// 回落音之间的间隔。
+  static const int eventGapMs = 80;
+
+  /// 分区停顿：步序音与测试动作之间、测试动作与回落之间的静默。
   ///
-  /// 必须明显长于 [_gapStd]（140ms）：140ms 只是把音符分开，听感上仍是一个
+  /// 必须明显长于 [gapMs]（140ms）：140ms 只是把音符分开，听感上仍是一个
   /// 连续乐句；300ms 才能让人听出「一段结束、另一段开始」。
-  static const int _sectionGapStd = 300;
-
-  /// 该风格下步序码单元与间隔的时值，固件生成器据此渲染宏。
-  static ({int unitMs, int gapMs}) stepTiming(DebugCueStyle style) =>
-      (unitMs: style.scale(_unitStd), gapMs: style.scale(_gapStd));
-
-  /// 该风格下回落音与分区停顿的时值，固件生成器据此渲染宏。
-  static ({int eventDoneMs, int eventGapMs, int sectionGapMs}) eventTiming(
-    DebugCueStyle style,
-  ) => (
-    eventDoneMs: style.scale(_eventDoneStd),
-    eventGapMs: style.scale(_eventGapStd),
-    sectionGapMs: style.scale(_sectionGapStd),
-  );
+  static const int sectionGapMs = 300;
 
   /// 第 [index] 项的步序提示（[index] 从 1 开始）。
   ///
@@ -122,16 +98,15 @@ abstract final class DebugCues {
   ///
   /// [index] 超出 1~10 时按最后一段处理，不抛异常——调试序列的项数由用户
   /// 配置决定，这里只负责把序号映射成可辨识的提示音。
-  static List<DebugCueNote> step(int index, DebugCueStyle style) {
+  static List<DebugCueNote> step(int index) {
     final offset = index < 1 ? 0 : index - 1;
     final count = offset % zoneSpan + 1;
     final high = offset ~/ zoneSpan != 0;
-    final timing = stepTiming(style);
     final motif = ascent(high).take(count).toList();
     return [
       for (var i = 0; i < motif.length; i++) ...[
-        DebugCueNote(motif[i], timing.unitMs),
-        if (i + 1 < motif.length) DebugCueNote(null, timing.gapMs),
+        DebugCueNote(motif[i], unitMs),
+        if (i + 1 < motif.length) DebugCueNote(null, gapMs),
       ],
     ];
   }
@@ -140,40 +115,29 @@ abstract final class DebugCues {
   ///
   /// 回落是上行音型跳过步序落音后倒序（见 [descent]），与 [step] 同一音区，
   /// 所以「上行 N 个音 → 回落」构成一句首尾呼应的乐句，不再需要额外的开始区。
-  static List<DebugCueNote> stepDone(int index, DebugCueStyle style) {
+  static List<DebugCueNote> stepDone(int index) {
     final offset = index < 1 ? 0 : index - 1;
     final count = offset % zoneSpan + 1;
     final high = offset ~/ zoneSpan != 0;
-    final timing = stepTiming(style);
     final motif = descent(count, high);
     return [
       for (var i = 0; i < motif.length; i++) ...[
-        DebugCueNote(motif[i], timing.unitMs),
-        if (i + 1 < motif.length) DebugCueNote(null, timing.gapMs),
+        DebugCueNote(motif[i], unitMs),
+        if (i + 1 < motif.length) DebugCueNote(null, gapMs),
       ],
     ];
   }
 
   /// 一个测试项的完整提示：上行前 N 个音 → 停顿 → 对称回落，用于试听。
   ///
-  /// 两个段落，中间一段 sectionGapMs 静默。不再有开始区——个数本身就说明
+  /// 两个段落，中间一段 [sectionGapMs] 静默。不再有开始区——个数本身就说明
   /// 了是第几项，先播一遍完整音型只是把同一句话说两遍。
-  static List<DebugCueNote> fullStep(int index, DebugCueStyle style) {
-    final t = eventTiming(style);
+  static List<DebugCueNote> fullStep(int index) {
     return [
-      ...step(index, style),
-      DebugCueNote(null, t.sectionGapMs),
-      ...stepDone(index, style),
+      ...step(index),
+      const DebugCueNote(null, sectionGapMs),
+      ...stepDone(index),
     ];
-  }
-
-  static const List<DebugCueStyle> styles = DebugCueStyle.values;
-
-  static DebugCueStyle styleByName(String? name) {
-    for (final style in DebugCueStyle.values) {
-      if (style.name == name) return style;
-    }
-    return DebugCueStyle.standard;
   }
 
   /// 曲线总时长（毫秒）。
