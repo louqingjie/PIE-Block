@@ -72,7 +72,8 @@ space=7 时 C6 会顶出屏幕上沿，space=5 时字形过小；pxPerQuarter �
 
 ### 4.3 调号、临时记号、拍号、小节线
 
-- 调号由 `--key` 指定（15 个大调 + 相对小调），按标准顺序画在固定区：
+- 调号来自音乐工程的 `keySignatureFifths`（编辑器下拉 / 项目 JSON / MIDI 调号 meta），
+  模拟器 `--key` 可临时覆盖。按标准顺序画在固定区：
   - 升号顺序 F C G D A E B；降号顺序 B E A D G C F；
   - 高音、低音谱号各一套标准线/间位置（`trebleSharpSteps` 等表）；
   - 调号里每个升降号占 6px（5px 字形 + 1px 间距）。
@@ -124,25 +125,30 @@ space=7 时 C6 会顶出屏幕上沿，space=5 时字形过小；pxPerQuarter �
 ## 8. 模拟器用法
 
 ```powershell
-# 内置示例（twinkle/wide/bass/mixed/chromatic/rests）+ 调号
-dart run tool/render_oled_staff.dart --demo twinkle --key C --out tmp/staff_preview/twinkle
-dart run tool/render_oled_staff.dart --demo wide --key G
-dart run tool/render_oled_staff.dart --demo bass --key F
+# 内置示例：twinkle/wide/bass/mixed/chromatic/accidentals/flats/rests/sevenSharps
+dart run tool/render_oled_staff.dart --demo twinkle --out tmp/staff_preview/twinkle
+dart run tool/render_oled_staff.dart --demo wide
+dart run tool/render_oled_staff.dart --demo bass
 
-# 升号/还原号特写（F#5 压在顶线、F5 还原）
+# 临时升/降/还原号特写（压在顶线、需要谱线遮罩的场景）
 dart run tool/render_oled_staff.dart --demo accidentals --out tmp/staff_preview/accidentals
+dart run tool/render_oled_staff.dart --demo flats --out tmp/staff_preview/flats
 
-# 真实工程
+# 真实工程：默认用工程的 keySignatureFifths，--key 可临时覆盖
+dart run tool/render_oled_staff.dart --project path/to/music.pieproj
 dart run tool/render_oled_staff.dart --project path/to/music.pieproj --key G
 
-# 参数对比 / 自检 / 输出字形规格
-dart run tool/render_oled_staff.dart --demo twinkle --space 7 --px-per-quarter 10
+# 自检 / 输出字形与几何规格
 dart run tool/render_oled_staff.dart --self-check
-dart run tool/render_oled_staff.dart --demo wide --key G --emit-spec
+dart run tool/render_oled_staff.dart --demo wide --emit-spec
 ```
 
 输出：`frame_*.png`（128×64 原始帧）、`detail.png`（放大 8 倍单帧）、
 `sheet.png`（4 列滚动对比图）、`spec.json`（几何 + 字形点阵 + 事件表）。
+
+版面参数（`--space`/`--px-per-quarter`/`--min-note-gap`/`--cursor`）现在与固件
+共用整数版面，只接受标准值（6 / 16 / 6 / 0.30），传其它值会直接报错——这是
+“模拟器帧与固件帧逐字节一致”的前提。
 
 ## 9. 已知限制
 
@@ -153,12 +159,71 @@ dart run tool/render_oled_staff.dart --demo wide --key G --emit-spec
   但固定区显示的是当前谱号）。
 - 模拟器不模拟 OLED 软 SPI 的刷屏耗时；按 1024 字节整屏估算量级为数毫秒到十几毫秒，
   步进式滚动够用，固件阶段再实测。
-- 7 个升降号时固定区会很挤（每个 4px），实际曲目按 0–4 个升降号使用。
+- 7 个升降号时固定区会很挤（每个 6px），实际曲目按 0–4 个升降号使用。
 
-## 10. 后续（固件阶段，待规范确认后另立计划）
+## 10. 固件接入（代码生成器）
 
-1. `stc32g_sdcc/build_manifest.json` 给 `BUZZER_MUSIC_GENERATED` 增加 `lcd` 源组。
-2. 生成代码里加 1024 字节帧缓冲（XRAM）+ 本方案的字形/版面数据，按播放段刷屏。
-3. 播放循环在每段开始前更新画面（步进滚动），蜂鸣器发声与画面同源。
-4. 音乐工程增加「调号」字段（编辑器下拉 + 项目 JSON + MIDI 调号导入），供固件显示。
-5. 视需要再谈连杠、三连音、彩屏/更多 OLED 型号。
+固件阶段已把本方案的模拟器逻辑原样搬进 `stc32g_sdcc`：音乐工程生成 `main.c` 时，
+`pieblock_core` 会把乐谱预先算成紧凑的显示事件数据表，并随 main.c 一起发射字形点阵；
+固件运行时只做几何绘制和整屏刷新。
+
+### 10.1 数据流
+
+```
+MusicConfig → buildStaffSong()（pieblock_core）
+  · soundingSpans 裁决 + 休止拆分
+  · 按调号拼写的音名 → step、自动谱号、临时记号、时值编码、毫秒时长
+  · 调号纵向步数（高/低音各一套）、拍号
+→ main.c 内 `#if defined(__SDCC)` 分支：
+  · staffGlyphRows/staffGlyphDescs/staffGlyphSet（字形点阵）
+  · staffTickDurations/staffDurationsMs/staffPitches/staffSteps/staffFlags
+  · staffKeyStepsTreble/staffKeyStepsBass
+  · staffSong（指向上述表的只读结构体）
+→ 固件循环：OLEDStaff_Show(&staffSong, i) → 发声/停 → Music_Wait(durationsMs[i])
+```
+
+- 事件表用 SoA（避免结构体对齐浪费 flash），事件首尾相接，C 侧累加
+  `tickDurations` 得到 `startTick`。
+- 渲染器 `StaffRender.c` 是纯 C（只依赖 `stdint.h`/`string.h`），可在 PC 上用 gcc
+  编译，和 Dart 模拟器逐帧对拍；板级胶水 `OLED_Staff.c` 负责 XRAM 帧缓冲与
+  `LCD_WriteFrame`（新增文件实现软件 SPI 整屏写，不修改厂商 `LCD.c`）。
+- 版面常量与 `pieblock_core/lib/src/staff_layout.dart` 完全一致（整数像素），
+  禁区/隔离带/整颗音符不截断/临时记号遮罩等规则不变。
+
+### 10.2 构建与验证
+
+- `build_manifest.json` 新增 `staff` 源组；三个音乐工程的 `library_groups` 为
+  `["pwm","lcd","staff"]`。Android/Windows/Linux 的资源打包会自动带上
+  `libraries/**`，不需要改打包脚本。
+- 本地重新生成并构建：
+
+```powershell
+dart run tool/generate_firmware_main.dart --project assets/templates/music.pieproj `
+  --out stc32g_sdcc/projects/BUZZER_MUSIC_GENERATED/src/main.c
+
+pwsh stc32g_sdcc/build.ps1 -Project BUZZER_MUSIC_GENERATED `
+  -Sdcc vendor\sdcc-toolchain\bin\sdcc.exe `
+  -LibDir vendor\sdcc-toolchain\lib\mcs251-large-stack-auto `
+  -StdInclude vendor\sdcc-toolchain\include
+```
+
+- 主机对拍：`tool/emit_staff_fixtures.dart` 生成 fixture（6 个场景的 C 数据 + golden
+  帧），`stc32g_sdcc/tests/test_staff_render_host.py` 用 gcc 编译
+  `StaffRender.c` 逐帧比较，并用 SDCC `-c` 检查 C251 兼容性。
+- 生成器测试：`packages/pieblock_core/test/staff_notation_test.dart` 覆盖调号拼写、
+  自动谱号、临时记号、休止拆分、MIDI 调号往返与 main.c 分支结构。
+
+### 10.3 限制
+
+- 只有 SDCC 构建包含五线谱显示；Keil 音乐构建保持原蜂鸣器播放（main.c 用
+  `#if defined(__SDCC)` 隔离，部署页会提示）。
+- 只显示第一个拍号事件；中途变拍号仍按第一拍号画小节线。
+- 整屏软件 SPI 刷新在每事件开头统一增加数毫秒延迟，节奏整体平移但不改变相对时值；
+  若实机明显需要优化，再做按页差量刷新。
+- 曲目过长时五线谱数据可能逼近 64KB 代码区，校验器会给出预算告警。
+
+## 11. 后续可选
+
+1. 连杠（beaming）、三连音数字/括号。
+2. Keil 音乐工程也接入 OLED 显示（需要改 Keil 工程文件与库）。
+3. 多拍号/多调号事件与更平滑的滚动。
