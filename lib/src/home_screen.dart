@@ -854,17 +854,11 @@ class _ActionCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  _IconBadge(
-                    icon: icon,
-                    background: badgeBackground,
-                    foreground: badgeForeground,
-                    size: compact ? 56 : 64,
-                  ),
-                  const Spacer(),
-                  if (primary) const _RecommendPill(),
-                ],
+              _IconBadge(
+                icon: icon,
+                background: badgeBackground,
+                foreground: badgeForeground,
+                size: compact ? 56 : 64,
               ),
               SizedBox(height: compact ? 20 : 24),
               Text(
@@ -924,32 +918,6 @@ class _ActionCard extends StatelessWidget {
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
-
-/// 胶囊「推荐」标，强调新建是主路径。
-class _RecommendPill extends StatelessWidget {
-  const _RecommendPill();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: ShapeDecoration(
-        shape: const StadiumBorder(),
-        color: colors.primary.withValues(alpha: .12),
-      ),
-      child: Text(
-        '推荐',
-        style: theme.textTheme.labelSmall?.copyWith(
-          color: colors.primary,
-          fontWeight: FontWeight.w600,
-          letterSpacing: .2,
         ),
       ),
     );
