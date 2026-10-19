@@ -520,67 +520,52 @@ class HomeScreen extends ConsumerWidget {
                               ],
                             ),
                           ),
-                        const SizedBox(height: 36),
-                        Text(
-                          '最近项目',
-                          style: Theme.of(context).textTheme.titleLarge
-                              ?.copyWith(fontWeight: FontWeight.w700),
-                        ),
-                        const SizedBox(height: 12),
-                        Card(
-                          key: const ValueKey('home.recent-projects'),
-                          child: recentProjects.isEmpty
-                              ? const Padding(
-                                  padding: EdgeInsets.all(28),
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.history),
-                                      SizedBox(width: 12),
-                                      Text('还没有最近打开的项目'),
-                                    ],
-                                  ),
-                                )
-                              : Column(
-                                  children: [
-                                    for (final entry in recentProjects.indexed)
-                                      ListTile(
-                                        leading: Icon(
-                                          recentProjectIcon(entry.$2.kind),
-                                        ),
-                                        title: Text(
-                                          AppDocumentIo.displayName(
-                                            entry.$2.path,
-                                          ),
-                                        ),
-                                        subtitle: Text(
-                                          entry.$2.path,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                        trailing: const Icon(
-                                          Icons.chevron_right,
-                                        ),
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.vertical(
-                                            top: entry.$1 == 0
-                                                ? const Radius.circular(18)
-                                                : Radius.zero,
-                                            bottom:
-                                                entry.$1 ==
-                                                    recentProjects.length - 1
-                                                ? const Radius.circular(18)
-                                                : Radius.zero,
-                                          ),
-                                        ),
-                                        onTap: () => ref
-                                            .read(
-                                              appControllerProvider.notifier,
-                                            )
-                                            .openProject(entry.$2.path),
+                        if (recentProjects.isNotEmpty) ...[
+                          const SizedBox(height: 36),
+                          Text(
+                            '最近项目',
+                            style: Theme.of(context).textTheme.titleLarge
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                          const SizedBox(height: 12),
+                          Card(
+                            key: const ValueKey('home.recent-projects'),
+                            child: Column(
+                              children: [
+                                for (final entry in recentProjects.indexed)
+                                  ListTile(
+                                    leading: Icon(
+                                      recentProjectIcon(entry.$2.kind),
+                                    ),
+                                    title: Text(
+                                      AppDocumentIo.displayName(entry.$2.path),
+                                    ),
+                                    subtitle: Text(
+                                      entry.$2.path,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    trailing: const Icon(Icons.chevron_right),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.vertical(
+                                        top: entry.$1 == 0
+                                            ? const Radius.circular(18)
+                                            : Radius.zero,
+                                        bottom:
+                                            entry.$1 ==
+                                                recentProjects.length - 1
+                                            ? const Radius.circular(18)
+                                            : Radius.zero,
                                       ),
-                                  ],
-                                ),
-                        ),
+                                    ),
+                                    onTap: () => ref
+                                        .read(appControllerProvider.notifier)
+                                        .openProject(entry.$2.path),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
