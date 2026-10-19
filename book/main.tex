@@ -8,10 +8,8 @@
 % ============================================================================
 \documentclass[lang=cn,10pt,scheme=chinese,color=blue]{elegantbook}
 
-% ---------------------------- 书目信息 --------------------------------------
-% 封面中英文书名与副标题都放进 \title，用显式 \vspace 控制行距；
-% 不再使用 \subtitle，避免模板在两块之间插入不合适的空白。
-% 编著/单位/时间/版本等小字不显示。
+% ---------------------------- 封面 ------------------------------------------
+% 书名与中英文副标题写在 \title 里，行距用显式 \vspace 控制。
 \title{\texorpdfstring{%
   \setlength{\parskip}{0pt}%
   {\fontsize{36}{44}\selectfont PIE-Block 软件与应用\par}%
@@ -20,20 +18,42 @@
   \vspace{16pt}%
   {\fontsize{14.3}{17}\selectfont\bfseries\color{darkgray}%
     首都师范大学RoboMaster 机甲大师赛机器人图形化配置集成开发环境\par}%
-  \vspace{-19pt}%
+  \vspace{-17pt}%
   {\fontsize{12}{16}\selectfont\mdseries\color{darkgray}%
     Capital Normal University RoboMaster Competition: Graphical Configuration IDE for Robots}%
 }{PIE-Block 软件与应用 --- Software and Applications}}
-\author{}   % 置空，封面不显示作者行
-\date{}     % 置空，避免默认的 \today 让封面出现“时间：”
 
-% 封面上的饰线使用 PIE-Block 品牌青绿色（#087F8C）
+% 饰线、页脚线使用 PIE-Block 品牌青绿色（#087F8C）
 \definecolor{pieblockteal}{HTML}{087F8C}
 \colorlet{coverlinecolor}{pieblockteal}
 
-% ---------------------------- 封面 ------------------------------------------
-% 封面横幅右上角为 W.PIE 学生创新实验室标识；不在右下角单独放校名图片
-\cover{image/cover.jpg}
+% 自行排版封面：150mm 横幅 + 4mm 饰线 + 20mm 左缩进的书名块 + 页脚收口
+\makeatletter
+\renewcommand{\maketitle}{%
+  \hypersetup{pageanchor=false}%
+  \pagenumbering{Alph}%
+  \begin{titlepage}%
+    \newgeometry{margin=0in}%
+    \parindent=0pt%
+    \noindent\includegraphics[width=\linewidth]{image/cover.jpg}\par\nointerlineskip
+    {\color{coverlinecolor}\hrule width \linewidth height 4mm}%
+    \vspace{41mm}%
+    \noindent\hspace*{20mm}%
+    \begin{minipage}{\dimexpr\linewidth-40mm\relax}%
+      \bfseries\Huge\@title\par
+    \end{minipage}\par
+    \vfill
+    \noindent\hspace*{20mm}%
+    \begin{minipage}{\dimexpr\linewidth-40mm\relax}%
+      {\color{coverlinecolor}\hrule width \linewidth height 0.4pt}%
+      \vspace{2.5mm}%
+      {\small\color{gray}PIE-Block 项目组\hfill pieblock.asia}%
+    \end{minipage}\par
+    \vspace{16mm}%
+  \end{titlepage}%
+  \restoregeometry
+  \thispagestyle{empty}}
+\makeatother
 
 % 目录显示到二级标题（章、节）
 \setcounter{tocdepth}{2}
