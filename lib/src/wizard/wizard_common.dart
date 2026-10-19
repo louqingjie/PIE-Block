@@ -115,7 +115,7 @@ void _scrollToField(String path, {bool requestFocus = true}) {
   if (context != null) {
     Scrollable.ensureVisible(
       context,
-      duration: const Duration(milliseconds: 280),
+      duration: m3Duration(context, Durations.medium2),
       alignment: .28,
     );
     if (requestFocus) _fieldFocusNodes[path]?.requestFocus();
@@ -144,7 +144,8 @@ class _FieldAnchor extends StatelessWidget {
       valueListenable: _highlightedField,
       builder: (context, highlighted, child) => AnimatedContainer(
         key: _fieldAnchor(path),
-        duration: const Duration(milliseconds: 180),
+        duration: m3Duration(context, Durations.short4),
+        curve: Easing.standard,
         padding: const EdgeInsets.all(2),
         decoration: BoxDecoration(
           color: highlighted == path

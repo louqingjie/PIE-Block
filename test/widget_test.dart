@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pieblock_app/main.dart';
 import 'package:pieblock_app/src/asm_preview_controller.dart';
+import 'package:pieblock_app/src/motion.dart';
 import 'package:pieblock_app/src/controller.dart';
 import 'package:pieblock_app/src/debug_cue_preview.dart';
 import 'package:pieblock_app/src/deploy_controller.dart';
@@ -648,9 +649,9 @@ void main() {
     // 编辑页从右侧约 2.5% 偏移滑入（测试窗口逻辑宽度 800）。
     final editorFinder = find.byKey(editorKey);
     expect(tester.getTopLeft(editorFinder).dx, closeTo(800 * .025, 0.5));
-    // 先空泵一帧启动动画节拍，再推进到动画中段。
+    // 先空泵一帧启动动画节拍，再推进到 300ms 动画的半程。
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 110));
+    await tester.pump(const Duration(milliseconds: 150));
     final halfwayDx = tester.getTopLeft(editorFinder).dx;
     expect(halfwayDx, greaterThan(0));
     expect(halfwayDx, lessThan(800 * .025));
@@ -3173,5 +3174,69 @@ void main() {
     expect(tester.widget<FilledButton>(createButton).enabled, isTrue);
     expect(tester.takeException(), isNull);
     debugDefaultTargetPlatformOverride = null;
+  });
+
+  testWidgets('m3Duration 在减少动态效果时返回零', (tester) async {
+    late Duration normal;
+    late Duration reduced;
+
+    await tester.pumpWidget(
+      MediaQuery(
+        data: const MediaQueryData(),
+        child: Builder(
+          builder: (context) {
+            normal = m3Duration(context, Durations.medium2);
+            return const SizedBox();
+          },
+        ),
+      ),
+    );
+    await tester.pumpWidget(
+      MediaQuery(
+        data: const MediaQueryData(disableAnimations: true),
+        child: Builder(
+          builder: (context) {
+            reduced = m3Duration(context, Durations.medium2);
+            return const SizedBox();
+          },
+        ),
+      ),
+    );
+
+    expect(normal, Durations.medium2);
+    expect(reduced, Duration.zero);
+  });
+
+  testWidgets('减少动态效果时向导步骤切换立即完成', (tester) async {
+    tester.platformDispatcher.accessibilityFeaturesTestValue =
+        const FakeAccessibilityFeatures(disableAnimations: true);
+    addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+
+    late _StaticProjectController controller;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => controller = _StaticProjectController(_infantryDocument(), 0),
+          ),
+          deployControllerProvider.overrideWith(_FakeDeployController.new),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(controller.goToStep(1), isTrue);
+    await tester.pump();
+
+    expect(find.text('云台与拨弹机构'), findsOneWidget);
+    // 减少动态效果时旧页面应立即卸载，而不是像 AnimatedSwitcher 那样保留到动画结束。
+    expect(find.text('通道号'), findsNothing);
+    await tester.pumpAndSettle();
+    expect(tester.binding.transientCallbackCount, 0);
+    // 让 goToStep 的 500ms 保存防抖计时器落地，避免测试结束时仍有 pending timer。
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
   });
 }

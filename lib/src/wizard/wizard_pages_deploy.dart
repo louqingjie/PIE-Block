@@ -124,7 +124,7 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
     if (context != null) {
       Scrollable.ensureVisible(
         context,
-        duration: const Duration(milliseconds: 280),
+        duration: m3Duration(context, Durations.medium2),
         alignment: .28,
       );
     }

@@ -116,7 +116,7 @@ class _AppPageTransition extends StatefulWidget {
 
 class _AppPageTransitionState extends State<_AppPageTransition>
     with SingleTickerProviderStateMixin {
-  static const _duration = Duration(milliseconds: 220);
+  static const _duration = Durations.medium2;
   static const _homeBackdropKey = ValueKey('home-page-transition-backdrop');
   static const _editorKey = ValueKey('editor-page-transition');
 
@@ -136,10 +136,13 @@ class _AppPageTransitionState extends State<_AppPageTransition>
       duration: _duration,
       value: widget.showEditor ? 1 : 0,
     );
-    _editorSlide = Tween<Offset>(
-      begin: const Offset(.025, 0),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
+    _editorSlide = Tween<Offset>(begin: const Offset(.025, 0), end: Offset.zero)
+        .animate(
+          CurvedAnimation(
+            parent: _controller,
+            curve: Easing.emphasizedDecelerate,
+          ),
+        );
   }
 
   @override

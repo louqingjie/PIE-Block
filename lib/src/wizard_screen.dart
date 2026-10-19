@@ -17,6 +17,7 @@ import 'asm_preview_controller.dart';
 import 'controller.dart';
 import 'debug_cue_preview.dart';
 import 'deploy_controller.dart';
+import 'motion.dart';
 import 'platform/file_export.dart';
 import 'platform/keil_discovery.dart';
 import 'platform/udev_rule.dart';
@@ -178,10 +179,29 @@ class WizardScreen extends ConsumerWidget {
             child: LayoutBuilder(
               builder: (context, constraints) {
                 final wide = constraints.maxWidth >= _wideBreakpoint;
-                final content = AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 180),
-                  child: KeyedSubtree(key: ValueKey(state.step), child: page),
-                );
+                // M3 fade-through：旧页淡出、新页淡入并轻微放大；
+                // 系统开启「减少动态效果」时直接切换，避免残留一帧旧页面。
+                final content = MediaQuery.disableAnimationsOf(context)
+                    ? page
+                    : AnimatedSwitcher(
+                        duration: Durations.medium2,
+                        switchInCurve: Easing.emphasizedDecelerate,
+                        switchOutCurve: Easing.emphasizedAccelerate,
+                        transitionBuilder: (child, animation) => FadeTransition(
+                          opacity: animation,
+                          child: ScaleTransition(
+                            scale: Tween<double>(
+                              begin: .98,
+                              end: 1,
+                            ).animate(animation),
+                            child: child,
+                          ),
+                        ),
+                        child: KeyedSubtree(
+                          key: ValueKey(state.step),
+                          child: page,
+                        ),
+                      );
                 // 生成代码页正在构建汇编列表时，用全屏遮罩挡住整个内容区。
                 Widget withCompileOverlay(Widget child) => Stack(
                   children: [
