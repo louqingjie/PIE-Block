@@ -1132,7 +1132,6 @@ class _HomeBackdrop extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final wide = MediaQuery.sizeOf(context).width >= 900;
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -1171,27 +1170,6 @@ class _HomeBackdrop extends StatelessWidget {
             size: 560,
           ),
         ),
-        if (wide)
-          Positioned(
-            right: 32,
-            top: 32,
-            child: IgnorePointer(
-              child: Transform.rotate(
-                angle: .18,
-                child: Container(
-                  width: 420,
-                  height: 420,
-                  decoration: ShapeDecoration(
-                    shape: CircleBorder(
-                      side: BorderSide(
-                        color: colors.outlineVariant.withValues(alpha: .18),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
       ],
     );
   }
