@@ -1,0 +1,11 @@
+% 目录中附录编号前统一加「附录」前缀。
+% tocloft 的前缀写入晚于第一个附录条目，这里在首个附录章之前补写一次。
+\addtocontents{toc}{%
+  \protect\renewcommand{\protect\cftchappresnum}{\appendixname\protect\space}%
+  \protect\renewcommand{\protect\cftchapaftersnum}{}%
+}
+
+\chapter{硬件接口与引脚速查}
+\label{app:hw}
+
+% TODO: 附录正文待编写（主控板接口、拓展板端口、PWM/引脚角色对照表）。

@@ -1,0 +1,77 @@
+% ============================================================================
+%  PIE-Block 教材（LaTeX 模板骨架）
+%  ---------------------------------------------------------------------------
+%  编译方式：XeLaTeX -> Biber -> XeLaTeX -> XeLaTeX
+%  推荐命令：latexmk -xelatex main.tex（在 book/ 目录下执行）
+%  在线使用：把 book/ 目录打包为 zip 上传 Overleaf，编译器选 XeLaTeX
+%  当前状态：封面、目录、章节骨架已就绪；正文尚未编写（见 chapters/*.tex）
+% ============================================================================
+\documentclass[lang=cn,10pt,scheme=chinese,color=blue]{elegantbook}
+
+% ---------------------------- 书目信息 --------------------------------------
+\title{PIE-Block 机器人图形化配置教程}
+\subtitle{RoboMaster 机甲大师赛机器人图形化配置集成开发环境}
+\author{PIE-Block 项目组}
+\institute{首都师范大学}
+\date{2026 年 10 月}
+\version{0.1}
+\bioinfo{适用对象}{本科一至三年级，零基础读者亦可}
+\extrainfo{配套软件 PIE-Block 1.4.0\quad|\quad pieblock.asia}
+
+% 封面标签：教材署名习惯用「编著 / 单位」
+\renewcommand{\authorname}{\citshape 编著：}
+\renewcommand{\institutename}{\citshape 单位：}
+
+% 封面上的饰线使用 PIE-Block 品牌青绿色（#087F8C）
+\definecolor{pieblockteal}{HTML}{087F8C}
+\colorlet{coverlinecolor}{pieblockteal}
+
+% ---------------------------- 封面与徽标 ------------------------------------
+\logo{image/logo.png}
+\cover{image/cover.jpg}
+
+% 目录显示到二级标题（章、节）
+\setcounter{tocdepth}{2}
+
+% 参考文献数据库
+\addbibresource[location=local]{reference.bib}
+
+\begin{document}
+
+\maketitle
+
+\frontmatter
+\tableofcontents
+
+% 前言占位：需要时取消下一行注释，并在 chapters/preface.tex 中写作
+% \include{chapters/preface}
+
+\mainmatter
+
+% ------------------------------- 正文 ---------------------------------------
+% 各章文件目前只有章标题与 TODO 注释，正文待编写
+\include{chapters/ch01}
+\include{chapters/ch02}
+\include{chapters/ch03}
+\include{chapters/ch04}
+\include{chapters/ch05}
+\include{chapters/ch06}
+\include{chapters/ch07}
+\include{chapters/ch08}
+\include{chapters/ch09}
+\include{chapters/ch10}
+
+\appendix
+
+% ------------------------------- 附录 ---------------------------------------
+\include{chapters/appendix-a}
+\include{chapters/appendix-b}
+\include{chapters/appendix-c}
+
+\backmatter
+
+% 正文尚未引用文献时，先占位输出 reference.bib 中的条目；开始引用后删掉 \nocite{*}
+\nocite{*}
+\printbibliography[heading=bibintoc, title=\ebibname]
+
+\end{document}

@@ -32,6 +32,7 @@ stc32g/                  STC32G 固件和硬件参考代码
 stc32g_sdcc/             SDCC C251 支持库与离线测试
 keil_server/             独立云编译服务（不由当前应用调用）
 docs/                    分类文档（guides / reference / design / releases / pitfall / playbook / legal 等）
+book/                    面向大学生的教材（LaTeX 源码，见 book/README.md）
 ```
 
 Flutter UI 不包含生成规则。`pieblock_core` 是配置、检查和 C 代码生成的唯一实现；`pieblock_toolchain` 负责把生成的 C 编译成固件，并在构建结果里带回链接后的列表文件（`BuildResult.listing`）供「生成代码」页的汇编栏展示。
