@@ -24,8 +24,8 @@ book/
 │   ├── appendix-b.tex    # 附录 B 常见问题（FAQ）
 │   └── appendix-c.tex    # 附录 C 术语表
 ├── image/
-│   ├── cover.jpg         # 封面横幅：PIE-Block 品牌色 + 真实界面截图 + 校徽
-│   └── logo.png          # 首都师范大学校徽（封面右下角）
+│   ├── cover.jpg         # 封面横幅：品牌色 + 配置拓扑示意 + 右上角 W.PIE 标识
+│   └── wpie-logo.png     # W.PIE 学生创新实验室标识（封面横幅素材）
 ├── reference.bib         # 参考文献（biblatex / biber）
 ├── build.ps1             # Windows 编译脚本
 ├── build.sh              # Linux / macOS 编译脚本
@@ -71,9 +71,9 @@ latexmk -xelatex main.tex
 
 ## 封面与素材来源
 
-- 封面横幅中的界面截图取自 `website/assets/shots/wizard.webp`（应用真实截图）；
-- 校徽取自 `assets/images/cnu-blue.png` / `cnu-white.png`；
-- 封面配色使用应用主题色 `#087F8C`；
+- 封面横幅使用应用主题色 `#087F8C` 与「节点-连接」拓扑示意；
+- 右上角为 W.PIE（首都师范大学学生创新实验室）标识，素材存于 `image/wpie-logo.png`；
+- 封面不放软件截图，也不在右下角单独放校名图片；
 - 文类 `elegantbook.cls` 来自 ElegantBook 项目，遵循 LPPL 1.3c 或更高版本，
   分发时请保留其协议声明与项目地址。
 
