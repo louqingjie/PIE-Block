@@ -9,10 +9,21 @@
 \documentclass[lang=cn,10pt,scheme=chinese,color=blue]{elegantbook}
 
 % ---------------------------- 书目信息 --------------------------------------
-% 封面保留书名与副标题；编著/单位/时间/版本/适用对象/配套信息等小字不显示
-% 封面标题加大字号；\texorpdfstring 保证 PDF 书签里仍是纯文本
-\title{\texorpdfstring{\fontsize{36}{44}\selectfont PIE-Block 软件与应用}{PIE-Block 软件与应用}}
-\subtitle{RoboMaster 机甲大师赛机器人图形化配置集成开发环境}
+% 封面中英文书名与副标题都放进 \title，用显式 \vspace 控制行距；
+% 不再使用 \subtitle，避免模板在两块之间插入不合适的空白。
+% 编著/单位/时间/版本等小字不显示。
+\title{\texorpdfstring{%
+  \setlength{\parskip}{0pt}%
+  {\fontsize{36}{44}\selectfont PIE-Block 软件与应用\par}%
+  \vspace{2pt}%
+  {\fontsize{20}{26}\selectfont\mdseries PIE-Block: Software and Applications\par}%
+  \vspace{16pt}%
+  {\fontsize{14.3}{17}\selectfont\bfseries\color{darkgray}%
+    首都师范大学\quad RoboMaster 机甲大师赛机器人图形化配置集成开发环境\par}%
+  \vspace{-19pt}%
+  {\fontsize{10.5}{14}\selectfont\mdseries\color{darkgray}%
+    Graphical Configuration IDE for RoboMaster Competition Robots}%
+}{PIE-Block 软件与应用 --- Software and Applications}}
 \author{}   % 置空，封面不显示作者行
 \date{}     % 置空，避免默认的 \today 让封面出现“时间：”
 
