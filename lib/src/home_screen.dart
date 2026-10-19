@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:pieblock_core/pieblock_core.dart';
@@ -9,10 +10,31 @@ import 'platform/document_io.dart';
 import 'platform/paths.dart';
 import 'project_kind_ui.dart';
 import 'project_templates.dart';
+import 'recent_project.dart';
 
 const _brandCyan = Color(0xff02acc0);
 const _brandCoral = Color(0xffef685d);
 const _projectFileSuffix = '.pieproj';
+
+// 欢迎页的 M3 Expressive 形状与节奏 token。卡片使用超级椭圆
+// （superellipse）而不是普通圆角，观感更接近 M3E 的柔和形状语汇；
+// 圆角、时长全部集中在这里，避免散落的魔法数字。
+const _homeCardRadius = 28.0;
+const _homeBadgeRadius = 18.0;
+const _homeTileRadius = 20.0;
+const _homeEntranceDuration = Durations.medium4; // 400ms
+const _homePressDuration = Durations.short3; // 150ms
+const _coralInkLight = Color(0xff9b3f37);
+const _coralInkDark = Color(0xffffb4ab);
+
+/// 欢迎页统一的超级椭圆形状；side 为 null 时表示无描边。
+RoundedSuperellipseBorder _expressiveShape(
+  double radius, {
+  BorderSide side = BorderSide.none,
+}) => RoundedSuperellipseBorder(
+  borderRadius: BorderRadius.circular(radius),
+  side: side,
+);
 
 /// 路径中最后一个目录分隔符的位置，-1 表示没有分隔符。
 ///
@@ -146,9 +168,9 @@ class HomeScreen extends ConsumerWidget {
     // 弹窗存续期间不再碰 ref：创建按钮的回调里有 await，届时外层弹窗可能已经
     // 不在挂载状态。这里一次性取出控制器和提示偏好快照供整个弹窗使用。
     final appController = ref.read(appControllerProvider.notifier);
-    var suppressTemplateGuide = ref.read(
-      appControllerProvider,
-    ).suppressTemplateGuide;
+    var suppressTemplateGuide = ref
+        .read(appControllerProvider)
+        .suppressTemplateGuide;
     await showDialog<void>(
       context: context,
       builder: (context) => StatefulBuilder(
@@ -298,9 +320,9 @@ class HomeScreen extends ConsumerWidget {
                     template = await templates.config(projectKind);
                   } catch (error) {
                     if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('模板载入失败：$error')),
-                      );
+                      ScaffoldMessenger.of(
+                        context,
+                      ).showSnackBar(SnackBar(content: Text('模板载入失败：$error')));
                     }
                     return;
                   }
@@ -350,9 +372,7 @@ class HomeScreen extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text(
-                    '模板工程会一次性写入全部机器人配置字段，创建后可直接进入审查与生成环节。',
-                  ),
+                  const Text('模板工程会一次性写入全部机器人配置字段，创建后可直接进入审查与生成环节。'),
                   const SizedBox(height: 12),
                   const Text(
                     '使用模板将跳过逐项配置过程。初次使用者难以借此了解各配置项与遥控器按键、'
@@ -412,31 +432,14 @@ class HomeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(appControllerProvider);
     final recentProjects = state.recentProjects;
-    final colors = Theme.of(context).colorScheme;
-    final dark = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final dark = theme.brightness == Brightness.dark;
     return Scaffold(
       body: Stack(
         children: [
           Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Color.alphaBlend(
-                      _brandCyan.withValues(alpha: dark ? .20 : .14),
-                      colors.surface,
-                    ),
-                    colors.surface,
-                    Color.alphaBlend(
-                      _brandCoral.withValues(alpha: dark ? .16 : .11),
-                      colors.surface,
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            child: _HomeBackdrop(colors: colors, dark: dark),
           ),
           SafeArea(
             child: Center(
@@ -450,123 +453,79 @@ class HomeScreen extends ConsumerWidget {
                   ),
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 1040),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _HomeHeader(
-                          dark: dark,
-                          themeMode: state.themeMode,
-                          onCycleTheme: ref
-                              .read(appControllerProvider.notifier)
-                              .cycleTheme,
-                        ),
-                        const SizedBox(height: 44),
-                        LayoutBuilder(
-                          builder: (context, c) {
-                            final cards = [
-                              _ActionCard(
-                                icon: Icons.add_circle_outline,
-                                title: '新建机器人项目',
-                                subtitle: '从步兵、工程、调试或音乐类型开始分步配置',
-                                button: '新建项目',
-                                accent: _brandCyan,
-                                foreground: const Color(0xff00363d),
-                                onPressed: () => _create(context, ref),
-                              ),
-                              _ActionCard(
-                                icon: Icons.folder_open,
-                                title: '打开已有项目',
-                                // 版本号取自代码而不是写死，避免每次升格式都漏改文案。
-                                subtitle:
-                                    '仅支持当前格式 ${ProjectDocument.formatVersion} 的 .pieproj',
-                                button: '打开项目',
-                                accent: _brandCoral,
-                                foreground: const Color(0xff3d0b08),
-                                onPressed: () => _open(context, ref),
-                              ),
-                            ];
-                            if (c.maxWidth < 600) {
-                              return Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  cards.first,
-                                  const SizedBox(height: 16),
-                                  cards.last,
-                                ],
-                              );
-                            }
-                            return Row(
-                              children: [
-                                Expanded(child: cards.first),
-                                const SizedBox(width: 20),
-                                Expanded(child: cards.last),
-                              ],
-                            );
-                          },
-                        ),
-                        if (state.message != null)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 20),
-                            child: MaterialBanner(
-                              content: Text(state.message!),
-                              leading: const Icon(Icons.error_outline),
-                              actions: [
-                                TextButton(
-                                  onPressed: ref
-                                      .read(appControllerProvider.notifier)
-                                      .clearMessage,
-                                  child: const Text('关闭'),
-                                ),
-                              ],
+                    child: _HomeEntrance(
+                      builder: (context, animate, progress) => Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _Reveal(
+                            progress: progress,
+                            animate: animate,
+                            interval: const Interval(
+                              0,
+                              .55,
+                              curve: Easing.emphasizedDecelerate,
+                            ),
+                            child: _HomeHeader(
+                              key: const ValueKey('home.hero'),
+                              dark: dark,
+                              themeMode: state.themeMode,
+                              onCycleTheme: ref
+                                  .read(appControllerProvider.notifier)
+                                  .cycleTheme,
                             ),
                           ),
-                        if (recentProjects.isNotEmpty) ...[
-                          const SizedBox(height: 36),
-                          Text(
-                            '最近项目',
-                            style: Theme.of(context).textTheme.titleLarge
-                                ?.copyWith(fontWeight: FontWeight.w700),
-                          ),
-                          const SizedBox(height: 12),
-                          Card(
-                            key: const ValueKey('home.recent-projects'),
-                            child: Column(
-                              children: [
-                                for (final entry in recentProjects.indexed)
-                                  ListTile(
-                                    leading: Icon(
-                                      recentProjectIcon(entry.$2.kind),
-                                    ),
-                                    title: Text(
-                                      AppDocumentIo.displayName(entry.$2.path),
-                                    ),
-                                    subtitle: Text(
-                                      entry.$2.path,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                    trailing: const Icon(Icons.chevron_right),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.vertical(
-                                        top: entry.$1 == 0
-                                            ? const Radius.circular(18)
-                                            : Radius.zero,
-                                        bottom:
-                                            entry.$1 ==
-                                                recentProjects.length - 1
-                                            ? const Radius.circular(18)
-                                            : Radius.zero,
-                                      ),
-                                    ),
-                                    onTap: () => ref
-                                        .read(appControllerProvider.notifier)
-                                        .openProject(entry.$2.path),
-                                  ),
-                              ],
+                          const SizedBox(height: 48),
+                          _Reveal(
+                            progress: progress,
+                            animate: animate,
+                            interval: const Interval(
+                              .1,
+                              .75,
+                              curve: Easing.emphasizedDecelerate,
+                            ),
+                            child: _ActionCards(
+                              onCreate: () => _create(context, ref),
+                              onOpen: () => _open(context, ref),
                             ),
                           ),
+                          if (state.message != null) ...[
+                            const SizedBox(height: 24),
+                            _Reveal(
+                              progress: progress,
+                              animate: animate,
+                              interval: const Interval(
+                                .18,
+                                .8,
+                                curve: Easing.emphasizedDecelerate,
+                              ),
+                              child: _MessageBanner(
+                                message: state.message!,
+                                onDismiss: ref
+                                    .read(appControllerProvider.notifier)
+                                    .clearMessage,
+                              ),
+                            ),
+                          ],
+                          if (recentProjects.isNotEmpty) ...[
+                            const SizedBox(height: 40),
+                            _Reveal(
+                              progress: progress,
+                              animate: animate,
+                              interval: const Interval(
+                                .25,
+                                1,
+                                curve: Easing.emphasizedDecelerate,
+                              ),
+                              child: _RecentProjectsSection(
+                                projects: recentProjects,
+                                onOpen: (entry) => ref
+                                    .read(appControllerProvider.notifier)
+                                    .openProject(entry.path),
+                              ),
+                            ),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
                   ),
                 ),
@@ -581,6 +540,7 @@ class HomeScreen extends ConsumerWidget {
 
 class _HomeHeader extends StatelessWidget {
   const _HomeHeader({
+    super.key,
     required this.dark,
     required this.themeMode,
     required this.onCycleTheme,
@@ -590,162 +550,796 @@ class _HomeHeader extends StatelessWidget {
   final ThemeMode themeMode;
   final VoidCallback onCycleTheme;
 
-  Widget _brandIcon() => Container(
-    width: 56,
-    height: 56,
-    decoration: BoxDecoration(
-      color: _brandCyan,
-      borderRadius: BorderRadius.circular(16),
-    ),
-    child: const Icon(Icons.hub_outlined, color: Color(0xff00363d), size: 30),
-  );
-
-  Widget _themeButton() => IconButton.filledTonal(
-    onPressed: onCycleTheme,
-    tooltip: '切换浅色 / 深色 / 跟随系统',
-    icon: Icon(
-      themeMode == ThemeMode.dark
-          ? Icons.dark_mode
-          : themeMode == ThemeMode.light
-          ? Icons.light_mode
-          : Icons.brightness_auto,
-    ),
-  );
-
-  Widget _title({required bool compact}) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      if (compact) ...[
-        Image.asset(
-          dark ? 'assets/images/cnu-white.png' : 'assets/images/cnu-blue.png',
-          height: 32,
-          fit: BoxFit.contain,
-          filterQuality: FilterQuality.high,
-          semanticLabel: '首都师范大学',
-        ),
-        const SizedBox(height: 10),
-        const Text(
-          'RoboMaster 机甲大师赛机器人图形化配置集成开发环境',
-          style: TextStyle(
-            fontSize: 21,
-            height: 1.3,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-      ] else
-        Row(
-          children: [
-            Image.asset(
-              dark
-                  ? 'assets/images/cnu-white.png'
-                  : 'assets/images/cnu-blue.png',
-              height: 36,
-              fit: BoxFit.contain,
-              filterQuality: FilterQuality.high,
-              semanticLabel: '首都师范大学',
-            ),
-            const SizedBox(width: 14),
-            const Expanded(
-              child: Text(
-                'RoboMaster 机甲大师赛机器人图形化配置集成开发环境',
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 23,
-                  height: 1.25,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-          ],
-        ),
-      // const SizedBox(height: 5),
-      // const Text('用清晰的步骤配置机器人，生成可靠的控制代码'),
-    ],
-  );
-
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
-      if (constraints.maxWidth < 600) {
+      final compact = constraints.maxWidth < 600;
+      final titleSize = compact
+          ? 22.0
+          : (constraints.maxWidth < 900 ? 25.0 : 28.0);
+      final brand = _BrandMark(compact: compact);
+      final title = _BrandTitle(
+        dark: dark,
+        compact: compact,
+        titleSize: titleSize,
+      );
+      if (compact) {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              // Web 版固定暗色，不提供主题切换。
-              children: [_brandIcon(), if (!kIsWeb) _themeButton()],
+              children: [
+                brand,
+                const Spacer(),
+                // Web 版固定暗色，不提供主题切换。
+                if (!kIsWeb)
+                  _ThemeToggle(themeMode: themeMode, onPressed: onCycleTheme),
+              ],
             ),
             const SizedBox(height: 20),
-            _title(compact: true),
+            title,
           ],
         );
       }
       return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _brandIcon(),
-          const SizedBox(width: 16),
-          Expanded(child: _title(compact: false)),
-          const SizedBox(width: 18),
-          if (!kIsWeb) _themeButton(),
+          brand,
+          const SizedBox(width: 20),
+          Expanded(child: title),
+          const SizedBox(width: 24),
+          if (!kIsWeb)
+            _ThemeToggle(themeMode: themeMode, onPressed: onCycleTheme),
         ],
       );
     },
   );
 }
 
+/// 品牌标：primaryContainer 底 + 超级椭圆，比默认圆角更接近 M3E 形状语汇。
+class _BrandMark extends StatelessWidget {
+  const _BrandMark({required this.compact});
+
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final size = compact ? 56.0 : 64.0;
+    return Container(
+      width: size,
+      height: size,
+      decoration: ShapeDecoration(
+        shape: _expressiveShape(compact ? _homeBadgeRadius : 20),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            colors.primaryContainer,
+            Color.lerp(colors.primaryContainer, Colors.black, .18)!,
+          ],
+        ),
+      ),
+      child: Icon(
+        Icons.hub_outlined,
+        size: compact ? 28 : 32,
+        color: colors.onPrimaryContainer,
+      ),
+    );
+  }
+}
+
+/// 品牌区：eyebrow → 标题 → 说明，建立 M3E 式的三级排版层级。
+///
+/// 校徽放在 eyebrow 行右侧，标题独占整行，避免长标题被校徽挤成孤字换行。
+class _BrandTitle extends StatelessWidget {
+  const _BrandTitle({
+    required this.dark,
+    required this.compact,
+    required this.titleSize,
+  });
+
+  final bool dark;
+  final bool compact;
+  final double titleSize;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final textTheme = theme.textTheme;
+    final logo = Image.asset(
+      dark ? 'assets/images/cnu-white.png' : 'assets/images/cnu-blue.png',
+      height: compact ? 30 : 34,
+      fit: BoxFit.contain,
+      filterQuality: FilterQuality.high,
+      semanticLabel: '首都师范大学',
+    );
+    final eyebrow = Text(
+      'PIE-BLOCK',
+      style: textTheme.labelLarge?.copyWith(
+        color: colors.primary,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 2,
+      ),
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (compact) ...[
+          // 窄屏把校徽单独放一行，避免长标题在大字号下被挤到溢出。
+          eyebrow,
+          const SizedBox(height: 6),
+          logo,
+          const SizedBox(height: 10),
+        ] else ...[
+          Row(children: [eyebrow, const Spacer(), logo]),
+          const SizedBox(height: 10),
+        ],
+        Text(
+          'RoboMaster 机甲大师赛机器人图形化配置集成开发环境',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: textTheme.headlineSmall?.copyWith(
+            fontSize: titleSize,
+            height: compact ? 1.3 : 1.2,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -.3,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          '用清晰的步骤配置机器人，生成可靠的控制代码',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: textTheme.bodyMedium?.copyWith(
+            color: colors.onSurfaceVariant,
+            height: 1.5,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 主题切换按钮：胶囊形 + 图标缩放淡入淡出。
+class _ThemeToggle extends StatelessWidget {
+  const _ThemeToggle({required this.themeMode, required this.onPressed});
+
+  final ThemeMode themeMode;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final icon = switch (themeMode) {
+      ThemeMode.dark => Icons.dark_mode,
+      ThemeMode.light => Icons.light_mode,
+      ThemeMode.system => Icons.brightness_auto,
+    };
+    return IconButton.filledTonal(
+      key: const ValueKey('home.theme-toggle'),
+      onPressed: onPressed,
+      tooltip: '切换浅色 / 深色 / 跟随系统',
+      style: IconButton.styleFrom(
+        shape: const StadiumBorder(),
+        minimumSize: const Size(48, 48),
+      ),
+      icon: AnimatedSwitcher(
+        duration: _homePressDuration,
+        switchInCurve: Easing.emphasizedDecelerate,
+        switchOutCurve: Easing.emphasizedAccelerate,
+        transitionBuilder: (child, animation) => ScaleTransition(
+          scale: animation,
+          child: FadeTransition(opacity: animation, child: child),
+        ),
+        child: Icon(icon, key: ValueKey<ThemeMode>(themeMode), size: 22),
+      ),
+    );
+  }
+}
+
+class _ActionCards extends StatelessWidget {
+  const _ActionCards({required this.onCreate, required this.onOpen});
+
+  final VoidCallback onCreate;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final create = _ActionCard(
+      key: const ValueKey('home.action.new'),
+      primary: true,
+      icon: Icons.add_circle_outline,
+      title: '新建机器人项目',
+      subtitle: '从步兵、工程、调试或音乐类型开始分步配置',
+      button: '新建项目',
+      onPressed: onCreate,
+    );
+    final open = _ActionCard(
+      key: const ValueKey('home.action.open'),
+      primary: false,
+      icon: Icons.folder_open,
+      title: '打开已有项目',
+      // 版本号取自代码而不是写死，避免每次升格式都漏改文案。
+      subtitle: '仅支持当前格式 ${ProjectDocument.formatVersion} 的 .pieproj',
+      button: '打开项目',
+      onPressed: onOpen,
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 600) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [create, const SizedBox(height: 20), open],
+          );
+        }
+        // 宽屏把「新建」放大到 3:2，建立 M3E 式的主次层级。
+        final wide = constraints.maxWidth >= 900;
+        return IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(flex: wide ? 3 : 1, child: create),
+              const SizedBox(width: 24),
+              Expanded(flex: wide ? 2 : 1, child: open),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _ActionCard extends StatelessWidget {
   const _ActionCard({
+    super.key,
+    required this.primary,
     required this.icon,
     required this.title,
     required this.subtitle,
     required this.button,
-    required this.accent,
-    required this.foreground,
     required this.onPressed,
   });
+
+  final bool primary;
   final IconData icon;
-  final String title, subtitle, button;
-  final Color accent, foreground;
+  final String title;
+  final String subtitle;
+  final String button;
   final VoidCallback onPressed;
+
   @override
-  Widget build(BuildContext context) => Card(
-    color: Color.alphaBlend(
-      accent.withValues(
-        alpha: Theme.of(context).brightness == Brightness.dark ? .055 : .025,
-      ),
-      Theme.of(context).colorScheme.surface,
-    ),
-    shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(18),
-      side: BorderSide(color: accent.withValues(alpha: .34)),
-    ),
-    child: Padding(
-      padding: EdgeInsets.all(MediaQuery.sizeOf(context).width < 600 ? 20 : 28),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 38, color: accent),
-          const SizedBox(height: 24),
-          Text(
-            title,
-            style: Theme.of(context).textTheme.titleLarge
-                ?.copyWith(fontWeight: FontWeight.w700),
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final textTheme = theme.textTheme;
+    final dark = theme.brightness == Brightness.dark;
+    final compact = MediaQuery.sizeOf(context).width < 600;
+    final coralInk = dark ? _coralInkDark : _coralInkLight;
+    final accent = primary ? colors.primary : coralInk;
+    final background = primary
+        ? Color.alphaBlend(
+            colors.primaryContainer.withValues(alpha: dark ? .18 : .14),
+            colors.surfaceContainerLow,
+          )
+        : Color.alphaBlend(
+            _brandCoral.withValues(alpha: dark ? .05 : .04),
+            colors.surfaceContainerLow,
+          );
+    final border = primary
+        ? colors.primary.withValues(alpha: .38)
+        : colors.outlineVariant.withValues(alpha: .7);
+    final badgeBackground = primary
+        ? colors.primaryContainer
+        : Color.alphaBlend(
+            _brandCoral.withValues(alpha: dark ? .22 : .14),
+            colors.surfaceContainerLow,
+          );
+    final badgeForeground = primary ? colors.onPrimaryContainer : coralInk;
+    return Card(
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      color: background,
+      clipBehavior: Clip.antiAlias,
+      shape: _expressiveShape(_homeCardRadius, side: BorderSide(color: border)),
+      child: InkWell(
+        onTap: onPressed,
+        // 交互语义由内部按钮承担，避免读屏重复播报两个按钮。
+        excludeFromSemantics: true,
+        customBorder: _expressiveShape(_homeCardRadius),
+        hoverColor: accent.withValues(alpha: .04),
+        highlightColor: accent.withValues(alpha: .06),
+        child: Padding(
+          padding: EdgeInsets.all(compact ? 24 : 32),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  _IconBadge(
+                    icon: icon,
+                    background: badgeBackground,
+                    foreground: badgeForeground,
+                    size: compact ? 56 : 64,
+                  ),
+                  const Spacer(),
+                  if (primary) const _RecommendPill(),
+                ],
+              ),
+              SizedBox(height: compact ? 20 : 24),
+              Text(
+                title,
+                style: textTheme.headlineSmall?.copyWith(
+                  fontSize: compact ? 22 : 24,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -.2,
+                  height: 1.2,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                subtitle,
+                style: textTheme.bodyMedium?.copyWith(
+                  color: colors.onSurfaceVariant,
+                  height: 1.5,
+                ),
+              ),
+              SizedBox(height: compact ? 24 : 28),
+              _SpringPress(
+                enabled:
+                    !(MediaQuery.maybeOf(context)?.disableAnimations ?? false),
+                child: primary
+                    ? FilledButton.icon(
+                        onPressed: onPressed,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: colors.primary,
+                          foregroundColor: colors.onPrimary,
+                          shape: const StadiumBorder(),
+                          minimumSize: const Size(0, 48),
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          textStyle: textTheme.labelLarge?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        icon: const Icon(Icons.arrow_forward_rounded, size: 20),
+                        label: Text(button),
+                      )
+                    : OutlinedButton.icon(
+                        onPressed: onPressed,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: coralInk,
+                          side: BorderSide(
+                            color: coralInk.withValues(alpha: .45),
+                          ),
+                          shape: const StadiumBorder(),
+                          minimumSize: const Size(0, 48),
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          textStyle: textTheme.labelLarge?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        icon: const Icon(Icons.folder_open_rounded, size: 20),
+                        label: Text(button),
+                      ),
+              ),
+            ],
           ),
-          const SizedBox(height: 8),
-          Text(subtitle),
-          const SizedBox(height: 28),
-          FilledButton.icon(
-            onPressed: onPressed,
-            style: FilledButton.styleFrom(
-              backgroundColor: accent,
-              foregroundColor: foreground,
+        ),
+      ),
+    );
+  }
+}
+
+/// 胶囊「推荐」标，强调新建是主路径。
+class _RecommendPill extends StatelessWidget {
+  const _RecommendPill();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: ShapeDecoration(
+        shape: const StadiumBorder(),
+        color: colors.primary.withValues(alpha: .12),
+      ),
+      child: Text(
+        '推荐',
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: colors.primary,
+          fontWeight: FontWeight.w600,
+          letterSpacing: .2,
+        ),
+      ),
+    );
+  }
+}
+
+class _IconBadge extends StatelessWidget {
+  const _IconBadge({
+    required this.icon,
+    required this.background,
+    required this.foreground,
+    required this.size,
+  });
+
+  final IconData icon;
+  final Color background;
+  final Color foreground;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: size,
+    height: size,
+    decoration: ShapeDecoration(
+      shape: _expressiveShape(_homeBadgeRadius),
+      color: background,
+    ),
+    child: Icon(icon, size: size * .46, color: foreground),
+  );
+}
+
+/// 弹簧按压反馈：按下缩到 .97，抬起用轻微过冲的弹簧回弹。
+///
+/// M3E 的按压反馈基于弹簧物理；这里用 [SpringSimulation] 近似，
+/// `disableAnimations` 时直接置值，保证无障碍与测试稳定。
+class _SpringPress extends StatefulWidget {
+  const _SpringPress({required this.child, this.enabled = true});
+
+  final Widget child;
+  final bool enabled;
+
+  @override
+  State<_SpringPress> createState() => _SpringPressState();
+}
+
+class _SpringPressState extends State<_SpringPress>
+    with SingleTickerProviderStateMixin {
+  static const _spring = SpringDescription(
+    mass: 1,
+    stiffness: 650,
+    damping: 30,
+  );
+
+  late final AnimationController _scale = AnimationController.unbounded(
+    vsync: this,
+    value: 1,
+  );
+
+  void _animateTo(double target) {
+    if (!widget.enabled) {
+      _scale.value = target;
+      return;
+    }
+    _scale.animateWith(SpringSimulation(_spring, _scale.value, target, 0));
+  }
+
+  @override
+  void dispose() {
+    _scale.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Listener(
+    onPointerDown: (_) => _animateTo(.97),
+    onPointerUp: (_) => _animateTo(1),
+    onPointerCancel: (_) => _animateTo(1),
+    child: ScaleTransition(scale: _scale, child: widget.child),
+  );
+}
+
+class _MessageBanner extends StatelessWidget {
+  const _MessageBanner({required this.message, required this.onDismiss});
+
+  final String message;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: MaterialBanner(
+        backgroundColor: colors.errorContainer,
+        leading: Icon(Icons.error_outline, color: colors.onErrorContainer),
+        content: Text(
+          message,
+          style: TextStyle(color: colors.onErrorContainer),
+        ),
+        actions: [
+          TextButton(
+            onPressed: onDismiss,
+            style: TextButton.styleFrom(
+              foregroundColor: colors.onErrorContainer,
             ),
-            icon: const Icon(Icons.arrow_forward),
-            label: Text(button),
+            child: const Text('关闭'),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _RecentProjectsSection extends StatelessWidget {
+  const _RecentProjectsSection({required this.projects, required this.onOpen});
+
+  final List<RecentProject> projects;
+  final ValueChanged<RecentProject> onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final textTheme = theme.textTheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              '最近项目',
+              style: textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const Spacer(),
+            Text(
+              '${projects.length} 个',
+              style: textTheme.labelMedium?.copyWith(
+                color: colors.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Card(
+          key: const ValueKey('home.recent-projects'),
+          elevation: 0,
+          margin: EdgeInsets.zero,
+          color: colors.surfaceContainerLow,
+          clipBehavior: Clip.antiAlias,
+          shape: _expressiveShape(
+            _homeCardRadius,
+            side: BorderSide(
+              color: colors.outlineVariant.withValues(alpha: .6),
+            ),
+          ),
+          child: Column(
+            children: [
+              for (final (index, entry) in projects.indexed) ...[
+                if (index > 0)
+                  Divider(
+                    height: 1,
+                    indent: 72,
+                    endIndent: 16,
+                    color: colors.outlineVariant.withValues(alpha: .5),
+                  ),
+                ListTile(
+                  shape: _expressiveShape(_homeTileRadius),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 4,
+                  ),
+                  leading: _IconBadge(
+                    icon: recentProjectIcon(entry.kind),
+                    background: colors.secondaryContainer,
+                    foreground: colors.onSecondaryContainer,
+                    size: 40,
+                  ),
+                  title: Text(
+                    AppDocumentIo.displayName(entry.path),
+                    style: textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  subtitle: Text(
+                    entry.path,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: textTheme.bodySmall?.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => onOpen(entry),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 背景：surface 底 + 品牌双色径向光斑，宽屏再叠一个描边圆环。
+class _HomeBackdrop extends StatelessWidget {
+  const _HomeBackdrop({required this.colors, required this.dark});
+
+  final ColorScheme colors;
+  final bool dark;
+
+  @override
+  Widget build(BuildContext context) {
+    final wide = MediaQuery.sizeOf(context).width >= 900;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Color.alphaBlend(
+                  colors.primary.withValues(alpha: dark ? .07 : .05),
+                  colors.surface,
+                ),
+                colors.surface,
+                Color.alphaBlend(
+                  _brandCoral.withValues(alpha: dark ? .05 : .04),
+                  colors.surface,
+                ),
+              ],
+            ),
+          ),
+        ),
+        Positioned(
+          left: -180,
+          top: -180,
+          child: _Glow(
+            color: _brandCyan.withValues(alpha: dark ? .10 : .14),
+            size: 520,
+          ),
+        ),
+        Positioned(
+          right: -220,
+          bottom: -200,
+          child: _Glow(
+            color: _brandCoral.withValues(alpha: dark ? .09 : .10),
+            size: 560,
+          ),
+        ),
+        if (wide)
+          Positioned(
+            right: 32,
+            top: 32,
+            child: IgnorePointer(
+              child: Transform.rotate(
+                angle: .18,
+                child: Container(
+                  width: 420,
+                  height: 420,
+                  decoration: ShapeDecoration(
+                    shape: CircleBorder(
+                      side: BorderSide(
+                        color: colors.outlineVariant.withValues(alpha: .18),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _Glow extends StatelessWidget {
+  const _Glow({required this.color, required this.size});
+
+  final Color color;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => IgnorePointer(
+    child: Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: RadialGradient(colors: [color, color.withValues(alpha: 0)]),
+      ),
     ),
   );
+}
+
+/// 首屏入场：header → cards → recent 分段淡入上移。
+///
+/// 系统开启「减少动态效果」时不启动 ticker，并跳过过渡节点。
+class _HomeEntrance extends StatefulWidget {
+  const _HomeEntrance({required this.builder});
+
+  final Widget Function(
+    BuildContext context,
+    bool animate,
+    Animation<double> progress,
+  )
+  builder;
+
+  @override
+  State<_HomeEntrance> createState() => _HomeEntranceState();
+}
+
+class _HomeEntranceState extends State<_HomeEntrance>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: _homeEntranceDuration,
+  );
+  var _started = false;
+  var _animate = true;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final disabled = MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+    if (disabled) {
+      _animate = false;
+      if (_controller.isAnimating) {
+        _controller.stop();
+      }
+      if (_controller.value != 1) {
+        _controller.value = 1;
+      }
+    } else {
+      _animate = true;
+      if (!_started) {
+        _started = true;
+        _controller.forward();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      widget.builder(context, _animate, _controller);
+}
+
+class _Reveal extends StatelessWidget {
+  const _Reveal({
+    required this.progress,
+    required this.animate,
+    required this.interval,
+    required this.child,
+  });
+
+  final Animation<double> progress;
+  final bool animate;
+  final Interval interval;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!animate) {
+      return child;
+    }
+    return AnimatedBuilder(
+      animation: progress,
+      child: child,
+      builder: (context, child) {
+        final t = interval.transform(progress.value);
+        if (t >= 1) {
+          return child!;
+        }
+        return Opacity(
+          opacity: t,
+          child: Transform.translate(
+            offset: Offset(0, (1 - t) * 16),
+            child: child,
+          ),
+        );
+      },
+    );
+  }
 }

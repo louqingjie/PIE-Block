@@ -118,7 +118,8 @@ class _CapturingCreateController extends AppController {
   }
 }
 
-class _InfantryStartController extends AppController {  @override
+class _InfantryStartController extends AppController {
+  @override
   AppState build() => AppState(
     document: ProjectDocument.create('步兵测试', ProjectKind.infantry),
     saveStatus: SaveStatus.saved,
@@ -269,12 +270,11 @@ const _rstSample = '''
       FF0007 9A FE 08 5F      [12]  131 \tecall\t_main
 ''';
 
-AsmPreviewState _readyAsmState(String code) =>
-    AsmPreviewState(
-      activity: AsmPreviewActivity.ready,
-      sourceCode: code,
-      listing: _rstSample,
-    );
+AsmPreviewState _readyAsmState(String code) => AsmPreviewState(
+  activity: AsmPreviewActivity.ready,
+  sourceCode: code,
+  listing: _rstSample,
+);
 
 /// 记录调用次数的假控制器：用来断言「进页面不编译、只有点汇编才编译」。
 class _FakeAsmPreviewController extends AsmPreviewController {
@@ -562,12 +562,7 @@ ProjectDocument _musicDocument() {
       trackName: 'Melody',
       notes: const [
         MusicNote(id: 'main', pitch: 60, startTick: 0, durationTicks: 480),
-        MusicNote(
-          id: 'overlap',
-          pitch: 67,
-          startTick: 0,
-          durationTicks: 480,
-        ),
+        MusicNote(id: 'overlap', pitch: 67, startTick: 0, durationTicks: 480),
         MusicNote(id: 'later', pitch: 64, startTick: 5760, durationTicks: 480),
       ],
     ),
@@ -3134,5 +3129,87 @@ void main() {
     expect(find.text('安装 udev 规则'), findsNothing);
     expect(tester.takeException(), isNull);
     debugDefaultTargetPlatformOverride = null;
+  });
+
+  testWidgets('欢迎页包含 Expressive 结构键', (tester) async {
+    await tester.pumpWidget(const ProviderScope(child: PieBlockApp()));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('home.hero')), findsOneWidget);
+    expect(find.byKey(const ValueKey('home.action.new')), findsOneWidget);
+    expect(find.byKey(const ValueKey('home.action.open')), findsOneWidget);
+    expect(find.byKey(const ValueKey('home.theme-toggle')), findsOneWidget);
+
+    // 卡片形状是 M3E 形状语汇的超级椭圆，而不是默认 18 圆角。
+    final createCard = tester.widget<Card>(
+      find.descendant(
+        of: find.byKey(const ValueKey('home.action.new')),
+        matching: find.byType(Card),
+      ),
+    );
+    expect(createCard.shape, isA<RoundedSuperellipseBorder>());
+    expect(
+      (createCard.shape! as RoundedSuperellipseBorder).borderRadius,
+      BorderRadius.circular(28),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('减少动态效果时欢迎页直接呈现且不播放入场动画', (tester) async {
+    tester.platformDispatcher.accessibilityFeaturesTestValue =
+        const FakeAccessibilityFeatures(disableAnimations: true);
+    addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+
+    await tester.pumpWidget(const ProviderScope(child: PieBlockApp()));
+    await tester.pump();
+
+    expect(find.text('新建机器人项目'), findsOneWidget);
+    expect(find.text('打开已有项目'), findsOneWidget);
+    // 不应有任何入场动画的 ticker 还在运行。
+    expect(tester.binding.transientCallbackCount, 0);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('欢迎页在 360 宽与 1.5 倍字号下无溢出', (tester) async {
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+      tester.platformDispatcher.textScaleFactorTestValue = 1;
+    });
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(360, 640);
+    tester.platformDispatcher.textScaleFactorTestValue = 1.5;
+
+    await tester.pumpWidget(const ProviderScope(child: PieBlockApp()));
+    await tester.pumpAndSettle();
+
+    expect(find.text('新建机器人项目'), findsOneWidget);
+    expect(find.text('打开已有项目'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('最近项目卡片使用超级椭圆并保留分组', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(_RecentProjectsController.new),
+        ],
+        child: const MaterialApp(home: HomeScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final recentCard = tester.widget<Card>(
+      find.byKey(const ValueKey('home.recent-projects')),
+    );
+    expect(recentCard.shape, isA<RoundedSuperellipseBorder>());
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('home.recent-projects')),
+        matching: find.byType(ListTile),
+      ),
+      findsNWidgets(5),
+    );
+    expect(tester.takeException(), isNull);
   });
 }
