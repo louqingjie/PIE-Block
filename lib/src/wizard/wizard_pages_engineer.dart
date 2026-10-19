@@ -350,7 +350,7 @@ class _ActionRow extends ConsumerWidget {
       const SizedBox(width: 8),
       Expanded(
         child: usesSensitivity
-            ? _DecimalNumberField(
+            ? _NumberField<double>(
                 label: parameterLabel,
                 fieldPath: '$fieldPath.parameter',
                 value: action.parameter?.toDouble(),
