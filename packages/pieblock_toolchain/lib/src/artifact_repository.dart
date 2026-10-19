@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 
+import 'file_ops.dart';
 import 'hex_validator.dart';
 import 'models.dart';
 
@@ -136,17 +137,21 @@ class BuildArtifactRepository {
   }
 
   static Future<void> _atomicCopy(File source, File destination) async {
-    final temporary = File('${destination.path}.tmp');
-    if (await temporary.exists()) await temporary.delete();
-    await source.copy(temporary.path);
-    if (await destination.exists()) await destination.delete();
-    await temporary.rename(destination.path);
+    await retryFileSystem(() async {
+      final temporary = File('${destination.path}.tmp');
+      if (await temporary.exists()) await temporary.delete();
+      await source.copy(temporary.path);
+      if (await destination.exists()) await destination.delete();
+      await temporary.rename(destination.path);
+    });
   }
 
   static Future<void> _atomicWrite(File destination, String contents) async {
-    final temporary = File('${destination.path}.tmp');
-    await temporary.writeAsString(contents, flush: true);
-    if (await destination.exists()) await destination.delete();
-    await temporary.rename(destination.path);
+    await retryFileSystem(() async {
+      final temporary = File('${destination.path}.tmp');
+      await temporary.writeAsString(contents, flush: true);
+      if (await destination.exists()) await destination.delete();
+      await temporary.rename(destination.path);
+    });
   }
 }

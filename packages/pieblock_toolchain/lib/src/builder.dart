@@ -9,8 +9,10 @@ import 'package:pieblock_core/pieblock_core.dart';
 
 import 'artifact_repository.dart';
 import 'compiler_backend.dart';
+import 'file_ops.dart';
 import 'hex_validator.dart';
 import 'models.dart';
+import 'sdcc_runtime_deployer.dart';
 import 'tool_output_text.dart';
 
 const _buildSchemaVersion = 'flutter_build_v5';
@@ -182,6 +184,9 @@ class FirmwareBuilder {
   final String _runtimeRoot;
   final String _workRoot;
   final SdccCompilerBackend? _sdccBackend;
+  late final SdccRuntimeDeployer _deployer = SdccRuntimeDeployer(
+    runtimeRoot: _runtimeRoot,
+  );
   Process? _process;
   bool _canceled = false;
 
@@ -231,7 +236,12 @@ class FirmwareBuilder {
     }
     final backend = _sdccBackend;
     if (backend != null) return backend.resolveFingerprint();
-    final assets = await _locateAssets();
+    return _toolchainFingerprint(await _locateAssets());
+  }
+
+  /// 内置 SDCC 工具链指纹：随工具链清单、固件清单与固件源码内容变化，
+  /// 同时作为运行时部署目录名和构建缓存键。
+  Future<String> _toolchainFingerprint(_ToolchainAssets assets) async {
     final bundle = await File(
       p.join(assets.sdccToolchain, 'bundle_manifest.json'),
     ).readAsString();
@@ -429,7 +439,24 @@ class FirmwareBuilder {
     emit,
   ) async {
     final assets = await _locateAssets();
-    final deployed = await _deploySdcc(assets, emit);
+    final SdccRuntimeDeployment deployed;
+    try {
+      deployed = await _deployer.ensure(
+        toolchainAssets: assets.sdccToolchain,
+        firmwareAssets: assets.sdccFirmware,
+        fingerprint: await _toolchainFingerprint(assets),
+        emit: emit,
+      );
+    } on SdccDeploymentException catch (error) {
+      // 首次部署失败最常见的原因是被杀毒软件/索引器占用，给出可操作建议，
+      // 而不是只显示裸的 PathAccessException。
+      emit(BuildStage.preparing, error.message, level: BuildEventLevel.error);
+      final hint = error.hint;
+      if (hint != null) {
+        emit(BuildStage.preparing, hint, level: BuildEventLevel.error);
+      }
+      return const _RawBuildResult(false);
+    }
     final manifest = (jsonDecode(
       await File(p.join(deployed.firmware, 'build_manifest.json'))
           .readAsString(),
@@ -610,12 +637,12 @@ class FirmwareBuilder {
       CompilerKind.keil,
     );
     final workspace = p.join(work, 'stc32g');
-    await _copyDirectory(
+    await copyDirectory(
       Directory(p.join(assets.keil, 'Libraries')),
       Directory(p.join(workspace, 'Libraries')),
     );
     final projectDir = p.join(workspace, 'Projects', projectName);
-    await _copyDirectory(
+    await copyDirectory(
       Directory(p.join(assets.keil, 'Projects', projectName)),
       Directory(projectDir),
     );
@@ -726,7 +753,7 @@ class FirmwareBuilder {
 
   /// 编译与汇编预览共用的头文件与库搜索路径参数。
   static List<String> _includeArgs(
-    _DeployedSdcc deployed,
+    SdccRuntimeDeployment deployed,
     Map<String, Object?> manifest,
     String project,
   ) => <String>[
@@ -813,80 +840,6 @@ class FirmwareBuilder {
     );
   }
 
-  Future<_DeployedSdcc> _deploySdcc(
-    _ToolchainAssets assets,
-    void Function(
-      BuildStage,
-      String, {
-      BuildEventLevel level,
-      int? current,
-      int? total,
-    })
-    emit,
-  ) async {
-    final bundleManifest = File(
-      p.join(assets.sdccToolchain, 'bundle_manifest.json'),
-    );
-    final firmwareManifest = File(
-      p.join(assets.sdccFirmware, 'build_manifest.json'),
-    );
-    final firmwareSources = await firmwareContentHash(assets.sdccFirmware);
-    final fingerprintValue = sha256
-        .convert(
-          utf8.encode(
-            '${await bundleManifest.readAsString()}\n'
-            '${await firmwareManifest.readAsString()}\n'
-            '$firmwareSources',
-          ),
-        )
-        .toString();
-    final destination = Directory(
-      p.join(_runtimeRoot, 'sdcc', fingerprintValue),
-    );
-    final marker = File(p.join(destination.path, '.ready'));
-    if (!await marker.exists()) {
-      emit(BuildStage.preparing, '首次使用，正在部署内置 SDCC 工具链…');
-      final pending = Directory('${destination.path}.pending');
-      if (await pending.exists()) await pending.delete(recursive: true);
-      await _copyDirectory(
-        Directory(assets.sdccToolchain),
-        Directory(p.join(pending.path, 'toolchain')),
-      );
-      await _copyDirectory(
-        Directory(assets.sdccFirmware),
-        Directory(p.join(pending.path, 'firmware')),
-      );
-      await _validateSdccBundle(Directory(p.join(pending.path, 'toolchain')));
-      await File(p.join(pending.path, '.ready'))
-          .writeAsString(fingerprintValue, flush: true);
-      if (await destination.exists()) await destination.delete(recursive: true);
-      await pending.rename(destination.path);
-    }
-    return _DeployedSdcc(
-      p.join(destination.path, 'toolchain'),
-      p.join(destination.path, 'firmware'),
-    );
-  }
-
-  static Future<void> _validateSdccBundle(Directory toolchain) async {
-    final manifestFile = File(p.join(toolchain.path, 'bundle_manifest.json'));
-    final manifest = (jsonDecode(await manifestFile.readAsString()) as Map)
-        .cast<String, Object?>();
-    final files = (manifest['files']! as Map).cast<String, Object?>();
-    for (final entry in files.entries) {
-      final file = File(
-        p.join(toolchain.path, entry.key.replaceAll('/', p.separator)),
-      );
-      if (!await file.exists()) {
-        throw StateError('内置 SDCC 工具链文件缺失：${entry.key}');
-      }
-      final actual = sha256.convert(await file.readAsBytes()).toString();
-      if (actual != entry.value) {
-        throw StateError('内置 SDCC 工具链文件校验失败：${entry.key}');
-      }
-    }
-  }
-
   static Future<_ToolchainAssets> _locateAssets() async {
     final candidates = <String>[
       if ((Platform.environment['PIEBLOCK_RUNTIME_ROOT'] ?? '').isNotEmpty)
@@ -961,21 +914,6 @@ class FirmwareBuilder {
     }
     return false;
   }
-
-  static Future<void> _copyDirectory(
-    Directory source,
-    Directory destination,
-  ) async {
-    await destination.create(recursive: true);
-    await for (final entity in source.list(followLinks: false)) {
-      final target = p.join(destination.path, p.basename(entity.path));
-      if (entity is Directory) {
-        await _copyDirectory(entity, Directory(target));
-      } else if (entity is File) {
-        await entity.copy(target);
-      }
-    }
-  }
 }
 
 class _RunResult {
@@ -1006,10 +944,4 @@ class _ToolchainAssets {
   final String sdccToolchain;
   final String sdccFirmware;
   final String keil;
-}
-
-class _DeployedSdcc {
-  const _DeployedSdcc(this.toolchain, this.firmware);
-  final String toolchain;
-  final String firmware;
 }
