@@ -5,8 +5,10 @@
 “生成代码”页只读展示生成的 `main.c`；要读汇编时点代码区右上角的「汇编」，内置 SDCC 会现场做一次完整构建并显示链接后的列表文件 `main.rst`（见下文「生成代码页的 C / 汇编列表」）。通过后进入最后的“烧录”步骤。默认的“内置 SDCC C251”无需安装其他软件，可以离线编译步兵和工程项目。第一次使用时，应用会把经过版本和哈希校验的工具链部署到：
 
 ```text
-%LOCALAPPDATA%\PIE-Block\runtime
+%APPDATA%\com.wpie\PIE-Block\runtime
 ```
+
+该目录约 24 MB。部署期间若被杀毒软件或索引器短暂占用，应用会自动重试，并在日志里给出目录与处理建议。
 
 也可以选择“本地 Keil C251”。指定的目录必须包含：
 
@@ -17,7 +19,7 @@ C251\BIN\C251.EXE
 
 PIE-Block 始终调用 Keil 的 `-r` 全量重建，避免不同机器人配置复用旧目标文件。如果日志出现 `RESTRICTED VERSION`、`LICENSE ERROR` 或 `ERROR L250`，需要为当前电脑配置有效的 C251 许可证。应用只有在用户明确提交密钥后才修改 `TOOLS.INI`，写入前会创建 `.pieblock.bak`，也可以直接使用 Keil License Management。
 
-成功固件缓存于 `%LOCALAPPDATA%\PIE-Block\builds`。源码、项目类型、编译器或工具链版本发生变化后，旧固件立即失效；应用不会把 HEX 写入 `.pieproj`。
+成功固件缓存于 `%APPDATA%\com.wpie\PIE-Block\builds`。源码、项目类型、编译器或工具链版本发生变化后，旧固件立即失效；应用不会把 HEX 写入 `.pieproj`。
 
 ## 生成代码页的 C / 汇编列表
 
@@ -101,6 +103,8 @@ Android 版在“烧录”页使用与 Windows 相同的 USB-HID ISP 协议与�
 | USB 设备被占用 | 关闭其他烧录工具，重新插拔主控板 |
 | 写入固件时提示「设备无响应」 | 应用会按同一地址自动重发 3 次；仍失败时先关闭四个开关、给主控板断电重新上电进 ISP，再点「烧录当前固件」重试，无需重新编译 |
 | HEX 已变化或布局非法 | 重新点击“仅编译”，不要手工修改缓存文件 |
+| 编译日志出现 `Failed to decode data using encoding 'utf-8'`（路径含中文用户名） | 旧版本缺陷：链接器按系统 ANSI 编码写 MAP，旧代码按 UTF-8 严格读取会崩溃。升级到修复版本即可；临时可把临时目录指向纯英文路径 |
+| 首次编译提示「内置 SDCC 工具链部署失败…拒绝访问」 | 关闭或退出杀毒软件实时防护，或把 `%APPDATA%\com.wpie\PIE-Block\runtime` 加入白名单后直接重试；仍失败则退出应用、删除该 `runtime\sdcc` 目录再重试 |
 | Keil 目录无效 | 选择包含 UV4 和 C251 的 Keil 安装根目录 |
 | Keil 许可证受限 | 使用应用许可证引导或 Keil License Management |
 | 烧录成功后设备消失 | 正常复位行为；需要再次烧录时重新断电上电 |
