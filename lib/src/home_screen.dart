@@ -293,53 +293,62 @@ class HomeScreen extends ConsumerWidget {
               onPressed: () => Navigator.pop(context),
               child: const Text('取消'),
             ),
-            FilledButton(
-              onPressed: () async {
-                final projectName = name.text.trim();
-                if (projectName.isEmpty) return;
-                if (androidReference == null && android) {
-                  final selected = await _chooseSavePath(
-                    context,
-                    suggestedName: '$projectName.pieproj',
-                  );
-                  if (selected == null || !context.mounted) return;
-                  androidReference = selected;
-                  path.text = AppDocumentIo.displayName(selected);
-                }
-                // Web 上没有目录可选：项目名就是文件名，内容存在浏览器里。
-                final projectPath = kIsWeb
-                    ? '$projectName.pieproj'
-                    : androidReference ?? path.text;
-                if (projectPath.trim().isEmpty) return;
-                final projectKind = kind;
-                ProjectConfig? template;
-                if (useTemplate) {
-                  // 载入失败就中止：静默退化成空项目会让用户以为字段已填好，
-                  // 到向导里才发现满屏红字。
-                  try {
-                    template = await templates.config(projectKind);
-                  } catch (error) {
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(
-                        context,
-                      ).showSnackBar(SnackBar(content: Text('模板载入失败：$error')));
-                    }
-                    return;
-                  }
-                }
-                if (!context.mounted) return;
-                // 先关闭新建弹窗，再切换根页面；否则根页面重建会在弹窗
-                // 仍挂载时卸载其 InheritedElement，Android 上会触发
-                // framework.dart 的 `_dependents.isEmpty` 断言。
-                Navigator.pop(context);
-                await appController.createProject(
-                  projectPath,
-                  projectName,
-                  projectKind,
-                  template: template,
+            ValueListenableBuilder<TextEditingValue>(
+              valueListenable: name,
+              builder: (context, value, _) {
+                // 项目名称为空时直接禁用创建，避免点击后静默无响应。
+                final canCreate = value.text.trim().isNotEmpty;
+                return FilledButton(
+                  onPressed: canCreate
+                      ? () async {
+                          final projectName = name.text.trim();
+                          if (projectName.isEmpty) return;
+                          if (androidReference == null && android) {
+                            final selected = await _chooseSavePath(
+                              context,
+                              suggestedName: '$projectName.pieproj',
+                            );
+                            if (selected == null || !context.mounted) return;
+                            androidReference = selected;
+                            path.text = AppDocumentIo.displayName(selected);
+                          }
+                          // Web 上没有目录可选：项目名就是文件名，内容存在浏览器里。
+                          final projectPath = kIsWeb
+                              ? '$projectName.pieproj'
+                              : androidReference ?? path.text;
+                          if (projectPath.trim().isEmpty) return;
+                          final projectKind = kind;
+                          ProjectConfig? template;
+                          if (useTemplate) {
+                            // 载入失败就中止：静默退化成空项目会让用户以为字段已填好，
+                            // 到向导里才发现满屏红字。
+                            try {
+                              template = await templates.config(projectKind);
+                            } catch (error) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('模板载入失败：$error')),
+                                );
+                              }
+                              return;
+                            }
+                          }
+                          if (!context.mounted) return;
+                          // 先关闭新建弹窗，再切换根页面；否则根页面重建会在弹窗
+                          // 仍挂载时卸载其 InheritedElement，Android 上会触发
+                          // framework.dart 的 `_dependents.isEmpty` 断言。
+                          Navigator.pop(context);
+                          await appController.createProject(
+                            projectPath,
+                            projectName,
+                            projectKind,
+                            template: template,
+                          );
+                        }
+                      : null,
+                  child: const Text('创建项目'),
                 );
               },
-              child: const Text('创建项目'),
             ),
           ],
         ),

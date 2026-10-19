@@ -3212,4 +3212,48 @@ void main() {
     );
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('新建项目名称为空时创建按钮禁用', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    late _CapturingCreateController controller;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => controller = _CapturingCreateController(),
+          ),
+        ],
+        child: MaterialApp(
+          home: HomeScreen(
+            fileDialogs: _FakeProjectFileDialogs(
+              savePath: r'C:\projects\机器人.pieproj',
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('新建项目'));
+    await tester.pumpAndSettle();
+
+    final createButton = find.widgetWithText(FilledButton, '创建项目');
+    expect(tester.widget<FilledButton>(createButton).enabled, isTrue);
+
+    // 只剩空白字符时按钮禁用，点击也不会创建项目。
+    final nameField = find.byType(TextField).at(0);
+    await tester.enterText(nameField, '   ');
+    await tester.pump();
+    expect(tester.widget<FilledButton>(createButton).enabled, isFalse);
+    await tester.tap(createButton, warnIfMissed: false);
+    await tester.pumpAndSettle();
+    expect(controller.createCalls, 0);
+    expect(find.byType(AlertDialog), findsOneWidget);
+
+    // 重新输入名称后恢复可用。
+    await tester.enterText(nameField, '新项目');
+    await tester.pump();
+    expect(tester.widget<FilledButton>(createButton).enabled, isTrue);
+    expect(tester.takeException(), isNull);
+    debugDefaultTargetPlatformOverride = null;
+  });
 }
