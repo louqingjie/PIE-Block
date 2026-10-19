@@ -9,25 +9,18 @@
 \documentclass[lang=cn,10pt,scheme=chinese,color=blue]{elegantbook}
 
 % ---------------------------- 书目信息 --------------------------------------
-% 封面标题：加大字号；\texorpdfstring 保证 PDF 书签里仍是纯文本
+% 封面只保留书名与右上角标识：不显示编著/单位/时间/版本/适用对象/配套信息等小字
+% 封面标题加大字号；\texorpdfstring 保证 PDF 书签里仍是纯文本
 \title{\texorpdfstring{\fontsize{36}{44}\selectfont PIE-Block 软件与应用}{PIE-Block 软件与应用}}
-\author{PIE-Block 项目组}
-\institute{首都师范大学}
-\date{2026 年 10 月}
-\version{0.1}
-\bioinfo{适用对象}{本科一至三年级，零基础读者亦可}
-\extrainfo{配套软件 PIE-Block 1.4.0\quad|\quad pieblock.asia}
-
-% 封面标签：教材署名习惯用「编著 / 单位」
-\renewcommand{\authorname}{\citshape 编著：}
-\renewcommand{\institutename}{\citshape 单位：}
+\author{}   % 置空，封面不显示作者行
+\date{}     % 置空，避免默认的 \today 让封面出现“时间：”
 
 % 封面上的饰线使用 PIE-Block 品牌青绿色（#087F8C）
 \definecolor{pieblockteal}{HTML}{087F8C}
 \colorlet{coverlinecolor}{pieblockteal}
 
 % ---------------------------- 封面 ------------------------------------------
-% 封面横幅右上角为 W.PIE 学生创新实验室标识；不再单独放右下角校名图片
+% 封面横幅右上角为 W.PIE 学生创新实验室标识；不在右下角单独放校名图片
 \cover{image/cover.jpg}
 
 % 目录显示到二级标题（章、节）
