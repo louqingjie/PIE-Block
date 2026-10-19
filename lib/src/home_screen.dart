@@ -631,7 +631,8 @@ class _BrandMark extends StatelessWidget {
 
 /// 品牌区：eyebrow → 标题 → 说明，建立 M3E 式的三级排版层级。
 ///
-/// 校徽放在 eyebrow 行右侧，标题独占整行，避免长标题被校徽挤成孤字换行。
+/// 校徽是软件正式名称的一部分（"首都师范大学 RoboMaster …"），
+/// 因此与标题文字组成同一个 masthead，而不是右侧的装饰图。
 class _BrandTitle extends StatelessWidget {
   const _BrandTitle({
     required this.dark,
@@ -666,25 +667,23 @@ class _BrandTitle extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (compact) ...[
-          // 窄屏把校徽单独放一行，避免长标题在大字号下被挤到溢出。
-          eyebrow,
-          const SizedBox(height: 6),
-          logo,
-          const SizedBox(height: 10),
-        ] else ...[
-          Row(children: [eyebrow, const Spacer(), logo]),
-          const SizedBox(height: 10),
-        ],
-        Text(
-          'RoboMaster 机甲大师赛机器人图形化配置集成开发环境',
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: textTheme.headlineSmall?.copyWith(
-            fontSize: titleSize,
-            height: compact ? 1.3 : 1.2,
-            fontWeight: FontWeight.w700,
-            letterSpacing: -.3,
+        eyebrow,
+        const SizedBox(height: 6),
+        // 校徽 + 标题组成完整软件名称，校徽紧贴标题上方。
+        logo,
+        const SizedBox(height: 10),
+        Semantics(
+          header: true,
+          child: Text(
+            'RoboMaster 机甲大师赛机器人图形化配置集成开发环境',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: textTheme.headlineSmall?.copyWith(
+              fontSize: titleSize,
+              height: compact ? 1.3 : 1.2,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -.3,
+            ),
           ),
         ),
         const SizedBox(height: 8),
