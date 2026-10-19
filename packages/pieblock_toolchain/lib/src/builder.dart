@@ -11,6 +11,7 @@ import 'artifact_repository.dart';
 import 'compiler_backend.dart';
 import 'hex_validator.dart';
 import 'models.dart';
+import 'tool_output_text.dart';
 
 const _buildSchemaVersion = 'flutter_build_v5';
 
@@ -577,7 +578,7 @@ class FirmwareBuilder {
     }
     if (candidates.isEmpty) return null;
     candidates.sort((a, b) => a.path.compareTo(b.path));
-    return candidates.first.readAsString();
+    return readToolOutputText(candidates.first.path);
   }
 
   Future<_RawBuildResult> _buildKeil(
@@ -641,7 +642,7 @@ class FirmwareBuilder {
       publishOutput: false,
     );
     final log = await File(logPath).exists()
-        ? await File(logPath).readAsString()
+        ? await readToolOutputText(logPath)
         : run.output;
     for (final line in const LineSplitter().convert(log)) {
       if (line.trim().isNotEmpty) {

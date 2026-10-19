@@ -5,6 +5,7 @@ import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 import 'package:pieblock_core/pieblock_core.dart';
 import 'package:pieblock_toolchain/pieblock_toolchain.dart';
+import 'package:pieblock_toolchain/src/tool_output_text.dart';
 import 'package:test/test.dart';
 
 const _validHex =
@@ -70,6 +71,60 @@ void main() {
       )).ok,
       isFalse,
     );
+  });
+
+  test('MAP 的 Files Linked 段含 GBK 路径时仍能通过布局校验', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'pieblock-map-gbk-',
+    );
+    addTearDown(() => directory.delete(recursive: true));
+    final hex = File('${directory.path}/firmware.hex')
+      ..writeAsStringSync(_validHex);
+    final map = File('${directory.path}/firmware.map');
+    await map.writeAsBytes([
+      ...utf8.encode(
+        ' HOME     00FF0000 00000003 =\n'
+        ' CSEG     00FE0000 00000001 =\n'
+        ' XSEG     00010000 00000010 =\n'
+        ' DSEG     00000000 00000010 =\n'
+        '__sdcc_mcs251_reset_trampoline\n'
+        '__sdcc_gsinit_startup\n'
+        '_Default_Isr\n'
+        '\nFiles Linked\n',
+      ),
+      ...'C:\\Users\\'.codeUnits,
+      // CP936 的「培训模板」：中文用户名/路径会让链接器写出这些非 UTF-8 字节。
+      0xC5, 0xE0, 0xD1, 0xB5, 0xC4, 0xA3, 0xB0, 0xE5,
+      ...'\\output\\main.rel\n'.codeUnits,
+    ]);
+    final result = await IntelHexValidator.validateSdccLayout(
+      hexPath: hex.path,
+      mapPath: map.path,
+    );
+    expect(result.ok, isTrue, reason: result.message);
+  });
+
+  test('工具链文本宽松解码不会因非 UTF-8 字节抛异常', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'pieblock-tool-text-',
+    );
+    addTearDown(() => directory.delete(recursive: true));
+    final file = File('${directory.path}/build.log');
+    await file.writeAsBytes([
+      ...utf8.encode('HOME 00FF0000\nC:\\Users\\'),
+      0xC5,
+      0xE0,
+      0xD1,
+      0xB5,
+      0xC4,
+      0xA3,
+      0xB0,
+      0xE5,
+      ...utf8.encode('\\output\\main.rel\n'),
+    ]);
+    final text = await readToolOutputText(file.path);
+    expect(text, contains('HOME 00FF0000'));
+    expect(text, contains('main.rel'));
   });
 
   test('Keil 允许在 0xFF1000 之后的应用区放置数据', () async {

@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'tool_output_text.dart';
+
 class HexImage {
   const HexImage(this.bytes);
   final Map<int, int> bytes;
@@ -168,7 +170,9 @@ abstract final class IntelHexValidator {
     if (!await mapFile.exists()) {
       return const HexValidationResult(ok: false, message: '缺少 SDCC MAP 文件');
     }
-    final mapText = await mapFile.readAsString();
+    // Windows 上的链接器按系统 ANSI 代码页写 MAP 的 "Files Linked" 段，
+    // 中文用户名会让该段包含 GBK 字节，严格 UTF-8 解码会直接抛异常。
+    final mapText = await readToolOutputText(mapPath);
     final areaPattern = RegExp(
       r'^\s*(HOME|GSINIT|GSFINAL|CSEG|CONST|XINIT|XISEG|DSEG|SSEG|PSEG|XSEG)\s+([0-9A-Fa-f]{8})\s+([0-9A-Fa-f]{8})\s+=',
       multiLine: true,
