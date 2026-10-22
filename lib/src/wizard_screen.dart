@@ -22,7 +22,6 @@ import 'design/app_card.dart';
 import 'design/app_theme.dart';
 import 'design/connected_button_group.dart';
 import 'design/legacy_theme_bridge.dart';
-import 'design/press_scale.dart';
 import 'design/wavy_progress_indicator.dart';
 import 'motion.dart';
 import 'platform/file_export.dart';
@@ -301,15 +300,12 @@ class WizardScreen extends ConsumerWidget {
                           tooltip: '上一步',
                           icon: const Icon(Icons.arrow_back),
                         )
-                      : PressScale(
-                          enabled: state.step > 0 && !deploy.busy,
-                          child: OutlinedButton.icon(
-                            onPressed: state.step > 0 && !deploy.busy
-                                ? () => goToStep(state.step - 1)
-                                : null,
-                            icon: const Icon(Icons.arrow_back),
-                            label: const Text('上一步'),
-                          ),
+                      : OutlinedButton.icon(
+                          onPressed: state.step > 0 && !deploy.busy
+                              ? () => goToStep(state.step - 1)
+                              : null,
+                          icon: const Icon(Icons.arrow_back),
+                          label: const Text('上一步'),
                         ),
                   const Spacer(),
                   Text(
@@ -334,26 +330,24 @@ class WizardScreen extends ConsumerWidget {
                               : '下一步',
                           icon: const Icon(Icons.arrow_forward),
                         )
-                      : PressScale(
-                          enabled:
-                              state.step < steps.length - 1 && !deploy.busy,
-                          child: FilledButton.icon(
-                            onPressed:
-                                state.step < steps.length - 1 && !deploy.busy
-                                ? () => goToStep(state.step + 1)
-                                : null,
-                            icon: const Icon(Icons.arrow_forward),
-                            label: Text(
-                              state.step == controller.reviewStep(document.kind)
-                                  ? '生成代码'
-                                  : state.step ==
-                                        controller.codeStep(document.kind)
-                                  ? '烧录'
-                                  : state.step ==
-                                        controller.deployStep(document.kind)
-                                  ? '烧录'
-                                  : '下一步',
-                            ),
+                      : FilledButton.icon(
+                          onPressed:
+                              state.step < steps.length - 1 && !deploy.busy
+                              ? () => goToStep(state.step + 1)
+                              : null,
+                          // M3E：前进类动作的箭头跟在文字后面，与阅读方向一致。
+                          iconAlignment: IconAlignment.end,
+                          icon: const Icon(Icons.arrow_forward),
+                          label: Text(
+                            state.step == controller.reviewStep(document.kind)
+                                ? '生成代码'
+                                : state.step ==
+                                      controller.codeStep(document.kind)
+                                ? '烧录'
+                                : state.step ==
+                                      controller.deployStep(document.kind)
+                                ? '烧录'
+                                : '下一步',
                           ),
                         ),
                 ],
