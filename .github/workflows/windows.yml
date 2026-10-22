@@ -213,6 +213,10 @@ jobs:
         shell: pwsh
         run: ./tools/package_flutter_windows.ps1 -SkipBuild
 
+      - name: 生成单文件便携版
+        shell: pwsh
+        run: ./tools/package_flutter_windows_portable.ps1 -SkipBuild -Verify
+
       - name: 打包免安装 zip
         id: zip
         shell: pwsh
@@ -248,6 +252,7 @@ jobs:
           name: PIEBlock-windows-x64
           path: |
             output/PIEBlock-*-windows-setup.exe
+            output/PIEBlock-*-windows-portable.exe
             ${{ steps.zip.outputs.name }}
           if-no-files-found: error
           retention-days: 14

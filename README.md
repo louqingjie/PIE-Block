@@ -51,6 +51,17 @@ flutter build windows --release
 
 三个 Dart 包可独立运行 `dart analyze` 与 `dart test`。Windows Release 产物位于 `build/windows/x64/runner/Release/`，发布时必须保留整个目录；`pieblock_hid.dll`、`data/pieblock_runtime` 和 `data/flutter_assets` 都是运行所必需的。
 
+Windows 单文件便携版（单 exe、免安装，适合直接分发给没有开发环境的同学）：
+
+```powershell
+.\tools\package_flutter_windows_portable.ps1            # 完整构建并生成
+.\tools\package_flutter_windows_portable.ps1 -SkipBuild # 复用已有 Release 产物
+```
+
+输出 `output/PIEBlock-<版本>-windows-portable.exe`（约 27MB）。它把整个 `Release` 目录作为内嵌载荷塞进 exe 资源，首次启动解压到 `%LOCALAPPDATA%\PIE-Block\portable\app\<版本号+载荷哈希>\`（约 1–2 秒），之后直接复用缓存；不需要管理员权限，也不写注册表。可用 `PIEBLOCK_PORTABLE_ROOT` 覆盖解压目录，`PIEBLOCK_PORTABLE_EXTRACT_ONLY=1` 只解压不启动（打包脚本的 `-Verify` 自检即用该模式），`PIEBLOCK_PORTABLE_LOG` 指定启动器日志文件。
+
+注意两点：Flutter 官方明确不支持把 `flutter_windows.dll` 与 `data/` 静态链接进单个 exe（[flutter#75200](https://github.com/flutter/flutter/issues/75200)），所以这里是「自解压启动器 + 本地缓存」而不是真正的单文件运行；另外应用设置仍保存在系统应用数据目录，配置不会随 exe 一起带走。未签名的单 exe 首次运行可能触发 SmartScreen 提示，正式分发请先代码签名。
+
 Linux 构建与打包（x64）：
 
 ```bash
@@ -122,9 +133,9 @@ Web 版与桌面版共用同一套代码，差异都由 `lib/src/platform/` 下�
 `.github/workflows/windows.yml` 在 push / PR 到 `main` 以及手动触发时校验 Windows 构建，分两段执行：
 
 1. **静态分析与单元测试**（ubuntu，约 2 分钟）：`pieblock_core`、`pieblock_hid`、`pieblock_toolchain` 三个包分别 `dart analyze` + `dart test`，再跑根目录的 `flutter analyze` + `flutter test`。
-2. **Windows 构建与打包**（windows-latest，首次 20–35 分钟，工具链缓存命中后 5–8 分钟）：在 MSYS2 UCRT64 里跑 `tools/build_sdcc_windows_package.sh` 编译 Windows 版内置 SDCC 工具链（按 `sdcc-c251` 子模块提交与脚本哈希缓存），再用 `tools/prepare_sdcc_toolchain.ps1 -PackageOnly` 暂存并生成 `bundle_manifest.json`；随后校验平台字段，再 `flutter build windows --release` 并用 `tools/package_flutter_windows.ps1 -SkipBuild` 出安装包。
+2. **Windows 构建与打包**（windows-latest，首次 20–35 分钟，工具链缓存命中后 5–8 分钟）：在 MSYS2 UCRT64 里跑 `tools/build_sdcc_windows_package.sh` 编译 Windows 版内置 SDCC 工具链（按 `sdcc-c251` 子模块提交与脚本哈希缓存），再用 `tools/prepare_sdcc_toolchain.ps1 -PackageOnly` 暂存并生成 `bundle_manifest.json`；随后校验平台字段，再 `flutter build windows --release` 并用 `tools/package_flutter_windows.ps1 -SkipBuild` 出安装包、用 `tools/package_flutter_windows_portable.ps1 -SkipBuild -Verify` 出单文件便携版。
 
-产物保留 14 天，名称为 `PIEBlock-<版本>-windows-setup.exe`（Inno 安装包）与 `PIEBlock-<版本>-windows-x64-release.zip`（免安装 `Release` 目录）。
+产物保留 14 天，名称为 `PIEBlock-<版本>-windows-setup.exe`（Inno 安装包）、`PIEBlock-<版本>-windows-portable.exe`（单文件便携版）与 `PIEBlock-<版本>-windows-x64-release.zip`（免安装 `Release` 目录）。
 
 SDCC 黄金固件比对不在桌面发版流水线里跑：桌面版编固件用的就是随包发布的同一条工具链，跨平台一致性对它不构成风险。该比对只在 Android 验收时按需运行（`tools/run_android_sdcc_ci.ps1` 的无设备验收，以及真机上的黄金矩阵），见 [Android SDCC 多进程移植](docs/design/android-sdcc-port.md)。
 
