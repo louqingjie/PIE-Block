@@ -736,7 +736,7 @@ class _ActionCard extends StatelessWidget {
         accent.withValues(alpha: dark ? .055 : .025),
         AppSurface.card.colorOf(scheme),
       ),
-      padding: EdgeInsets.all(compact ? 20 : 28),
+      padding: EdgeInsets.zero,
       clipBehavior: Clip.antiAlias,
       child: Stack(
         children: [
@@ -749,35 +749,38 @@ class _ActionCard extends StatelessWidget {
               size: 180,
             ),
           ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              ShapeBadge(
-                shape: MaterialShapes.cookie6Sided,
-                color: scheme.primaryContainer,
-                size: 56,
-                child: Icon(icon, size: 30, color: scheme.onPrimaryContainer),
-              ),
-              const SizedBox(height: 24),
-              Text(title, style: AppText.sectionTitle(context)),
-              const SizedBox(height: 8),
-              Text(subtitle),
-              const SizedBox(height: 28),
-              PressScale(
-                child: FilledButton.icon(
-                  onPressed: onPressed,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: accent,
-                    foregroundColor: foreground,
-                  ),
-                  icon: const Icon(Icons.arrow_forward),
-                  label: Text(
-                    button,
-                    style: AppText.cta(context).copyWith(color: foreground),
+          Padding(
+            padding: EdgeInsets.all(compact ? 20 : 28),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ShapeBadge(
+                  shape: MaterialShapes.cookie6Sided,
+                  color: scheme.primaryContainer,
+                  size: 56,
+                  child: Icon(icon, size: 30, color: scheme.onPrimaryContainer),
+                ),
+                const SizedBox(height: 24),
+                Text(title, style: AppText.sectionTitle(context)),
+                const SizedBox(height: 8),
+                Text(subtitle),
+                const SizedBox(height: 28),
+                PressScale(
+                  child: FilledButton.icon(
+                    onPressed: onPressed,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: accent,
+                      foregroundColor: foreground,
+                    ),
+                    icon: const Icon(Icons.arrow_forward),
+                    label: Text(
+                      button,
+                      style: AppText.cta(context).copyWith(color: foreground),
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ],
       ),
