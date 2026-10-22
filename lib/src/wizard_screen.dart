@@ -14,12 +14,14 @@ import 'package:re_highlight/styles/atom-one-dark.dart';
 import 'package:re_highlight/styles/atom-one-light.dart';
 
 import 'as251_highlight_mode.dart';
+import 'asm_hover.dart';
 import 'asm_preview_controller.dart';
 import 'controller.dart';
 import 'debug_cue_preview.dart';
 import 'deploy_controller.dart';
 import 'design/app_card.dart';
 import 'design/app_theme.dart';
+import 'design/asm_hover_card.dart';
 import 'design/connected_button_group.dart';
 import 'design/legacy_theme_bridge.dart';
 import 'design/press_scale.dart';

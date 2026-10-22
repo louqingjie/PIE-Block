@@ -66,6 +66,15 @@ class _CodePageState extends ConsumerState<_CodePage> {
                     listing: showListing,
                     onChanged: (value) => _selectListing(value, config, code),
                   ),
+                  if (showListing && asm.ready)
+                    Tooltip(
+                      message: '悬停在指令、寄存器、伪指令或数值上查看说明',
+                      child: Icon(
+                        Icons.info_outline,
+                        size: 18,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
                   if (showListing)
                     OutlinedButton.icon(
                       onPressed: asm.compiling
@@ -224,16 +233,33 @@ class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
   List<CodeLineSelection> _matches = const [];
   int _matchIndex = -1;
 
+  /// 汇编字段的悬停说明：C 代码不启用。
+  late final AsmHoverAnnotator _hover;
+  OverlayEntry? _hoverCard;
+  Timer? _hoverDelay;
+
+  /// 按下鼠标期间不弹卡片，免得拖选代码时被挡住。
+  bool _pressing = false;
+
+  static const Duration _hoverDelayDuration = Duration(milliseconds: 200);
+
   @override
   void initState() {
     super.initState();
-    _editingController = CodeLineEditingController.fromText(widget.code);
+    _hover = AsmHoverAnnotator(onEnter: _hoverEnter, onExit: _hoverExit);
+    _applyHoverSource(widget.code);
+    _editingController = CodeLineEditingController(
+      codeLines: widget.code.codeLines,
+      spanBuilder: _buildCodeSpan,
+    );
     _searchController = TextEditingController();
     _searchFocusNode = FocusNode(debugLabel: 'code-search');
     final vertical = ScrollController();
     final horizontal = ScrollController();
     _verticalScroller = vertical;
     _horizontalScroller = horizontal;
+    vertical.addListener(_hideHoverCard);
+    horizontal.addListener(_hideHoverCard);
     _scrollController = CodeScrollController(
       verticalScroller: vertical,
       horizontalScroller: horizontal,
@@ -244,10 +270,77 @@ class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
   @override
   void didUpdateWidget(covariant _GeneratedCodePreview oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.code != widget.code ||
+        oldWidget.fileName != widget.fileName) {
+      _hideHoverCard();
+      _applyHoverSource(widget.code);
+    }
     if (oldWidget.code != widget.code) {
       _editingController.text = widget.code;
       _updateSearch(_searchController.text);
     }
+  }
+
+  /// `.rst` 是链接器列表（带前 40 列），`.asm` 是纯汇编，其它文件不悬停。
+  void _applyHoverSource(String code) {
+    final name = widget.fileName.toLowerCase();
+    final listing = name.endsWith('.rst');
+    _hover.update(
+      code,
+      enabled: listing || name.endsWith('.asm'),
+      listing: listing,
+    );
+  }
+
+  TextSpan _buildCodeSpan({
+    required BuildContext context,
+    required int index,
+    required CodeLine codeLine,
+    required TextSpan textSpan,
+    required TextStyle style,
+  }) => _hover.buildSpan(codeLine: codeLine, textSpan: textSpan);
+
+  void _hoverEnter(AsmHoverToken token, List<Rect> rects) {
+    if (_pressing || rects.isEmpty) return;
+    _hoverDelay?.cancel();
+    _hoverDelay = Timer(_hoverDelayDuration, () {
+      if (!mounted || _pressing) return;
+      _showHoverCard(token, rects.first);
+    });
+  }
+
+  void _hoverExit(AsmHoverToken token) => _hideHoverCard();
+
+  void _showHoverCard(AsmHoverToken token, Rect anchor) {
+    final overlay = Overlay.maybeOf(context);
+    if (overlay == null) return;
+    _removeHoverCard();
+    final entry = OverlayEntry(
+      builder: (context) => Positioned.fill(
+        child: IgnorePointer(
+          child: CustomSingleChildLayout(
+            delegate: AsmHoverCardLayout(anchor: anchor),
+            child: AsmHoverCard(token: token.text, data: token.data),
+          ),
+        ),
+      ),
+    );
+    overlay.insert(entry);
+    _hoverCard = entry;
+  }
+
+  void _hideHoverCard() {
+    _hoverDelay?.cancel();
+    _hoverDelay = null;
+    _removeHoverCard();
+  }
+
+  void _removeHoverCard() {
+    final entry = _hoverCard;
+    if (entry == null) return;
+    _hoverCard = null;
+    if (entry.mounted) entry.remove();
+    entry.dispose();
   }
 
   void _updateSearch(String query) {
@@ -282,6 +375,7 @@ class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
     final normalized =
         (index % _matches.length + _matches.length) % _matches.length;
     if (rebuild) setState(() => _matchIndex = normalized);
+    _hideHoverCard();
     _editingController.selection = _matches[normalized];
     _scrollController.makeCenterIfInvisible(_matches[normalized].start);
     if (focusEditor) _editorFocusNode.requestFocus();
@@ -289,6 +383,7 @@ class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
 
   @override
   void dispose() {
+    _hideHoverCard();
     _searchController.dispose();
     _searchFocusNode.dispose();
     _editingController.dispose();
@@ -390,87 +485,97 @@ class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
         LegacyMaterialThemeBridge(
           child: SizedBox(
             height: (MediaQuery.sizeOf(context).height * .55).clamp(280, 560),
-            child: CodeEditor(
-              key: const ValueKey('generated-code-editor'),
-              controller: _editingController,
-              scrollController: _scrollController,
-              focusNode: _editorFocusNode,
-              readOnly: true,
-              showCursorWhenReadOnly: true,
-              wordWrap: false,
-              chunkAnalyzer: const NonCodeChunkAnalyzer(),
-              shortcutOverrideActions: {
-                CodeShortcutFindIntent: CallbackAction<CodeShortcutFindIntent>(
-                  onInvoke: (intent) {
-                    _searchFocusNode.requestFocus();
-                    _searchController.selection = TextSelection(
-                      baseOffset: 0,
-                      extentOffset: _searchController.text.length,
-                    );
-                    return null;
-                  },
-                ),
+            child: Listener(
+              onPointerDown: (_) {
+                _pressing = true;
+                _hideHoverCard();
               },
-              padding: _codeEditorPadding,
-              borderRadius: BorderRadius.circular(AppCorner.md),
-              clipBehavior: Clip.antiAlias,
-              border: Border.all(
-                color: Theme.of(context).colorScheme.outlineVariant,
-              ),
-              leadingDivider: Container(
-                width: 1,
-                color: Theme.of(context).colorScheme.outlineVariant,
-              ),
-              indicatorBuilder:
-                  (context, editingController, chunkController, notifier) =>
-                      Padding(
-                        padding: const EdgeInsets.only(left: 10, right: 8),
-                        child: DefaultCodeLineNumber(
-                          key: const ValueKey('generated-code-line-numbers'),
-                          controller: editingController,
-                          notifier: notifier,
-                          textStyle: TextStyle(
-                            color: gutter,
-                            fontFamily: 'PieBlockMono',
-                            fontFamilyFallback: _codeFontFallbacks,
-                            fontSize: _codeFontSize,
-                            height: _codeLineHeightFactor,
-                          ),
-                          focusedTextStyle: TextStyle(
-                            color: Theme.of(context).colorScheme.primary,
-                            fontFamily: 'PieBlockMono',
-                            fontFamilyFallback: _codeFontFallbacks,
-                            fontSize: _codeFontSize,
-                            height: _codeLineHeightFactor,
+              onPointerUp: (_) => _pressing = false,
+              onPointerCancel: (_) => _pressing = false,
+              child: CodeEditor(
+                key: const ValueKey('generated-code-editor'),
+                controller: _editingController,
+                scrollController: _scrollController,
+                focusNode: _editorFocusNode,
+                readOnly: true,
+                showCursorWhenReadOnly: true,
+                wordWrap: false,
+                chunkAnalyzer: const NonCodeChunkAnalyzer(),
+                shortcutOverrideActions: {
+                  CodeShortcutFindIntent:
+                      CallbackAction<CodeShortcutFindIntent>(
+                        onInvoke: (intent) {
+                          _searchFocusNode.requestFocus();
+                          _searchController.selection = TextSelection(
+                            baseOffset: 0,
+                            extentOffset: _searchController.text.length,
+                          );
+                          return null;
+                        },
+                      ),
+                },
+                padding: _codeEditorPadding,
+                borderRadius: BorderRadius.circular(AppCorner.md),
+                clipBehavior: Clip.antiAlias,
+                border: Border.all(
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
+                leadingDivider: Container(
+                  width: 1,
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
+                indicatorBuilder:
+                    (context, editingController, chunkController, notifier) =>
+                        Padding(
+                          padding: const EdgeInsets.only(left: 10, right: 8),
+                          child: DefaultCodeLineNumber(
+                            key: const ValueKey('generated-code-line-numbers'),
+                            controller: editingController,
+                            notifier: notifier,
+                            textStyle: TextStyle(
+                              color: gutter,
+                              fontFamily: 'PieBlockMono',
+                              fontFamilyFallback: _codeFontFallbacks,
+                              fontSize: _codeFontSize,
+                              height: _codeLineHeightFactor,
+                            ),
+                            focusedTextStyle: TextStyle(
+                              color: Theme.of(context).colorScheme.primary,
+                              fontFamily: 'PieBlockMono',
+                              fontFamilyFallback: _codeFontFallbacks,
+                              fontSize: _codeFontSize,
+                              height: _codeLineHeightFactor,
+                            ),
                           ),
                         ),
-                      ),
-              style: CodeEditorStyle(
-                fontFamily: 'PieBlockMono',
-                fontFamilyFallback: _codeFontFallbacks,
-                fontSize: _codeFontSize,
-                fontHeight: _codeLineHeightFactor,
-                textColor: foreground,
-                backgroundColor: background,
-                selectionColor: const Color(0xff02acc0).withValues(alpha: .34),
-                highlightColor: const Color(0xffef685d).withValues(alpha: .3),
-                cursorColor: Theme.of(context).colorScheme.primary,
-                cursorLineColor: Theme.of(context).colorScheme.primary
-                    .withValues(alpha: .07),
-                codeTheme: CodeHighlightTheme(
-                  // 按输出文件选语言；保持单条目，re_editor 才走确定性高亮。
-                  languages:
-                      widget.languages ??
-                      (widget.fileName.endsWith('.asm')
-                          ? {'asm': CodeHighlightThemeMode(mode: langAs251)}
-                          : widget.fileName.endsWith('.rst')
-                          ? {
-                              'asm': CodeHighlightThemeMode(
-                                mode: langAs251Listing,
-                              ),
-                            }
-                          : {'c': CodeHighlightThemeMode(mode: langC)}),
-                  theme: syntaxTheme,
+                style: CodeEditorStyle(
+                  fontFamily: 'PieBlockMono',
+                  fontFamilyFallback: _codeFontFallbacks,
+                  fontSize: _codeFontSize,
+                  fontHeight: _codeLineHeightFactor,
+                  textColor: foreground,
+                  backgroundColor: background,
+                  selectionColor: const Color(0xff02acc0)
+                      .withValues(alpha: .34),
+                  highlightColor: const Color(0xffef685d).withValues(alpha: .3),
+                  cursorColor: Theme.of(context).colorScheme.primary,
+                  cursorLineColor: Theme.of(context).colorScheme.primary
+                      .withValues(alpha: .07),
+                  codeTheme: CodeHighlightTheme(
+                    // 按输出文件选语言；保持单条目，re_editor 才走确定性高亮。
+                    languages:
+                        widget.languages ??
+                        (widget.fileName.endsWith('.asm')
+                            ? {'asm': CodeHighlightThemeMode(mode: langAs251)}
+                            : widget.fileName.endsWith('.rst')
+                            ? {
+                                'asm': CodeHighlightThemeMode(
+                                  mode: langAs251Listing,
+                                ),
+                              }
+                            : {'c': CodeHighlightThemeMode(mode: langC)}),
+                    theme: syntaxTheme,
+                  ),
                 ),
               ),
             ),

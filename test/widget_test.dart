@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -276,6 +277,17 @@ AsmPreviewState _readyAsmState(String code) => AsmPreviewState(
   sourceCode: code,
   listing: _rstSample,
 );
+
+/// 在 span 树里找出文本为 [text] 的可悬停叶子（悬停说明注入的结果）。
+MouseTrackerAnnotationTextSpan? _hoverLeaf(TextSpan span, String text) {
+  if (span.text == text && span is MouseTrackerAnnotationTextSpan) return span;
+  for (final child in span.children ?? const <InlineSpan>[]) {
+    if (child is! TextSpan) continue;
+    final found = _hoverLeaf(child, text);
+    if (found != null) return found;
+  }
+  return null;
+}
 
 /// 记录调用次数的假控制器：用来断言「进页面不编译、只有点汇编才编译」。
 class _FakeAsmPreviewController extends AsmPreviewController {
@@ -2665,6 +2677,97 @@ void main() {
       find.byKey(const ValueKey('generated-code-line-numbers')),
     );
     expect(numbers.customLineIndex2Text, isNull);
+    expect(tester.takeException(), isNull);
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  testWidgets('汇编列表悬停字段弹出说明卡片，C 代码不注入悬停', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1600, 900);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+      debugDefaultTargetPlatformOverride = null;
+    });
+    final document = _musicDocument();
+    final fake = _FakeAsmPreviewController(const AsmPreviewState());
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _GeneratedCodeController(document: document),
+          ),
+          asmPreviewControllerProvider.overrideWith(() => fake),
+          deployControllerProvider.overrideWith(_FakeDeployController.new),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final editorFinder = find.byKey(const ValueKey('generated-code-editor'));
+    const style = TextStyle(fontSize: 13);
+    TextSpan buildSpan(
+      CodeLineEditingController controller,
+      int index,
+      TextSpan input,
+    ) => controller.buildTextSpan(
+      context: tester.element(editorFinder),
+      index: index,
+      textSpan: input,
+      style: style,
+    );
+
+    // C 视图：span 原样返回，没有任何可悬停字段。
+    final cController = tester.widget<CodeEditor>(editorFinder).controller!;
+    final cInput = TextSpan(text: cController.codeLines[0].text);
+    expect(identical(buildSpan(cController, 0, cInput), cInput), isTrue);
+
+    await tester.tap(find.text('汇编'));
+    await tester.pumpAndSettle();
+
+    // 列表第 3 行是 `mov r7, dpl`（前两行是注释与 .module）。
+    final controller = tester.widget<CodeEditor>(editorFinder).controller!;
+    final line = controller.codeLines[2].text;
+    expect(line, contains('mov'));
+    final span = buildSpan(controller, 2, TextSpan(text: line));
+    final mov = _hoverLeaf(span, 'mov');
+    expect(mov, isNotNull);
+    expect(_hoverLeaf(span, 'r7'), isNotNull);
+    expect(_hoverLeaf(span, 'dpl'), isNotNull);
+    // 机器码列不做字段悬停，只有整段前缀一条列表说明。
+    expect(_hoverLeaf(span, '7E'), isNull);
+    expect(_hoverLeaf(span, line.substring(0, 40)), isNotNull);
+
+    final anchor = const Rect.fromLTWH(200, 300, 26, 18);
+    mov!.onEnterWithRect(
+      PointerEnterEvent(
+        position: const Offset(205, 305),
+        kind: PointerDeviceKind.mouse,
+      ),
+      2,
+      [anchor],
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    await tester.pumpAndSettle();
+
+    expect(find.text('mov'), findsOneWidget);
+    expect(find.text('指令'), findsOneWidget);
+    expect(find.text('MOV · 数据传送'), findsOneWidget);
+    expect(find.textContaining('把源操作数的值复制到目的操作数'), findsOneWidget);
+
+    mov.onExitWithRect(
+      PointerExitEvent(
+        position: const Offset(0, 0),
+        kind: PointerDeviceKind.mouse,
+      ),
+      2,
+      [anchor],
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('MOV · 数据传送'), findsNothing);
     expect(tester.takeException(), isNull);
     debugDefaultTargetPlatformOverride = null;
   });
