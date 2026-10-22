@@ -771,7 +771,10 @@ class _ActionCard extends StatelessWidget {
                     foregroundColor: foreground,
                   ),
                   icon: const Icon(Icons.arrow_forward),
-                  label: Text(button, style: AppText.cta(context)),
+                  label: Text(
+                    button,
+                    style: AppText.cta(context).copyWith(color: foreground),
+                  ),
                 ),
               ),
             ],
