@@ -196,3 +196,8 @@ app.*.map.json
 .widget_preview/
 .workbuddy/
 .zcode/
+
+# 文档渲染临时目录（LibreOffice Kit 生成）及参赛材料压缩包
+/.dsh-office-*/
+/submission/*.zip
+
