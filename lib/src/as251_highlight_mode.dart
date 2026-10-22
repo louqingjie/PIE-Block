@@ -1,5 +1,7 @@
 import 'package:re_highlight/re_highlight.dart';
 
+import 'asm_glossary.dart';
+
 /// SDCC as251（MCS-251 内核）汇编的语法高亮模式。
 ///
 /// re_highlight 内置的汇编模式面向 AVR、X86 等方言，对本项目代码
@@ -7,6 +9,9 @@ import 'package:re_highlight/re_highlight.dart';
 /// 按生成器实际的指令集定制。scope 键与 atom-one 主题已有的样式
 /// （keyword/built_in/meta/comment/number/symbol/title/string）一一
 /// 对应，无需扩充主题。
+///
+/// 词表直接取自 `asm_glossary.dart`：着色认识的词与悬停能解释的词始终是
+/// 同一批，不会出现「有颜色却查不到说明」。
 ///
 /// [listing] 为真时用于链接器产出的列表文件（`main.rst`）：它的每行前面
 /// 还有四列列表机信息——地址、机器码字节、指令周期 `[n]` 与 asm 行号，
@@ -20,20 +25,12 @@ Mode as251Mode({bool listing = false}) => Mode(
   disableAutodetect: true,
   keywords: {
     r'$pattern': r'\.?[a-zA-Z]\w*',
-    // 8051 全部助记符 + MCS-251 新增（ecall/ejmp/eret/trap/sla/sra/srl）。
-    'keyword': 'acall add addc ajmp anl cjne clr cpl da dec div djnz '
-        'ecall ejmp eret inc jb jbc jc jmp jnb jnc jnz jz lcall ljmp mov '
-        'movc movx mul nop orl pop push ret reti rl rlc rr rrc setb sjmp '
-        'sla sra srl subb swap trap xch xchd xrl',
-    // 寄存器（含 ar0~ar7 直接地址别名）与 asxxxx 地址空间、段名。
-    'built_in': 'a acc ap ar0 ar1 ar2 ar3 ar4 ar5 ar6 ar7 b bit bseg c '
-        'code cseg data dph dpl dpx dpxh dpxl dr28 dr30 dptr gsfinal '
-        'gsinit home idata iseg mds md0 md1 md2 pdata psw pseg r0 r1 r2 '
-        'r3 r4 r5 r6 r7 sseg sp spx xdata xinit xseg',
-    'meta': '.area .ascii .asciz .byte .db .ds .dsb .dsw .dw .else .end '
-        '.endif .endm .equ .error .even .globl .if .ifdef .ifndef '
-        '.include .list .macro .module .nolist .org .page .radix .sbttl '
-        '.set .title',
+    // MCS-251 全部指令族，外加 call / pushw 两个汇编器别名。
+    'keyword': asmMnemonicKeywords,
+    // 寄存器（含 ar0~ar7 直接地址别名、wr/dr 元组）与 asxxxx 地址空间、
+    // 段名、`.area` 属性。
+    'built_in': '$asmRegisterKeywords $asmSegmentKeywords',
+    'meta': asmDirectiveKeywords,
   },
   contains: <Mode>[
     // 列表文件的前 40 列：地址 + 机器码 + [周期] + 行号（+ 行号后的空白）。
