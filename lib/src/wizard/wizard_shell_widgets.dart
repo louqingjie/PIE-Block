@@ -115,10 +115,15 @@ class _PageFrame extends ConsumerWidget {
     required this.subtitle,
     required this.child,
     this.stepId,
+    this.fill = false,
   });
   final String title, subtitle;
   final String? stepId;
   final Widget child;
+
+  /// 由 child 自己承担滚动时置为 true：页头固定，child 填满剩余高度。
+  final bool fill;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final activeInputField = _activeInputField(ref);
@@ -134,6 +139,52 @@ class _PageFrame extends ConsumerWidget {
               )
               .toList();
     final compact = _isCompact(context);
+    final header = <Widget>[
+      Text(
+        title,
+        style: Theme.of(
+          context,
+        ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800),
+      ),
+      const SizedBox(height: 6),
+      Text(subtitle, style: Theme.of(context).textTheme.bodyLarge),
+      if (issues.isNotEmpty) ...[
+        const SizedBox(height: 16),
+        if (fill)
+          // 留给问题面板的高度有上限，短窗口下不能把列表挤成零高。
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 200),
+            child: SingleChildScrollView(
+              child: _StepProblemPanel(issues: issues),
+            ),
+          )
+        else
+          _StepProblemPanel(issues: issues),
+      ],
+    ];
+    if (fill) {
+      return Padding(
+        padding: EdgeInsets.fromLTRB(
+          compact ? 16 : 32,
+          compact ? 18 : 26,
+          compact ? 16 : 32,
+          compact ? 16 : 24,
+        ),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 980),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ...header,
+                const SizedBox(height: 24),
+                Expanded(child: child),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
     return SingleChildScrollView(
       padding: EdgeInsets.fromLTRB(
         compact ? 16 : 32,
@@ -146,21 +197,7 @@ class _PageFrame extends ConsumerWidget {
           constraints: const BoxConstraints(maxWidth: 980),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: Theme.of(context).textTheme.headlineMedium
-                    ?.copyWith(fontWeight: FontWeight.w800),
-              ),
-              const SizedBox(height: 6),
-              Text(subtitle, style: Theme.of(context).textTheme.bodyLarge),
-              if (issues.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                _StepProblemPanel(issues: issues),
-              ],
-              const SizedBox(height: 24),
-              child,
-            ],
+            children: [...header, const SizedBox(height: 24), child],
           ),
         ),
       ),

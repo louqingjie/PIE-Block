@@ -777,6 +777,66 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('调试序列拖拽浮层被限制在列表区域内', (tester) async {
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1200, 1000);
+    final preview = _FakeDebugCuePreview();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _StaticProjectController(_debugDocument(), 0),
+          ),
+          deployControllerProvider.overrideWith(_FakeDeployController.new),
+        ],
+        child: MaterialApp(
+          theme: ThemeData(useMaterial3: true),
+          home: WizardScreen(debugCuePreview: preview),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final listRect = tester.getRect(find.byType(ReorderableListView));
+    final titleRect = tester.getRect(find.text('调试测试序列'));
+    final handle = find.byIcon(Icons.drag_indicator).first;
+
+    // 向上拖出列表：浮层应停在列表视口上方 20px 内，而不是盖住页标题。
+    final gesture = await tester.startGesture(tester.getCenter(handle));
+    await tester.pump();
+    await gesture.moveBy(const Offset(0, -20));
+    await tester.pump();
+    await gesture.moveBy(const Offset(0, -600));
+    await tester.pump();
+    final proxy = find.byKey(const ValueKey('debug-drag-proxy'));
+    expect(proxy, findsOneWidget);
+    expect(tester.getRect(proxy).top, greaterThanOrEqualTo(listRect.top - 21));
+    expect(tester.getRect(proxy).top, greaterThan(titleRect.bottom));
+    expect(tester.takeException(), isNull);
+    await gesture.up();
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 600));
+
+    // 向下拖 400px 应真的换位。
+    final move = await tester.startGesture(tester.getCenter(handle));
+    await tester.pump();
+    await move.moveBy(const Offset(0, 20));
+    await tester.pump();
+    for (var step = 0; step < 8; step += 1) {
+      await move.moveBy(const Offset(0, 50));
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    await move.up();
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(find.text('1. P64'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('调试向导展示可排序十路测试和动态摩擦轮字段', (tester) async {
     // 试听面板默认用 flutter_soloud，测试里没有原生动态库，必须注入假实现。
     final preview = _FakeDebugCuePreview();
@@ -796,13 +856,17 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('调试测试序列'), findsOneWidget);
-    expect(find.byIcon(Icons.drag_indicator), findsNWidgets(10));
+    // 列表自带滚动：屏幕外的项在缓存区内已构建但处于 offstage，需关闭过滤才数得到。
+    expect(
+      find.byIcon(Icons.drag_indicator, skipOffstage: false),
+      findsNWidgets(10),
+    );
     // 摩擦轮项直接填目标占空比；页面上不再有独立的 P64/P66 满油上限字段。
-    expect(find.text('最大占空比'), findsNWidgets(2));
-    expect(find.text('油门'), findsNothing);
-    expect(find.text('P64 最大占空比'), findsNothing);
-    expect(find.text('P66 最大占空比'), findsNothing);
-    expect(find.text('测试时长'), findsNothing);
+    expect(find.text('最大占空比', skipOffstage: false), findsNWidgets(2));
+    expect(find.text('油门', skipOffstage: false), findsNothing);
+    expect(find.text('P64 最大占空比', skipOffstage: false), findsNothing);
+    expect(find.text('P66 最大占空比', skipOffstage: false), findsNothing);
+    expect(find.text('测试时长', skipOffstage: false), findsNothing);
     expect(tester.takeException(), isNull);
 
     // 页面顶部原有的三条说明 banner 已删除，不再出现这些文案。

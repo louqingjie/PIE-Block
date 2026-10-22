@@ -163,205 +163,285 @@ class _DebugTestsPage extends ConsumerWidget {
           '启用需要测试的引脚并拖动排序。固件会按此顺序逐项执行，'
           '跑完最后一项自动回到第 1 项，如此循环。',
       stepId: 'tests',
-      child: Column(
-        children: [
-          _DebugCueAudition(
-            enabledCount: config.tests.where((item) => item.enabled).length,
-            preview: cuePreview,
-          ),
-          const SizedBox(height: 18),
-          _FieldAnchor(
-            path: 'tests',
-            child: ReorderableListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              buildDefaultDragHandles: false,
-              itemCount: config.tests.length,
-              onReorderItem: (oldIndex, newIndex) {
-                final tests = [...config.tests];
-                final item = tests.removeAt(oldIndex);
-                tests.insert(newIndex, item);
-                controller.updateConfig(config.copyWith(tests: tests));
-              },
-              itemBuilder: (context, index) {
-                final item = config.tests[index];
-                final base = 'tests.$index';
-                final mainServo = mainServoPins.contains(item.pin);
-                final driveChoices = mainServo
-                    ? const [DebugDriveType.servo]
-                    : <DebugDriveType>[
-                        DebugDriveType.motor,
-                        DebugDriveType.servo,
-                        if (const {'P64', 'P66'}.contains(item.pin))
-                          DebugDriveType.friction,
-                      ];
-                String driveLabel(DebugDriveType value) => switch (value) {
-                  DebugDriveType.motor => '电机',
-                  DebugDriveType.servo => '舵机',
-                  DebugDriveType.friction => '摩擦轮',
-                };
-                final valueLabel = switch (item.driveType) {
-                  DebugDriveType.servo => '角度',
-                  DebugDriveType.friction => '最大占空比',
-                  _ => '速度',
-                };
-                return Card(
-                  key: ValueKey(item.pin),
-                  margin: const EdgeInsets.only(bottom: 12),
-                  child: Padding(
-                    padding: EdgeInsets.all(_isCompact(context) ? 14 : 18),
-                    child: Column(
-                      children: [
-                        Row(
-                          children: [
-                            ReorderableDragStartListener(
-                              index: index,
-                              child: const Padding(
-                                padding: EdgeInsets.all(8),
-                                child: Icon(Icons.drag_indicator),
-                              ),
-                            ),
-                            Expanded(
-                              child: Text(
-                                '${index + 1}. ${item.pin}',
-                                style: Theme.of(context).textTheme.titleMedium
-                                    ?.copyWith(fontWeight: FontWeight.w700),
-                              ),
-                            ),
-                            Switch(
-                              value: item.enabled,
-                              onChanged: (value) =>
-                                  replace(index, item.copyWith(enabled: value)),
-                            ),
-                          ],
-                        ),
-                        if (item.enabled) ...[
-                          const SizedBox(height: 12),
-                          _FormRow(
-                            fieldPaths: [
-                              '$base.drive_type',
-                              if (item.driveType != DebugDriveType.friction)
-                                '$base.direction',
-                              '$base.value',
-                              if (item.driveType != DebugDriveType.friction)
-                                '$base.duration_ms',
-                            ],
-                            children: [
-                              Expanded(
-                                child: _FieldAnchor(
-                                  path: '$base.drive_type',
-                                  child:
-                                      DropdownButtonFormField<DebugDriveType>(
-                                        key: ValueKey(
-                                          '${item.pin}-drive-${item.driveType}',
-                                        ),
-                                        initialValue: item.driveType,
-                                        decoration: _fieldDecoration(
-                                          ref,
-                                          '$base.drive_type',
-                                          '驱动类型',
-                                        ),
-                                        items: [
-                                          for (final value in driveChoices)
-                                            DropdownMenuItem(
-                                              value: value,
-                                              child: Text(driveLabel(value)),
-                                            ),
-                                        ],
-                                        onChanged: (value) => replace(
-                                          index,
-                                          item.copyWith(
-                                            driveType: value,
-                                            direction:
-                                                value == DebugDriveType.friction
-                                                ? null
-                                                : item.direction,
-                                          ),
-                                        ),
-                                      ),
-                                ),
-                              ),
-                              if (item.driveType !=
-                                  DebugDriveType.friction) ...[
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: _FieldAnchor(
-                                    path: '$base.direction',
-                                    child: DropdownButtonFormField<Direction>(
-                                      initialValue: item.direction,
-                                      decoration: _fieldDecoration(
-                                        ref,
-                                        '$base.direction',
-                                        '方向',
-                                      ),
-                                      items: Direction.values
-                                          .map(
-                                            (value) => DropdownMenuItem(
-                                              value: value,
-                                              child: Text(
-                                                value == Direction.forward
-                                                    ? '正向'
-                                                    : '反向',
-                                              ),
-                                            ),
-                                          )
-                                          .toList(),
-                                      onChanged: (value) => replace(
-                                        index,
-                                        item.copyWith(direction: value),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: _NumberField(
-                                  label: valueLabel,
-                                  suffix:
-                                      item.driveType == DebugDriveType.friction
-                                      ? 'duty'
-                                      : null,
-                                  value: item.value,
-                                  fieldPath: '$base.value',
-                                  onChanged: (value) => replace(
-                                    index,
-                                    item.copyWith(value: value),
-                                  ),
-                                ),
-                              ),
-                              if (item.driveType !=
-                                  DebugDriveType.friction) ...[
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: _NumberField(
-                                    label: '测试时长',
-                                    value: item.durationMs,
-                                    suffix: 'ms',
-                                    fieldPath: '$base.duration_ms',
-                                    onChanged: (value) {
-                                      if (value != null) {
-                                        replace(
-                                          index,
-                                          item.copyWith(durationMs: value),
-                                        );
-                                      }
-                                    },
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                );
-              },
+      fill: true,
+      child: _FieldAnchor(
+        path: 'tests',
+        child: ReorderableListView.builder(
+          buildDefaultDragHandles: false,
+          // 调试序列固定 10 项：全部保持挂载，题面板跳转才能定位到屏幕外的卡片。
+          scrollCacheExtent: const ScrollCacheExtent.pixels(4000),
+          proxyDecorator: _debugDragProxy,
+          dragBoundaryProvider: _debugDragBoundary,
+          onReorderStart: (_) => _endTextInput(ref),
+          header: Padding(
+            padding: const EdgeInsets.only(bottom: 18),
+            child: _DebugCueAudition(
+              enabledCount: config.tests.where((item) => item.enabled).length,
+              preview: cuePreview,
             ),
           ),
-        ],
+          itemCount: config.tests.length,
+          onReorderItem: (oldIndex, newIndex) {
+            final tests = [...config.tests];
+            final item = tests.removeAt(oldIndex);
+            tests.insert(newIndex, item);
+            controller.updateConfig(config.copyWith(tests: tests));
+          },
+          itemBuilder: (context, index) {
+            final item = config.tests[index];
+            final base = 'tests.$index';
+            final mainServo = mainServoPins.contains(item.pin);
+            final driveChoices = mainServo
+                ? const [DebugDriveType.servo]
+                : <DebugDriveType>[
+                    DebugDriveType.motor,
+                    DebugDriveType.servo,
+                    if (const {'P64', 'P66'}.contains(item.pin))
+                      DebugDriveType.friction,
+                  ];
+            String driveLabel(DebugDriveType value) => switch (value) {
+              DebugDriveType.motor => '电机',
+              DebugDriveType.servo => '舵机',
+              DebugDriveType.friction => '摩擦轮',
+            };
+            final valueLabel = switch (item.driveType) {
+              DebugDriveType.servo => '角度',
+              DebugDriveType.friction => '最大占空比',
+              _ => '速度',
+            };
+            return Card(
+              key: ValueKey(item.pin),
+              margin: const EdgeInsets.only(bottom: _debugCardGap),
+              child: Padding(
+                padding: EdgeInsets.all(_isCompact(context) ? 14 : 18),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        ReorderableDragStartListener(
+                          index: index,
+                          child: const Padding(
+                            padding: EdgeInsets.all(8),
+                            child: Icon(Icons.drag_indicator),
+                          ),
+                        ),
+                        Expanded(
+                          child: Text(
+                            '${index + 1}. ${item.pin}',
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                        Switch(
+                          value: item.enabled,
+                          onChanged: (value) =>
+                              replace(index, item.copyWith(enabled: value)),
+                        ),
+                      ],
+                    ),
+                    if (item.enabled) ...[
+                      const SizedBox(height: 12),
+                      _FormRow(
+                        fieldPaths: [
+                          '$base.drive_type',
+                          if (item.driveType != DebugDriveType.friction)
+                            '$base.direction',
+                          '$base.value',
+                          if (item.driveType != DebugDriveType.friction)
+                            '$base.duration_ms',
+                        ],
+                        children: [
+                          Expanded(
+                            child: _FieldAnchor(
+                              path: '$base.drive_type',
+                              child: DropdownButtonFormField<DebugDriveType>(
+                                key: ValueKey(
+                                  '${item.pin}-drive-${item.driveType}',
+                                ),
+                                initialValue: item.driveType,
+                                decoration: _fieldDecoration(
+                                  ref,
+                                  '$base.drive_type',
+                                  '驱动类型',
+                                ),
+                                items: [
+                                  for (final value in driveChoices)
+                                    DropdownMenuItem(
+                                      value: value,
+                                      child: Text(driveLabel(value)),
+                                    ),
+                                ],
+                                onChanged: (value) => replace(
+                                  index,
+                                  item.copyWith(
+                                    driveType: value,
+                                    direction: value == DebugDriveType.friction
+                                        ? null
+                                        : item.direction,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          if (item.driveType != DebugDriveType.friction) ...[
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _FieldAnchor(
+                                path: '$base.direction',
+                                child: DropdownButtonFormField<Direction>(
+                                  initialValue: item.direction,
+                                  decoration: _fieldDecoration(
+                                    ref,
+                                    '$base.direction',
+                                    '方向',
+                                  ),
+                                  items: Direction.values
+                                      .map(
+                                        (value) => DropdownMenuItem(
+                                          value: value,
+                                          child: Text(
+                                            value == Direction.forward
+                                                ? '正向'
+                                                : '反向',
+                                          ),
+                                        ),
+                                      )
+                                      .toList(),
+                                  onChanged: (value) => replace(
+                                    index,
+                                    item.copyWith(direction: value),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _NumberField(
+                              label: valueLabel,
+                              suffix: item.driveType == DebugDriveType.friction
+                                  ? 'duty'
+                                  : null,
+                              value: item.value,
+                              fieldPath: '$base.value',
+                              onChanged: (value) =>
+                                  replace(index, item.copyWith(value: value)),
+                            ),
+                          ),
+                          if (item.driveType != DebugDriveType.friction) ...[
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _NumberField(
+                                label: '测试时长',
+                                value: item.durationMs,
+                                suffix: 'ms',
+                                fieldPath: '$base.duration_ms',
+                                onChanged: (value) {
+                                  if (value != null) {
+                                    replace(
+                                      index,
+                                      item.copyWith(durationMs: value),
+                                    );
+                                  }
+                                },
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
       ),
+    );
+  }
+}
+
+/// 卡片之间的纵向间隙，拖拽浮层要按它把阴影收进卡片本体。
+const double _debugCardGap = 12;
+
+/// 拖拽浮层外扩的像素数：越过 EdgeDraggingAutoScroller 的严格边界判断，
+/// 同时不超过页头与列表之间的 24px 间距。
+const double _dragBoundaryPeek = 20;
+
+Widget _debugDragProxy(Widget child, int index, Animation<double> animation) {
+  return AnimatedBuilder(
+    animation: animation,
+    child: child,
+    builder: (context, child) {
+      final t = Curves.easeInOut.transform(animation.value);
+      return Stack(
+        key: const ValueKey('debug-drag-proxy'),
+        clipBehavior: Clip.none,
+        children: [
+          // 只给卡片本体投圆角阴影；底部 12px 间隙保持透明，不露出矩形底。
+          Positioned(
+            left: 0,
+            right: 0,
+            top: 0,
+            bottom: _debugCardGap,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(18),
+                boxShadow: [
+                  BoxShadow(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.shadow.withValues(alpha: .24 * t),
+                    blurRadius: 18 * t,
+                    offset: Offset(0, 6 * t),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // Card 自带 Material，这里不再叠一层矩形底色。
+          child!,
+        ],
+      );
+    },
+  );
+}
+
+DragBoundaryDelegate<Rect>? _debugDragBoundary(BuildContext listContext) {
+  final box = Scrollable.maybeOf(listContext)?.context.findRenderObject();
+  if (box is! RenderBox || !box.hasSize) return null;
+  final rect = box.localToGlobal(Offset.zero) & box.size;
+  return _DebugDragBoundary(
+    Rect.fromLTRB(
+      rect.left,
+      rect.top - _dragBoundaryPeek,
+      rect.right,
+      rect.bottom + _dragBoundaryPeek,
+    ),
+  );
+}
+
+/// 把拖拽浮层夹在列表视口附近，避免它盖住页标题或跑出窗口。
+class _DebugDragBoundary extends DragBoundaryDelegate<Rect> {
+  _DebugDragBoundary(this.bounds);
+
+  final Rect bounds;
+
+  @override
+  bool isWithinBoundary(Rect dragged) =>
+      bounds.contains(dragged.topLeft) && bounds.contains(dragged.bottomRight);
+
+  @override
+  Rect nearestPositionWithinBoundary(Rect dragged) {
+    // 视口比卡片还矮时退回不夹取，避免 SDK 的默认实现直接抛 FlutterError。
+    if (dragged.width > bounds.width || dragged.height > bounds.height) {
+      return dragged;
+    }
+    return Rect.fromLTWH(
+      dragged.left.clamp(bounds.left, bounds.right - dragged.width).toDouble(),
+      dragged.top.clamp(bounds.top, bounds.bottom - dragged.height).toDouble(),
+      dragged.width,
+      dragged.height,
     );
   }
 }
