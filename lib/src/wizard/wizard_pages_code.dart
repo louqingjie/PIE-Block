@@ -118,22 +118,14 @@ class _CodeOutputSwitch extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Semantics(
     label: '输出语言',
-    child: SegmentedButton<bool>(
-      showSelectedIcon: false,
+    child: ConnectedButtonGroup<bool>(
+      semanticLabel: '输出语言',
       segments: const [
-        ButtonSegment(
-          value: false,
-          icon: Icon(Icons.code, size: 18),
-          label: Text('C 代码'),
-        ),
-        ButtonSegment(
-          value: true,
-          icon: Icon(Icons.memory, size: 18),
-          label: Text('汇编'),
-        ),
+        ConnectedSegment(value: false, icon: Icons.code, label: 'C 代码'),
+        ConnectedSegment(value: true, icon: Icons.memory, label: '汇编'),
       ],
-      selected: {listing},
-      onSelectionChanged: (selection) => onChanged(selection.first),
+      value: listing,
+      onChanged: onChanged,
     ),
   );
 }
@@ -155,18 +147,14 @@ class _ListingPlaceholder extends StatelessWidget {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 26),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(12),
+        shape: AppShape.lg,
       ),
       child: Column(
         children: [
           if (compiling) ...[
-            const SizedBox(
-              width: 30,
-              height: 30,
-              child: CircularProgressIndicator(strokeWidth: 3),
-            ),
+            const WavyProgressIndicator(semanticLabel: '编译进度'),
             const SizedBox(height: 16),
             Text(
               '正在用内置 SDCC C251 构建 main.c…',
@@ -399,89 +387,91 @@ class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
             ],
           ),
         const SizedBox(height: 16),
-        SizedBox(
-          height: (MediaQuery.sizeOf(context).height * .55).clamp(280, 560),
-          child: CodeEditor(
-            key: const ValueKey('generated-code-editor'),
-            controller: _editingController,
-            scrollController: _scrollController,
-            focusNode: _editorFocusNode,
-            readOnly: true,
-            showCursorWhenReadOnly: true,
-            wordWrap: false,
-            chunkAnalyzer: const NonCodeChunkAnalyzer(),
-            shortcutOverrideActions: {
-              CodeShortcutFindIntent: CallbackAction<CodeShortcutFindIntent>(
-                onInvoke: (intent) {
-                  _searchFocusNode.requestFocus();
-                  _searchController.selection = TextSelection(
-                    baseOffset: 0,
-                    extentOffset: _searchController.text.length,
-                  );
-                  return null;
-                },
+        LegacyMaterialThemeBridge(
+          child: SizedBox(
+            height: (MediaQuery.sizeOf(context).height * .55).clamp(280, 560),
+            child: CodeEditor(
+              key: const ValueKey('generated-code-editor'),
+              controller: _editingController,
+              scrollController: _scrollController,
+              focusNode: _editorFocusNode,
+              readOnly: true,
+              showCursorWhenReadOnly: true,
+              wordWrap: false,
+              chunkAnalyzer: const NonCodeChunkAnalyzer(),
+              shortcutOverrideActions: {
+                CodeShortcutFindIntent: CallbackAction<CodeShortcutFindIntent>(
+                  onInvoke: (intent) {
+                    _searchFocusNode.requestFocus();
+                    _searchController.selection = TextSelection(
+                      baseOffset: 0,
+                      extentOffset: _searchController.text.length,
+                    );
+                    return null;
+                  },
+                ),
+              },
+              padding: _codeEditorPadding,
+              borderRadius: BorderRadius.circular(AppCorner.md),
+              clipBehavior: Clip.antiAlias,
+              border: Border.all(
+                color: Theme.of(context).colorScheme.outlineVariant,
               ),
-            },
-            padding: _codeEditorPadding,
-            borderRadius: BorderRadius.circular(12),
-            clipBehavior: Clip.antiAlias,
-            border: Border.all(
-              color: Theme.of(context).colorScheme.outlineVariant,
-            ),
-            leadingDivider: Container(
-              width: 1,
-              color: Theme.of(context).colorScheme.outlineVariant,
-            ),
-            indicatorBuilder:
-                (context, editingController, chunkController, notifier) =>
-                    Padding(
-                      padding: const EdgeInsets.only(left: 10, right: 8),
-                      child: DefaultCodeLineNumber(
-                        key: const ValueKey('generated-code-line-numbers'),
-                        controller: editingController,
-                        notifier: notifier,
-                        textStyle: TextStyle(
-                          color: gutter,
-                          fontFamily: 'PieBlockMono',
-                          fontFamilyFallback: _codeFontFallbacks,
-                          fontSize: _codeFontSize,
-                          height: _codeLineHeightFactor,
-                        ),
-                        focusedTextStyle: TextStyle(
-                          color: Theme.of(context).colorScheme.primary,
-                          fontFamily: 'PieBlockMono',
-                          fontFamilyFallback: _codeFontFallbacks,
-                          fontSize: _codeFontSize,
-                          height: _codeLineHeightFactor,
+              leadingDivider: Container(
+                width: 1,
+                color: Theme.of(context).colorScheme.outlineVariant,
+              ),
+              indicatorBuilder:
+                  (context, editingController, chunkController, notifier) =>
+                      Padding(
+                        padding: const EdgeInsets.only(left: 10, right: 8),
+                        child: DefaultCodeLineNumber(
+                          key: const ValueKey('generated-code-line-numbers'),
+                          controller: editingController,
+                          notifier: notifier,
+                          textStyle: TextStyle(
+                            color: gutter,
+                            fontFamily: 'PieBlockMono',
+                            fontFamilyFallback: _codeFontFallbacks,
+                            fontSize: _codeFontSize,
+                            height: _codeLineHeightFactor,
+                          ),
+                          focusedTextStyle: TextStyle(
+                            color: Theme.of(context).colorScheme.primary,
+                            fontFamily: 'PieBlockMono',
+                            fontFamilyFallback: _codeFontFallbacks,
+                            fontSize: _codeFontSize,
+                            height: _codeLineHeightFactor,
+                          ),
                         ),
                       ),
-                    ),
-            style: CodeEditorStyle(
-              fontFamily: 'PieBlockMono',
-              fontFamilyFallback: _codeFontFallbacks,
-              fontSize: _codeFontSize,
-              fontHeight: _codeLineHeightFactor,
-              textColor: foreground,
-              backgroundColor: background,
-              selectionColor: const Color(0xff02acc0).withValues(alpha: .34),
-              highlightColor: const Color(0xffef685d).withValues(alpha: .3),
-              cursorColor: Theme.of(context).colorScheme.primary,
-              cursorLineColor: Theme.of(context).colorScheme.primary
-                  .withValues(alpha: .07),
-              codeTheme: CodeHighlightTheme(
-                // 按输出文件选语言；保持单条目，re_editor 才走确定性高亮。
-                languages:
-                    widget.languages ??
-                    (widget.fileName.endsWith('.asm')
-                        ? {'asm': CodeHighlightThemeMode(mode: langAs251)}
-                        : widget.fileName.endsWith('.rst')
-                        ? {
-                            'asm': CodeHighlightThemeMode(
-                              mode: langAs251Listing,
-                            ),
-                          }
-                        : {'c': CodeHighlightThemeMode(mode: langC)}),
-                theme: syntaxTheme,
+              style: CodeEditorStyle(
+                fontFamily: 'PieBlockMono',
+                fontFamilyFallback: _codeFontFallbacks,
+                fontSize: _codeFontSize,
+                fontHeight: _codeLineHeightFactor,
+                textColor: foreground,
+                backgroundColor: background,
+                selectionColor: const Color(0xff02acc0).withValues(alpha: .34),
+                highlightColor: const Color(0xffef685d).withValues(alpha: .3),
+                cursorColor: Theme.of(context).colorScheme.primary,
+                cursorLineColor: Theme.of(context).colorScheme.primary
+                    .withValues(alpha: .07),
+                codeTheme: CodeHighlightTheme(
+                  // 按输出文件选语言；保持单条目，re_editor 才走确定性高亮。
+                  languages:
+                      widget.languages ??
+                      (widget.fileName.endsWith('.asm')
+                          ? {'asm': CodeHighlightThemeMode(mode: langAs251)}
+                          : widget.fileName.endsWith('.rst')
+                          ? {
+                              'asm': CodeHighlightThemeMode(
+                                mode: langAs251Listing,
+                              ),
+                            }
+                          : {'c': CodeHighlightThemeMode(mode: langC)}),
+                  theme: syntaxTheme,
+                ),
               ),
             ),
           ),
@@ -504,25 +494,29 @@ class _AsmCompilingOverlay extends StatelessWidget {
     return AbsorbPointer(
       child: ColoredBox(
         color: colors.surface.withValues(alpha: .9),
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(
-                width: 38,
-                height: 38,
-                child: CircularProgressIndicator(strokeWidth: 3),
+        child: Column(
+          children: [
+            const WavyProgressIndicator(semanticLabel: '正在构建汇编列表'),
+            Expanded(
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '正在构建汇编列表…',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      progress ?? '用内置 SDCC C251 完整构建 main.c，首次使用需要先部署工具链。',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(height: 18),
-              Text('正在构建汇编列表…', style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 6),
-              Text(
-                progress ?? '用内置 SDCC C251 完整构建 main.c，首次使用需要先部署工具链。',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

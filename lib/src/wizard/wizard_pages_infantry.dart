@@ -13,7 +13,7 @@ class _PinOption extends StatelessWidget {
       color: enabled
           ? Colors.transparent
           : Theme.of(context).colorScheme.surfaceContainerHighest,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(AppCorner.sm),
     ),
     child: Row(
       children: [

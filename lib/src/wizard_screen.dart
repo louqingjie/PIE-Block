@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -18,6 +18,12 @@ import 'asm_preview_controller.dart';
 import 'controller.dart';
 import 'debug_cue_preview.dart';
 import 'deploy_controller.dart';
+import 'design/app_card.dart';
+import 'design/app_theme.dart';
+import 'design/connected_button_group.dart';
+import 'design/legacy_theme_bridge.dart';
+import 'design/press_scale.dart';
+import 'design/wavy_progress_indicator.dart';
 import 'motion.dart';
 import 'platform/file_export.dart';
 import 'platform/keil_discovery.dart';
@@ -180,21 +186,34 @@ class WizardScreen extends ConsumerWidget {
             child: LayoutBuilder(
               builder: (context, constraints) {
                 final wide = constraints.maxWidth >= _wideBreakpoint;
-                // M3 fade-through：旧页淡出、新页淡入并轻微放大；
-                // 系统开启「减少动态效果」时直接切换，避免残留一帧旧页面。
+                // M3E：透明度走 effects 曲线，缩放走 spatial 曲线，两者分开。
+                final effectsEnd =
+                    AppMotion.defaultEffectsDuration.inMilliseconds /
+                    AppMotion.defaultSpatialDuration.inMilliseconds;
                 final content = MediaQuery.disableAnimationsOf(context)
                     ? page
                     : AnimatedSwitcher(
-                        duration: Durations.medium2,
-                        switchInCurve: Easing.emphasizedDecelerate,
-                        switchOutCurve: Easing.emphasizedAccelerate,
+                        duration: AppMotion.defaultSpatial(context),
+                        switchInCurve: Curves.linear,
+                        switchOutCurve: Curves.linear,
                         transitionBuilder: (child, animation) => FadeTransition(
-                          opacity: animation,
+                          opacity: animation.drive(
+                            CurveTween(
+                              curve: Interval(
+                                0,
+                                effectsEnd,
+                                curve: AppMotion.expressiveDefaultEffects,
+                              ),
+                            ),
+                          ),
                           child: ScaleTransition(
-                            scale: Tween<double>(
-                              begin: .98,
-                              end: 1,
-                            ).animate(animation),
+                            scale: Tween<double>(begin: .98, end: 1).animate(
+                              animation.drive(
+                                CurveTween(
+                                  curve: AppMotion.expressiveDefaultSpatial,
+                                ),
+                              ),
+                            ),
                             child: child,
                           ),
                         ),
@@ -235,31 +254,22 @@ class WizardScreen extends ConsumerWidget {
                       SizedBox(
                         width: 260,
                         child: Material(
-                          color: Theme.of(context).colorScheme.surface,
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              border: Border(
-                                right: BorderSide(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .outlineVariant,
+                          color: AppSurface.block.colorOf(
+                            Theme.of(context).colorScheme,
+                          ),
+                          child: ListView(
+                            padding: const EdgeInsets.all(16),
+                            children: [
+                              for (var i = 0; i < steps.length; i++)
+                                _StepTile(
+                                  index: i,
+                                  title: steps[i],
+                                  visual: _stepVisual(i, state),
+                                  onTap: deploy.busy
+                                      ? () {}
+                                      : () => goToStep(i),
                                 ),
-                              ),
-                            ),
-                            child: ListView(
-                              padding: const EdgeInsets.all(16),
-                              children: [
-                                for (var i = 0; i < steps.length; i++)
-                                  _StepTile(
-                                    index: i,
-                                    title: steps[i],
-                                    visual: _stepVisual(i, state),
-                                    onTap: deploy.busy
-                                        ? () {}
-                                        : () => goToStep(i),
-                                  ),
-                              ],
-                            ),
+                            ],
                           ),
                         ),
                       ),
@@ -273,13 +283,9 @@ class WizardScreen extends ConsumerWidget {
           SafeArea(
             top: false,
             child: Container(
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface,
-                border: Border(
-                  top: BorderSide(
-                    color: Theme.of(context).colorScheme.outlineVariant,
-                  ),
-                ),
+              decoration: ShapeDecoration(
+                color: AppSurface.block.colorOf(Theme.of(context).colorScheme),
+                shape: AppShape.top(AppCorner.lgIncreased),
               ),
               padding: EdgeInsets.symmetric(
                 horizontal: compact ? 12 : 28,
@@ -295,17 +301,20 @@ class WizardScreen extends ConsumerWidget {
                           tooltip: '上一步',
                           icon: const Icon(Icons.arrow_back),
                         )
-                      : OutlinedButton.icon(
-                          onPressed: state.step > 0 && !deploy.busy
-                              ? () => goToStep(state.step - 1)
-                              : null,
-                          icon: const Icon(Icons.arrow_back),
-                          label: const Text('上一步'),
+                      : PressScale(
+                          enabled: state.step > 0 && !deploy.busy,
+                          child: OutlinedButton.icon(
+                            onPressed: state.step > 0 && !deploy.busy
+                                ? () => goToStep(state.step - 1)
+                                : null,
+                            icon: const Icon(Icons.arrow_back),
+                            label: const Text('上一步'),
+                          ),
                         ),
                   const Spacer(),
                   Text(
                     '${state.step + 1} / ${steps.length}',
-                    style: Theme.of(context).textTheme.labelLarge,
+                    style: AppText.count(context),
                   ),
                   const Spacer(),
                   compact
@@ -325,22 +334,26 @@ class WizardScreen extends ConsumerWidget {
                               : '下一步',
                           icon: const Icon(Icons.arrow_forward),
                         )
-                      : FilledButton.icon(
-                          onPressed:
-                              state.step < steps.length - 1 && !deploy.busy
-                              ? () => goToStep(state.step + 1)
-                              : null,
-                          icon: const Icon(Icons.arrow_forward),
-                          label: Text(
-                            state.step == controller.reviewStep(document.kind)
-                                ? '生成代码'
-                                : state.step ==
-                                      controller.codeStep(document.kind)
-                                ? '烧录'
-                                : state.step ==
-                                      controller.deployStep(document.kind)
-                                ? '烧录'
-                                : '下一步',
+                      : PressScale(
+                          enabled:
+                              state.step < steps.length - 1 && !deploy.busy,
+                          child: FilledButton.icon(
+                            onPressed:
+                                state.step < steps.length - 1 && !deploy.busy
+                                ? () => goToStep(state.step + 1)
+                                : null,
+                            icon: const Icon(Icons.arrow_forward),
+                            label: Text(
+                              state.step == controller.reviewStep(document.kind)
+                                  ? '生成代码'
+                                  : state.step ==
+                                        controller.codeStep(document.kind)
+                                  ? '烧录'
+                                  : state.step ==
+                                        controller.deployStep(document.kind)
+                                  ? '烧录'
+                                  : '下一步',
+                            ),
                           ),
                         ),
                 ],

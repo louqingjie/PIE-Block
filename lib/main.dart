@@ -1,10 +1,11 @@
 import 'dart:ui' show AppExitResponse;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'src/controller.dart';
+import 'src/design/app_theme.dart';
 import 'src/platform/host_bridge.dart';
 import 'src/deploy_controller.dart';
 import 'src/home_screen.dart';
@@ -44,15 +45,8 @@ class _PieBlockAppState extends ConsumerState<PieBlockApp> {
   }
 
   ThemeData _theme(Brightness brightness) {
-    final scheme = ColorScheme.fromSeed(
-      seedColor: const Color(0xff087f8c),
+    return buildAppTheme(
       brightness: brightness,
-      dynamicSchemeVariant: DynamicSchemeVariant.fidelity,
-    );
-    return ThemeData(
-      useMaterial3: true,
-      brightness: brightness,
-      colorScheme: scheme,
       fontFamily: 'PieBlockSans',
       // 子集字体缺字时按这个顺序回退。前面几个是 Windows 的，后面几个
       // 覆盖 macOS / Linux / Web，避免 Web 上落到浏览器默认字体。
@@ -69,23 +63,6 @@ class _PieBlockAppState extends ConsumerState<PieBlockApp> {
       scaffoldBackgroundColor: brightness == Brightness.light
           ? const Color(0xfff6f8fa)
           : const Color(0xff101416),
-      cardTheme: CardThemeData(
-        elevation: 0,
-        margin: EdgeInsets.zero,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
-          side: BorderSide(color: scheme.outlineVariant.withValues(alpha: .65)),
-        ),
-      ),
-      inputDecorationTheme: InputDecorationTheme(
-        filled: true,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-      navigationRailTheme: NavigationRailThemeData(
-        backgroundColor: scheme.surface,
-        indicatorColor: scheme.secondaryContainer,
-        useIndicator: true,
-      ),
     );
   }
 
@@ -116,7 +93,7 @@ class _AppPageTransition extends StatefulWidget {
 
 class _AppPageTransitionState extends State<_AppPageTransition>
     with SingleTickerProviderStateMixin {
-  static const _duration = Durations.medium2;
+  static const _duration = AppMotion.fastSpatialDuration;
   static const _homeBackdropKey = ValueKey('home-page-transition-backdrop');
   static const _editorKey = ValueKey('editor-page-transition');
 
@@ -140,7 +117,7 @@ class _AppPageTransitionState extends State<_AppPageTransition>
         .animate(
           CurvedAnimation(
             parent: _controller,
-            curve: Easing.emphasizedDecelerate,
+            curve: AppMotion.expressiveFastSpatial,
           ),
         );
   }

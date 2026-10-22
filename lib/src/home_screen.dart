@@ -1,10 +1,17 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart'
+    hide MaterialShapes, RoundedPolygon;
+import 'package:material_new_shapes/material_new_shapes.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:pieblock_core/pieblock_core.dart';
 
 import 'controller.dart';
+import 'design/app_card.dart';
+import 'design/app_theme.dart';
+import 'design/connected_button_group.dart';
+import 'design/press_scale.dart';
+import 'design/shape_badge.dart';
 import 'platform/document_io.dart';
 import 'platform/paths.dart';
 import 'project_kind_ui.dart';
@@ -160,17 +167,18 @@ class HomeScreen extends ConsumerWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  SegmentedButton<ProjectKind>(
+                  ConnectedButtonGroup<ProjectKind>(
+                    semanticLabel: '项目类型',
                     segments: [
                       for (final projectKind in ProjectKind.values)
-                        ButtonSegment(
+                        ConnectedSegment(
                           value: projectKind,
-                          icon: Icon(projectKind.icon),
-                          label: Text(projectKind.label),
+                          icon: projectKind.icon,
+                          label: projectKind.label,
                         ),
                     ],
-                    selected: {kind},
-                    onSelectionChanged: (v) => setState(() => kind = v.first),
+                    value: kind,
+                    onChanged: (value) => setState(() => kind = value),
                   ),
                   SwitchListTile(
                     key: const ValueKey('new_project.template'),
@@ -276,55 +284,58 @@ class HomeScreen extends ConsumerWidget {
               builder: (context, value, _) {
                 // 项目名称为空时直接禁用创建，避免点击后静默无响应。
                 final canCreate = value.text.trim().isNotEmpty;
-                return FilledButton(
-                  onPressed: canCreate
-                      ? () async {
-                          final projectName = name.text.trim();
-                          if (projectName.isEmpty) return;
-                          if (androidReference == null && android) {
-                            final selected = await _chooseSavePath(
-                              context,
-                              suggestedName: '$projectName.pieproj',
-                            );
-                            if (selected == null || !context.mounted) return;
-                            androidReference = selected;
-                            path.text = AppDocumentIo.displayName(selected);
-                          }
-                          // Web 上没有目录可选：项目名就是文件名，内容存在浏览器里。
-                          final projectPath = kIsWeb
-                              ? '$projectName.pieproj'
-                              : androidReference ?? path.text;
-                          if (projectPath.trim().isEmpty) return;
-                          final projectKind = kind;
-                          ProjectConfig? template;
-                          if (useTemplate) {
-                            // 载入失败就中止：静默退化成空项目会让用户以为字段已填好，
-                            // 到向导里才发现满屏红字。
-                            try {
-                              template = await templates.config(projectKind);
-                            } catch (error) {
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('模板载入失败：$error')),
-                                );
-                              }
-                              return;
+                return PressScale(
+                  enabled: canCreate,
+                  child: FilledButton(
+                    onPressed: canCreate
+                        ? () async {
+                            final projectName = name.text.trim();
+                            if (projectName.isEmpty) return;
+                            if (androidReference == null && android) {
+                              final selected = await _chooseSavePath(
+                                context,
+                                suggestedName: '$projectName.pieproj',
+                              );
+                              if (selected == null || !context.mounted) return;
+                              androidReference = selected;
+                              path.text = AppDocumentIo.displayName(selected);
                             }
+                            // Web 上没有目录可选：项目名就是文件名，内容存在浏览器里。
+                            final projectPath = kIsWeb
+                                ? '$projectName.pieproj'
+                                : androidReference ?? path.text;
+                            if (projectPath.trim().isEmpty) return;
+                            final projectKind = kind;
+                            ProjectConfig? template;
+                            if (useTemplate) {
+                              // 载入失败就中止：静默退化成空项目会让用户以为字段已填好，
+                              // 到向导里才发现满屏红字。
+                              try {
+                                template = await templates.config(projectKind);
+                              } catch (error) {
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('模板载入失败：$error')),
+                                  );
+                                }
+                                return;
+                              }
+                            }
+                            if (!context.mounted) return;
+                            // 先关闭新建弹窗，再切换根页面；否则根页面重建会在弹窗
+                            // 仍挂载时卸载其 InheritedElement，Android 上会触发
+                            // framework.dart 的 `_dependents.isEmpty` 断言。
+                            Navigator.pop(context);
+                            await appController.createProject(
+                              projectPath,
+                              projectName,
+                              projectKind,
+                              template: template,
+                            );
                           }
-                          if (!context.mounted) return;
-                          // 先关闭新建弹窗，再切换根页面；否则根页面重建会在弹窗
-                          // 仍挂载时卸载其 InheritedElement，Android 上会触发
-                          // framework.dart 的 `_dependents.isEmpty` 断言。
-                          Navigator.pop(context);
-                          await appController.createProject(
-                            projectPath,
-                            projectName,
-                            projectKind,
-                            template: template,
-                          );
-                        }
-                      : null,
-                  child: const Text('创建项目'),
+                        : null,
+                    child: const Text('创建项目'),
+                  ),
                 );
               },
             ),
@@ -529,14 +540,12 @@ class HomeScreen extends ConsumerWidget {
                           ),
                         if (recentProjects.isNotEmpty) ...[
                           const SizedBox(height: 36),
-                          Text(
-                            '最近项目',
-                            style: Theme.of(context).textTheme.titleLarge
-                                ?.copyWith(fontWeight: FontWeight.w700),
-                          ),
+                          Text('最近项目', style: AppText.sectionTitle(context)),
                           const SizedBox(height: 12),
-                          Card(
+                          AppCard(
                             key: const ValueKey('home.recent-projects'),
+                            padding: EdgeInsets.zero,
+                            clipBehavior: Clip.antiAlias,
                             child: Column(
                               children: [
                                 for (final entry in recentProjects.indexed)
@@ -553,15 +562,19 @@ class HomeScreen extends ConsumerWidget {
                                       overflow: TextOverflow.ellipsis,
                                     ),
                                     trailing: const Icon(Icons.chevron_right),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.vertical(
+                                    shape: AppShape.of(
+                                      BorderRadius.vertical(
                                         top: entry.$1 == 0
-                                            ? const Radius.circular(18)
+                                            ? const Radius.circular(
+                                                AppCorner.lg,
+                                              )
                                             : Radius.zero,
                                         bottom:
                                             entry.$1 ==
                                                 recentProjects.length - 1
-                                            ? const Radius.circular(18)
+                                            ? const Radius.circular(
+                                                AppCorner.lg,
+                                              )
                                             : Radius.zero,
                                       ),
                                     ),
@@ -597,13 +610,10 @@ class _HomeHeader extends StatelessWidget {
   final ThemeMode themeMode;
   final VoidCallback onCycleTheme;
 
-  Widget _brandIcon() => Container(
-    width: 56,
-    height: 56,
-    decoration: BoxDecoration(
-      color: _brandCyan,
-      borderRadius: BorderRadius.circular(16),
-    ),
+  Widget _brandIcon() => ShapeBadge(
+    shape: MaterialShapes.cookie6Sided,
+    color: _brandCyan,
+    size: 56,
     child: const Icon(Icons.hub_outlined, color: Color(0xff00363d), size: 30),
   );
 
@@ -716,43 +726,58 @@ class _ActionCard extends StatelessWidget {
   final Color accent, foreground;
   final VoidCallback onPressed;
   @override
-  Widget build(BuildContext context) => Card(
-    color: Color.alphaBlend(
-      accent.withValues(
-        alpha: Theme.of(context).brightness == Brightness.dark ? .055 : .025,
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final compact = MediaQuery.sizeOf(context).width < 600;
+    return AppCard(
+      variant: AppCardVariant.hero,
+      color: Color.alphaBlend(
+        accent.withValues(alpha: dark ? .055 : .025),
+        AppSurface.card.colorOf(scheme),
       ),
-      Theme.of(context).colorScheme.surface,
-    ),
-    shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(18),
-      side: BorderSide(color: accent.withValues(alpha: .34)),
-    ),
-    child: Padding(
-      padding: EdgeInsets.all(MediaQuery.sizeOf(context).width < 600 ? 20 : 28),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      padding: EdgeInsets.all(compact ? 20 : 28),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
         children: [
-          Icon(icon, size: 38, color: accent),
-          const SizedBox(height: 24),
-          Text(
-            title,
-            style: Theme.of(context).textTheme.titleLarge
-                ?.copyWith(fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 8),
-          Text(subtitle),
-          const SizedBox(height: 28),
-          FilledButton.icon(
-            onPressed: onPressed,
-            style: FilledButton.styleFrom(
-              backgroundColor: accent,
-              foregroundColor: foreground,
+          PositionedDirectional(
+            end: -42,
+            top: -54,
+            child: ShapeBadge(
+              shape: MaterialShapes.cookie12Sided,
+              color: accent.withValues(alpha: .08),
+              size: 180,
             ),
-            icon: const Icon(Icons.arrow_forward),
-            label: Text(button),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ShapeBadge(
+                shape: MaterialShapes.cookie6Sided,
+                color: scheme.primaryContainer,
+                size: 56,
+                child: Icon(icon, size: 30, color: scheme.onPrimaryContainer),
+              ),
+              const SizedBox(height: 24),
+              Text(title, style: AppText.sectionTitle(context)),
+              const SizedBox(height: 8),
+              Text(subtitle),
+              const SizedBox(height: 28),
+              PressScale(
+                child: FilledButton.icon(
+                  onPressed: onPressed,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: accent,
+                    foregroundColor: foreground,
+                  ),
+                  icon: const Icon(Icons.arrow_forward),
+                  label: Text(button, style: AppText.cta(context)),
+                ),
+              ),
+            ],
           ),
         ],
       ),
-    ),
-  );
+    );
+  }
 }

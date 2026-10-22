@@ -147,11 +147,11 @@ class _FieldAnchor extends StatelessWidget {
         duration: m3Duration(context, Durations.short4),
         curve: Easing.standard,
         padding: const EdgeInsets.all(2),
-        decoration: BoxDecoration(
+        decoration: ShapeDecoration(
           color: highlighted == path
               ? Theme.of(context).colorScheme.tertiaryContainer
               : Colors.transparent,
-          borderRadius: BorderRadius.circular(10),
+          shape: AppShape.md,
         ),
         child: child,
       ),
@@ -239,11 +239,12 @@ InputDecoration _fieldDecoration(
   String? suffix,
 }) {
   final issue = _fieldIssue(ref, path);
+  final brightness = Theme.of(ref.context).brightness;
   final color = issue == null
       ? null
       : issue.severity == IssueSeverity.error
       ? Theme.of(ref.context).colorScheme.error
-      : Colors.orange;
+      : AppStatusColors.warn(brightness);
   return InputDecoration(
     labelText: label,
     suffixText: suffix,
@@ -285,9 +286,9 @@ class _FormRow extends ConsumerWidget {
         if (issues.isNotEmpty) ...[
           const SizedBox(height: 8),
           DecoratedBox(
-            decoration: BoxDecoration(
+            decoration: ShapeDecoration(
               color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(10),
+              shape: AppShape.md,
             ),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -301,7 +302,9 @@ class _FormRow extends ConsumerWidget {
                       style: TextStyle(
                         color: item.$2.severity == IssueSeverity.error
                             ? Theme.of(context).colorScheme.error
-                            : Colors.orange,
+                            : AppStatusColors.warn(
+                                Theme.of(context).brightness,
+                              ),
                       ),
                     ),
                 ],
@@ -318,20 +321,31 @@ class _InfoBanner extends StatelessWidget {
   const _InfoBanner(this.text);
   final String text;
   @override
-  Widget build(BuildContext context) => Container(
-    width: double.infinity,
-    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-    decoration: BoxDecoration(
-      color: Theme.of(context).colorScheme.secondaryContainer
-          .withValues(alpha: .55),
-      borderRadius: BorderRadius.circular(12),
-    ),
-    child: Row(
-      children: [
-        const Icon(Icons.info_outline, size: 18),
-        const SizedBox(width: 10),
-        Expanded(child: Text(text)),
-      ],
-    ),
-  );
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+      decoration: ShapeDecoration(
+        color: scheme.secondaryContainer,
+        shape: AppShape.md,
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.info_outline,
+            size: 18,
+            color: scheme.onSecondaryContainer,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(color: scheme.onSecondaryContainer),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

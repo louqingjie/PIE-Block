@@ -536,7 +536,7 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
                         : Icons.verified_outlined,
                     color: artifact == null
                         ? Theme.of(context).colorScheme.onSurfaceVariant
-                        : Colors.green,
+                        : AppStatusColors.ok(Theme.of(context).brightness),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
@@ -606,7 +606,7 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
                     Icon(
                       deploy.deviceCount == 1 ? Icons.usb : Icons.usb_off,
                       color: deploy.deviceCount == 1
-                          ? Colors.green
+                          ? AppStatusColors.ok(Theme.of(context).brightness)
                           : deploy.deviceCount > 1
                           ? Theme.of(context).colorScheme.error
                           : null,
@@ -659,11 +659,17 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
             title: '进度与日志',
             children: [
               // 栏目高度恒定：进度条与消息行常驻占位，日志框固定 360px。
-              deploy.progress != null
-                  ? LinearProgressIndicator(value: deploy.progress)
-                  : deploy.busy
-                  ? const LinearProgressIndicator()
-                  : const SizedBox(height: 4),
+              SizedBox(
+                height: 16,
+                child: deploy.progress != null
+                    ? WavyProgressIndicator(
+                        value: deploy.progress,
+                        semanticLabel: '烧录进度',
+                      )
+                    : deploy.busy
+                    ? const WavyProgressIndicator(semanticLabel: '烧录进度')
+                    : const SizedBox.shrink(),
+              ),
               const SizedBox(height: 12),
               SizedBox(
                 height: 20,
@@ -679,9 +685,9 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
                 width: double.infinity,
                 height: 360,
                 padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
+                decoration: ShapeDecoration(
                   color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(12),
+                  shape: AppShape.lg,
                 ),
                 child: SingleChildScrollView(
                   controller: _logScroll,
@@ -712,7 +718,7 @@ class _SafetyImage extends StatelessWidget {
   Widget build(BuildContext context) => Column(
     children: [
       ClipRRect(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppCorner.lg),
         child: Image.asset(
           asset,
           height: 190,

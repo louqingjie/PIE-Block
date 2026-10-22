@@ -38,14 +38,17 @@ class _ReviewPage extends ConsumerWidget {
                     icon: Icons.warning_amber,
                     label: '警告',
                     count: warnings,
-                    color: Colors.orange,
+                    color: AppStatusColors.warn(Theme.of(context).brightness),
                   ),
                 ],
               ),
               const SizedBox(height: 16),
               if (issues.isEmpty)
-                const ListTile(
-                  leading: Icon(Icons.check_circle, color: Colors.green),
+                ListTile(
+                  leading: Icon(
+                    Icons.check_circle,
+                    color: AppStatusColors.ok(Theme.of(context).brightness),
+                  ),
                   title: Text('配置检查通过，可以生成代码'),
                 )
               else
@@ -57,7 +60,7 @@ class _ReviewPage extends ConsumerWidget {
                           : Icons.warning_amber,
                       color: issue.severity == IssueSeverity.error
                           ? Theme.of(context).colorScheme.error
-                          : Colors.orange,
+                          : AppStatusColors.warn(Theme.of(context).brightness),
                     ),
                     title: Text(issue.message),
                     subtitle: Text(issue.fieldPath),
@@ -209,7 +212,7 @@ class _CountBadge extends StatelessWidget {
     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
     decoration: BoxDecoration(
       color: color.withValues(alpha: .12),
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(AppCorner.md),
     ),
     child: Row(
       children: [

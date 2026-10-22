@@ -58,14 +58,21 @@ class _StepTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final badge = _StepBadge(index: index, visual: visual);
+    final scheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: ListTile(
         key: ValueKey('wizard-step-tile-$index'),
         enabled: visual != _StepVisual.locked,
         selected: visual == _StepVisual.current,
-        selectedTileColor: Theme.of(context).colorScheme.secondaryContainer,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        selectedTileColor: scheme.secondaryContainer,
+        minTileHeight: 48,
+        shape: AppShape.full,
+        titleTextStyle: Theme.of(context).textTheme.bodyLarge?.copyWith(
+          fontWeight: visual == _StepVisual.current
+              ? FontWeight.w700
+              : FontWeight.w500,
+        ),
         leading: switch (visual) {
           _StepVisual.completed => Semantics(
             label: '已完成',
@@ -113,18 +120,14 @@ class _StepBadge extends StatelessWidget {
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         color: fill ?? Colors.transparent,
-        border: outline == null
-            ? null
-            : Border.all(color: outline, width: 1.5),
+        border: outline == null ? null : Border.all(color: outline, width: 1.5),
       ),
       child: visual == _StepVisual.completed
           ? Icon(Icons.check, size: 18, color: foreground)
           : Text(
               '${index + 1}',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color: foreground,
-                fontWeight: FontWeight.w600,
-              ),
+              style: Theme.of(context).textTheme.titleMedium
+                  ?.copyWith(color: foreground, fontWeight: FontWeight.w600),
             ),
     );
   }
@@ -211,9 +214,8 @@ class _PageFrame extends ConsumerWidget {
     final header = <Widget>[
       Text(
         title,
-        style: Theme.of(
-          context,
-        ).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800),
+        style: Theme.of(context).textTheme.headlineMedium
+            ?.copyWith(fontWeight: FontWeight.w800),
       ),
       const SizedBox(height: 6),
       Text(subtitle, style: Theme.of(context).textTheme.bodyLarge),
@@ -280,46 +282,47 @@ class _StepProblemPanel extends ConsumerWidget {
   final List<ValidationIssue> issues;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) => Material(
-    color: Theme.of(context).colorScheme.errorContainer.withValues(alpha: .35),
-    shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(14),
-      side: BorderSide(
-        color: Theme.of(context).colorScheme.error.withValues(alpha: .35),
-      ),
-    ),
-    clipBehavior: Clip.antiAlias,
-    child: Padding(
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '本页有 ${issues.where((i) => i.severity == IssueSeverity.error).length} 项错误、${issues.where((i) => i.severity == IssueSeverity.warning).length} 项提醒',
-            style: const TextStyle(fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 6),
-          for (final issue in issues)
-            ListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              leading: Icon(
-                issue.severity == IssueSeverity.error
-                    ? Icons.error_outline
-                    : Icons.warning_amber,
-                color: issue.severity == IssueSeverity.error
-                    ? Theme.of(context).colorScheme.error
-                    : Colors.orange,
-              ),
-              title: Text(issue.message),
-              trailing: const Icon(Icons.my_location, size: 18),
-              onTap: () {
-                _endTextInput(ref);
-                _scrollToField(issue.fieldPath);
-              },
+  Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
+    final warn = AppStatusColors.warn(Theme.of(context).brightness);
+    return Material(
+      color: scheme.errorContainer,
+      shape: AppShape.lg,
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '本页有 ${issues.where((i) => i.severity == IssueSeverity.error).length} 项错误、${issues.where((i) => i.severity == IssueSeverity.warning).length} 项提醒',
+              style: AppText.cardTitle(context)
+                  .copyWith(color: scheme.onErrorContainer),
             ),
-        ],
+            const SizedBox(height: 6),
+            for (final issue in issues)
+              ListTile(
+                dense: true,
+                shape: AppShape.md,
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(
+                  issue.severity == IssueSeverity.error
+                      ? Icons.error_outline
+                      : Icons.warning_amber,
+                  color: issue.severity == IssueSeverity.error
+                      ? scheme.error
+                      : warn,
+                ),
+                title: Text(issue.message),
+                trailing: const Icon(Icons.my_location, size: 18),
+                onTap: () {
+                  _endTextInput(ref);
+                  _scrollToField(issue.fieldPath);
+                },
+              ),
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }

@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -649,12 +649,13 @@ void main() {
     // 编辑页从右侧约 2.5% 偏移滑入（测试窗口逻辑宽度 800）。
     final editorFinder = find.byKey(editorKey);
     expect(tester.getTopLeft(editorFinder).dx, closeTo(800 * .025, 0.5));
-    // 先空泵一帧启动动画节拍，再推进到 300ms 动画的半程。
+    // 先空泵一帧启动动画节拍，再推进到 350ms 动画的中段；
+    // expressive fast spatial 允许轻微回弹，位移可以在 0 附近。
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 150));
     final halfwayDx = tester.getTopLeft(editorFinder).dx;
-    expect(halfwayDx, greaterThan(0));
     expect(halfwayDx, lessThan(800 * .025));
+    expect(halfwayDx, greaterThan(-20));
 
     // 动画进行中首页背景保持存在，结束后被卸载。
     expect(find.byKey(backdropKey), findsOneWidget);

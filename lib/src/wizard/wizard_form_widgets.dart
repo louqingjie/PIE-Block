@@ -15,44 +15,31 @@ class _Section extends StatelessWidget {
   @override
   Widget build(BuildContext context) => SizedBox(
     width: double.infinity,
-    child: Card(
-      child: Padding(
-        padding: EdgeInsets.all(_isCompact(context) ? 16 : 24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (trailing == null)
-              Text(
-                title,
-                style: Theme.of(context).textTheme.titleLarge
-                    ?.copyWith(fontWeight: FontWeight.w700),
-              )
-            else
-              SizedBox(
-                width: double.infinity,
-                child: Wrap(
-                  alignment: WrapAlignment.spaceBetween,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: 16,
-                  runSpacing: 12,
-                  children: [
-                    Text(
-                      title,
-                      style: Theme.of(context).textTheme.titleLarge
-                          ?.copyWith(fontWeight: FontWeight.w700),
-                    ),
-                    ?trailing,
-                  ],
-                ),
+    child: AppCard(
+      padding: EdgeInsets.all(_isCompact(context) ? 16 : 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (trailing == null)
+            Text(title, style: AppText.sectionTitle(context))
+          else
+            SizedBox(
+              width: double.infinity,
+              child: Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 16,
+                runSpacing: 12,
+                children: [
+                  Text(title, style: AppText.sectionTitle(context)),
+                  ?trailing,
+                ],
               ),
-            if (subtitle != null) ...[
-              const SizedBox(height: 5),
-              Text(subtitle!),
-            ],
-            const SizedBox(height: 20),
-            ...children,
-          ],
-        ),
+            ),
+          if (subtitle != null) ...[const SizedBox(height: 5), Text(subtitle!)],
+          const SizedBox(height: 20),
+          ...children,
+        ],
       ),
     ),
   );

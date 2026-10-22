@@ -2,10 +2,12 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pieblock_core/pieblock_core.dart';
+
+import 'design/connected_button_group.dart';
 
 import 'controller.dart';
 import 'platform/document_io.dart';
@@ -1130,37 +1132,40 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
                             tooltip: '重做 Ctrl+Y',
                             icon: const Icon(Icons.redo),
                           ),
-                          SegmentedButton<_MusicTool>(
-                            showSelectedIcon: !compactToolbar,
-                            segments: [
-                              ButtonSegment(
-                                value: _MusicTool.select,
-                                icon: const Icon(Icons.near_me_outlined),
-                                label: compactToolbar ? null : const Text('选择'),
-                                tooltip: '选择',
-                              ),
-                              ButtonSegment(
-                                value: _MusicTool.pencil,
-                                icon: const Icon(Icons.edit),
-                                label: compactToolbar ? null : const Text('画笔'),
-                                tooltip: '画笔',
-                              ),
-                              ButtonSegment(
-                                value: _MusicTool.erase,
-                                icon: const Icon(Icons.delete_outline),
-                                label: compactToolbar ? null : const Text('删除'),
-                                tooltip: '删除',
-                              ),
-                              ButtonSegment(
-                                value: _MusicTool.pan,
-                                icon: const Icon(Icons.pan_tool_outlined),
-                                label: compactToolbar ? null : const Text('平移'),
-                                tooltip: '平移',
-                              ),
-                            ],
-                            selected: {_tool},
-                            onSelectionChanged: (value) =>
-                                setState(() => _tool = value.first),
+                          SizedBox(
+                            width: compactToolbar ? 192 : 360,
+                            child: ConnectedButtonGroup<_MusicTool>(
+                              semanticLabel: '编辑工具',
+                              segments: [
+                                ConnectedSegment(
+                                  value: _MusicTool.select,
+                                  icon: Icons.near_me_outlined,
+                                  label: compactToolbar ? '' : '选择',
+                                  tooltip: '选择',
+                                ),
+                                ConnectedSegment(
+                                  value: _MusicTool.pencil,
+                                  icon: Icons.edit,
+                                  label: compactToolbar ? '' : '画笔',
+                                  tooltip: '画笔',
+                                ),
+                                ConnectedSegment(
+                                  value: _MusicTool.erase,
+                                  icon: Icons.delete_outline,
+                                  label: compactToolbar ? '' : '删除',
+                                  tooltip: '删除',
+                                ),
+                                ConnectedSegment(
+                                  value: _MusicTool.pan,
+                                  icon: Icons.pan_tool_outlined,
+                                  label: compactToolbar ? '' : '平移',
+                                  tooltip: '平移',
+                                ),
+                              ],
+                              value: _tool,
+                              onChanged: (value) =>
+                                  setState(() => _tool = value),
+                            ),
                           ),
                           DropdownButton<int>(
                             value: _snapDivisor,
@@ -1196,9 +1201,7 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
                                     value == config.overlapMode) {
                                   return;
                                 }
-                                _commit(
-                                  _config.copyWith(overlapMode: value),
-                                );
+                                _commit(_config.copyWith(overlapMode: value));
                               },
                             ),
                           ),
@@ -1298,37 +1301,33 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
                               onSelected: (value) =>
                                   setState(() => _loopPreview = value),
                             ),
-                          SegmentedButton<MusicViewportMode>(
-                            showSelectedIcon: !compactToolbar,
-                            segments: [
-                              ButtonSegment(
-                                value: MusicViewportMode.fixed,
-                                icon: const Icon(Icons.crop_free),
-                                label: compactToolbar
-                                    ? null
-                                    : const Text('固定视窗'),
-                                tooltip: '固定视窗',
-                              ),
-                              ButtonSegment(
-                                value: MusicViewportMode.paged,
-                                icon: const Icon(Icons.auto_stories_outlined),
-                                label: compactToolbar
-                                    ? null
-                                    : const Text('逐页跟随'),
-                                tooltip: '逐页跟随',
-                              ),
-                              ButtonSegment(
-                                value: MusicViewportMode.anchored,
-                                icon: const Icon(Icons.vertical_align_center),
-                                label: compactToolbar
-                                    ? null
-                                    : const Text('固定跟随'),
-                                tooltip: '固定跟随',
-                              ),
-                            ],
-                            selected: {_viewportMode},
-                            onSelectionChanged: (value) =>
-                                _setViewportMode(value.first),
+                          SizedBox(
+                            width: compactToolbar ? 168 : 400,
+                            child: ConnectedButtonGroup<MusicViewportMode>(
+                              semanticLabel: '播放视窗',
+                              segments: [
+                                ConnectedSegment(
+                                  value: MusicViewportMode.fixed,
+                                  icon: Icons.crop_free,
+                                  label: compactToolbar ? '' : '固定视窗',
+                                  tooltip: '固定视窗',
+                                ),
+                                ConnectedSegment(
+                                  value: MusicViewportMode.paged,
+                                  icon: Icons.auto_stories_outlined,
+                                  label: compactToolbar ? '' : '逐页跟随',
+                                  tooltip: '逐页跟随',
+                                ),
+                                ConnectedSegment(
+                                  value: MusicViewportMode.anchored,
+                                  icon: Icons.vertical_align_center,
+                                  label: compactToolbar ? '' : '固定跟随',
+                                  tooltip: '固定跟随',
+                                ),
+                              ],
+                              value: _viewportMode,
+                              onChanged: _setViewportMode,
+                            ),
                           ),
                           MenuAnchor(
                             menuChildren: [
@@ -1742,10 +1741,7 @@ class _PianoRollPainter extends CustomPainter {
   Rect _bodyRect(MusicNote note) => Rect.fromLTWH(
     note.startTick / config.ticksPerQuarter * pixelsPerQuarter,
     (127 - note.pitch) * rowHeight + 1,
-    math.max(
-      8,
-      note.durationTicks / config.ticksPerQuarter * pixelsPerQuarter,
-    ),
+    math.max(8, note.durationTicks / config.ticksPerQuarter * pixelsPerQuarter),
     rowHeight - 2,
   );
 

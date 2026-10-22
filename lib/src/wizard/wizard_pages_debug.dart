@@ -386,12 +386,11 @@ Widget _debugDragProxy(Widget child, int index, Animation<double> animation) {
             bottom: _debugCardGap,
             child: DecoratedBox(
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(18),
+                borderRadius: BorderRadius.circular(AppCorner.lg),
                 boxShadow: [
                   BoxShadow(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.shadow.withValues(alpha: .24 * t),
+                    color: Theme.of(context).colorScheme.shadow
+                        .withValues(alpha: .24 * t),
                     blurRadius: 18 * t,
                     offset: Offset(0, 6 * t),
                   ),

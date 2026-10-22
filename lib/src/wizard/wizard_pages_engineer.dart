@@ -156,13 +156,14 @@ class _EngineerMappingsPageState extends ConsumerState<_EngineerMappingsPage> {
       subtitle: '每个动作都有稳定 ID；增删和切换模式不会让配置串行。',
       child: Column(
         children: [
-          SegmentedButton<int>(
+          ConnectedButtonGroup<int>(
+            semanticLabel: '模式',
             segments: [
               for (var i = 0; i < availableModeCount; i++)
-                ButtonSegment(value: i, label: Text('模式 ${i + 1}')),
+                ConnectedSegment(value: i, label: '模式 ${i + 1}'),
             ],
-            selected: {selected},
-            onSelectionChanged: (v) => setState(() => selected = v.first),
+            value: selected,
+            onChanged: (value) => setState(() => selected = value),
           ),
           const SizedBox(height: 18),
           _Section(
