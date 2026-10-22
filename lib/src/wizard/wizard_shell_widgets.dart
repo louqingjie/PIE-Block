@@ -66,6 +66,7 @@ class _StepTile extends StatelessWidget {
         enabled: visual != _StepVisual.locked,
         selected: visual == _StepVisual.current,
         selectedTileColor: scheme.secondaryContainer,
+        selectedColor: scheme.onSecondaryContainer,
         minTileHeight: 48,
         shape: AppShape.full,
         titleTextStyle: Theme.of(context).textTheme.bodyLarge?.copyWith(

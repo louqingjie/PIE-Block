@@ -17,8 +17,6 @@ import 'platform/paths.dart';
 import 'project_kind_ui.dart';
 import 'project_templates.dart';
 
-const _brandCyan = Color(0xff02acc0);
-const _brandCoral = Color(0xffef685d);
 const _projectFileSuffix = '.pieproj';
 
 /// 路径中最后一个目录分隔符的位置，-1 表示没有分隔符。
@@ -443,12 +441,12 @@ class HomeScreen extends ConsumerWidget {
                   end: Alignment.bottomRight,
                   colors: [
                     Color.alphaBlend(
-                      _brandCyan.withValues(alpha: dark ? .20 : .14),
+                      AppBrand.cyan.withValues(alpha: dark ? .20 : .14),
                       colors.surface,
                     ),
                     colors.surface,
                     Color.alphaBlend(
-                      _brandCoral.withValues(alpha: dark ? .16 : .11),
+                      AppBrand.coral.withValues(alpha: dark ? .16 : .11),
                       colors.surface,
                     ),
                   ],
@@ -487,8 +485,8 @@ class HomeScreen extends ConsumerWidget {
                                 title: '新建机器人项目',
                                 subtitle: '从步兵、工程、调试或音乐类型开始分步配置',
                                 button: '新建项目',
-                                accent: _brandCyan,
-                                foreground: const Color(0xff00363d),
+                                accent: AppBrand.cyan,
+                                foreground: AppBrand.onCyan,
                                 onPressed: () => _create(context, ref),
                               ),
                               _ActionCard(
@@ -498,8 +496,8 @@ class HomeScreen extends ConsumerWidget {
                                 subtitle:
                                     '仅支持当前格式 ${ProjectDocument.formatVersion} 的 .pieproj',
                                 button: '打开项目',
-                                accent: _brandCoral,
-                                foreground: const Color(0xff3d0b08),
+                                accent: AppBrand.coral,
+                                foreground: AppBrand.onCoral,
                                 onPressed: () => _open(context, ref),
                               ),
                             ];
@@ -612,9 +610,9 @@ class _HomeHeader extends StatelessWidget {
 
   Widget _brandIcon() => ShapeBadge(
     shape: MaterialShapes.cookie6Sided,
-    color: _brandCyan,
+    color: AppBrand.cyan,
     size: 56,
-    child: const Icon(Icons.hub_outlined, color: Color(0xff00363d), size: 30),
+    child: const Icon(Icons.hub_outlined, color: AppBrand.onCyan, size: 30),
   );
 
   Widget _themeButton() => IconButton.filledTonal(

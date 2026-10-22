@@ -2,6 +2,17 @@ import 'package:material_ui/material_ui.dart';
 
 import '../motion.dart';
 
+/// 产品品牌色：欢迎页的青蓝与珊瑚粉。
+///
+/// 主题的 primary 由青蓝派生，secondary 由珊瑚粉派生，避免动态配色
+/// 把主色旋转到与品牌无关的色相。
+abstract final class AppBrand {
+  static const cyan = Color(0xff02acc0);
+  static const coral = Color(0xffef685d);
+  static const onCyan = Color(0xff00363d);
+  static const onCoral = Color(0xff3d0b08);
+}
+
 /// M3 Expressive 的十级圆角刻度。
 ///
 /// 数值与 Material 3 的 corner radius scale 一致，避免各页面再自行写
@@ -217,9 +228,9 @@ ThemeData buildAppTheme({
   Color? scaffoldBackgroundColor,
 }) {
   final colorScheme = ColorScheme.fromSeed(
-    seedColor: const Color(0xff087f8c),
+    seedColor: AppBrand.cyan,
     brightness: brightness,
-    dynamicSchemeVariant: DynamicSchemeVariant.expressive,
+    dynamicSchemeVariant: DynamicSchemeVariant.tonalSpot,
   );
   final base = ThemeData(
     useMaterial3: true,
