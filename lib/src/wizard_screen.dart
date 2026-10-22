@@ -253,8 +253,7 @@ class WizardScreen extends ConsumerWidget {
                                   _StepTile(
                                     index: i,
                                     title: steps[i],
-                                    selected: i == state.step,
-                                    enabled: i <= state.maxVisitedStep + 1,
+                                    visual: _stepVisual(i, state),
                                     onTap: deploy.busy
                                         ? () {}
                                         : () => goToStep(i),

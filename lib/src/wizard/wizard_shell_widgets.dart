@@ -34,31 +34,100 @@ class _CompactSaveBadge extends StatelessWidget {
   }
 }
 
+enum _StepVisual { current, completed, next, locked }
+
+_StepVisual _stepVisual(int index, AppState state) => index == state.step
+    ? _StepVisual.current
+    : index <= state.maxVisitedStep
+    ? _StepVisual.completed
+    : index == state.maxVisitedStep + 1
+    ? _StepVisual.next
+    : _StepVisual.locked;
+
 class _StepTile extends StatelessWidget {
   const _StepTile({
     required this.index,
     required this.title,
-    required this.selected,
-    required this.enabled,
+    required this.visual,
     required this.onTap,
   });
   final int index;
   final String title;
-  final bool selected, enabled;
+  final _StepVisual visual;
   final VoidCallback onTap;
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 8),
-    child: ListTile(
-      enabled: enabled,
-      selected: selected,
-      selectedTileColor: Theme.of(context).colorScheme.secondaryContainer,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      leading: CircleAvatar(radius: 15, child: Text('${index + 1}')),
-      title: Text(title),
-      onTap: enabled ? onTap : null,
-    ),
-  );
+  Widget build(BuildContext context) {
+    final badge = _StepBadge(index: index, visual: visual);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        key: ValueKey('wizard-step-tile-$index'),
+        enabled: visual != _StepVisual.locked,
+        selected: visual == _StepVisual.current,
+        selectedTileColor: Theme.of(context).colorScheme.secondaryContainer,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        leading: switch (visual) {
+          _StepVisual.completed => Semantics(
+            label: '已完成',
+            child: ExcludeSemantics(child: badge),
+          ),
+          _StepVisual.locked => Semantics(
+            label: '未解锁',
+            child: ExcludeSemantics(child: badge),
+          ),
+          _ => badge,
+        },
+        title: Text(title),
+        onTap: visual == _StepVisual.locked ? null : onTap,
+      ),
+    );
+  }
+}
+
+class _StepBadge extends StatelessWidget {
+  const _StepBadge({required this.index, required this.visual});
+  final int index;
+  final _StepVisual visual;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final (Color? fill, Color foreground, Color? outline) = switch (visual) {
+      _StepVisual.current => (scheme.primary, scheme.onPrimary, null),
+      _StepVisual.completed => (
+        scheme.primaryContainer,
+        scheme.onPrimaryContainer,
+        null,
+      ),
+      _StepVisual.next => (null, scheme.onSurfaceVariant, scheme.outline),
+      _StepVisual.locked => (
+        null,
+        scheme.onSurface.withValues(alpha: .38),
+        scheme.outlineVariant,
+      ),
+    };
+    return Container(
+      width: 30,
+      height: 30,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: fill ?? Colors.transparent,
+        border: outline == null
+            ? null
+            : Border.all(color: outline, width: 1.5),
+      ),
+      child: visual == _StepVisual.completed
+          ? Icon(Icons.check, size: 18, color: foreground)
+          : Text(
+              '${index + 1}',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                color: foreground,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+    );
+  }
 }
 
 class _CompactStepPicker extends ConsumerWidget {

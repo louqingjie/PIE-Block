@@ -3077,6 +3077,52 @@ void main() {
     }
   });
 
+  testWidgets('宽屏侧栏按访问进度区分步骤状态', (tester) async {
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1600, 900);
+
+    Future<void> pumpStep(int step) => tester.pumpWidget(
+      ProviderScope(
+        key: ValueKey('step-$step'),
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _StaticProjectController(_infantryDocument(), step),
+          ),
+        ],
+        child: MaterialApp(
+          theme: ThemeData(useMaterial3: true),
+          home: const WizardScreen(),
+        ),
+      ),
+    );
+
+    Finder tile(int index) => find.byKey(ValueKey('wizard-step-tile-$index'));
+    Finder check(int index) =>
+        find.descendant(of: tile(index), matching: find.byIcon(Icons.check));
+
+    await pumpStep(2);
+    await tester.pumpAndSettle();
+    expect(check(0), findsOneWidget);
+    expect(check(1), findsOneWidget);
+    expect(check(2), findsNothing);
+    expect(tester.widget<ListTile>(tile(2)).selected, isTrue);
+    expect(tester.widget<ListTile>(tile(3)).onTap, isNotNull);
+    expect(tester.widget<ListTile>(tile(4)).onTap, isNull);
+
+    // 新建项目时 maxVisitedStep 与 step 同为 0，第 1 步不能显示为已完成。
+    await pumpStep(0);
+    await tester.pumpAndSettle();
+    for (var i = 0; i < 6; i++) {
+      expect(check(i), findsNothing);
+    }
+    expect(tester.widget<ListTile>(tile(1)).onTap, isNotNull);
+    expect(tester.widget<ListTile>(tile(2)).onTap, isNull);
+  });
+
   testWidgets('窄屏覆盖工程 PWM、动作映射、检查和烧录页面', (tester) async {
     addTearDown(() {
       tester.view.resetPhysicalSize();
