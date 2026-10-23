@@ -57,6 +57,9 @@ class ConnectedButtonGroup<T> extends StatelessWidget {
         padding: const EdgeInsets.all(2),
         decoration: ShapeDecoration(color: base, shape: AppShape.full),
         child: Row(
+          // 必须撑满：默认 center 会让每段按图标/文字的固有高度收缩，
+          // 选中胶囊就只有 20dp 高，浮在组里、与容器边缘疏密不均。
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             for (final (index, segment) in segments.indexed)
               Expanded(
