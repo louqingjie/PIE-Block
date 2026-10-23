@@ -240,7 +240,7 @@ class _PageFrame extends ConsumerWidget {
           compact ? 16 : 32,
           compact ? 18 : 26,
           compact ? 16 : 32,
-          compact ? 16 : 24,
+          compact ? 104 : 116,
         ),
         child: Center(
           child: ConstrainedBox(
@@ -262,7 +262,7 @@ class _PageFrame extends ConsumerWidget {
         compact ? 16 : 32,
         compact ? 18 : 26,
         compact ? 16 : 32,
-        40 + MediaQuery.viewInsetsOf(context).bottom,
+        (compact ? 104 : 116) + MediaQuery.viewInsetsOf(context).bottom,
       ),
       child: Center(
         child: ConstrainedBox(
@@ -324,6 +324,84 @@ class _StepProblemPanel extends ConsumerWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// 悬浮在内容右下角的步骤操作组：步骤计数 + 上一步/下一步。
+///
+/// 不再占用整条底栏，避免底栏圆角与侧栏、页面内容互相切割。
+class _WizardActionCluster extends StatelessWidget {
+  const _WizardActionCluster({
+    required this.compact,
+    required this.step,
+    required this.totalSteps,
+    required this.nextLabel,
+    required this.onPrevious,
+    required this.onNext,
+  });
+
+  final bool compact;
+  final int step;
+  final int totalSteps;
+  final String nextLabel;
+  final VoidCallback? onPrevious;
+  final VoidCallback? onNext;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        DecoratedBox(
+          decoration: ShapeDecoration(
+            color: scheme.surfaceContainerHigh,
+            shape: AppShape.full,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            child: Text(
+              '${step + 1} / $totalSteps',
+              style: AppText.count(context),
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (onPrevious != null) ...[
+              compact
+                  ? IconButton.outlined(
+                      onPressed: onPrevious,
+                      tooltip: '上一步',
+                      icon: const Icon(Icons.arrow_back),
+                    )
+                  : OutlinedButton.icon(
+                      onPressed: onPrevious,
+                      icon: const Icon(Icons.arrow_back),
+                      label: const Text('上一步'),
+                    ),
+              const SizedBox(width: 8),
+            ],
+            compact
+                ? IconButton.filled(
+                    onPressed: onNext,
+                    tooltip: nextLabel,
+                    icon: const Icon(Icons.arrow_forward),
+                  )
+                // M3E：前进类动作的箭头跟在文字后面，按下只做形变不放大。
+                : FilledButton.icon(
+                    onPressed: onNext,
+                    iconAlignment: IconAlignment.end,
+                    icon: const Icon(Icons.arrow_forward),
+                    label: Text(nextLabel),
+                  ),
+          ],
+        ),
+      ],
     );
   }
 }

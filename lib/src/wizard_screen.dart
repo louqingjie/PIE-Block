@@ -126,6 +126,25 @@ class WizardScreen extends ConsumerWidget {
     final deploy = ref.watch(deployControllerProvider);
     final asmPreview = ref.watch(asmPreviewControllerProvider);
     final compact = _isCompact(context);
+    final nextLabel = state.step == controller.reviewStep(document.kind)
+        ? '生成代码'
+        : state.step == controller.codeStep(document.kind)
+        ? '烧录'
+        : state.step == controller.deployStep(document.kind)
+        ? '烧录'
+        : '下一步';
+    final actionCluster = _WizardActionCluster(
+      compact: compact,
+      step: state.step,
+      totalSteps: steps.length,
+      nextLabel: nextLabel,
+      onPrevious: state.step > 0 && !deploy.busy
+          ? () => goToStep(state.step - 1)
+          : null,
+      onNext: state.step < steps.length - 1 && !deploy.busy
+          ? () => goToStep(state.step + 1)
+          : null,
+    );
     return Scaffold(
       appBar: AppBar(
         titleSpacing: compact ? 4 : 20,
@@ -235,6 +254,18 @@ class WizardScreen extends ConsumerWidget {
                       ),
                   ],
                 );
+                Widget withActions(Widget child) => Stack(
+                  children: [
+                    Positioned.fill(child: child),
+                    PositionedDirectional(
+                      end: compact ? 12 : 24,
+                      bottom:
+                          (compact ? 12 : 24) +
+                          MediaQuery.paddingOf(context).bottom,
+                      child: actionCluster,
+                    ),
+                  ],
+                );
                 if (!wide) {
                   return withCompileOverlay(
                     Column(
@@ -244,7 +275,7 @@ class WizardScreen extends ConsumerWidget {
                           selected: state.step,
                           busy: deploy.busy,
                         ),
-                        Expanded(child: content),
+                        Expanded(child: withActions(content)),
                       ],
                     ),
                   );
@@ -274,86 +305,11 @@ class WizardScreen extends ConsumerWidget {
                           ),
                         ),
                       ),
-                      Expanded(child: content),
+                      Expanded(child: withActions(content)),
                     ],
                   ),
                 );
               },
-            ),
-          ),
-          SafeArea(
-            top: false,
-            child: Container(
-              decoration: ShapeDecoration(
-                color: AppSurface.block.colorOf(Theme.of(context).colorScheme),
-                shape: AppShape.top(AppCorner.lgIncreased),
-              ),
-              padding: EdgeInsets.symmetric(
-                horizontal: compact ? 12 : 28,
-                vertical: compact ? 8 : 14,
-              ),
-              child: Row(
-                children: [
-                  compact
-                      ? IconButton.outlined(
-                          onPressed: state.step > 0 && !deploy.busy
-                              ? () => goToStep(state.step - 1)
-                              : null,
-                          tooltip: '上一步',
-                          icon: const Icon(Icons.arrow_back),
-                        )
-                      : OutlinedButton.icon(
-                          onPressed: state.step > 0 && !deploy.busy
-                              ? () => goToStep(state.step - 1)
-                              : null,
-                          icon: const Icon(Icons.arrow_back),
-                          label: const Text('上一步'),
-                        ),
-                  const Spacer(),
-                  Text(
-                    '${state.step + 1} / ${steps.length}',
-                    style: AppText.count(context),
-                  ),
-                  const Spacer(),
-                  compact
-                      ? IconButton.filled(
-                          onPressed:
-                              state.step < steps.length - 1 && !deploy.busy
-                              ? () => goToStep(state.step + 1)
-                              : null,
-                          tooltip:
-                              state.step == controller.reviewStep(document.kind)
-                              ? '生成代码'
-                              : state.step == controller.codeStep(document.kind)
-                              ? '烧录'
-                              : state.step ==
-                                    controller.deployStep(document.kind)
-                              ? '烧录'
-                              : '下一步',
-                          icon: const Icon(Icons.arrow_forward),
-                        )
-                      : FilledButton.icon(
-                          onPressed:
-                              state.step < steps.length - 1 && !deploy.busy
-                              ? () => goToStep(state.step + 1)
-                              : null,
-                          // M3E：前进类动作的箭头跟在文字后面，与阅读方向一致。
-                          iconAlignment: IconAlignment.end,
-                          icon: const Icon(Icons.arrow_forward),
-                          label: Text(
-                            state.step == controller.reviewStep(document.kind)
-                                ? '生成代码'
-                                : state.step ==
-                                      controller.codeStep(document.kind)
-                                ? '烧录'
-                                : state.step ==
-                                      controller.deployStep(document.kind)
-                                ? '烧录'
-                                : '下一步',
-                          ),
-                        ),
-                ],
-              ),
             ),
           ),
         ],
