@@ -527,6 +527,10 @@ class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
   OverlayEntry? _hoverCard;
   Timer? _hoverDelay;
 
+  /// 编辑器里的文本：汇编视图比原始文本每行多一个尾随空格，
+  /// 见 [asmHoverDisplayText]。
+  late String _displayCode;
+
   /// 按下鼠标期间不弹卡片，免得拖选代码时被挡住。
   bool _pressing = false;
 
@@ -538,7 +542,7 @@ class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
     _hover = AsmHoverAnnotator(onEnter: _hoverEnter, onExit: _hoverExit);
     _applyHoverSource(widget.code);
     _editingController = CodeLineEditingController(
-      codeLines: widget.code.codeLines,
+      codeLines: _displayCode.codeLines,
       spanBuilder: _buildCodeSpan,
     );
     _searchController = TextEditingController();
@@ -559,13 +563,15 @@ class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
   @override
   void didUpdateWidget(covariant _GeneratedCodePreview oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.code != widget.code ||
-        oldWidget.fileName != widget.fileName) {
-      _hideHoverCard();
-      _applyHoverSource(widget.code);
+    if (oldWidget.code == widget.code &&
+        oldWidget.fileName == widget.fileName) {
+      return;
     }
-    if (oldWidget.code != widget.code) {
-      _editingController.text = widget.code;
+    _hideHoverCard();
+    _applyHoverSource(widget.code);
+    // 换文件后缀也会换显示文本（汇编视图多一个尾随空格），因此按结果比对。
+    if (_editingController.text != _displayCode) {
+      _editingController.text = _displayCode;
       _updateSearch(_searchController.text);
     }
   }
@@ -574,11 +580,9 @@ class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
   void _applyHoverSource(String code) {
     final name = widget.fileName.toLowerCase();
     final listing = name.endsWith('.rst');
-    _hover.update(
-      code,
-      enabled: listing || name.endsWith('.asm'),
-      listing: listing,
-    );
+    final enabled = listing || name.endsWith('.asm');
+    _displayCode = enabled ? asmHoverDisplayText(code) : code;
+    _hover.update(_displayCode, enabled: enabled, listing: listing);
   }
 
   TextSpan _buildCodeSpan({

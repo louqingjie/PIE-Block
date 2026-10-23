@@ -595,6 +595,21 @@ class AsmHoverAnnotator {
   }
 }
 
+/// 汇编视图交给编辑器的显示文本：每行末尾补一个空格。
+///
+/// re_editor 的 `_ParagraphImpl.getSpanForPosition` 在
+/// `position.offset >= length - 1` 时直接返回 null，每行最后一个字符永远
+/// 命中不到——而列表里 `clr a`、`rlc a`、`mov r6,a` 这些操作数恰好都落在
+/// 行尾。补一个空格让段落文本变长一格，行尾字段才落进可命中的范围。
+///
+/// 补在文本里而不是只补在高亮结果里：编辑器文本与段落文本必须等长，否则
+/// 点行尾空白处会得到超出行长度的光标位置。空格没有可见宽度，复制、搜索与
+/// 另存为仍用原始文本。
+String asmHoverDisplayText(String code) => code
+    .split('\n')
+    .map((line) => line.isEmpty ? line : '$line ')
+    .join('\n');
+
 /// 纯函数版本，便于单元测试。
 TextSpan buildAsmHoverSpan({
   required TextSpan highlighted,

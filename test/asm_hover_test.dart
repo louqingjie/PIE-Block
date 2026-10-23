@@ -485,83 +485,140 @@ void main() {
     });
   });
 
-  group('re_editor 集成', () {
-    /// 测试环境用等宽方框字体，一个字符正好 [fontSize] 宽，
-    /// 因此可以按列号算出指针要落在哪里。
-    const fontSize = 13.0;
+  group('显示文本', () {
+    test('每行补一个尾随空格，空行不补', () {
+      expect(asmHoverDisplayText('clr a\n\nmov r6,a'), 'clr a \n\nmov r6,a ');
+    });
+  });
 
+  group('re_editor 集成', () {
+    /// 测试环境用等宽方框字体，一个字符正好 [_fontSize] 宽，
+    /// 因此可以按列号算出指针要落在哪里。
     testWidgets('真实鼠标悬停会触发进入与离开回调', (tester) async {
       const line = _movR7;
-      final annotator = AsmHoverAnnotator()
-        ..update(line, enabled: true, listing: true);
       final entered = <String>[];
       final exited = <String>[];
-      annotator
-        ..onEnter = (token, rects) {
+      final probe = await _pumpEditor(
+        tester,
+        line,
+        onEnter: (token, rects) {
           expect(rects, isNotEmpty);
           entered.add(token.text.trim());
-        }
-        ..onExit = (token) => exited.add(token.text.trim());
-
-      final controller = CodeLineEditingController(
-        codeLines: line.codeLines,
-        spanBuilder: ({
-          required BuildContext context,
-          required int index,
-          required CodeLine codeLine,
-          required TextSpan textSpan,
-          required TextStyle style,
-        }) => annotator.buildSpan(codeLine: codeLine, textSpan: textSpan),
+        },
+        onExit: (token) => exited.add(token.text.trim()),
       );
-      addTearDown(controller.dispose);
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: SizedBox(
-              width: 1200,
-              height: 120,
-              child: CodeEditor(
-                controller: controller,
-                padding: EdgeInsets.zero,
-                style: CodeEditorStyle(fontSize: fontSize, fontHeight: 1.45),
-              ),
-            ),
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
-      // 起点放在编辑器外，免得刚加上指针就先命中第一行。
-      await gesture.addPointer(location: const Offset(4, 200));
-      addTearDown(gesture.removePointer);
-      await tester.pump();
-      final origin = tester.getTopLeft(find.byType(CodeEditor));
-      Offset at(int column) =>
-          origin + Offset(column * fontSize + 2, fontSize / 2);
 
       // `mov` 从第 41 列开始：前 40 列是列表信息，第 41 列是制表符。
-      await gesture.moveTo(at(41));
-      await tester.pump();
+      await probe.at(41);
       expect(entered, ['mov']);
 
       // 移到同一行的寄存器：先离开助记符，再进入寄存器。
-      await gesture.moveTo(at(45));
-      await tester.pump();
+      await probe.at(45);
       expect(exited, ['mov']);
       expect(entered, ['mov', 'r7']);
 
       // 移到机器码列：前缀整体是一条列表说明，机器码字节本身不单独成字段。
-      await gesture.moveTo(at(10));
-      await tester.pump();
+      await probe.at(10);
       expect(entered, ['mov', 'r7', line.substring(0, 40).trim()]);
 
       // 移出编辑器后收起。
-      await gesture.moveTo(const Offset(4, 200));
-      await tester.pump();
+      await probe.leave();
       expect(exited, hasLength(3));
     });
+
+    testWidgets('行尾字段也能悬停', (tester) async {
+      const line = '      FE06A4 E4               [12] 1426 \tclr\ta';
+      final entered = <String>[];
+      final probe = await _pumpEditor(
+        tester,
+        asmHoverDisplayText(line),
+        onEnter: (token, _) => entered.add(token.text.trim()),
+      );
+
+      // `a` 是这一行的最后一个字符：不补尾随空格时命中判定会把它漏掉。
+      await probe.at(line.length - 1);
+      expect(entered, ['a']);
+    });
   });
+}
+
+const double _fontSize = 13;
+
+/// 按列号移动鼠标的探针：测试环境的等宽方框字体一个字符正好
+/// [_fontSize] 宽，因此列号能直接换算成指针位置。
+class _EditorProbe {
+  _EditorProbe(this._tester, this._gesture, this._origin);
+
+  final WidgetTester _tester;
+  final TestGesture _gesture;
+  final Offset _origin;
+
+  Future<void> at(int column) async {
+    await _gesture.moveTo(
+      _origin + Offset(column * _fontSize + 2, _fontSize / 2),
+    );
+    await _tester.pump();
+  }
+
+  Future<void> leave() async {
+    await _gesture.moveTo(const Offset(4, 200));
+    await _tester.pump();
+  }
+}
+
+/// 用一个注入了悬停回调的编辑器渲染 [code]，返回按列号移动指针的探针。
+Future<_EditorProbe> _pumpEditor(
+  WidgetTester tester,
+  String code, {
+  void Function(AsmHoverToken token, List<Rect> rects)? onEnter,
+  void Function(AsmHoverToken token)? onExit,
+}) async {
+  final annotator = AsmHoverAnnotator()
+    ..update(code, enabled: true, listing: true)
+    ..onEnter = (onEnter ?? (_, _) {})
+    ..onExit = (onExit ?? (_) {});
+
+  final controller = CodeLineEditingController(
+    codeLines: code.codeLines,
+    spanBuilder: ({
+      required BuildContext context,
+      required int index,
+      required CodeLine codeLine,
+      required TextSpan textSpan,
+      required TextStyle style,
+    }) => annotator.buildSpan(codeLine: codeLine, textSpan: textSpan),
+  );
+  addTearDown(controller.dispose);
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: SizedBox(
+          width: 1200,
+          height: 120,
+          child: CodeEditor(
+            controller: controller,
+            padding: EdgeInsets.zero,
+            style: const CodeEditorStyle(
+              fontSize: _fontSize,
+              fontHeight: 1.45,
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
+
+  final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+  // 起点放在编辑器外，免得刚加上指针就先命中第一行。
+  await gesture.addPointer(location: const Offset(4, 200));
+  addTearDown(gesture.removePointer);
+  await tester.pump();
+  return _EditorProbe(
+    tester,
+    gesture,
+    tester.getTopLeft(find.byType(CodeEditor)),
+  );
 }
 
 TextSpan? _leafWithText(TextSpan span, String text) {

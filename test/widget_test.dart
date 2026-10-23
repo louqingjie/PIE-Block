@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pieblock_app/main.dart';
+import 'package:pieblock_app/src/asm_hover.dart';
 import 'package:pieblock_app/src/asm_preview_controller.dart';
 import 'package:pieblock_app/src/motion.dart';
 import 'package:pieblock_app/src/controller.dart';
@@ -2646,7 +2647,8 @@ void main() {
       find.byKey(const ValueKey('generated-code-editor')),
     );
     expect(listingEditor.style!.codeTheme!.languages, contains('asm'));
-    expect(listingEditor.controller!.text, _rstSample);
+    // 汇编视图的显示文本每行多一个尾随空格，见 asmHoverDisplayText。
+    expect(listingEditor.controller!.text, asmHoverDisplayText(_rstSample));
     expect(
       listingEditor.controller!.text,
       contains(r'ecall\t_main'.replaceAll(r'\t', '\t')),
@@ -3047,7 +3049,8 @@ void main() {
     final listingEditor = tester.widget<CodeEditor>(
       find.byKey(const ValueKey('generated-code-editor')),
     );
-    expect(listingEditor.controller!.text, _rstSample);
+    // 汇编视图的显示文本每行多一个尾随空格，见 asmHoverDisplayText。
+    expect(listingEditor.controller!.text, asmHoverDisplayText(_rstSample));
     expect(listingEditor.controller!.text, contains('ecall'));
     expect(listingEditor.controller!.text, isNot(contains('#include')));
     final numbers = tester.widget<DefaultCodeLineNumber>(
