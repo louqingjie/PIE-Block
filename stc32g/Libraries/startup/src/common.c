@@ -91,7 +91,7 @@ void Register_Set(void)
 	CLKSEL = 0x01; 			//选择外部晶振
 #else
 	//自动设置系统频率
-	#if (33177600 == FOSC)
+	#if (22118400 == FOSC)
 		system_clock = System_Clock_Set();
 	#else
 		system_clock = FOSC;

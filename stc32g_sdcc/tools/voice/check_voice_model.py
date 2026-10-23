@@ -30,6 +30,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import voice_model as vm  # noqa: E402
 
+
+def _read_fosc_hz() -> float:
+    """从固件头文件读 FOSC，避免主频一旦调整这里就悄悄算错预算。"""
+    header = Path(__file__).resolve().parents[2] / "include" / "common.h"
+    text = header.read_text(encoding="utf-8")
+    match = re.search(r"#define\s+FOSC\s+(\d+)UL", text)
+    if match is None:
+        raise SystemExit(f"没在 {header} 里找到 FOSC 定义")
+    return float(match.group(1))
+
+
+FOSC_HZ = _read_fosc_hz()
+
 ORDER = vm.ORDER
 # 每个样本都会执行的函数：里面出现 32 位乘法运行库就会拖垮 8kHz 中断。
 HOT_FUNCTIONS = (
@@ -356,9 +369,9 @@ def check_hot_path_budget(asm_path: Path, order: int, sample_rate_hz: float = 80
     detail = [f"格型单级={lattice}", f"阶数={order}",
               f"NextSample(含1级格型)={function_cost('_VoiceSynth_NextSample')}"]
 
-    budget_cycles = 33177600.0 / sample_rate_hz
-    used_us = per_sample / 33177600.0 * 1e6
-    budget_us = budget_cycles / 33177600.0 * 1e6
+    budget_cycles = FOSC_HZ / sample_rate_hz
+    used_us = per_sample / FOSC_HZ * 1e6
+    budget_us = budget_cycles / FOSC_HZ * 1e6
     print(f"[信息] 每样本约 {per_sample} 周期（{used_us:.1f} us）/ 预算 {budget_us:.1f} us"
           f"（{', '.join(detail)}）")
     # 估算用的单指令周期是保守值（存储访问 3、分支 3），实际约 2 周期/指令：

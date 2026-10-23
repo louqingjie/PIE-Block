@@ -94,7 +94,8 @@ void Register_Set(void)
 	CLKSEL = 0x01; 			//ѡ���ⲿ����
 #else
 	//�Զ�����ϵͳƵ��
-	#if (33177600 == FOSC)
+	/* keep in sync with common.h FOSC: decides whether System_Clock_Set() runs */
+#if (22118400 == FOSC)
 		system_clock = System_Clock_Set();
 	#else
 		system_clock = FOSC;
@@ -142,35 +143,39 @@ void Register_Set(void)
  * @param[in]  ��ʱʱ��
  * @retval     NULL
 ***************************************************************************************************************************/
-#if defined(__SDCC) && (FOSC == 33177600UL)
+#if defined(__SDCC) && (FOSC == 22118400UL)
 /*
- * Keil C251 在 33.1776 MHz 下对：
+ * Keil C251 在 22.1184 MHz 下对：
  *
  *     unsigned long edata i;
  *     _nop_();
- *     i = 8293UL;
+ *     i = 5529UL;
  *     while (i) i--;
  *
- * 生成 MOV DR4,#02065H / DEC DR4,#01H / JNE。SDCC 的 C 后端目前会把
+ * 生成 MOV DR4,#01599H / DEC DR4,#01H / JNE。SDCC 的 C 后端目前会把
  * 同样的 32 位循环展开成逐字节判断，不能使用相同的计数值获得相同的
  * 时间，因此这里保留 Keil 的两条指令循环作为明确的 SDCC 校准基准。
+ *
+ * 计数值随主频线性换算（每次迭代 ≈4 个周期）：
+ *   33.1776 MHz: 33.1776e6 × 1e-3 / 4 ≈ 8293
+ *   22.1184 MHz: 22.1184e6 × 1e-3 / 4 ≈ 5529
  */
 static void Delay1000us_Reference(void)
 {
 	__asm
 		nop
-		mov dr4,#0x2065
+		mov dr4,#0x1599
 	00001$:
 		dec dr4,#0x01
 		jne 00001$
 	__endasm;
 }
 
-/* Keil 33.1776 MHz 的 Delay1us：计数值为 7。 */
+/* Keil 22.1184 MHz 的 Delay1us：计数值为 5（33.1776 MHz 时为 7）。 */
 static void Delay1us_Reference(void)
 {
 	__asm
-		mov dr4,#0x0007
+		mov dr4,#0x0005
 	00002$:
 		dec dr4,#0x01
 		jne 00002$
@@ -180,7 +185,7 @@ static void Delay1us_Reference(void)
 
 void Ms_Delay(uint16_t ms)
 {
-#if defined(__SDCC) && (FOSC == 33177600UL)
+#if defined(__SDCC) && (FOSC == 22118400UL)
 	while (ms > 0)
 	{
 		ms--;
@@ -202,7 +207,7 @@ void Ms_Delay(uint16_t ms)
 ***************************************************************************************************************************/
 void Us_Delay(uint32_t us)
 {
-#if defined(__SDCC) && (FOSC == 33177600UL)
+#if defined(__SDCC) && (FOSC == 22118400UL)
 	while (us > 0UL)
 	{
 		us--;

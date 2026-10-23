@@ -14,16 +14,16 @@
 #include "voice_data.h"
 
 #define VOICE_BUZZER_CH PWMB_CH3_P33
-/* FOSC / 64800 = 512，占空比分辨率 9 位。
+/* FOSC / 64800 = 341（22.1184 MHz），占空比分辨率约 8.4 位。
  * 载波从 129.6kHz 降到 64.8kHz 是为了响度：压电片是容性负载（约 15nF），
  * 129.6kHz 时容抗只有 ~80Ω，与引脚内阻分压后加到压电片上的电压只剩六成左右；
  * 降一半载波让容抗翻倍，分压损失明显减小，同时仍远高于音频带。 */
 #define VOICE_CARRIER_HZ 64800UL
 /* PWM_Init 的占空比单位是万分之一：5000 = 50%。 */
 #define VOICE_DUTY_IDLE 5000UL
-/* Timer0 1T 模式（AUXR.7=1，计数频率 = FOSC）：65536-4608 = 60928，
- * 中断频率 = 33177600/4608 = 7200Hz（正好整除）。 */
-#define VOICE_TIMER_RELOAD 60928U
+/* Timer0 1T 模式（AUXR.7=1，计数频率 = FOSC）：65536-3072 = 62464，
+ * 中断频率 = 22118400/3072 = 7200Hz（正好整除）。 */
+#define VOICE_TIMER_RELOAD 62464U
 #define VOICE_GAP_MS 800U
 #define VOICE_LED_PORT GPIO_P3
 #define VOICE_LED_A GPIO_Pin_5

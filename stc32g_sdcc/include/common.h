@@ -9,7 +9,7 @@
 #include "STC32Gxx.h"
 #include "intrins.h"
 
-#define FOSC 33177600UL
+#define FOSC 22118400UL
 #define EXTERNAL_CRYSTA_ENABLE 0
 
 #if defined(__SDCC)

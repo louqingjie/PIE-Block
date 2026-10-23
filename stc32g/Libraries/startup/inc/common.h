@@ -26,7 +26,7 @@
 #include "intrins.h"
 
 //单片机主频设置 22118400 24000000 27000000 30000000 33177600 35000000
-#define FOSC 33177600//24MHz
+#define FOSC 22118400//22.1184MHz
 #define EXTERNAL_CRYSTA_ENABLE 0
 extern unsigned long system_clock;
 
