@@ -22,13 +22,17 @@ class ConnectedSegment<T> {
 
 /// M3 Expressive 的 connected button group：外圈全圆、内圈按尺寸收紧，
 /// 选中项在组内形变为完整胶囊。
+///
+/// 尺寸取 M3E 的 small 档：按钮 40 + 上下各 2dp 内边距 = 44；内圈圆角 8、
+/// 图标 20 都与该档位对齐。容器比按钮高 4dp，不能写成 48，否则内部按钮
+/// 会变成 44 这种规范里不存在的档位。
 class ConnectedButtonGroup<T> extends StatelessWidget {
   const ConnectedButtonGroup({
     super.key,
     required this.segments,
     required this.value,
     required this.onChanged,
-    this.height = 48,
+    this.height = 44,
     this.innerRadius = AppCorner.sm,
     this.semanticLabel,
   });
@@ -166,7 +170,9 @@ class _ConnectedSegmentButton<T> extends StatelessWidget {
       return Center(child: text);
     }
     if (segment.label.isEmpty) {
-      return Center(child: Icon(icon, size: 18, color: foreground));
+      return Center(
+        child: Icon(icon, size: AppButton.iconSize, color: foreground),
+      );
     }
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -174,7 +180,7 @@ class _ConnectedSegmentButton<T> extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         spacing: 6,
         children: [
-          Icon(icon, size: 18, color: foreground),
+          Icon(icon, size: AppButton.iconSize, color: foreground),
           Flexible(child: text),
         ],
       ),
