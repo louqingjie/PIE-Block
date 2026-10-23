@@ -1,12 +1,10 @@
 import 'package:material_ui/material_ui.dart';
 
-import 'app_card.dart';
-
 /// 官方 W.PIE 学生创新实验室标识。
 ///
-/// 原图背景透明，但笔画内部保留了不透明白色留白；直接放到深色主题上会
-/// 出现白斑，深灰色的「首都师范大学 / 学生创新实验室」也会看不清。因此
-/// 标识始终放在纯白卡片上，白色留白与卡片融为一体，品牌配色保持原样。
+/// 浅色主题使用去除白底后的透明彩色原图，深色主题使用同形状的白色单通道
+/// 版本；两套资源由官方标识生成，裁切与宽高比完全一致，切换主题时布局不会
+/// 跳动，也不需要额外的底板来遮挡原图内部的白底留白。
 class WpieLogo extends StatelessWidget {
   const WpieLogo({
     super.key,
@@ -22,25 +20,23 @@ class WpieLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AppCard(
-      variant: AppCardVariant.hero,
-      color: Colors.white,
-      padding: EdgeInsets.all(height >= 80 ? 10 : 6),
-      child: Image.asset(
-        'assets/images/wpie-logo.png',
-        height: height,
-        fit: BoxFit.contain,
-        filterQuality: FilterQuality.high,
-        semanticLabel: semanticLabel,
-      ),
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return Image.asset(
+      dark
+          ? 'assets/images/wpie-logo-dark.png'
+          : 'assets/images/wpie-logo-light.png',
+      height: height,
+      fit: BoxFit.contain,
+      filterQuality: FilterQuality.high,
+      gaplessPlayback: true,
+      semanticLabel: semanticLabel,
     );
   }
 }
 
 /// 完整标识顶部裁出的 W.PIE 词标，用于高度受限的窄屏步骤栏。
 ///
-/// 词标由 `assets/images/wpie-logo.png` 的顶部 W.PIE 区域合成白底后生成，
-/// 完整标识仍然是 `assets/images/wpie-logo.png`；两者不是两套独立素材。
+/// 浅色 / 深色两套词标与完整标识使用同一份裁切结果，只改变颜色通道。
 class WpieWordmark extends StatelessWidget {
   const WpieWordmark({
     super.key,
@@ -54,17 +50,16 @@ class WpieWordmark extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AppCard(
-      variant: AppCardVariant.dense,
-      color: Colors.white,
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-      child: Image.asset(
-        'assets/images/wpie-wordmark.png',
-        height: height,
-        fit: BoxFit.contain,
-        filterQuality: FilterQuality.high,
-        semanticLabel: semanticLabel,
-      ),
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return Image.asset(
+      dark
+          ? 'assets/images/wpie-wordmark-dark.png'
+          : 'assets/images/wpie-wordmark-light.png',
+      height: height,
+      fit: BoxFit.contain,
+      filterQuality: FilterQuality.high,
+      gaplessPlayback: true,
+      semanticLabel: semanticLabel,
     );
   }
 }

@@ -594,10 +594,16 @@ void main() {
   });
 
   testWidgets('首页展示 W.PIE 学生创新实验室标识', (tester) async {
-    final full = await rootBundle.load('assets/images/wpie-logo.png');
-    final wordmark = await rootBundle.load('assets/images/wpie-wordmark.png');
-    expect(full.lengthInBytes, greaterThan(0));
-    expect(wordmark.lengthInBytes, greaterThan(0));
+    const assets = [
+      'assets/images/wpie-logo-light.png',
+      'assets/images/wpie-logo-dark.png',
+      'assets/images/wpie-wordmark-light.png',
+      'assets/images/wpie-wordmark-dark.png',
+    ];
+    for (final asset in assets) {
+      final data = await rootBundle.load(asset);
+      expect(data.lengthInBytes, greaterThan(0), reason: asset);
+    }
 
     await tester.pumpWidget(const ProviderScope(child: PieBlockApp()));
     await tester.pumpAndSettle();
@@ -609,7 +615,7 @@ void main() {
     );
     expect(
       (image.image as AssetImage).assetName,
-      'assets/images/wpie-logo.png',
+      'assets/images/wpie-logo-light.png',
     );
     expect(image.semanticLabel, '首都师范大学学生创新实验室');
     expect(tester.takeException(), isNull);
@@ -1699,7 +1705,7 @@ void main() {
     );
     expect(
       (image.image as AssetImage).assetName,
-      'assets/images/wpie-logo.png',
+      'assets/images/wpie-logo-light.png',
     );
     expect(tester.takeException(), isNull);
   });

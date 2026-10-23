@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart'
     hide MaterialShapes, RoundedPolygon;
 import 'package:material_new_shapes/material_new_shapes.dart';
 import 'package:pieblock_app/src/design/app_card.dart';
+import 'package:pieblock_app/src/design/app_logo.dart';
 import 'package:pieblock_app/src/design/app_theme.dart';
 import 'package:pieblock_app/src/design/connected_button_group.dart';
 import 'package:pieblock_app/src/design/press_scale.dart';
@@ -241,5 +242,41 @@ void main() {
     expect(find.byType(ShapeBadge), findsOneWidget);
     expect(find.bySemanticsLabel(RegExp('.')), findsNothing);
     semantics.dispose();
+  });
+
+  testWidgets('WpieLogo 按主题亮度选择去底彩色或白色单通道资源', (tester) async {
+    const cases = [
+      (Brightness.light, 'assets/images/wpie-logo-light.png'),
+      (Brightness.dark, 'assets/images/wpie-logo-dark.png'),
+    ];
+    for (final (brightness, assetName) in cases) {
+      await tester.pumpWidget(
+        MaterialApp(
+          key: ValueKey(brightness),
+          theme: buildAppTheme(brightness: brightness),
+          home: const Scaffold(body: WpieLogo()),
+        ),
+      );
+      final image = tester.widget<Image>(find.byType(Image));
+      expect((image.image as AssetImage).assetName, assetName);
+    }
+  });
+
+  testWidgets('WpieWordmark 按主题亮度选择对应资源', (tester) async {
+    const cases = [
+      (Brightness.light, 'assets/images/wpie-wordmark-light.png'),
+      (Brightness.dark, 'assets/images/wpie-wordmark-dark.png'),
+    ];
+    for (final (brightness, assetName) in cases) {
+      await tester.pumpWidget(
+        MaterialApp(
+          key: ValueKey(brightness),
+          theme: buildAppTheme(brightness: brightness),
+          home: const Scaffold(body: WpieWordmark()),
+        ),
+      );
+      final image = tester.widget<Image>(find.byType(Image));
+      expect((image.image as AssetImage).assetName, assetName);
+    }
   });
 }

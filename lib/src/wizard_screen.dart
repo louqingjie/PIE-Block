@@ -299,8 +299,8 @@ class WizardScreen extends ConsumerWidget {
                               ),
                             ),
                             // 品牌区固定在步骤栏底部：不占 AppBar，也不会在
-                            // 短窗口里被步骤列表滚走。白卡是标识原图的白色
-                            // 笔画留白所需的背景，深浅主题都保持一致。
+                            // 短窗口里被步骤列表滚走；标识按主题自动切换
+                            // 透明彩色 / 白色单通道资源。
                             Padding(
                               padding: EdgeInsets.fromLTRB(
                                 16,

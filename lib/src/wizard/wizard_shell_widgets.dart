@@ -155,7 +155,7 @@ class _CompactStepPicker extends ConsumerWidget {
         child: Row(
           children: [
             // 完整标识的三行文字在步骤栏高度下无法辨认，窄屏改用词标；
-            // 白卡与词标自身的白底一致，深浅主题下都不出现白斑。
+            // 词标同样按主题切换透明彩色 / 白色单通道资源。
             const WpieWordmark(key: ValueKey('wizard.lab-wordmark')),
             const SizedBox(width: 12),
             Expanded(
