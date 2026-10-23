@@ -125,6 +125,10 @@ class WizardScreen extends ConsumerWidget {
     }
     final deploy = ref.watch(deployControllerProvider);
     final asmPreview = ref.watch(asmPreviewControllerProvider);
+    // 构建汇编列表时不让翻页：汇编构建与烧录共用同一套工具链工作目录，
+    // 同时发起两次构建会互相踩。这里只禁用入口，不再整页遮挡内容。
+    final compiling = asmPreview.compiling;
+    final busy = deploy.busy || compiling;
     final compact = _isCompact(context);
     final nextLabel = state.step == controller.reviewStep(document.kind)
         ? '生成代码'
@@ -138,10 +142,10 @@ class WizardScreen extends ConsumerWidget {
       step: state.step,
       totalSteps: steps.length,
       nextLabel: nextLabel,
-      onPrevious: state.step > 0 && !deploy.busy
+      onPrevious: state.step > 0 && !busy
           ? () => goToStep(state.step - 1)
           : null,
-      onNext: state.step < steps.length - 1 && !deploy.busy
+      onNext: state.step < steps.length - 1 && !busy
           ? () => goToStep(state.step + 1)
           : null,
     );
@@ -157,6 +161,8 @@ class WizardScreen extends ConsumerWidget {
                       ref,
                       controller.closeProject,
                     )
+                  : compiling
+                  ? null
                   : controller.closeProject,
               tooltip: '返回项目首页',
               icon: const Icon(Icons.arrow_back),
@@ -242,18 +248,7 @@ class WizardScreen extends ConsumerWidget {
                           child: page,
                         ),
                       );
-                // 生成代码页正在构建汇编列表时，用全屏遮罩挡住整个内容区。
-                Widget withCompileOverlay(Widget child) => Stack(
-                  children: [
-                    child,
-                    if (asmPreview.compiling)
-                      Positioned.fill(
-                        child: _AsmCompilingOverlay(
-                          progress: asmPreview.progress,
-                        ),
-                      ),
-                  ],
-                );
+                // 生成代码页的编译进度就地显示在汇编栏里，不再遮挡整个内容区。
                 Widget withActions(Widget child) => Stack(
                   children: [
                     Positioned.fill(child: child),
@@ -267,47 +262,41 @@ class WizardScreen extends ConsumerWidget {
                   ],
                 );
                 if (!wide) {
-                  return withCompileOverlay(
-                    Column(
-                      children: [
-                        _CompactStepPicker(
-                          steps: steps,
-                          selected: state.step,
-                          busy: deploy.busy,
-                        ),
-                        Expanded(child: withActions(content)),
-                      ],
-                    ),
-                  );
-                }
-                return withCompileOverlay(
-                  Row(
+                  return Column(
                     children: [
-                      SizedBox(
-                        width: 260,
-                        child: Material(
-                          color: AppSurface.block.colorOf(
-                            Theme.of(context).colorScheme,
-                          ),
-                          child: ListView(
-                            padding: const EdgeInsets.all(16),
-                            children: [
-                              for (var i = 0; i < steps.length; i++)
-                                _StepTile(
-                                  index: i,
-                                  title: steps[i],
-                                  visual: _stepVisual(i, state),
-                                  onTap: deploy.busy
-                                      ? () {}
-                                      : () => goToStep(i),
-                                ),
-                            ],
-                          ),
-                        ),
+                      _CompactStepPicker(
+                        steps: steps,
+                        selected: state.step,
+                        busy: busy,
                       ),
                       Expanded(child: withActions(content)),
                     ],
-                  ),
+                  );
+                }
+                return Row(
+                  children: [
+                    SizedBox(
+                      width: 260,
+                      child: Material(
+                        color: AppSurface.block.colorOf(
+                          Theme.of(context).colorScheme,
+                        ),
+                        child: ListView(
+                          padding: const EdgeInsets.all(16),
+                          children: [
+                            for (var i = 0; i < steps.length; i++)
+                              _StepTile(
+                                index: i,
+                                title: steps[i],
+                                visual: _stepVisual(i, state),
+                                onTap: busy ? () {} : () => goToStep(i),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Expanded(child: withActions(content)),
+                  ],
                 );
               },
             ),

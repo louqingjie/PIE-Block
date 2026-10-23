@@ -42,7 +42,11 @@ class _CodePageState extends ConsumerState<_CodePage> {
     final listing = asm.listing;
     return _PageFrame(
       title: '生成代码',
-      subtitle: blocked ? '仍有错误，返回检查页修正后才能生成。' : '代码根据项目配置实时生成，只读且不会写回项目文件。',
+      subtitle: blocked
+          ? '仍有错误，返回检查页修正后才能生成。'
+          : asm.compiling
+          ? _compilingSubtitle
+          : '代码根据项目配置实时生成，只读且不会写回项目文件。',
       child: blocked
           ? _Section(
               title: '无法生成',
@@ -75,6 +79,7 @@ class _CodePageState extends ConsumerState<_CodePage> {
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                     ),
+                  // 编译中保留按钮但置灰：入口位置固定，重试不会到处找。
                   if (showListing)
                     OutlinedButton.icon(
                       onPressed: asm.compiling
@@ -96,20 +101,29 @@ class _CodePageState extends ConsumerState<_CodePage> {
                     fileName: 'main.c',
                     onExport: () => _export(code, 'main.c'),
                   )
-                else if (asm.ready)
+                else
+                  // 汇编栏始终是同一个编辑器：内容没好就把编辑区换成占位，
+                  // 工具栏留在原位并禁用，列表到达时不会把整块内容顶下去。
                   _GeneratedCodePreview(
-                    code: listing!,
+                    code: listing ?? '',
                     fileName: 'main.rst',
-                    onExport: () => _export(listing, 'main.rst'),
+                    onExport: () => _export(listing ?? '', 'main.rst'),
                     languages: {
                       'asm': CodeHighlightThemeMode(mode: langAs251Listing),
                     },
-                  )
-                else
-                  _ListingPlaceholder(
-                    compiling: asm.compiling,
-                    message: asm.message,
-                    progress: asm.progress,
+                    controlsEnabled: asm.ready,
+                    placeholder: asm.ready
+                        ? null
+                        : _ListingPlaceholder(
+                            compiling: asm.compiling,
+                            message: asm.message,
+                            progress: asm.progress,
+                            onRetry: () => unawaited(
+                              ref
+                                  .read(asmPreviewControllerProvider.notifier)
+                                  .recompile(config),
+                            ),
+                          ),
                   ),
               ],
             ),
@@ -127,63 +141,330 @@ class _CodeOutputSwitch extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Semantics(
     label: '输出语言',
-    child: ConnectedButtonGroup<bool>(
-      semanticLabel: '输出语言',
-      segments: const [
-        ConnectedSegment(value: false, icon: Icons.code, label: 'C 代码'),
-        ConnectedSegment(value: true, icon: Icons.memory, label: '汇编'),
-      ],
-      value: listing,
-      onChanged: onChanged,
+    // 分段按钮内部每段都是 Expanded，放进 Wrap 会一路撑满整行、把旁边的
+    // 「重新编译」挤到下一行，这里按控件自身宽度收住。
+    child: ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 300),
+      child: ConnectedButtonGroup<bool>(
+        semanticLabel: '输出语言',
+        segments: const [
+          ConnectedSegment(value: false, icon: Icons.code, label: 'C 代码'),
+          ConnectedSegment(value: true, icon: Icons.memory, label: '汇编'),
+        ],
+        value: listing,
+        onChanged: onChanged,
+      ),
     ),
   );
 }
 
-/// 汇编栏还没就绪时的占位：编译中显示阶段进度，失败或降级时显示原因。
-class _ListingPlaceholder extends StatelessWidget {
+/// 编译中的页面说明：交代当前状态，以及为什么此刻翻页按钮是禁用的。
+/// 具体编到第几个文件由汇编栏自己报，这里不重复数字。
+const _compilingSubtitle = '正在编译汇编列表，编译期间不能切换步骤。';
+
+/// 构建阶段文案的解析结果。
+///
+/// 工具链按 `[7/22] 编译 libraries/…/Encoder.c` 报告逐文件进度；准备工具链、
+/// 链接等阶段没有编号，此时 [value] 为 null，按不确定进度显示。
+class _BuildStage {
+  const _BuildStage({this.index, this.total, this.detail = ''});
+
+  factory _BuildStage.parse(String? message) {
+    final text = message?.trim() ?? '';
+    if (text.isEmpty) return const _BuildStage();
+    final match = RegExp(r'^\[(\d+)\s*/\s*(\d+)\]\s*(.*)$').firstMatch(text);
+    if (match == null) return _BuildStage(detail: text);
+    return _BuildStage(
+      index: int.tryParse(match.group(1)!),
+      total: int.tryParse(match.group(2)!),
+      detail: match.group(3) ?? '',
+    );
+  }
+
+  final int? index, total;
+
+  /// 去掉编号后的阶段说明，例如 `编译 libraries/boards/src/Encoder.c`。
+  final String detail;
+
+  double? get value {
+    final index = this.index, total = this.total;
+    if (index == null || total == null || total <= 0) return null;
+    return (index / total).clamp(0.0, 1.0);
+  }
+}
+
+/// 代码面板的底色、前景与行号色。
+///
+/// 占位面板与真实编辑器共用同一套颜色、同一块高度和同一个圆角，所以编译
+/// 结束时是「内容在原地淡入」，而不是先闪一块别的颜色再变成代码。
+class _CodeSurface {
+  const _CodeSurface({
+    required this.background,
+    required this.foreground,
+    required this.gutter,
+  });
+
+  factory _CodeSurface.of(BuildContext context) =>
+      Theme.of(context).brightness == Brightness.dark
+      ? const _CodeSurface(
+          background: Color(0xff091012),
+          foreground: Color(0xffd7e1e3),
+          gutter: Color(0xff789094),
+        )
+      : const _CodeSurface(
+          background: Color(0xfff0f3f5),
+          foreground: Color(0xff263238),
+          gutter: Color(0xff60777b),
+        );
+
+  final Color background, foreground, gutter;
+}
+
+/// 骨架屏里的一条假代码行：缩进用像素，长度取剩余宽度的比例。
+class _SkeletonLine {
+  const _SkeletonLine(this.indent, this.width);
+  final double indent, width;
+}
+
+const _skeletonLines = <_SkeletonLine>[
+  _SkeletonLine(0, .34),
+  _SkeletonLine(14, .52),
+  _SkeletonLine(14, .41),
+  _SkeletonLine(28, .63),
+  _SkeletonLine(28, .30),
+  _SkeletonLine(14, .47),
+  _SkeletonLine(0, .22),
+  _SkeletonLine(0, .58),
+  _SkeletonLine(14, .36),
+  _SkeletonLine(28, .50),
+  _SkeletonLine(14, .27),
+  _SkeletonLine(0, .18),
+];
+
+/// 汇编栏还没就绪时的占位。
+///
+/// 编译中在**内容将要出现的位置**就地等待：确定进度（由 `[7/22]` 换算）+
+/// 阶段文案 + 骨架行，页面其余部分照常可读。失败或降级时在同一块里说明
+/// 原因，并把「重试」放在原因旁边，不必回标题栏找按钮。
+class _ListingPlaceholder extends StatefulWidget {
   const _ListingPlaceholder({
     required this.compiling,
     this.message,
     this.progress,
+    this.onRetry,
   });
 
   final bool compiling;
   final String? message, progress;
+  final VoidCallback? onRetry;
+
+  @override
+  State<_ListingPlaceholder> createState() => _ListingPlaceholderState();
+}
+
+class _ListingPlaceholderState extends State<_ListingPlaceholder>
+    with SingleTickerProviderStateMixin {
+  /// 骨架行的呼吸只改透明度、不做位移；系统要求减少动态效果时停在中点。
+  late final AnimationController _pulse = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1600),
+    value: 1,
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _syncPulse();
+  }
+
+  @override
+  void didUpdateWidget(_ListingPlaceholder oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncPulse();
+  }
+
+  void _syncPulse() {
+    if (widget.compiling && !MediaQuery.disableAnimationsOf(context)) {
+      if (!_pulse.isAnimating) _pulse.repeat(reverse: true);
+    } else {
+      _pulse
+        ..stop()
+        ..value = 1;
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final surface = _CodeSurface.of(context);
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 26),
-      decoration: ShapeDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
-        shape: AppShape.lg,
+      padding: _codeEditorPadding,
+      decoration: BoxDecoration(
+        color: surface.background,
+        borderRadius: BorderRadius.circular(AppCorner.md),
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
       ),
-      child: Column(
-        children: [
-          if (compiling) ...[
-            const WavyProgressIndicator(semanticLabel: '编译进度'),
-            const SizedBox(height: 16),
-            Text(
-              '正在用内置 SDCC C251 构建 main.c…',
-              style: theme.textTheme.titleSmall,
+      clipBehavior: Clip.antiAlias,
+      child: widget.compiling
+          ? _buildLoading(context, surface)
+          : _buildFailure(context, surface),
+    );
+  }
+
+  Widget _buildLoading(BuildContext context, _CodeSurface surface) {
+    final theme = Theme.of(context);
+    final stage = _BuildStage.parse(widget.progress);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                '正在编译汇编列表',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.titleSmall?.copyWith(
+                  color: surface.foreground,
+                ),
+              ),
             ),
-            const SizedBox(height: 6),
-            Text(
-              progress ?? '编译全部源文件并链接后才会产出带机器码的 main.rst。',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodySmall,
-            ),
-          ] else ...[
-            Icon(Icons.info_outline, color: theme.colorScheme.onSurfaceVariant),
+            if (stage.total != null) ...[
+              const SizedBox(width: 12),
+              Text(
+                '${stage.index} / ${stage.total}',
+                style: AppText.count(
+                  context,
+                ).copyWith(color: surface.gutter),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 10),
+        WavyProgressIndicator(
+          value: stage.value,
+          height: 12,
+          color: theme.colorScheme.primary,
+          trackColor: surface.foreground.withValues(alpha: .2),
+          semanticLabel: '编译进度',
+        ),
+        const SizedBox(height: 8),
+        Text(
+          stage.detail.isEmpty
+              ? '用内置 SDCC C251 完整构建 main.c，首次使用需要先部署工具链。'
+              : stage.detail,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: surface.gutter,
+            fontFamily: 'PieBlockMono',
+            fontFamilyFallback: _codeFontFallbacks,
+            fontSize: 12,
+          ),
+        ),
+        const SizedBox(height: 14),
+        Expanded(child: _buildSkeleton(surface)),
+      ],
+    );
+  }
+
+  Widget _buildSkeleton(_CodeSurface surface) {
+    const lineHeight = _codeFontSize * _codeLineHeightFactor;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final count = (constraints.maxHeight / lineHeight)
+            .floor()
+            .clamp(3, 24);
+        return AnimatedBuilder(
+          animation: _pulse,
+          builder: (context, _) {
+            final breath = .45 + .55 * Curves.easeInOut.transform(_pulse.value);
+            final bar = surface.foreground.withValues(alpha: .16 * breath);
+            final number = surface.gutter.withValues(alpha: .55 * breath);
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (var i = 0; i < count; i += 1)
+                  SizedBox(
+                    height: lineHeight,
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 26,
+                          child: Text(
+                            '${i + 1}',
+                            textAlign: TextAlign.right,
+                            style: TextStyle(
+                              color: number,
+                              fontFamily: 'PieBlockMono',
+                              fontFamilyFallback: _codeFontFallbacks,
+                              fontSize: _codeFontSize,
+                              height: _codeLineHeightFactor,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Padding(
+                            padding: EdgeInsetsDirectional.only(
+                              start: _skeletonLines[i % _skeletonLines.length]
+                                  .indent,
+                            ),
+                            child: FractionallySizedBox(
+                              alignment: AlignmentDirectional.centerStart,
+                              widthFactor:
+                                  _skeletonLines[i % _skeletonLines.length]
+                                      .width,
+                              child: Container(
+                                height: 10,
+                                decoration: BoxDecoration(
+                                  color: bar,
+                                  borderRadius: AppRadius.xs,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildFailure(BuildContext context, _CodeSurface surface) {
+    return Center(
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.info_outline, color: surface.gutter),
             const SizedBox(height: 12),
             Text(
-              message ?? '还没有汇编列表，点「重新编译」再试一次。',
+              widget.message ?? '还没有汇编列表，点「重试」再编译一次。',
               textAlign: TextAlign.center,
+              style: TextStyle(color: surface.foreground),
             ),
+            if (widget.onRetry != null) ...[
+              const SizedBox(height: 16),
+              FilledButton.tonalIcon(
+                onPressed: widget.onRetry,
+                icon: const Icon(Icons.refresh),
+                label: const Text('重试'),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -209,6 +490,8 @@ class _GeneratedCodePreview extends StatefulWidget {
     required this.onExport,
     this.fileName = 'main.c',
     this.languages,
+    this.placeholder,
+    this.controlsEnabled = true,
   });
 
   final String code;
@@ -217,6 +500,12 @@ class _GeneratedCodePreview extends StatefulWidget {
 
   /// 为空时按 [fileName] 后缀选语言（.asm / .rst 走 AS251）。
   final Map<String, CodeHighlightThemeMode>? languages;
+
+  /// 内容还没就绪时替换编辑区，工具栏保持原位。
+  final Widget? placeholder;
+
+  /// 搜索、复制、另存为是否可用；内容没就绪时禁用。
+  final bool controlsEnabled;
 
   @override
   State<_GeneratedCodePreview> createState() => _GeneratedCodePreviewState();
@@ -397,18 +686,21 @@ class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
   @override
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
-    final background = dark ? const Color(0xff091012) : const Color(0xfff0f3f5);
-    final foreground = dark ? const Color(0xffd7e1e3) : const Color(0xff263238);
-    final gutter = dark ? const Color(0xff789094) : const Color(0xff60777b);
+    final codeSurface = _CodeSurface.of(context);
+    final background = codeSurface.background,
+        foreground = codeSurface.foreground,
+        gutter = codeSurface.gutter;
     final syntaxTheme = <String, TextStyle>{
       ...(dark ? atomOneDarkTheme : atomOneLightTheme),
       'root': TextStyle(color: foreground, backgroundColor: background),
     };
     final compact = _isCompact(context);
+    final enabled = widget.controlsEnabled;
     final search = TextField(
       key: const ValueKey('code-search-field'),
       controller: _searchController,
       focusNode: _searchFocusNode,
+      enabled: enabled,
       onChanged: _updateSearch,
       decoration: const InputDecoration(
         prefixIcon: Icon(Icons.search),
@@ -424,32 +716,38 @@ class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
       ),
     );
     final previous = IconButton(
-      onPressed: _matches.isEmpty ? null : () => _selectMatch(_matchIndex - 1),
+      onPressed: !enabled || _matches.isEmpty
+          ? null
+          : () => _selectMatch(_matchIndex - 1),
       tooltip: '上一个匹配',
       icon: const Icon(Icons.keyboard_arrow_up),
     );
     final next = IconButton(
-      onPressed: _matches.isEmpty ? null : () => _selectMatch(_matchIndex + 1),
+      onPressed: !enabled || _matches.isEmpty
+          ? null
+          : () => _selectMatch(_matchIndex + 1),
       tooltip: '下一个匹配',
       icon: const Icon(Icons.keyboard_arrow_down),
     );
     final copy = IconButton.filledTonal(
-      onPressed: () {
-        Clipboard.setData(ClipboardData(text: widget.code));
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('代码已复制')));
-      },
+      onPressed: enabled
+          ? () {
+              Clipboard.setData(ClipboardData(text: widget.code));
+              ScaffoldMessenger.of(context)
+                  .showSnackBar(const SnackBar(content: Text('代码已复制')));
+            }
+          : null,
       tooltip: '复制全部',
       icon: const Icon(Icons.copy),
     );
     final export = compact
         ? IconButton.filled(
-            onPressed: widget.onExport,
+            onPressed: enabled ? widget.onExport : null,
             tooltip: '另存为 ${widget.fileName}',
             icon: const Icon(Icons.save_alt),
           )
         : FilledButton.icon(
-            onPressed: widget.onExport,
+            onPressed: enabled ? widget.onExport : null,
             icon: const Icon(Icons.save_alt),
             label: const Text('另存为'),
           );
@@ -485,14 +783,21 @@ class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
         LegacyMaterialThemeBridge(
           child: SizedBox(
             height: (MediaQuery.sizeOf(context).height * .55).clamp(280, 560),
-            child: Listener(
-              onPointerDown: (_) {
-                _pressing = true;
-                _hideHoverCard();
-              },
-              onPointerUp: (_) => _pressing = false,
-              onPointerCancel: (_) => _pressing = false,
-              child: CodeEditor(
+            child: AnimatedSwitcher(
+              duration: AppMotion.defaultEffects(context),
+              switchInCurve: AppMotion.expressiveDefaultEffects,
+              switchOutCurve: AppMotion.expressiveDefaultEffects,
+              child:
+                  widget.placeholder ??
+                  Listener(
+                    key: const ValueKey('generated-code-editor-area'),
+                    onPointerDown: (_) {
+                      _pressing = true;
+                      _hideHoverCard();
+                    },
+                    onPointerUp: (_) => _pressing = false,
+                    onPointerCancel: (_) => _pressing = false,
+                    child: CodeEditor(
                 key: const ValueKey('generated-code-editor'),
                 controller: _editingController,
                 scrollController: _scrollController,
@@ -581,49 +886,8 @@ class _GeneratedCodePreviewState extends State<_GeneratedCodePreview> {
             ),
           ),
         ),
-      ],
-    );
-  }
-}
-
-/// 生成代码页正在把 main.c 编译成汇编时的全屏等待遮罩。
-class _AsmCompilingOverlay extends StatelessWidget {
-  const _AsmCompilingOverlay({this.progress});
-
-  /// 当前构建阶段文案（准备工具链 / 编译 x/y / 链接…），可能为空。
-  final String? progress;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return AbsorbPointer(
-      child: ColoredBox(
-        color: colors.surface.withValues(alpha: .9),
-        child: Column(
-          children: [
-            const WavyProgressIndicator(semanticLabel: '正在构建汇编列表'),
-            Expanded(
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      '正在构建汇编列表…',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      progress ?? '用内置 SDCC C251 完整构建 main.c，首次使用需要先部署工具链。',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
       ),
+      ],
     );
   }
 }

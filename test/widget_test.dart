@@ -2916,9 +2916,15 @@ void main() {
     debugDefaultTargetPlatformOverride = null;
   });
 
-  testWidgets('汇编构建中显示全屏等待遮罩与阶段文案', (tester) async {
+  testWidgets('汇编构建中在汇编栏就地显示进度，不遮挡整页', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
-    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1600, 900);
+    addTearDown(() {
+      debugDefaultTargetPlatformOverride = null;
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -2929,8 +2935,9 @@ void main() {
             () => _FakeAsmPreviewController(
               const AsmPreviewState(
                 activity: AsmPreviewActivity.compiling,
-                progress: '正在链接 BUZZER_MUSIC_GENERATED.hex…',
+                progress: '[7/22] 编译 libraries/boards/src/Encoder.c',
               ),
+              listing: null,
             ),
           ),
           deployControllerProvider.overrideWith(_FakeDeployController.new),
@@ -2940,8 +2947,16 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('正在构建汇编列表…'), findsOneWidget);
-    expect(find.text('正在链接 BUZZER_MUSIC_GENERATED.hex…'), findsOneWidget);
+    // 切到汇编：等待状态出现在汇编栏本身，标题栏同时报进度。
+    await tester.tap(find.text('汇编'));
+    await _pumpFrames(tester);
+
+    expect(find.text('正在编译汇编列表'), findsOneWidget);
+    expect(find.text('7 / 22'), findsOneWidget);
+    expect(find.text('正在编译汇编列表，编译期间不能切换步骤。'), findsOneWidget);
+    expect(find.text('编译 libraries/boards/src/Encoder.c'), findsOneWidget);
+    // 页面其余部分照常可读：C/汇编切换器仍在，说明没有被整页遮罩接管。
+    expect(find.text('C 代码'), findsOneWidget);
     expect(tester.takeException(), isNull);
     debugDefaultTargetPlatformOverride = null;
   });
