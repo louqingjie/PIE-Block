@@ -202,3 +202,7 @@ app.*.map.json
 /submission/*.zip
 
 .workbuddy-ai/
+
+# 主控板主频异常筛板流程的本地产物（tools/diagnostics）
+/tools/diagnostics/screen_results.csv
+/tools/diagnostics/clock_probe_keil.hex
