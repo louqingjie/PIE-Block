@@ -126,6 +126,20 @@ enum AppSurface {
   }
 }
 
+/// M3E 按钮尺寸令牌（默认尺寸 small）。
+///
+/// 数值对齐 `md.comp.button.small`：容器高 40、图标 20、左右内边距各 16、
+/// 图标与文字间距 8，按下时容器圆角从 full 收缩到 corner-small(8dp)。
+/// Flutter 的 M3 默认值是图标 18、图标按钮内边距 16/24、按下圆角 12，
+/// 都与 M3E 不一致，因此在主题里统一覆盖。
+abstract final class AppButton {
+  static const double height = 40;
+  static const double iconSize = 20;
+  static const double horizontalPadding = 16;
+  static const double iconLabelGap = 8;
+  static const double pressedCorner = AppCorner.sm;
+}
+
 /// M3E Web 换算表给出的曲线与时长。
 ///
 /// Flutter 端 M3E 的 spring token 尚未内置，按官方 Web 换算表用曲线实现，
@@ -242,13 +256,35 @@ ThemeData buildAppTheme({
   );
 
   OutlinedBorder buttonShape(Set<WidgetState> states) =>
-      states.contains(WidgetState.pressed) ? AppShape.md : AppShape.full;
+      states.contains(WidgetState.pressed) ? AppShape.sm : AppShape.full;
 
   const buttonAnimation = AppMotion.fastSpatialDuration;
-  final buttonStyle = ButtonStyle(
+  final buttonBase = ButtonStyle(
     shape: WidgetStateProperty.resolveWith(buttonShape),
     animationDuration: buttonAnimation,
     tapTargetSize: MaterialTapTargetSize.padded,
+    minimumSize: const WidgetStatePropertyAll(Size(64, AppButton.height)),
+    iconSize: const WidgetStatePropertyAll(AppButton.iconSize),
+  );
+  // 文字按钮的左右留白在 M3E 里仍是 12，不能跟 filled/outlined 一起改成 16。
+  final fieldButtonStyle = buttonBase.copyWith(
+    padding: const WidgetStatePropertyAll(
+      EdgeInsets.symmetric(horizontal: AppButton.horizontalPadding),
+    ),
+  );
+  final outlinedButtonStyle = fieldButtonStyle.copyWith(
+    foregroundColor: WidgetStateProperty.resolveWith<Color?>((states) {
+      if (states.contains(WidgetState.disabled)) {
+        return colorScheme.onSurface.withValues(alpha: 0.38);
+      }
+      return colorScheme.onSurfaceVariant;
+    }),
+    side: WidgetStateProperty.resolveWith<BorderSide?>((states) {
+      if (states.contains(WidgetState.disabled)) {
+        return BorderSide(color: colorScheme.onSurface.withValues(alpha: 0.12));
+      }
+      return BorderSide(color: colorScheme.outlineVariant);
+    }),
   );
 
   return base.copyWith(
@@ -328,10 +364,10 @@ ThemeData buildAppTheme({
         borderSide: BorderSide(color: colorScheme.primary, width: 1.5),
       ),
     ),
-    filledButtonTheme: FilledButtonThemeData(style: buttonStyle),
-    textButtonTheme: TextButtonThemeData(style: buttonStyle),
-    outlinedButtonTheme: OutlinedButtonThemeData(style: buttonStyle),
-    elevatedButtonTheme: ElevatedButtonThemeData(style: buttonStyle),
+    filledButtonTheme: FilledButtonThemeData(style: fieldButtonStyle),
+    textButtonTheme: TextButtonThemeData(style: buttonBase),
+    outlinedButtonTheme: OutlinedButtonThemeData(style: outlinedButtonStyle),
+    elevatedButtonTheme: ElevatedButtonThemeData(style: fieldButtonStyle),
     iconButtonTheme: IconButtonThemeData(
       style: ButtonStyle(
         shape: const WidgetStatePropertyAll(AppShape.circle),

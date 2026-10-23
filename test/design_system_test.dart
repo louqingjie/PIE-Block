@@ -52,9 +52,32 @@ void main() {
     );
     expect(
       pressed.borderRadius.resolve(TextDirection.ltr).topLeft.x,
-      AppCorner.md,
+      AppButton.pressedCorner,
     );
     expect(buttonStyle.animationDuration, AppMotion.fastSpatialDuration);
+    // M3E small 按钮：高 40、图标 20、左右内边距 16。
+    expect(
+      buttonStyle.minimumSize!.resolve(<WidgetState>{}),
+      const Size(64, AppButton.height),
+    );
+    expect(buttonStyle.iconSize!.resolve(<WidgetState>{}), AppButton.iconSize);
+    expect(
+      buttonStyle.padding!.resolve(<WidgetState>{}),
+      const EdgeInsets.symmetric(horizontal: AppButton.horizontalPadding),
+    );
+  });
+
+  test('描边按钮使用 M3E 的 outline variant 与 on surface variant', () {
+    final theme = buildAppTheme(brightness: Brightness.dark);
+    final style = theme.outlinedButtonTheme.style!;
+    expect(
+      style.foregroundColor!.resolve(<WidgetState>{}),
+      theme.colorScheme.onSurfaceVariant,
+    );
+    expect(
+      style.side!.resolve(<WidgetState>{})?.color,
+      theme.colorScheme.outlineVariant,
+    );
   });
 
   testWidgets('ConnectedButtonGroup 点击后回调新选择', (tester) async {
