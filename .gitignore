@@ -201,3 +201,4 @@ app.*.map.json
 /.dsh-office-*/
 /submission/*.zip
 
+.workbuddy-ai/
