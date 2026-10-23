@@ -20,6 +20,7 @@ import 'controller.dart';
 import 'debug_cue_preview.dart';
 import 'deploy_controller.dart';
 import 'design/app_card.dart';
+import 'design/app_logo.dart';
 import 'design/app_theme.dart';
 import 'design/asm_hover_card.dart';
 import 'design/connected_button_group.dart';
@@ -281,16 +282,39 @@ class WizardScreen extends ConsumerWidget {
                         color: AppSurface.block.colorOf(
                           Theme.of(context).colorScheme,
                         ),
-                        child: ListView(
-                          padding: const EdgeInsets.all(16),
+                        child: Column(
                           children: [
-                            for (var i = 0; i < steps.length; i++)
-                              _StepTile(
-                                index: i,
-                                title: steps[i],
-                                visual: _stepVisual(i, state),
-                                onTap: busy ? () {} : () => goToStep(i),
+                            Expanded(
+                              child: ListView(
+                                padding: const EdgeInsets.all(16),
+                                children: [
+                                  for (var i = 0; i < steps.length; i++)
+                                    _StepTile(
+                                      index: i,
+                                      title: steps[i],
+                                      visual: _stepVisual(i, state),
+                                      onTap: busy ? () {} : () => goToStep(i),
+                                    ),
+                                ],
                               ),
+                            ),
+                            // 品牌区固定在步骤栏底部：不占 AppBar，也不会在
+                            // 短窗口里被步骤列表滚走。白卡是标识原图的白色
+                            // 笔画留白所需的背景，深浅主题都保持一致。
+                            Padding(
+                              padding: EdgeInsets.fromLTRB(
+                                16,
+                                0,
+                                16,
+                                16 + MediaQuery.paddingOf(context).bottom,
+                              ),
+                              child: const Center(
+                                child: WpieLogo(
+                                  key: ValueKey('wizard.lab-logo'),
+                                  height: 96,
+                                ),
+                              ),
+                            ),
                           ],
                         ),
                       ),

@@ -8,6 +8,7 @@ import 'package:pieblock_core/pieblock_core.dart';
 
 import 'controller.dart';
 import 'design/app_card.dart';
+import 'design/app_logo.dart';
 import 'design/app_theme.dart';
 import 'design/connected_button_group.dart';
 import 'design/press_scale.dart';
@@ -470,7 +471,6 @@ class HomeScreen extends ConsumerWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         _HomeHeader(
-                          dark: dark,
                           themeMode: state.themeMode,
                           onCycleTheme: ref
                               .read(appControllerProvider.notifier)
@@ -598,21 +598,14 @@ class HomeScreen extends ConsumerWidget {
 }
 
 class _HomeHeader extends StatelessWidget {
-  const _HomeHeader({
-    required this.dark,
-    required this.themeMode,
-    required this.onCycleTheme,
-  });
+  const _HomeHeader({required this.themeMode, required this.onCycleTheme});
 
-  final bool dark;
   final ThemeMode themeMode;
   final VoidCallback onCycleTheme;
 
-  Widget _brandIcon() => ShapeBadge(
-    shape: MaterialShapes.cookie6Sided,
-    color: AppBrand.cyan,
-    size: 56,
-    child: const Icon(Icons.hub_outlined, color: AppBrand.onCyan, size: 30),
+  Widget _logo({required bool compact}) => WpieLogo(
+    key: const ValueKey('home.lab-logo'),
+    height: compact ? 96 : 112,
   );
 
   Widget _themeButton() => IconButton.filledTonal(
@@ -627,56 +620,15 @@ class _HomeHeader extends StatelessWidget {
     ),
   );
 
-  Widget _title({required bool compact}) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      if (compact) ...[
-        Image.asset(
-          dark ? 'assets/images/cnu-white.png' : 'assets/images/cnu-blue.png',
-          height: 32,
-          fit: BoxFit.contain,
-          filterQuality: FilterQuality.high,
-          semanticLabel: '首都师范大学',
-        ),
-        const SizedBox(height: 10),
-        const Text(
-          'RoboMaster 机甲大师赛机器人图形化配置集成开发环境',
-          style: TextStyle(
-            fontSize: 21,
-            height: 1.3,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-      ] else
-        Row(
-          children: [
-            Image.asset(
-              dark
-                  ? 'assets/images/cnu-white.png'
-                  : 'assets/images/cnu-blue.png',
-              height: 36,
-              fit: BoxFit.contain,
-              filterQuality: FilterQuality.high,
-              semanticLabel: '首都师范大学',
-            ),
-            const SizedBox(width: 14),
-            const Expanded(
-              child: Text(
-                'RoboMaster 机甲大师赛机器人图形化配置集成开发环境',
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 23,
-                  height: 1.25,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-          ],
-        ),
-      // const SizedBox(height: 5),
-      // const Text('用清晰的步骤配置机器人，生成可靠的控制代码'),
-    ],
+  Widget _title({required bool compact}) => Text(
+    'RoboMaster 机甲大师赛机器人图形化配置集成开发环境',
+    maxLines: compact ? null : 2,
+    overflow: compact ? null : TextOverflow.ellipsis,
+    style: TextStyle(
+      fontSize: compact ? 21 : 23,
+      height: compact ? 1.3 : 1.25,
+      fontWeight: FontWeight.w800,
+    ),
   );
 
   @override
@@ -688,8 +640,9 @@ class _HomeHeader extends StatelessWidget {
           children: [
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.start,
               // Web 版固定暗色，不提供主题切换。
-              children: [_brandIcon(), if (!kIsWeb) _themeButton()],
+              children: [_logo(compact: true), if (!kIsWeb) _themeButton()],
             ),
             const SizedBox(height: 20),
             _title(compact: true),
@@ -698,8 +651,8 @@ class _HomeHeader extends StatelessWidget {
       }
       return Row(
         children: [
-          _brandIcon(),
-          const SizedBox(width: 16),
+          _logo(compact: false),
+          const SizedBox(width: 24),
           Expanded(child: _title(compact: false)),
           const SizedBox(width: 18),
           if (!kIsWeb) _themeButton(),

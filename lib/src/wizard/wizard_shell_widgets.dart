@@ -152,30 +152,42 @@ class _CompactStepPicker extends ConsumerWidget {
       color: Theme.of(context).colorScheme.surface,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
-        child: DropdownButtonFormField<int>(
-          initialValue: selected,
-          isExpanded: true,
-          decoration: InputDecoration(
-            labelText: '当前步骤 · ${selected + 1} / ${steps.length}',
-            prefixIcon: const Icon(Icons.route_outlined),
-            isDense: true,
-          ),
-          items: [
-            for (var i = 0; i < steps.length; i++)
-              DropdownMenuItem(
-                value: i,
-                enabled: !busy && i <= maxStep,
-                child: Text('${i + 1}. ${steps[i]}'),
+        child: Row(
+          children: [
+            // 完整标识的三行文字在步骤栏高度下无法辨认，窄屏改用词标；
+            // 白卡与词标自身的白底一致，深浅主题下都不出现白斑。
+            const WpieWordmark(key: ValueKey('wizard.lab-wordmark')),
+            const SizedBox(width: 12),
+            Expanded(
+              child: DropdownButtonFormField<int>(
+                initialValue: selected,
+                isExpanded: true,
+                decoration: InputDecoration(
+                  labelText: '当前步骤 · ${selected + 1} / ${steps.length}',
+                  prefixIcon: const Icon(Icons.route_outlined),
+                  isDense: true,
+                ),
+                items: [
+                  for (var i = 0; i < steps.length; i++)
+                    DropdownMenuItem(
+                      value: i,
+                      enabled: !busy && i <= maxStep,
+                      child: Text('${i + 1}. ${steps[i]}'),
+                    ),
+                ],
+                onChanged: busy
+                    ? null
+                    : (step) {
+                        if (step != null && step <= maxStep) {
+                          _endTextInput(ref);
+                          ref
+                              .read(appControllerProvider.notifier)
+                              .goToStep(step);
+                        }
+                      },
               ),
+            ),
           ],
-          onChanged: busy
-              ? null
-              : (step) {
-                  if (step != null && step <= maxStep) {
-                    _endTextInput(ref);
-                    ref.read(appControllerProvider.notifier).goToStep(step);
-                  }
-                },
         ),
       ),
     );

@@ -590,7 +590,29 @@ void main() {
     expect(find.text('新建机器人项目'), findsOneWidget);
     expect(find.text('打开已有项目'), findsOneWidget);
     expect(find.textContaining('RoboMaster'), findsOneWidget);
-    expect(find.bySemanticsLabel('首都师范大学'), findsOneWidget);
+    expect(find.bySemanticsLabel('首都师范大学学生创新实验室'), findsOneWidget);
+  });
+
+  testWidgets('首页展示 W.PIE 学生创新实验室标识', (tester) async {
+    final full = await rootBundle.load('assets/images/wpie-logo.png');
+    final wordmark = await rootBundle.load('assets/images/wpie-wordmark.png');
+    expect(full.lengthInBytes, greaterThan(0));
+    expect(wordmark.lengthInBytes, greaterThan(0));
+
+    await tester.pumpWidget(const ProviderScope(child: PieBlockApp()));
+    await tester.pumpAndSettle();
+
+    final logo = find.byKey(const ValueKey('home.lab-logo'));
+    expect(logo, findsOneWidget);
+    final image = tester.widget<Image>(
+      find.descendant(of: logo, matching: find.byType(Image)),
+    );
+    expect(
+      (image.image as AssetImage).assetName,
+      'assets/images/wpie-logo.png',
+    );
+    expect(image.semanticLabel, '首都师范大学学生创新实验室');
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('从启动页进入编辑页时播放横向揭示动画', (tester) async {
@@ -747,6 +769,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('新建机器人项目'), findsOneWidget);
+    expect(find.byKey(const ValueKey('home.lab-logo')), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.tap(find.text('新建项目'));
     await tester.pumpAndSettle();
@@ -1642,8 +1665,43 @@ void main() {
       expect(find.byType(ChoiceChip), findsNothing);
       expect(find.byType(DropdownButtonFormField<int>), findsOneWidget);
       expect(find.text('当前步骤 · 1 / 6'), findsOneWidget);
+      // 窄屏没有左侧步骤栏，品牌标识改用步骤下拉栏左侧的词标。
+      expect(find.byKey(const ValueKey('wizard.lab-wordmark')), findsOneWidget);
+      expect(find.byKey(const ValueKey('wizard.lab-logo')), findsNothing);
       expect(tester.takeException(), isNull);
     }
+  });
+
+  testWidgets('宽屏向导在步骤栏底部展示完整实验室标识', (tester) async {
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1400, 900);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(_InfantryStartController.new),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('wizard.lab-logo')), findsOneWidget);
+    expect(find.byKey(const ValueKey('wizard.lab-wordmark')), findsNothing);
+    final image = tester.widget<Image>(
+      find.descendant(
+        of: find.byKey(const ValueKey('wizard.lab-logo')),
+        matching: find.byType(Image),
+      ),
+    );
+    expect(
+      (image.image as AssetImage).assetName,
+      'assets/images/wpie-logo.png',
+    );
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('空白配置先不报错，点击下一步后显示未填项', (tester) async {
@@ -3291,7 +3349,14 @@ void main() {
             await tester.tap(flash);
             await tester.pumpAndSettle();
             expect(find.text('烧录主控板前请确认'), findsOneWidget);
-            expect(find.byType(Image), findsNWidgets(2));
+            // 步骤栏里的 W.PIE 词标也是 Image，这里只数弹窗内的两张说明图。
+            expect(
+              find.descendant(
+                of: find.byType(AlertDialog),
+                matching: find.byType(Image),
+              ),
+              findsNWidgets(2),
+            );
             expect(tester.takeException(), isNull);
             await tester.tap(find.text('取消'));
             await tester.pumpAndSettle();

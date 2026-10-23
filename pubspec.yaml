@@ -78,6 +78,9 @@ flutter:
   assets:
     - assets/images/cnu-blue.png
     - assets/images/cnu-white.png
+    # 官方 W.PIE 标识；词标是从同一张图顶部裁出的窄屏版本。
+    - assets/images/wpie-logo.png
+    - assets/images/wpie-wordmark.png
     - assets/images/switch_main.png
     - assets/images/switch_expend.png
     - assets/templates/
