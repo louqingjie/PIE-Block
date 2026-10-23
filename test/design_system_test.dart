@@ -144,6 +144,36 @@ void main() {
     expect(tester.binding.transientCallbackCount, 0);
   });
 
+  testWidgets('确定进度停在原地时波浪仍在流动', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildAppTheme(brightness: Brightness.dark),
+        home: const Scaffold(
+          body: SizedBox(
+            width: 300,
+            child: WavyProgressIndicator(value: .35, semanticLabel: '编译进度'),
+          ),
+        ),
+      ),
+    );
+    expect(tester.binding.transientCallbackCount, greaterThan(0));
+  });
+
+  testWidgets('跑满 100% 的波浪进度条不再空转', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildAppTheme(brightness: Brightness.dark),
+        home: const Scaffold(
+          body: SizedBox(
+            width: 300,
+            child: WavyProgressIndicator(value: 1, semanticLabel: '编译进度'),
+          ),
+        ),
+      ),
+    );
+    expect(tester.binding.transientCallbackCount, 0);
+  });
+
   testWidgets('PressScale 按下时把缩放目标切到 1.03', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
