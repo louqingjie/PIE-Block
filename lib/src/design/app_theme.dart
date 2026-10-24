@@ -405,7 +405,14 @@ ThemeData buildAppTheme({
             ? colorScheme.primary
             : colorScheme.surfaceContainerHighest,
       ),
-      trackOutlineColor: const WidgetStatePropertyAll(Colors.transparent),
+      // M3：未选中开关的轨道自带 2dp outline 描边，这是它在对话框等
+      // High 容器（与轨道只差 2 个色调步进）上保持可见的方式；选中态
+      // 由 primary 填充接管，描边去掉。
+      trackOutlineColor: WidgetStateProperty.resolveWith(
+        (states) => states.contains(WidgetState.selected)
+            ? Colors.transparent
+            : colorScheme.outline,
+      ),
     ),
   );
 }
