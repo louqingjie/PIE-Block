@@ -78,85 +78,155 @@ class _PwmPage extends ConsumerWidget {
                   runSpacing: 12,
                   children: [
                     for (final pin in [...expansionPins, ...mainServoPins])
-                      SizedBox(
-                        width: constraints.maxWidth < _compactBreakpoint
+                      () {
+                        final isServo =
+                            mainServoPins.contains(pin) ||
+                            pwm.pinRoles[pin] == PinRole.servo;
+                        final isFriction =
+                            (pin == 'P64' || pin == 'P66') &&
+                            pwm.pinRoles[pin] == PinRole.friction;
+                        final compact =
+                            constraints.maxWidth < _compactBreakpoint;
+                        final rowWidth = compact
                             ? constraints.maxWidth
-                            : 280,
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: _FieldAnchor(
-                                path: 'pwm.pin_roles.$pin',
-                                child: DropdownButtonFormField<PinRole>(
-                                  key: ValueKey('pwm.pin_roles.$pin'),
-                                  initialValue: mainServoPins.contains(pin)
-                                      ? PinRole.servo
-                                      : pwm.pinRoles[pin],
-                                  decoration: _fieldDecoration(
-                                    ref,
-                                    'pwm.pin_roles.$pin',
-                                    pin,
+                            : isServo
+                            ? 620.0
+                            : 280.0;
+                        // 紧凑时角色下拉独占一行，角度输入自动换到下一行；
+                        // 宽屏时与同行输入框按固定宽分配，与旧的 Row 布局一致。
+                        final roleWidth = compact
+                            ? rowWidth
+                            : rowWidth -
+                                  (isServo
+                                      ? 3 * 108.0
+                                      : isFriction
+                                      ? 118.0
+                                      : 0.0);
+                        return SizedBox(
+                          width: rowWidth,
+                          child: Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              SizedBox(
+                                width: roleWidth,
+                                child: _FieldAnchor(
+                                  path: 'pwm.pin_roles.$pin',
+                                  child: DropdownButtonFormField<PinRole>(
+                                    key: ValueKey('pwm.pin_roles.$pin'),
+                                    initialValue: mainServoPins.contains(pin)
+                                        ? PinRole.servo
+                                        : pwm.pinRoles[pin],
+                                    decoration: _fieldDecoration(
+                                      ref,
+                                      'pwm.pin_roles.$pin',
+                                      pin,
+                                    ),
+                                    items: _roleItems(pin, pwm.pinRoles[pin]),
+                                    onChanged: mainServoPins.contains(pin)
+                                        ? null
+                                        : (v) {
+                                            final roles = {
+                                              ...pwm.pinRoles,
+                                              pin: v!,
+                                            };
+                                            update(
+                                              pwm.copyWith(pinRoles: roles),
+                                            );
+                                          },
                                   ),
-                                  items: _roleItems(pin, pwm.pinRoles[pin]),
-                                  onChanged: mainServoPins.contains(pin)
-                                      ? null
-                                      : (v) {
-                                          final roles = {
-                                            ...pwm.pinRoles,
-                                            pin: v!,
-                                          };
-                                          update(pwm.copyWith(pinRoles: roles));
-                                        },
                                 ),
                               ),
-                            ),
-                            if (mainServoPins.contains(pin) ||
-                                pwm.pinRoles[pin] == PinRole.servo) ...[
-                              const SizedBox(width: 8),
-                              SizedBox(
-                                width: 100,
-                                child: _NumberField(
-                                  label: '中位°',
-                                  fieldPath: 'pwm.servo_mids.$pin',
-                                  value: pwm.servoMids[pin],
-                                  onChanged: (v) {
-                                    final mids = {...pwm.servoMids};
-                                    if (v == null) {
-                                      mids.remove(pin);
-                                    } else {
-                                      mids[pin] = v;
-                                    }
-                                    update(pwm.copyWith(servoMids: mids));
-                                  },
+                              if (isServo) ...[
+                                SizedBox(
+                                  width: 100,
+                                  child: _NumberField(
+                                    label: '中位°',
+                                    fieldPath: 'pwm.servo_mids.$pin',
+                                    value: pwm.servoMids[pin],
+                                    onChanged: (v) {
+                                      final mids = {...pwm.servoMids};
+                                      if (v == null) {
+                                        mids.remove(pin);
+                                      } else {
+                                        mids[pin] = v;
+                                      }
+                                      update(pwm.copyWith(servoMids: mids));
+                                    },
+                                  ),
                                 ),
-                              ),
+                                SizedBox(
+                                  width: 100,
+                                  child: _NumberField(
+                                    label: '左限位°',
+                                    fieldPath: 'pwm.servo_min_limits.$pin',
+                                    value: pwm.servoMinLimits[pin],
+                                    onChanged: (v) {
+                                      final limits = {
+                                        ...pwm.servoMinLimits,
+                                      };
+                                      if (v == null) {
+                                        limits.remove(pin);
+                                      } else {
+                                        limits[pin] = v;
+                                      }
+                                      update(
+                                        pwm.copyWith(servoMinLimits: limits),
+                                      );
+                                    },
+                                  ),
+                                ),
+                                SizedBox(
+                                  width: 100,
+                                  child: _NumberField(
+                                    label: '右限位°',
+                                    fieldPath: 'pwm.servo_max_limits.$pin',
+                                    value: pwm.servoMaxLimits[pin],
+                                    onChanged: (v) {
+                                      final limits = {
+                                        ...pwm.servoMaxLimits,
+                                      };
+                                      if (v == null) {
+                                        limits.remove(pin);
+                                      } else {
+                                        limits[pin] = v;
+                                      }
+                                      update(
+                                        pwm.copyWith(servoMaxLimits: limits),
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ],
+                              if (isFriction)
+                                SizedBox(
+                                  width: 110,
+                                  child: _NumberField(
+                                    label: '满油 duty',
+                                    fieldPath: 'pwm.friction_max_duties.$pin',
+                                    value: pwm.frictionMaxDuties[pin],
+                                    onChanged: (v) {
+                                      final duties = {
+                                        ...pwm.frictionMaxDuties,
+                                      };
+                                      if (v == null) {
+                                        duties.remove(pin);
+                                      } else {
+                                        duties[pin] = v;
+                                      }
+                                      update(
+                                        pwm.copyWith(
+                                          frictionMaxDuties: duties,
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
                             ],
-                            if ((pin == 'P64' || pin == 'P66') &&
-                                pwm.pinRoles[pin] == PinRole.friction) ...[
-                              const SizedBox(width: 8),
-                              SizedBox(
-                                width: 110,
-                                child: _NumberField(
-                                  label: '满油 duty',
-                                  fieldPath: 'pwm.friction_max_duties.$pin',
-                                  value: pwm.frictionMaxDuties[pin],
-                                  onChanged: (v) {
-                                    final duties = {...pwm.frictionMaxDuties};
-                                    if (v == null) {
-                                      duties.remove(pin);
-                                    } else {
-                                      duties[pin] = v;
-                                    }
-                                    update(
-                                      pwm.copyWith(frictionMaxDuties: duties),
-                                    );
-                                  },
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
+                          ),
+                        );
+                      }(),
                   ],
                 ),
               ),

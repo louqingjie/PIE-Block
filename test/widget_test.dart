@@ -2158,6 +2158,104 @@ void main() {
     await tester.pump(const Duration(milliseconds: 600));
   });
 
+  testWidgets('工程 PWM 页舵机行提供左右限位输入且非舵机行不显示', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _StaticProjectController(_engineerServoButtonDocument(), 1),
+          ),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('pwm.servo_min_limits.P60')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('pwm.servo_max_limits.P60')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('pwm.servo_min_limits.MP03')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('pwm.servo_min_limits.P62')), findsNothing);
+
+    final minField = find.byKey(const ValueKey('pwm.servo_min_limits.P60'));
+    await tester.ensureVisible(minField);
+    await tester.enterText(minField, '-30');
+    await tester.pumpAndSettle();
+    final maxField = find.byKey(const ValueKey('pwm.servo_max_limits.P60'));
+    await tester.enterText(maxField, '45');
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(WizardScreen)),
+    );
+    final updated =
+        container.read(appControllerProvider).document!.config
+        as EngineerConfig;
+    expect(updated.pwm.servoMinLimits['P60'], -30);
+    expect(updated.pwm.servoMaxLimits['P60'], 45);
+
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+    await tester.enterText(maxField, '91');
+    await tester.pumpAndSettle();
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(of: maxField, matching: find.byIcon(Icons.error_outline)),
+      findsOneWidget,
+    );
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
+  testWidgets('步兵云台舵机执行器提供最小最大限位输入', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _StaticProjectController(_infantryDocument(), 1),
+          ),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('gimbal.yaw.0.min_limit')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('gimbal.yaw.0.max_limit')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('gimbal.pitch.0.min_limit')),
+      findsOneWidget,
+    );
+
+    final yawMin = find.byKey(const ValueKey('gimbal.yaw.0.min_limit'));
+    await tester.ensureVisible(yawMin);
+    await tester.enterText(yawMin, '-40');
+    await tester.pumpAndSettle();
+    final yawMax = find.byKey(const ValueKey('gimbal.yaw.0.max_limit'));
+    await tester.enterText(yawMax, '30');
+    await tester.pumpAndSettle();
+
+    final config = _currentInfantry(tester);
+    expect(config.yawActuators.single.minLimit, -40);
+    expect(config.yawActuators.single.maxLimit, 30);
+    expect(config.pitchActuators.single.minLimit, isNull);
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
   testWidgets('错误显示在字段和问题栏并阻止下一步', (tester) async {
     await tester.pumpWidget(
       ProviderScope(

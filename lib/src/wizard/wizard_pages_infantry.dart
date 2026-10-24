@@ -193,7 +193,17 @@ class _InfantryMechanismPage extends ConsumerWidget {
               index,
               'direction',
             ),
-            midPath = InfantryPinPlanner.axisPath(yaw, index, 'mid_offset');
+            midPath = InfantryPinPlanner.axisPath(yaw, index, 'mid_offset'),
+            minLimitPath = InfantryPinPlanner.axisPath(
+              yaw,
+              index,
+              'min_limit',
+            ),
+            maxLimitPath = InfantryPinPlanner.axisPath(
+              yaw,
+              index,
+              'max_limit',
+            );
         void updateAt(AxisActuator Function(AxisActuator) change) {
           final next = [...actuators];
           next[index] = change(next[index]);
@@ -217,7 +227,7 @@ class _InfantryMechanismPage extends ConsumerWidget {
             drivePath,
             pinPath,
             directionPath,
-            if (drive == DriveType.servo) midPath,
+            if (drive == DriveType.servo) ...[midPath, minLimitPath, maxLimitPath],
           ],
           children: [
             Expanded(
@@ -312,6 +322,26 @@ class _InfantryMechanismPage extends ConsumerWidget {
                   suffix: '°',
                   value: mid,
                   onChanged: (v) => updateAt((a) => a.copyWith(midOffset: v)),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _NumberField(
+                  label: '最小限位',
+                  fieldPath: minLimitPath,
+                  suffix: '°',
+                  value: actuator.minLimit,
+                  onChanged: (v) => updateAt((a) => a.copyWith(minLimit: v)),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _NumberField(
+                  label: '最大限位',
+                  fieldPath: maxLimitPath,
+                  suffix: '°',
+                  value: actuator.maxLimit,
+                  onChanged: (v) => updateAt((a) => a.copyWith(maxLimit: v)),
                 ),
               ),
             ],
