@@ -1,4 +1,189 @@
 \chapter{遥控器与底盘}
 \label{ch:chassis}
 
-% TODO: 本章正文待编写（遥控器通道、底盘类型、PWM 与引脚角色推导、电机参数）。
+\begin{introduction}
+  \item 认识智能交互手柄：双摇杆、按键、通道号与死区；
+  \item 会填“遥控器与底盘”页：通道、死区、四轮 IO 与方向、普通/冲刺速度；
+  \item 看懂生成代码里的底盘混控 \texttt{CalculateChassis()}；
+  \item 用单轮方向、转向反转和低速点动完成方向校准。
+\end{introduction}
+
+步兵项目是校内赛最常用的构型。本章从“手柄怎么把动作传给车”讲起，把
+“遥控器与底盘”页的每一个字段填明白，并对照生成代码解释混控的来龙去脉。
+填完这一章，再进入第~\ref{ch:gimbal}~章的云台、拨弹与摩擦轮，一辆步兵车
+的配置就齐了。本章示例使用随书工程 \texttt{infantry-standard.pieproj}
+（教材示例：标准步兵），可以直接导入对照。
+
+\section{智能交互手柄与通道号}
+
+\subsection{手柄的结构}
+
+比赛用智能交互手柄通过 NRF24L01 无线模块与主控板通信，支持双摇杆与多个
+按键。手柄内置电池，由 USB 口充电；面板上有左右两个摇杆，以及 A、B、C、
+D、E 五个数字按键、四个方向键和 LC、RC 两个肩部功能键。摇杆由两路 ADC
+检测，量程约 $-2047$ 到 $+2047$，共 12 位精度，手柄开机时会自动做归一化
+校准。
+
+主控板一侧同样插一块 NRF24L01 模块。无线收发要求收发两端设置在同一个
+\textbf{通道号}上（0--125）：手柄开机后长按 mode 键，屏幕会跳到通道号
+显示页面，记下这个数字；PIE-Block 里“遥控器与底盘”页的“通道号”就填它。
+通道不一致时收不到任何数据，这是“车没反应”类故障的第一排查项。
+
+\subsection{死区}
+
+摇杆回中后 ADC 读数未必恰好是 0，通常会有几到几十的小偏移。\textbf{死区}
+（0--2047，建议不超过 500）表示：摇杆读数绝对值不大于死区时，固件直接把
+它当成 0，车不会因为摇杆轻微偏移而慢慢移动。死区太小，车会“自己走”；
+太大，摇杆中小幅度推不过临界点，操控发“木”。100 是一个常用的起始值，
+手感不对再调。
+
+摇杆的极性（推上读数是正是负）由手柄标定决定，不同批次可能相反。本书
+正文按“推上时 LY 为负”书写；第一次上车务必按
+第~\ref{sec:ch03-calibrate}~节的方法低速核对，反了就按同样方法纠正，不必
+背符号。
+
+\section{遥控器与底盘页}
+
+新建步兵项目后，向导第 1 步就是“遥控器与底盘”页，如图~\ref{fig:ch03-remote}
+所示。这一页自上而下分三块：遥控器（通道号与死区）、四轮底盘（IO 与
+方向、速度）和几个开关。
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.98\linewidth]{image/ch03/3-1-remote-top.png}
+  \caption{步兵项目的“遥控器与底盘”页：通道 36、死区 100，四轮 IO 与
+  方向、普通/冲刺速度一次填完}
+  \label{fig:ch03-remote}
+\end{figure}
+
+\subsection{四轮 IO 与单轮方向}
+
+“四轮底盘”区要填四个轮子各自的 IO 和方向。IO 下拉框列出的是机械拓展板
+的电机端口 P74--P77：PWMB 组的四路固定 10000\,Hz，正是平滑电机的频率
+（PWM 分组见附录~A）。四路电机各占一个端口，命名按车体方位：左前、左后、
+右前、右后。
+
+\textbf{单轮方向}不是“这轮应该往前转”，而是在告诉生成器：这路电机的接线
+和安装方向，与“端口输出正占空比时轮子向前滚”的默认约定是否一致。最常见
+的情形是右侧电机镜像安装——同样接线，右侧轮子电气上的“正转”在车体上是
+向后滚。随书示例按这个常见装法把右前、右后设为“反向”，左侧两轮设为
+“正向”。实车装好后如果某个动作方向不对，按
+第~\ref{sec:ch03-calibrate}~节逐轮纠正，不需要改接线。
+
+同侧两个轮子可以共用一个 IO（生成代码会按同一占空比驱动），但同侧共用
+IO 时两个轮子的方向必须相同，校验器会拒绝“左前用 P74、左后也用 P74 但
+方向相反”这类配置；跨侧共用 IO 则一律报错。
+
+\subsection{普通速度与冲刺速度}
+
+\textbf{普通速度}是左摇杆推满时的轮电机占空比，范围 0--10000，建议不低于
+4000，太低底盘会显得“没劲”。\textbf{冲刺速度}是按住冲刺键时的占空比，
+建议不低于 9000，且必须不小于普通速度，否则冲刺无效（校验器会给警告）。
+未启用冲刺时，冲刺速度不参与控制。
+
+“按下左摇杆启用冲刺”打开后，把左摇杆按下去（相当于一个按键 LC）即进入
+冲刺速度，松开回到普通速度。这是比赛里最顺手的冲刺方式：拇指不用离开
+摇杆。
+
+“反转左右转向”用于转向方向整体相反的手柄或接线：打开后仅反转水平摇杆
+和左右方向键产生的转向量，前后移动不受影响。
+
+\section{底盘混控：生成代码怎么开车}
+
+配置通过检查后，切到“生成代码”页可以看到步兵固件的完整 \texttt{main.c}。
+与底盘直接相关的有两个函数：\texttt{ReadControllerInputs()} 每轮读取摇杆
+并施加死区；\texttt{CalculateChassis()} 把摇杆值混控成四路占空比。随书
+示例生成的混控如下（见“生成代码”页或 \texttt{infantry-standard.c}）：
+
+\begin{lstlisting}[style=pieblockc,
+  caption={随书示例生成的底盘混控（节选）：先算平移与转向量，再按单轮方向合成},
+  label={lst:ch03-chassis}]
+void CalculateChassis(void)
+{
+    int speed = maxSpeed;
+    int baseSpeed;
+    int turnSpeed;
+    if (RcKeyValueRead(KEY_OFFSET_Rocker11)) speed = ultraSpeed;
+
+    baseSpeed = (int)(((int32_t)-valueOfRoker[0][1] * (int32_t)speed) / 2047L);
+    turnSpeed = (int)(((int32_t)-valueOfRoker[0][0] * (int32_t)speed) / 2047L);
+    dutyOfMotor[4] = baseSpeed - turnSpeed;
+    dutyOfMotor[5] = baseSpeed - turnSpeed;
+    dutyOfMotor[6] = baseSpeed + turnSpeed;
+    dutyOfMotor[7] = baseSpeed + turnSpeed;
+}
+\end{lstlisting}
+
+逐行读一遍：
+
+\begin{itemize}
+  \item \texttt{speed} 默认是普通速度；左摇杆按下去（\texttt{KEY\_OFFSET\_
+        Rocker11} 就是 LC）时换成冲刺速度；
+  \item \texttt{baseSpeed} 是平移分量：LY 推上为负，取负号后推上得正，
+        车前进；
+  \item \texttt{turnSpeed} 是转向分量：来自水平摇杆 LX；
+  \item 四行 \texttt{dutyOfMotor} 把两个分量合成到四个轮子：左侧两轮
+        \texttt{base - turn}，右侧两轮 \texttt{base + turn}——右侧的符号
+        已经把镜像安装折算进去（对应示例里右侧两轮的“反向”配置）。转向
+        分量变负时左侧变快、右侧变慢，车向那一侧转；转向分量为零时四轮
+        同速直行。
+\end{itemize}
+
+若把某一轮的“方向”改成另一档，该轮在混控里的符号会整体翻转，这就是
+“不改接线纠正转向”的机制。主循环每轮把 \texttt{dutyOfMotor} 的符号与
+绝对值拆成方向帧和占空比帧发给拓展板（帧格式见
+第~\ref{ch:compileflash}~章与第~\ref{ch:linkdebug}~章）。
+
+\begin{remark}
+方向键在步兵固件里是“摇杆的替身”：用途选“移动”时，按住上/下/左/右键
+等价于把左摇杆推满对应方向（固件里直接写 \texttt{valueOfRoker} 的满值）。
+手柄摇杆不顺手时，方向键可以作为应急的精确挡位。
+\end{remark}
+
+\section{方向校准与常见问题}
+\label{sec:ch03-calibrate}
+
+单轮方向、摇杆极性和转向反转三件事互相叠加，实车调试时不要背符号，按
+下面的顺序用低速点动核对：
+
+\begin{enumerate}
+  \item \textbf{架空}：把车架起来四轮悬空，把普通速度临时改小（例如
+        3000），生成并烧录后再上电；
+  \item \textbf{前进}：轻推左摇杆向上。四个轮子应同时向前滚；若某个轮子
+        反了，把那一轮的“方向”改档，重新生成烧录；
+  \item \textbf{转向}：轻推左摇杆向左，车应向左转；若转向方向反了，打开
+        “反转左右转向”；
+  \item \textbf{冲刺}：按下左摇杆推满，速度应明显提升；
+  \item \textbf{落地}：确认后落地低速试走直线，再逐步提速。
+\end{enumerate}
+
+常见的方向类现象与处理见表~\ref{tab:ch03-trouble}。
+
+\begin{table}[htbp]
+  \centering
+  \small
+  \begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{0.30\linewidth} >{\raggedright\arraybackslash}X@{}}
+    \toprule
+    现象 & 处理 \\
+    \midrule
+    车完全不动 & 先查通道号：手柄长按 mode 键读出通道，与页面填的是否一致；再看手柄与主控板是否都已上电 \\
+    推前进却后退 & 摇杆标定相反（批次差异）：若四个轮子同时反向，说明整机前后颠倒，按实测把前后逻辑交给核对流程处理，必要时结合第~\ref{ch:gencheck}~章的试算核对 LY 的符号 \\
+    某个轮子反了 & 把该轮“方向”改档，不改接线 \\
+    转向方向反了 & 打开“反转左右转向” \\
+    车慢慢漂移 & 死区太小，适当加大 \\
+    冲刺没反应 & 确认“按下左摇杆启用冲刺”已打开，且冲刺速度不小于普通速度 \\
+    \bottomrule
+  \end{tabularx}
+  \caption{方向与手柄类问题速查}
+  \label{tab:ch03-trouble}
+\end{table}
+
+\begin{note}
+四轮底盘的四个端口属于 PWMB 组（固定 10000\,Hz），拨弹电机只能落在 PWMA
+组（固定 50\,Hz），所以步兵的拨弹电机会带“可能一卡一卡”的提醒——这是
+引脚拓扑决定的既定取舍，详见第~\ref{ch:gimbal}~章与第~\ref{ch:gencheck}~章。
+\end{note}
+
+本章配置完成后，向导会带着走过“检查与摘要 $\rightarrow$ 生成代码 $\rightarrow$
+烧录”三步，流程与第~\ref{ch:compileflash}~章完全一致。下一章填云台、拨弹
+与摩擦轮，把步兵的“武器”配齐。

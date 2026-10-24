@@ -1,4 +1,149 @@
 \chapter{代码生成与静态检查}
-\label{ch:codegen}
+\label{ch:gencheck}
 
-% TODO: 本章正文待编写（生成代码预览、C 代码与汇编列表、字段范围/引脚占用/按键冲突校验）。
+\begin{introduction}
+  \item 理解“检查与摘要”页：错误与警告的区别，以及它们各挡住什么；
+  \item 掌握校验器的四类检查：必填与范围、引脚占用、按键冲突、表达式；
+  \item 会读“生成代码”页：C 代码与汇编列表两栏，搜索与另存为；
+  \item 用表达式编译检查与“试算表达式”把公式错误挡在实车之前。
+\end{introduction}
+
+前几章反复出现“配置检查通过，可以生成代码”。本章把这句话背后的机制
+一次讲透：PIE-Block 在生成代码\textbf{之前}做了什么检查，生成的代码
+\textbf{长什么样、能不能改}，以及桌面端独有的两道验证——表达式编译检查
+与试算。本章示例仍用步兵工程 \texttt{infantry-standard.pieproj}。
+
+\section{检查与摘要：错误挡生成，警告给提醒}
+
+每一步填完，向导都会实时检查当前配置；点“下一步”进入“检查与摘要”页
+（图~\ref{fig:ch08-review}）时，所有问题集中列在一起。问题分两档：
+
+\begin{itemize}
+  \item \textbf{错误}：配置不完整或自相矛盾，\textbf{阻止}生成代码。
+        例如通道号没填、四轮 IO 重复、按键冲突、表达式引用了未定义
+        变量；
+  \item \textbf{警告}：配置合法但不一定符合预期，只提醒不拦截。例如
+        “拨弹电机位于固定 50\,Hz 的 PWMA，电机可能一卡一卡”“冲刺速度
+        低于 9000，底盘移动速度可能变慢”“摩擦轮目标占空比低于 650，
+        可能带不动摩擦轮”。
+\end{itemize}
+
+每条问题都带字段路径（如 \texttt{mechanism.feeder\_pin}），点击直接跳回
+对应步骤——错误不会留到实车上才暴露。检查通过后，“配置概览”把通道、
+速度、PWM 分组、每个引脚的用途列成清单，生成前最后核对一遍。
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.95\linewidth]{image/ch08/8-1-review.png}
+  \caption{“检查与摘要”页：0 错误、1 警告（拨弹电机在 50\,Hz 的 PWMA），
+  配置概览逐项列出引脚用途}
+  \label{fig:ch08-review}
+\end{figure}
+
+\section{校验器在查什么}
+
+校验器的规则可以归成四类。了解它们，遇到报错就能立刻定位。
+
+\subsection{必填与范围}
+
+新项目的每个必填项都是空值，应用不会替你预选。数值型字段有硬范围与
+建议范围两层：通道号 0--125、死区 0--2047（建议 $\le$500）、速度
+0--10000（普通速度建议 $\ge$4000）、舵机角度 0--90、摩擦轮满油上限
+500--800 的整百值等。硬范围之外是错误；建议范围之外是警告。
+
+\subsection{引脚占用：拓扑推导}
+
+引脚能力由硬件拓扑推导（对照表见附录~A）：主控板 MP03/MP74 只能接舵机；
+P74--P77 固定 10000\,Hz 只能作电机；P64/P66 可作摩擦轮或舵机；PWMA/PWMB
+组内四路必须同频。步兵配置不保存 PWM——PWMA 固定 50\,Hz、PWMB 固定
+10000\,Hz，引脚角色由实际选择自动推导，因此“拨弹电机只能落在 50\,Hz 的
+PWMA”这类结论是拓扑决定的，不是页面限制。校验器同时检查：同一端口不能
+既作电机又作舵机；同侧两轮共用 IO 时方向必须一致；云台多执行器的限位
+区间必须有交集。
+
+\subsection{按键冲突}
+
+手柄的按键是稀缺资源：A--E、LC、RC 与四个方向键都要分配。校验器维护
+一张占用表——底盘冲刺占用 LC，云台归中占用 RC，方向键按“用途”占用
+（移动/瞄准/其他），剩下的数字按键分给拨弹与摩擦轮。同一按键分配给两个
+动作是错误；把已占用的键再分配出去，页面会在分配时就地提示，检查页汇总。
+
+\subsection{表达式}
+
+工程项目的表达式行按第~\ref{ch:engineer}~章的规则检查：变量先定义后
+使用（同一模式内）、变量名是合法 C 标识符且不与内置输入/函数/关键字
+冲突、表达式在白名单内（\texttt{abs/min/max/sign/sqrt/atan2} 与常量
+\texttt{PI/E}）、\texttt{sqrt} 的常量负数与常量除零在解析期报错。整型
+变量生成 \texttt{int32\_t}，有理数生成 \texttt{float}。
+
+\section{生成代码页：只读的 main.c}
+
+“生成代码”页（图~\ref{fig:ch08-code}）根据当前配置\textbf{实时}生成
+\texttt{main.c}：改动任何配置，源码立即更新。代码只读，不会写回项目
+文件——想改行为，回到配置里改；直接改 \texttt{main.c} 没有意义，下一次
+生成会把它覆盖。页面提供搜索、复制与“另存为”。
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.95\linewidth]{image/ch08/8-2-generated-code.png}
+  \caption{“生成代码”页：C 代码与汇编两栏切换，右上角“汇编”触发一次
+  真实编译}
+  \label{fig:ch08-code}
+\end{figure}
+
+步兵固件的骨架如下（随书示例生成代码节选）：
+
+\begin{lstlisting}[style=pieblockc,
+  caption={步兵 \texttt{main.c} 的主循环（节选）：读输入、算动作、发帧、刷舵机},
+  label={lst:ch08-mainloop}]
+void main(void)
+{
+    All_Init();
+    while (1) {
+        nrf_handler(); // 轮询 NRF 接收（P2.6 中断已关）
+        ReadControllerInputs();
+
+        CalculateChassis();
+        UpdateGimbal();
+        UpdateWeapons();
+        ExpansionBoradControl(Dir_Change_Order, /* 方向帧 */);
+        Ms_Delay(EXPANSION_FRAME_GAP_MS);
+        ExpansionBoradControl(Duty_Change_Order, /* 占空比帧 */);
+        Ms_Delay(EXPANSION_FRAME_GAP_MS);
+        PWM_SET_Frequency(PWMB_CH1_P74, 50, yawDuty);
+        PWM_SET_Frequency(PWMB_CH4_P03, 50, pitchDuty);
+        UpdateBuzzerFeedback();
+        Ms_Delay(10);
+    }
+}
+\end{lstlisting}
+
+每个主循环约 20\,ms：读手柄、算混控与武器逻辑、向拓展板发一对方向/
+占空比帧（两帧之间隔 \texttt{EXPANSION\_FRAME\_GAP\_MS} 防丢帧）、刷新
+主控板上的云台舵机与蜂鸣反馈。主循环是慢周期任务，单发拨弹这类阻塞动作
+会占住循环——这正是拨弹时长不能填大的原因
+（见第~\ref{ch:gimbal}~章）。
+
+\section{表达式编译检查与试算}
+
+桌面端有两道只在本地可用的验证（Web 与 Android 端只做解析器校验）：
+
+\textbf{表达式编译检查}。点“检查表达式”，PIE-Block 把当前配置的完整
+\texttt{main.c} 交给内置 SDCC C251 做一次真实编译，把编译错误回填到对应
+的表达式行。它验证的不是“表达式合法”，而是“整个固件能编译通过”——
+类型、内存模型、C 代码生成的边界问题都会被真实工具链暴露。
+
+\textbf{试算表达式}。对话框用滑杆和按键模拟遥控器输入，按模式顺序执行
+变量行与表达式行，显示每一行的结果。它不连接硬件、不运行生成代码，只
+用于核对公式：把滑杆推到满量程，检查输出是否越界、方向是否正确。
+
+工程项目的动作行很多时，建议的核对顺序是：试算核对典型输入 $\rightarrow$
+表达式编译检查确认能编译 $\rightarrow$ 生成代码页通读一遍变量顺序与输出
+行 $\rightarrow$ 烧录后架空低速验证。四步全部通过，公式类的风险就基本
+清零了。
+
+\begin{remark}
+表达式编译通过不等于实机安全：它只证明语法、类型与 C 代码能编译，不证明
+机械参数、舵机方向与工作空间正确。第~\ref{ch:engineer}~章的机械臂示例
+里，限位、零位与奇异点防护仍然要靠配置与实车标定。
+\end{remark}

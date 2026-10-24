@@ -24,7 +24,7 @@ book/
 │   ├── appendix-a.tex    # 附录 A 硬件接口与引脚速查
 │   ├── appendix-b.tex    # 附录 B 常见问题（FAQ）
 │   └── appendix-c.tex    # 附录 C 术语表
-├── examples/            # 第 5 章配套示例工程（.pieproj，可直接导入）
+├── examples/            # 全书配套示例工程（.pieproj，可直接导入）
 │   ├── mecanum4.pieproj # 四轮麦克纳姆轮工程车
 │   ├── omni3.pieproj    # 三轮全向轮工程车
 │   ├── arm2dof.pieproj  # 二自由度机械臂
@@ -32,7 +32,7 @@ book/
 ├── image/
 │   ├── cover.jpg         # 封面横幅：品牌色 + 配置拓扑示意 + 右上角 W.PIE 标识
 │   ├── wpie-logo.png     # W.PIE 学生创新实验室标识（封面横幅素材）
-│   └── ch05/             # 第 5 章软件截图（由 tool/book_screenshots_test.dart 生成）
+│   ├── ch01/…ch10/       # 各章软件截图与实物照片（由 tool/book_screenshots_*.dart 生成）
 ├── reference.bib         # 参考文献（biblatex / biber）
 ├── build.ps1             # Windows 编译脚本
 ├── build.sh              # Linux / macOS 编译脚本
@@ -76,11 +76,10 @@ latexmk -xelatex main.tex
 改封面 / 改配色 / GB/T 7714 参考文献的写法，见模板说明：
 <https://github.com/ElegantLaTeX/ElegantBook>
 
-## 第 5 章示例与截图维护
+## 示例工程与截图维护
 
-第 5 章「工程机器人与高级构型」的示例工程在 `examples/`，可以直接从应用首页
-“打开项目”导入。示例只做公式/编译级验证，实机使用前请按正文的安全清单架空、
-限速、标定。
+全书示例工程在 `examples/`，可以直接从应用首页“打开项目”导入。示例只做
+公式/编译级验证，实机使用前请按正文的安全清单架空、限速、标定。
 
 生成示例 C 并校验（在仓库根目录执行）：
 
@@ -96,9 +95,23 @@ flutter test test/book_examples_test.dart     # 校验、生成 C、试算断言
 flutter test tool/book_screenshots_test.dart
 ```
 
-截图工具不是默认 CI 测试：它不在 `test/` 下，`flutter test` 不会自动收集；
-只有在界面文案或布局改动后才需要手动重跑。截图按 1440 逻辑像素宽渲染，
-输出 2078 px 宽，与第 2 章截图一致。
+重新生成第 1、3、4、6、7、8、9、10 章软件截图（会覆盖
+`image/ch01…ch10/*.png`）：
+
+```bash
+flutter test tool/book_screenshots_chapters_test.dart
+```
+
+用内置 SDCC 真实编译部分示例，产出第 9 章引用的 HEX 与 main.rst
+（输出到 `build/book_firmware/`）：
+
+```bash
+dart run tool/build_book_firmware.dart
+```
+
+截图工具不是默认 CI 测试：它们不在 `test/` 下，`flutter test` 不会自动
+收集；只有在界面文案或布局改动后才需要手动重跑。截图按 1440 逻辑像素宽
+渲染，输出 2078 px 宽，与第 2 章截图一致。
 
 ## 写作约定
 
@@ -115,6 +128,7 @@ flutter test tool/book_screenshots_test.dart
 | `image/ch05/photo-mecanum.jpg` | 麦克纳姆轮特写 | Stilfehler | CC BY-SA 4.0 | <https://commons.wikimedia.org/wiki/File:FIRST_Tech_Challenge_%E2%80%93_Parts_%E2%80%93_Mecanum_wheels.jpg> |
 | `image/ch05/photo-omni.jpg` | 全向轮特写 | Stilfehler | CC BY-SA 4.0 | <https://commons.wikimedia.org/wiki/File:FIRST_Tech_Challenge_%E2%80%93_Parts_%E2%80%93_Omni_wheels.jpg> |
 | `image/ch05/photo-arm-mecanum.jpg` | 麦轮底盘 + 舵机机械臂教学机器人 | Anani A. George | CC0 | <https://commons.wikimedia.org/wiki/File:Mecanum_Wheel_Robot_with_an_Arm.jpg> |
+| `image/ch07/7-2-buzzer.jpg` | 压电蜂鸣器剖开外壳特写（已裁剪） | Raimond Spekking | CC BY-SA 4.0 | <https://commons.wikimedia.org/wiki/File:Ideenwelt_EM2862_-_Piezoelectric_buzzer-91799.jpg> |
 
 ## 封面与素材来源
 

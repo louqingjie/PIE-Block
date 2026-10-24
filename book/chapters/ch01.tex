@@ -49,3 +49,52 @@ Blockly（Google 开源的积木式编程库）的图形化编程前端：使用
 
 名字里的 Block 保留了下来。它不再表示界面上有积木，而是记录这段演化：PIE-Block 是
 从积木编程长出来的参数化配置工具。
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.9\linewidth]{image/ch01/1-1-home.png}
+  \caption{PIE-Block 首页：新建机器人项目、打开已有项目与最近项目。
+  所有工作围绕 \texttt{.pieproj} 项目文件展开}
+  \label{fig:ch01-home}
+\end{figure}
+
+\section{项目类型与本书结构}
+
+启动 PIE-Block，从首页“新建项目”选择四种项目类型之一（图~\ref{fig:ch01-home}）：
+
+\begin{itemize}
+  \item \textbf{步兵项目}：底盘 + 云台 + 拨弹 + 摩擦轮的标准战斗构型，
+        覆盖第~\ref{ch:chassis}、\ref{ch:gimbal}~章；
+  \item \textbf{工程项目}：可关掉预制底盘、用变量与受限表达式自定义
+        混控与机构的开放构型，覆盖第~\ref{ch:engineer}~章；
+  \item \textbf{调试项目}：十路输出逐项启停的“装车前检查单”，覆盖
+        第~\ref{ch:compileflash}、\ref{ch:debugproj}~章；
+  \item \textbf{音乐项目}：钢琴卷帘 + 蜂鸣器演奏，覆盖
+        第~\ref{ch:music}~章。
+\end{itemize}
+
+每种项目都是一条“填参数 $\rightarrow$ 检查 $\rightarrow$ 生成代码
+$\rightarrow$ 烧录”的向导流程。第~\ref{ch:gencheck}~章讲生成与检查的
+机制，第~\ref{ch:linkdebug}~章深入编译、HEX 与 USB-HID 烧录，
+第~\ref{ch:projects}~章讲项目文件与排障。全书示例工程都在随书仓库的
+\texttt{book/examples/} 下，可直接导入对照。
+
+\begin{table}[htbp]
+  \centering
+  \small
+  \begin{tabular}{@{}lll@{}}
+    \toprule
+    随书示例 & 项目类型 & 用在 \\
+    \midrule
+    \texttt{infantry-standard.pieproj} & 步兵 & 第 \ref{ch:chassis}、\ref{ch:gimbal}、\ref{ch:gencheck}、\ref{ch:linkdebug} 章 \\
+    \texttt{mecanum4.pieproj} & 工程 & 第 \ref{ch:engineer} 章 \\
+    \texttt{omni3.pieproj} & 工程 & 第 \ref{ch:engineer} 章 \\
+    \texttt{arm2dof.pieproj} & 工程 & 第 \ref{ch:engineer} 章 \\
+    \texttt{debug-checklist.pieproj} & 调试 & 第 \ref{ch:compileflash}、\ref{ch:debugproj} 章 \\
+    \texttt{music-twinkle.pieproj} & 音乐 & 第 \ref{ch:music} 章 \\
+    \bottomrule
+  \end{tabular}
+  \caption{随书示例工程一览}
+  \label{tab:ch01-examples}
+\end{table}
+

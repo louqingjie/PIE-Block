@@ -8,4 +8,80 @@
 \chapter{硬件接口与引脚速查}
 \label{app:hw}
 
-% TODO: 附录正文待编写（主控板接口、拓展板端口、PWM/引脚角色对照表）。
+\section{板卡职责}
+
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\toprule
+板卡 & 职责 & 能否烧录 \\
+\midrule
+主控板（STC32G12K128） & 运行固件、读手柄、驱动云台舵机与蜂鸣器 & 只烧这块 \\
+机械拓展板 & 解析 UART 指令，输出电机/舵机/摩擦轮信号 & \textbf{绝不可烧录} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+主控板通过 UART1（230400 波特率）向拓展板发送 21 字节命令帧
+（帧头 \texttt{AB BC}、帧尾 \texttt{CD DE}）；命令码：\texttt{0xAA}
+初始化频率、\texttt{0xBB} 占空比、\texttt{0xCC} 频率、\texttt{0xDD}
+方向、\texttt{0xEE} 归零。每次发帧后应加 \texttt{Ms\_Delay()} 留出
+响应时间。
+
+\section{主控板接口}
+
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\toprule
+接口 & 说明 & 备注 \\
+\midrule
+MP03、MP74 & 主舵机口，固定 50\,Hz & 只能接舵机；与拓展板 P03/P74 同名不同脚 \\
+P33 & 无源蜂鸣器 & PWM 频率即音高，音乐项目与提示音共用 \\
+NRF24L01 座 & 智能交互手柄接收模块 & 通道 0--125，须与手柄一致 \\
+USB & 免驱 USB-HID（ISP 烧录） & VID 34BF / PID 1001 \\
+供电开关 & SERVO、POWER & 烧录前关闭 \\
+OLED & 128$\times$64 显示 & 音乐项目五线谱、调试信息 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{机械拓展板引脚}
+
+\begin{center}
+\begin{tabular}{@{}llll@{}}
+\toprule
+位置 & 引脚 & PWM 组 & 可作 \\
+\midrule
+左侧 & P74、P75、P76、P77 & PWMB（固定/常用 10000\,Hz） & 电机（步兵轮电机默认） \\
+中间 & P60、P62 & PWMA（固定/常用 50\,Hz） & 电机（拨弹）或舵机 \\
+摩擦轮区 & P64、P66 & PWMA（固定/常用 50\,Hz） & 摩擦轮或舵机 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{itemize}
+  \item 组内四路必须同频：50\,Hz 适合舵机/摩擦轮/抖动电机，10000\,Hz
+        适合平滑电机；同一端口不能同时作电机和舵机；
+  \item 步兵固定 PWMA 50\,Hz、PWMB 10000\,Hz；工程可自由选组频率，
+        角色与频率不匹配给警告；
+  \item P64/P66 不用于轮电机或拨弹电机；丝印 \texttt{NC} 表示未连接；
+  \item 上电后严禁带电插拔；烧录前关闭拓展板 POWER、BOOSTER 与主控板
+        SERVO、POWER。
+\end{itemize}
+
+\section{信号量速查}
+
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\toprule
+信号 & 范围 & 说明 \\
+\midrule
+摇杆读数 & $-2047 \sim +2047$ & 12 位 ADC，开机自动校准；极性因批次可能相反 \\
+舵机占空比 & 250--1250 & 0.5/1.5/2.5\,ms 对应 $-90^\circ/0^\circ/+90^\circ$；每度 $\approx5.56$ \\
+电机占空比 & $-10000 \sim 10000$ & 符号由方向帧表达，幅值由占空比帧表达 \\
+摩擦轮占空比 & 0 或 500--800 & 500 启动信号；用户上限为 500--800 整百；1100 为红线 \\
+摩擦轮油门 & 0--100\% & $\text{duty} = 500 + \text{油门}\% \times (\text{上限} - 500)/100$ \\
+手柄通道 & 0--125 & 长按手柄 mode 键读出 \\
+\bottomrule
+\end{tabular}
+\end{center}
+

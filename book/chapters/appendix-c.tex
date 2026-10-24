@@ -1,4 +1,39 @@
 \chapter{术语表}
 \label{app:glossary}
 
-% TODO: 附录正文待编写（RoboMaster、STC32G、SDCC、PWM、USB-HID 等术语的中英文对照与解释）。
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}l l >{\raggedright\arraybackslash}X@{}}
+\toprule
+术语 & 英文 & 解释 \\
+\midrule
+PIE-Block & --- & 本书讲解的图形化配置集成开发环境；PIE 取自 W.PIE 实验室，Block 记录其积木编程的出身 \\
+RoboMaster & --- & 大学生机器人对抗赛事；本书面向其校内赛的步兵、工程、调试与音乐项目 \\
+STC32G12K128 & --- & 主控板与拓展板使用的 8051 系增强型单片机；应用区在低 64KB \\
+SDCC C251 & Small Device C Compiler & 开源 C 编译器，内置工具链用它把 C 编译成 251 指令 \\
+Keil C251 & --- & 商业 C251 工具链，可作为可选编译器；退出码不可信，以日志为准 \\
+PWM & Pulse Width Modulation & 脉宽调制；占空比决定平均输出 \\
+占空比 & Duty & 本项目电机用 $\pm10000$，舵机用 250--1250（万分比） \\
+电调 & ESC & 无刷电机驱动器；摩擦轮的 500 启动信号与渐变规程针对它 \\
+无源蜂鸣器 & Passive buzzer & 不带振荡电路的压电蜂鸣器；PWM 频率即音高 \\
+云台 & Gimbal & Yaw/Pitch 两轴的瞄准机构；主控板 MP03/MP74 驱动 \\
+拨弹 & Feeder & 把弹丸送入摩擦轮的供弹机构 \\
+摩擦轮 & Friction wheel & 对转轮组，靠摩擦把弹丸加速射出；P64/P66 专用 \\
+麦克纳姆轮 & Mecanum wheel & 轮毂斜装 $45^\circ$ 辊子的全向轮 \\
+全向轮 & Omni wheel & 轮缘装 $90^\circ$ 辊子的轮子，只能沿滚动方向出力 \\
+舵轮 & Swerve module & 转向与驱动分离的轮组，每模块两个执行器 \\
+逆运动学 & Inverse kinematics & 已知末端目标求关节角；本书只做闭式解 \\
+混控 & Mixing & 把平移/转向指令分配到多个执行器的过程 \\
+死区 & Deadzone & 摇杆回中附近的忽略区间，消除零点漂移 \\
+通道号 & Channel & NRF24L01 的通信频道，收发必须一致 \\
+USB-HID & Human Interface Device & 免驱 USB 设备类；烧录协议运行在 64 字节报告上 \\
+ISP & In-System Programming & 芯片内置的在线烧录引导；断电重新上电进入 \\
+Intel HEX & --- & 文本格式的固件镜像，带地址与逐行校验和 \\
+.fmt 17 & Format version 17 & 当前 .pieproj 格式版本；与 15/16 完全不兼容 \\
+PPQ & Ticks per quarter & 音乐卷帘的时间分辨率，每四分音符的 tick 数 \\
+单音裁决 & Overlap arbitration & 重叠音符按 highest/lowest/nearest 只发声一个 \\
+udev & --- & Linux 设备管理；PIE-Block 用它授权 hidraw 烧录设备 \\
+NDK & Native Development Kit & Android 的原生开发套件；移动端 SDCC 以 NDK 库发布 \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
