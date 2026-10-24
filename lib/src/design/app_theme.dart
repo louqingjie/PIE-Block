@@ -101,7 +101,10 @@ abstract final class AppShape {
       RoundedSuperellipseBorder(borderRadius: borderRadius);
 }
 
-/// 表面层级：page → card → block → inset，越往里越亮（深色）或越深（浅色）。
+/// 表面层级：page → card → block → inset，直接取 M3 的 surface 容器阶梯
+/// （surface → surfaceContainer → surfaceContainerHigh → surfaceContainerHighest）。
+/// 浅色下越往里越深、深色下越往里越亮，层级只靠色调差表达；相邻层级
+/// 之间保持 2 个色调步进，保证容器在画布上有可感知的对比度。
 enum AppSurface {
   page,
   card,
@@ -114,16 +117,12 @@ enum AppSurface {
     block || inset => inset,
   };
 
-  Color colorOf(ColorScheme colorScheme) {
-    final dark = colorScheme.brightness == Brightness.dark;
-    return switch (this) {
-      page => dark ? colorScheme.surface : colorScheme.surfaceContainer,
-      card => dark ? colorScheme.surfaceContainer : colorScheme.surfaceBright,
-      block =>
-        dark ? colorScheme.surfaceContainerHigh : colorScheme.surfaceContainer,
-      inset => colorScheme.surfaceContainerHighest,
-    };
-  }
+  Color colorOf(ColorScheme colorScheme) => switch (this) {
+    page => colorScheme.surface,
+    card => colorScheme.surfaceContainer,
+    block => colorScheme.surfaceContainerHigh,
+    inset => colorScheme.surfaceContainerHighest,
+  };
 }
 
 /// M3E 按钮尺寸令牌（默认尺寸 small）。

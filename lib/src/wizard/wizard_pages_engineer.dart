@@ -380,7 +380,8 @@ class _ActionRow extends ConsumerWidget {
       ),
     ];
     return Card(
-      color: Theme.of(context).colorScheme.surfaceContainerLow,
+      // 动作卡嵌在 _Section 卡片里，用 block 色调保持「越往里越深」的层级。
+      color: AppSurface.block.colorOf(Theme.of(context).colorScheme),
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: LayoutBuilder(

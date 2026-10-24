@@ -48,7 +48,9 @@ class ConnectedButtonGroup<T> extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final rtl = Directionality.of(context) == TextDirection.rtl;
-    final base = AppSurface.block.colorOf(scheme);
+    // 凹槽控制面用与输入框一致的 inset 色调：组会出现在页面画布、卡片和
+    // 对话框（surfaceContainerHigh）里，block 色调会和对话框背景重合。
+    final base = AppSurface.inset.colorOf(scheme);
     return Semantics(
       container: true,
       label: semanticLabel,
