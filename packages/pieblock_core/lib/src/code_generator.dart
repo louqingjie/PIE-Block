@@ -238,8 +238,9 @@ $turnReverse    dutyOfMotor[${_slot(c.leftFront.pin)}] = ${_dir(c.leftFront.dire
       if (actuator.drive == DriveType.servo) {
         final variable = dutyName(yaw: yaw, index: index);
         final home = _servoDuty(actuator.midOffset);
-        final low = (home - 333).clamp(250, 1250);
-        final high = (home + 333).clamp(250, 1250);
+        // 云台舵机走满电气行程，端点 250~1250 即 ±90°，行程余量由机械限位负责。
+        final low = (home - 500).clamp(250, 1250);
+        final high = (home + 500).clamp(250, 1250);
         final sign = actuator.direction == Direction.forward ? '' : '-';
         return '''    $variable += (int)((float)$sign$rocker * 2.0f / 2047.0f * 5.555556f);
     if ($variable < $low) $variable = $low; if ($variable > $high) $variable = $high;''';

@@ -2173,7 +2173,7 @@ void main() {
       expect(
         code,
         contains(
-          '    if (pitchDuty2 < 473) pitchDuty2 = 473; if (pitchDuty2 > 1139) pitchDuty2 = 1139;',
+          '    if (pitchDuty2 < 306) pitchDuty2 = 306; if (pitchDuty2 > 1250) pitchDuty2 = 1250;',
         ),
       );
       expect(
@@ -2190,6 +2190,22 @@ void main() {
       );
       expect(code, contains('static uint16_t lastFeedbackDuty[3] = {0};'));
       expect(code, contains('pitchDuty2,abs(dutyOfMotor[3])'));
+    });
+
+    test('云台舵机行程覆盖全部电气端点', () {
+      final code = CodeGenerator.generate(completeInfantry());
+      expect(
+        code,
+        contains(
+          '    if (yawDuty < 250) yawDuty = 250; if (yawDuty > 1250) yawDuty = 1250;',
+        ),
+      );
+      expect(
+        code,
+        contains(
+          '    if (pitchDuty < 250) pitchDuty = 250; if (pitchDuty > 1250) pitchDuty = 1250;',
+        ),
+      );
     });
 
     test('空轴不生成占空比变量和控制语句', () {
