@@ -1,5 +1,5 @@
 {
-  "format_version": 15,
+  "format_version": 17,
   "name": "演示音乐",
   "project_kind": "music",
   "created_at": "2026-09-12T09:43:29.553515Z",
@@ -19,115 +19,102 @@
         "id": "n0",
         "pitch": 60,
         "start_tick": 0,
-        "duration_ticks": 420,
-        "primary": true
+        "duration_ticks": 420
       },
       {
         "id": "n1",
         "pitch": 62,
         "start_tick": 480,
-        "duration_ticks": 420,
-        "primary": true
+        "duration_ticks": 420
       },
       {
         "id": "n2",
         "pitch": 64,
         "start_tick": 960,
-        "duration_ticks": 420,
-        "primary": true
+        "duration_ticks": 420
       },
       {
         "id": "n3",
         "pitch": 65,
         "start_tick": 1440,
-        "duration_ticks": 420,
-        "primary": true
+        "duration_ticks": 420
       },
       {
         "id": "n4",
         "pitch": 67,
         "start_tick": 1920,
-        "duration_ticks": 420,
-        "primary": true
+        "duration_ticks": 420
       },
       {
         "id": "n5",
         "pitch": 65,
         "start_tick": 2400,
-        "duration_ticks": 420,
-        "primary": true
+        "duration_ticks": 420
       },
       {
         "id": "n6",
         "pitch": 64,
         "start_tick": 2880,
-        "duration_ticks": 420,
-        "primary": true
+        "duration_ticks": 420
       },
       {
         "id": "n7",
         "pitch": 62,
         "start_tick": 3360,
-        "duration_ticks": 420,
-        "primary": true
+        "duration_ticks": 420
       },
       {
         "id": "n8",
         "pitch": 60,
         "start_tick": 3840,
-        "duration_ticks": 420,
-        "primary": true
+        "duration_ticks": 420
       },
       {
         "id": "n9",
         "pitch": 64,
         "start_tick": 4320,
-        "duration_ticks": 420,
-        "primary": true
+        "duration_ticks": 420
       },
       {
         "id": "n10",
         "pitch": 67,
         "start_tick": 4800,
-        "duration_ticks": 420,
-        "primary": true
+        "duration_ticks": 420
       },
       {
         "id": "n11",
         "pitch": 72,
         "start_tick": 5280,
-        "duration_ticks": 420,
-        "primary": true
+        "duration_ticks": 420
       },
       {
         "id": "n12",
         "pitch": 71,
         "start_tick": 5760,
-        "duration_ticks": 420,
-        "primary": true
+        "duration_ticks": 420
       },
       {
         "id": "n13",
         "pitch": 67,
         "start_tick": 6240,
-        "duration_ticks": 420,
-        "primary": true
+        "duration_ticks": 420
       },
       {
         "id": "n14",
         "pitch": 64,
         "start_tick": 6720,
-        "duration_ticks": 420,
-        "primary": true
+        "duration_ticks": 420
       },
       {
         "id": "n15",
         "pitch": 60,
         "start_tick": 7200,
-        "duration_ticks": 420,
-        "primary": true
+        "duration_ticks": 420
       }
     ],
+    "overlap_mode": "nearest",
+    "new_note_interrupts": true,
+    "key_signature_fifths": 0,
     "tempo_events": [
       {
         "tick": 0,

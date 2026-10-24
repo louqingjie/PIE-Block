@@ -1,5 +1,7 @@
 # Flutter 项目文件格式
 
+> 注意：`reference/schemas/` 下的 JSON Schema 由已停用的旧版 Godot CLI 生成，字段结构停留在旧格式；格式 17 以本文档与代码实现为准，暂不把旧 schema 作为校验依据。
+
 `.pieproj` 是 UTF-8 JSON 文件。格式 17 使用稳定语义字段，不包含 UI 控件路径或生成代码，并保存可恢复的向导进度。
 
 ```json
