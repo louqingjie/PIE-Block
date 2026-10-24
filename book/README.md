@@ -9,8 +9,8 @@
 ## 当前状态
 
 模板骨架已完成：封面、目录、10 章正文与 3 个附录的标题、参考文献占位都已排好。
-第一章「PIE-Block 概述」（1.1 简介、1.2 名称的由来）与第二章「编译和烧录」已有正文初稿；
-其余各章暂只保留 `\chapter{...}` 和一条 `TODO` 注释。
+第一章「PIE-Block 概述」、第二章「编译和烧录」与第五章「工程机器人与高级构型」
+已有正文；其余各章暂只保留 `\chapter{...}` 和一条 `TODO` 注释。
 
 ## 目录结构
 
@@ -20,13 +20,19 @@ book/
 ├── elegantbook.cls       # 文类文件（ElegantBook v4.7，已内置）
 ├── chapters/
 │   ├── preface.tex       # 前言（默认未 include）
-│   ├── ch01.tex … ch10.tex   # 正文各章（前两章已有正文，其余为章标题占位）
+│   ├── ch01.tex … ch10.tex   # 正文各章（第 1、2、5 章已有正文，其余为章标题占位）
 │   ├── appendix-a.tex    # 附录 A 硬件接口与引脚速查
 │   ├── appendix-b.tex    # 附录 B 常见问题（FAQ）
 │   └── appendix-c.tex    # 附录 C 术语表
+├── examples/            # 第 5 章配套示例工程（.pieproj，可直接导入）
+│   ├── mecanum4.pieproj # 四轮麦克纳姆轮工程车
+│   ├── omni3.pieproj    # 三轮全向轮工程车
+│   ├── arm2dof.pieproj  # 二自由度机械臂
+│   └── README.md
 ├── image/
 │   ├── cover.jpg         # 封面横幅：品牌色 + 配置拓扑示意 + 右上角 W.PIE 标识
-│   └── wpie-logo.png     # W.PIE 学生创新实验室标识（封面横幅素材）
+│   ├── wpie-logo.png     # W.PIE 学生创新实验室标识（封面横幅素材）
+│   └── ch05/             # 第 5 章软件截图（由 tool/book_screenshots_test.dart 生成）
 ├── reference.bib         # 参考文献（biblatex / biber）
 ├── build.ps1             # Windows 编译脚本
 ├── build.sh              # Linux / macOS 编译脚本
@@ -69,6 +75,30 @@ latexmk -xelatex main.tex
 可用的排版环境（定义、定理、例题、练习、解答、注意、章前导读、章后习题等）及
 改封面 / 改配色 / GB/T 7714 参考文献的写法，见模板说明：
 <https://github.com/ElegantLaTeX/ElegantBook>
+
+## 第 5 章示例与截图维护
+
+第 5 章「工程机器人与高级构型」的示例工程在 `examples/`，可以直接从应用首页
+“打开项目”导入。示例只做公式/编译级验证，实机使用前请按正文的安全清单架空、
+限速、标定。
+
+生成示例 C 并校验（在仓库根目录执行）：
+
+```bash
+dart run tool/generate_book_examples.dart   # 输出到 build/book_examples/
+flutter test test/book_examples_test.dart     # 校验、生成 C、试算断言
+```
+
+重新生成第 5 章软件截图（会覆盖 `image/ch05/*.png`，需要图形环境依赖的字体
+资源，但不启动窗口）：
+
+```bash
+flutter test tool/book_screenshots_test.dart
+```
+
+截图工具不是默认 CI 测试：它不在 `test/` 下，`flutter test` 不会自动收集；
+只有在界面文案或布局改动后才需要手动重跑。截图按 1440 逻辑像素宽渲染，
+输出 2078 px 宽，与第 2 章截图一致。
 
 ## 写作约定
 

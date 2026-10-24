@@ -4,7 +4,7 @@
 %  编译方式：XeLaTeX -> Biber -> XeLaTeX -> XeLaTeX
 %  推荐命令：latexmk -xelatex main.tex（在 book/ 目录下执行）
 %  在线使用：把 book/ 目录打包为 zip 上传 Overleaf，编译器选 XeLaTeX
-%  当前状态：封面、目录、章节骨架已就绪；正文尚未编写（见 chapters/*.tex）
+%  当前状态：第 1、2、5 章已有正文；其余章节仍为骨架（见 chapters/*.tex）
 % ============================================================================
 \documentclass[lang=cn,10pt,scheme=chinese,color=blue]{elegantbook}
 
@@ -60,6 +60,31 @@
 
 % 参考文献数据库
 \addbibresource[location=local]{reference.bib}
+
+% 第 5 章的表格与箭头：表格用 tabularx 自动适应正文宽度，
+% TikZ 用 arrows.meta 画速度/力矢量。
+\usepackage{tabularx}
+\usepackage{float}
+\usetikzlibrary{arrows.meta}
+
+% 第 5 章的 C 代码摘录样式：与正文同宽，长行自动折行。
+\renewcommand{\lstlistingname}{代码}
+\lstdefinestyle{pieblockc}{
+  language=C,
+  basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\color{structurecolor}\bfseries,
+  commentstyle=\color{gray},
+  numbers=none,
+  frame=single,
+  rulecolor=\color{structurecolor!40},
+  breaklines=true,
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  tabsize=2,
+  aboveskip=6pt,
+  belowskip=6pt
+}
 
 \begin{document}
 
