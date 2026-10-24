@@ -8,9 +8,9 @@
 
 ## 当前状态
 
-模板骨架已完成：封面、目录、10 章正文与 3 个附录的标题、参考文献占位都已排好。
-第一章「PIE-Block 概述」、第二章「编译和烧录」与第五章「工程机器人与高级构型」
-已有正文；其余各章暂只保留 `\chapter{...}` 和一条 `TODO` 注释。
+全部完稿：前言、10 章正文与 3 个附录，共 62 页（A4）。每章配有真实
+Widget 树渲染的软件截图、Wikimedia Commons 的 CC 授权实物照片，以及由
+内置 SDCC 真实编译产出的代码/HEX 摘录。
 
 ## 目录结构
 
@@ -20,7 +20,7 @@ book/
 ├── elegantbook.cls       # 文类文件（ElegantBook v4.7，已内置）
 ├── chapters/
 │   ├── preface.tex       # 前言（默认未 include）
-│   ├── ch01.tex … ch10.tex   # 正文各章（第 1、2、5 章已有正文，其余为章标题占位）
+│   ├── ch01.tex … ch10.tex   # 正文各章（全部完稿）
 │   ├── appendix-a.tex    # 附录 A 硬件接口与引脚速查
 │   ├── appendix-b.tex    # 附录 B 常见问题（FAQ）
 │   └── appendix-c.tex    # 附录 C 术语表
