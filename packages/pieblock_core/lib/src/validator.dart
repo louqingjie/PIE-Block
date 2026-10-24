@@ -454,6 +454,43 @@ abstract final class ProjectValidator {
     }
   }
 
+  /// 舵机左/右限位：选填，填了必须在 -90~90，且两者都填时右限位不小于左限位。
+  static void _servoLimitPair(
+    int? min,
+    int? max,
+    String minPath,
+    String maxPath,
+    String label,
+    String minName,
+    String maxName,
+    String step,
+    _AddIssue issue,
+  ) {
+    _range(
+      min,
+      -90,
+      90,
+      minPath,
+      '$label$minName',
+      step,
+      issue,
+      required: false,
+    );
+    _range(
+      max,
+      -90,
+      90,
+      maxPath,
+      '$label$maxName',
+      step,
+      issue,
+      required: false,
+    );
+    if (min != null && max != null && max < min) {
+      issue(IssueSeverity.error, maxPath, '$label$maxName不能小于$minName', step);
+    }
+  }
+
   static void _chassis(ChassisConfig chassis, _AddIssue issue) {
     final wheels =
         <({String path, String label, WheelConfig value, String side})>[
@@ -745,6 +782,43 @@ abstract final class ProjectValidator {
         }
       }
     }
+    // LC/RC 被生成代码固定占用（冲刺=LC、云台归零=RC）：动作键撞上时一次按键
+    // 会同时触发两件事，必须在配置期拦下。
+    if (config.chassis.sprintEnabled) {
+      for (final entry in keyEntries) {
+        if (entry.key == 'LC') {
+          issue(
+            IssueSeverity.error,
+            entry.path,
+            'LC 已用于底盘冲刺，不能同时作为${entry.label}',
+            'controls',
+          );
+        }
+      }
+    }
+    if (config.zeroEnabled) {
+      for (final entry in keyEntries) {
+        if (entry.key == 'RC') {
+          issue(
+            IssueSeverity.error,
+            entry.path,
+            'RC 已用于云台归中，不能同时作为${entry.label}',
+            'controls',
+          );
+        }
+      }
+    }
+    // 冲刺方向键直接用冲刺速度：未填时按普通速度移动，「冲刺」静默失效。
+    if (config.arrowBehavior == ArrowBehavior.sprint &&
+        config.chassis.sprintSpeed == null) {
+      issue(
+        IssueSeverity.error,
+        'chassis.sprint_speed',
+        '方向键用作冲刺时必须填写冲刺速度',
+        'remote',
+        ValidationIssueKind.required,
+      );
+    }
     _infantryPins(config, issue);
   }
 
@@ -787,6 +861,17 @@ abstract final class ProjectValidator {
           'mechanism',
           issue,
         );
+        _servoLimitPair(
+          actuator.minLimit,
+          actuator.maxLimit,
+          path('min_limit'),
+          path('max_limit'),
+          '$label ',
+          '最小限位',
+          '最大限位',
+          'mechanism',
+          issue,
+        );
       }
       final pin = actuator.pin;
       if (pin != null && actuator.drive != null) {
@@ -813,6 +898,28 @@ abstract final class ProjectValidator {
             'mechanism',
           );
         }
+      }
+    }
+    // 同轴舵机限位按交集生效（任一执行器到限位即全轴钳位），
+    // 因此各执行器的限位区间（未填按 ±90）必须有交集。
+    final servoIndexes = [
+      for (var index = 0; index < actuators.length; index += 1)
+        if (actuators[index].drive == DriveType.servo) index,
+    ];
+    if (servoIndexes.length > 1) {
+      final axisMin = servoIndexes
+          .map((index) => actuators[index].minLimit ?? -90)
+          .reduce((a, b) => a > b ? a : b);
+      final axisMax = servoIndexes
+          .map((index) => actuators[index].maxLimit ?? 90)
+          .reduce((a, b) => a < b ? a : b);
+      if (axisMin > axisMax) {
+        issue(
+          IssueSeverity.error,
+          InfantryPinPlanner.axisPath(yaw, servoIndexes.first, 'min_limit'),
+          '$name 轴各执行器限位区间没有交集，无法全轴钳位',
+          'mechanism',
+        );
       }
     }
   }
@@ -993,6 +1100,17 @@ abstract final class ProjectValidator {
           'pwm',
           issue,
         );
+        _servoLimitPair(
+          config.pwm.servoMinLimits[pin],
+          config.pwm.servoMaxLimits[pin],
+          'pwm.servo_min_limits.$pin',
+          'pwm.servo_max_limits.$pin',
+          '$pin 舵机',
+          '左限位',
+          '右限位',
+          'pwm',
+          issue,
+        );
       }
     }
     for (final pin in mainServoPins) {
@@ -1002,6 +1120,17 @@ abstract final class ProjectValidator {
         90,
         'pwm.servo_mids.$pin',
         '$pin 舵机中位偏移',
+        'pwm',
+        issue,
+      );
+      _servoLimitPair(
+        config.pwm.servoMinLimits[pin],
+        config.pwm.servoMaxLimits[pin],
+        'pwm.servo_min_limits.$pin',
+        'pwm.servo_max_limits.$pin',
+        '$pin 舵机',
+        '左限位',
+        '右限位',
         'pwm',
         issue,
       );
@@ -1090,6 +1219,21 @@ abstract final class ProjectValidator {
         issue(IssueSeverity.error, entry.path, '模式切换按键不能重复', 'strategy');
       }
     }
+    // 启用底盘冲刺时 LC 被生成代码固定占用：切换键/动作键撞上会一次按键
+    // 同时切模式（或触发动作）并让底盘冲刺。
+    final sprintReserved = chassisEnabled && config.chassis.sprintEnabled;
+    if (sprintReserved) {
+      for (final entry in switchEntries) {
+        if (entry.key == 'LC') {
+          issue(
+            IssueSeverity.error,
+            entry.path,
+            'LC 已用于底盘冲刺，不能同时作为模式切换按键',
+            'strategy',
+          );
+        }
+      }
+    }
     final variableTypes = <String, ExpressionType>{};
     final variableModes = <String, Set<int>>{};
     for (var mi = 0; mi < count; mi++) {
@@ -1146,6 +1290,14 @@ abstract final class ProjectValidator {
           }
         }
         _action(config, mode, action, path, switchKeys, modeVariables, issue);
+        if (sprintReserved && action.key == 'LC') {
+          issue(
+            IssueSeverity.error,
+            '$path.key',
+            'LC 已用于底盘冲刺，不能同时作为动作输入',
+            'mappings',
+          );
+        }
         if (action.outputKind != ActionOutputKind.pin) {
           final name = action.variableName?.trim() ?? '';
           if (isValidVariableName(name)) {
@@ -1221,6 +1373,11 @@ abstract final class ProjectValidator {
       }
       _choice(action.variableName, '$path.variable', '变量名', 'mappings', issue);
       final name = action.variableName?.trim() ?? '';
+      if (action.variableName != null && name != action.variableName) {
+        // 变量名原样进入生成的 C 标识符：首尾空格会拼出 pbv_ foo 这类
+        // 非法标识符，或与去空格后的同名变量重复声明。
+        issue(IssueSeverity.error, '$path.variable', '变量名首尾不能有空格', 'mappings');
+      }
       if (name.isNotEmpty && !isValidVariableName(name)) {
         issue(
           IssueSeverity.error,

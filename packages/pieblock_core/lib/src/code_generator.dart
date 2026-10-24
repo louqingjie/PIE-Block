@@ -59,6 +59,20 @@ abstract final class CodeGenerator {
       value == PwmFrequency.hz50 ? 50 : 10000;
   static int _servoDuty(int? degrees) =>
       (750 + ((degrees ?? 0) * 1000 / 180)).round().clamp(250, 1250);
+
+  /// 角度对应的 duty 跨度，与 [_servoDuty] 同一换算（±90° = ±500 duty）。
+  static int _dutySpan(int degrees) => (degrees * 1000 / 180).round();
+
+  /// 舵机引脚的运行钳位界：限位相对中位换算成 duty，再截到电气安全范围；
+  /// 未填的一侧维持满电气行程。
+  static ({int low, int high}) _servoBounds(PwmGroupConfig pwm, String pin) {
+    final home = _servoDuty(pwm.servoMids[pin]);
+    final min = pwm.servoMinLimits[pin], max = pwm.servoMaxLimits[pin];
+    return (
+      low: min == null ? 250 : (home + _dutySpan(min)).clamp(250, 1250),
+      high: max == null ? 1250 : (home + _dutySpan(max)).clamp(250, 1250),
+    );
+  }
   static String _key(String key) => switch (key) {
     'E' => 'KEY_OFFSET_1',
     'LC' => 'KEY_OFFSET_Rocker11',
@@ -72,7 +86,12 @@ abstract final class CodeGenerator {
   static int _slot(String? pin) =>
       expansionPins.indexOf(InfantryPinPlanner.normalizePin(pin));
 
-  static String _variableCName(String name) => 'pbv_$name';
+  static String _variableCName(String name) => 'pbv_${name.trim()}';
+
+  /// 变量名统一去首尾空格后再当键用：校验器已拒绝带空格的名字，
+  /// 这里兜底保证旧项目/手工编辑的 JSON 不会拼出非法 C 标识符或重复声明。
+  static String _variableKey(ActionMapping action) =>
+      (action.variableName ?? '').trim();
 
   static String _readOfKey(String key) {
     final isAxis = key.endsWith('X') || key.endsWith('Y');
@@ -284,15 +303,29 @@ $turnReverse    dutyOfMotor[${_slot(c.leftFront.pin)}] = ${_dir(c.leftFront.dire
               ),
         ],
     ];
+    // 同轴舵机限位按交集生效：任一执行器到限位即全轴视为到限位，
+    // 未填限位的执行器按 ±90° 参与交集（校验保证交集非空）。
+    ({int min, int max}) axisLimits(bool yaw) {
+      var min = -90, max = 90;
+      for (final actuator in c.actuators(yaw)) {
+        if (actuator.drive != DriveType.servo) continue;
+        final lo = actuator.minLimit ?? -90, hi = actuator.maxLimit ?? 90;
+        if (lo > min) min = lo;
+        if (hi < max) max = hi;
+      }
+      return (min: min, max: max);
+    }
     String actuatorUpdate({required bool yaw, required int index}) {
       final actuator = actuatorAt(yaw: yaw, index: index)!;
       final rocker = yaw ? 'valueOfRoker[1][0]' : 'valueOfRoker[1][1]';
       if (actuator.drive == DriveType.servo) {
         final variable = dutyName(yaw: yaw, index: index);
         final home = _servoDuty(actuator.midOffset);
-        // 云台舵机走满电气行程，端点 250~1250 即 ±90°，行程余量由机械限位负责。
-        final low = (home - 500).clamp(250, 1250);
-        final high = (home + 500).clamp(250, 1250);
+        final limits = axisLimits(yaw);
+        // 限位相对各自归中位置换算成 duty 并截到电气安全范围；
+        // 未配置时限位即 ±90°，等价于过去的满电气行程 250~1250。
+        final low = (home + _dutySpan(limits.min)).clamp(250, 1250);
+        final high = (home + _dutySpan(limits.max)).clamp(250, 1250);
         final sign = actuator.direction == Direction.forward ? '' : '-';
         return '''    $variable += (int)((float)$sign$rocker * 2.0f / 2047.0f * 5.555556f);
     if ($variable < $low) $variable = $low; if ($variable > $high) $variable = $high;''';
@@ -699,7 +732,7 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
       final seenNames = <String>{};
       for (final action in c.modes[mi].actions) {
         if (action.outputKind == ActionOutputKind.pin) continue;
-        final name = action.variableName ?? '';
+        final name = _variableKey(action);
         if (name.isEmpty || !seenNames.add(name)) continue;
         final type = action.outputKind == ActionOutputKind.integer
             ? ExpressionType.integer
@@ -719,7 +752,7 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
       final localVariables = <String, ExpressionType>{};
       for (final action in mode.actions) {
         if (action.outputKind == ActionOutputKind.pin) continue;
-        final name = action.variableName ?? '';
+        final name = _variableKey(action);
         if (name.isEmpty || globalVariables.containsKey(name)) continue;
         localVariables[name] = action.outputKind == ActionOutputKind.integer
             ? ExpressionType.integer
@@ -752,9 +785,9 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
             expressionHelpers.addAll(expressionEmitter.helpers);
             if (a.outputKind != ActionOutputKind.pin) {
               body.add(
-                '    ${_variableCName(a.variableName ?? '')} = ($emitted);$marker',
+                '    ${_variableCName(_variableKey(a))} = ($emitted);$marker',
               );
-              modeVariableTypes[a.variableName ?? ''] = variableType;
+              modeVariableTypes[_variableKey(a)] = variableType;
             } else if (a.pin != null) {
               final slot = expansionPins.indexOf(a.pin!);
               if (slot >= 0) {
@@ -791,9 +824,9 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
               ? ExpressionType.integer
               : ExpressionType.rational;
           body.add(
-            '    ${_variableCName(a.variableName ?? '')} = (${variableType.cType})(${_readOfKey(a.key!)});',
+            '    ${_variableCName(_variableKey(a))} = (${variableType.cType})(${_readOfKey(a.key!)});',
           );
-          modeVariableTypes[a.variableName ?? ''] = variableType;
+          modeVariableTypes[_variableKey(a)] = variableType;
           continue;
         }
         final sign = a.direction == Direction.forward ? '' : '-';
@@ -892,9 +925,10 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
                 final signedAngle =
                     (a.direction == Direction.forward ? 1 : -1) *
                     a.parameter!.toInt();
+                final bounds = _servoBounds(c.pwm, a.pin!);
                 final target = _servoDuty(
                   (c.pwm.servoMids[a.pin!] ?? 0) + signedAngle,
-                );
+                ).clamp(bounds.low, bounds.high);
                 body.add(
                   '    if ($read && !servoButtonKeyLast[$edgeIndex]) dutyOfMotor[$slot] = $target;',
                 );
@@ -925,9 +959,10 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
               if (a.mode == ControlMode.single) {
                 body.add('    servoButtonKeyLast[$edgeIndex] = $read;');
               }
+              final bounds = _servoBounds(c.pwm, a.pin!);
               body.add(
-                '    if (dutyOfMotor[$slot] < 250) { dutyOfMotor[$slot] = 250; servoButtonRemainder[$remainderIndex] = 0; } '
-                'else if (dutyOfMotor[$slot] > 1250) { dutyOfMotor[$slot] = 1250; servoButtonRemainder[$remainderIndex] = 0; }',
+                '    if (dutyOfMotor[$slot] < ${bounds.low}) { dutyOfMotor[$slot] = ${bounds.low}; servoButtonRemainder[$remainderIndex] = 0; } '
+                'else if (dutyOfMotor[$slot] > ${bounds.high}) { dutyOfMotor[$slot] = ${bounds.high}; servoButtonRemainder[$remainderIndex] = 0; }',
               );
               continue;
             }
@@ -939,8 +974,9 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
             } else {
               body.add('    dutyOfMotor[$slot] += $delta;');
             }
+            final bounds = _servoBounds(c.pwm, a.pin!);
             body.add(
-              '    if (dutyOfMotor[$slot] < 250) dutyOfMotor[$slot] = 250; else if (dutyOfMotor[$slot] > 1250) dutyOfMotor[$slot] = 1250;',
+              '    if (dutyOfMotor[$slot] < ${bounds.low}) dutyOfMotor[$slot] = ${bounds.low}; else if (dutyOfMotor[$slot] > ${bounds.high}) dutyOfMotor[$slot] = ${bounds.high};',
             );
           } else if (a.mode == ControlMode.direct) {
             body.add(
@@ -951,8 +987,12 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
               '    dutyOfMotor[$slot] = (int)(((int32_t)$read * ${a.parameter!.toInt()}L) / 2047L);',
             );
           } else {
+            // 增速：每周期累加摇杆增量，必须钳位在 ±10000——
+            // 持续打杆会无界增长，目标机的 16 位 int 会回绕翻转方向位。
+            body.add('    dutyOfMotor[$slot] += (int)(((int32_t)$read * ${a.parameter!.toInt()}L) / 2047L);');
             body.add(
-              '    dutyOfMotor[$slot] += (int)(((int32_t)$read * ${a.parameter!.toInt()}L) / 2047L);',
+              '    if (dutyOfMotor[$slot] > 10000) dutyOfMotor[$slot] = 10000; '
+              'else if (dutyOfMotor[$slot] < -10000) dutyOfMotor[$slot] = -10000;',
             );
           }
         } else {
@@ -964,9 +1004,10 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
               final signedAngle =
                   (a.direction == Direction.forward ? 1 : -1) *
                   a.parameter!.toInt();
+              final bounds = _servoBounds(c.pwm, a.pin!);
               final target = _servoDuty(
                 (c.pwm.servoMids[a.pin!] ?? 0) + signedAngle,
-              );
+              ).clamp(bounds.low, bounds.high);
               body.add(
                 '    if ($read && !servoButtonKeyLast[$edgeIndex]) mainServoDuty[$mainIndex] = $target;',
               );
@@ -997,9 +1038,10 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
             if (a.mode == ControlMode.single) {
               body.add('    servoButtonKeyLast[$edgeIndex] = $read;');
             }
+            final bounds = _servoBounds(c.pwm, a.pin!);
             body.add(
-              '    if (mainServoDuty[$mainIndex] < 250) { mainServoDuty[$mainIndex] = 250; servoButtonRemainder[$remainderIndex] = 0; } '
-              'else if (mainServoDuty[$mainIndex] > 1250) { mainServoDuty[$mainIndex] = 1250; servoButtonRemainder[$remainderIndex] = 0; }',
+              '    if (mainServoDuty[$mainIndex] < ${bounds.low}) { mainServoDuty[$mainIndex] = ${bounds.low}; servoButtonRemainder[$remainderIndex] = 0; } '
+              'else if (mainServoDuty[$mainIndex] > ${bounds.high}) { mainServoDuty[$mainIndex] = ${bounds.high}; servoButtonRemainder[$remainderIndex] = 0; }',
             );
             continue;
           }
@@ -1011,8 +1053,9 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
           } else {
             body.add('    mainServoDuty[$mainIndex] += $delta;');
           }
+          final bounds = _servoBounds(c.pwm, a.pin!);
           body.add(
-            '    if (mainServoDuty[$mainIndex] < 250) mainServoDuty[$mainIndex] = 250; else if (mainServoDuty[$mainIndex] > 1250) mainServoDuty[$mainIndex] = 1250;',
+            '    if (mainServoDuty[$mainIndex] < ${bounds.low}) mainServoDuty[$mainIndex] = ${bounds.low}; else if (mainServoDuty[$mainIndex] > ${bounds.high}) mainServoDuty[$mainIndex] = ${bounds.high};',
           );
         }
       }
@@ -1056,9 +1099,15 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
           .map((action) => expansionPins.indexOf(action.pin ?? ''))
           .where((slot) => slot >= 0)
           .toSet();
+      // 底盘槽只在「保留底盘」的模式里豁免归零：不保留底盘的模式里底盘
+      // 引脚无人重写，残留占空比会让底盘保持旧速度继续跑（安全隐患）。
+      final modeChassisSlots =
+          c.chassis.enabled && c.modes[i].preserveChassis
+          ? chassisSlots
+          : <int>{};
       final lines = <String>[];
       for (var slot = 0; slot < expansionPins.length; slot++) {
-        if (!chassisSlots.contains(slot) &&
+        if (!modeChassisSlots.contains(slot) &&
             !frictionSlots.contains(slot) &&
             !mapped.contains(slot) &&
             (c.pwm.pinRoles[expansionPins[slot]] == PinRole.motor ||

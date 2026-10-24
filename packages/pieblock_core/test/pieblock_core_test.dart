@@ -705,6 +705,250 @@ void main() {
     });
   });
 
+  group('舵机限位', () {
+    EngineerConfig limitEngineer({
+      Map<String, int>? minLimits,
+      Map<String, int>? maxLimits,
+    }) {
+      final source = completeEngineer();
+      return source.copyWith(
+        pwm: source.pwm.copyWith(
+          pinRoles: {...source.pwm.pinRoles, 'P60': PinRole.servo},
+          servoMids: {...source.pwm.servoMids, 'P60': 0},
+          servoMinLimits: minLimits ?? const {},
+          servoMaxLimits: maxLimits ?? const {},
+        ),
+      );
+    }
+
+    AxisActuator servoActuator({
+      String pin = 'MP74',
+      int mid = 0,
+      int? min,
+      int? max,
+    }) => AxisActuator(
+      drive: DriveType.servo,
+      pin: pin,
+      direction: Direction.forward,
+      midOffset: mid,
+      minLimit: min,
+      maxLimit: max,
+    );
+
+    test('工程限位角度随配置往返且未填一侧为空', () {
+      final config = limitEngineer(
+        minLimits: const {'P60': -30, 'MP03': -45},
+        maxLimits: const {'P60': 45},
+      );
+      final pwmJson = config.pwm.toJson();
+      expect(pwmJson['servo_min_limits'], containsPair('P60', -30));
+      expect(pwmJson['servo_min_limits'], containsPair('P62', isNull));
+      final restored = EngineerConfig.fromJson(
+        Map<String, Object?>.from(
+          jsonDecode(jsonEncode(config.toJson())) as Map,
+        ),
+      );
+      expect(restored.pwm.servoMinLimits['P60'], -30);
+      expect(restored.pwm.servoMinLimits['MP03'], -45);
+      expect(restored.pwm.servoMaxLimits['P60'], 45);
+      expect(restored.pwm.servoMaxLimits['MP03'], isNull);
+    });
+
+    test('步兵执行器限位随配置往返且默认为空', () {
+      final source = completeInfantry().copyWith(
+        yawActuators: [servoActuator(mid: -12, min: -40, max: 30)],
+      );
+      final restored = InfantryConfig.fromJson(
+        Map<String, Object?>.from(
+          jsonDecode(jsonEncode(source.toJson())) as Map,
+        ),
+      );
+      expect(restored.yawActuators.single.minLimit, -40);
+      expect(restored.yawActuators.single.maxLimit, 30);
+      expect(restored.pitchActuators.single.minLimit, isNull);
+      expect(restored.pitchActuators.single.maxLimit, isNull);
+    });
+
+    test('工程限位超出 ±90 或右限位小于左限位报 Error', () {
+      List<ValidationIssue> limitIssues(EngineerConfig config) =>
+          ProjectValidator.validate(config)
+              .where((issue) => issue.severity == IssueSeverity.error)
+              .where(
+                (issue) =>
+                    issue.fieldPath.startsWith('pwm.servo_min_limits.') ||
+                    issue.fieldPath.startsWith('pwm.servo_max_limits.'),
+              )
+              .toList();
+
+      expect(
+        limitIssues(
+          limitEngineer(minLimits: {'P60': -91}, maxLimits: {'P60': 90}),
+        ).map((issue) => issue.fieldPath),
+        ['pwm.servo_min_limits.P60'],
+      );
+      expect(
+        limitIssues(
+          limitEngineer(minLimits: {'P60': -90}, maxLimits: {'P60': 91}),
+        ).map((issue) => issue.fieldPath),
+        ['pwm.servo_max_limits.P60'],
+      );
+      expect(
+        limitIssues(
+          limitEngineer(maxLimits: {'MP03': 120}),
+        ).map((issue) => issue.fieldPath),
+        ['pwm.servo_max_limits.MP03'],
+      );
+      final reversed = limitIssues(
+        limitEngineer(minLimits: {'P60': -30}, maxLimits: {'P60': -60}),
+      );
+      expect(reversed, hasLength(1));
+      expect(reversed.single.fieldPath, 'pwm.servo_max_limits.P60');
+      expect(reversed.single.message, contains('右限位不能小于左限位'));
+      // 边界值与未填写均合法。
+      expect(
+        limitIssues(
+          limitEngineer(minLimits: {'P60': -90}, maxLimits: {'P60': 90}),
+        ),
+        isEmpty,
+      );
+      expect(limitIssues(limitEngineer()), isEmpty);
+    });
+
+    test('步兵限位报错规则与同轴交集校验', () {
+      List<ValidationIssue> limitIssues(InfantryConfig config) =>
+          ProjectValidator.validate(config)
+              .where((issue) => issue.severity == IssueSeverity.error)
+              .where(
+                (issue) =>
+                    issue.fieldPath.contains('min_limit') ||
+                    issue.fieldPath.contains('max_limit'),
+              )
+              .toList();
+
+      expect(
+        limitIssues(
+          completeInfantry().copyWith(
+            yawActuators: [servoActuator(min: -91, max: 90)],
+          ),
+        ).map((issue) => issue.fieldPath),
+        ['gimbal.yaw.0.min_limit'],
+      );
+      expect(
+        limitIssues(
+          completeInfantry().copyWith(
+            yawActuators: [servoActuator(min: -90, max: 91)],
+          ),
+        ).map((issue) => issue.fieldPath),
+        ['gimbal.yaw.0.max_limit'],
+      );
+      expect(
+        limitIssues(
+          completeInfantry().copyWith(
+            yawActuators: [servoActuator(min: 20, max: 10)],
+          ),
+        ).map((issue) => issue.fieldPath),
+        ['gimbal.yaw.0.max_limit'],
+      );
+      // 边界值与未填写均合法。
+      expect(
+        limitIssues(
+          completeInfantry().copyWith(
+            yawActuators: [servoActuator(min: -90, max: 90)],
+          ),
+        ),
+        isEmpty,
+      );
+      expect(limitIssues(completeInfantry()), isEmpty);
+      // 同轴两只舵机区间无交集：报在首个执行器的 min_limit。
+      final disjoint = limitIssues(
+        completeInfantry().copyWith(
+          yawActuators: [
+            servoActuator(min: -30, max: 45),
+            servoActuator(pin: 'P62', min: 50, max: 80),
+          ],
+        ),
+      );
+      expect(disjoint.map((issue) => issue.fieldPath), [
+        'gimbal.yaw.0.min_limit',
+      ]);
+      expect(disjoint.single.message, contains('没有交集'));
+      // 有交集（未填的一侧按 ±90 参与交集）不报错。
+      expect(
+        limitIssues(
+          completeInfantry().copyWith(
+            yawActuators: [
+              servoActuator(min: -30, max: 45),
+              servoActuator(pin: 'P62'),
+            ],
+          ),
+        ),
+        isEmpty,
+      );
+    });
+
+    test('工程限位按中位换算钳位界且未填时维持满行程', () {
+      final source = advancedEngineer();
+      final limited = source.copyWith(
+        pwm: source.pwm.copyWith(
+          servoMinLimits: const {'P60': -30},
+          servoMaxLimits: const {'P60': 45},
+        ),
+      );
+      final code = CodeGenerator.generate(limited);
+      // 中位 0°：左 -30° → 750-167=583，右 45° → 750+250=1000。
+      expect(code, contains('dutyOfMotor[0] < 583'));
+      expect(code, contains('dutyOfMotor[0] > 1000'));
+      expect(code, isNot(contains('dutyOfMotor[0] < 250')));
+      // 未填限位维持满电气行程。
+      final plain = CodeGenerator.generate(advancedEngineer());
+      expect(plain, contains('dutyOfMotor[0] < 250'));
+      expect(plain, contains('dutyOfMotor[0] > 1250'));
+    });
+
+    test('工程直接模式目标点位被限位截断', () {
+      final source = servoButtonEngineer(
+        mode: ControlMode.direct,
+        parameter: 90,
+      );
+      final config = source.copyWith(
+        pwm: source.pwm.copyWith(servoMaxLimits: const {'P60': 45}),
+      );
+      final code = CodeGenerator.generate(config);
+      // 中位 0°、右限位 45°：目标 90° 被截到 1000 duty。
+      expect(code, contains('dutyOfMotor[0] = 1000;'));
+      expect(code, isNot(contains('dutyOfMotor[0] = 1250;')));
+    });
+
+    test('步兵云台限位按轴取交集且未填时维持满行程', () {
+      final plain = CodeGenerator.generate(completeInfantry());
+      expect(
+        plain,
+        contains('if (yawDuty < 250) yawDuty = 250; if (yawDuty > 1250) yawDuty = 1250;'),
+      );
+      final single = CodeGenerator.generate(
+        completeInfantry().copyWith(
+          yawActuators: [servoActuator(min: -30, max: 45)],
+        ),
+      );
+      expect(single, contains('yawDuty < 583'));
+      expect(single, contains('yawDuty > 1000'));
+      // 双执行器取交集 [-30,45]：限位随各自归中位置平移，
+      // A（MP74，mid 10）home=806 → 639/1056；B（P62，mid -20）home=639 → 472/889。
+      final dual = CodeGenerator.generate(
+        completeInfantry().copyWith(
+          yawActuators: [
+            servoActuator(mid: 10, min: -30, max: 45),
+            servoActuator(pin: 'P62', mid: -20),
+          ],
+        ),
+      );
+      expect(dual, contains('yawDuty < 639'));
+      expect(dual, contains('yawDuty > 1056'));
+      expect(dual, contains('yawDuty2 < 472'));
+      expect(dual, contains('yawDuty2 > 889'));
+    });
+  });
+
   group('调试项目', () {
     test('空序列、非法引脚能力和值会阻止生成', () {
       expect(ProjectValidator.validate(DebugConfig()), isNotEmpty);

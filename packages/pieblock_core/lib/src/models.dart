@@ -255,14 +255,21 @@ class PwmGroupConfig {
     this.buzzerDisabled = false,
     Map<String, PinRole>? pinRoles,
     Map<String, int>? servoMids,
+    Map<String, int>? servoMinLimits,
+    Map<String, int>? servoMaxLimits,
     Map<String, int>? frictionMaxDuties,
   }) : pinRoles = Map.unmodifiable(pinRoles ?? const {}),
        servoMids = Map.unmodifiable(servoMids ?? const {}),
+       servoMinLimits = Map.unmodifiable(servoMinLimits ?? const {}),
+       servoMaxLimits = Map.unmodifiable(servoMaxLimits ?? const {}),
        frictionMaxDuties = Map.unmodifiable(frictionMaxDuties ?? const {});
   final PwmFrequency? pwma, pwmb;
   final bool buzzerDisabled;
   final Map<String, PinRole> pinRoles;
   final Map<String, int> servoMids;
+
+  /// 舵机相对中位的左/右限位角度（-90~90，选填）；未填的一侧走满电气行程。
+  final Map<String, int> servoMinLimits, servoMaxLimits;
 
   /// P64/P66 满油占空比（500–800 整百）；仅摩擦轮专用控制方式使用。
   final Map<String, int> frictionMaxDuties;
@@ -272,6 +279,8 @@ class PwmGroupConfig {
     bool? buzzerDisabled,
     Map<String, PinRole>? pinRoles,
     Map<String, int>? servoMids,
+    Map<String, int>? servoMinLimits,
+    Map<String, int>? servoMaxLimits,
     Map<String, int>? frictionMaxDuties,
   }) => PwmGroupConfig(
     pwma: identical(pwma, _unset) ? this.pwma : pwma as PwmFrequency?,
@@ -279,6 +288,8 @@ class PwmGroupConfig {
     buzzerDisabled: buzzerDisabled ?? this.buzzerDisabled,
     pinRoles: pinRoles ?? this.pinRoles,
     servoMids: servoMids ?? this.servoMids,
+    servoMinLimits: servoMinLimits ?? this.servoMinLimits,
+    servoMaxLimits: servoMaxLimits ?? this.servoMaxLimits,
     frictionMaxDuties: frictionMaxDuties ?? this.frictionMaxDuties,
   );
   Map<String, Object?> toJson() => {
@@ -289,6 +300,14 @@ class PwmGroupConfig {
     'servo_mids': {
       for (final pin in [...expansionPins, ...mainServoPins])
         pin: servoMids[pin],
+    },
+    'servo_min_limits': {
+      for (final pin in [...expansionPins, ...mainServoPins])
+        pin: servoMinLimits[pin],
+    },
+    'servo_max_limits': {
+      for (final pin in [...expansionPins, ...mainServoPins])
+        pin: servoMaxLimits[pin],
     },
     'friction_max_duties': {
       for (final pin in EngineerPinCapabilities.frictionPins)
@@ -310,6 +329,15 @@ class PwmGroupConfig {
       final value = (e.value as num?)?.toInt();
       if (value != null) mids[e.key] = value;
     }
+    Map<String, int> limits(String key) {
+      final result = <String, int>{};
+      for (final e in Map<String, Object?>.from(j[key] as Map? ?? {}).entries) {
+        final value = (e.value as num?)?.toInt();
+        if (value != null) result[e.key] = value;
+      }
+      return result;
+    }
+
     final frictionMaxDuties = <String, int>{};
     for (final e in Map<String, Object?>.from(
       j['friction_max_duties'] as Map? ?? {},
@@ -323,6 +351,8 @@ class PwmGroupConfig {
       buzzerDisabled: j['buzzer_disabled'] as bool? ?? false,
       pinRoles: roles,
       servoMids: mids,
+      servoMinLimits: limits('servo_min_limits'),
+      servoMaxLimits: limits('servo_max_limits'),
       frictionMaxDuties: frictionMaxDuties,
     );
   }
@@ -654,16 +684,29 @@ class MusicConfig extends ProjectConfig {
 ///
 /// 同轴可以挂 1~N 个执行器（如两只舵机并联增扭），也可以一个都不挂。
 class AxisActuator {
-  const AxisActuator({this.drive, this.pin, this.direction, this.midOffset});
+  const AxisActuator({
+    this.drive,
+    this.pin,
+    this.direction,
+    this.midOffset,
+    this.minLimit,
+    this.maxLimit,
+  });
   final DriveType? drive;
   final String? pin;
   final Direction? direction;
   final int? midOffset;
+
+  /// 舵机相对归中位置的左/右限位角度（-90~90，选填）；
+  /// 同轴任一执行器到限位即全轴视为到限位（生成时按轴取交集）。
+  final int? minLimit, maxLimit;
   AxisActuator copyWith({
     Object? drive = _unset,
     Object? pin = _unset,
     Object? direction = _unset,
     Object? midOffset = _unset,
+    Object? minLimit = _unset,
+    Object? maxLimit = _unset,
   }) => AxisActuator(
     drive: identical(drive, _unset) ? this.drive : drive as DriveType?,
     pin: identical(pin, _unset) ? this.pin : pin as String?,
@@ -673,18 +716,28 @@ class AxisActuator {
     midOffset: identical(midOffset, _unset)
         ? this.midOffset
         : midOffset as int?,
+    minLimit: identical(minLimit, _unset)
+        ? this.minLimit
+        : minLimit as int?,
+    maxLimit: identical(maxLimit, _unset)
+        ? this.maxLimit
+        : maxLimit as int?,
   );
   Map<String, Object?> toJson() => {
     'drive': drive?.name,
     'pin': pin,
     'direction': direction?.name,
     'mid_offset': midOffset,
+    'min_limit': minLimit,
+    'max_limit': maxLimit,
   };
   factory AxisActuator.fromJson(Map<String, Object?> json) => AxisActuator(
     drive: nullableEnumValue(DriveType.values, json['drive']),
     pin: json['pin']?.toString(),
     direction: nullableEnumValue(Direction.values, json['direction']),
     midOffset: (json['mid_offset'] as num?)?.toInt(),
+    minLimit: (json['min_limit'] as num?)?.toInt(),
+    maxLimit: (json['max_limit'] as num?)?.toInt(),
   );
 }
 
