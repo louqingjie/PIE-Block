@@ -396,6 +396,9 @@ ${frictionRamp('P66')}
     lastFrictionDown = frictionDown;
 '''
         : '';
+    // 方向寄存器只在主循环的 Dir 帧里更新（占空比帧只发 abs()，符号不落地）：
+    // 阻塞单发脉冲期间主循环停摆，必须先补发 Dir 帧再发 Duty 帧，否则反向
+    // 配置下扳机单发会沿用遗留的正转方向，与反向拨弹键同向。
     final feedSign = _dir(c.feederDirection!) == 1 ? '' : '-',
         reverseFeedSign = _dir(c.feederDirection!) == 1 ? '-' : '';
     final forwardFeedUpdate = c.feedMode == FeedMode.visualClosedLoop
@@ -403,6 +406,8 @@ ${frictionRamp('P66')}
 '''
         : '''    if (trigger && !lastTrigger) {
         dutyOfMotor[$feederSlot] = $feedSign${c.triggerSpeed!};
+        ExpansionBoradControl(Dir_Change_Order, $directionArgs);
+        Ms_Delay(EXPANSION_FRAME_GAP_MS);
         ExpansionBoradControl(Duty_Change_Order, $dutyArgs);
         Ms_Delay(${c.triggerTimeMs!});
         dutyOfMotor[$feederSlot] = 0;
@@ -422,6 +427,8 @@ ${frictionRamp('P66')}
     } else {
         if (trigger && !lastTrigger) {
             dutyOfMotor[$feederSlot] = $feedSign${c.triggerSpeed!};
+            ExpansionBoradControl(Dir_Change_Order, $directionArgs);
+            Ms_Delay(EXPANSION_FRAME_GAP_MS);
             ExpansionBoradControl(Duty_Change_Order, $dutyArgs);
             Ms_Delay(${c.triggerTimeMs!});
         }

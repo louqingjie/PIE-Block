@@ -2039,6 +2039,55 @@ void main() {
       );
     });
 
+    test('阻塞单发脉冲先补发方向帧再发占空比帧', () {
+      // 脉冲在 Ms_Delay 期间主循环停摆，方向寄存器不会刷新；方向帧缺失时
+      // 反向电机的扳机单发会沿用遗留的正转方向，与反向拨弹键同向。
+      final pulseSendsDirection = RegExp(
+        r'dutyOfMotor\[0\] = -?6000;\n'
+        r'\s*ExpansionBoradControl\(Dir_Change_Order, dutyOfMotor\[0\]>=0,'
+        r'[^;]*\);\n'
+        r'\s*Ms_Delay\(EXPANSION_FRAME_GAP_MS\);\n'
+        r'\s*ExpansionBoradControl\(Duty_Change_Order, abs\(dutyOfMotor\[0\]\),'
+        r'[^;]*\);\n'
+        r'\s*Ms_Delay\(250\);',
+      );
+
+      // 配了反向键：扳机脉冲在 else 分支里，正向电机写 +6000
+      expect(
+        CodeGenerator.generate(completeInfantry(reverseFeedKey: 'D')),
+        matches(pulseSendsDirection),
+      );
+      // 反向电机 + 反向键：扳机脉冲写 -6000，必须带方向帧才是真的反向
+      expect(
+        CodeGenerator.generate(
+          completeInfantry(reverseFeedKey: 'D').copyWith(
+            feederDirection: Direction.reverse,
+          ),
+        ),
+        matches(pulseSendsDirection),
+      );
+      // 未配反向键：扳机脉冲直接在 UpdateWeapons 顶层，同样要带方向帧
+      expect(
+        CodeGenerator.generate(
+          completeInfantry().copyWith(feederDirection: Direction.reverse),
+        ),
+        matches(pulseSendsDirection),
+      );
+
+      // 闭环模式的符号经主循环 Dir/Duty 帧成对落地，UpdateWeapons 内不出现直接帧
+      final visual = CodeGenerator.generate(
+        completeInfantry(
+          feedMode: FeedMode.visualClosedLoop,
+          reverseFeedKey: 'D',
+        ),
+      );
+      final weapons = visual.substring(
+        visual.indexOf('void UpdateWeapons'),
+        visual.indexOf('void main'),
+      );
+      expect(weapons, isNot(contains('ExpansionBoradControl(')));
+    });
+
     test('工程完整配置可以生成', () {
       expect(CodeGenerator.generate(completeEngineer()), contains('RunMode1'));
     });
