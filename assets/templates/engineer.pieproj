@@ -1,5 +1,5 @@
 {
-  "format_version": 16,
+  "format_version": 17,
   "name": "模板工程",
   "project_kind": "engineer",
   "created_at": "2026-01-01T00:00:00.000Z",
@@ -16,6 +16,7 @@
       "deadzone": 100
     },
     "chassis": {
+      "enabled": true,
       "left_front": {
         "pin": "P74 P24",
         "direction": "forward"
@@ -62,6 +63,10 @@
         "P77": null,
         "MP03": 0,
         "MP74": 0
+      },
+      "friction_max_duties": {
+        "P64": null,
+        "P66": null
       }
     },
     "mode_count": 2,
@@ -80,35 +85,51 @@
         "actions": [
           {
             "id": "template-1-1",
+            "input_kind": "remote",
             "key": "A",
+            "output_kind": "pin",
+            "pin": "P60",
+            "variable": null,
+            "expression": null,
             "direction": "forward",
             "mode": "single",
-            "parameter": 5,
-            "pin": "P60"
+            "parameter": 5
           },
           {
             "id": "template-1-2",
+            "input_kind": "remote",
             "key": "B",
+            "output_kind": "pin",
+            "pin": "P62",
+            "variable": null,
+            "expression": null,
             "direction": "forward",
             "mode": "continuous",
-            "parameter": 3,
-            "pin": "P62"
+            "parameter": 3
           },
           {
             "id": "template-1-3",
+            "input_kind": "remote",
             "key": "C",
+            "output_kind": "pin",
+            "pin": "P64",
+            "variable": null,
+            "expression": null,
             "direction": "forward",
             "mode": "direct",
-            "parameter": 6000,
-            "pin": "P64"
+            "parameter": 6000
           },
           {
             "id": "template-1-4",
+            "input_kind": "remote",
             "key": "RX",
+            "output_kind": "pin",
+            "pin": "P66",
+            "variable": null,
+            "expression": null,
             "direction": "forward",
             "mode": "speed",
-            "parameter": 6000,
-            "pin": "P66"
+            "parameter": 6000
           }
         ]
       },
@@ -118,27 +139,39 @@
         "actions": [
           {
             "id": "template-2-1",
+            "input_kind": "remote",
             "key": "LX",
+            "output_kind": "pin",
+            "pin": "P60",
+            "variable": null,
+            "expression": null,
             "direction": "forward",
             "mode": "incremental",
-            "parameter": 20,
-            "pin": "P60"
+            "parameter": 20
           },
           {
             "id": "template-2-2",
+            "input_kind": "remote",
             "key": "RY",
+            "output_kind": "pin",
+            "pin": "P64",
+            "variable": null,
+            "expression": null,
             "direction": "forward",
             "mode": "accelerate",
-            "parameter": 100,
-            "pin": "P64"
+            "parameter": 100
           },
           {
             "id": "template-2-3",
+            "input_kind": "remote",
             "key": "D",
+            "output_kind": "pin",
+            "pin": "P62",
+            "variable": null,
+            "expression": null,
             "direction": "reverse",
             "mode": "direct",
-            "parameter": 45,
-            "pin": "P62"
+            "parameter": 45
           }
         ]
       }

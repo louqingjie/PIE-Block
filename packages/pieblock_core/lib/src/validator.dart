@@ -75,54 +75,61 @@ abstract final class ProjectValidator {
         'remote',
       );
     }
-    _range(
-      config.chassis.normalSpeed,
-      0,
-      10000,
-      'chassis.normal_speed',
-      '普通速度',
-      'remote',
-      issue,
-    );
-    _range(
-      config.chassis.sprintSpeed,
-      0,
-      10000,
-      'chassis.sprint_speed',
-      '冲刺速度',
-      'remote',
-      issue,
-      required: config.chassis.sprintEnabled,
-    );
-    if (config.chassis.normalSpeed case final speed?
-        when speed >= 0 && speed < 4000) {
-      issue(
-        IssueSeverity.warning,
+    final engineerChassisDisabled =
+        config is EngineerConfig && !config.chassis.enabled;
+    if (config is InfantryConfig && !config.chassis.enabled) {
+      issue(IssueSeverity.error, 'chassis.enabled', '步兵项目必须启用底盘控制', 'remote');
+    }
+    if (!engineerChassisDisabled) {
+      _range(
+        config.chassis.normalSpeed,
+        0,
+        10000,
         'chassis.normal_speed',
-        '普通速度低于 4000，底盘移动速度可能变慢',
+        '普通速度',
         'remote',
+        issue,
       );
-    }
-    if (config.chassis.sprintSpeed case final speed?
-        when speed >= 0 && speed < 9000) {
-      issue(
-        IssueSeverity.warning,
+      _range(
+        config.chassis.sprintSpeed,
+        0,
+        10000,
         'chassis.sprint_speed',
-        '冲刺速度低于 9000，底盘移动速度可能变慢',
+        '冲刺速度',
         'remote',
+        issue,
+        required: config.chassis.sprintEnabled,
       );
+      if (config.chassis.normalSpeed case final speed?
+          when speed >= 0 && speed < 4000) {
+        issue(
+          IssueSeverity.warning,
+          'chassis.normal_speed',
+          '普通速度低于 4000，底盘移动速度可能变慢',
+          'remote',
+        );
+      }
+      if (config.chassis.sprintSpeed case final speed?
+          when speed >= 0 && speed < 9000) {
+        issue(
+          IssueSeverity.warning,
+          'chassis.sprint_speed',
+          '冲刺速度低于 9000，底盘移动速度可能变慢',
+          'remote',
+        );
+      }
+      if (config.chassis.normalSpeed != null &&
+          config.chassis.sprintSpeed != null &&
+          config.chassis.sprintSpeed! < config.chassis.normalSpeed!) {
+        issue(
+          IssueSeverity.warning,
+          'chassis.sprint_speed',
+          '冲刺速度低于普通速度，冲刺将无法生效',
+          'remote',
+        );
+      }
+      _chassis(config.chassis, issue);
     }
-    if (config.chassis.normalSpeed != null &&
-        config.chassis.sprintSpeed != null &&
-        config.chassis.sprintSpeed! < config.chassis.normalSpeed!) {
-      issue(
-        IssueSeverity.warning,
-        'chassis.sprint_speed',
-        '冲刺速度低于普通速度，冲刺将无法生效',
-        'remote',
-      );
-    }
-    _chassis(config.chassis, issue);
   }
 
   static void _debug(DebugConfig config, _AddIssue issue) {
@@ -926,16 +933,18 @@ abstract final class ProjectValidator {
   static void _engineer(EngineerConfig config, _AddIssue issue) {
     _choice(config.pwm.pwma, 'pwm.pwma', 'PWMA 初始化频率', 'pwm', issue);
     _choice(config.pwm.pwmb, 'pwm.pwmb', 'PWMB 初始化频率', 'pwm', issue);
-    final chassisUsed =
-        [
-              config.chassis.leftFront.pin,
-              config.chassis.leftRear.pin,
-              config.chassis.rightFront.pin,
-              config.chassis.rightRear.pin,
-            ]
-            .map(InfantryPinPlanner.normalizePin)
-            .where((pin) => pin.isNotEmpty)
-            .toSet();
+    final chassisEnabled = config.chassis.enabled;
+    final chassisUsed = chassisEnabled
+        ? [
+                config.chassis.leftFront.pin,
+                config.chassis.leftRear.pin,
+                config.chassis.rightFront.pin,
+                config.chassis.rightRear.pin,
+              ]
+              .map(InfantryPinPlanner.normalizePin)
+              .where((pin) => pin.isNotEmpty)
+              .toSet()
+        : <String>{};
     for (final pin in expansionPins) {
       final role = config.pwm.pinRoles[pin];
       _choice(role, 'pwm.pin_roles.$pin', '$pin 输出角色', 'pwm', issue);
@@ -1004,13 +1013,17 @@ abstract final class ProjectValidator {
       issue(IssueSeverity.error, 'modes', '模式配置数量不足', 'mappings');
       return;
     }
-    if (!config.modes.first.preserveChassis) {
-      issue(
-        IssueSeverity.error,
-        'modes.0.preserve_chassis',
-        '模式 1 必须保留左摇杆底盘控制',
-        'mappings',
-      );
+    if (!chassisEnabled) {
+      for (var i = 0; i < count; i++) {
+        if (config.modes[i].preserveChassis) {
+          issue(
+            IssueSeverity.error,
+            'modes.$i.preserve_chassis',
+            '未启用底盘控制时不能保留底盘控制',
+            'mappings',
+          );
+        }
+      }
     }
     final switchEntries = <({String path, String? key})>[];
     if (count > 1) {
@@ -1099,12 +1112,14 @@ abstract final class ProjectValidator {
     if (action.pin != null && !allPins.contains(action.pin)) {
       issue(IssueSeverity.error, '$path.pin', '动作 IO 无效', 'mappings');
     }
-    final chassisUsed = [
-      config.chassis.leftFront.pin,
-      config.chassis.leftRear.pin,
-      config.chassis.rightFront.pin,
-      config.chassis.rightRear.pin,
-    ].map(InfantryPinPlanner.normalizePin).toSet();
+    final chassisUsed = config.chassis.enabled
+        ? [
+            config.chassis.leftFront.pin,
+            config.chassis.leftRear.pin,
+            config.chassis.rightFront.pin,
+            config.chassis.rightRear.pin,
+          ].map(InfantryPinPlanner.normalizePin).toSet()
+        : <String>{};
     if (action.pin != null && chassisUsed.contains(action.pin)) {
       issue(
         IssueSeverity.error,
@@ -1198,6 +1213,13 @@ abstract final class ProjectValidator {
         );
       case ControlMode.single || ControlMode.continuous:
         _servoButtonSensitivity(action.parameter, '$path.parameter', issue);
+      case ControlMode.frictionToggle ||
+          ControlMode.frictionStep ||
+          ControlMode.frictionContinuous ||
+          ControlMode.frictionAxis:
+        // 摩擦轮专用控制方式在阶段 2 接入；当前 allowed 列表尚未放行，
+        // 这里只保证枚举穷尽。
+        break;
       case null:
         _choice(action.parameter, '$path.parameter', '动作参数', 'mappings', issue);
     }

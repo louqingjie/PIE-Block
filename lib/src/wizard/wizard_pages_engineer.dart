@@ -149,7 +149,8 @@ class _EngineerMappingsPageState extends ConsumerState<_EngineerMappingsPage> {
     }
 
     final mode = c.modes[selected];
-    final preserveChassis = selected == 0 || mode.preserveChassis;
+    final chassisEnabled = c.chassis.enabled;
+    final preserveChassis = chassisEnabled && mode.preserveChassis;
     return _PageFrame(
       title: '动作映射',
       stepId: 'mappings',
@@ -169,16 +170,16 @@ class _EngineerMappingsPageState extends ConsumerState<_EngineerMappingsPage> {
           _Section(
             title: '模式 ${selected + 1}',
             children: [
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('保留左摇杆底盘控制'),
-                value: preserveChassis,
-                onChanged: selected == 0
-                    ? null
-                    : (v) => updateMode(mode.copyWith(preserveChassis: v)),
-              ),
-              if (selected == 0)
-                const _InfoBanner('模式 1 固定保留底盘控制；因此该模式动作不能使用 LX/LY。'),
+              if (chassisEnabled)
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('保留左摇杆底盘控制'),
+                  value: preserveChassis,
+                  onChanged: (v) =>
+                      updateMode(mode.copyWith(preserveChassis: v)),
+                )
+              else
+                const _InfoBanner('未启用底盘控制，本模式不保留底盘控制，LX/LY 可用于动作。'),
               for (var i = 0; i < mode.actions.length; i++)
                 Padding(
                   padding: const EdgeInsets.only(top: 12),
@@ -281,6 +282,10 @@ class _ActionRow extends ConsumerWidget {
             ControlMode.speed => '最大速度 duty',
             ControlMode.accelerate => '加速度 duty/周期',
             ControlMode.direct => role == PinRole.servo ? '目标角度 °' : '占空比 duty',
+            ControlMode.frictionToggle => '目标油门 %',
+            ControlMode.frictionStep => '每次油门 %',
+            ControlMode.frictionContinuous => '每秒油门 %',
+            ControlMode.frictionAxis => '满杆每秒 %',
             ControlMode.single || ControlMode.continuous || null => '参数',
           };
     String modeLabel(ControlMode mode) => switch (mode) {
@@ -290,14 +295,19 @@ class _ActionRow extends ConsumerWidget {
       ControlMode.accelerate => '增速',
       ControlMode.single => '单次',
       ControlMode.continuous => '持续',
+      ControlMode.frictionToggle => '启停',
+      ControlMode.frictionStep => '油门单次',
+      ControlMode.frictionContinuous => '油门持续',
+      ControlMode.frictionAxis => '摇杆油门',
     };
     final fields = <Widget>[
       Expanded(
         child: _FieldAnchor(
           path: '$fieldPath.key',
           child: DropdownButtonFormField(
+            key: ValueKey('$fieldPath.key'),
             initialValue: action.key,
-            decoration: _fieldDecoration(ref, '$fieldPath.key', '按键'),
+            decoration: _fieldDecoration(ref, '$fieldPath.key', '输入'),
             items: visibleInputs
                 .map((e) => DropdownMenuItem(value: e, child: Text(e)))
                 .toList(),
@@ -308,8 +318,24 @@ class _ActionRow extends ConsumerWidget {
       const SizedBox(width: 8),
       Expanded(
         child: _FieldAnchor(
+          path: '$fieldPath.pin',
+          child: DropdownButtonFormField(
+            key: ValueKey('$fieldPath.pin'),
+            initialValue: action.pin,
+            decoration: _fieldDecoration(ref, '$fieldPath.pin', '输出'),
+            items: visiblePins
+                .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                .toList(),
+            onChanged: (v) => onChanged(action.copyWith(pin: v)),
+          ),
+        ),
+      ),
+      const SizedBox(width: 8),
+      Expanded(
+        child: _FieldAnchor(
           path: '$fieldPath.direction',
           child: DropdownButtonFormField(
+            key: ValueKey('$fieldPath.direction'),
             initialValue: action.direction,
             decoration: _fieldDecoration(ref, '$fieldPath.direction', '方向'),
             items: Direction.values
@@ -363,20 +389,6 @@ class _ActionRow extends ConsumerWidget {
                 value: action.parameter?.toInt(),
                 onChanged: (v) => onChanged(action.copyWith(parameter: v)),
               ),
-      ),
-      const SizedBox(width: 8),
-      Expanded(
-        child: _FieldAnchor(
-          path: '$fieldPath.pin',
-          child: DropdownButtonFormField(
-            initialValue: action.pin,
-            decoration: _fieldDecoration(ref, '$fieldPath.pin', 'IO'),
-            items: visiblePins
-                .map((e) => DropdownMenuItem(value: e, child: Text(e)))
-                .toList(),
-            onChanged: (v) => onChanged(action.copyWith(pin: v)),
-          ),
-        ),
       ),
     ];
     return Card(

@@ -217,11 +217,13 @@ String _fieldLabel(String path) {
   if (exact[path] case final label?) return label;
   if (path.endsWith('.direction')) return '方向';
   if (path.endsWith('.drive')) return '驱动类型';
-  if (path.endsWith('.pin')) return 'IO';
+  if (path.endsWith('.pin')) return '输出';
   if (path.endsWith('.mid_offset')) return '归中偏移';
   if (path.endsWith('.mode')) return '控制方式';
   if (path.endsWith('.parameter')) return '参数';
-  if (path.endsWith('.key')) return '按键';
+  if (path.endsWith('.key')) return '输入';
+  if (path.endsWith('.variable')) return '变量名';
+  if (path.endsWith('.expression')) return '表达式';
   if (path.contains('servo_mids')) return '舵机中位';
   if (path.contains('pin_roles')) return '输出角色';
   return path;

@@ -1,5 +1,5 @@
 {
-  "format_version": 16,
+  "format_version": 17,
   "name": "模板工程",
   "project_kind": "infantry",
   "created_at": "2026-01-01T00:00:00.000Z",
@@ -16,6 +16,7 @@
       "deadzone": 100
     },
     "chassis": {
+      "enabled": true,
       "left_front": {
         "pin": "P74 P24",
         "direction": "forward"

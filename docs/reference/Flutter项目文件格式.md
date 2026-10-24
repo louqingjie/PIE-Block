@@ -1,10 +1,10 @@
 # Flutter 项目文件格式
 
-`.pieproj` 是 UTF-8 JSON 文件。格式 16 使用稳定语义字段，不包含 UI 控件路径或生成代码，并保存可恢复的向导进度。
+`.pieproj` 是 UTF-8 JSON 文件。格式 17 使用稳定语义字段，不包含 UI 控件路径或生成代码，并保存可恢复的向导进度。
 
 ```json
 {
-  "format_version": 16,
+  "format_version": 17,
   "name": "我的机器人",
   "project_kind": "infantry",
   "created_at": "2026-08-25T01:00:00.000Z",
@@ -15,7 +15,7 @@
   },
   "config": {
     "remote": {"channel": null, "deadzone": null},
-    "chassis": {"turn_reversed": false},
+    "chassis": {"enabled": true, "turn_reversed": false},
     "feeder_pin": null,
     "yaw": [{"drive": null, "pin": null}],
     "pitch": [{"drive": null, "pin": null}],
@@ -36,13 +36,13 @@
 
 新项目的必填数值、枚举、按键、IO、方向、驱动类型、工程 PWM 和模式策略均为 `null`，应用不会替用户提前选择。纯可选开关默认关闭。
 
-新建弹窗有一个默认关闭的「模板工程」开关。只有显式打开它时，配置才整份取自 `assets/templates/<kind>.pieproj`；项目文件本身不写入任何模板标记，创建出来就是普通项目，`name`、两个时间戳和 `guide_progress` 都按本次创建重新生成。模板文件同为 `format_version: 16`，格式版本变更时必须用 `dart run tool/generate_project_templates.dart` 重存四份模板，否则 `test/project_templates_test.dart` 会失败。步兵模板的拨弹电机落在固定 50Hz 的 PWMA（四轮已占满固定 10000Hz 的 PWMB），因此会带一条「电机可能一卡一卡」提示，这是既定取舍而非模板缺陷。
+新建弹窗有一个默认关闭的「模板工程」开关。只有显式打开它时，配置才整份取自 `assets/templates/<kind>.pieproj`；项目文件本身不写入任何模板标记，创建出来就是普通项目，`name`、两个时间戳和 `guide_progress` 都按本次创建重新生成。模板文件同为 `format_version: 17`，格式版本变更时必须用 `dart run tool/generate_project_templates.dart` 重存四份模板，否则 `test/project_templates_test.dart` 会失败。步兵模板的拨弹电机落在固定 50Hz 的 PWMA（四轮已占满固定 10000Hz 的 PWMB），因此会带一条「电机可能一卡一卡」提示，这是既定取舍而非模板缺陷。
 
-步兵和工程项目的 `chassis.turn_reversed` 是共用底盘校准项，默认 `false`；启用后仅反转水平摇杆及左右方向键产生的转向量，不改变直行、倒车、冲刺或单轮方向配置。
+步兵和工程项目的 `chassis.turn_reversed` 是共用底盘校准项，默认 `false`；启用后仅反转水平摇杆及左右方向键产生的转向量，不改变直行、倒车、冲刺或单轮方向配置。格式 17 起 `chassis.enabled` 表示是否启用预制四轮底盘，默认 `true`；仅工程项目允许设为 `false`，此时四轮 IO/方向/速度不再必填，原底盘引脚可被动作行使用；步兵项目必须保持启用。
 
-工程动作的 `mode` 支持 `direct`、`incremental`、`speed`、`accelerate`、`single` 和 `continuous`。数字按键控制舵机时可使用 `direct`（按键上升沿到达相对中位点的预设角度）、`single`（按键上升沿按灵敏度单次增加）或 `continuous`（按住期间按灵敏度逐主循环增加）。`direct` 的 `parameter` 为 0–90 的整数目标角度，方向决定中位点两侧；`single` 和 `continuous` 的 `parameter` 保存最多两位小数的角度灵敏度；其他动作参数仍为整数。
+工程动作的 `mode` 支持 `direct`、`incremental`、`speed`、`accelerate`、`single` 和 `continuous`。数字按键控制舵机时可使用 `direct`（按键上升沿到达相对中位点的预设角度）、`single`（按键上升沿按灵敏度单次增加）或 `continuous`（按住期间按灵敏度逐主循环增加）。`direct` 的 `parameter` 为 0–90 的整数目标角度，方向决定中位点两侧；`single` 和 `continuous` 的 `parameter` 保存最多两位小数的角度灵敏度；其他动作参数仍为整数。格式 17 起动作行还保存 `input_kind`（`remote`/`unspecified`）、`output_kind`（`pin`/`integer`/`rational`）、`variable` 与 `expression`：`input_kind == unspecified` 的行使用 `expression` 单条受限表达式，`output_kind` 非 `pin` 时输出到同名变量。摩擦轮专用控制方式 `frictionToggle`/`frictionStep`/`frictionContinuous`/`frictionAxis` 在后续阶段启用；P64/P66 摩擦轮旧方式保留 raw duty 兼容历史金样。
 
-步兵配置不保存 `pwm`：PWMA 固定为 50Hz，PWMB 固定为 10000Hz，其他引脚角色由实际选择自动推导。只有 `friction_mode` 为 `brushlessEsc` 时 P64/P66 才固定用于摩擦轮；选择 `disabled` 时两端口释放。工程配置继续保存 `pwm`，允许配置分组频率、引脚角色和舵机中位。
+步兵配置不保存 `pwm`：PWMA 固定为 50Hz，PWMB 固定为 10000Hz，其他引脚角色由实际选择自动推导。只有 `friction_mode` 为 `brushlessEsc` 时 P64/P66 才固定用于摩擦轮；选择 `disabled` 时两端口释放。工程配置继续保存 `pwm`，允许配置分组频率、引脚角色、舵机中位与 `friction_max_duties`（P64/P66 满油占空比，500–800 整百；摩擦轮专用控制方式使用）。
 
 调试配置保存 `tests` 数组。数组始终包含 P60、P62、P64、P66、P74、P75、P76、P77、MP03、MP74 十个固定引脚，数组顺序就是固件执行顺序。每项保存 `enabled`、`drive_type` 和 `value`；电机和舵机额外保存 `direction` 与 `duration_ms`，摩擦轮不保存方向与时长，测试期间也不发送方向帧。摩擦轮仅限 P64/P66：`value` 就是**目标占空比**本身（500–800，写成这张卡实测想跑的占空比），先给 `500` 启动占空比保持 1 秒完成电调激活，再逐周期平滑渐变到该目标，停留 1.5 秒后归零；低于 `600` 时只给一条提醒（可能带不动摩擦轮）。调试项目不再保存 `friction_*_max_duty`，也不再做「油门 → 满油上限」换算。
 
@@ -68,4 +68,4 @@ duty(引脚) = 500 + 油门% × (该引脚满油上限 − 500) ÷ 100
 
 项目可以在配置未完成时保存。生成代码是配置的派生结果，不写入项目文件；任何配置变化都会重新检查并重新生成。HEX、编译日志、编译器选择和 Keil 路径也不写入 `.pieproj`：构建产物放在用户本地缓存，编译器偏好属于应用设置。应用使用同目录临时文件写入后替换目标文件。
 
-格式 15 及其他版本均不兼容格式 16。应用会拒绝打开并提示在对应旧版 PIE-Block 中处理，不执行自动转换。
+格式 15、16 及其他版本均不兼容格式 17。应用会拒绝打开并提示在对应旧版 PIE-Block 中处理，不执行自动转换。

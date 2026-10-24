@@ -3606,4 +3606,101 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('工程底盘可关闭并释放四轮字段', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _StaticProjectController(_engineerDocument(), 0),
+          ),
+          deployControllerProvider.overrideWith(_FakeDeployController.new),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('chassis.left_front.pin')),
+      findsOneWidget,
+    );
+    final switchFinder = find.byKey(const ValueKey('chassis.enabled'));
+    expect(switchFinder, findsOneWidget);
+    await tester.ensureVisible(switchFinder);
+    await tester.tap(switchFinder);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('chassis.left_front.pin')), findsNothing);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(WizardScreen)),
+    );
+    final config =
+        container.read(appControllerProvider).document!.config
+            as EngineerConfig;
+    expect(config.chassis.enabled, isFalse);
+    expect(config.modes.first.preserveChassis, isFalse);
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
+  testWidgets('工程动作行输入在输出之前且使用新名称', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _StaticProjectController(_engineerDocument(), 3),
+          ),
+          deployControllerProvider.overrideWith(_FakeDeployController.new),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('输入'), findsWidgets);
+    expect(find.text('输出'), findsWidgets);
+    final keyOffset = tester.getTopLeft(
+      find.byKey(const ValueKey('modes.0.actions.0.key')),
+    );
+    final pinOffset = tester.getTopLeft(
+      find.byKey(const ValueKey('modes.0.actions.0.pin')),
+    );
+    expect(
+      keyOffset.dy < pinOffset.dy ||
+          (keyOffset.dy == pinOffset.dy && keyOffset.dx < pinOffset.dx),
+      isTrue,
+    );
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
+  testWidgets('工程模式 1 可取消保留底盘控制', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _StaticProjectController(_engineerDocument(), 3),
+          ),
+          deployControllerProvider.overrideWith(_FakeDeployController.new),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final preserve = find.widgetWithText(SwitchListTile, '保留左摇杆底盘控制');
+    expect(preserve, findsOneWidget);
+    expect(tester.widget<SwitchListTile>(preserve).onChanged, isNotNull);
+    await tester.ensureVisible(preserve);
+    await tester.tap(preserve);
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(WizardScreen)),
+    );
+    final config =
+        container.read(appControllerProvider).document!.config
+            as EngineerConfig;
+    expect(config.modes.first.preserveChassis, isFalse);
+    await tester.pump(const Duration(milliseconds: 600));
+  });
 }

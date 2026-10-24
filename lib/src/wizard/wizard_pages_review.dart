@@ -86,11 +86,15 @@ class _ReviewPage extends ConsumerWidget {
                 ListTile(
                   leading: const Icon(Icons.speed),
                   title: Text(
-                    '普通速度 ${config.chassis.normalSpeed ?? '未填写'} · 冲刺速度 ${config.chassis.sprintSpeed ?? '未填写'}',
+                    config.chassis.enabled
+                        ? '普通速度 ${config.chassis.normalSpeed ?? '未填写'} · 冲刺速度 ${config.chassis.sprintSpeed ?? '未填写'}'
+                        : '底盘控制：未启用（自定义输出）',
                   ),
-                  subtitle: Text(
-                    config.chassis.turnReversed ? '左右转向：反向' : '左右转向：标准',
-                  ),
+                  subtitle: config.chassis.enabled
+                      ? Text(
+                          config.chassis.turnReversed ? '左右转向：反向' : '左右转向：标准',
+                        )
+                      : null,
                 ),
               ],
               ListTile(

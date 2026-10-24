@@ -18,7 +18,27 @@ enum PwmFrequency { hz50, hz10000 }
 
 enum SwitchStrategy { cycle, direct }
 
-enum ControlMode { direct, incremental, speed, accelerate, single, continuous }
+enum ControlMode {
+  direct,
+  incremental,
+  speed,
+  accelerate,
+  single,
+  continuous,
+  frictionToggle,
+  frictionStep,
+  frictionContinuous,
+  frictionAxis,
+}
+
+/// 动作行的输入来源：遥控器输入，或「未指定」。
+///
+/// 「未指定」只用于表达式行与变量赋值行；与 `key == null` 的「尚未选择」是
+/// 两种不同状态，必须有独立字段区分。
+enum ActionInputKind { remote, unspecified }
+
+/// 动作行的输出目标：扩展板/主控板引脚，或整数/有理数变量。
+enum ActionOutputKind { pin, integer, rational }
 
 enum IssueSeverity { error, warning }
 
@@ -151,6 +171,7 @@ class WheelConfig {
 
 class ChassisConfig {
   const ChassisConfig({
+    this.enabled = true,
     this.leftFront = const WheelConfig(),
     this.leftRear = const WheelConfig(),
     this.rightFront = const WheelConfig(),
@@ -161,10 +182,17 @@ class ChassisConfig {
     this.turnReversed = false,
   });
   factory ChassisConfig.defaults() => const ChassisConfig();
+
+  /// 是否启用预制四轮底盘。
+  ///
+  /// 仅工程项目可关闭：关闭后四轮/速度不再必填，原底盘引脚释放给动作行；
+  /// 步兵项目必须保持启用。
+  final bool enabled;
   final WheelConfig leftFront, leftRear, rightFront, rightRear;
   final int? normalSpeed, sprintSpeed;
   final bool sprintEnabled, turnReversed;
   ChassisConfig copyWith({
+    bool? enabled,
     WheelConfig? leftFront,
     WheelConfig? leftRear,
     WheelConfig? rightFront,
@@ -174,6 +202,7 @@ class ChassisConfig {
     bool? sprintEnabled,
     bool? turnReversed,
   }) => ChassisConfig(
+    enabled: enabled ?? this.enabled,
     leftFront: leftFront ?? this.leftFront,
     leftRear: leftRear ?? this.leftRear,
     rightFront: rightFront ?? this.rightFront,
@@ -188,6 +217,7 @@ class ChassisConfig {
     turnReversed: turnReversed ?? this.turnReversed,
   );
   Map<String, Object?> toJson() => {
+    'enabled': enabled,
     'left_front': leftFront.toJson(),
     'left_rear': leftRear.toJson(),
     'right_front': rightFront.toJson(),
@@ -198,6 +228,7 @@ class ChassisConfig {
     'turn_reversed': turnReversed,
   };
   factory ChassisConfig.fromJson(Map<String, Object?> j) => ChassisConfig(
+    enabled: j['enabled'] as bool? ?? true,
     leftFront: WheelConfig.fromJson(
       Map<String, Object?>.from(j['left_front'] as Map? ?? {}),
     ),
@@ -224,24 +255,31 @@ class PwmGroupConfig {
     this.buzzerDisabled = false,
     Map<String, PinRole>? pinRoles,
     Map<String, int>? servoMids,
+    Map<String, int>? frictionMaxDuties,
   }) : pinRoles = Map.unmodifiable(pinRoles ?? const {}),
-       servoMids = Map.unmodifiable(servoMids ?? const {});
+       servoMids = Map.unmodifiable(servoMids ?? const {}),
+       frictionMaxDuties = Map.unmodifiable(frictionMaxDuties ?? const {});
   final PwmFrequency? pwma, pwmb;
   final bool buzzerDisabled;
   final Map<String, PinRole> pinRoles;
   final Map<String, int> servoMids;
+
+  /// P64/P66 满油占空比（500–800 整百）；仅摩擦轮专用控制方式使用。
+  final Map<String, int> frictionMaxDuties;
   PwmGroupConfig copyWith({
     Object? pwma = _unset,
     Object? pwmb = _unset,
     bool? buzzerDisabled,
     Map<String, PinRole>? pinRoles,
     Map<String, int>? servoMids,
+    Map<String, int>? frictionMaxDuties,
   }) => PwmGroupConfig(
     pwma: identical(pwma, _unset) ? this.pwma : pwma as PwmFrequency?,
     pwmb: identical(pwmb, _unset) ? this.pwmb : pwmb as PwmFrequency?,
     buzzerDisabled: buzzerDisabled ?? this.buzzerDisabled,
     pinRoles: pinRoles ?? this.pinRoles,
     servoMids: servoMids ?? this.servoMids,
+    frictionMaxDuties: frictionMaxDuties ?? this.frictionMaxDuties,
   );
   Map<String, Object?> toJson() => {
     'pwma': pwma?.name,
@@ -251,6 +289,10 @@ class PwmGroupConfig {
     'servo_mids': {
       for (final pin in [...expansionPins, ...mainServoPins])
         pin: servoMids[pin],
+    },
+    'friction_max_duties': {
+      for (final pin in EngineerPinCapabilities.frictionPins)
+        pin: frictionMaxDuties[pin],
     },
   };
   factory PwmGroupConfig.fromJson(Map<String, Object?> j) {
@@ -268,12 +310,20 @@ class PwmGroupConfig {
       final value = (e.value as num?)?.toInt();
       if (value != null) mids[e.key] = value;
     }
+    final frictionMaxDuties = <String, int>{};
+    for (final e in Map<String, Object?>.from(
+      j['friction_max_duties'] as Map? ?? {},
+    ).entries) {
+      final value = (e.value as num?)?.toInt();
+      if (value != null) frictionMaxDuties[e.key] = value;
+    }
     return PwmGroupConfig(
       pwma: nullableEnumValue(PwmFrequency.values, j['pwma']),
       pwmb: nullableEnumValue(PwmFrequency.values, j['pwmb']),
       buzzerDisabled: j['buzzer_disabled'] as bool? ?? false,
       pinRoles: roles,
       servoMids: mids,
+      frictionMaxDuties: frictionMaxDuties,
     );
   }
 }
@@ -1374,26 +1424,52 @@ abstract final class InfantryPinPlanner {
 class ActionMapping {
   ActionMapping({
     String? id,
+    this.inputKind = ActionInputKind.remote,
     this.key,
+    this.outputKind = ActionOutputKind.pin,
+    this.pin,
+    this.variableName,
+    this.expression,
     this.direction,
     this.mode,
     this.parameter,
-    this.pin,
   }) : id = id ?? DateTime.now().microsecondsSinceEpoch.toString();
   final String id;
-  final String? key, pin;
+  final String? key;
+  final ActionInputKind inputKind;
+  final ActionOutputKind outputKind;
+  final String? pin;
+  final String? variableName;
+  final String? expression;
   final Direction? direction;
   final ControlMode? mode;
   final num? parameter;
   ActionMapping copyWith({
+    Object? inputKind = _unset,
     Object? key = _unset,
+    Object? outputKind = _unset,
+    Object? pin = _unset,
+    Object? variableName = _unset,
+    Object? expression = _unset,
     Object? direction = _unset,
     Object? mode = _unset,
     Object? parameter = _unset,
-    Object? pin = _unset,
   }) => ActionMapping(
     id: id,
+    inputKind: identical(inputKind, _unset)
+        ? this.inputKind
+        : inputKind as ActionInputKind,
     key: identical(key, _unset) ? this.key : key as String?,
+    outputKind: identical(outputKind, _unset)
+        ? this.outputKind
+        : outputKind as ActionOutputKind,
+    pin: identical(pin, _unset) ? this.pin : pin as String?,
+    variableName: identical(variableName, _unset)
+        ? this.variableName
+        : variableName as String?,
+    expression: identical(expression, _unset)
+        ? this.expression
+        : expression as String?,
     direction: identical(direction, _unset)
         ? this.direction
         : direction as Direction?,
@@ -1401,23 +1477,38 @@ class ActionMapping {
     parameter: identical(parameter, _unset)
         ? this.parameter
         : parameter as num?,
-    pin: identical(pin, _unset) ? this.pin : pin as String?,
   );
   Map<String, Object?> toJson() => {
     'id': id,
+    'input_kind': inputKind.name,
     'key': key,
+    'output_kind': outputKind.name,
+    'pin': pin,
+    'variable': variableName,
+    'expression': expression,
     'direction': direction?.name,
     'mode': mode?.name,
     'parameter': parameter,
-    'pin': pin,
   };
   factory ActionMapping.fromJson(Map<String, Object?> j) => ActionMapping(
     id: j['id']?.toString(),
+    inputKind: enumValue(
+      ActionInputKind.values,
+      j['input_kind'],
+      ActionInputKind.remote,
+    ),
     key: j['key']?.toString(),
+    outputKind: enumValue(
+      ActionOutputKind.values,
+      j['output_kind'],
+      ActionOutputKind.pin,
+    ),
+    pin: j['pin']?.toString(),
+    variableName: j['variable']?.toString(),
+    expression: j['expression']?.toString(),
     direction: nullableEnumValue(Direction.values, j['direction']),
     mode: nullableEnumValue(ControlMode.values, j['mode']),
     parameter: j['parameter'] as num?,
-    pin: j['pin']?.toString(),
   );
 }
 
@@ -1607,7 +1698,7 @@ class ProjectDocument {
     required this.config,
     required this.guideProgress,
   });
-  static const formatVersion = 16;
+  static const formatVersion = 17;
   final String name;
   final ProjectKind kind;
   final DateTime createdAt, updatedAt;

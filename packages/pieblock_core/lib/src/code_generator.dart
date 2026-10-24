@@ -1,4 +1,4 @@
-﻿import 'dart:math' as math;
+import 'dart:math' as math;
 
 import 'debug_cues.dart';
 import 'models.dart';
@@ -88,15 +88,19 @@ static void StepDone(uint8_t step) { Beep(500 + (uint16_t)(step % 8) * 60, 60); 
 ''' : 'static void StepDone(uint8_t step) { (void)step; }'}
 ''';
 
-  static String _header(RobotConfig c, String title, bool buzzerDisabled) =>
-      '''// $title（由 PIE-Block Flutter 配置器自动生成）
+  static String _header(RobotConfig c, String title, bool buzzerDisabled) {
+    final chassisEnabled = !(c is EngineerConfig && !c.chassis.enabled);
+    final chassisConstants = chassisEnabled
+        ? '''uint16_t maxSpeed = ${c.chassis.normalSpeed!};
+uint16_t ultraSpeed = ${c.chassis.sprintSpeed ?? c.chassis.normalSpeed!};
+'''
+        : '';
+    return '''// $title（由 PIE-Block Flutter 配置器自动生成）
 #include "main.h"
 #include <stdlib.h>
 
 uint8_t Channal = ${c.remote.channel!};
-uint16_t maxSpeed = ${c.chassis.normalSpeed!};
-uint16_t ultraSpeed = ${c.chassis.sprintSpeed ?? c.chassis.normalSpeed!};
-uint16_t deadBandOfLeft = ${c.remote.deadzone!};
+${chassisConstants}uint16_t deadBandOfLeft = ${c.remote.deadzone!};
 uint16_t deadBandOfRight = ${c.remote.deadzone!};
 
 #define COMM_HEADER_1 0xAB
@@ -162,6 +166,7 @@ void ReadControllerInputs(void)
     if (abs(valueOfRoker[1][1]) <= deadBandOfRight) valueOfRoker[1][1] = 0;
 }
 ''';
+  }
 
   static String _chassis(ChassisConfig c) {
     final sprint = c.sprintEnabled
@@ -602,7 +607,9 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
     };
     for (var i = 0; i < c.modeCount!; i++) {
       final mode = c.modes[i], body = <String>[];
-      if (mode.preserveChassis) body.add('    CalculateChassis();');
+      if (mode.preserveChassis && c.chassis.enabled) {
+        body.add('    CalculateChassis();');
+      }
       for (
         var actionIndex = 0;
         actionIndex < mode.actions.length;
@@ -753,12 +760,14 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
       cases.add('        case ${i + 1}: RunMode${i + 1}(); break;');
     }
     final feedbackEnabled = c.modeCount! > 1 && !c.pwm.buzzerDisabled;
-    final chassisSlots = {
-      _slot(c.chassis.leftFront.pin),
-      _slot(c.chassis.leftRear.pin),
-      _slot(c.chassis.rightFront.pin),
-      _slot(c.chassis.rightRear.pin),
-    };
+    final chassisSlots = c.chassis.enabled
+        ? {
+            _slot(c.chassis.leftFront.pin),
+            _slot(c.chassis.leftRear.pin),
+            _slot(c.chassis.rightFront.pin),
+            _slot(c.chassis.rightRear.pin),
+          }
+        : <int>{};
     final prepareCases = <String>[];
     for (var i = 0; i < c.modeCount!; i++) {
       final mapped = c.modes[i].actions
@@ -878,7 +887,7 @@ $prepareMode
 $servoButtonSync
 $engineerFeedback
 
-${_chassis(c.chassis)}
+${c.chassis.enabled ? _chassis(c.chassis) : ''}
 ${modeFunctions.join('\n\n')}
 
 void All_Init(void)

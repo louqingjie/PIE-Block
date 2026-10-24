@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:pieblock_core/pieblock_core.dart';
@@ -210,7 +210,7 @@ EngineerConfig servoButtonEngineer({
 
 void main() {
   group('项目格式与进度', () {
-    test('格式 16 往返并保存向导进度', () {
+    test('格式 17 往返并保存向导进度', () {
       final source = ProjectDocument.create('步兵测试', ProjectKind.infantry)
           .copyWith(
             guideProgress: const GuideProgress(
@@ -223,7 +223,7 @@ void main() {
           jsonDecode(jsonEncode(source.toJson())) as Map,
         ),
       );
-      expect(source.toJson()['format_version'], 16);
+      expect(source.toJson()['format_version'], 17);
       expect(restored.guideProgress.currentStepId, 'controls');
       expect(restored.guideProgress.visitedStepIds, hasLength(3));
       expect((source.toJson()['config']! as Map), isNot(contains('pwm')));
@@ -902,10 +902,7 @@ void main() {
       expect(code, contains('#define CUE_ZONE_SPAN 5'));
       expect(code, contains('#define CUE_UNIT_MS 220'));
       expect(code, contains('#define CUE_GAP_MS 140'));
-      expect(
-        code,
-        contains('zone = (uint8_t)((step - 1) / CUE_ZONE_SPAN);'),
-      );
+      expect(code, contains('zone = (uint8_t)((step - 1) / CUE_ZONE_SPAN);'));
       expect(
         code,
         contains('count = (uint8_t)((step - 1) % CUE_ZONE_SPAN + 1);'),
@@ -980,8 +977,11 @@ void main() {
       // 音型本身单调递增（它只是被 step() 按个数取前缀，不再单独播一遍，
       // 但它仍是整个方案的音高来源，所以这里的顺序性质要守住）。
       for (var i = 1; i < DebugCues.ascentLow.length; i++) {
-        expect(DebugCues.ascentLow[i] > DebugCues.ascentLow[i - 1], isTrue,
-            reason: '上行音型第 $i 个音应高于前一个');
+        expect(
+          DebugCues.ascentLow[i] > DebugCues.ascentLow[i - 1],
+          isTrue,
+          reason: '上行音型第 $i 个音应高于前一个',
+        );
       }
 
       // 上行音型的第一个音仍是整条方案的音高基准。
@@ -1005,8 +1005,11 @@ void main() {
 
         // 单调上行。
         for (var i = 1; i < voiced.length; i++) {
-          expect(voiced[i].frequencyHz! > voiced[i - 1].frequencyHz!, isTrue,
-              reason: '第 $index 项应单调上行');
+          expect(
+            voiced[i].frequencyHz! > voiced[i - 1].frequencyHz!,
+            isTrue,
+            reason: '第 $index 项应单调上行',
+          );
         }
         // 时值只有两种：单元音与音间间隔。
         expect(voiced.every((n) => n.durationMs == DebugCues.unitMs), isTrue);
@@ -1096,7 +1099,9 @@ void main() {
           contains(contains('P64 摩擦轮目标占空比必须在 500–800 之间')),
         );
         expect(
-          issues(duty).firstWhere((i) => i.fieldPath == 'tests.0.value').severity,
+          issues(duty)
+              .firstWhere((i) => i.fieldPath == 'tests.0.value')
+              .severity,
           IssueSeverity.error,
         );
       }
@@ -2106,9 +2111,8 @@ void main() {
       // 反向电机 + 反向键：扳机脉冲写 -6000，必须带方向帧才是真的反向
       expect(
         CodeGenerator.generate(
-          completeInfantry(reverseFeedKey: 'D').copyWith(
-            feederDirection: Direction.reverse,
-          ),
+          completeInfantry(reverseFeedKey: 'D')
+              .copyWith(feederDirection: Direction.reverse),
         ),
         matches(pulseSendsDirection),
       );
@@ -2269,6 +2273,139 @@ void main() {
       expect(directCode, contains('modeKeyLast[0]'));
       expect(directCode, isNot(contains('ModeSwitchFeedback')));
       expect(directCode, isNot(contains('Beep(')));
+    });
+  });
+
+  group('格式 17 与底盘可选', () {
+    EngineerConfig chassislessEngineer() => EngineerConfig(
+      remote: const RemoteConfig(channel: 36, deadzone: 100),
+      chassis: const ChassisConfig(enabled: false),
+      pwm: PwmGroupConfig(
+        pwma: PwmFrequency.hz10000,
+        pwmb: PwmFrequency.hz10000,
+        pinRoles: {
+          'P60': PinRole.motor,
+          'P62': PinRole.motor,
+          'P64': PinRole.unused,
+          'P66': PinRole.unused,
+          for (final pin in const ['P74', 'P75', 'P76', 'P77'])
+            pin: PinRole.motor,
+        },
+        servoMids: const {'MP03': 0, 'MP74': 0},
+      ),
+      modeCount: 1,
+      modes: [
+        EngineerModeConfig(
+          preserveChassis: false,
+          actions: [
+            ActionMapping(
+              key: 'LX',
+              direction: Direction.forward,
+              mode: ControlMode.speed,
+              parameter: 5000,
+              pin: 'P60',
+            ),
+          ],
+        ),
+      ],
+    );
+
+    test('底盘可关闭：四轮/速度不必填且释放引脚可被动作使用', () {
+      final config = chassislessEngineer();
+      final errors = ProjectValidator.validate(config)
+          .where((issue) => issue.severity == IssueSeverity.error);
+      expect(errors, isEmpty);
+
+      final code = CodeGenerator.generate(config);
+      expect(code, isNot(contains('CalculateChassis')));
+      expect(code, isNot(contains('uint16_t maxSpeed')));
+      expect(code, contains('dutyOfMotor[0]'));
+    });
+
+    test('未启用底盘时保留底盘控制报错', () {
+      final source = chassislessEngineer();
+      final config = source.copyWith(
+        modes: [source.modes.first.copyWith(preserveChassis: true)],
+      );
+      final errors = ProjectValidator.validate(config)
+          .where((issue) => issue.severity == IssueSeverity.error)
+          .toList();
+      expect(
+        errors.map((issue) => issue.message),
+        contains('未启用底盘控制时不能保留底盘控制'),
+      );
+    });
+
+    test('模式 1 不再强制保留底盘控制', () {
+      final source = completeEngineer();
+      final config = source.copyWith(
+        modes: [EngineerModeConfig(preserveChassis: false)],
+      );
+      final errors = ProjectValidator.validate(config)
+          .where((issue) => issue.severity == IssueSeverity.error);
+      expect(errors, isEmpty);
+      expect(
+        CodeGenerator.generate(config),
+        isNot(contains('CalculateChassis()')),
+      );
+    });
+
+    test('步兵项目不能关闭底盘', () {
+      final config = completeInfantry().copyWith(
+        chassis: completeChassis().copyWith(enabled: false),
+      );
+      final errors = ProjectValidator.validate(config)
+          .where((issue) => issue.severity == IssueSeverity.error)
+          .toList();
+      expect(errors.map((issue) => issue.message), contains('步兵项目必须启用底盘控制'));
+    });
+
+    test('格式 17 新字段往返', () {
+      final source = ProjectDocument.create('格式 17', ProjectKind.engineer)
+          .copyWith(
+            config: chassislessEngineer().copyWith(
+              pwm: PwmGroupConfig(
+                pwma: PwmFrequency.hz10000,
+                pwmb: PwmFrequency.hz10000,
+                pinRoles: {
+                  'P60': PinRole.motor,
+                  'P62': PinRole.motor,
+                  'P64': PinRole.unused,
+                  'P66': PinRole.unused,
+                  for (final pin in const ['P74', 'P75', 'P76', 'P77'])
+                    pin: PinRole.motor,
+                },
+                servoMids: const {'MP03': 0, 'MP74': 0},
+                frictionMaxDuties: const {'P64': 700, 'P66': 800},
+              ),
+              modes: [
+                EngineerModeConfig(
+                  actions: [
+                    ActionMapping(
+                      inputKind: ActionInputKind.unspecified,
+                      outputKind: ActionOutputKind.integer,
+                      variableName: 'count',
+                      expression: 'LX + 1',
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          );
+      final restored = ProjectDocument.fromJson(
+        Map<String, Object?>.from(
+          jsonDecode(jsonEncode(source.toJson())) as Map,
+        ),
+      );
+      final config = restored.config as EngineerConfig;
+      expect(config.chassis.enabled, isFalse);
+      expect(config.pwm.frictionMaxDuties, const {'P64': 700, 'P66': 800});
+      final action = config.modes.first.actions.single;
+      expect(action.inputKind, ActionInputKind.unspecified);
+      expect(action.outputKind, ActionOutputKind.integer);
+      expect(action.variableName, 'count');
+      expect(action.expression, 'LX + 1');
+      expect(source.toJson()['format_version'], 17);
     });
   });
 }
