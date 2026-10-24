@@ -47,6 +47,7 @@
 
 - [STC32G 无线固件升级技术报告](design/STC32G无线固件升级技术报告.md)
 - [Android SDCC 多进程移植](design/android-sdcc-port.md)
+- [工程项目高级配置决策](design/工程项目高级配置决策.md)
 
 ## releases（发布说明）
 
