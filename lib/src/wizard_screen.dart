@@ -16,6 +16,7 @@ import 'package:re_highlight/styles/atom-one-light.dart';
 import 'as251_highlight_mode.dart';
 import 'asm_hover.dart';
 import 'asm_preview_controller.dart';
+import 'expression_check_controller.dart';
 import 'controller.dart';
 import 'debug_cue_preview.dart';
 import 'deploy_controller.dart';
@@ -251,14 +252,10 @@ class WizardScreen extends ConsumerWidget {
                             );
                           }
                           return FadeTransition(
-                            opacity: animation.drive(
-                              CurveTween(curve: fadeIn),
-                            ),
+                            opacity: animation.drive(CurveTween(curve: fadeIn)),
                             child: ScaleTransition(
                               scale: Tween<double>(begin: .98, end: 1).animate(
-                                animation.drive(
-                                  CurveTween(curve: scaleIn),
-                                ),
+                                animation.drive(CurveTween(curve: scaleIn)),
                               ),
                               child: child,
                             ),

@@ -72,6 +72,15 @@ class _ReviewPage extends ConsumerWidget {
                   ),
             ],
           ),
+          if (config is EngineerConfig && _hasExpressionRows(config)) ...[
+            const SizedBox(height: 18),
+            _Section(
+              title: '表达式编译检查',
+              subtitle:
+                  '桌面端会用内置 SDCC 对生成代码做一次完整编译，并把错误回填到对应表达式行；Web/Android 仅做语法检查。',
+              children: [_ExpressionCheckCard(config: config)],
+            ),
+          ],
           const SizedBox(height: 18),
           _Section(
             title: '配置概览',
@@ -226,4 +235,204 @@ class _CountBadge extends StatelessWidget {
       ],
     ),
   );
+}
+
+bool _hasExpressionRows(EngineerConfig config) => config.modes
+    .take(config.modeCount ?? 0)
+    .any(
+      (mode) => mode.actions.any(
+        (action) =>
+            action.inputKind == ActionInputKind.unspecified ||
+            action.outputKind != ActionOutputKind.pin,
+      ),
+    );
+
+class _ExpressionCheckCard extends ConsumerWidget {
+  const _ExpressionCheckCard({required this.config});
+  final EngineerConfig config;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(expressionCheckControllerProvider);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          spacing: 12,
+          runSpacing: 8,
+          children: [
+            FilledButton.icon(
+              onPressed: state.busy
+                  ? null
+                  : () => ref
+                        .read(expressionCheckControllerProvider.notifier)
+                        .check(config),
+              icon: state.busy
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.playlist_add_check),
+              label: Text(state.busy ? '正在编译检查…' : '检查表达式'),
+            ),
+            OutlinedButton.icon(
+              onPressed: () => showDialog<void>(
+                context: context,
+                builder: (_) => _ExpressionPreviewDialog(config: config),
+              ),
+              icon: const Icon(Icons.calculate_outlined),
+              label: const Text('试算表达式'),
+            ),
+          ],
+        ),
+        if (state.progress != null) ...[
+          const SizedBox(height: 10),
+          Text(state.progress!, style: Theme.of(context).textTheme.bodySmall),
+        ],
+        if (state.message != null) ...[
+          const SizedBox(height: 10),
+          Text(
+            state.message!,
+            style: TextStyle(
+              color: state.activity == ExpressionCheckActivity.failed
+                  ? Theme.of(context).colorScheme.error
+                  : null,
+            ),
+          ),
+        ],
+        for (final issue in state.issues)
+          ListTile(
+            dense: true,
+            leading: Icon(
+              Icons.error_outline,
+              color: Theme.of(context).colorScheme.error,
+            ),
+            title: Text(issue.message),
+            subtitle: Text(issue.fieldPath),
+          ),
+      ],
+    );
+  }
+}
+
+class _ExpressionPreviewDialog extends StatefulWidget {
+  const _ExpressionPreviewDialog({required this.config});
+  final EngineerConfig config;
+
+  @override
+  State<_ExpressionPreviewDialog> createState() =>
+      _ExpressionPreviewDialogState();
+}
+
+class _ExpressionPreviewDialogState extends State<_ExpressionPreviewDialog> {
+  final Map<String, num> _inputs = {
+    for (final name in expressionAxisInputs) name: 0,
+    for (final name in expressionButtonInputs) name: 0,
+  };
+  int _modeIndex = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final result = EngineerPreview.evaluateMode(
+      widget.config,
+      _modeIndex,
+      _inputs,
+    );
+    return AlertDialog(
+      title: const Text('表达式试算'),
+      content: SizedBox(
+        width: 620,
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              DropdownButtonFormField<int>(
+                initialValue: _modeIndex,
+                decoration: const InputDecoration(labelText: '模式'),
+                items: [
+                  for (
+                    var index = 0;
+                    index < (widget.config.modeCount ?? 1);
+                    index++
+                  )
+                    DropdownMenuItem(
+                      value: index,
+                      child: Text('模式 ${index + 1}'),
+                    ),
+                ],
+                onChanged: (value) => setState(() {
+                  if (value != null) _modeIndex = value;
+                }),
+              ),
+              const SizedBox(height: 12),
+              for (final name in expressionAxisInputs)
+                Row(
+                  children: [
+                    SizedBox(width: 42, child: Text(name)),
+                    Expanded(
+                      child: Slider(
+                        min: -2047,
+                        max: 2047,
+                        divisions: 4094,
+                        value: (_inputs[name] ?? 0).toDouble(),
+                        label: '${_inputs[name] ?? 0}',
+                        onChanged: (value) =>
+                            setState(() => _inputs[name] = value.round()),
+                      ),
+                    ),
+                    SizedBox(
+                      width: 56,
+                      child: Text(
+                        '${_inputs[name] ?? 0}',
+                        textAlign: TextAlign.right,
+                      ),
+                    ),
+                  ],
+                ),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final name in expressionButtonInputs)
+                    FilterChip(
+                      label: Text(name),
+                      selected: (_inputs[name] ?? 0) != 0,
+                      onSelected: (selected) =>
+                          setState(() => _inputs[name] = selected ? 1 : 0),
+                    ),
+                ],
+              ),
+              const Divider(height: 28),
+              Text('结果', style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 6),
+              for (final row in result.rows)
+                ListTile(
+                  dense: true,
+                  title: Text(
+                    row.error == null ? row.label : '${row.label}：${row.error}',
+                  ),
+                  subtitle: Text(row.fieldPath),
+                  trailing: Text(row.value?.toString() ?? '—'),
+                ),
+              if (result.variables.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  '变量：${result.variables.entries.map((entry) => '${entry.key}=${entry.value}').join('，')}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('关闭'),
+        ),
+      ],
+    );
+  }
 }

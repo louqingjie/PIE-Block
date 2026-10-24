@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 
+import 'models.dart';
+
 /// 表达式的值类型。整数按 C 的 `int32_t` 语义，有理数按 `float` 语义。
 enum ExpressionType { integer, rational }
 
@@ -976,4 +978,149 @@ abstract final class ExpressionRuntime {
 ''',
     _ => '',
   };
+}
+
+/// 单个模式表达式试算的结果行。
+class EngineerPreviewRow {
+  const EngineerPreviewRow({
+    required this.label,
+    required this.fieldPath,
+    this.value,
+    this.error,
+  });
+  final String label;
+  final String fieldPath;
+  final num? value;
+  final String? error;
+}
+
+class EngineerPreviewResult {
+  const EngineerPreviewResult({required this.variables, required this.rows});
+  final Map<String, num> variables;
+  final List<EngineerPreviewRow> rows;
+}
+
+/// 按模式顺序试算变量/表达式行，供 UI 预览与单元测试使用。
+///
+/// 只做当前模式内的赋值与表达式求值；远程输入行按 [inputs] 的别名取值，
+/// 未提供的输入按 0 处理。摩擦轮/普通动作行不在这里计算。
+abstract final class EngineerPreview {
+  static EngineerPreviewResult evaluateMode(
+    EngineerConfig config,
+    int modeIndex,
+    Map<String, num> inputs,
+  ) {
+    final rows = <EngineerPreviewRow>[];
+    final variables = <String, num>{};
+    if (modeIndex < 0 || modeIndex >= config.modes.length) {
+      return EngineerPreviewResult(variables: variables, rows: rows);
+    }
+    final counts = <String, Set<int>>{};
+    for (var mi = 0; mi < config.modes.length; mi++) {
+      for (final action in config.modes[mi].actions) {
+        if (action.outputKind == ActionOutputKind.pin) continue;
+        final name = action.variableName ?? '';
+        if (name.isEmpty) continue;
+        counts.putIfAbsent(name, () => <int>{}).add(mi);
+      }
+    }
+    for (final action in config.modes[modeIndex].actions) {
+      if (action.outputKind == ActionOutputKind.pin) continue;
+      final name = action.variableName ?? '';
+      if (name.isNotEmpty && (counts[name]?.length ?? 0) >= 2) {
+        variables[name] = 0;
+      }
+    }
+    final mode = config.modes[modeIndex];
+    for (var index = 0; index < mode.actions.length; index++) {
+      final action = mode.actions[index];
+      final fieldPath = 'modes.$modeIndex.actions.$index';
+      final label = '第 ${index + 1} 行';
+      if (action.inputKind == ActionInputKind.unspecified) {
+        final parsed = ExpressionParser.parse(
+          action.expression ?? '',
+          variables: {
+            for (final entry in _variableTypes(config, modeIndex).entries)
+              if (variables.containsKey(entry.key)) entry.key: entry.value,
+          },
+        );
+        if (!parsed.ok) {
+          rows.add(
+            EngineerPreviewRow(
+              label: label,
+              fieldPath: '$fieldPath.expression',
+              error: parsed.diagnostics.first.message,
+            ),
+          );
+          continue;
+        }
+        final value = ExpressionEvaluator.evaluate(
+          parsed.root!,
+          inputs: inputs,
+          variables: variables,
+        );
+        if (action.outputKind != ActionOutputKind.pin) {
+          final name = action.variableName ?? '';
+          variables[name] = value;
+        }
+        rows.add(
+          EngineerPreviewRow(
+            label: label,
+            fieldPath: action.outputKind == ActionOutputKind.pin
+                ? '$fieldPath.expression'
+                : '$fieldPath.variable',
+            value: value,
+          ),
+        );
+      } else if (action.outputKind != ActionOutputKind.pin) {
+        final alias = _aliasOfRemoteKey(action.key);
+        final value = inputs[alias] ?? 0;
+        final name = action.variableName ?? '';
+        variables[name] = value;
+        rows.add(
+          EngineerPreviewRow(
+            label: label,
+            fieldPath: '$fieldPath.variable',
+            value: value,
+          ),
+        );
+      }
+    }
+    return EngineerPreviewResult(variables: variables, rows: rows);
+  }
+
+  static Map<String, ExpressionType> _variableTypes(
+    EngineerConfig config,
+    int modeIndex,
+  ) {
+    final counts = <String, Set<int>>{};
+    for (var mi = 0; mi < config.modes.length; mi++) {
+      for (final action in config.modes[mi].actions) {
+        if (action.outputKind == ActionOutputKind.pin) continue;
+        final name = action.variableName ?? '';
+        if (name.isEmpty) continue;
+        counts.putIfAbsent(name, () => <int>{}).add(mi);
+      }
+    }
+    final result = <String, ExpressionType>{};
+    for (final mode in config.modes) {
+      for (final action in mode.actions) {
+        if (action.outputKind == ActionOutputKind.pin) continue;
+        final name = action.variableName ?? '';
+        if (name.isEmpty) continue;
+        result[name] = action.outputKind == ActionOutputKind.integer
+            ? ExpressionType.integer
+            : ExpressionType.rational;
+      }
+    }
+    return result;
+  }
+
+  static String? _aliasOfRemoteKey(String? key) {
+    if (key == null) return null;
+    for (final entry in expressionInputAliases.entries) {
+      if (entry.value == key) return entry.key;
+    }
+    return null;
+  }
 }

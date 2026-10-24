@@ -2820,4 +2820,154 @@ void main() {
       );
     });
   });
+  group('表达式行号映射', () {
+    test('generateProgram 把表达式行号映射到字段路径', () {
+      final config = EngineerConfig(
+        remote: const RemoteConfig(channel: 36, deadzone: 100),
+        chassis: const ChassisConfig(
+          leftFront: WheelConfig('P74 P24', Direction.forward),
+          leftRear: WheelConfig('P75 P25', Direction.forward),
+          rightFront: WheelConfig('P76 P26', Direction.reverse),
+          rightRear: WheelConfig('P77 P27', Direction.reverse),
+          normalSpeed: 4000,
+        ),
+        pwm: PwmGroupConfig(
+          pwma: PwmFrequency.hz10000,
+          pwmb: PwmFrequency.hz10000,
+          pinRoles: const {
+            'P60': PinRole.motor,
+            'P62': PinRole.unused,
+            'P64': PinRole.unused,
+            'P66': PinRole.unused,
+            'P74': PinRole.motor,
+            'P75': PinRole.motor,
+            'P76': PinRole.motor,
+            'P77': PinRole.motor,
+          },
+          servoMids: const {'MP03': 0, 'MP74': 0},
+        ),
+        modeCount: 1,
+        modes: [
+          EngineerModeConfig(
+            actions: [
+              ActionMapping(
+                inputKind: ActionInputKind.unspecified,
+                outputKind: ActionOutputKind.pin,
+                pin: 'P60',
+                expression: 'LX + 1',
+              ),
+            ],
+          ),
+        ],
+      );
+      final program = CodeGenerator.generateProgram(config);
+      expect(
+        program.expressionLineFields.values,
+        contains('modes.0.actions.0.expression'),
+      );
+      for (final entry in program.expressionLineFields.entries) {
+        expect(
+          program.source.split('\n')[entry.key - 1],
+          contains('@expr:${entry.value}'),
+        );
+      }
+      expect(
+        CodeGenerator.generateProgram(completeEngineer()).expressionLineFields,
+        isEmpty,
+      );
+    });
+  });
+  group('表达式试算', () {
+    test('按模式顺序计算变量与表达式输出', () {
+      final config = EngineerConfig(
+        remote: const RemoteConfig(channel: 36, deadzone: 100),
+        chassis: const ChassisConfig(
+          leftFront: WheelConfig('P74 P24', Direction.forward),
+          leftRear: WheelConfig('P75 P25', Direction.forward),
+          rightFront: WheelConfig('P76 P26', Direction.reverse),
+          rightRear: WheelConfig('P77 P27', Direction.reverse),
+          normalSpeed: 4000,
+        ),
+        pwm: PwmGroupConfig(
+          pwma: PwmFrequency.hz10000,
+          pwmb: PwmFrequency.hz10000,
+          pinRoles: const {
+            'P60': PinRole.motor,
+            'P62': PinRole.unused,
+            'P64': PinRole.unused,
+            'P66': PinRole.unused,
+            'P74': PinRole.motor,
+            'P75': PinRole.motor,
+            'P76': PinRole.motor,
+            'P77': PinRole.motor,
+          },
+          servoMids: const {'MP03': 0, 'MP74': 0},
+        ),
+        modeCount: 1,
+        modes: [
+          EngineerModeConfig(
+            actions: [
+              ActionMapping(
+                inputKind: ActionInputKind.unspecified,
+                outputKind: ActionOutputKind.integer,
+                variableName: 'v',
+                expression: 'LX + LY',
+              ),
+              ActionMapping(
+                inputKind: ActionInputKind.unspecified,
+                outputKind: ActionOutputKind.pin,
+                pin: 'P60',
+                expression: 'v * 2',
+              ),
+            ],
+          ),
+        ],
+      );
+      final result = EngineerPreview.evaluateMode(config, 0, {
+        'LX': 100,
+        'LY': 50,
+      });
+      expect(result.rows, hasLength(2));
+      expect(result.rows[0].value, 150);
+      expect(result.rows[1].value, 300);
+      expect(result.variables['v'], 150);
+    });
+
+    test('未声明的变量在试算中报错', () {
+      final config = EngineerConfig(
+        remote: const RemoteConfig(channel: 36, deadzone: 100),
+        chassis: completeChassis(),
+        pwm: PwmGroupConfig(
+          pwma: PwmFrequency.hz10000,
+          pwmb: PwmFrequency.hz10000,
+          pinRoles: const {
+            'P60': PinRole.motor,
+            'P62': PinRole.unused,
+            'P64': PinRole.unused,
+            'P66': PinRole.unused,
+            'P74': PinRole.motor,
+            'P75': PinRole.motor,
+            'P76': PinRole.motor,
+            'P77': PinRole.motor,
+          },
+          servoMids: const {'MP03': 0, 'MP74': 0},
+        ),
+        modeCount: 1,
+        modes: [
+          EngineerModeConfig(
+            actions: [
+              ActionMapping(
+                inputKind: ActionInputKind.unspecified,
+                outputKind: ActionOutputKind.pin,
+                pin: 'P60',
+                expression: 'missing + 1',
+              ),
+            ],
+          ),
+        ],
+      );
+      final result = EngineerPreview.evaluateMode(config, 0, const {});
+      expect(result.rows.single.error, contains('未定义变量'));
+    });
+  });
 }

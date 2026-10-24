@@ -3933,4 +3933,33 @@ void main() {
     expect(find.textContaining('未定义变量'), findsWidgets);
     await tester.pump(const Duration(milliseconds: 600));
   });
+  testWidgets('检查页提供表达式编译检查与试算对话框', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _StaticProjectController(
+              _engineerExpressionDocument(expression: 'LX + 1'),
+              4,
+            ),
+          ),
+          deployControllerProvider.overrideWith(_FakeDeployController.new),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('表达式编译检查'), findsOneWidget);
+    expect(find.text('检查表达式'), findsOneWidget);
+    final preview = find.text('试算表达式');
+    await tester.ensureVisible(preview);
+    await tester.tap(preview);
+    await tester.pumpAndSettle();
+    expect(find.text('表达式试算'), findsOneWidget);
+    expect(find.byType(Slider), findsNWidgets(4));
+    await tester.tap(find.text('关闭'));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 600));
+  });
 }

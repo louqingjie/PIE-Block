@@ -8,7 +8,22 @@ import 'staff_firmware_c.dart';
 import 'staff_notation.dart';
 import 'validator.dart';
 
+/// 生成结果：源码 + 表达式行在源码中的行号→字段路径映射。
+///
+/// 映射用于桌面端表达式编译门禁把编译器错误回填到具体配置行；没有表达式时
+/// 映射为空，旧配置的源码文本保持逐字节不变。
+class GeneratedProgram {
+  const GeneratedProgram({
+    required this.source,
+    required this.expressionLineFields,
+  });
+  final String source;
+  final Map<int, String> expressionLineFields;
+}
+
 abstract final class CodeGenerator {
+  static final _expressionMarker = RegExp(r'/\*@expr:([^*]+)\*/');
+
   static String generate(ProjectConfig config) {
     final errors = ProjectValidator.validate(config)
         .where((issue) => issue.severity == IssueSeverity.error);
@@ -21,6 +36,17 @@ abstract final class CodeGenerator {
       DebugConfig value => _debug(value),
       MusicConfig value => _music(value),
     };
+  }
+
+  static GeneratedProgram generateProgram(ProjectConfig config) {
+    final source = generate(config);
+    final lineFields = <int, String>{};
+    final lines = source.split('\n');
+    for (var index = 0; index < lines.length; index++) {
+      final match = _expressionMarker.firstMatch(lines[index]);
+      if (match != null) lineFields[index + 1] = match.group(1)!;
+    }
+    return GeneratedProgram(source: source, expressionLineFields: lineFields);
   }
 
   static int _dir(Direction value) => value == Direction.forward ? 1 : 0;
@@ -715,6 +741,8 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
           );
           final root = parsed.root;
           if (root != null && parsed.diagnostics.isEmpty) {
+            final marker =
+                ' /*@expr:modes.$i.actions.$actionIndex.expression*/';
             final variableType = a.outputKind == ActionOutputKind.integer
                 ? ExpressionType.integer
                 : ExpressionType.rational;
@@ -724,7 +752,7 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
             expressionHelpers.addAll(expressionEmitter.helpers);
             if (a.outputKind != ActionOutputKind.pin) {
               body.add(
-                '    ${_variableCName(a.variableName ?? '')} = ($emitted);',
+                '    ${_variableCName(a.variableName ?? '')} = ($emitted);$marker',
               );
               modeVariableTypes[a.variableName ?? ''] = variableType;
             } else if (a.pin != null) {
@@ -734,24 +762,24 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
                 if (role == PinRole.servo) {
                   expressionHelpers.addAll({'clamp_f', 'servo_duty'});
                   body.add(
-                    '    dutyOfMotor[$slot] = pb_servo_duty(pb_clamp_f((float)($emitted), -90.0f, 90.0f));',
+                    '    dutyOfMotor[$slot] = pb_servo_duty(pb_clamp_f((float)($emitted), -90.0f, 90.0f));$marker',
                   );
                 } else if (root.type == ExpressionType.rational) {
                   expressionHelpers.add('clamp_f');
                   body.add(
-                    '    dutyOfMotor[$slot] = (int)pb_clamp_f((float)($emitted), -10000.0f, 10000.0f);',
+                    '    dutyOfMotor[$slot] = (int)pb_clamp_f((float)($emitted), -10000.0f, 10000.0f);$marker',
                   );
                 } else {
                   expressionHelpers.add('clamp_i');
                   body.add(
-                    '    dutyOfMotor[$slot] = (int)pb_clamp_i((int32_t)($emitted), -10000, 10000);',
+                    '    dutyOfMotor[$slot] = (int)pb_clamp_i((int32_t)($emitted), -10000, 10000);$marker',
                   );
                 }
               } else {
                 final mainIndex = a.pin == 'MP74' ? 1 : 0;
                 expressionHelpers.addAll({'clamp_f', 'servo_duty'});
                 body.add(
-                  '    mainServoDuty[$mainIndex] = pb_servo_duty(pb_clamp_f((float)($emitted), -90.0f, 90.0f));',
+                  '    mainServoDuty[$mainIndex] = pb_servo_duty(pb_clamp_f((float)($emitted), -90.0f, 90.0f));$marker',
                 );
               }
             }
