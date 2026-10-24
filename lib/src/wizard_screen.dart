@@ -299,8 +299,11 @@ class WizardScreen extends ConsumerWidget {
                               ),
                             ),
                             // 品牌区固定在步骤栏底部：不占 AppBar，也不会在
-                            // 短窗口里被步骤列表滚走；标识按主题自动切换
-                            // 透明彩色 / 白色单通道资源。
+                            // 短窗口里被步骤列表滚走；这里只展示从官方标识
+                            // 顶部裁出的 W.PIE 词标，不显示“首都师范大学”
+                            // “学生创新实验室”两行中文。词标按主题自动切换
+                            // 透明彩色 / 白色单通道资源；实验室全名仍保留在
+                            // 无障碍标签里，读屏用户不会丢失信息。
                             Padding(
                               padding: EdgeInsets.fromLTRB(
                                 16,
@@ -309,9 +312,10 @@ class WizardScreen extends ConsumerWidget {
                                 16 + MediaQuery.paddingOf(context).bottom,
                               ),
                               child: const Center(
-                                child: WpieLogo(
+                                child: WpieWordmark(
                                   key: ValueKey('wizard.lab-logo'),
-                                  height: 96,
+                                  height: 64,
+                                  semanticLabel: '首都师范大学学生创新实验室',
                                 ),
                               ),
                             ),

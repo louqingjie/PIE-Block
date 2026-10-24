@@ -34,9 +34,12 @@ class WpieLogo extends StatelessWidget {
   }
 }
 
-/// 完整标识顶部裁出的 W.PIE 词标，用于高度受限的窄屏步骤栏。
+/// 完整标识顶部裁出的 W.PIE 词标：只保留“W.PIE”字样，不含
+/// “首都师范大学”“学生创新实验室”两行中文。
 ///
-/// 浅色 / 深色两套词标与完整标识使用同一份裁切结果，只改变颜色通道。
+/// 用于高度受限的窄屏步骤栏，以及只需品牌字样、不希望出现中文实验室
+/// 名称的宽屏步骤栏底部。浅色 / 深色两套词标与完整标识使用同一份裁切
+/// 结果，只改变颜色通道。
 class WpieWordmark extends StatelessWidget {
   const WpieWordmark({
     super.key,

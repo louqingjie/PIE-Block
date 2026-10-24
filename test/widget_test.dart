@@ -1678,7 +1678,7 @@ void main() {
     }
   });
 
-  testWidgets('宽屏向导在步骤栏底部展示完整实验室标识', (tester) async {
+  testWidgets('宽屏向导在步骤栏底部展示不含中文名称的 W.PIE 词标', (tester) async {
     addTearDown(() {
       tester.view.resetPhysicalSize();
       tester.view.resetDevicePixelRatio();
@@ -1703,10 +1703,13 @@ void main() {
         matching: find.byType(Image),
       ),
     );
+    // 过程页左下角只保留 W.PIE 词标，不再出现“首都师范大学”
+    // “学生创新实验室”两行中文；实验室全名只留在无障碍标签里。
     expect(
       (image.image as AssetImage).assetName,
-      'assets/images/wpie-logo-light.png',
+      'assets/images/wpie-wordmark-light.png',
     );
+    expect(image.semanticLabel, '首都师范大学学生创新实验室');
     expect(tester.takeException(), isNull);
   });
 
