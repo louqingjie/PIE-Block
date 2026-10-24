@@ -16,6 +16,19 @@ PIE-Block 的工程项目提供了两样关键能力：一是可以把预制底�
 自己分配每一个输出；二是可以用变量和受限表达式描述多输入、多输出的
 控制律。本章就围绕这两样能力展开。
 
+图~\ref{fig:ch05-photo-rm} 是一台真实的 RoboMaster 机器人：独立悬挂的
+底盘、顶部的云台与发射机构，都是赛场上经过验证的工程构型。本章的任务，
+是用 PIE-Block 把这类构型中适合开环控制的部分——麦轮、全向轮和舵机
+机械臂——配置出来。
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.82\linewidth]{image/ch05/photo-robomaster.jpg}
+  \caption{RoboMaster 机器人展品（深圳南山博物馆）：底盘带独立悬挂，顶部
+  是云台与发射机构（照片：Underbar dk，Wikimedia Commons，CC BY-SA 4.0）}
+  \label{fig:ch05-photo-rm}
+\end{figure}
+
 需要先说明本章的边界。PIE-Block 不是任意 C 语言编程环境：表达式只能是
 一条右值表达式，没有语句、循环和自定义函数；生成代码只读，改配置才会
 重新生成；所有控制都是开环的，扩展板没有编码器回读。因此本章的示例
@@ -225,14 +238,27 @@ $-90^\circ$ 到 $+90^\circ$ 的角度，生成代码时自动换算成 250--1250
         \draw[roller] (-0.45,\t-0.45) -- (0.45,\t+0.45);
       }
       \draw[axis] (0,-2.4) -- (0,3.0) node[above] {$v$};
+      % 分量记号与本章坐标系一致：x 沿滚动方向（前进），y 为侧向
       \draw[force] (0,0) -- (0.9,0.9) node[right] {$F$};
-      \draw[force,dashed] (0,0) -- (0.9,0) node[below right] {$F_x$};
-      \draw[force,dashed] (0,0) -- (0,0.9) node[left] {$F_y$};
+      \draw[force,dashed] (0,0) -- (0,0.9) node[left] {$F_x$};
+      \draw[force,dashed] (0,0) -- (0.9,0) node[below right] {$F_y$};
       \node[lab] at (0.25,-2.7) {辊子 $45^\circ$};
     \end{tikzpicture}
   \end{minipage}
   \caption{麦克纳姆轮：四轮俯视布局（左）与单轮斜向力的分解（右）}
   \label{fig:ch05-mecanum}
+\end{figure}
+
+真实的麦克纳姆轮如图~\ref{fig:ch05-photo-mecanum} 所示：辊子斜装在轮毂
+四周，与轮面约成 $45^\circ$；成对购买时分为左旋与右旋两种，装配时左右
+两侧镜像。
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.78\linewidth]{image/ch05/photo-mecanum.jpg}
+  \caption{真实的麦克纳姆轮：轮毂周围斜装着约 $45^\circ$ 的辊子
+  （照片：Stilfehler，Wikimedia Commons，CC BY-SA 4.0）}
+  \label{fig:ch05-photo-mecanum}
 \end{figure}
 
 \subsection{四轮平移运动学}
@@ -467,14 +493,29 @@ void RunMode1(void)
       roller/.style={draw=black!45,line width=0.5pt},
       axis/.style={-{Latex[length=2mm]},line width=1pt,structurecolor},
       lab/.style={font=\small,inner sep=1pt}]
-      \draw[wheel] (0,0) circle (1.55);
-      \foreach \a in {0,30,...,330} {
-        \draw[roller] (\a:1.25) -- (\a:1.68);
-        \draw[fill=gray!35,draw=black!45] (\a:1.68) circle (0.10);
+      % 轮子侧视：滚动方向在纸面内，主轴垂直于纸面
+      \draw[wheel] (0,0) circle (1.5);
+      \foreach \a in {15,45,...,345} {
+        \draw[roller] (\a:1.2) -- (\a:1.63);
+        \draw[fill=gray!35,draw=black!45] (\a:1.63) circle (0.10);
       }
-      \draw[axis] (0,-1.9) -- (0,2.3) node[above] {可驱动};
-      \node[lab] at (0,-2.05) {单轮：辊子 $90^\circ$};
-      \node[lab,align=center] at (0,-2.55) {侧向自由度\\垂直于纸面};
+      % 主轴：垂直纸面的三维示意（双箭头 + 端面椭圆）
+      \draw[<->,line width=0.9pt,structurecolor] (-0.58,-0.40) -- (0.58,0.40);
+      \draw[fill=white,draw=structurecolor,line width=0.7pt]
+        [rotate around={34:(-0.58,-0.40)}] (-0.58,-0.40) ellipse (0.20 and 0.07);
+      \draw[fill=white,draw=structurecolor,line width=0.7pt]
+        [rotate around={34:(0.58,0.40)}] (0.58,0.40) ellipse (0.20 and 0.07);
+      \node[lab,structurecolor] at (0.72,0.30) {主轴};
+      % 驱动方向：轮心速度，沿接触点切线（水平）
+      \draw[axis] (0,0) -- (2.6,0) node[right] {可驱动};
+      % 地面与接触点
+      \draw[black!50,line width=0.7pt] (-1.9,-1.5) -- (1.9,-1.5);
+      \foreach \gx in {-1.75,-1.45,...,1.75} {
+        \draw[black!35] (\gx,-1.5) -- (\gx-0.14,-1.66); }
+      \fill[black] (0,-1.5) circle (1.5pt);
+      \node[lab,align=center] at (0,-2.06)
+        {单轮侧视：辊子轴线与主轴成 $90^\circ$\\双箭头为主轴，垂直纸面；
+        侧向可沿主轴自由滚动};
     \end{tikzpicture}
   \end{minipage}\hfill
   \begin{minipage}{0.50\linewidth}
@@ -485,8 +526,8 @@ void RunMode1(void)
       lab/.style={font=\small,inner sep=1pt}]
       \draw[dashed,black!35] (0,0) circle (1.65);
       \draw[fill=structurecolor!6,draw=structurecolor!60] (0,0) circle (0.48);
-      \foreach \a/\n in {0/1,120/2,240/3} {
-        \draw[axis] (0,0) -- (\a:2.45) node[above right] {$v_{\n}$};
+      \foreach \a/\n/\pos in {0/1/above right,120/2/above right,240/3/below left} {
+        \draw[axis] (0,0) -- (\a:2.45) node[\pos] {$v_{\n}$};
         \draw[wheel,rotate around={\a:(\a:1.65)}]
           (\a:1.65) ++(-0.42,-0.16) rectangle ++(0.84,0.32);
       }
@@ -494,9 +535,20 @@ void RunMode1(void)
       \draw[axis,dashed] (0,0) -- (0,3.2) node[above] {$y$};
     \end{tikzpicture}
   \end{minipage}
-  \caption{全向轮：单轮 90$^\circ$ 辊子侧视示意（左，侧向自由度垂直于纸面）
-  与三轮 120$^\circ$ 滚动方向（右）}
+  \caption{全向轮：单轮侧视（左，滚动方向在纸面内，侧向可沿主轴自由滚动，
+  主轴垂直于纸面）与三轮 120$^\circ$ 滚动方向（右）}
   \label{fig:ch05-omni}
+\end{figure}
+
+真实的全向轮如图~\ref{fig:ch05-photo-omni} 所示：辊子的轴线与主轴成
+$90^\circ$，侧向受力时辊子绕自身轴线自由滚动，几乎不产生阻力。
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.74\linewidth]{image/ch05/photo-omni.jpg}
+  \caption{真实的全向轮：辊子轴线与主轴垂直（成 $90^\circ$），侧向可自由
+  滚动（照片：Stilfehler，Wikimedia Commons，CC BY-SA 4.0）}
+  \label{fig:ch05-photo-omni}
 \end{figure}
 
 \subsection{三轮 120$^\circ$ 运动学}
@@ -591,13 +643,14 @@ $\sqrt3/2\approx0.866$。三个轮子的 duty 仍按式~\eqref{eq:ch05-duty}
 需要转向角反馈、零位标定和限位保护，成本和调试量都高得多。
 
 图~\ref{fig:ch05-steering} 左侧是单个模块的俯视示意：转向轴在轮子中心，
-舵机把轮子转到 $\beta$ 角，驱动电机让轮子以速度 $s$ 滚动；右侧是四个
-模块的常见布局。每个模块的转向角和驱动速度都要根据车体运动指令单独
-计算，不能像麦轮那样只靠四个轮子的线性组合。
+舵机把轮子转到 $\beta$ 角，驱动电机让轮子以速度 $s$ 沿轮子朝向滚动；右侧是
+四个模块以同一转向角 $\beta$ 转向的布局，此时车头朝向不变，整车沿斜向
+平移。每个模块的转向角和驱动速度都要根据车体运动指令单独计算，不能像
+麦轮那样只靠四个轮子的线性组合。
 
 \begin{figure}[htbp]
   \centering
-  \begin{minipage}{0.44\linewidth}
+  \begin{minipage}{0.46\linewidth}
     \centering
     \begin{tikzpicture}[scale=0.9,>=Latex,font=\small,
       body/.style={draw=structurecolor!70,fill=structurecolor!6,
@@ -606,25 +659,37 @@ $\sqrt3/2\approx0.866$。三个轮子的 duty 仍按式~\eqref{eq:ch05-duty}
         rounded corners=2pt,line width=0.8pt},
       axis/.style={-{Latex[length=2mm]},line width=0.9pt,structurecolor},
       lab/.style={font=\small,inner sep=1pt}]
-      \draw[body] (-2.2,-1.8) rectangle (2.2,1.8);
-      \draw[fill=white,draw=black!50] (0,0) circle (0.55);
-      \draw[black!50] (-0.35,0) -- (0.35,0);
-      \draw[black!50] (0,-0.35) -- (0,0.35);
-      \begin{scope}[rotate=28]
-        \draw[wheel] (-1.45,-0.35) rectangle (1.45,0.35);
-        \foreach \t in {-1.05,-0.55,-0.05,0.45,0.95} {
-          \draw[black!40] (\t,-0.35) -- (\t+0.35,0.35);
-        }
+      % 坐标系与图 5.3 一致：x 向前（页面向上），y 向左（页面向左）
+      \draw[body] (-2.6,-2.2) rectangle (2.2,2.6);
+      \draw[axis] (0,0) -- (0,3.3) node[above] {$x$};
+      \draw[axis] (0,0) -- (-3.0,0) node[left] {$y$};
+      % 转向平台 + 轮子：自 x 轴向 y 轴（左）转过 beta=40 度，
+      % 轮胎面垂直于滚动方向
+      \begin{scope}[rotate=130]
+        \draw[draw=black!45,fill=gray!6,rounded corners=2pt,line width=0.6pt]
+          (-1.05,-0.55) rectangle (1.05,0.55);
+        \draw[wheel] (-1.5,-0.28) rectangle (1.5,0.28);
+        \foreach \t in {-1.25,-0.95,...,1.25} {
+          \draw[black!40,line width=0.5pt] (\t,-0.28) -- (\t,0.28); }
       \end{scope}
-      \draw[axis] (0,0) -- (0,2.6) node[above] {$y$};
-      \draw[axis] (0,0) -- (2.6,0) node[right] {$x$};
-      \draw[axis] (0,0) -- (28:2.1) node[above right] {$\beta$};
-      \node[lab] at (0.35,-2.15) {转向轴};
-      \node[lab] at (1.35,1.45) {驱动电机};
-      \node[lab] at (-1.35,1.45) {舵机};
+      % 转向轴（画在最上层）
+      \draw[fill=white,draw=black!50] (0,0) circle (0.5);
+      \draw[black!50] (-0.32,0) -- (0.32,0);
+      \draw[black!50] (0,-0.32) -- (0,0.32);
+      % 标注：舵机负责转向，驱动电机装在转向平台上随轮子转向
+      \node[lab,align=center] at (1.45,1.7) {舵机\\（转向）};
+      \draw[black!50,->] (1.2,1.42) -- (0.44,0.44);
+      \node[lab,anchor=west] at (0.72,-1.72) {驱动电机};
+      \draw[black!50,->] (0.9,-1.56) -- (0.64,-0.82);
+      \node[lab,anchor=east] at (-0.78,-1.42) {转向轴};
+      \draw[black!50,->] (-0.72,-1.34) -- (-0.4,-0.42);
+      % beta 角弧与驱动速度 s
+      \draw[->,black!65] (0,1.85) arc[start angle=90,end angle=130,radius=1.85];
+      \node[lab] at (112:2.12) {$\beta$};
+      \draw[axis] (130:1.9) -- (130:2.8) node[above left] {$s$};
     \end{tikzpicture}
   \end{minipage}\hfill
-  \begin{minipage}{0.50\linewidth}
+  \begin{minipage}{0.48\linewidth}
     \centering
     \begin{tikzpicture}[scale=0.78,>=Latex,font=\small,
       body/.style={draw=structurecolor!70,fill=structurecolor!6,
@@ -634,22 +699,20 @@ $\sqrt3/2\approx0.866$。三个轮子的 duty 仍按式~\eqref{eq:ch05-duty}
       axis/.style={-{Latex[length=2mm]},line width=0.9pt,structurecolor},
       lab/.style={font=\small,inner sep=1pt}]
       \draw[body] (-2.7,-2.0) rectangle (2.7,2.0);
-      \foreach \x/\y/\b in {-2.0/1.45/15, 2.0/1.45/105,
-                              -2.0/-1.45/-15, 2.0/-1.45/75} {
-        \begin{scope}[shift={(\x,\y)},rotate=\b]
+      % 四个模块同转向角（30 度）：蟹行平移
+      \foreach \x/\y in {-2.0/1.45, 2.0/1.45, -2.0/-1.45, 2.0/-1.45} {
+        \begin{scope}[shift={(\x,\y)},rotate=30]
           \draw[wheel] (-0.28,-0.95) rectangle (0.28,0.95);
-          \draw[black!40] (-0.28,-0.6) -- (0.28,-0.6);
-          \draw[black!40] (-0.28,0.0) -- (0.28,0.0);
-          \draw[black!40] (-0.28,0.6) -- (0.28,0.6);
+          \foreach \t in {-0.65,-0.25,0.15,0.55} {
+            \draw[black!40,line width=0.5pt] (-0.28,\t) -- (0.28,\t); }
         \end{scope}
         \draw[black!50] (\x,\y) circle (0.10);
       }
-      \draw[axis] (0,0) -- (3.4,0) node[right] {$v_x$};
-      \draw[axis] (0,0) -- (0,3.0) node[above] {$v_y$};
-      \node[lab,below] at (0,-2.35) {四模块布局：每模块一个转向、一个驱动};
+      \draw[axis] (0,0) -- (30:3.3) node[right] {$v$};
+      \node[lab,below] at (0,-2.3) {四模块同转向角：车头不变，斜向平移};
     \end{tikzpicture}
   \end{minipage}
-  \caption{舵轮：单模块的转向角与驱动（左）和四模块布局（右）}
+  \caption{舵轮：单模块的转向角与驱动（左）和四模块同角转向的斜向平移（右）}
   \label{fig:ch05-steering}
 \end{figure}
 
@@ -725,8 +788,8 @@ MP74 两个主舵机口，可以留给两自由度机械臂或其他小机构；
 （elbow-down）。逆解还要处理可达性：目标太远或太近时，公式里的
 $\cos q_2$ 会超出 $[-1,1]$，必须钳位；否则会出现无效角度或数值异常。
 
-图~\ref{fig:ch05-arm-ik} 是二连杆的几何关系。实线是肘上解，虚线是同一
-目标点的肘下解；两个虚线圆之间是可达的工作空间，内圆半径
+图~\ref{fig:ch05-arm-ik} 是二连杆的几何关系。实线是肘下解，虚线是同一
+目标点的肘上解；两个虚线圆之间是可达的工作空间，内圆半径
 $|L_1-L_2|$，外圆半径 $L_1+L_2$。
 
 \begin{figure}[htbp]
@@ -770,11 +833,11 @@ $|L_1-L_2|$，外圆半径 $L_1+L_2$。
     \node[lab] at (4.55,0.55) {$L_1+L_2$};
     \node[lab] at (0.15,1.05) {$|L_1-L_2|$};
     % 图例
-    \node[lab,anchor=north west] at (-0.4,-1.35)
-      {实线：肘上解；虚线：肘下解};
+  \node[lab,anchor=north west] at (-0.4,-1.35)
+    {实线：肘下解；虚线：肘上解};
   \end{tikzpicture}
-  \caption{二连杆机械臂的几何关系：实线为肘上解，虚线为肘下解；
-  两个虚线圆之间为可达工作空间}
+  \caption{二连杆机械臂的几何关系：实线为肘下解（$s_2>0$），虚线为肘上解
+  （$s_2<0$）；两个虚线圆之间为可达工作空间}
   \label{fig:ch05-arm-ik}
 \end{figure}
 
@@ -794,7 +857,8 @@ s_2=\sqrt{1-\tilde c_2^2}.
 \label{eq:ch05-ik-s2}
 \end{equation}
 
-这里的 $s_2\ge0$ 对应肘上解；取负号就是肘下解。两个关节角为：
+这里的 $s_2\ge0$ 对应肘下解（肘关节落在肩—目标连线的下方，见
+图~\ref{fig:ch05-arm-ik} 的实线）；取负号就是肘上解。两个关节角为：
 
 \begin{equation}
 q_2=\operatorname{atan2}(s_2,\tilde c_2),\qquad
@@ -1053,6 +1117,18 @@ PWMB 设 10000\,Hz；两个主舵机接 MP03、MP74，PWMA 设 50\,Hz。动作�
         \texttt{c2c}、\texttt{s2}、\texttt{q1}、\texttt{q2} 八行；
   \item 两个舵机表达式。
 \end{enumerate}
+
+图~\ref{fig:ch05-photo-arm} 就是这样一台“麦轮底盘 + 舵机机械臂”的教学
+机器人：底盘负责全向移动，机械臂负责抓取，与示例 A、示例 B 合并后的构型
+思路一致。
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.80\linewidth]{image/ch05/photo-arm-mecanum.jpg}
+  \caption{麦轮底盘与舵机机械臂组合成的教学机器人，即示例 A 与示例 B
+  合并后的构型（照片：Anani A. George，Wikimedia Commons，CC0）}
+  \label{fig:ch05-photo-arm}
+\end{figure}
 
 合计 16 行。左摇杆控制底盘，右摇杆控制机械臂；因为没有模式切换，两个
 子系统每轮都会更新。注意 \texttt{RX/RY} 已经被机械臂占用，所以麦轮不能

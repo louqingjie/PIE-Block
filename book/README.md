@@ -104,6 +104,18 @@ flutter test tool/book_screenshots_test.dart
 
 - 本书正文的中文引号一律使用弯引号 “ ”，不使用「」；后续各章沿用同一约定。
 
+## 真实世界照片来源与授权
+
+第 5 章使用的实物照片均取自 Wikimedia Commons，图注中已注明作者与许可，
+此处记录完整来源；替换或新增照片时保持同样的署名要求。
+
+| 文件 | 内容 | 作者 | 许可 | 来源 |
+| --- | --- | --- | --- | --- |
+| `image/ch05/photo-robomaster.jpg` | RoboMaster 机器人展品（深圳南山博物馆，已裁剪） | Underbar dk | CC BY-SA 4.0 | <https://commons.wikimedia.org/wiki/File:RoboMaster_robot_as_an_exhibit_in_the_Nanshan_Museum.jpg> |
+| `image/ch05/photo-mecanum.jpg` | 麦克纳姆轮特写 | Stilfehler | CC BY-SA 4.0 | <https://commons.wikimedia.org/wiki/File:FIRST_Tech_Challenge_%E2%80%93_Parts_%E2%80%93_Mecanum_wheels.jpg> |
+| `image/ch05/photo-omni.jpg` | 全向轮特写 | Stilfehler | CC BY-SA 4.0 | <https://commons.wikimedia.org/wiki/File:FIRST_Tech_Challenge_%E2%80%93_Parts_%E2%80%93_Omni_wheels.jpg> |
+| `image/ch05/photo-arm-mecanum.jpg` | 麦轮底盘 + 舵机机械臂教学机器人 | Anani A. George | CC0 | <https://commons.wikimedia.org/wiki/File:Mecanum_Wheel_Robot_with_an_Arm.jpg> |
+
 ## 封面与素材来源
 
 - 封面横幅使用应用主题色 `#087F8C` 与“节点-连接”拓扑示意；
