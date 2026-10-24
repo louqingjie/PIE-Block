@@ -213,37 +213,56 @@ class WizardScreen extends ConsumerWidget {
             child: LayoutBuilder(
               builder: (context, constraints) {
                 final wide = constraints.maxWidth >= _wideBreakpoint;
-                // M3E：透明度走 effects 曲线，缩放走 spatial 曲线，两者分开。
-                final effectsEnd =
-                    AppMotion.defaultEffectsDuration.inMilliseconds /
-                    AppMotion.defaultSpatialDuration.inMilliseconds;
+                // M3 fade-through：旧页在前 30% 淡出，新页从 30% 开始淡入、
+                // 轻微放大。两页不会在同一位置同时可读，避免切换瞬间出现
+                // “字叠字”的重影；透明度走 effects 曲线，缩放走 spatial 曲线。
+                const fadeOut = Interval(
+                  .7,
+                  1,
+                  curve: AppMotion.expressiveFastEffects,
+                );
+                const fadeIn = Interval(
+                  .3,
+                  1,
+                  curve: AppMotion.expressiveDefaultEffects,
+                );
+                const scaleIn = Interval(
+                  .3,
+                  1,
+                  curve: AppMotion.expressiveDefaultSpatial,
+                );
                 final content = MediaQuery.disableAnimationsOf(context)
                     ? page
                     : AnimatedSwitcher(
-                        duration: AppMotion.defaultSpatial(context),
+                        duration: AppMotion.fastSpatial(context),
                         switchInCurve: Curves.linear,
                         switchOutCurve: Curves.linear,
-                        transitionBuilder: (child, animation) => FadeTransition(
-                          opacity: animation.drive(
-                            CurveTween(
-                              curve: Interval(
-                                0,
-                                effectsEnd,
-                                curve: AppMotion.expressiveDefaultEffects,
+                        transitionBuilder: (child, animation) {
+                          // AnimatedSwitcher 给旧页的是反向动画；用当前步骤
+                          // 判断哪一份是新页：新页延迟淡入，旧页先淡出。
+                          final incoming = child.key == ValueKey(state.step);
+                          if (!incoming) {
+                            return FadeTransition(
+                              opacity: animation.drive(
+                                CurveTween(curve: fadeOut),
                               ),
+                              child: child,
+                            );
+                          }
+                          return FadeTransition(
+                            opacity: animation.drive(
+                              CurveTween(curve: fadeIn),
                             ),
-                          ),
-                          child: ScaleTransition(
-                            scale: Tween<double>(begin: .98, end: 1).animate(
-                              animation.drive(
-                                CurveTween(
-                                  curve: AppMotion.expressiveDefaultSpatial,
+                            child: ScaleTransition(
+                              scale: Tween<double>(begin: .98, end: 1).animate(
+                                animation.drive(
+                                  CurveTween(curve: scaleIn),
                                 ),
                               ),
+                              child: child,
                             ),
-                            child: child,
-                          ),
-                        ),
+                          );
+                        },
                         child: KeyedSubtree(
                           key: ValueKey(state.step),
                           child: page,

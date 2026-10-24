@@ -3529,6 +3529,51 @@ void main() {
     expect(reduced, Duration.zero);
   });
 
+  testWidgets('向导步骤切换用 fade-through，旧页淡出后才显示新页', (tester) async {
+    late _StaticProjectController controller;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => controller = _StaticProjectController(_infantryDocument(), 0),
+          ),
+          deployControllerProvider.overrideWith(_FakeDeployController.new),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    bool pageFade(Widget widget) =>
+        widget is FadeTransition &&
+        (widget.child is KeyedSubtree || widget.child is ScaleTransition);
+
+    expect(controller.goToStep(1), isTrue);
+    // 逐帧采样过渡过程：任何时刻最多只有一个页面可见，避免旧/新页面的
+    // 文字在同一位置同时出现、叠成重影。
+    var overlappingFrames = 0;
+    for (var i = 0; i < 45; i += 1) {
+      await tester.pump(const Duration(milliseconds: 10));
+      final visible = tester
+          .widgetList<FadeTransition>(
+            find.descendant(
+              of: find.byType(AnimatedSwitcher),
+              matching: find.byWidgetPredicate(pageFade),
+            ),
+          )
+          .where((fade) => fade.opacity.value > .05)
+          .length;
+      if (visible > 1) overlappingFrames += 1;
+    }
+    expect(overlappingFrames, 0);
+    expect(find.text('云台与拨弹机构'), findsOneWidget);
+    await tester.pumpAndSettle();
+    // 让 goToStep 的 500ms 保存防抖计时器落地，避免测试结束时仍有 pending timer。
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('减少动态效果时向导步骤切换立即完成', (tester) async {
     tester.platformDispatcher.accessibilityFeaturesTestValue =
         const FakeAccessibilityFeatures(disableAnimations: true);
