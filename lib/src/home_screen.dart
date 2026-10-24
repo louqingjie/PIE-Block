@@ -8,6 +8,7 @@ import 'package:pieblock_core/pieblock_core.dart';
 
 import 'controller.dart';
 import 'design/app_card.dart';
+import 'design/app_dialog.dart';
 import 'design/app_logo.dart';
 import 'design/app_theme.dart';
 import 'design/connected_button_group.dart';
@@ -158,7 +159,7 @@ class HomeScreen extends ConsumerWidget {
     await showDialog<void>(
       context: context,
       builder: (context) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
+        builder: (context, setState) => AppDialog(
           title: const Text('新建项目'),
           content: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 520),

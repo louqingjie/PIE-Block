@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pieblock_core/pieblock_core.dart';
 
+import 'design/app_dialog.dart';
 import 'design/connected_button_group.dart';
 
 import 'controller.dart';
@@ -940,7 +941,7 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
     );
     final save = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => AppDialog(
         title: Text(event == null ? '添加速度事件' : '编辑速度事件'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -993,7 +994,7 @@ class _MusicEditorPageState extends ConsumerState<MusicEditorPage> {
     final save = await showDialog<bool>(
       context: context,
       builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
+        builder: (context, setDialogState) => AppDialog(
           title: Text(event == null ? '添加拍号事件' : '编辑拍号事件'),
           content: Column(
             mainAxisSize: MainAxisSize.min,

@@ -360,7 +360,7 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
     final key = TextEditingController();
     final submitted = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => AppDialog(
         title: const Text('应用 Keil C251 许可证'),
         content: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 560),

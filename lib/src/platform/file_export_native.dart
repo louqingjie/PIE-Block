@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../design/app_dialog.dart';
 import 'document_io.dart';
 import 'paths.dart';
 
@@ -57,7 +58,7 @@ Future<bool> exportGeneratedText(
 
   await showDialog<void>(
     context: context,
-    builder: (context) => AlertDialog(
+    builder: (context) => AppDialog(
       title: Text('导出 $suggestedName'),
       content: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 520),

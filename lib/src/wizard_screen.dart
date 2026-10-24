@@ -20,6 +20,7 @@ import 'controller.dart';
 import 'debug_cue_preview.dart';
 import 'deploy_controller.dart';
 import 'design/app_card.dart';
+import 'design/app_dialog.dart';
 import 'design/app_logo.dart';
 import 'design/app_theme.dart';
 import 'design/asm_hover_card.dart';
