@@ -2,6 +2,7 @@ library;
 
 export 'src/code_generator.dart';
 export 'src/debug_cues.dart';
+export 'src/expression.dart';
 export 'src/models.dart';
 export 'src/midi_codec.dart';
 export 'src/music.dart';

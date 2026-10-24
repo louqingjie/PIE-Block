@@ -540,6 +540,59 @@ ProjectDocument _engineerServoButtonDocument() {
   );
 }
 
+ProjectDocument _engineerExpressionDocument({
+  String? expression,
+  bool variableOutput = false,
+}) {
+  final source = _engineerDocument();
+  final config = source.config as EngineerConfig;
+  return source.copyWith(
+    config: config.copyWith(
+      pwm: config.pwm.copyWith(
+        pinRoles: const {
+          'P60': PinRole.motor,
+          'P62': PinRole.unused,
+          'P64': PinRole.unused,
+          'P66': PinRole.unused,
+          'P74': PinRole.motor,
+          'P75': PinRole.motor,
+          'P76': PinRole.motor,
+          'P77': PinRole.motor,
+        },
+        servoMids: const {'MP03': 0, 'MP74': 0},
+      ),
+      modes: [
+        EngineerModeConfig(
+          preserveChassis: false,
+          actions: [
+            expression == null
+                ? ActionMapping(
+                    key: 'A',
+                    direction: Direction.forward,
+                    mode: ControlMode.direct,
+                    parameter: 4000,
+                    pin: 'P60',
+                  )
+                : variableOutput
+                ? ActionMapping(
+                    inputKind: ActionInputKind.unspecified,
+                    outputKind: ActionOutputKind.integer,
+                    variableName: 'count',
+                    expression: expression,
+                  )
+                : ActionMapping(
+                    inputKind: ActionInputKind.unspecified,
+                    outputKind: ActionOutputKind.pin,
+                    pin: 'P60',
+                    expression: expression,
+                  ),
+          ],
+        ),
+      ],
+    ),
+  );
+}
+
 ProjectDocument _engineerFrictionDocument() {
   final source = _engineerDocument();
   final config = source.config as EngineerConfig;
@@ -3798,6 +3851,86 @@ void main() {
         container.read(appControllerProvider).document!.config
             as EngineerConfig;
     expect(config.pwm.frictionMaxDuties['P64'], 750);
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+  testWidgets('工程表达式行显示表达式并隐藏方向与控制方式', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _StaticProjectController(
+              _engineerExpressionDocument(expression: 'LX + 1'),
+              3,
+            ),
+          ),
+          deployControllerProvider.overrideWith(_FakeDeployController.new),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('modes.0.actions.0.expression')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('modes.0.actions.0.direction')),
+      findsNothing,
+    );
+    expect(find.byKey(const ValueKey('modes.0.actions.0.mode')), findsNothing);
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
+  testWidgets('工程变量输出行显示变量名与表达式', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _StaticProjectController(
+              _engineerExpressionDocument(
+                expression: 'LX + 1',
+                variableOutput: true,
+              ),
+              3,
+            ),
+          ),
+          deployControllerProvider.overrideWith(_FakeDeployController.new),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('modes.0.actions.0.variable')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('modes.0.actions.0.expression')),
+      findsOneWidget,
+    );
+    expect(find.text('整数'), findsWidgets);
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
+  testWidgets('非法表达式在检查页给出字段错误', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _StaticProjectController(
+              _engineerExpressionDocument(expression: 'unknown + 1'),
+              4,
+            ),
+          ),
+          deployControllerProvider.overrideWith(_FakeDeployController.new),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('未定义变量'), findsWidgets);
     await tester.pump(const Duration(milliseconds: 600));
   });
 }

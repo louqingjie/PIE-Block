@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'debug_cues.dart';
+import 'expression.dart';
 import 'models.dart';
 import 'music.dart';
 import 'staff_firmware_c.dart';
@@ -44,6 +45,21 @@ abstract final class CodeGenerator {
   };
   static int _slot(String? pin) =>
       expansionPins.indexOf(InfantryPinPlanner.normalizePin(pin));
+
+  static String _variableCName(String name) => 'pbv_$name';
+
+  static String _readOfKey(String key) {
+    final isAxis = key.endsWith('X') || key.endsWith('Y');
+    return isAxis
+        ? 'valueOfRoker[${key.startsWith('L') ? 0 : 1}][${key.endsWith('X') ? 0 : 1}]'
+        : 'RcKeyValueRead(${_key(key)})';
+  }
+
+  static String _expressionInputCode(String name) {
+    if (axisRemoteInputs.contains(name)) return _readOfKey(name);
+    final key = expressionInputAliases[name] ?? name;
+    return 'RcKeyValueRead(${_key(key)})';
+  }
 
   static const String _uart1TxQuery = '''
 static void Uart1TxQuery(uint8_t dat)
@@ -646,8 +662,43 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
         for (final action in mode.actions)
           if (action.pin != null) action.pin!,
     };
+    final expressionHelpers = <String>{};
+    final expressionEmitter = ExpressionEmitter(
+      inputCode: _expressionInputCode,
+      variableCode: _variableCName,
+    );
+    final variableDefinitions = <String, ExpressionType>{};
+    final variableModes = <String, Set<int>>{};
+    for (var mi = 0; mi < c.modeCount!; mi++) {
+      final seenNames = <String>{};
+      for (final action in c.modes[mi].actions) {
+        if (action.outputKind == ActionOutputKind.pin) continue;
+        final name = action.variableName ?? '';
+        if (name.isEmpty || !seenNames.add(name)) continue;
+        final type = action.outputKind == ActionOutputKind.integer
+            ? ExpressionType.integer
+            : ExpressionType.rational;
+        variableDefinitions[name] = type;
+        variableModes.putIfAbsent(name, () => <int>{}).add(mi);
+      }
+    }
+    final globalVariables = <String, ExpressionType>{
+      for (final entry in variableDefinitions.entries)
+        if ((variableModes[entry.key]?.length ?? 0) >= 2)
+          entry.key: entry.value,
+    };
     for (var i = 0; i < c.modeCount!; i++) {
       final mode = c.modes[i], body = <String>[];
+      final modeVariableTypes = <String, ExpressionType>{...globalVariables};
+      final localVariables = <String, ExpressionType>{};
+      for (final action in mode.actions) {
+        if (action.outputKind == ActionOutputKind.pin) continue;
+        final name = action.variableName ?? '';
+        if (name.isEmpty || globalVariables.containsKey(name)) continue;
+        localVariables[name] = action.outputKind == ActionOutputKind.integer
+            ? ExpressionType.integer
+            : ExpressionType.rational;
+      }
       if (mode.preserveChassis && c.chassis.enabled) {
         body.add('    CalculateChassis();');
       }
@@ -657,6 +708,66 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
         actionIndex++
       ) {
         final a = mode.actions[actionIndex];
+        if (a.inputKind == ActionInputKind.unspecified) {
+          final parsed = ExpressionParser.parse(
+            a.expression ?? '',
+            variables: modeVariableTypes,
+          );
+          final root = parsed.root;
+          if (root != null && parsed.diagnostics.isEmpty) {
+            final variableType = a.outputKind == ActionOutputKind.integer
+                ? ExpressionType.integer
+                : ExpressionType.rational;
+            final emitted = a.outputKind == ActionOutputKind.pin
+                ? expressionEmitter.emit(root)
+                : expressionEmitter.emitCast(root, variableType);
+            expressionHelpers.addAll(expressionEmitter.helpers);
+            if (a.outputKind != ActionOutputKind.pin) {
+              body.add(
+                '    ${_variableCName(a.variableName ?? '')} = ($emitted);',
+              );
+              modeVariableTypes[a.variableName ?? ''] = variableType;
+            } else if (a.pin != null) {
+              final slot = expansionPins.indexOf(a.pin!);
+              if (slot >= 0) {
+                final role = c.pwm.pinRoles[a.pin!];
+                if (role == PinRole.servo) {
+                  expressionHelpers.addAll({'clamp_f', 'servo_duty'});
+                  body.add(
+                    '    dutyOfMotor[$slot] = pb_servo_duty(pb_clamp_f((float)($emitted), -90.0f, 90.0f));',
+                  );
+                } else if (root.type == ExpressionType.rational) {
+                  expressionHelpers.add('clamp_f');
+                  body.add(
+                    '    dutyOfMotor[$slot] = (int)pb_clamp_f((float)($emitted), -10000.0f, 10000.0f);',
+                  );
+                } else {
+                  expressionHelpers.add('clamp_i');
+                  body.add(
+                    '    dutyOfMotor[$slot] = (int)pb_clamp_i((int32_t)($emitted), -10000, 10000);',
+                  );
+                }
+              } else {
+                final mainIndex = a.pin == 'MP74' ? 1 : 0;
+                expressionHelpers.addAll({'clamp_f', 'servo_duty'});
+                body.add(
+                  '    mainServoDuty[$mainIndex] = pb_servo_duty(pb_clamp_f((float)($emitted), -90.0f, 90.0f));',
+                );
+              }
+            }
+          }
+          continue;
+        }
+        if (a.outputKind != ActionOutputKind.pin) {
+          final variableType = a.outputKind == ActionOutputKind.integer
+              ? ExpressionType.integer
+              : ExpressionType.rational;
+          body.add(
+            '    ${_variableCName(a.variableName ?? '')} = (${variableType.cType})(${_readOfKey(a.key!)});',
+          );
+          modeVariableTypes[a.variableName ?? ''] = variableType;
+          continue;
+        }
         final sign = a.direction == Direction.forward ? '' : '-';
         final isAxis = a.key!.endsWith('X') || a.key!.endsWith('Y');
         final read = isAxis
@@ -877,9 +988,28 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
           );
         }
       }
-      modeFunctions.add('void RunMode${i + 1}(void)\n{\n${body.join('\n')}\n}');
+      final declarations = <String>[
+        for (final entry in localVariables.entries)
+          '    ${entry.value.cType} ${_variableCName(entry.key)} = ${entry.value == ExpressionType.rational ? '0.0f' : '0'};',
+      ];
+      modeFunctions.add(
+        'void RunMode${i + 1}(void)\n{\n${[...declarations, ...body].join('\n')}\n}',
+      );
       cases.add('        case ${i + 1}: RunMode${i + 1}(); break;');
     }
+    final expressionPrelude = () {
+      final runtime = ExpressionRuntime.code(expressionHelpers);
+      final globals = <String>[
+        for (final entry in globalVariables.entries)
+          '${entry.value.cType} ${_variableCName(entry.key)} = ${entry.value == ExpressionType.rational ? '0.0f' : '0'};',
+      ];
+      final parts = <String>[
+        if (runtime.isNotEmpty) runtime.trimRight(),
+        ...globals,
+      ];
+      if (parts.isEmpty) return '';
+      return '${parts.join('\n')}\n';
+    }();
     final feedbackEnabled = c.modeCount! > 1 && !c.pwm.buzzerDisabled;
     final chassisSlots = c.chassis.enabled
         ? {
@@ -1103,7 +1233,7 @@ ${engineerFeedbackChecks.join('\n')}
       return role == PinRole.servo ? '1' : 'dutyOfMotor[$slot]>=0';
     }).join(',');
     return '''${_header(c, '工程机器人控制代码', c.pwm.buzzerDisabled)}
-${frictionSupport}uint8_t currentMode = 1;
+$frictionSupport${expressionPrelude}uint8_t currentMode = 1;
 uint8_t lastSwitch = 0;
 uint8_t modeKeyLast[4] = {0};
 int mainServoDuty[2] = {${_servoDuty(c.pwm.servoMids['MP03'])}, ${_servoDuty(c.pwm.servoMids['MP74'])}};

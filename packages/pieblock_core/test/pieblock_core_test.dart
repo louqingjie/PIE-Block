@@ -2556,4 +2556,268 @@ void main() {
       );
     });
   });
+  group('工程变量与表达式', () {
+    EngineerConfig expressionEngineer() => EngineerConfig(
+      remote: const RemoteConfig(channel: 36, deadzone: 100),
+      chassis: completeChassis(),
+      pwm: PwmGroupConfig(
+        pwma: PwmFrequency.hz10000,
+        pwmb: PwmFrequency.hz10000,
+        pinRoles: const {
+          'P60': PinRole.motor,
+          'P62': PinRole.unused,
+          'P64': PinRole.unused,
+          'P66': PinRole.unused,
+          'P74': PinRole.motor,
+          'P75': PinRole.motor,
+          'P76': PinRole.motor,
+          'P77': PinRole.motor,
+        },
+        servoMids: const {'MP03': 0, 'MP74': 0},
+      ),
+      modeCount: 2,
+      switchStrategy: SwitchStrategy.cycle,
+      modeSwitchKey: 'E',
+      modes: [
+        EngineerModeConfig(
+          actions: [
+            ActionMapping(
+              inputKind: ActionInputKind.unspecified,
+              outputKind: ActionOutputKind.integer,
+              variableName: 'v',
+              expression: 'LX + LY',
+              id: 'v-mode1',
+            ),
+            ActionMapping(
+              inputKind: ActionInputKind.unspecified,
+              outputKind: ActionOutputKind.rational,
+              variableName: 'k',
+              expression: 'PI / 2',
+              id: 'k-mode1',
+            ),
+            ActionMapping(
+              outputKind: ActionOutputKind.rational,
+              variableName: 'raw',
+              key: 'RX',
+              id: 'raw-mode1',
+            ),
+            ActionMapping(
+              inputKind: ActionInputKind.unspecified,
+              outputKind: ActionOutputKind.pin,
+              pin: 'P60',
+              expression: 'v * 3 + (raw > 0 ? 100 : 0)',
+              id: 'exec-mode1',
+            ),
+            ActionMapping(
+              inputKind: ActionInputKind.unspecified,
+              outputKind: ActionOutputKind.pin,
+              pin: 'MP03',
+              expression: 'sqrt(v * v + 1)',
+              id: 'servo-mode1',
+            ),
+          ],
+        ),
+        EngineerModeConfig(
+          actions: [
+            ActionMapping(
+              inputKind: ActionInputKind.unspecified,
+              outputKind: ActionOutputKind.integer,
+              variableName: 'v',
+              expression: '1',
+              id: 'v-mode2',
+            ),
+            ActionMapping(
+              inputKind: ActionInputKind.unspecified,
+              outputKind: ActionOutputKind.pin,
+              pin: 'P60',
+              expression: 'v * 2',
+              id: 'exec-mode2',
+            ),
+          ],
+        ),
+      ],
+    );
+
+    Iterable<ValidationIssue> errors(EngineerConfig config) =>
+        ProjectValidator.validate(config)
+            .where((issue) => issue.severity == IssueSeverity.error);
+
+    test('变量与表达式可校验并生成声明/表达式/安全转换', () {
+      final config = expressionEngineer();
+      expect(
+        errors(config).map((e) => '${e.fieldPath}: ${e.message}').toList(),
+        isEmpty,
+      );
+      final code = CodeGenerator.generate(config);
+      expect(code, contains('int32_t pbv_v = 0;'));
+      expect(code, contains('float pbv_k = 0.0f;'));
+      expect(code, contains('float pbv_raw = 0.0f;'));
+      expect(code, contains('pbv_v = '));
+      expect(code, contains('pb_div_f'));
+      expect(code, contains('pb_sqrt'));
+      expect(code, contains('pb_clamp_i'));
+      expect(code, contains('pb_servo_duty'));
+      expect(code, contains('mainServoDuty[0] = pb_servo_duty'));
+      expect(code, contains('RunMode1'));
+      expect(code, contains('RunMode2'));
+    });
+
+    test('表达式/变量规则错误可定位', () {
+      EngineerConfig withAction(ActionMapping action) => EngineerConfig(
+        remote: const RemoteConfig(channel: 36, deadzone: 100),
+        chassis: completeChassis(),
+        pwm: PwmGroupConfig(
+          pwma: PwmFrequency.hz10000,
+          pwmb: PwmFrequency.hz10000,
+          pinRoles: const {
+            'P60': PinRole.motor,
+            'P62': PinRole.unused,
+            'P64': PinRole.unused,
+            'P66': PinRole.unused,
+            'P74': PinRole.motor,
+            'P75': PinRole.motor,
+            'P76': PinRole.motor,
+            'P77': PinRole.motor,
+          },
+          servoMids: const {'MP03': 0, 'MP74': 0},
+        ),
+        modeCount: 1,
+        modes: [
+          EngineerModeConfig(actions: [action]),
+        ],
+      );
+
+      expect(
+        errors(
+          withAction(
+            ActionMapping(
+              inputKind: ActionInputKind.unspecified,
+              outputKind: ActionOutputKind.pin,
+              pin: 'P60',
+              expression: 'unknown + 1',
+            ),
+          ),
+        ).map((issue) => issue.message),
+        contains(contains('未定义变量')),
+      );
+      expect(
+        errors(
+          withAction(
+            ActionMapping(
+              key: 'A',
+              direction: Direction.forward,
+              mode: ControlMode.direct,
+              parameter: 4000,
+              pin: 'P60',
+              expression: '1 + 1',
+            ),
+          ),
+        ).map((issue) => issue.message),
+        contains('只有输入为未指定时才能填写表达式'),
+      );
+      expect(
+        errors(
+          withAction(
+            ActionMapping(
+              inputKind: ActionInputKind.unspecified,
+              outputKind: ActionOutputKind.pin,
+              pin: 'P60',
+              expression: 'LX / 0',
+            ),
+          ),
+        ).map((issue) => issue.message),
+        contains(contains('除数不能为 0')),
+      );
+      expect(
+        errors(
+          withAction(
+            ActionMapping(
+              key: 'A',
+              direction: Direction.forward,
+              mode: ControlMode.direct,
+              parameter: 4000,
+              pin: 'P60',
+              variableName: 'x',
+            ),
+          ),
+        ).map((issue) => issue.message),
+        contains('引脚输出不能填写变量名'),
+      );
+    });
+
+    test('变量重复、类型不一致与先定义后使用', () {
+      final config = expressionEngineer();
+      final duplicate = config.copyWith(
+        modes: [
+          EngineerModeConfig(
+            actions: [
+              ActionMapping(
+                inputKind: ActionInputKind.unspecified,
+                outputKind: ActionOutputKind.integer,
+                variableName: 'same',
+                expression: '1',
+              ),
+              ActionMapping(
+                inputKind: ActionInputKind.unspecified,
+                outputKind: ActionOutputKind.integer,
+                variableName: 'same',
+                expression: '2',
+              ),
+            ],
+          ),
+          config.modes[1],
+        ],
+      );
+      expect(
+        errors(duplicate).map((issue) => issue.message),
+        contains('本模式内变量名不能重复'),
+      );
+
+      final wrongType = config.copyWith(
+        modes: [
+          config.modes[0],
+          EngineerModeConfig(
+            actions: [
+              ActionMapping(
+                inputKind: ActionInputKind.unspecified,
+                outputKind: ActionOutputKind.rational,
+                variableName: 'v',
+                expression: '1.0',
+              ),
+            ],
+          ),
+        ],
+      );
+      expect(
+        errors(wrongType).map((issue) => issue.message),
+        contains('同名变量在不同模式中的类型必须一致'),
+      );
+
+      final useBeforeDefine = config.copyWith(
+        modes: [
+          EngineerModeConfig(
+            actions: [
+              ActionMapping(
+                inputKind: ActionInputKind.unspecified,
+                outputKind: ActionOutputKind.pin,
+                pin: 'P60',
+                expression: 'later * 2',
+              ),
+              ActionMapping(
+                inputKind: ActionInputKind.unspecified,
+                outputKind: ActionOutputKind.integer,
+                variableName: 'later',
+                expression: '1',
+              ),
+            ],
+          ),
+          config.modes[1],
+        ],
+      );
+      expect(
+        errors(useBeforeDefine).map((issue) => issue.message),
+        contains(contains('未定义变量')),
+      );
+    });
+  });
 }

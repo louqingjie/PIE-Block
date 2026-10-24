@@ -310,21 +310,67 @@ class _ActionRow extends ConsumerWidget {
       ControlMode.frictionContinuous => '油门持续',
       ControlMode.frictionAxis => '摇杆油门',
     };
+    const unspecifiedInputToken = '__unspecified__';
+    const integerOutputToken = '__output_integer__';
+    const rationalOutputToken = '__output_rational__';
+    final inputUnspecified = action.inputKind == ActionInputKind.unspecified;
+    final variableOutput = action.outputKind != ActionOutputKind.pin;
+    final pinOutput = !variableOutput;
     final directionVisible =
+        pinOutput &&
+        !inputUnspecified &&
         action.mode != ControlMode.frictionToggle &&
         action.mode != ControlMode.frictionAxis;
-    final fields = <Widget>[
+    final inputChoices = <String>[unspecifiedInputToken, ...visibleInputs];
+    final inputValue = inputUnspecified ? unspecifiedInputToken : action.key;
+    final outputChoices = <String>[
+      ...visiblePins,
+      integerOutputToken,
+      rationalOutputToken,
+    ];
+    final outputValue = pinOutput
+        ? action.pin
+        : action.outputKind == ActionOutputKind.integer
+        ? integerOutputToken
+        : rationalOutputToken;
+    final primaryFields = <Widget>[
       Expanded(
         child: _FieldAnchor(
           path: '$fieldPath.key',
-          child: DropdownButtonFormField(
+          child: DropdownButtonFormField<String>(
             key: ValueKey('$fieldPath.key'),
-            initialValue: action.key,
+            initialValue: inputValue,
             decoration: _fieldDecoration(ref, '$fieldPath.key', '输入'),
-            items: visibleInputs
-                .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+            items: inputChoices
+                .map(
+                  (e) => DropdownMenuItem(
+                    value: e,
+                    child: Text(e == unspecifiedInputToken ? '未指定' : e),
+                  ),
+                )
                 .toList(),
-            onChanged: (v) => onChanged(action.copyWith(key: v)),
+            onChanged: (v) {
+              if (v == null) return;
+              if (v == unspecifiedInputToken) {
+                onChanged(
+                  action.copyWith(
+                    inputKind: ActionInputKind.unspecified,
+                    key: null,
+                    direction: null,
+                    mode: null,
+                    parameter: null,
+                  ),
+                );
+              } else {
+                onChanged(
+                  action.copyWith(
+                    inputKind: ActionInputKind.remote,
+                    key: v,
+                    expression: null,
+                  ),
+                );
+              }
+            },
           ),
         ),
       ),
@@ -332,14 +378,42 @@ class _ActionRow extends ConsumerWidget {
       Expanded(
         child: _FieldAnchor(
           path: '$fieldPath.pin',
-          child: DropdownButtonFormField(
+          child: DropdownButtonFormField<String>(
             key: ValueKey('$fieldPath.pin'),
-            initialValue: action.pin,
+            initialValue: outputValue,
             decoration: _fieldDecoration(ref, '$fieldPath.pin', '输出'),
-            items: visiblePins
-                .map((e) => DropdownMenuItem(value: e, child: Text(e)))
-                .toList(),
-            onChanged: (v) => onChanged(action.copyWith(pin: v)),
+            items: outputChoices.map((e) {
+              final label = switch (e) {
+                integerOutputToken => '整数',
+                rationalOutputToken => '有理数',
+                _ => e,
+              };
+              return DropdownMenuItem(value: e, child: Text(label));
+            }).toList(),
+            onChanged: (v) {
+              if (v == null) return;
+              if (v == integerOutputToken || v == rationalOutputToken) {
+                onChanged(
+                  action.copyWith(
+                    outputKind: v == integerOutputToken
+                        ? ActionOutputKind.integer
+                        : ActionOutputKind.rational,
+                    pin: null,
+                    direction: null,
+                    mode: null,
+                    parameter: null,
+                  ),
+                );
+              } else {
+                onChanged(
+                  action.copyWith(
+                    outputKind: ActionOutputKind.pin,
+                    pin: v,
+                    variableName: null,
+                  ),
+                );
+              }
+            },
           ),
         ),
       ),
@@ -365,100 +439,124 @@ class _ActionRow extends ConsumerWidget {
           ),
         ),
       ],
-      const SizedBox(width: 8),
-      Expanded(
-        child: _FieldAnchor(
-          path: '$fieldPath.mode',
-          child: DropdownButtonFormField(
-            key: ValueKey('$fieldPath.mode'),
-            initialValue: action.mode,
-            decoration: _fieldDecoration(ref, '$fieldPath.mode', '控制方式'),
-            selectedItemBuilder: (context) => [
-              for (final mode in visibleModes) Text(modeLabel(mode)),
-            ],
-            items: visibleModes.map((e) {
-              final label = modeLabel(e);
-              final supported = modes.contains(e);
-              return DropdownMenuItem(
-                value: e,
-                enabled: supported,
-                child: Text('$label${supported ? '' : '（当前配置，不支持）'}'),
-              );
-            }).toList(),
-            onChanged: (v) {
-              final clearsDirection =
-                  v == ControlMode.frictionToggle ||
-                  v == ControlMode.frictionAxis;
-              onChanged(
-                action.copyWith(
-                  mode: v,
-                  direction: clearsDirection ? null : action.direction,
-                ),
-              );
-            },
+      if (pinOutput && !inputUnspecified) ...[
+        const SizedBox(width: 8),
+        Expanded(
+          child: _FieldAnchor(
+            path: '$fieldPath.mode',
+            child: DropdownButtonFormField(
+              key: ValueKey('$fieldPath.mode'),
+              initialValue: action.mode,
+              decoration: _fieldDecoration(ref, '$fieldPath.mode', '控制方式'),
+              selectedItemBuilder: (context) => [
+                for (final mode in visibleModes) Text(modeLabel(mode)),
+              ],
+              items: visibleModes.map((e) {
+                final label = modeLabel(e);
+                final supported = modes.contains(e);
+                return DropdownMenuItem(
+                  value: e,
+                  enabled: supported,
+                  child: Text('$label${supported ? '' : '（当前配置，不支持）'}'),
+                );
+              }).toList(),
+              onChanged: (v) {
+                final clearsDirection =
+                    v == ControlMode.frictionToggle ||
+                    v == ControlMode.frictionAxis;
+                onChanged(
+                  action.copyWith(
+                    mode: v,
+                    direction: clearsDirection ? null : action.direction,
+                  ),
+                );
+              },
+            ),
           ),
         ),
-      ),
-      const SizedBox(width: 8),
-      Expanded(
-        child: usesSensitivity
-            ? _NumberField<double>(
-                label: parameterLabel,
-                fieldPath: '$fieldPath.parameter',
-                value: action.parameter?.toDouble(),
-                onChanged: (v) => onChanged(action.copyWith(parameter: v)),
-              )
-            : _NumberField(
-                label: parameterLabel,
-                fieldPath: '$fieldPath.parameter',
-                value: action.parameter?.toInt(),
-                onChanged: (v) => onChanged(action.copyWith(parameter: v)),
-              ),
-      ),
+      ],
+    ];
+    final secondaryFields = <Widget>[
+      if (pinOutput && !inputUnspecified)
+        Expanded(
+          child: usesSensitivity
+              ? _NumberField<double>(
+                  label: parameterLabel,
+                  fieldPath: '$fieldPath.parameter',
+                  value: action.parameter?.toDouble(),
+                  onChanged: (v) => onChanged(action.copyWith(parameter: v)),
+                )
+              : _NumberField(
+                  label: parameterLabel,
+                  fieldPath: '$fieldPath.parameter',
+                  value: action.parameter?.toInt(),
+                  onChanged: (v) => onChanged(action.copyWith(parameter: v)),
+                ),
+        ),
+      if (variableOutput) ...[
+        if (secondaryFieldsNotEmpty(pinOutput, inputUnspecified))
+          const SizedBox(width: 8),
+        Expanded(
+          child: _TextField(
+            label: '变量名',
+            value: action.variableName,
+            fieldPath: '$fieldPath.variable',
+            onChanged: (v) => onChanged(
+              action.copyWith(variableName: v.trim().isEmpty ? null : v),
+            ),
+          ),
+        ),
+      ],
+      if (inputUnspecified) ...[
+        if (pinOutput || variableOutput) const SizedBox(width: 8),
+        Expanded(
+          flex: 2,
+          child: _TextField(
+            label: '表达式',
+            value: action.expression,
+            fieldPath: '$fieldPath.expression',
+            monospace: true,
+            hint: '例如 LX + LY、min(LX, 2047) * 4、sqrt(PI)',
+            onChanged: (v) =>
+                onChanged(action.copyWith(expression: v.isEmpty ? null : v)),
+          ),
+        ),
+      ],
     ];
     return Card(
-      // 动作卡嵌在 _Section 卡片里，用 block 色调保持「越往里越深」的层级。
       color: AppSurface.block.colorOf(Theme.of(context).colorScheme),
       child: Padding(
         padding: const EdgeInsets.all(12),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            if (constraints.maxWidth < _compactBreakpoint) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    children: [
-                      const Expanded(
-                        child: Text(
-                          '动作配置',
-                          style: TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: onRemove,
-                        tooltip: '删除动作',
-                        icon: const Icon(Icons.delete_outline),
-                      ),
-                    ],
-                  ),
-                  ..._unflexChildren(fields, spacing: 10),
-                ],
-              );
-            }
-            return Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
               children: [
-                ...fields,
+                const Expanded(
+                  child: Text(
+                    '动作配置',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
                 IconButton(
                   onPressed: onRemove,
                   tooltip: '删除动作',
                   icon: const Icon(Icons.delete_outline),
                 ),
               ],
-            );
-          },
+            ),
+            const SizedBox(height: 8),
+            _AdaptiveRow(children: primaryFields),
+            if (secondaryFields.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              _AdaptiveRow(children: secondaryFields),
+            ],
+          ],
         ),
       ),
     );
   }
+
+  bool secondaryFieldsNotEmpty(bool pinOutput, bool inputUnspecified) =>
+      pinOutput && !inputUnspecified;
 }

@@ -1,3 +1,4 @@
+import 'expression.dart';
 import 'models.dart';
 import 'music.dart';
 import 'staff_notation.dart';
@@ -1089,13 +1090,70 @@ abstract final class ProjectValidator {
         issue(IssueSeverity.error, entry.path, '模式切换按键不能重复', 'strategy');
       }
     }
+    final variableTypes = <String, ExpressionType>{};
+    final variableModes = <String, Set<int>>{};
+    for (var mi = 0; mi < count; mi++) {
+      final mode = config.modes[mi];
+      final seenNames = <String>{};
+      for (var ai = 0; ai < mode.actions.length; ai++) {
+        final action = mode.actions[ai];
+        if (action.outputKind == ActionOutputKind.pin) continue;
+        final name = action.variableName?.trim() ?? '';
+        if (name.isEmpty ||
+            !isValidVariableName(name) ||
+            !seenNames.add(name)) {
+          continue;
+        }
+        final type = action.outputKind == ActionOutputKind.integer
+            ? ExpressionType.integer
+            : ExpressionType.rational;
+        final existing = variableTypes[name];
+        if (existing != null && existing != type) {
+          issue(
+            IssueSeverity.error,
+            'modes.$mi.actions.$ai.variable',
+            '同名变量在不同模式中的类型必须一致',
+            'mappings',
+          );
+        } else {
+          variableTypes[name] = type;
+        }
+        variableModes.putIfAbsent(name, () => <int>{}).add(mi);
+      }
+    }
+    final globalVariables = <String, ExpressionType>{
+      for (final entry in variableTypes.entries)
+        if ((variableModes[entry.key]?.length ?? 0) >= 2)
+          entry.key: entry.value,
+    };
     for (var mi = 0; mi < count; mi++) {
       final mode = config.modes[mi];
       final seen = <String, int>{};
+      final seenVariables = <String>{};
+      final modeVariables = <String, ExpressionType>{...globalVariables};
       for (var ai = 0; ai < mode.actions.length; ai++) {
         final action = mode.actions[ai];
         final path = 'modes.$mi.actions.$ai';
-        _action(config, mode, action, path, switchKeys, issue);
+        if (action.outputKind != ActionOutputKind.pin) {
+          final name = action.variableName?.trim() ?? '';
+          if (name.isNotEmpty && !seenVariables.add(name)) {
+            issue(
+              IssueSeverity.error,
+              '$path.variable',
+              '本模式内变量名不能重复',
+              'mappings',
+            );
+          }
+        }
+        _action(config, mode, action, path, switchKeys, modeVariables, issue);
+        if (action.outputKind != ActionOutputKind.pin) {
+          final name = action.variableName?.trim() ?? '';
+          if (isValidVariableName(name)) {
+            modeVariables[name] = action.outputKind == ActionOutputKind.integer
+                ? ExpressionType.integer
+                : ExpressionType.rational;
+          }
+        }
         if (action.key != null) {
           final previous = seen[action.key!];
           if (previous != null) {
@@ -1113,14 +1171,181 @@ abstract final class ProjectValidator {
     }
   }
 
+  static void _expressionOrVariableRow(
+    EngineerConfig config,
+    EngineerModeConfig parent,
+    ActionMapping action,
+    String path,
+    Set<String> switchKeys,
+    Map<String, ExpressionType> variables,
+    _AddIssue issue,
+  ) {
+    final inputUnspecified = action.inputKind == ActionInputKind.unspecified;
+    final pinOutput = action.outputKind == ActionOutputKind.pin;
+
+    if (inputUnspecified) {
+      if (action.key != null) {
+        issue(IssueSeverity.error, '$path.key', '输入为未指定时不能再选择按键', 'mappings');
+      }
+    } else {
+      _choice(action.key, '$path.key', '动作输入', 'mappings', issue);
+      if (action.key != null && !remoteKeys.contains(action.key)) {
+        issue(IssueSeverity.error, '$path.key', '未知遥控器输入', 'mappings');
+      }
+      if (action.key != null && switchKeys.contains(action.key)) {
+        issue(IssueSeverity.error, '$path.key', '动作输入与模式切换按键冲突', 'mappings');
+      }
+      if (parent.preserveChassis &&
+          (action.key == 'LX' || action.key == 'LY')) {
+        issue(
+          IssueSeverity.error,
+          '$path.key',
+          '当前模式保留底盘控制，LX/LY 不能用于动作',
+          'mappings',
+        );
+      }
+    }
+
+    if (pinOutput) {
+      _choice(action.pin, '$path.pin', '动作输出', 'mappings', issue);
+      if (action.pin != null &&
+          ![...expansionPins, ...mainServoPins].contains(action.pin)) {
+        issue(IssueSeverity.error, '$path.pin', '动作输出无效', 'mappings');
+      }
+      if (action.variableName != null) {
+        issue(IssueSeverity.error, '$path.variable', '引脚输出不能填写变量名', 'mappings');
+      }
+    } else {
+      if (action.pin != null) {
+        issue(IssueSeverity.error, '$path.pin', '变量输出不能同时选择引脚', 'mappings');
+      }
+      _choice(action.variableName, '$path.variable', '变量名', 'mappings', issue);
+      final name = action.variableName?.trim() ?? '';
+      if (name.isNotEmpty && !isValidVariableName(name)) {
+        issue(
+          IssueSeverity.error,
+          '$path.variable',
+          '变量名必须是合法 C 标识符，且不能使用内置输入/常量/函数/关键字',
+          'mappings',
+        );
+      }
+    }
+
+    if (!inputUnspecified && action.expression != null) {
+      issue(
+        IssueSeverity.error,
+        '$path.expression',
+        '只有输入为未指定时才能填写表达式',
+        'mappings',
+      );
+    }
+    if (inputUnspecified) {
+      _choice(action.expression, '$path.expression', '表达式', 'mappings', issue);
+      if (action.direction != null) {
+        issue(IssueSeverity.error, '$path.direction', '表达式行不使用方向', 'mappings');
+      }
+      if (action.mode != null) {
+        issue(IssueSeverity.error, '$path.mode', '表达式行不使用控制方式', 'mappings');
+      }
+      if (action.parameter != null) {
+        issue(IssueSeverity.error, '$path.parameter', '表达式行不使用参数', 'mappings');
+      }
+      final source = action.expression;
+      if (source != null && source.trim().isNotEmpty) {
+        final parsed = ExpressionParser.parse(source, variables: variables);
+        for (final diagnostic in parsed.diagnostics) {
+          issue(
+            IssueSeverity.error,
+            '$path.expression',
+            diagnostic.message,
+            'mappings',
+          );
+        }
+      }
+    } else {
+      if (action.direction != null) {
+        issue(IssueSeverity.error, '$path.direction', '变量赋值行不使用方向', 'mappings');
+      }
+      if (action.mode != null) {
+        issue(IssueSeverity.error, '$path.mode', '变量赋值行不使用控制方式', 'mappings');
+      }
+      if (action.parameter != null) {
+        issue(IssueSeverity.error, '$path.parameter', '变量赋值行不使用参数', 'mappings');
+      }
+    }
+
+    if (pinOutput && inputUnspecified && action.pin != null) {
+      final role = mainServoPins.contains(action.pin)
+          ? PinRole.servo
+          : config.pwm.pinRoles[action.pin];
+      if (role == PinRole.friction) {
+        issue(
+          IssueSeverity.error,
+          '$path.pin',
+          '摩擦轮脚不能使用表达式，请使用摩擦轮专用控制方式',
+          'mappings',
+        );
+      }
+      if (role == PinRole.unused) {
+        issue(
+          IssueSeverity.error,
+          '$path.pin',
+          '${action.pin} 已标记为未使用，不能作为动作输出',
+          'mappings',
+        );
+      }
+      final chassisUsed = config.chassis.enabled
+          ? [
+              config.chassis.leftFront.pin,
+              config.chassis.leftRear.pin,
+              config.chassis.rightFront.pin,
+              config.chassis.rightRear.pin,
+            ].map(InfantryPinPlanner.normalizePin).toSet()
+          : <String>{};
+      if (chassisUsed.contains(action.pin)) {
+        issue(
+          IssueSeverity.error,
+          '$path.pin',
+          '${action.pin} 已被底盘电机占用',
+          'mappings',
+        );
+      }
+    }
+  }
+
   static void _action(
     EngineerConfig config,
     EngineerModeConfig parent,
     ActionMapping action,
     String path,
     Set<String> switchKeys,
+    Map<String, ExpressionType> variables,
     _AddIssue issue,
   ) {
+    if (action.outputKind != ActionOutputKind.pin ||
+        action.inputKind == ActionInputKind.unspecified) {
+      _expressionOrVariableRow(
+        config,
+        parent,
+        action,
+        path,
+        switchKeys,
+        variables,
+        issue,
+      );
+      return;
+    }
+    if (action.expression != null) {
+      issue(
+        IssueSeverity.error,
+        '$path.expression',
+        '只有输入为未指定时才能填写表达式',
+        'mappings',
+      );
+    }
+    if (action.variableName != null) {
+      issue(IssueSeverity.error, '$path.variable', '引脚输出不能填写变量名', 'mappings');
+    }
     _choice(action.key, '$path.key', '动作输入', 'mappings', issue);
     final frictionMode = _isFrictionMode(action.mode);
     final directionOptional =
