@@ -5,3 +5,6 @@
 # Avoid committing pubspec.lock for library packages; see
 # https://dart.dev/tools/pub/private-files#pubspec-lock.
 pubspec.lock
+
+# 生成代码运行时验证工具的工作目录（tool/verify_runtime.dart）
+tool/.verify_runtime/
