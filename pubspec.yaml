@@ -95,6 +95,11 @@ flutter:
     - family: PieBlockSans
       fonts:
         - asset: assets/fonts/NotoSansSC-Regular-subset.ttf
+    # 只含 – ÷ ≥ ≤ ♯ ♭ ♮ 等界面用到的符号，作为 PieBlockSans 的字体回退：
+    # 走打包资源可以避免 Linux 上为缺字扫描全部系统字体（见 lib/main.dart）。
+    - family: PieBlockSymbols
+      fonts:
+        - asset: assets/fonts/NotoSansSC-Symbols-subset.ttf
     - family: PieBlockMono
       fonts:
         - asset: assets/fonts/JetBrainsMonoNL-Regular.ttf

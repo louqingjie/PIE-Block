@@ -694,7 +694,7 @@ class _DeployPageState extends ConsumerState<_DeployPage> {
                   child: SelectableText(
                     deploy.events.isEmpty ? '等待操作…' : deploy.events.join('\n'),
                     style: const TextStyle(
-                      fontFamily: 'Consolas',
+                      fontFamily: 'PieBlockMono',
                       fontSize: 12.5,
                       height: 1.45,
                     ),

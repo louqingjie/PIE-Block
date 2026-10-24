@@ -621,6 +621,25 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('字体回退只用打包字体族，避免 Linux 扫描全部系统字体', (tester) async {
+    await tester.pumpWidget(const ProviderScope(child: PieBlockApp()));
+    await tester.pumpAndSettle();
+
+    final app = tester.widget<MaterialApp>(find.byType(MaterialApp));
+    for (final theme in [app.theme!, app.darkTheme!]) {
+      expect(theme.textTheme.bodyMedium?.fontFamilyFallback, <String>[
+        'PieBlockSymbols',
+      ]);
+    }
+    // 符号回退字体会随包分发，确保缺字（– ÷ ≥ ≤ ♯ ♭ ♮ 等）不再落到
+    // 系统字体解析；Linux 上那会触发 fontconfig 全量扫描并卡住 UI 线程。
+    final data = await rootBundle.load(
+      'assets/fonts/NotoSansSC-Symbols-subset.ttf',
+    );
+    expect(data.lengthInBytes, greaterThan(0));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('从启动页进入编辑页时播放横向揭示动画', (tester) async {
     late _PageTransitionController controller;
     await tester.pumpWidget(
@@ -2606,12 +2625,9 @@ void main() {
     expect(editor.style!.fontFamily, 'PieBlockMono');
     expect(
       editor.style!.fontFamilyFallback,
-      containsAll(<String>[
-        'PieBlockSans',
-        'Noto Sans CJK SC',
-        'Source Han Sans SC',
-        'WenQuanYi Micro Hei Mono',
-      ]),
+      // 只回退到打包字体族：Linux 上列系统族名会触发 fontconfig 扫描全部
+      // 系统字体，见 lib/main.dart 的注释。
+      <String>['PieBlockSans', 'PieBlockSymbols'],
     );
     final lineNumbers = tester.widget<DefaultCodeLineNumber>(
       find.byKey(const ValueKey('generated-code-line-numbers')),

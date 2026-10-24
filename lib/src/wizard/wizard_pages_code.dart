@@ -477,12 +477,9 @@ const EdgeInsets _codeEditorPadding = EdgeInsets.symmetric(
   horizontal: 14,
   vertical: 12,
 );
-const _codeFontFallbacks = <String>[
-  'PieBlockSans',
-  'Noto Sans CJK SC',
-  'Source Han Sans SC',
-  'WenQuanYi Micro Hei Mono',
-];
+// 等宽正文缺字时回退到打包的 PieBlockSans / 符号子集；不列系统字体族名，
+// 避免 Linux 上 fontconfig 为未知族名扫描全部系统字体（见 lib/main.dart）。
+const _codeFontFallbacks = <String>['PieBlockSans', 'PieBlockSymbols'];
 
 class _GeneratedCodePreview extends StatefulWidget {
   const _GeneratedCodePreview({

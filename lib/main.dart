@@ -48,18 +48,12 @@ class _PieBlockAppState extends ConsumerState<PieBlockApp> {
     return buildAppTheme(
       brightness: brightness,
       fontFamily: 'PieBlockSans',
-      // 子集字体缺字时按这个顺序回退。前面几个是 Windows 的，后面几个
-      // 覆盖 macOS / Linux / Web，避免 Web 上落到浏览器默认字体。
-      fontFamilyFallback: const [
-        'Microsoft YaHei UI',
-        'PingFang SC',
-        'Noto Sans CJK SC',
-        'Source Han Sans SC',
-        'Segoe UI',
-        'Segoe UI Symbol',
-        'Segoe UI Emoji',
-        'sans-serif',
-      ],
+      // 只回退到随应用打包的符号子集（– ÷ ≥ ♯ ♭ ♮ 等）。不要在这里列
+      // 系统字体族名：Linux 上 fontconfig 解析不存在的族名时会逐个打开
+      // 系统字体建立 typeface（实测约 1 万次 openat），把首帧、首个弹窗和
+      // 首次进入向导的 UI 线程卡住 1–2 秒。常见 3755 个汉字与界面用字已在
+      // PieBlockSans 的子集里，个别缺字交给引擎的系统回退路径。
+      fontFamilyFallback: const ['PieBlockSymbols'],
       scaffoldBackgroundColor: brightness == Brightness.light
           ? const Color(0xfff6f8fa)
           : const Color(0xff101416),
