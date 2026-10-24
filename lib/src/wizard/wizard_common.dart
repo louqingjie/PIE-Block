@@ -225,6 +225,7 @@ String _fieldLabel(String path) {
   if (path.endsWith('.variable')) return '变量名';
   if (path.endsWith('.expression')) return '表达式';
   if (path.contains('servo_mids')) return '舵机中位';
+  if (path.contains('friction_max_duties')) return '摩擦轮满油占空比';
   if (path.contains('pin_roles')) return '输出角色';
   return path;
 }

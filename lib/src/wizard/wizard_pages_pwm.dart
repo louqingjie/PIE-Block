@@ -131,6 +131,29 @@ class _PwmPage extends ConsumerWidget {
                                 ),
                               ),
                             ],
+                            if ((pin == 'P64' || pin == 'P66') &&
+                                pwm.pinRoles[pin] == PinRole.friction) ...[
+                              const SizedBox(width: 8),
+                              SizedBox(
+                                width: 110,
+                                child: _NumberField(
+                                  label: '满油 duty',
+                                  fieldPath: 'pwm.friction_max_duties.$pin',
+                                  value: pwm.frictionMaxDuties[pin],
+                                  onChanged: (v) {
+                                    final duties = {...pwm.frictionMaxDuties};
+                                    if (v == null) {
+                                      duties.remove(pin);
+                                    } else {
+                                      duties[pin] = v;
+                                    }
+                                    update(
+                                      pwm.copyWith(frictionMaxDuties: duties),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ),

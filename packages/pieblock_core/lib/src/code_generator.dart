@@ -23,6 +23,11 @@ abstract final class CodeGenerator {
   }
 
   static int _dir(Direction value) => value == Direction.forward ? 1 : 0;
+  static bool _isFrictionMode(ControlMode? mode) =>
+      mode == ControlMode.frictionToggle ||
+      mode == ControlMode.frictionStep ||
+      mode == ControlMode.frictionContinuous ||
+      mode == ControlMode.frictionAxis;
   static int _frequency(PwmFrequency value) =>
       value == PwmFrequency.hz50 ? 50 : 10000;
   static int _servoDuty(int? degrees) =>
@@ -600,6 +605,42 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
         }
       }
     }
+    final frictionKeyActions =
+        <({int modeIndex, int actionIndex, ActionMapping action})>[];
+    final frictionKeyIndexes = <String, int>{};
+    final frictionRateActions =
+        <({int modeIndex, int actionIndex, ActionMapping action})>[];
+    final frictionRateIndexes = <String, int>{};
+    final hasFrictionControl = c.modes
+        .take(c.modeCount!)
+        .any((mode) => mode.actions.any((a) => _isFrictionMode(a.mode)));
+    if (hasFrictionControl) {
+      for (var modeIndex = 0; modeIndex < c.modeCount!; modeIndex++) {
+        final actions = c.modes[modeIndex].actions;
+        for (var actionIndex = 0; actionIndex < actions.length; actionIndex++) {
+          final action = actions[actionIndex];
+          if (action.mode == ControlMode.frictionToggle ||
+              action.mode == ControlMode.frictionStep) {
+            frictionKeyIndexes['$modeIndex:$actionIndex'] =
+                frictionKeyActions.length;
+            frictionKeyActions.add((
+              modeIndex: modeIndex,
+              actionIndex: actionIndex,
+              action: action,
+            ));
+          } else if (action.mode == ControlMode.frictionContinuous ||
+              action.mode == ControlMode.frictionAxis) {
+            frictionRateIndexes['$modeIndex:$actionIndex'] =
+                frictionRateActions.length;
+            frictionRateActions.add((
+              modeIndex: modeIndex,
+              actionIndex: actionIndex,
+              action: action,
+            ));
+          }
+        }
+      }
+    }
     final usedPins = <String>{
       for (final mode in c.modes.take(c.modeCount!))
         for (final action in mode.actions)
@@ -621,6 +662,86 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
         final read = isAxis
             ? 'valueOfRoker[${a.key!.startsWith('L') ? 0 : 1}][${a.key!.endsWith('X') ? 0 : 1}]'
             : 'RcKeyValueRead(${_key(a.key!)})';
+        if (_isFrictionMode(a.mode)) {
+          final parameter = a.parameter!.toInt();
+          switch (a.mode!) {
+            case ControlMode.frictionToggle:
+              final index = frictionKeyIndexes['$i:$actionIndex']!;
+              body.add(
+                '    if ($read && !frictionKeyLast[$index]) frictionLevel = frictionLevel > 0 ? 0 : $parameter;',
+              );
+              body.add('    frictionKeyLast[$index] = $read;');
+            case ControlMode.frictionStep:
+              final index = frictionKeyIndexes['$i:$actionIndex']!;
+              final forward = a.direction == Direction.forward;
+              body.add('    if ($read && !frictionKeyLast[$index]) {');
+              if (forward) {
+                body.add(
+                  '        if (frictionLevel + $parameter > FRICTION_LEVEL_MAX) frictionLevel = FRICTION_LEVEL_MAX;',
+                );
+                body.add('        else frictionLevel += $parameter;');
+              } else {
+                body.add(
+                  '        if (frictionLevel > $parameter) frictionLevel -= $parameter;',
+                );
+                body.add('        else frictionLevel = 0;');
+              }
+              body.add('    }');
+              body.add('    frictionKeyLast[$index] = $read;');
+            case ControlMode.frictionContinuous:
+              final index = frictionRateIndexes['$i:$actionIndex']!;
+              final forward = a.direction == Direction.forward;
+              body.add('    if ($read) {');
+              body.add('        frictionRateAcc[$index] += $parameter;');
+              body.add(
+                '        while (frictionRateAcc[$index] >= FRICTION_RATE_LOOPS) {',
+              );
+              body.add(
+                '            frictionRateAcc[$index] -= FRICTION_RATE_LOOPS;',
+              );
+              body.add(
+                forward
+                    ? '            if (frictionLevel < FRICTION_LEVEL_MAX) frictionLevel++;'
+                    : '            if (frictionLevel > 0) frictionLevel--;',
+              );
+              body.add('        }');
+              body.add('    } else {');
+              body.add('        frictionRateAcc[$index] = 0;');
+              body.add('    }');
+            case ControlMode.frictionAxis:
+              final index = frictionRateIndexes['$i:$actionIndex']!;
+              body.add(
+                '    frictionRateAcc[$index] += (int32_t)$read * $parameter;',
+              );
+              body.add(
+                '    while (frictionRateAcc[$index] >= 2047L * FRICTION_RATE_LOOPS) {',
+              );
+              body.add(
+                '        frictionRateAcc[$index] -= 2047L * FRICTION_RATE_LOOPS;',
+              );
+              body.add(
+                '        if (frictionLevel < FRICTION_LEVEL_MAX) frictionLevel++;',
+              );
+              body.add('    }');
+              body.add(
+                '    while (frictionRateAcc[$index] <= -2047L * FRICTION_RATE_LOOPS) {',
+              );
+              body.add(
+                '        frictionRateAcc[$index] += 2047L * FRICTION_RATE_LOOPS;',
+              );
+              body.add('        if (frictionLevel > 0) frictionLevel--;');
+              body.add('    }');
+              body.add(
+                '    if (frictionLevel == 0 && frictionRateAcc[$index] < 0) frictionRateAcc[$index] = 0;',
+              );
+              body.add(
+                '    else if (frictionLevel == FRICTION_LEVEL_MAX && frictionRateAcc[$index] > 0) frictionRateAcc[$index] = 0;',
+              );
+            default:
+              break;
+          }
+          continue;
+        }
         final slot = expansionPins.indexOf(a.pin!);
         final role = slot >= 0 ? c.pwm.pinRoles[a.pin!] : PinRole.servo;
         if (slot >= 0) {
@@ -768,6 +889,9 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
             _slot(c.chassis.rightRear.pin),
           }
         : <int>{};
+    final frictionSlots = hasFrictionControl
+        ? {_slot('P64'), _slot('P66')}
+        : <int>{};
     final prepareCases = <String>[];
     for (var i = 0; i < c.modeCount!; i++) {
       final mapped = c.modes[i].actions
@@ -777,6 +901,7 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
       final lines = <String>[];
       for (var slot = 0; slot < expansionPins.length; slot++) {
         if (!chassisSlots.contains(slot) &&
+            !frictionSlots.contains(slot) &&
             !mapped.contains(slot) &&
             (c.pwm.pinRoles[expansionPins[slot]] == PinRole.motor ||
                 c.pwm.pinRoles[expansionPins[slot]] == PinRole.friction ||
@@ -796,6 +921,107 @@ ${prepareCases.join('\n')}
     }
 }
 ''';
+    final frictionP64Max = c.pwm.frictionMaxDuties['P64'] ?? 800;
+    final frictionP66Max = c.pwm.frictionMaxDuties['P66'] ?? 800;
+    final frictionSupport = hasFrictionControl
+        ? '''#define FRICTION_START_DUTY 500
+#define FRICTION_LEVEL_MAX 100
+#define FRICTION_RAMP_STEP 1
+#define FRICTION_ACTIVATE_MS 1000
+#define FRICTION_LOOP_MS 20
+#define FRICTION_ACTIVATE_LOOPS ((FRICTION_ACTIVATE_MS + FRICTION_LOOP_MS - 1) / FRICTION_LOOP_MS)
+#define FRICTION_RATE_LOOPS 50
+#define FRICTION_MAX_DUTY_P64 $frictionP64Max
+#define FRICTION_MAX_DUTY_P66 $frictionP66Max
+uint8_t frictionLevel = 0;
+uint16_t frictionTargetDutyP64 = 0;
+uint16_t frictionTargetDutyP66 = 0;
+uint16_t frictionDutyP64 = 0;
+uint16_t frictionDutyP66 = 0;
+uint8_t frictionActivateLoops = 0;
+${frictionKeyActions.isEmpty ? '' : 'uint8_t frictionKeyLast[${frictionKeyActions.length}] = {0};'}
+${frictionRateActions.isEmpty ? '' : 'int32_t frictionRateAcc[${frictionRateActions.length}] = {0};'}
+static uint16_t FrictionDutyOfLevel(uint8_t level, uint16_t maxDuty)
+{
+    return (uint16_t)(FRICTION_START_DUTY
+        + ((uint16_t)level * (uint16_t)(maxDuty - FRICTION_START_DUTY)) / FRICTION_LEVEL_MAX);
+}
+static void UpdateFriction(void)
+{
+    if (frictionLevel == 0) frictionActivateLoops = 0;
+    frictionTargetDutyP64 = frictionLevel > 0
+        ? FrictionDutyOfLevel(frictionLevel, FRICTION_MAX_DUTY_P64) : 0;
+    frictionTargetDutyP66 = frictionLevel > 0
+        ? FrictionDutyOfLevel(frictionLevel, FRICTION_MAX_DUTY_P66) : 0;
+    if (frictionLevel > 0 && frictionDutyP64 == 0
+        && frictionTargetDutyP64 >= FRICTION_START_DUTY)
+        frictionActivateLoops = FRICTION_ACTIVATE_LOOPS;
+    if (frictionActivateLoops > 0) {
+        frictionActivateLoops--;
+        frictionDutyP64 = FRICTION_START_DUTY;
+        frictionDutyP66 = FRICTION_START_DUTY;
+    } else {
+        if (frictionTargetDutyP64 >= FRICTION_START_DUTY && frictionDutyP64 < FRICTION_START_DUTY)
+            frictionDutyP64 = FRICTION_START_DUTY;
+        else if (frictionDutyP64 < frictionTargetDutyP64)
+            frictionDutyP64 += FRICTION_RAMP_STEP;
+        else if (frictionDutyP64 > frictionTargetDutyP64) {
+            if (frictionTargetDutyP64 == 0 && frictionDutyP64 <= FRICTION_START_DUTY)
+                frictionDutyP64 = 0;
+            else
+                frictionDutyP64 -= FRICTION_RAMP_STEP;
+        }
+        if (frictionTargetDutyP66 >= FRICTION_START_DUTY && frictionDutyP66 < FRICTION_START_DUTY)
+            frictionDutyP66 = FRICTION_START_DUTY;
+        else if (frictionDutyP66 < frictionTargetDutyP66)
+            frictionDutyP66 += FRICTION_RAMP_STEP;
+        else if (frictionDutyP66 > frictionTargetDutyP66) {
+            if (frictionTargetDutyP66 == 0 && frictionDutyP66 <= FRICTION_START_DUTY)
+                frictionDutyP66 = 0;
+            else
+                frictionDutyP66 -= FRICTION_RAMP_STEP;
+        }
+    }
+    dutyOfMotor[${_slot('P64')}] = frictionDutyP64;
+    dutyOfMotor[${_slot('P66')}] = frictionDutyP66;
+}
+'''
+        : '';
+    final frictionSync = !hasFrictionControl
+        ? ''
+        : '''uint8_t frictionStateMode = 0;
+static void SyncFrictionKeys(uint8_t mode)
+{
+    switch (mode) {
+${List.generate(c.modeCount!, (modeIndex) {
+            final lines = <String>[];
+            for (var index = 0; index < frictionKeyActions.length; index++) {
+              final entry = frictionKeyActions[index];
+              if (entry.modeIndex == modeIndex) {
+                lines.add('            frictionKeyLast[$index] = RcKeyValueRead(${_key(entry.action.key!)});');
+              }
+            }
+            for (var index = 0; index < frictionRateActions.length; index++) {
+              final entry = frictionRateActions[index];
+              if (entry.modeIndex == modeIndex) {
+                lines.add('            frictionRateAcc[$index] = 0;');
+              }
+            }
+            return lines.isEmpty ? '' : '        case ${modeIndex + 1}:\n${lines.join('\n')}\n            break;';
+          }).where((value) => value.isNotEmpty).join('\n')}
+    }
+}
+''';
+    final frictionSyncCall = hasFrictionControl
+        ? '''        if (frictionStateMode != currentMode) {
+            SyncFrictionKeys(currentMode);
+            frictionStateMode = currentMode;
+        }
+'''
+        : '';
+    final frictionUpdateCall = hasFrictionControl
+        ? '        UpdateFriction();\n'
+        : '';
     final servoButtonDeclarations =
         '''${servoButtonRemainderActions.isEmpty ? '' : 'int32_t servoButtonRemainder[${servoButtonRemainderActions.length}] = {0};'}
 ${servoButtonEdgeActions.isEmpty ? '' : 'uint8_t servoButtonKeyLast[${servoButtonEdgeActions.length}] = {0};'}''';
@@ -877,7 +1103,7 @@ ${engineerFeedbackChecks.join('\n')}
       return role == PinRole.servo ? '1' : 'dutyOfMotor[$slot]>=0';
     }).join(',');
     return '''${_header(c, '工程机器人控制代码', c.pwm.buzzerDisabled)}
-uint8_t currentMode = 1;
+${frictionSupport}uint8_t currentMode = 1;
 uint8_t lastSwitch = 0;
 uint8_t modeKeyLast[4] = {0};
 int mainServoDuty[2] = {${_servoDuty(c.pwm.servoMids['MP03'])}, ${_servoDuty(c.pwm.servoMids['MP74'])}};
@@ -885,7 +1111,7 @@ $servoButtonDeclarations
 $feedback
 $prepareMode
 $servoButtonSync
-$engineerFeedback
+$frictionSync$engineerFeedback
 
 ${c.chassis.enabled ? _chassis(c.chassis) : ''}
 ${modeFunctions.join('\n\n')}
@@ -927,10 +1153,10 @@ ${servoButtonEdgeActions.isEmpty ? '' : '''        if (servoButtonStateMode != c
             SyncServoButtonKeys(currentMode);
             servoButtonStateMode = currentMode;
         }'''}
-        switch (currentMode) {
+$frictionSyncCall        switch (currentMode) {
 ${cases.join('\n')}
         }
-        ExpansionBoradControl(Dir_Change_Order, $directionArgs);
+$frictionUpdateCall        ExpansionBoradControl(Dir_Change_Order, $directionArgs);
         Ms_Delay(EXPANSION_FRAME_GAP_MS);
         ExpansionBoradControl(Duty_Change_Order, abs(dutyOfMotor[0]),abs(dutyOfMotor[1]),abs(dutyOfMotor[2]),abs(dutyOfMotor[3]),abs(dutyOfMotor[4]),abs(dutyOfMotor[5]),abs(dutyOfMotor[6]),abs(dutyOfMotor[7]));
         Ms_Delay(EXPANSION_FRAME_GAP_MS);

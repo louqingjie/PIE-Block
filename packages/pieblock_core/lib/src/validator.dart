@@ -1006,6 +1006,40 @@ abstract final class ProjectValidator {
       );
     }
 
+    final frictionControl = _hasFrictionControl(config);
+    for (final pin in EngineerPinCapabilities.frictionPins) {
+      final maxDuty = config.pwm.frictionMaxDuties[pin];
+      if (maxDuty != null &&
+          (maxDuty < 500 || maxDuty > 800 || maxDuty % 100 != 0)) {
+        issue(
+          IssueSeverity.error,
+          'pwm.friction_max_duties.$pin',
+          '$pin 摩擦轮满油占空比必须是 500–800 内的整百值',
+          'pwm',
+        );
+      }
+      if (!frictionControl) continue;
+      if (config.pwm.pinRoles[pin] != PinRole.friction) {
+        issue(
+          IssueSeverity.error,
+          'pwm.pin_roles.$pin',
+          '使用摩擦轮控制时 $pin 的输出角色必须是摩擦轮',
+          'pwm',
+        );
+      }
+      if (maxDuty == null) {
+        issue(
+          IssueSeverity.error,
+          'pwm.friction_max_duties.$pin',
+          '$pin 摩擦轮满油占空比尚未填写',
+          'pwm',
+        );
+      }
+    }
+    if (frictionControl && config.pwm.pwma != PwmFrequency.hz50) {
+      issue(IssueSeverity.error, 'pwm.pwma', '使用摩擦轮控制时 PWMA 必须为 50Hz', 'pwm');
+    }
+
     _range(config.modeCount, 1, 4, 'modes.count', '模式数量', 'strategy', issue);
     final count = config.modeCount;
     if (count == null || count < 1 || count > 4) return;
@@ -1088,7 +1122,13 @@ abstract final class ProjectValidator {
     _AddIssue issue,
   ) {
     _choice(action.key, '$path.key', '动作输入', 'mappings', issue);
-    _choice(action.direction, '$path.direction', '动作方向', 'mappings', issue);
+    final frictionMode = _isFrictionMode(action.mode);
+    final directionOptional =
+        action.mode == ControlMode.frictionToggle ||
+        action.mode == ControlMode.frictionAxis;
+    if (!directionOptional) {
+      _choice(action.direction, '$path.direction', '动作方向', 'mappings', issue);
+    }
     _choice(action.mode, '$path.mode', '控制方式', 'mappings', issue);
     _choice(action.pin, '$path.pin', '动作 IO', 'mappings', issue);
     if (action.key != null && !remoteKeys.contains(action.key)) {
@@ -1134,6 +1174,8 @@ abstract final class ProjectValidator {
         ? PinRole.servo
         : config.pwm.pinRoles[action.pin];
     final motor = role != null && _motorRole(role);
+    final friction = role == PinRole.friction;
+    final hasFrictionControl = _hasFrictionControl(config);
     if (role == PinRole.unused) {
       issue(
         IssueSeverity.error,
@@ -1142,8 +1184,77 @@ abstract final class ProjectValidator {
         'mappings',
       );
     }
+    if (frictionMode) {
+      if (role != PinRole.friction) {
+        issue(
+          IssueSeverity.error,
+          '$path.pin',
+          '摩擦轮专用控制方式只能用于角色为摩擦轮的 P64/P66',
+          'mappings',
+        );
+      }
+      if (action.outputKind != ActionOutputKind.pin ||
+          action.variableName != null ||
+          action.expression != null) {
+        issue(IssueSeverity.error, '$path.pin', '摩擦轮专用控制方式必须输出到引脚', 'mappings');
+      }
+      if (action.inputKind != ActionInputKind.remote) {
+        issue(IssueSeverity.error, '$path.key', '摩擦轮专用控制方式需要遥控器输入', 'mappings');
+      }
+      if (action.mode == ControlMode.frictionAxis) {
+        if (!isAxis) {
+          issue(IssueSeverity.error, '$path.key', '摇杆油门只能使用摇杆轴输入', 'mappings');
+        }
+      } else if (!isButton) {
+        issue(
+          IssueSeverity.error,
+          '$path.key',
+          '启停/单次/持续只能使用数字按键输入',
+          'mappings',
+        );
+      }
+      if (directionOptional && action.direction != null) {
+        issue(
+          IssueSeverity.error,
+          '$path.direction',
+          '该摩擦轮控制方式不使用方向',
+          'mappings',
+        );
+      }
+    } else if (friction) {
+      if (hasFrictionControl) {
+        issue(
+          IssueSeverity.error,
+          '$path.mode',
+          '同一配置中摩擦轮脚不能混用旧控制方式',
+          'mappings',
+        );
+      } else {
+        issue(
+          IssueSeverity.warning,
+          '$path.mode',
+          '摩擦轮脚上的旧控制方式直接写占空比，不受安全斜坡保护',
+          'mappings',
+        );
+      }
+    }
     final allowed = role == null
         ? const <ControlMode>[]
+        : role == PinRole.friction
+        ? (isAxis
+              ? const [
+                  ControlMode.frictionAxis,
+                  ControlMode.speed,
+                  ControlMode.accelerate,
+                ]
+              : isButton
+              ? const [
+                  ControlMode.frictionToggle,
+                  ControlMode.frictionStep,
+                  ControlMode.frictionContinuous,
+                  ControlMode.direct,
+                ]
+              : const <ControlMode>[])
         : motor
         ? (isAxis
               ? const [ControlMode.speed, ControlMode.accelerate]
@@ -1213,13 +1324,46 @@ abstract final class ProjectValidator {
         );
       case ControlMode.single || ControlMode.continuous:
         _servoButtonSensitivity(action.parameter, '$path.parameter', issue);
-      case ControlMode.frictionToggle ||
-          ControlMode.frictionStep ||
-          ControlMode.frictionContinuous ||
-          ControlMode.frictionAxis:
-        // 摩擦轮专用控制方式在阶段 2 接入；当前 allowed 列表尚未放行，
-        // 这里只保证枚举穷尽。
-        break;
+      case ControlMode.frictionToggle:
+        _actionIntegerRange(
+          action.parameter,
+          1,
+          100,
+          '$path.parameter',
+          '目标油门 %',
+          'mappings',
+          issue,
+        );
+      case ControlMode.frictionStep:
+        _actionIntegerRange(
+          action.parameter,
+          1,
+          100,
+          '$path.parameter',
+          '单次油门 %',
+          'mappings',
+          issue,
+        );
+      case ControlMode.frictionContinuous:
+        _actionIntegerRange(
+          action.parameter,
+          1,
+          100,
+          '$path.parameter',
+          '持续油门 %/秒',
+          'mappings',
+          issue,
+        );
+      case ControlMode.frictionAxis:
+        _actionIntegerRange(
+          action.parameter,
+          1,
+          100,
+          '$path.parameter',
+          '摇杆油门 %/秒',
+          'mappings',
+          issue,
+        );
       case null:
         _choice(action.parameter, '$path.parameter', '动作参数', 'mappings', issue);
     }
@@ -1276,6 +1420,22 @@ abstract final class ProjectValidator {
       role == PinRole.motor ||
       role == PinRole.friction ||
       role == PinRole.jitterMotor;
+
+  static const _frictionModes = {
+    ControlMode.frictionToggle,
+    ControlMode.frictionStep,
+    ControlMode.frictionContinuous,
+    ControlMode.frictionAxis,
+  };
+
+  static bool _isFrictionMode(ControlMode? mode) =>
+      mode != null && _frictionModes.contains(mode);
+
+  static bool _hasFrictionControl(EngineerConfig config) => config.modes
+      .take(config.modeCount ?? 0)
+      .any(
+        (mode) => mode.actions.any((action) => _isFrictionMode(action.mode)),
+      );
 
   static String _engineerRoleLabel(PinRole role) => switch (role) {
     PinRole.motor => '平滑电机',

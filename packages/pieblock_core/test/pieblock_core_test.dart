@@ -2408,4 +2408,152 @@ void main() {
       expect(source.toJson()['format_version'], 17);
     });
   });
+  group('工程摩擦轮控制', () {
+    EngineerConfig frictionEngineer() => EngineerConfig(
+      remote: const RemoteConfig(channel: 36, deadzone: 100),
+      chassis: completeChassis(),
+      pwm: PwmGroupConfig(
+        pwma: PwmFrequency.hz50,
+        pwmb: PwmFrequency.hz10000,
+        pinRoles: const {
+          'P60': PinRole.servo,
+          'P62': PinRole.unused,
+          'P64': PinRole.friction,
+          'P66': PinRole.friction,
+          'P74': PinRole.motor,
+          'P75': PinRole.motor,
+          'P76': PinRole.motor,
+          'P77': PinRole.motor,
+        },
+        servoMids: const {'P60': 0, 'MP03': 0, 'MP74': 0},
+        frictionMaxDuties: const {'P64': 700, 'P66': 800},
+      ),
+      modeCount: 2,
+      switchStrategy: SwitchStrategy.cycle,
+      modeSwitchKey: 'E',
+      modes: [
+        EngineerModeConfig(
+          preserveChassis: true,
+          actions: [
+            ActionMapping(
+              key: 'A',
+              mode: ControlMode.frictionToggle,
+              parameter: 100,
+              pin: 'P64',
+            ),
+            ActionMapping(
+              key: 'B',
+              direction: Direction.forward,
+              mode: ControlMode.frictionStep,
+              parameter: 10,
+              pin: 'P64',
+            ),
+            ActionMapping(
+              key: 'C',
+              direction: Direction.reverse,
+              mode: ControlMode.frictionContinuous,
+              parameter: 20,
+              pin: 'P66',
+            ),
+          ],
+        ),
+        EngineerModeConfig(
+          actions: [
+            ActionMapping(
+              key: 'RY',
+              mode: ControlMode.frictionAxis,
+              parameter: 50,
+              pin: 'P66',
+            ),
+          ],
+        ),
+      ],
+    );
+
+    Iterable<ValidationIssue> frictionErrors(EngineerConfig config) =>
+        ProjectValidator.validate(config)
+            .where((issue) => issue.severity == IssueSeverity.error);
+
+    test('四种摩擦轮控制方式可校验并生成安全栈', () {
+      final config = frictionEngineer();
+      expect(frictionErrors(config), isEmpty);
+      final code = CodeGenerator.generate(config);
+      expect(code, contains('#define FRICTION_START_DUTY 500'));
+      expect(code, contains('#define FRICTION_MAX_DUTY_P64 700'));
+      expect(code, contains('#define FRICTION_MAX_DUTY_P66 800'));
+      expect(code, contains('FRICTION_ACTIVATE_LOOPS'));
+      expect(code, contains('frictionLevel'));
+      expect(code, contains('frictionKeyLast['));
+      expect(code, contains('frictionRateAcc['));
+      expect(code, contains('static void UpdateFriction(void)'));
+      expect(code, contains('UpdateFriction();'));
+      expect(code, contains('SyncFrictionKeys(currentMode)'));
+      expect(code, contains('frictionLevel = frictionLevel > 0 ? 0 : 100'));
+      expect(code, contains('frictionRateAcc['));
+      // PrepareMode 不归零摩擦轮槽，否则会直接断输出。
+      final prepare = code.substring(
+        code.indexOf('static void PrepareMode'),
+        code.indexOf('static void SyncFrictionKeys'),
+      );
+      expect(prepare, isNot(contains('dutyOfMotor[2] = 0;')));
+      expect(prepare, isNot(contains('dutyOfMotor[3] = 0;')));
+    });
+
+    test('摩擦轮配置缺失、频率错误与旧控制方式混用会报错', () {
+      final missing = frictionEngineer().copyWith(
+        pwm: frictionEngineer().pwm.copyWith(
+          frictionMaxDuties: const {'P64': 700},
+        ),
+      );
+      expect(
+        frictionErrors(missing).map((issue) => issue.message),
+        contains('P66 摩擦轮满油占空比尚未填写'),
+      );
+
+      final wrongFrequency = frictionEngineer().copyWith(
+        pwm: frictionEngineer().pwm.copyWith(pwma: PwmFrequency.hz10000),
+      );
+      expect(
+        frictionErrors(wrongFrequency).map((issue) => issue.message),
+        contains('使用摩擦轮控制时 PWMA 必须为 50Hz'),
+      );
+
+      final legacyMix = frictionEngineer().copyWith(
+        modes: [
+          ...frictionEngineer().modes,
+          EngineerModeConfig(
+            actions: [
+              ActionMapping(
+                key: 'RX',
+                direction: Direction.forward,
+                mode: ControlMode.speed,
+                parameter: 5000,
+                pin: 'P64',
+              ),
+            ],
+          ),
+        ],
+        modeCount: 3,
+      );
+      expect(
+        frictionErrors(legacyMix).map((issue) => issue.message),
+        contains('同一配置中摩擦轮脚不能混用旧控制方式'),
+      );
+    });
+
+    test('摩擦轮旧控制方式仅给安全提示且不阻止生成', () {
+      final legacy = advancedEngineer();
+      final warnings = ProjectValidator.validate(legacy)
+          .where((issue) => issue.severity == IssueSeverity.warning);
+      expect(
+        warnings.map((issue) => issue.message),
+        contains(contains('不受安全斜坡保护')),
+      );
+      expect(
+        ProjectValidator.validate(legacy)
+            .where((issue) => issue.severity == IssueSeverity.error),
+        isEmpty,
+      );
+    });
+  });
 }

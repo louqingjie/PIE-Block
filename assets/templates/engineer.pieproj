@@ -65,8 +65,8 @@
         "MP74": 0
       },
       "friction_max_duties": {
-        "P64": null,
-        "P66": null
+        "P64": 700,
+        "P66": 800
       }
     },
     "mode_count": 2,
@@ -115,21 +115,21 @@
             "pin": "P64",
             "variable": null,
             "expression": null,
-            "direction": "forward",
-            "mode": "direct",
-            "parameter": 6000
+            "direction": null,
+            "mode": "frictionToggle",
+            "parameter": 100
           },
           {
             "id": "template-1-4",
             "input_kind": "remote",
-            "key": "RX",
+            "key": "D",
             "output_kind": "pin",
             "pin": "P66",
             "variable": null,
             "expression": null,
-            "direction": "forward",
-            "mode": "speed",
-            "parameter": 6000
+            "direction": "reverse",
+            "mode": "frictionStep",
+            "parameter": 10
           }
         ]
       },
@@ -157,9 +157,9 @@
             "pin": "P64",
             "variable": null,
             "expression": null,
-            "direction": "forward",
-            "mode": "accelerate",
-            "parameter": 100
+            "direction": null,
+            "mode": "frictionAxis",
+            "parameter": 50
           },
           {
             "id": "template-2-3",

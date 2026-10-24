@@ -40,7 +40,15 @@
 
 步兵和工程项目的 `chassis.turn_reversed` 是共用底盘校准项，默认 `false`；启用后仅反转水平摇杆及左右方向键产生的转向量，不改变直行、倒车、冲刺或单轮方向配置。格式 17 起 `chassis.enabled` 表示是否启用预制四轮底盘，默认 `true`；仅工程项目允许设为 `false`，此时四轮 IO/方向/速度不再必填，原底盘引脚可被动作行使用；步兵项目必须保持启用。
 
-工程动作的 `mode` 支持 `direct`、`incremental`、`speed`、`accelerate`、`single` 和 `continuous`。数字按键控制舵机时可使用 `direct`（按键上升沿到达相对中位点的预设角度）、`single`（按键上升沿按灵敏度单次增加）或 `continuous`（按住期间按灵敏度逐主循环增加）。`direct` 的 `parameter` 为 0–90 的整数目标角度，方向决定中位点两侧；`single` 和 `continuous` 的 `parameter` 保存最多两位小数的角度灵敏度；其他动作参数仍为整数。格式 17 起动作行还保存 `input_kind`（`remote`/`unspecified`）、`output_kind`（`pin`/`integer`/`rational`）、`variable` 与 `expression`：`input_kind == unspecified` 的行使用 `expression` 单条受限表达式，`output_kind` 非 `pin` 时输出到同名变量。摩擦轮专用控制方式 `frictionToggle`/`frictionStep`/`frictionContinuous`/`frictionAxis` 在后续阶段启用；P64/P66 摩擦轮旧方式保留 raw duty 兼容历史金样。
+工程动作的 `mode` 支持 `direct`、`incremental`、`speed`、`accelerate`、`single`、`continuous`、`frictionToggle`、`frictionStep`、`frictionContinuous` 和 `frictionAxis`。数字按键控制舵机时可使用 `direct`（按键上升沿到达相对中位点的预设角度）、`single`（按键上升沿按灵敏度单次增加）或 `continuous`（按住期间按灵敏度逐主循环增加）。`direct` 的 `parameter` 为 0–90 的整数目标角度，方向决定中位点两侧；`single` 和 `continuous` 的 `parameter` 保存最多两位小数的角度灵敏度；其他动作参数仍为整数。格式 17 起动作行还保存 `input_kind`（`remote`/`unspecified`）、`output_kind`（`pin`/`integer`/`rational`）、`variable` 与 `expression`：`input_kind == unspecified` 的行使用 `expression` 单条受限表达式，`output_kind` 非 `pin` 时输出到同名变量。
+
+摩擦轮专用控制方式（仅 P64/P66 角色为摩擦轮、PWMA 为 50Hz 时可用，要求配置 `pwm.friction_max_duties`）：
+- `frictionToggle` 启停：按键边沿在 0 与 `parameter`（1–100，目标油门 %）之间切换；不使用方向；
+- `frictionStep` 单次：每次按键按 `parameter`（1–100 %）加/减，方向决定加减；
+- `frictionContinuous` 持续：按住期间按 `parameter`（1–100 %/秒）加/减，方向决定加减；
+- `frictionAxis` 摇杆油门：仅摇杆轴输入，满杆按 `parameter`（1–100 %/秒）加/减，方向由轴符号决定。
+
+P64/P66 共享同一油门百分比，各自按 `friction_max_duties` 映射目标占空比；实际占空比按步兵摩擦轮同一套安全栈（500 启动、1000ms 激活、±1 duty/主循环、停机斜坡、上限保护）逼近。旧控制方式写在摩擦轮脚上仍可生成，但会给出「不受安全斜坡保护」提示；同一配置里不能与新摩擦轮方式混用。
 
 步兵配置不保存 `pwm`：PWMA 固定为 50Hz，PWMB 固定为 10000Hz，其他引脚角色由实际选择自动推导。只有 `friction_mode` 为 `brushlessEsc` 时 P64/P66 才固定用于摩擦轮；选择 `disabled` 时两端口释放。工程配置继续保存 `pwm`，允许配置分组频率、引脚角色、舵机中位与 `friction_max_duties`（P64/P66 满油占空比，500–800 整百；摩擦轮专用控制方式使用）。
 

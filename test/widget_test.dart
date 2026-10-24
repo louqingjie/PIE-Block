@@ -540,6 +540,42 @@ ProjectDocument _engineerServoButtonDocument() {
   );
 }
 
+ProjectDocument _engineerFrictionDocument() {
+  final source = _engineerDocument();
+  final config = source.config as EngineerConfig;
+  return source.copyWith(
+    config: config.copyWith(
+      pwm: config.pwm.copyWith(
+        pinRoles: const {
+          'P60': PinRole.servo,
+          'P62': PinRole.unused,
+          'P64': PinRole.friction,
+          'P66': PinRole.friction,
+          'P74': PinRole.motor,
+          'P75': PinRole.motor,
+          'P76': PinRole.motor,
+          'P77': PinRole.motor,
+        },
+        servoMids: const {'P60': 0, 'MP03': 0, 'MP74': 0},
+        frictionMaxDuties: const {'P64': 700, 'P66': 800},
+      ),
+      modes: [
+        EngineerModeConfig(
+          preserveChassis: true,
+          actions: [
+            ActionMapping(
+              key: 'A',
+              mode: ControlMode.frictionToggle,
+              parameter: 100,
+              pin: 'P64',
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
+}
+
 ProjectDocument _debugDocument() {
   final source = ProjectDocument.create('调试测试', ProjectKind.debug);
   return source.copyWith(
@@ -3701,6 +3737,67 @@ void main() {
         container.read(appControllerProvider).document!.config
             as EngineerConfig;
     expect(config.modes.first.preserveChassis, isFalse);
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+  testWidgets('摩擦轮动作行显示专用控制方式并隐藏方向', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _StaticProjectController(_engineerFrictionDocument(), 3),
+          ),
+          deployControllerProvider.overrideWith(_FakeDeployController.new),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    DropdownButton<ControlMode> modeField() =>
+        tester.widget<DropdownButton<ControlMode>>(
+          find.descendant(
+            of: find.byKey(const ValueKey('modes.0.actions.0.mode')),
+            matching: find.byType(DropdownButton<ControlMode>),
+          ),
+        );
+    expect(modeField().items!.map((item) => item.value).toList(), const [
+      ControlMode.frictionToggle,
+      ControlMode.frictionStep,
+      ControlMode.frictionContinuous,
+    ]);
+    expect(find.text('启停'), findsWidgets);
+    expect(
+      find.byKey(const ValueKey('modes.0.actions.0.direction')),
+      findsNothing,
+    );
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
+  testWidgets('PWM 页可为摩擦轮填写满油占空比', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _StaticProjectController(_engineerFrictionDocument(), 1),
+          ),
+          deployControllerProvider.overrideWith(_FakeDeployController.new),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final field = find.byKey(const ValueKey('pwm.friction_max_duties.P64'));
+    expect(field, findsOneWidget);
+    await tester.enterText(field, '750');
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(WizardScreen)),
+    );
+    final config =
+        container.read(appControllerProvider).document!.config
+            as EngineerConfig;
+    expect(config.pwm.frictionMaxDuties['P64'], 750);
     await tester.pump(const Duration(milliseconds: 600));
   });
 }

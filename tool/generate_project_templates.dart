@@ -32,7 +32,9 @@ void main() {
     final warnings = issues
         .where((issue) => issue.severity == IssueSeverity.warning)
         .toList();
-    stdout.writeln('${document.kind.name}: ${errors.length} error, ${warnings.length} warning');
+    stdout.writeln(
+      '${document.kind.name}: ${errors.length} error, ${warnings.length} warning',
+    );
     for (final issue in issues) {
       final mark = issue.severity == IssueSeverity.error ? 'ERROR' : 'warn ';
       stdout.writeln('  [$mark] ${issue.fieldPath}: ${issue.message}');
@@ -41,9 +43,8 @@ void main() {
       failed = true;
       continue;
     }
-    final encoded = const JsonEncoder.withIndent('  ').convert(
-      document.toJson(),
-    );
+    final encoded = const JsonEncoder.withIndent('  ')
+        .convert(document.toJson());
     File('$_outputDir/${document.kind.name}.pieproj')
         .writeAsStringSync('$encoded\n');
   }
@@ -148,6 +149,7 @@ ProjectConfig _engineer() {
       pwmb: PwmFrequency.hz10000,
       pinRoles: roles,
       servoMids: const {'P60': 0, 'P62': 0, 'MP03': 0, 'MP74': 0},
+      frictionMaxDuties: const {'P64': 700, 'P66': 800},
     ),
     modeCount: 2,
     switchStrategy: SwitchStrategy.cycle,
@@ -173,20 +175,21 @@ ProjectConfig _engineer() {
             parameter: 3,
             pin: 'P62',
           ),
+          // 摩擦轮用专用语义：启停按一次切到目标油门、再按一次停止；
+          // P64/P66 共享同一油门，各自按满油上限映射占空比。
           ActionMapping(
             id: 'template-1-3',
             key: 'C',
-            direction: Direction.forward,
-            mode: ControlMode.direct,
-            parameter: 6000,
+            mode: ControlMode.frictionToggle,
+            parameter: 100,
             pin: 'P64',
           ),
           ActionMapping(
             id: 'template-1-4',
-            key: 'RX',
-            direction: Direction.forward,
-            mode: ControlMode.speed,
-            parameter: 6000,
+            key: 'D',
+            direction: Direction.reverse,
+            mode: ControlMode.frictionStep,
+            parameter: 10,
             pin: 'P66',
           ),
         ],
@@ -206,9 +209,8 @@ ProjectConfig _engineer() {
           ActionMapping(
             id: 'template-2-2',
             key: 'RY',
-            direction: Direction.forward,
-            mode: ControlMode.accelerate,
-            parameter: 100,
+            mode: ControlMode.frictionAxis,
+            parameter: 50,
             pin: 'P64',
           ),
           ActionMapping(

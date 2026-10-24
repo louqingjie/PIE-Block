@@ -245,7 +245,17 @@ class _ActionRow extends ConsumerWidget {
     final isButton = digitalRemoteKeys.contains(action.key);
     final isMotorRole =
         role != null && role != PinRole.servo && role != PinRole.unused;
-    final modes = role == PinRole.servo
+    final modes = role == PinRole.friction
+        ? isAxis
+              ? const [ControlMode.frictionAxis]
+              : isButton
+              ? const [
+                  ControlMode.frictionToggle,
+                  ControlMode.frictionStep,
+                  ControlMode.frictionContinuous,
+                ]
+              : const <ControlMode>[]
+        : role == PinRole.servo
         ? isAxis
               ? const [ControlMode.direct, ControlMode.incremental]
               : isButton
@@ -300,6 +310,9 @@ class _ActionRow extends ConsumerWidget {
       ControlMode.frictionContinuous => '油门持续',
       ControlMode.frictionAxis => '摇杆油门',
     };
+    final directionVisible =
+        action.mode != ControlMode.frictionToggle &&
+        action.mode != ControlMode.frictionAxis;
     final fields = <Widget>[
       Expanded(
         child: _FieldAnchor(
@@ -330,26 +343,28 @@ class _ActionRow extends ConsumerWidget {
           ),
         ),
       ),
-      const SizedBox(width: 8),
-      Expanded(
-        child: _FieldAnchor(
-          path: '$fieldPath.direction',
-          child: DropdownButtonFormField(
-            key: ValueKey('$fieldPath.direction'),
-            initialValue: action.direction,
-            decoration: _fieldDecoration(ref, '$fieldPath.direction', '方向'),
-            items: Direction.values
-                .map(
-                  (e) => DropdownMenuItem(
-                    value: e,
-                    child: Text(e == Direction.forward ? '正' : '反'),
-                  ),
-                )
-                .toList(),
-            onChanged: (v) => onChanged(action.copyWith(direction: v)),
+      if (directionVisible) ...[
+        const SizedBox(width: 8),
+        Expanded(
+          child: _FieldAnchor(
+            path: '$fieldPath.direction',
+            child: DropdownButtonFormField(
+              key: ValueKey('$fieldPath.direction'),
+              initialValue: action.direction,
+              decoration: _fieldDecoration(ref, '$fieldPath.direction', '方向'),
+              items: Direction.values
+                  .map(
+                    (e) => DropdownMenuItem(
+                      value: e,
+                      child: Text(e == Direction.forward ? '正' : '反'),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (v) => onChanged(action.copyWith(direction: v)),
+            ),
           ),
         ),
-      ),
+      ],
       const SizedBox(width: 8),
       Expanded(
         child: _FieldAnchor(
@@ -370,7 +385,17 @@ class _ActionRow extends ConsumerWidget {
                 child: Text('$label${supported ? '' : '（当前配置，不支持）'}'),
               );
             }).toList(),
-            onChanged: (v) => onChanged(action.copyWith(mode: v)),
+            onChanged: (v) {
+              final clearsDirection =
+                  v == ControlMode.frictionToggle ||
+                  v == ControlMode.frictionAxis;
+              onChanged(
+                action.copyWith(
+                  mode: v,
+                  direction: clearsDirection ? null : action.direction,
+                ),
+              );
+            },
           ),
         ),
       ),
