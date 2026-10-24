@@ -898,7 +898,9 @@ abstract final class InfantryPinPlanner {
   static const pwmbFrequency = PwmFrequency.hz10000;
   static const frictionPins = ['P64', 'P66'];
   static const motorPins = expansionPins;
-  static const servoPins = [...expansionPins, ...mainServoPins];
+  // 步兵生成代码把两组频率写死（PWMA=50Hz、PWMB=10000Hz），舵机只能落在
+  // PWMA 或主控板舵机口；P74~P77 固定 10000Hz，仅供电机。
+  static const servoPins = ['P60', 'P62', 'P64', 'P66', ...mainServoPins];
 
   static String normalizePin(String? value) => value?.split(' ').first ?? '';
 

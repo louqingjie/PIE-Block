@@ -1500,6 +1500,52 @@ void main() {
       expect(taken.feederPin, isNull);
     });
 
+    test('舵机不得落在固定 10000Hz 的 PWMB（P74~P77）', () {
+      expect(InfantryPinPlanner.servoPins, [
+        'P60',
+        'P62',
+        'P64',
+        'P66',
+        'MP03',
+        'MP74',
+      ]);
+      final config = completeInfantry().copyWith(
+        // 右前轮让出 P76，避免引脚冲突错误盖过白名单错误。
+        chassis: completeChassis().copyWith(
+          rightFront: const WheelConfig('P62 P63', Direction.reverse),
+        ),
+        yawActuators: const [
+          AxisActuator(
+            drive: DriveType.servo,
+            pin: 'P76',
+            direction: Direction.forward,
+            midOffset: 0,
+          ),
+        ],
+      );
+      final issues = ProjectValidator.validate(config)
+          .where(
+            (i) =>
+                i.severity == IssueSeverity.error &&
+                i.fieldPath == 'gimbal.yaw.0.pin',
+          )
+          .toList();
+      expect(issues, hasLength(1));
+      expect(
+        issues.single.message,
+        'Yaw 不能使用 P76：P74~P77 固定 10000Hz 仅供电机，'
+        '舵机请选 P60/P62/P64/P66/MP03/MP74',
+      );
+      expect(
+        InfantryPinPlanner.allowedPins(
+          config,
+          'gimbal.yaw.0.pin',
+          driveType: DriveType.servo,
+        ),
+        isNot(contains('P76')),
+      );
+    });
+
     test('执行器逐个校验，空轴不报必填', () {
       final blank = InfantryConfig();
       expect(

@@ -786,10 +786,14 @@ abstract final class ProjectValidator {
             ? InfantryPinPlanner.servoPins
             : InfantryPinPlanner.motorPins;
         if (!valid.contains(pin)) {
+          final servoHint = actuator.drive == DriveType.servo
+              ? '：P74~P77 固定 10000Hz 仅供电机，'
+                    '舵机请选 ${InfantryPinPlanner.servoPins.join('/')}'
+              : '';
           issue(
             IssueSeverity.error,
             path('pin'),
-            '$label 不能使用 $pin',
+            '$label 不能使用 $pin$servoHint',
             'mechanism',
           );
         }
