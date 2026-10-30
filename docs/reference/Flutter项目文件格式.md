@@ -42,6 +42,8 @@
 
 步兵和工程项目的 `chassis.turn_reversed` 是共用底盘校准项，默认 `false`；启用后仅反转水平摇杆及左右方向键产生的转向量，不改变直行、倒车、冲刺或单轮方向配置。格式 17 起 `chassis.enabled` 表示是否启用预制四轮底盘，默认 `true`；仅工程项目允许设为 `false`，此时四轮 IO/方向/速度不再必填，原底盘引脚可被动作行使用；步兵项目必须保持启用。
 
+步兵云台执行器的舵机保存可选的 `min_limit` 与 `max_limit`（相对归中位置的角度）：`max_limit` 为逆时针一侧（非负），`min_limit` 为顺时针一侧（非正），界面按限幅大小显示为「逆时针限幅」「顺时针限幅」。留空表示该侧走满物理行程；填写时逆时针限幅必须在 `0–(90 − mid_offset)` 内、顺时针限幅必须在 `0–(90 + mid_offset)` 内，越界会作为错误阻止生成代码。同轴多个舵机按各侧最紧的限幅取交集执行。
+
 工程动作的 `mode` 支持 `direct`、`incremental`、`speed`、`accelerate`、`single`、`continuous`、`frictionToggle`、`frictionStep`、`frictionContinuous` 和 `frictionAxis`。数字按键控制舵机时可使用 `direct`（按键上升沿到达相对中位点的预设角度）、`single`（按键上升沿按灵敏度单次增加）或 `continuous`（按住期间按灵敏度逐主循环增加）。`direct` 的 `parameter` 为 0–90 的整数目标角度，方向决定中位点两侧；`single` 和 `continuous` 的 `parameter` 保存最多两位小数的角度灵敏度；其他动作参数仍为整数。格式 17 起动作行还保存 `input_kind`（`remote`/`unspecified`）、`output_kind`（`pin`/`integer`/`rational`）、`variable` 与 `expression`：`input_kind == unspecified` 的行使用 `expression` 单条受限表达式，`output_kind` 非 `pin` 时输出到同名变量。
 
 摩擦轮专用控制方式（仅 P64/P66 角色为摩擦轮、PWMA 为 50Hz 时可用，要求配置 `pwm.friction_max_duties`）：
