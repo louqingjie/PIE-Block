@@ -861,17 +861,31 @@ abstract final class ProjectValidator {
           'mechanism',
           issue,
         );
-        _servoLimitPair(
-          actuator.minLimit,
-          actuator.maxLimit,
-          path('min_limit'),
-          path('max_limit'),
-          '$label ',
-          '最小限位',
-          '最大限位',
-          'mechanism',
-          issue,
-        );
+        // 限幅是相对归中位置的两侧行程：逆时针存 maxLimit（非负），
+        // 顺时针存 -minLimit（非负），两侧都不得超过该侧的电气余量。
+        final mid = actuator.midOffset;
+        if (mid != null && mid >= -90 && mid <= 90) {
+          _range(
+            actuator.maxLimit,
+            0,
+            90 - mid,
+            path('max_limit'),
+            '$label 逆时针限幅',
+            'mechanism',
+            issue,
+            required: false,
+          );
+          _range(
+            actuator.minLimit == null ? null : -actuator.minLimit!,
+            0,
+            90 + mid,
+            path('min_limit'),
+            '$label 顺时针限幅',
+            'mechanism',
+            issue,
+            required: false,
+          );
+        }
       }
       final pin = actuator.pin;
       if (pin != null && actuator.drive != null) {
@@ -898,28 +912,6 @@ abstract final class ProjectValidator {
             'mechanism',
           );
         }
-      }
-    }
-    // 同轴舵机限位按交集生效（任一执行器到限位即全轴钳位），
-    // 因此各执行器的限位区间（未填按 ±90）必须有交集。
-    final servoIndexes = [
-      for (var index = 0; index < actuators.length; index += 1)
-        if (actuators[index].drive == DriveType.servo) index,
-    ];
-    if (servoIndexes.length > 1) {
-      final axisMin = servoIndexes
-          .map((index) => actuators[index].minLimit ?? -90)
-          .reduce((a, b) => a > b ? a : b);
-      final axisMax = servoIndexes
-          .map((index) => actuators[index].maxLimit ?? 90)
-          .reduce((a, b) => a < b ? a : b);
-      if (axisMin > axisMax) {
-        issue(
-          IssueSeverity.error,
-          InfantryPinPlanner.axisPath(yaw, servoIndexes.first, 'min_limit'),
-          '$name 轴各执行器限位区间没有交集，无法全轴钳位',
-          'mechanism',
-        );
       }
     }
   }

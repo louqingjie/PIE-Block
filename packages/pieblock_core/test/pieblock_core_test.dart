@@ -814,76 +814,68 @@ void main() {
       expect(limitIssues(limitEngineer()), isEmpty);
     });
 
-    test('步兵限位报错规则与同轴交集校验', () {
+    test('步兵逆时针/顺时针限幅受归中偏移约束', () {
       List<ValidationIssue> limitIssues(InfantryConfig config) =>
           ProjectValidator.validate(config)
               .where((issue) => issue.severity == IssueSeverity.error)
               .where(
                 (issue) =>
-                    issue.fieldPath.contains('min_limit') ||
-                    issue.fieldPath.contains('max_limit'),
+                    issue.fieldPath.endsWith('.min_limit') ||
+                    issue.fieldPath.endsWith('.max_limit'),
               )
               .toList();
 
-      expect(
-        limitIssues(
-          completeInfantry().copyWith(
-            yawActuators: [servoActuator(min: -91, max: 90)],
-          ),
-        ).map((issue) => issue.fieldPath),
-        ['gimbal.yaw.0.min_limit'],
-      );
-      expect(
-        limitIssues(
-          completeInfantry().copyWith(
-            yawActuators: [servoActuator(min: -90, max: 91)],
-          ),
-        ).map((issue) => issue.fieldPath),
-        ['gimbal.yaw.0.max_limit'],
-      );
-      expect(
-        limitIssues(
-          completeInfantry().copyWith(
-            yawActuators: [servoActuator(min: 20, max: 10)],
-          ),
-        ).map((issue) => issue.fieldPath),
-        ['gimbal.yaw.0.max_limit'],
-      );
-      // 边界值与未填写均合法。
-      expect(
-        limitIssues(
-          completeInfantry().copyWith(
-            yawActuators: [servoActuator(min: -90, max: 90)],
-          ),
-        ),
-        isEmpty,
-      );
-      expect(limitIssues(completeInfantry()), isEmpty);
-      // 同轴两只舵机区间无交集：报在首个执行器的 min_limit。
-      final disjoint = limitIssues(
-        completeInfantry().copyWith(
-          yawActuators: [
-            servoActuator(min: -30, max: 45),
-            servoActuator(pin: 'P62', min: 50, max: 80),
-          ],
-        ),
-      );
-      expect(disjoint.map((issue) => issue.fieldPath), [
-        'gimbal.yaw.0.min_limit',
-      ]);
-      expect(disjoint.single.message, contains('没有交集'));
-      // 有交集（未填的一侧按 ±90 参与交集）不报错。
-      expect(
-        limitIssues(
+      InfantryConfig withLimits({int mid = 0, int? cw, int? ccw}) =>
           completeInfantry().copyWith(
             yawActuators: [
-              servoActuator(min: -30, max: 45),
-              servoActuator(pin: 'P62'),
+              servoActuator(
+                mid: mid,
+                min: cw == null ? null : -cw,
+                max: ccw,
+              ),
             ],
-          ),
-        ),
-        isEmpty,
+          );
+
+      // 归中偏移 0：两侧都不超过 90°。
+      expect(limitIssues(withLimits(cw: 90, ccw: 90)), isEmpty);
+      expect(
+        limitIssues(withLimits(ccw: 91)).single.message,
+        'Yaw 逆时针限幅必须在 0–90 之间',
       );
+      expect(
+        limitIssues(withLimits(ccw: 91)).single.fieldPath,
+        'gimbal.yaw.0.max_limit',
+      );
+      expect(
+        limitIssues(withLimits(cw: 91)).single.message,
+        'Yaw 顺时针限幅必须在 0–90 之间',
+      );
+      expect(
+        limitIssues(withLimits(cw: 91)).single.fieldPath,
+        'gimbal.yaw.0.min_limit',
+      );
+
+      // 归中偏移 30：逆时针最多 60°，顺时针最多 120°。
+      expect(limitIssues(withLimits(mid: 30, cw: 120, ccw: 60)), isEmpty);
+      expect(
+        limitIssues(withLimits(mid: 30, ccw: 61)).single.message,
+        'Yaw 逆时针限幅必须在 0–60 之间',
+      );
+      expect(
+        limitIssues(withLimits(mid: 30, cw: 121)).single.message,
+        'Yaw 顺时针限幅必须在 0–120 之间',
+      );
+      // 方向填反（顺时针为正、逆时针为负）同样报错。
+      expect(
+        limitIssues(withLimits(mid: 30, cw: -20)).single.fieldPath,
+        'gimbal.yaw.0.min_limit',
+      );
+      expect(
+        limitIssues(withLimits(mid: 30, ccw: -20)).single.fieldPath,
+        'gimbal.yaw.0.max_limit',
+      );
+      // 未填写不报错。
+      expect(limitIssues(completeInfantry()), isEmpty);
     });
 
     test('工程限位按中位换算钳位界且未填时维持满行程', () {
@@ -946,6 +938,27 @@ void main() {
       expect(dual, contains('yawDuty > 1056'));
       expect(dual, contains('yawDuty2 < 472'));
       expect(dual, contains('yawDuty2 > 889'));
+      // 归中偏移 30°、逆时针 60°、顺时针 120°：两侧都到电气端点。
+      final shifted = CodeGenerator.generate(
+        completeInfantry().copyWith(
+          yawActuators: [servoActuator(mid: 30, min: -120, max: 60)],
+        ),
+      );
+      expect(shifted, contains('uint16_t yawDuty = 917;'));
+      expect(
+        shifted,
+        contains(
+          'if (yawDuty < 250) yawDuty = 250; if (yawDuty > 1250) yawDuty = 1250;',
+        ),
+      );
+      // 非对称：逆时针 70°、顺时针 50°。
+      final asymmetric = CodeGenerator.generate(
+        completeInfantry().copyWith(
+          yawActuators: [servoActuator(min: -50, max: 70)],
+        ),
+      );
+      expect(asymmetric, contains('yawDuty < 472'));
+      expect(asymmetric, contains('yawDuty > 1139'));
     });
   });
 

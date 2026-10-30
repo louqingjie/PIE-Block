@@ -64,6 +64,30 @@
         "MP03": 0,
         "MP74": 0
       },
+      "servo_min_limits": {
+        "P60": null,
+        "P62": null,
+        "P64": null,
+        "P66": null,
+        "P74": null,
+        "P75": null,
+        "P76": null,
+        "P77": null,
+        "MP03": null,
+        "MP74": null
+      },
+      "servo_max_limits": {
+        "P60": null,
+        "P62": null,
+        "P64": null,
+        "P66": null,
+        "P74": null,
+        "P75": null,
+        "P76": null,
+        "P77": null,
+        "MP03": null,
+        "MP74": null
+      },
       "friction_max_duties": {
         "P64": 700,
         "P66": 800

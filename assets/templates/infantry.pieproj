@@ -45,7 +45,9 @@
         "drive": "servo",
         "pin": "MP74",
         "direction": "forward",
-        "mid_offset": 0
+        "mid_offset": 0,
+        "min_limit": -60,
+        "max_limit": 60
       }
     ],
     "pitch": [
@@ -53,7 +55,9 @@
         "drive": "servo",
         "pin": "MP03",
         "direction": "forward",
-        "mid_offset": 0
+        "mid_offset": 0,
+        "min_limit": -60,
+        "max_limit": 60
       }
     ],
     "arrow_behavior": "move",

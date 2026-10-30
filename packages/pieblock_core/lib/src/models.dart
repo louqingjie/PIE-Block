@@ -697,7 +697,8 @@ class AxisActuator {
   final Direction? direction;
   final int? midOffset;
 
-  /// 舵机相对归中位置的左/右限位角度（-90~90，选填）；
+  /// 舵机相对归中位置的两侧限幅角（选填）：minLimit 为顺时针一侧（非正），
+  /// maxLimit 为逆时针一侧（非负）；界面按限幅大小展示。
   /// 同轴任一执行器到限位即全轴视为到限位（生成时按轴取交集）。
   final int? minLimit, maxLimit;
   AxisActuator copyWith({

@@ -94,6 +94,8 @@ ProjectConfig _infantry() {
         pin: 'MP74',
         direction: Direction.forward,
         midOffset: 0,
+        minLimit: -60,
+        maxLimit: 60,
       ),
     ],
     pitchActuators: const [
@@ -102,6 +104,8 @@ ProjectConfig _infantry() {
         pin: 'MP03',
         direction: Direction.forward,
         midOffset: 0,
+        minLimit: -60,
+        maxLimit: 60,
       ),
     ],
     arrowBehavior: ArrowBehavior.move,

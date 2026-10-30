@@ -2215,7 +2215,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 600));
   });
 
-  testWidgets('步兵云台舵机执行器提供最小最大限位输入', (tester) async {
+  testWidgets('步兵云台舵机执行器提供逆时针顺时针限幅输入', (tester) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -2228,31 +2228,46 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    final yawCcw = find.byKey(const ValueKey('gimbal.yaw.0.max_limit'));
+    final yawCw = find.byKey(const ValueKey('gimbal.yaw.0.min_limit'));
+    expect(yawCcw, findsOneWidget);
+    expect(yawCw, findsOneWidget);
     expect(
-      find.byKey(const ValueKey('gimbal.yaw.0.min_limit')),
+      find.byKey(const ValueKey('gimbal.pitch.0.max_limit')),
       findsOneWidget,
     );
-    expect(
-      find.byKey(const ValueKey('gimbal.yaw.0.max_limit')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey('gimbal.pitch.0.min_limit')),
-      findsOneWidget,
-    );
+    expect(find.text('逆时针限幅'), findsWidgets);
+    expect(find.text('顺时针限幅'), findsWidgets);
 
-    final yawMin = find.byKey(const ValueKey('gimbal.yaw.0.min_limit'));
-    await tester.ensureVisible(yawMin);
-    await tester.enterText(yawMin, '-40');
+    await tester.ensureVisible(yawCcw);
+    await tester.enterText(yawCcw, '30');
     await tester.pumpAndSettle();
-    final yawMax = find.byKey(const ValueKey('gimbal.yaw.0.max_limit'));
-    await tester.enterText(yawMax, '30');
+    await tester.enterText(yawCw, '40');
     await tester.pumpAndSettle();
 
-    final config = _currentInfantry(tester);
-    expect(config.yawActuators.single.minLimit, -40);
+    var config = _currentInfantry(tester);
     expect(config.yawActuators.single.maxLimit, 30);
+    expect(config.yawActuators.single.minLimit, -40);
+    expect(config.pitchActuators.single.maxLimit, isNull);
     expect(config.pitchActuators.single.minLimit, isNull);
+
+    // 归中偏移 30° 后逆时针最多 60°：61° 报错并阻止生成。
+    final mid = find.byKey(const ValueKey('gimbal.yaw.0.mid_offset'));
+    await tester.ensureVisible(mid);
+    await tester.enterText(mid, '30');
+    await tester.pumpAndSettle();
+    await tester.enterText(yawCcw, '61');
+    await tester.pumpAndSettle();
+
+    config = _currentInfantry(tester);
+    expect(config.yawActuators.single.midOffset, 30);
+    expect(config.yawActuators.single.maxLimit, 61);
+    final issue = ProjectValidator.validate(
+      config,
+    ).singleWhere((i) => i.fieldPath == 'gimbal.yaw.0.max_limit');
+    expect(issue.severity, IssueSeverity.error);
+    expect(issue.message, 'Yaw 逆时针限幅必须在 0–60 之间');
+    expect(() => CodeGenerator.generate(config), throwsA(isA<StateError>()));
     await tester.pump(const Duration(milliseconds: 600));
   });
 

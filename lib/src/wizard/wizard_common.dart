@@ -219,8 +219,8 @@ String _fieldLabel(String path) {
   if (path.endsWith('.drive')) return '驱动类型';
   if (path.endsWith('.pin')) return '输出';
   if (path.endsWith('.mid_offset')) return '归中偏移';
-  if (path.endsWith('.min_limit')) return '最小限位';
-  if (path.endsWith('.max_limit')) return '最大限位';
+  if (path.endsWith('.min_limit')) return '顺时针限幅';
+  if (path.endsWith('.max_limit')) return '逆时针限幅';
   if (path.endsWith('.mode')) return '控制方式';
   if (path.endsWith('.parameter')) return '参数';
   if (path.endsWith('.key')) return '输入';

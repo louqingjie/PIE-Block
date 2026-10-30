@@ -303,13 +303,15 @@ $turnReverse    dutyOfMotor[${_slot(c.leftFront.pin)}] = ${_dir(c.leftFront.dire
               ),
         ],
     ];
-    // 同轴舵机限位按交集生效：任一执行器到限位即全轴视为到限位，
-    // 未填限位的执行器按 ±90° 参与交集（校验保证交集非空）。
+    // 同轴舵机限位按交集生效：任一执行器到限位即全轴视为到限位。
+    // 未填限位的一侧按该执行器自己的满电气行程参与交集。
     ({int min, int max}) axisLimits(bool yaw) {
-      var min = -90, max = 90;
+      var min = -180, max = 180;
       for (final actuator in c.actuators(yaw)) {
         if (actuator.drive != DriveType.servo) continue;
-        final lo = actuator.minLimit ?? -90, hi = actuator.maxLimit ?? 90;
+        final mid = actuator.midOffset ?? 0;
+        final lo = actuator.minLimit ?? -(90 + mid);
+        final hi = actuator.maxLimit ?? (90 - mid);
         if (lo > min) min = lo;
         if (hi < max) max = hi;
       }

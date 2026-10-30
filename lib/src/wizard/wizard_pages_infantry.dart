@@ -186,6 +186,8 @@ class _InfantryMechanismPage extends ConsumerWidget {
             pin = actuator.pin,
             direction = actuator.direction,
             mid = actuator.midOffset,
+            ccw = actuator.maxLimit,
+            cw = actuator.minLimit == null ? null : -actuator.minLimit!,
             pinPath = InfantryPinPlanner.axisPath(yaw, index, 'pin'),
             drivePath = InfantryPinPlanner.axisPath(yaw, index, 'drive'),
             directionPath = InfantryPinPlanner.axisPath(
@@ -194,16 +196,9 @@ class _InfantryMechanismPage extends ConsumerWidget {
               'direction',
             ),
             midPath = InfantryPinPlanner.axisPath(yaw, index, 'mid_offset'),
-            minLimitPath = InfantryPinPlanner.axisPath(
-              yaw,
-              index,
-              'min_limit',
-            ),
-            maxLimitPath = InfantryPinPlanner.axisPath(
-              yaw,
-              index,
-              'max_limit',
-            );
+            // 逆时针存非负的 max_limit，顺时针存非正的 min_limit。
+            ccwPath = InfantryPinPlanner.axisPath(yaw, index, 'max_limit'),
+            cwPath = InfantryPinPlanner.axisPath(yaw, index, 'min_limit');
         void updateAt(AxisActuator Function(AxisActuator) change) {
           final next = [...actuators];
           next[index] = change(next[index]);
@@ -227,7 +222,7 @@ class _InfantryMechanismPage extends ConsumerWidget {
             drivePath,
             pinPath,
             directionPath,
-            if (drive == DriveType.servo) ...[midPath, minLimitPath, maxLimitPath],
+            if (drive == DriveType.servo) ...[midPath, ccwPath, cwPath],
           ],
           children: [
             Expanded(
@@ -327,21 +322,23 @@ class _InfantryMechanismPage extends ConsumerWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: _NumberField(
-                  label: '最小限位',
-                  fieldPath: minLimitPath,
+                  label: '逆时针限幅',
+                  fieldPath: ccwPath,
                   suffix: '°',
-                  value: actuator.minLimit,
-                  onChanged: (v) => updateAt((a) => a.copyWith(minLimit: v)),
+                  value: ccw,
+                  onChanged: (v) => updateAt((a) => a.copyWith(maxLimit: v)),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: _NumberField(
-                  label: '最大限位',
-                  fieldPath: maxLimitPath,
+                  label: '顺时针限幅',
+                  fieldPath: cwPath,
                   suffix: '°',
-                  value: actuator.maxLimit,
-                  onChanged: (v) => updateAt((a) => a.copyWith(maxLimit: v)),
+                  value: cw,
+                  onChanged: (v) => updateAt(
+                    (a) => a.copyWith(minLimit: v == null ? null : -v),
+                  ),
                 ),
               ),
             ],
