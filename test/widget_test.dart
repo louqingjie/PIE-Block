@@ -499,6 +499,37 @@ ProjectDocument _engineerDocument() {
   );
 }
 
+ProjectDocument _engineerDragDocument() {
+  final source = _engineerDocument();
+  final config = source.config as EngineerConfig;
+  return source.copyWith(
+    config: config.copyWith(
+      modes: [
+        EngineerModeConfig(
+          actions: [
+            ActionMapping(
+              id: 'drag-a',
+              key: 'A',
+              direction: Direction.forward,
+              mode: ControlMode.direct,
+              parameter: 3000,
+              pin: 'P60',
+            ),
+            ActionMapping(
+              id: 'drag-b',
+              key: 'B',
+              direction: Direction.forward,
+              mode: ControlMode.direct,
+              parameter: 5000,
+              pin: 'P60',
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
+}
+
 ProjectDocument _engineerServoButtonDocument() {
   final source = _engineerDocument();
   final config = source.config as EngineerConfig;
@@ -963,7 +994,7 @@ void main() {
     await tester.pump();
     await gesture.moveBy(const Offset(0, -600));
     await tester.pump();
-    final proxy = find.byKey(const ValueKey('debug-drag-proxy'));
+    final proxy = find.byKey(const ValueKey('reorder-drag-proxy'));
     expect(proxy, findsOneWidget);
     expect(tester.getRect(proxy).top, greaterThanOrEqualTo(listRect.top - 21));
     expect(tester.getRect(proxy).top, greaterThan(titleRect.bottom));
@@ -985,6 +1016,75 @@ void main() {
     await tester.pumpAndSettle();
     await tester.pump(const Duration(milliseconds: 600));
     expect(find.text('1. P64'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('工程动作行可拖动排序且浮层不越出列表', (tester) async {
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1200, 1000);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _StaticProjectController(_engineerDragDocument(), 3),
+          ),
+          deployControllerProvider.overrideWith(_FakeDeployController.new),
+        ],
+        child: MaterialApp(
+          theme: ThemeData(useMaterial3: true),
+          home: const WizardScreen(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final listRect = tester.getRect(find.byType(ReorderableListView));
+    final subtitleRect = tester.getRect(find.textContaining('拖动左侧手柄'));
+    final handles = find.byIcon(Icons.drag_indicator);
+    expect(handles, findsNWidgets(2));
+
+    // 向上拖出列表：浮层应停在列表视口上方 20px 内，而不是盖住页标题。
+    final gesture = await tester.startGesture(tester.getCenter(handles.first));
+    await tester.pump();
+    await gesture.moveBy(const Offset(0, -20));
+    await tester.pump();
+    await gesture.moveBy(const Offset(0, -600));
+    await tester.pump();
+    final proxy = find.byKey(const ValueKey('reorder-drag-proxy'));
+    expect(proxy, findsOneWidget);
+    expect(tester.getRect(proxy).top, greaterThanOrEqualTo(listRect.top - 21));
+    expect(tester.getRect(proxy).top, greaterThan(subtitleRect.bottom));
+    expect(tester.takeException(), isNull);
+    await gesture.up();
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 600));
+
+    // 向下拖过第二张卡片后松手，配置顺序应互换。
+    final move = await tester.startGesture(tester.getCenter(handles.first));
+    await tester.pump();
+    await move.moveBy(const Offset(0, 20));
+    await tester.pump();
+    for (var step = 0; step < 6; step += 1) {
+      await move.moveBy(const Offset(0, 50));
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    await move.up();
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 600));
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(WizardScreen)),
+    );
+    final actions =
+        (container.read(appControllerProvider).document!.config
+                as EngineerConfig)
+            .modes
+            .first
+            .actions;
+    expect(actions.map((action) => action.id).toList(), ['drag-b', 'drag-a']);
     expect(tester.takeException(), isNull);
   });
 
@@ -2089,8 +2189,15 @@ void main() {
     DropdownButton<ControlMode> modeField(int actionIndex) =>
         tester.widget<DropdownButton<ControlMode>>(
           find.descendant(
-            of: find.byKey(ValueKey('modes.0.actions.$actionIndex.mode')),
-            matching: find.byType(DropdownButton<ControlMode>),
+            of: find.byKey(
+              ValueKey('modes.0.actions.$actionIndex.mode'),
+              skipOffstage: false,
+            ),
+            matching: find.byType(
+              DropdownButton<ControlMode>,
+              skipOffstage: false,
+            ),
+            skipOffstage: false,
           ),
         );
     List<ControlMode?> modes(int actionIndex) =>
@@ -2122,6 +2229,7 @@ void main() {
 
     final mode = find.byKey(const ValueKey('modes.0.actions.0.mode'));
     await tester.ensureVisible(mode);
+    await tester.pumpAndSettle();
     await tester.tap(mode);
     await tester.pumpAndSettle();
     await tester.tap(find.text('单次').last);
@@ -2129,6 +2237,7 @@ void main() {
 
     final parameter = find.byKey(const ValueKey('modes.0.actions.0.parameter'));
     await tester.ensureVisible(parameter);
+    await tester.pumpAndSettle();
     expect(parameterLabel(), '灵敏度 °/周期');
     await tester.enterText(parameter, '10.01');
     await tester.pumpAndSettle();

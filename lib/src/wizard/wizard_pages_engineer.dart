@@ -151,11 +151,26 @@ class _EngineerMappingsPageState extends ConsumerState<_EngineerMappingsPage> {
     final mode = c.modes[selected];
     final chassisEnabled = c.chassis.enabled;
     final preserveChassis = chassisEnabled && mode.preserveChassis;
+    final actionKeys = <Key>[];
+    final occurrences = <String, int>{};
+    for (final action in mode.actions) {
+      final occurrence = occurrences.update(
+        action.id,
+        (value) => value + 1,
+        ifAbsent: () => 0,
+      );
+      actionKeys.add(ValueKey('${action.id}#$occurrence'));
+    }
+    // 问题面板按字段路径跳转，必须让屏幕外的动作行保持挂载。
+    final cacheExtent =
+        (mode.actions.length + 1) * (_isCompact(context) ? 680.0 : 360.0) + 400;
     return _PageFrame(
       title: '动作映射',
       stepId: 'mappings',
-      subtitle: '每个动作都有稳定 ID；增删和切换模式不会让配置串行。',
+      subtitle: '每个动作都有稳定 ID；拖动左侧手柄即可调整执行顺序。',
+      fill: true,
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           ConnectedButtonGroup<int>(
             semanticLabel: '模式',
@@ -167,47 +182,74 @@ class _EngineerMappingsPageState extends ConsumerState<_EngineerMappingsPage> {
             onChanged: (value) => setState(() => selected = value),
           ),
           const SizedBox(height: 18),
-          _Section(
-            title: '模式 ${selected + 1}',
-            children: [
-              if (chassisEnabled)
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('保留左摇杆底盘控制'),
-                  value: preserveChassis,
-                  onChanged: (v) =>
-                      updateMode(mode.copyWith(preserveChassis: v)),
-                )
-              else
-                const _InfoBanner('未启用底盘控制，本模式不保留底盘控制，LX/LY 可用于动作。'),
-              for (var i = 0; i < mode.actions.length; i++)
-                Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: _ActionRow(
-                    action: mode.actions[i],
-                    preserveChassis: preserveChassis,
-                    pinRoles: c.pwm.pinRoles,
-                    fieldPath: 'modes.$selected.actions.$i',
-                    onChanged: (a) {
-                      final actions = [...mode.actions];
-                      actions[i] = a;
-                      updateMode(mode.copyWith(actions: actions));
-                    },
-                    onRemove: () {
-                      final actions = [...mode.actions]..removeAt(i);
-                      updateMode(mode.copyWith(actions: actions));
-                    },
+          Expanded(
+            child: ReorderableListView.builder(
+              buildDefaultDragHandles: false,
+              scrollCacheExtent: ScrollCacheExtent.pixels(cacheExtent),
+              proxyDecorator: _reorderDragProxy,
+              dragBoundaryProvider: _reorderDragBoundary,
+              onReorderStart: (_) => _endTextInput(ref),
+              header: Padding(
+                padding: const EdgeInsets.only(bottom: _reorderCardGap),
+                child: _Section(
+                  title: '模式 ${selected + 1}',
+                  children: [
+                    if (chassisEnabled)
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('保留左摇杆底盘控制'),
+                        value: preserveChassis,
+                        onChanged: (v) =>
+                            updateMode(mode.copyWith(preserveChassis: v)),
+                      )
+                    else
+                      const _InfoBanner('未启用底盘控制，本模式不保留底盘控制，LX/LY 可用于动作。'),
+                  ],
+                ),
+              ),
+              footer: Padding(
+                padding: const EdgeInsets.only(top: 16),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: OutlinedButton.icon(
+                    onPressed: () => updateMode(
+                      mode.copyWith(
+                        actions: [...mode.actions, ActionMapping()],
+                      ),
+                    ),
+                    icon: const Icon(Icons.add),
+                    label: const Text('添加动作'),
                   ),
                 ),
-              const SizedBox(height: 16),
-              OutlinedButton.icon(
-                onPressed: () => updateMode(
-                  mode.copyWith(actions: [...mode.actions, ActionMapping()]),
-                ),
-                icon: const Icon(Icons.add),
-                label: const Text('添加动作'),
               ),
-            ],
+              itemCount: mode.actions.length,
+              onReorderItem: (oldIndex, newIndex) {
+                if (oldIndex == newIndex) return;
+                final actions = [...mode.actions];
+                actions.insert(newIndex, actions.removeAt(oldIndex));
+                updateMode(mode.copyWith(actions: actions));
+              },
+              itemBuilder: (context, index) {
+                final action = mode.actions[index];
+                return _ActionRow(
+                  key: actionKeys[index],
+                  index: index,
+                  action: action,
+                  preserveChassis: preserveChassis,
+                  pinRoles: c.pwm.pinRoles,
+                  fieldPath: 'modes.$selected.actions.$index',
+                  onChanged: (a) {
+                    final actions = [...mode.actions];
+                    actions[index] = a;
+                    updateMode(mode.copyWith(actions: actions));
+                  },
+                  onRemove: () {
+                    final actions = [...mode.actions]..removeAt(index);
+                    updateMode(mode.copyWith(actions: actions));
+                  },
+                );
+              },
+            ),
           ),
         ],
       ),
@@ -217,6 +259,8 @@ class _EngineerMappingsPageState extends ConsumerState<_EngineerMappingsPage> {
 
 class _ActionRow extends ConsumerWidget {
   const _ActionRow({
+    super.key,
+    required this.index,
     required this.action,
     required this.preserveChassis,
     required this.pinRoles,
@@ -224,6 +268,7 @@ class _ActionRow extends ConsumerWidget {
     required this.onChanged,
     required this.onRemove,
   });
+  final int index;
   final ActionMapping action;
   final bool preserveChassis;
   final Map<String, PinRole> pinRoles;
@@ -525,6 +570,7 @@ class _ActionRow extends ConsumerWidget {
     ];
     return Card(
       color: AppSurface.block.colorOf(Theme.of(context).colorScheme),
+      margin: const EdgeInsets.only(bottom: _reorderCardGap),
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
@@ -532,10 +578,17 @@ class _ActionRow extends ConsumerWidget {
           children: [
             Row(
               children: [
-                const Expanded(
+                ReorderableDragStartListener(
+                  index: index,
+                  child: const Padding(
+                    padding: EdgeInsets.all(8),
+                    child: Icon(Icons.drag_indicator),
+                  ),
+                ),
+                Expanded(
                   child: Text(
-                    '动作配置',
-                    style: TextStyle(fontWeight: FontWeight.w700),
+                    '动作 ${index + 1}',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
                 ),
                 IconButton(

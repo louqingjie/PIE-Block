@@ -170,8 +170,8 @@ class _DebugTestsPage extends ConsumerWidget {
           buildDefaultDragHandles: false,
           // 调试序列固定 10 项：全部保持挂载，题面板跳转才能定位到屏幕外的卡片。
           scrollCacheExtent: const ScrollCacheExtent.pixels(4000),
-          proxyDecorator: _debugDragProxy,
-          dragBoundaryProvider: _debugDragBoundary,
+          proxyDecorator: _reorderDragProxy,
+          dragBoundaryProvider: _reorderDragBoundary,
           onReorderStart: (_) => _endTextInput(ref),
           header: Padding(
             padding: const EdgeInsets.only(bottom: 18),
@@ -211,7 +211,7 @@ class _DebugTestsPage extends ConsumerWidget {
             };
             return Card(
               key: ValueKey(item.pin),
-              margin: const EdgeInsets.only(bottom: _debugCardGap),
+              margin: const EdgeInsets.only(bottom: _reorderCardGap),
               child: Padding(
                 padding: EdgeInsets.all(_isCompact(context) ? 14 : 18),
                 child: Column(
@@ -357,90 +357,6 @@ class _DebugTestsPage extends ConsumerWidget {
           },
         ),
       ),
-    );
-  }
-}
-
-/// 卡片之间的纵向间隙，拖拽浮层要按它把阴影收进卡片本体。
-const double _debugCardGap = 12;
-
-/// 拖拽浮层外扩的像素数：越过 EdgeDraggingAutoScroller 的严格边界判断，
-/// 同时不超过页头与列表之间的 24px 间距。
-const double _dragBoundaryPeek = 20;
-
-Widget _debugDragProxy(Widget child, int index, Animation<double> animation) {
-  return AnimatedBuilder(
-    animation: animation,
-    child: child,
-    builder: (context, child) {
-      final t = Curves.easeInOut.transform(animation.value);
-      return Stack(
-        key: const ValueKey('debug-drag-proxy'),
-        clipBehavior: Clip.none,
-        children: [
-          // 只给卡片本体投圆角阴影；底部 12px 间隙保持透明，不露出矩形底。
-          Positioned(
-            left: 0,
-            right: 0,
-            top: 0,
-            bottom: _debugCardGap,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(AppCorner.lg),
-                boxShadow: [
-                  BoxShadow(
-                    color: Theme.of(context).colorScheme.shadow
-                        .withValues(alpha: .24 * t),
-                    blurRadius: 18 * t,
-                    offset: Offset(0, 6 * t),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          // Card 自带 Material，这里不再叠一层矩形底色。
-          child!,
-        ],
-      );
-    },
-  );
-}
-
-DragBoundaryDelegate<Rect>? _debugDragBoundary(BuildContext listContext) {
-  final box = Scrollable.maybeOf(listContext)?.context.findRenderObject();
-  if (box is! RenderBox || !box.hasSize) return null;
-  final rect = box.localToGlobal(Offset.zero) & box.size;
-  return _DebugDragBoundary(
-    Rect.fromLTRB(
-      rect.left,
-      rect.top - _dragBoundaryPeek,
-      rect.right,
-      rect.bottom + _dragBoundaryPeek,
-    ),
-  );
-}
-
-/// 把拖拽浮层夹在列表视口附近，避免它盖住页标题或跑出窗口。
-class _DebugDragBoundary extends DragBoundaryDelegate<Rect> {
-  _DebugDragBoundary(this.bounds);
-
-  final Rect bounds;
-
-  @override
-  bool isWithinBoundary(Rect dragged) =>
-      bounds.contains(dragged.topLeft) && bounds.contains(dragged.bottomRight);
-
-  @override
-  Rect nearestPositionWithinBoundary(Rect dragged) {
-    // 视口比卡片还矮时退回不夹取，避免 SDK 的默认实现直接抛 FlutterError。
-    if (dragged.width > bounds.width || dragged.height > bounds.height) {
-      return dragged;
-    }
-    return Rect.fromLTWH(
-      dragged.left.clamp(bounds.left, bounds.right - dragged.width).toDouble(),
-      dragged.top.clamp(bounds.top, bounds.bottom - dragged.height).toDouble(),
-      dragged.width,
-      dragged.height,
     );
   }
 }
