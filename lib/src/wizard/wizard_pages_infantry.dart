@@ -384,7 +384,6 @@ class _InfantryMechanismPage extends ConsumerWidget {
 
     return _PageFrame(
       title: '云台与拨弹机构',
-      stepId: 'mechanism',
       subtitle: '配置固定执行机构。主控板 MP03/MP74 只能连接舵机。',
       child: Column(
         children: [
@@ -539,7 +538,6 @@ class _InfantryControlsPage extends ConsumerWidget {
 
     return _PageFrame(
       title: '控制与摩擦轮',
-      stepId: 'controls',
       subtitle: '为不同动作分配独立按键，并设置安全范围内的速度。',
       child: Column(
         children: [

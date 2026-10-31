@@ -140,7 +140,7 @@ class WizardScreen extends ConsumerWidget {
         : state.step == controller.deployStep(document.kind)
         ? '烧录'
         : '下一步';
-    final actionCluster = _WizardActionCluster(
+    final actionCluster = _WizardBottomDock(
       compact: compact,
       step: state.step,
       totalSteps: steps.length,

@@ -192,7 +192,6 @@ class _DebugTestsPage extends ConsumerWidget {
       subtitle:
           '启用需要测试的引脚并拖动排序。固件会按此顺序逐项执行，'
           '跑完最后一项自动回到第 1 项，如此循环。',
-      stepId: 'tests',
       fill: true,
       child: _FieldAnchor(
         path: 'tests',

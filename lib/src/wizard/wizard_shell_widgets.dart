@@ -194,35 +194,21 @@ class _CompactStepPicker extends ConsumerWidget {
   }
 }
 
-class _PageFrame extends ConsumerWidget {
+class _PageFrame extends StatelessWidget {
   const _PageFrame({
     required this.title,
     required this.subtitle,
     required this.child,
-    this.stepId,
     this.fill = false,
   });
   final String title, subtitle;
-  final String? stepId;
   final Widget child;
 
   /// 由 child 自己承担滚动时置为 true：页头固定，child 填满剩余高度。
   final bool fill;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final activeInputField = _activeInputField(ref);
-    final issues = stepId == null
-        ? const <ValidationIssue>[]
-        : ref
-              .read(appControllerProvider.notifier)
-              .visibleIssues
-              .where(
-                (issue) =>
-                    issue.stepId == stepId &&
-                    issue.fieldPath != activeInputField,
-              )
-              .toList();
+  Widget build(BuildContext context) {
     final compact = _isCompact(context);
     final header = <Widget>[
       Text(
@@ -232,19 +218,6 @@ class _PageFrame extends ConsumerWidget {
       ),
       const SizedBox(height: 6),
       Text(subtitle, style: Theme.of(context).textTheme.bodyLarge),
-      if (issues.isNotEmpty) ...[
-        const SizedBox(height: 16),
-        if (fill)
-          // 留给问题面板的高度有上限，短窗口下不能把列表挤成零高。
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 200),
-            child: SingleChildScrollView(
-              child: _StepProblemPanel(issues: issues),
-            ),
-          )
-        else
-          _StepProblemPanel(issues: issues),
-      ],
     ];
     if (fill) {
       return Padding(
@@ -289,50 +262,155 @@ class _PageFrame extends ConsumerWidget {
   }
 }
 
-class _StepProblemPanel extends ConsumerWidget {
-  const _StepProblemPanel({required this.issues});
+String _problemSummaryLabel(int errors, int warnings) {
+  if (errors == 0) return '$warnings 项提醒';
+  if (warnings == 0) return '$errors 项错误';
+  return '$errors 项错误 · $warnings 项提醒';
+}
+
+/// 底部操作区左侧的问题摘要；点击展开问题列表。
+class _ProblemSummaryButton extends StatelessWidget {
+  const _ProblemSummaryButton({required this.issues, required this.onPressed});
 
   final List<ValidationIssue> issues;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final brightness = Theme.of(context).brightness;
+    final errors = issues
+        .where((issue) => issue.severity == IssueSeverity.error)
+        .length;
+    final warnings = issues.length - errors;
+    final accent = errors > 0
+        ? scheme.error
+        : AppStatusColors.warn(brightness);
+    return Tooltip(
+      message: '展开问题',
+      child: Material(
+        color: scheme.surfaceContainerHigh,
+        shape: AppShape.full,
+        child: InkWell(
+          customBorder: AppShape.full,
+          onTap: onPressed,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  errors > 0 ? Icons.error_outline : Icons.warning_amber,
+                  size: 18,
+                  color: accent,
+                ),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    _problemSummaryLabel(errors, warnings),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: scheme.onSurface,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Icon(
+                  Icons.expand_less,
+                  size: 18,
+                  color: scheme.onSurfaceVariant,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 浮在底部操作区上的问题列表；默认折叠，展开后可滚动查看并跳转字段。
+class _StepProblemPanel extends ConsumerWidget {
+  const _StepProblemPanel({required this.issues, required this.onCollapse});
+
+  final List<ValidationIssue> issues;
+  final VoidCallback onCollapse;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final warn = AppStatusColors.warn(Theme.of(context).brightness);
+    final brightness = Theme.of(context).brightness;
+    final warn = AppStatusColors.warn(brightness);
+    final errors = issues
+        .where((issue) => issue.severity == IssueSeverity.error)
+        .length;
+    final warnings = issues.length - errors;
     return Material(
-      color: scheme.errorContainer,
+      color: scheme.surfaceContainerHigh,
       shape: AppShape.lg,
+      elevation: 3,
+      shadowColor: scheme.shadow.withValues(alpha: .24),
       clipBehavior: Clip.antiAlias,
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              '本页有 ${issues.where((i) => i.severity == IssueSeverity.error).length} 项错误、${issues.where((i) => i.severity == IssueSeverity.warning).length} 项提醒',
-              style: AppText.cardTitle(context)
-                  .copyWith(color: scheme.onErrorContainer),
-            ),
-            const SizedBox(height: 6),
-            for (final issue in issues)
-              ListTile(
-                dense: true,
-                shape: AppShape.md,
-                contentPadding: EdgeInsets.zero,
-                leading: Icon(
-                  issue.severity == IssueSeverity.error
-                      ? Icons.error_outline
-                      : Icons.warning_amber,
-                  color: issue.severity == IssueSeverity.error
-                      ? scheme.error
-                      : warn,
+            Row(
+              children: [
+                Icon(
+                  errors > 0 ? Icons.error_outline : Icons.warning_amber,
+                  size: 20,
+                  color: errors > 0 ? scheme.error : warn,
                 ),
-                title: Text(issue.message),
-                trailing: const Icon(Icons.my_location, size: 18),
-                onTap: () {
-                  _endTextInput(ref);
-                  _scrollToField(issue.fieldPath);
-                },
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '本页有 $errors 项错误、$warnings 项提醒',
+                    style: AppText.cardTitle(context),
+                  ),
+                ),
+                IconButton(
+                  onPressed: onCollapse,
+                  tooltip: '收起问题',
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.expand_more),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Flexible(
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (final issue in issues)
+                      ListTile(
+                        dense: true,
+                        shape: AppShape.md,
+                        contentPadding: EdgeInsets.zero,
+                        leading: Icon(
+                          issue.severity == IssueSeverity.error
+                              ? Icons.error_outline
+                              : Icons.warning_amber,
+                          color: issue.severity == IssueSeverity.error
+                              ? scheme.error
+                              : warn,
+                        ),
+                        title: Text(issue.message),
+                        trailing: const Icon(Icons.my_location, size: 18),
+                        onTap: () {
+                          _endTextInput(ref);
+                          _scrollToField(issue.fieldPath);
+                        },
+                      ),
+                  ],
+                ),
               ),
+            ),
           ],
         ),
       ),
@@ -413,6 +491,133 @@ class _WizardActionCluster extends StatelessWidget {
                   ),
           ],
         ),
+      ],
+    );
+  }
+}
+
+/// 右下角操作区：问题摘要/面板 + 步骤计数 + 上一步/下一步。
+class _WizardBottomDock extends ConsumerStatefulWidget {
+  const _WizardBottomDock({
+    required this.compact,
+    required this.step,
+    required this.totalSteps,
+    required this.nextLabel,
+    required this.onPrevious,
+    required this.onNext,
+  });
+
+  final bool compact;
+  final int step;
+  final int totalSteps;
+  final String nextLabel;
+  final VoidCallback? onPrevious;
+  final VoidCallback? onNext;
+
+  @override
+  ConsumerState<_WizardBottomDock> createState() => _WizardBottomDockState();
+}
+
+class _WizardBottomDockState extends ConsumerState<_WizardBottomDock> {
+  bool _expanded = false;
+
+  /// 只有这些步骤原先在页头展示问题面板。
+  static const _problemStepIds = {
+    'remote',
+    'mechanism',
+    'controls',
+    'pwm',
+    'strategy',
+    'mappings',
+    'tests',
+  };
+
+  @override
+  void didUpdateWidget(covariant _WizardBottomDock oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.step != widget.step) _expanded = false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = ref.watch(appControllerProvider);
+    final controller = ref.read(appControllerProvider.notifier);
+    final cluster = _WizardActionCluster(
+      compact: widget.compact,
+      step: widget.step,
+      totalSteps: widget.totalSteps,
+      nextLabel: widget.nextLabel,
+      onPrevious: widget.onPrevious,
+      onNext: widget.onNext,
+    );
+    final document = state.document;
+    final issues = <ValidationIssue>[];
+    if (document != null) {
+      final stepIds = controller.stepIds(document.kind);
+      if (widget.step >= 0 &&
+          widget.step < stepIds.length &&
+          _problemStepIds.contains(stepIds[widget.step])) {
+        final activeInput = _activeInputField(ref);
+        issues.addAll(
+          controller.visibleIssues.where(
+            (issue) =>
+                issue.stepId == stepIds[widget.step] &&
+                issue.fieldPath != activeInput,
+          ),
+        );
+      }
+    }
+    if (issues.isEmpty) return cluster;
+
+    final summary = _ProblemSummaryButton(
+      issues: issues,
+      onPressed: () => setState(() => _expanded = !_expanded),
+    );
+    final panel = _StepProblemPanel(
+      issues: issues,
+      onCollapse: () => setState(() => _expanded = false),
+    );
+    final stickAbove = widget.compact || MediaQuery.sizeOf(context).width < 900;
+    if (!_expanded) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Flexible(child: summary),
+          SizedBox(width: widget.compact ? 8 : 12),
+          cluster,
+        ],
+      );
+    }
+    if (stickAbove) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: widget.compact
+                  ? MediaQuery.sizeOf(context).width - 24
+                  : 380,
+              maxHeight: widget.compact ? 240 : 280,
+            ),
+            child: panel,
+          ),
+          const SizedBox(height: 8),
+          cluster,
+        ],
+      );
+    }
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 380, maxHeight: 280),
+          child: panel,
+        ),
+        const SizedBox(width: 12),
+        cluster,
       ],
     );
   }

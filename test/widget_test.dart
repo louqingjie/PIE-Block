@@ -703,6 +703,13 @@ ProjectDocument _musicDocument() {
   );
 }
 
+Future<void> _expandStepProblems(WidgetTester tester) async {
+  final toggle = find.byTooltip('展开问题');
+  if (toggle.evaluate().isEmpty) return;
+  await tester.tap(toggle);
+  await tester.pumpAndSettle();
+}
+
 void main() {
   testWidgets('启动页展示两个项目入口', (tester) async {
     await tester.pumpWidget(const ProviderScope(child: PieBlockApp()));
@@ -2033,10 +2040,88 @@ void main() {
 
     await tester.tap(find.text('下一步'));
     await tester.pumpAndSettle();
+    await _expandStepProblems(tester);
     expect(find.textContaining('尚未填写'), findsWidgets);
     expect(find.textContaining('尚未选择'), findsWidgets);
     expect(find.text('1 / 6'), findsOneWidget);
     await tester.pump(const Duration(milliseconds: 1500));
+  });
+
+  testWidgets('步骤问题摘要位于下一步左侧并可折叠展开', (tester) async {
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1400, 900);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(_InfantryStartController.new),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('下一步'));
+    await tester.pumpAndSettle();
+
+    final summary = find.byTooltip('展开问题');
+    expect(summary, findsOneWidget);
+    expect(
+      tester.getRect(summary).right,
+      lessThanOrEqualTo(tester.getRect(find.text('下一步')).left),
+    );
+    expect(find.textContaining('本页有'), findsNothing);
+
+    await tester.tap(summary);
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('收起问题'), findsOneWidget);
+    expect(find.textContaining('本页有'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('收起问题'));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('展开问题'), findsOneWidget);
+    expect(find.textContaining('本页有'), findsNothing);
+    expect(tester.takeException(), isNull);
+    await tester.pump(const Duration(milliseconds: 1500));
+  });
+
+  testWidgets('窄屏问题摘要可展开且不溢出', (tester) async {
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(360, 640);
+    final source = _infantryDocument();
+    final config = source.config as InfantryConfig;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _ConfiguredRemoteController(
+              source.copyWith(
+                config: config.copyWith(
+                  chassis: config.chassis.copyWith(normalSpeed: 3999),
+                ),
+              ),
+            ),
+          ),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final summary = find.byTooltip('展开问题');
+    expect(summary, findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.tap(summary);
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('收起问题'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pump(const Duration(milliseconds: 600));
   });
 
   testWidgets('已选配置产生冲突时立即报错', (tester) async {
@@ -2085,6 +2170,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    await _expandStepProblems(tester);
 
     expect(find.text('普通速度低于 4000，底盘移动速度可能变慢'), findsWidgets);
     expect(find.text('冲刺速度低于 9000，底盘移动速度可能变慢'), findsWidgets);
@@ -2119,6 +2205,7 @@ void main() {
 
     FocusManager.instance.primaryFocus?.unfocus();
     await tester.pumpAndSettle();
+    await _expandStepProblems(tester);
     expect(find.text('摇杆死区大于 500，可能影响操控灵敏度'), findsWidgets);
     expect(
       find.descendant(of: deadzone, matching: find.byIcon(Icons.warning_amber)),
@@ -2248,6 +2335,7 @@ void main() {
         .singleWhere((item) => item.value == PinRole.motor);
     expect(unsupported.enabled, isFalse);
     expect((unsupported.child as Text).data, '平滑电机（当前配置，不支持）');
+    await _expandStepProblems(tester);
     expect(find.textContaining('P64 不支持平滑电机'), findsWidgets);
 
     final p64 = find.byKey(const ValueKey('pwm.pin_roles.P64'));
@@ -2340,6 +2428,7 @@ void main() {
 
     FocusManager.instance.primaryFocus?.unfocus();
     await tester.pumpAndSettle();
+    await _expandStepProblems(tester);
     expect(find.text('舵机角度变化速度可能过快'), findsWidgets);
 
     await tester.enterText(parameter, '1.23');
@@ -2499,6 +2588,7 @@ void main() {
 
     await tester.tap(find.text('下一步'));
     await tester.pumpAndSettle();
+    await _expandStepProblems(tester);
     expect(find.text('遥控器通道号必须在 0–125 之间'), findsWidgets);
     expect(
       find.descendant(of: channel, matching: find.byIcon(Icons.error_outline)),
@@ -2527,6 +2617,7 @@ void main() {
     await tester.enterText(channel, '126');
     await tester.pumpAndSettle();
     expect(find.text('遥控器通道号必须在 0–125 之间'), findsNothing);
+    await _expandStepProblems(tester);
 
     await tester.enterText(deadzone, '2048');
     await tester.pumpAndSettle();

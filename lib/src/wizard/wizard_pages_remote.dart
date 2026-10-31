@@ -106,7 +106,6 @@ class _RemotePage extends ConsumerWidget {
     final chassisEnabled = engineer?.chassis.enabled ?? true;
     return _PageFrame(
       title: '遥控器与底盘',
-      stepId: 'remote',
       subtitle: chassisEnabled
           ? '先确认通信参数和四轮接线，后续页面会据此检查 IO 冲突。'
           : '未启用预制四轮底盘：原底盘引脚已释放给动作行使用。',

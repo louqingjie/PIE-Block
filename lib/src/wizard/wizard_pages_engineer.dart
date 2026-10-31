@@ -18,7 +18,6 @@ class _EngineerStrategyPage extends ConsumerWidget {
 
     return _PageFrame(
       title: '模式切换',
-      stepId: 'strategy',
       subtitle: '工程机器人可设置 1–4 套互相独立的控制映射。',
       child: _Section(
         title: '模式策略',
@@ -135,7 +134,6 @@ class _EngineerMappingsPageState extends ConsumerState<_EngineerMappingsPage> {
     if (availableModeCount == 0) {
       return const _PageFrame(
         title: '动作映射',
-        stepId: 'mappings',
         subtitle: '请先完成模式数量配置。',
         child: _InfoBanner('当前没有可编辑的模式，请返回“模式切换”页面。'),
       );
@@ -166,7 +164,6 @@ class _EngineerMappingsPageState extends ConsumerState<_EngineerMappingsPage> {
         (mode.actions.length + 1) * (_isCompact(context) ? 680.0 : 360.0) + 400;
     return _PageFrame(
       title: '动作映射',
-      stepId: 'mappings',
       subtitle: '每个动作都有稳定 ID；拖动左侧手柄即可调整执行顺序。',
       fill: true,
       child: Column(

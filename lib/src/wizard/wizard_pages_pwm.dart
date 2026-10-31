@@ -12,7 +12,6 @@ class _PwmPage extends ConsumerWidget {
         ctrl.updateConfig(c.copyWith(pwm: value));
     return _PageFrame(
       title: 'PWM 与引脚角色',
-      stepId: 'pwm',
       subtitle: '同一 PWM 组共享频率。角色与频率不匹配时会在检查页给出提示。',
       child: Column(
         children: [
