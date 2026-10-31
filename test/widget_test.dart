@@ -2267,7 +2267,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 600));
   });
 
-  testWidgets('工程 PWM 页舵机行提供左右限位输入且非舵机行不显示', (tester) async {
+  testWidgets('工程 PWM 页舵机行提供逆时针顺时针限幅输入且非舵机行不显示', (tester) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -2293,10 +2293,12 @@ void main() {
       findsOneWidget,
     );
     expect(find.byKey(const ValueKey('pwm.servo_min_limits.P62')), findsNothing);
+    expect(find.text('逆时针限幅°'), findsWidgets);
+    expect(find.text('顺时针限幅°'), findsWidgets);
 
     final minField = find.byKey(const ValueKey('pwm.servo_min_limits.P60'));
     await tester.ensureVisible(minField);
-    await tester.enterText(minField, '-30');
+    await tester.enterText(minField, '30');
     await tester.pumpAndSettle();
     final maxField = find.byKey(const ValueKey('pwm.servo_max_limits.P60'));
     await tester.enterText(maxField, '45');

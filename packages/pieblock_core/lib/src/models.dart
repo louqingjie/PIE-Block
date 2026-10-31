@@ -268,7 +268,8 @@ class PwmGroupConfig {
   final Map<String, PinRole> pinRoles;
   final Map<String, int> servoMids;
 
-  /// 舵机相对中位的左/右限位角度（-90~90，选填）；未填的一侧走满电气行程。
+  /// 舵机相对中位两侧的限幅角：servoMaxLimits 为逆时针一侧（非负），
+  /// servoMinLimits 为顺时针一侧（非正）；未填的一侧走满电气行程。
   final Map<String, int> servoMinLimits, servoMaxLimits;
 
   /// P64/P66 满油占空比（500–800 整百）；仅摩擦轮专用控制方式使用。

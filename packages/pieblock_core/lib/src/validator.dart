@@ -454,41 +454,39 @@ abstract final class ProjectValidator {
     }
   }
 
-  /// 舵机左/右限位：选填，填了必须在 -90~90，且两者都填时右限位不小于左限位。
-  static void _servoLimitPair(
-    int? min,
-    int? max,
-    String minPath,
-    String maxPath,
-    String label,
-    String minName,
-    String maxName,
-    String step,
-    _AddIssue issue,
-  ) {
+  /// 舵机两侧限幅：逆时针存非负的 maxLimit，顺时针存非正的 minLimit；
+  /// 输入按相对归中位置的行程大小校验，两侧都不得超过该侧的电气余量。
+  static void _servoTravelLimits({
+    required int mid,
+    required int? minLimit,
+    required int? maxLimit,
+    required String minPath,
+    required String maxPath,
+    required String ccwLabel,
+    required String cwLabel,
+    required String step,
+    required _AddIssue issue,
+  }) {
     _range(
-      min,
-      -90,
-      90,
-      minPath,
-      '$label$minName',
-      step,
-      issue,
-      required: false,
-    );
-    _range(
-      max,
-      -90,
-      90,
+      maxLimit,
+      0,
+      90 - mid,
       maxPath,
-      '$label$maxName',
+      ccwLabel,
       step,
       issue,
       required: false,
     );
-    if (min != null && max != null && max < min) {
-      issue(IssueSeverity.error, maxPath, '$label$maxName不能小于$minName', step);
-    }
+    _range(
+      minLimit == null ? null : -minLimit,
+      0,
+      90 + mid,
+      minPath,
+      cwLabel,
+      step,
+      issue,
+      required: false,
+    );
   }
 
   static void _chassis(ChassisConfig chassis, _AddIssue issue) {
@@ -865,25 +863,16 @@ abstract final class ProjectValidator {
         // 顺时针存 -minLimit（非负），两侧都不得超过该侧的电气余量。
         final mid = actuator.midOffset;
         if (mid != null && mid >= -90 && mid <= 90) {
-          _range(
-            actuator.maxLimit,
-            0,
-            90 - mid,
-            path('max_limit'),
-            '$label 逆时针限幅',
-            'mechanism',
-            issue,
-            required: false,
-          );
-          _range(
-            actuator.minLimit == null ? null : -actuator.minLimit!,
-            0,
-            90 + mid,
-            path('min_limit'),
-            '$label 顺时针限幅',
-            'mechanism',
-            issue,
-            required: false,
+          _servoTravelLimits(
+            mid: mid,
+            minLimit: actuator.minLimit,
+            maxLimit: actuator.maxLimit,
+            minPath: path('min_limit'),
+            maxPath: path('max_limit'),
+            ccwLabel: '$label 逆时针限幅',
+            cwLabel: '$label 顺时针限幅',
+            step: 'mechanism',
+            issue: issue,
           );
         }
       }
@@ -1092,17 +1081,20 @@ abstract final class ProjectValidator {
           'pwm',
           issue,
         );
-        _servoLimitPair(
-          config.pwm.servoMinLimits[pin],
-          config.pwm.servoMaxLimits[pin],
-          'pwm.servo_min_limits.$pin',
-          'pwm.servo_max_limits.$pin',
-          '$pin 舵机',
-          '左限位',
-          '右限位',
-          'pwm',
-          issue,
-        );
+        final mid = config.pwm.servoMids[pin];
+        if (mid != null && mid >= -90 && mid <= 90) {
+          _servoTravelLimits(
+            mid: mid,
+            minLimit: config.pwm.servoMinLimits[pin],
+            maxLimit: config.pwm.servoMaxLimits[pin],
+            minPath: 'pwm.servo_min_limits.$pin',
+            maxPath: 'pwm.servo_max_limits.$pin',
+            ccwLabel: '$pin 舵机逆时针限幅',
+            cwLabel: '$pin 舵机顺时针限幅',
+            step: 'pwm',
+            issue: issue,
+          );
+        }
       }
     }
     for (final pin in mainServoPins) {
@@ -1115,17 +1107,20 @@ abstract final class ProjectValidator {
         'pwm',
         issue,
       );
-      _servoLimitPair(
-        config.pwm.servoMinLimits[pin],
-        config.pwm.servoMaxLimits[pin],
-        'pwm.servo_min_limits.$pin',
-        'pwm.servo_max_limits.$pin',
-        '$pin 舵机',
-        '左限位',
-        '右限位',
-        'pwm',
-        issue,
-      );
+      final mid = config.pwm.servoMids[pin];
+      if (mid != null && mid >= -90 && mid <= 90) {
+        _servoTravelLimits(
+          mid: mid,
+          minLimit: config.pwm.servoMinLimits[pin],
+          maxLimit: config.pwm.servoMaxLimits[pin],
+          minPath: 'pwm.servo_min_limits.$pin',
+          maxPath: 'pwm.servo_max_limits.$pin',
+          ccwLabel: '$pin 舵机逆时针限幅',
+          cwLabel: '$pin 舵机顺时针限幅',
+          step: 'pwm',
+          issue: issue,
+        );
+      }
     }
 
     final frictionControl = _hasFrictionControl(config);

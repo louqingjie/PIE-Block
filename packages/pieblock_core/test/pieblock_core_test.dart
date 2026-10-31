@@ -707,6 +707,7 @@ void main() {
 
   group('舵机限位', () {
     EngineerConfig limitEngineer({
+      int mid = 0,
       Map<String, int>? minLimits,
       Map<String, int>? maxLimits,
     }) {
@@ -714,7 +715,7 @@ void main() {
       return source.copyWith(
         pwm: source.pwm.copyWith(
           pinRoles: {...source.pwm.pinRoles, 'P60': PinRole.servo},
-          servoMids: {...source.pwm.servoMids, 'P60': 0},
+          servoMids: {...source.pwm.servoMids, 'P60': mid},
           servoMinLimits: minLimits ?? const {},
           servoMaxLimits: maxLimits ?? const {},
         ),
@@ -769,7 +770,7 @@ void main() {
       expect(restored.pitchActuators.single.maxLimit, isNull);
     });
 
-    test('工程限位超出 ±90 或右限位小于左限位报 Error', () {
+    test('工程限位按两侧行程校验并受归中偏移约束', () {
       List<ValidationIssue> limitIssues(EngineerConfig config) =>
           ProjectValidator.validate(config)
               .where((issue) => issue.severity == IssueSeverity.error)
@@ -781,37 +782,42 @@ void main() {
               .toList();
 
       expect(
+        limitIssues(limitEngineer(maxLimits: {'P60': 91})).single.message,
+        'P60 舵机逆时针限幅必须在 0–90 之间',
+      );
+      expect(
+        limitIssues(limitEngineer(minLimits: {'P60': -91})).single.message,
+        'P60 舵机顺时针限幅必须在 0–90 之间',
+      );
+      expect(
+        limitIssues(limitEngineer(maxLimits: {'MP03': 91})).single.fieldPath,
+        'pwm.servo_max_limits.MP03',
+      );
+      // 归中偏移 30：逆时针最多 60°，顺时针最多 120°。
+      expect(
         limitIssues(
-          limitEngineer(minLimits: {'P60': -91}, maxLimits: {'P60': 90}),
-        ).map((issue) => issue.fieldPath),
-        ['pwm.servo_min_limits.P60'],
+          limitEngineer(mid: 30, maxLimits: {'P60': 61}),
+        ).single.message,
+        'P60 舵机逆时针限幅必须在 0–60 之间',
       );
       expect(
         limitIssues(
-          limitEngineer(minLimits: {'P60': -90}, maxLimits: {'P60': 91}),
-        ).map((issue) => issue.fieldPath),
-        ['pwm.servo_max_limits.P60'],
+          limitEngineer(mid: 30, minLimits: {'P60': -121}),
+        ).single.message,
+        'P60 舵机顺时针限幅必须在 0–120 之间',
       );
-      expect(
-        limitIssues(
-          limitEngineer(maxLimits: {'MP03': 120}),
-        ).map((issue) => issue.fieldPath),
-        ['pwm.servo_max_limits.MP03'],
-      );
-      final reversed = limitIssues(
-        limitEngineer(minLimits: {'P60': -30}, maxLimits: {'P60': -60}),
-      );
-      expect(reversed, hasLength(1));
-      expect(reversed.single.fieldPath, 'pwm.servo_max_limits.P60');
-      expect(reversed.single.message, contains('右限位不能小于左限位'));
       // 边界值与未填写均合法。
       expect(
         limitIssues(
-          limitEngineer(minLimits: {'P60': -90}, maxLimits: {'P60': 90}),
+          limitEngineer(
+            mid: 30,
+            minLimits: {'P60': -120},
+            maxLimits: {'P60': 60},
+          ),
         ),
         isEmpty,
       );
-      expect(limitIssues(limitEngineer()), isEmpty);
+      expect(limitIssues(completeEngineer()), isEmpty);
     });
 
     test('步兵逆时针/顺时针限幅受归中偏移约束', () {
@@ -906,7 +912,7 @@ void main() {
         pwm: source.pwm.copyWith(servoMaxLimits: const {'P60': 45}),
       );
       final code = CodeGenerator.generate(config);
-      // 中位 0°、右限位 45°：目标 90° 被截到 1000 duty。
+      // 中位 0°、逆时针限幅 45°：目标 90° 被截到 1000 duty。
       expect(code, contains('dutyOfMotor[0] = 1000;'));
       expect(code, isNot(contains('dutyOfMotor[0] = 1250;')));
     });

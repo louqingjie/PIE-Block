@@ -85,20 +85,25 @@ class _PwmPage extends ConsumerWidget {
                         final isFriction =
                             (pin == 'P64' || pin == 'P66') &&
                             pwm.pinRoles[pin] == PinRole.friction;
+                        final ccw = pwm.servoMaxLimits[pin];
+                        final cw = pwm.servoMinLimits[pin] == null
+                            ? null
+                            : -pwm.servoMinLimits[pin]!;
                         final compact =
                             constraints.maxWidth < _compactBreakpoint;
-                        final rowWidth = compact
+                        // 舵机行放不下完整的一排时退回换行布局，避免限幅字段被挤压。
+                        final stacked =
+                            compact || (isServo && constraints.maxWidth < 700);
+                        final rowWidth = stacked
                             ? constraints.maxWidth
                             : isServo
-                            ? 620.0
+                            ? 700.0
                             : 280.0;
-                        // 紧凑时角色下拉独占一行，角度输入自动换到下一行；
-                        // 宽屏时与同行输入框按固定宽分配，与旧的 Row 布局一致。
-                        final roleWidth = compact
+                        final roleWidth = stacked
                             ? rowWidth
                             : rowWidth -
                                   (isServo
-                                      ? 3 * 108.0
+                                      ? 404.0
                                       : isFriction
                                       ? 118.0
                                       : 0.0);
@@ -157,32 +162,11 @@ class _PwmPage extends ConsumerWidget {
                                   ),
                                 ),
                                 SizedBox(
-                                  width: 100,
+                                  width: 140,
                                   child: _NumberField(
-                                    label: '左限位°',
-                                    fieldPath: 'pwm.servo_min_limits.$pin',
-                                    value: pwm.servoMinLimits[pin],
-                                    onChanged: (v) {
-                                      final limits = {
-                                        ...pwm.servoMinLimits,
-                                      };
-                                      if (v == null) {
-                                        limits.remove(pin);
-                                      } else {
-                                        limits[pin] = v;
-                                      }
-                                      update(
-                                        pwm.copyWith(servoMinLimits: limits),
-                                      );
-                                    },
-                                  ),
-                                ),
-                                SizedBox(
-                                  width: 100,
-                                  child: _NumberField(
-                                    label: '右限位°',
+                                    label: '逆时针限幅°',
                                     fieldPath: 'pwm.servo_max_limits.$pin',
-                                    value: pwm.servoMaxLimits[pin],
+                                    value: ccw,
                                     onChanged: (v) {
                                       final limits = {
                                         ...pwm.servoMaxLimits,
@@ -194,6 +178,27 @@ class _PwmPage extends ConsumerWidget {
                                       }
                                       update(
                                         pwm.copyWith(servoMaxLimits: limits),
+                                      );
+                                    },
+                                  ),
+                                ),
+                                SizedBox(
+                                  width: 140,
+                                  child: _NumberField(
+                                    label: '顺时针限幅°',
+                                    fieldPath: 'pwm.servo_min_limits.$pin',
+                                    value: cw,
+                                    onChanged: (v) {
+                                      final limits = {
+                                        ...pwm.servoMinLimits,
+                                      };
+                                      if (v == null) {
+                                        limits.remove(pin);
+                                      } else {
+                                        limits[pin] = -v;
+                                      }
+                                      update(
+                                        pwm.copyWith(servoMinLimits: limits),
                                       );
                                     },
                                   ),
