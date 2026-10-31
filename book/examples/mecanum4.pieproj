@@ -1,0 +1,189 @@
+{
+  "format_version": 17,
+  "name": "教材示例：四轮麦轮工程",
+  "project_kind": "engineer",
+  "created_at": "2026-01-01T00:00:00.000Z",
+  "updated_at": "2026-01-01T00:00:00.000Z",
+  "guide_progress": {
+    "current_step_id": "mappings",
+    "visited_step_ids": [
+      "remote",
+      "pwm",
+      "strategy",
+      "mappings"
+    ]
+  },
+  "config": {
+    "remote": {
+      "channel": 36,
+      "deadzone": 100
+    },
+    "chassis": {
+      "enabled": false,
+      "left_front": {
+        "pin": null,
+        "direction": null
+      },
+      "left_rear": {
+        "pin": null,
+        "direction": null
+      },
+      "right_front": {
+        "pin": null,
+        "direction": null
+      },
+      "right_rear": {
+        "pin": null,
+        "direction": null
+      },
+      "normal_speed": null,
+      "sprint_speed": null,
+      "sprint_enabled": false,
+      "turn_reversed": false
+    },
+    "pwm": {
+      "pwma": "hz50",
+      "pwmb": "hz10000",
+      "buzzer_disabled": false,
+      "pin_roles": {
+        "P60": "unused",
+        "P62": "unused",
+        "P64": "unused",
+        "P66": "unused",
+        "P74": "motor",
+        "P75": "motor",
+        "P76": "motor",
+        "P77": "motor"
+      },
+      "servo_mids": {
+        "P60": null,
+        "P62": null,
+        "P64": null,
+        "P66": null,
+        "P74": null,
+        "P75": null,
+        "P76": null,
+        "P77": null,
+        "MP03": 0,
+        "MP74": 0
+      },
+      "servo_min_limits": {
+        "P60": null,
+        "P62": null,
+        "P64": null,
+        "P66": null,
+        "P74": null,
+        "P75": null,
+        "P76": null,
+        "P77": null,
+        "MP03": null,
+        "MP74": null
+      },
+      "servo_max_limits": {
+        "P60": null,
+        "P62": null,
+        "P64": null,
+        "P66": null,
+        "P74": null,
+        "P75": null,
+        "P76": null,
+        "P77": null,
+        "MP03": null,
+        "MP74": null
+      },
+      "friction_max_duties": {
+        "P64": 700,
+        "P66": 800
+      }
+    },
+    "mode_count": 1,
+    "switch_strategy": null,
+    "mode_switch_key": null,
+    "mode_keys": [
+      null,
+      null,
+      null,
+      null
+    ],
+    "modes": [
+      {
+        "id": "mode-1",
+        "preserve_chassis": false,
+        "actions": [
+          {
+            "id": "mecanum4-1",
+            "input_kind": "unspecified",
+            "key": null,
+            "output_kind": "integer",
+            "pin": null,
+            "variable": "vx",
+            "expression": "-LY",
+            "direction": null,
+            "mode": null,
+            "parameter": null
+          },
+          {
+            "id": "mecanum4-2",
+            "input_kind": "unspecified",
+            "key": null,
+            "output_kind": "integer",
+            "pin": null,
+            "variable": "vy",
+            "expression": "-LX",
+            "direction": null,
+            "mode": null,
+            "parameter": null
+          },
+          {
+            "id": "mecanum4-3",
+            "input_kind": "unspecified",
+            "key": null,
+            "output_kind": "pin",
+            "pin": "P74",
+            "variable": null,
+            "expression": "(vx-vy)*10000/2047",
+            "direction": null,
+            "mode": null,
+            "parameter": null
+          },
+          {
+            "id": "mecanum4-4",
+            "input_kind": "unspecified",
+            "key": null,
+            "output_kind": "pin",
+            "pin": "P75",
+            "variable": null,
+            "expression": "(vx+vy)*10000/2047",
+            "direction": null,
+            "mode": null,
+            "parameter": null
+          },
+          {
+            "id": "mecanum4-5",
+            "input_kind": "unspecified",
+            "key": null,
+            "output_kind": "pin",
+            "pin": "P76",
+            "variable": null,
+            "expression": "(vx+vy)*10000/2047",
+            "direction": null,
+            "mode": null,
+            "parameter": null
+          },
+          {
+            "id": "mecanum4-6",
+            "input_kind": "unspecified",
+            "key": null,
+            "output_kind": "pin",
+            "pin": "P77",
+            "variable": null,
+            "expression": "(vx-vy)*10000/2047",
+            "direction": null,
+            "mode": null,
+            "parameter": null
+          }
+        ]
+      }
+    ]
+  }
+}

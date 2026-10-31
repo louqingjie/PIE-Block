@@ -113,6 +113,10 @@ stc32g/toolchain/mcs251-tests/build/
 !assets/templates/
 !assets/templates/*.pieproj
 
+# 教材示例工程被测试与截图工具直接读取，也必须入库。
+!book/examples/
+!book/examples/*.pieproj
+
 # Local ISP/flash debug scratch (do not commit)
 STC32G.pdf
 _probe_*

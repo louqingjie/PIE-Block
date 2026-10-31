@@ -1,0 +1,93 @@
+{
+  "format_version": 17,
+  "name": "教材示例：装车前检查单",
+  "project_kind": "debug",
+  "created_at": "2026-01-01T00:00:00.000Z",
+  "updated_at": "2026-01-01T00:00:00.000Z",
+  "guide_progress": {
+    "current_step_id": "tests",
+    "visited_step_ids": [
+      "tests"
+    ]
+  },
+  "config": {
+    "tests": [
+      {
+        "pin": "P74",
+        "enabled": true,
+        "drive_type": "motor",
+        "direction": "forward",
+        "value": 5000,
+        "duration_ms": 2000
+      },
+      {
+        "pin": "P76",
+        "enabled": true,
+        "drive_type": "motor",
+        "direction": "reverse",
+        "value": 5000,
+        "duration_ms": 2000
+      },
+      {
+        "pin": "P60",
+        "enabled": true,
+        "drive_type": "servo",
+        "direction": "forward",
+        "value": 45,
+        "duration_ms": 1500
+      },
+      {
+        "pin": "MP03",
+        "enabled": true,
+        "drive_type": "servo",
+        "direction": "forward",
+        "value": 30,
+        "duration_ms": 1500
+      },
+      {
+        "pin": "P64",
+        "enabled": true,
+        "drive_type": "friction",
+        "value": 650
+      },
+      {
+        "pin": "P66",
+        "enabled": true,
+        "drive_type": "friction",
+        "value": 650
+      },
+      {
+        "pin": "P62",
+        "enabled": false,
+        "drive_type": null,
+        "direction": null,
+        "value": null,
+        "duration_ms": 3000
+      },
+      {
+        "pin": "P75",
+        "enabled": false,
+        "drive_type": null,
+        "direction": null,
+        "value": null,
+        "duration_ms": 3000
+      },
+      {
+        "pin": "P77",
+        "enabled": false,
+        "drive_type": null,
+        "direction": null,
+        "value": null,
+        "duration_ms": 3000
+      },
+      {
+        "pin": "MP74",
+        "enabled": false,
+        "drive_type": null,
+        "direction": null,
+        "value": null,
+        "duration_ms": 3000
+      }
+    ]
+  }
+}
