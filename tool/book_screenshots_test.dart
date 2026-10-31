@@ -270,15 +270,27 @@ Future<void> _saveScreenshot(
 /// 页面的外层滚动容器：`_PageFrame` 的 SingleChildScrollView。
 Finder _pageScrollView() => find.byType(SingleChildScrollView).first;
 
-/// 直接滚到页面底部（动作映射页下半部分用）。
-Future<void> _scrollPageToBottom(WidgetTester tester) async {
-  final scrollable = find
-      .descendant(
-        of: _pageScrollView(),
-        matching: find.byType(Scrollable),
-      )
-      .first;
-  final position = tester.state<ScrollableState>(scrollable).position;
+/// 页面外层滚动区。
+Finder _pageScrollable() => find
+    .descendant(of: _pageScrollView(), matching: find.byType(Scrollable))
+    .first;
+
+/// 动作映射页的动作列表：列表独立滚动，不再走页面外层滚动。
+Finder _actionsScrollable() => find
+    .descendant(
+      of: find.byType(ReorderableListView),
+      matching: find.byType(Scrollable),
+    )
+    .first;
+
+/// 直接滚到指定滚动区底部（动作映射页下半部分用）。
+Future<void> _scrollPageToBottom(
+  WidgetTester tester, {
+  Finder? scrollable,
+}) async {
+  final position = tester
+      .state<ScrollableState>(scrollable ?? _pageScrollable())
+      .position;
   position.jumpTo(position.maxScrollExtent);
   await tester.pumpAndSettle();
 }
@@ -397,10 +409,10 @@ void main() {
       step: 3,
       logicalHeight: 1200,
     );
-    // 先按清单检查表达式行，再滚到页面底部取「下半部分」。
+    // 先按清单检查表达式行，再滚到列表底部取「下半部分」。
     await tester.dragUntilVisible(
       find.byKey(const ValueKey('modes.0.actions.9.expression')),
-      _pageScrollView(),
+      _actionsScrollable(),
       const Offset(0, -250),
     );
     await tester.pumpAndSettle();
@@ -408,7 +420,7 @@ void main() {
       find.byKey(const ValueKey('modes.0.actions.9.expression')),
       findsOneWidget,
     );
-    await _scrollPageToBottom(tester);
+    await _scrollPageToBottom(tester, scrollable: _actionsScrollable());
     await _settle(tester);
     await _saveScreenshot(tester, key, '5-6-arm-servos.png');
   });
