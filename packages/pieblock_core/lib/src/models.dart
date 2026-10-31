@@ -1533,6 +1533,18 @@ class ActionMapping {
         ? this.parameter
         : parameter as num?,
   );
+  /// 复制动作配置，保留字段并生成新的 id。
+  ActionMapping duplicate() => ActionMapping(
+    inputKind: inputKind,
+    key: key,
+    outputKind: outputKind,
+    pin: pin,
+    variableName: variableName,
+    expression: expression,
+    direction: direction,
+    mode: mode,
+    parameter: parameter,
+  );
   Map<String, Object?> toJson() => {
     'id': id,
     'input_kind': inputKind.name,

@@ -1088,6 +1088,48 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('工程动作行可复制到源动作下方', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _StaticProjectController(_engineerServoButtonDocument(), 3),
+          ),
+          deployControllerProvider.overrideWith(_FakeDeployController.new),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(WizardScreen)),
+    );
+    EngineerConfig config() =>
+        container.read(appControllerProvider).document!.config as EngineerConfig;
+    final before = config().modes.first.actions;
+    expect(before, hasLength(3));
+
+    final copyButton = find.byTooltip('复制动作').first;
+    await tester.ensureVisible(copyButton);
+    await tester.pumpAndSettle();
+    await tester.tap(copyButton);
+    await tester.pumpAndSettle();
+
+    final actions = config().modes.first.actions;
+    expect(actions, hasLength(4));
+    expect(actions[1].id, isNot(actions[0].id));
+    expect(actions[1].key, actions[0].key);
+    expect(actions[1].pin, actions[0].pin);
+    expect(actions[1].direction, actions[0].direction);
+    expect(actions[1].mode, actions[0].mode);
+    expect(actions[1].parameter, actions[0].parameter);
+    expect(actions[2].id, before[1].id);
+    expect(actions[3].id, before[2].id);
+    expect(tester.takeException(), isNull);
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
   testWidgets('调试向导展示可排序十路测试和动态摩擦轮字段', (tester) async {
     // 试听面板默认用 flutter_soloud，测试里没有原生动态库，必须注入假实现。
     final preview = _FakeDebugCuePreview();

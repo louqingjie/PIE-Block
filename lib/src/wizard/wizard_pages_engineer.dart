@@ -247,6 +247,11 @@ class _EngineerMappingsPageState extends ConsumerState<_EngineerMappingsPage> {
                     final actions = [...mode.actions]..removeAt(index);
                     updateMode(mode.copyWith(actions: actions));
                   },
+                  onDuplicate: () {
+                    final actions = [...mode.actions];
+                    actions.insert(index + 1, action.duplicate());
+                    updateMode(mode.copyWith(actions: actions));
+                  },
                 );
               },
             ),
@@ -267,6 +272,7 @@ class _ActionRow extends ConsumerWidget {
     required this.fieldPath,
     required this.onChanged,
     required this.onRemove,
+    required this.onDuplicate,
   });
   final int index;
   final ActionMapping action;
@@ -275,6 +281,7 @@ class _ActionRow extends ConsumerWidget {
   final String fieldPath;
   final ValueChanged<ActionMapping> onChanged;
   final VoidCallback onRemove;
+  final VoidCallback onDuplicate;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final availableInputs = preserveChassis
@@ -590,6 +597,11 @@ class _ActionRow extends ConsumerWidget {
                     '动作 ${index + 1}',
                     style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
+                ),
+                IconButton(
+                  onPressed: onDuplicate,
+                  tooltip: '复制动作',
+                  icon: const Icon(Icons.copy),
                 ),
                 IconButton(
                   onPressed: onRemove,

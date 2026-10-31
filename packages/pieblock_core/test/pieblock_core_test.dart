@@ -321,6 +321,34 @@ void main() {
       expect(legacy.parameter, 30);
     });
 
+    test('动作复制保留字段并生成新 id', () {
+      final sources = [
+        ActionMapping(
+          id: 'source-pin',
+          key: 'A',
+          direction: Direction.forward,
+          mode: ControlMode.single,
+          parameter: 1.25,
+          pin: 'P60',
+        ),
+        ActionMapping(
+          id: 'source-expression',
+          inputKind: ActionInputKind.unspecified,
+          outputKind: ActionOutputKind.integer,
+          variableName: 'vx',
+          expression: '-LY',
+        ),
+      ];
+      for (final source in sources) {
+        final copy = source.duplicate();
+        expect(copy.id, isNot(source.id));
+        expect(
+          {...copy.toJson()}..remove('id'),
+          {...source.toJson()}..remove('id'),
+        );
+      }
+    });
+
     test('调试项目顺序与配置可往返', () {
       final source = ProjectDocument.create(
         '调试测试',
