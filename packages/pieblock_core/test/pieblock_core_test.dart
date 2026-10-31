@@ -1019,6 +1019,141 @@ void main() {
       expect(() => CodeGenerator.generate(invalid), throwsStateError);
     });
 
+    test('调试测试项可复制且可选 id 往返', () {
+      const source = DebugTestItem(
+        pin: 'P60',
+        enabled: true,
+        driveType: DebugDriveType.motor,
+        direction: Direction.forward,
+        value: 5000,
+        durationMs: 2000,
+      );
+      expect(source.toJson(), isNot(contains('id')));
+      final copy = source.duplicate();
+      expect(copy.id, isNotNull);
+      expect(copy.id, isNot(source.id));
+      expect({...copy.toJson()}..remove('id'), source.toJson());
+      final restored = DebugTestItem.fromJson(
+        Map<String, Object?>.from(
+          jsonDecode(jsonEncode(copy.toJson())) as Map,
+        ),
+      );
+      expect(restored.id, copy.id);
+      expect({...restored.toJson()}..remove('id'), source.toJson());
+    });
+
+    test('调试配置保留重复引脚并补齐缺失引脚', () {
+      final config = DebugConfig.fromJson({
+        'tests': [
+          {
+            'pin': 'P60',
+            'enabled': true,
+            'drive_type': 'motor',
+            'direction': 'forward',
+            'value': 3000,
+            'duration_ms': 1000,
+          },
+          {
+            'id': 'copy-60',
+            'pin': 'P60',
+            'enabled': true,
+            'drive_type': 'motor',
+            'direction': 'reverse',
+            'value': 5000,
+            'duration_ms': 2000,
+          },
+        ],
+      });
+      expect(config.tests.where((item) => item.pin == 'P60'), hasLength(2));
+      expect(config.tests[1].id, 'copy-60');
+      expect(config.tests.map((item) => item.pin).toSet(), containsAll(debugPins));
+      final restored = DebugConfig.fromJson(
+        Map<String, Object?>.from(
+          jsonDecode(jsonEncode(config.toJson())) as Map,
+        ),
+      );
+      expect(restored.tests.where((item) => item.pin == 'P60'), hasLength(2));
+      expect(restored.tests.length, config.tests.length);
+    });
+
+    test('重复调试引脚合法但仍须覆盖十路', () {
+      final complete = DebugConfig(
+        tests: [
+          const DebugTestItem(
+            pin: 'P60',
+            enabled: true,
+            driveType: DebugDriveType.motor,
+            direction: Direction.forward,
+            value: 5000,
+            durationMs: 1000,
+          ),
+          const DebugTestItem(
+            pin: 'P60',
+            enabled: true,
+            driveType: DebugDriveType.motor,
+            direction: Direction.reverse,
+            value: 5000,
+            durationMs: 1000,
+          ),
+          for (final pin in debugPins.where((value) => value != 'P60'))
+            DebugTestItem(pin: pin),
+        ],
+      );
+      expect(
+        ProjectValidator.validate(
+          complete,
+        ).where((issue) => issue.severity == IssueSeverity.error),
+        isEmpty,
+      );
+      final missing = DebugConfig(
+        tests: [
+          const DebugTestItem(
+            pin: 'P60',
+            enabled: true,
+            driveType: DebugDriveType.motor,
+            direction: Direction.forward,
+            value: 5000,
+            durationMs: 1000,
+          ),
+        ],
+      );
+      expect(
+        ProjectValidator.validate(missing).map((issue) => issue.message),
+        contains('调试序列必须包含全部十个固定引脚'),
+      );
+    });
+
+    test('同一引脚的多条测试按顺序生成', () {
+      final config = DebugConfig(
+        tests: [
+          const DebugTestItem(
+            pin: 'P60',
+            enabled: true,
+            driveType: DebugDriveType.motor,
+            direction: Direction.forward,
+            value: 3000,
+            durationMs: 1000,
+          ),
+          const DebugTestItem(
+            pin: 'P60',
+            enabled: true,
+            driveType: DebugDriveType.motor,
+            direction: Direction.reverse,
+            value: 6000,
+            durationMs: 2000,
+          ),
+          for (final pin in debugPins.where((value) => value != 'P60'))
+            DebugTestItem(pin: pin),
+        ],
+      );
+      final code = CodeGenerator.generate(config);
+      expect(code, contains('1. P60 motor'));
+      expect(code, contains('2. P60 motor'));
+      expect(code.indexOf('StepCue(1);'), lessThan(code.indexOf('StepCue(2);')));
+      expect(code, contains('3000'));
+      expect(code, contains('6000'));
+    });
+
     test('调试曲线的摩擦轮目标就是配置的占空比', () {
       final code = CodeGenerator.generate(completeDebug());
       expect(code.indexOf('1. P64'), lessThan(code.indexOf('2. P66')));

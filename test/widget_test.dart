@@ -1019,6 +1019,59 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('调试测试项可复制到源项下方', (tester) async {
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1200, 1000);
+    final preview = _FakeDebugCuePreview();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _StaticProjectController(_debugDocument(), 0),
+          ),
+          deployControllerProvider.overrideWith(_FakeDeployController.new),
+        ],
+        child: MaterialApp(
+          theme: ThemeData(useMaterial3: true),
+          home: WizardScreen(debugCuePreview: preview),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(WizardScreen)),
+    );
+    DebugConfig config() =>
+        container.read(appControllerProvider).document!.config as DebugConfig;
+    final before = config().tests;
+    expect(before, hasLength(10));
+
+    final copyButton = find.byTooltip('复制测试项').first;
+    await tester.ensureVisible(copyButton);
+    await tester.pumpAndSettle();
+    await tester.tap(copyButton);
+    await tester.pumpAndSettle();
+
+    final tests = config().tests;
+    expect(tests, hasLength(11));
+    expect(tests[1].id, isNotNull);
+    expect(tests[1].id, isNot(tests[0].id));
+    expect(tests[1].pin, tests[0].pin);
+    expect(tests[1].enabled, tests[0].enabled);
+    expect(tests[1].driveType, tests[0].driveType);
+    expect(tests[1].direction, tests[0].direction);
+    expect(tests[1].value, tests[0].value);
+    expect(tests[1].durationMs, tests[0].durationMs);
+    expect(tests[2].pin, before[1].pin);
+    expect(tester.takeException(), isNull);
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
   testWidgets('工程动作行可拖动排序且浮层不越出列表', (tester) async {
     addTearDown(() {
       tester.view.resetPhysicalSize();

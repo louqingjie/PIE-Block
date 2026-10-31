@@ -64,6 +64,13 @@ class _DebugCueAuditionState extends ConsumerState<_DebugCueAudition> {
               ),
           ],
         ),
+        if (widget.enabledCount > 10) ...[
+          const SizedBox(height: 12),
+          Text(
+            '启用超过 10 项时，第 11 项起提示音与第 6–10 项重复，请以界面序号为准。',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
       ],
     );
   }
@@ -157,6 +164,29 @@ class _DebugTestsPage extends ConsumerWidget {
       controller.updateConfig(config.copyWith(tests: tests));
     }
 
+    void duplicate(int index) {
+      final tests = [...config.tests];
+      tests.insert(index + 1, tests[index].duplicate());
+      controller.updateConfig(config.copyWith(tests: tests));
+    }
+
+    final itemKeys = <Key>[];
+    final pinCounts = <String, int>{};
+    for (final item in config.tests) {
+      if (item.id case final id?) {
+        itemKeys.add(ValueKey(id));
+      } else {
+        final occurrence = pinCounts.update(
+          item.pin,
+          (value) => value + 1,
+          ifAbsent: () => 0,
+        );
+        itemKeys.add(
+          ValueKey(occurrence == 0 ? item.pin : '${item.pin}#$occurrence'),
+        );
+      }
+    }
+
     return _PageFrame(
       title: '调试测试序列',
       subtitle:
@@ -168,8 +198,10 @@ class _DebugTestsPage extends ConsumerWidget {
         path: 'tests',
         child: ReorderableListView.builder(
           buildDefaultDragHandles: false,
-          // 调试序列固定 10 项：全部保持挂载，题面板跳转才能定位到屏幕外的卡片。
-          scrollCacheExtent: const ScrollCacheExtent.pixels(4000),
+          // 问题面板要跳到屏幕外的字段，按项数放宽缓存以保持测试项全部挂载。
+          scrollCacheExtent: ScrollCacheExtent.pixels(
+            400.0 * config.tests.length + 1000,
+          ),
           proxyDecorator: _reorderDragProxy,
           dragBoundaryProvider: _reorderDragBoundary,
           onReorderStart: (_) => _endTextInput(ref),
@@ -210,7 +242,7 @@ class _DebugTestsPage extends ConsumerWidget {
               _ => '速度',
             };
             return Card(
-              key: ValueKey(item.pin),
+              key: itemKeys[index],
               margin: const EdgeInsets.only(bottom: _reorderCardGap),
               child: Padding(
                 padding: EdgeInsets.all(_isCompact(context) ? 14 : 18),
@@ -231,6 +263,11 @@ class _DebugTestsPage extends ConsumerWidget {
                             style: Theme.of(context).textTheme.titleMedium
                                 ?.copyWith(fontWeight: FontWeight.w700),
                           ),
+                        ),
+                        IconButton(
+                          onPressed: () => duplicate(index),
+                          tooltip: '复制测试项',
+                          icon: const Icon(Icons.copy),
                         ),
                         Switch(
                           value: item.enabled,

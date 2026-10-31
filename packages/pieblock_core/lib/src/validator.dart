@@ -147,9 +147,10 @@ abstract final class ProjectValidator {
     for (var index = 0; index < config.tests.length; index++) {
       final item = config.tests[index];
       final base = 'tests.$index';
-      if (!debugPins.contains(item.pin) || !seen.add(item.pin)) {
-        issue(IssueSeverity.error, '$base.pin', '调试引脚无效或重复', 'tests');
+      if (!debugPins.contains(item.pin)) {
+        issue(IssueSeverity.error, '$base.pin', '调试引脚无效', 'tests');
       }
+      seen.add(item.pin);
       if (!item.enabled) continue;
       _choice(
         item.driveType,
@@ -250,7 +251,7 @@ abstract final class ProjectValidator {
           break;
       }
     }
-    if (seen.length != debugPins.length || !seen.containsAll(debugPins)) {
+    if (!seen.containsAll(debugPins)) {
       issue(IssueSeverity.error, 'tests', '调试序列必须包含全部十个固定引脚', 'tests');
     }
   }

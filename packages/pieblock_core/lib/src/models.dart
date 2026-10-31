@@ -386,6 +386,7 @@ const debugPins = [
 
 class DebugTestItem {
   const DebugTestItem({
+    this.id,
     required this.pin,
     this.enabled = false,
     this.driveType,
@@ -393,6 +394,7 @@ class DebugTestItem {
     this.value,
     this.durationMs = 3000,
   });
+  final String? id;
   final String pin;
   final bool enabled;
   final DebugDriveType? driveType;
@@ -403,13 +405,20 @@ class DebugTestItem {
   final int? value;
   final int durationMs;
 
+  static int _idSerial = 0;
+
+  static String _newId(String pin) =>
+      '$pin-copy-${DateTime.now().microsecondsSinceEpoch}-${_idSerial++}';
+
   DebugTestItem copyWith({
+    Object? id = _unset,
     bool? enabled,
     Object? driveType = _unset,
     Object? direction = _unset,
     Object? value = _unset,
     int? durationMs,
   }) => DebugTestItem(
+    id: identical(id, _unset) ? this.id : id as String?,
     pin: pin,
     enabled: enabled ?? this.enabled,
     driveType: identical(driveType, _unset)
@@ -422,7 +431,11 @@ class DebugTestItem {
     durationMs: durationMs ?? this.durationMs,
   );
 
+  /// 复制测试项，保留启用状态与全部参数，并生成新的稳定 id。
+  DebugTestItem duplicate() => copyWith(id: _newId(pin));
+
   Map<String, Object?> toJson() => {
+    if (id != null) 'id': id,
     'pin': pin,
     'enabled': enabled,
     'drive_type': driveType?.name,
@@ -437,6 +450,7 @@ class DebugTestItem {
       json['drive_type'],
     );
     return DebugTestItem(
+      id: json['id']?.toString(),
       pin: json['pin']?.toString() ?? '',
       enabled: json['enabled'] as bool? ?? false,
       driveType: driveType,
@@ -469,7 +483,10 @@ class DebugConfig extends ProjectConfig {
     for (final raw in json['tests'] as List? ?? const []) {
       if (raw is! Map) continue;
       final item = DebugTestItem.fromJson(Map<String, Object?>.from(raw));
-      if (debugPins.contains(item.pin) && seen.add(item.pin)) tests.add(item);
+      if (debugPins.contains(item.pin)) {
+        tests.add(item);
+        seen.add(item.pin);
+      }
     }
     for (final pin in debugPins) {
       if (seen.add(pin)) tests.add(DebugTestItem(pin: pin));
