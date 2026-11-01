@@ -1314,31 +1314,52 @@ abstract final class ProjectValidator {
         }
         if (action.outputKind == ActionOutputKind.pin &&
             action.pin != null &&
-            expansionPins.contains(action.pin) &&
-            config.pwm.pinRoles[action.pin!] != PinRole.servo) {
+            (expansionPins.contains(action.pin) ||
+                mainServoPins.contains(action.pin))) {
           dutyPinRows.putIfAbsent(action.pin!, () => <int>[]).add(ai);
         }
       }
       for (final entry in dutyPinRows.entries) {
         final rows = entry.value;
         if (rows.length < 2) continue;
-        final allDirect = rows.every((ai) {
-          final action = mode.actions[ai];
-          return action.mode == ControlMode.direct &&
-              action.inputKind == ActionInputKind.remote;
-        });
-        if (allDirect) continue;
-        final overwrites = rows.any((ai) {
-          final action = mode.actions[ai];
-          return action.inputKind == ActionInputKind.unspecified ||
-              action.mode == ControlMode.direct ||
-              action.mode == ControlMode.speed;
-        });
-        if (!overwrites) continue;
+        final actions = rows.map((ai) => mode.actions[ai]).toList();
+        final pin = entry.key;
+        final servo =
+            mainServoPins.contains(pin) ||
+            config.pwm.pinRoles[pin] == PinRole.servo;
+        final bool clobbers;
+        final String message;
+        if (servo) {
+          // 舵机行里只有摇杆行与表达式行是每周期无条件写，按键行是
+          // 上升沿或按住累加，可以共存。
+          clobbers = actions.any(
+            (action) =>
+                action.inputKind == ActionInputKind.unspecified ||
+                (action.key != null && axisRemoteInputs.contains(action.key)),
+          );
+          message = '$pin 在本模式被多行输出，摇杆行/表达式行每周期都会覆盖其他行的结果';
+        } else {
+          // 同一引脚的多条「直接」行会被生成器合并成 if/else 链，
+          // 其余组合（直接与速度/增速混用、表达式行等）按行序覆盖。
+          final allDirect = actions.every(
+            (action) =>
+                action.mode == ControlMode.direct &&
+                action.inputKind == ActionInputKind.remote,
+          );
+          if (allDirect) continue;
+          clobbers = actions.any(
+            (action) =>
+                action.inputKind == ActionInputKind.unspecified ||
+                action.mode == ControlMode.direct ||
+                action.mode == ControlMode.speed,
+          );
+          message = '$pin 在本模式被多行输出，行序在后的赋值会覆盖前面的结果';
+        }
+        if (!clobbers) continue;
         issue(
           IssueSeverity.warning,
           'modes.$mi.actions.${rows.last}.pin',
-          '${entry.key} 在本模式被多行输出，行序在后的赋值会覆盖前面的结果',
+          message,
           'mappings',
         );
       }

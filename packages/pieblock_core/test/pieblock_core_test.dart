@@ -635,10 +635,7 @@ void main() {
   });
 
   group('工程电机同引脚多行', () {
-    EngineerConfig motorDoubleKey({
-      ControlMode first = ControlMode.direct,
-      ControlMode second = ControlMode.direct,
-    }) => EngineerConfig(
+    EngineerConfig withActions(List<ActionMapping> actions) => EngineerConfig(
       remote: const RemoteConfig(channel: 36, deadzone: 100),
       chassis: const ChassisConfig(enabled: false),
       pwm: PwmGroupConfig(
@@ -655,28 +652,28 @@ void main() {
         servoMids: const {'P60': 0, 'P62': 0, 'MP03': 0, 'MP74': 0},
       ),
       modeCount: 1,
-      modes: [
-        EngineerModeConfig(
-          preserveChassis: false,
-          actions: [
-            ActionMapping(
-              key: 'B',
-              direction: Direction.reverse,
-              mode: first,
-              parameter: 10000,
-              pin: 'P74',
-            ),
-            ActionMapping(
-              key: 'C',
-              direction: Direction.forward,
-              mode: second,
-              parameter: 10000,
-              pin: 'P74',
-            ),
-          ],
-        ),
-      ],
+      modes: [EngineerModeConfig(preserveChassis: false, actions: actions)],
     );
+
+    EngineerConfig motorDoubleKey({
+      ControlMode first = ControlMode.direct,
+      ControlMode second = ControlMode.direct,
+    }) => withActions([
+      ActionMapping(
+        key: 'B',
+        direction: Direction.reverse,
+        mode: first,
+        parameter: 10000,
+        pin: 'P74',
+      ),
+      ActionMapping(
+        key: 'C',
+        direction: Direction.forward,
+        mode: second,
+        parameter: 10000,
+        pin: 'P74',
+      ),
+    ]);
 
     test('两条「直接」行合并成一条优先级链，不再互相清零', () {
       final code = CodeGenerator.generate(motorDoubleKey());
@@ -723,6 +720,56 @@ void main() {
         ProjectValidator.validate(motorDoubleKey())
             .where((issue) => issue.message.contains('在本模式被多行输出')),
         isEmpty,
+      );
+    });
+
+    test('舵机引脚被摇杆行或表达式行混写时给出警告', () {
+      String? warningOf(EngineerConfig config) => ProjectValidator.validate(
+        config,
+      ).where((issue) => issue.message.contains('在本模式被多行输出')).singleOrNull?.message;
+
+      expect(
+        warningOf(
+          withActions([
+            ActionMapping(
+              key: 'A',
+              direction: Direction.forward,
+              mode: ControlMode.direct,
+              parameter: 30,
+              pin: 'P60',
+            ),
+            ActionMapping(
+              key: 'RX',
+              direction: Direction.forward,
+              mode: ControlMode.direct,
+              parameter: 30,
+              pin: 'P60',
+            ),
+          ]),
+        ),
+        'P60 在本模式被多行输出，摇杆行/表达式行每周期都会覆盖其他行的结果',
+      );
+      // 两条按键行（上升沿/按住累加）可以共存，不应提示。
+      expect(
+        warningOf(
+          withActions([
+            ActionMapping(
+              key: 'A',
+              direction: Direction.forward,
+              mode: ControlMode.single,
+              parameter: 1,
+              pin: 'P60',
+            ),
+            ActionMapping(
+              key: 'B',
+              direction: Direction.reverse,
+              mode: ControlMode.single,
+              parameter: 1,
+              pin: 'P60',
+            ),
+          ]),
+        ),
+        isNull,
       );
     });
   });
