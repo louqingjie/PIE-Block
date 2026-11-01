@@ -71,7 +71,37 @@ jobs:
           PY
           exit $code
       - name: 应用测试
-        run: flutter test
+        run: |
+          set +e
+          flutter test --reporter json > test.json 2>&1
+          code=$?
+          python3 - <<'PY'
+          import json
+          names = {}
+          failures = []
+          for line in open('test.json', encoding='utf-8', errors='replace'):
+              line = line.strip()
+              if not line.startswith('{'):
+                  continue
+              try:
+                  event = json.loads(line)
+              except json.JSONDecodeError:
+                  continue
+              kind = event.get('type')
+              if kind == 'testStart':
+                  names[event['test']['id']] = event['test'].get('name', '')
+              elif kind == 'error':
+                  tid = event.get('testID')
+                  message = (event.get('error') or '')[:700].replace(chr(10), ' | ')
+                  failures.append((names.get(tid, str(tid)), message))
+          for name, message in failures[:10]:
+              print('::error::[' + name + '] ' + message)
+          print('::notice::' + str(len(failures)) + ' failing tests')
+          if not failures:
+              tail = ' | '.join(open('test.json', encoding='utf-8', errors='replace').read().splitlines()[-15:])[:900]
+              print('::error::' + tail)
+          PY
+          exit $code
 
   windows:
     name: Windows 构建与打包
