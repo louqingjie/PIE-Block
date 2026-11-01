@@ -4359,7 +4359,7 @@ void main() {
       ControlMode.frictionStep,
       ControlMode.frictionContinuous,
     ]);
-    expect(find.text('启停'), findsWidgets);
+    expect(find.text('启停（按下）'), findsWidgets);
     expect(
       find.byKey(const ValueKey('modes.0.actions.0.direction')),
       findsNothing,
