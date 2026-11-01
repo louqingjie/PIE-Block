@@ -801,7 +801,7 @@ class _InfantryControlsPage extends ConsumerWidget {
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('禁用蜂鸣器反馈'),
-                subtitle: const Text('关闭启动诊断和运行状态的声音提示'),
+                subtitle: const Text('关闭启动诊断、遥控输入与链路提示、运行状态的声音提示'),
                 value: c.buzzerDisabled,
                 onChanged: (v) => update(c.copyWith(buzzerDisabled: v)),
               ),

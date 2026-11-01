@@ -52,6 +52,7 @@ enum {
 };
 
 /* 由 harness.c 提供的实现。 */
+extern volatile uint32_t rc_packet_count; /* 板级库在 Rc_unpack_data 里自增 */
 void Ms_Delay(uint32_t ms);
 uint8_t NRF24L01_Init(void);
 void Board_Init(void);

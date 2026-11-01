@@ -931,6 +931,60 @@ void main() {
     });
   });
 
+  group('遥控反馈蜂鸣', () {
+    test('步兵生成收包计数读入与输入提示，关闭蜂鸣器后整段不生成', () {
+      final code = CodeGenerator.generate(completeInfantry());
+      expect(code, contains('static void UpdateRemoteFeedback(void)'));
+      expect(code, contains('if (rc_packet_count != remotePacketLast)'));
+      expect(code, contains('Beep(REMOTE_BEEP_INPUT_HZ, 25);'));
+      expect(
+        code,
+        contains('        ReadControllerInputs();\n        UpdateRemoteFeedback();'),
+      );
+
+      final muted = completeInfantry().copyWith(buzzerDisabled: true);
+      expect(
+        CodeGenerator.generate(muted),
+        isNot(contains('UpdateRemoteFeedback')),
+      );
+    });
+
+    test('工程多模式：模式切换键不参与输入提示', () {
+      final cycle = CodeGenerator.generate(advancedEngineer());
+      expect(
+        cycle,
+        isNot(contains('RcKeyValueRead(KEY_OFFSET_1)) keys |=')),
+        reason: '循环切换键 E 已有 ModeSwitchFeedback',
+      );
+      expect(cycle, contains('RcKeyValueRead(KEY_OFFSET_UP)) keys |='));
+
+      final direct = CodeGenerator.generate(
+        advancedEngineer(strategy: SwitchStrategy.direct),
+      );
+      for (final key in const [
+        'KEY_OFFSET_1',
+        'KEY_OFFSET_UP',
+        'KEY_OFFSET_DOWN',
+        'KEY_OFFSET_LEFT',
+      ]) {
+        expect(
+          direct,
+          isNot(contains('RcKeyValueRead($key)) keys |=')),
+          reason: '$key 是模式切换键',
+        );
+      }
+      expect(direct, contains('RcKeyValueRead(KEY_OFFSET_A)) keys |='));
+    });
+
+    test('模式切换后重置链路空闲计数，避免被误判掉线', () {
+      final code = CodeGenerator.generate(advancedEngineer());
+      expect(
+        code,
+        contains('ModeSwitchFeedback(currentMode); remoteLinkIdle = 0;'),
+      );
+    });
+  });
+
   group('工程舵机按键控制', () {
     Iterable<ValidationIssue> parameterIssues(num parameter) =>
         ProjectValidator.validate(servoButtonEngineer(parameter: parameter))
