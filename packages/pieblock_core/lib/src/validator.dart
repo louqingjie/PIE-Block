@@ -1263,6 +1263,11 @@ abstract final class ProjectValidator {
       final seen = <String, int>{};
       final seenVariables = <String>{};
       final modeVariables = <String, ExpressionType>{...globalVariables};
+      // 同一输出引脚被多行写入时，只有「直接」行会被生成器合并成
+      // if/else 链；其余组合（直接 + 速度/增速、两条表达式行等）按行序
+      // 覆盖，后行会把前行的输出清掉，必须提示。舵机行是条件写/累加，
+      // 不在此列。
+      final dutyPinRows = <String, List<int>>{};
       for (var ai = 0; ai < mode.actions.length; ai++) {
         final action = mode.actions[ai];
         final path = 'modes.$mi.actions.$ai';
@@ -1307,6 +1312,35 @@ abstract final class ProjectValidator {
             seen[action.key!] = ai;
           }
         }
+        if (action.outputKind == ActionOutputKind.pin &&
+            action.pin != null &&
+            expansionPins.contains(action.pin) &&
+            config.pwm.pinRoles[action.pin!] != PinRole.servo) {
+          dutyPinRows.putIfAbsent(action.pin!, () => <int>[]).add(ai);
+        }
+      }
+      for (final entry in dutyPinRows.entries) {
+        final rows = entry.value;
+        if (rows.length < 2) continue;
+        final allDirect = rows.every((ai) {
+          final action = mode.actions[ai];
+          return action.mode == ControlMode.direct &&
+              action.inputKind == ActionInputKind.remote;
+        });
+        if (allDirect) continue;
+        final overwrites = rows.any((ai) {
+          final action = mode.actions[ai];
+          return action.inputKind == ActionInputKind.unspecified ||
+              action.mode == ControlMode.direct ||
+              action.mode == ControlMode.speed;
+        });
+        if (!overwrites) continue;
+        issue(
+          IssueSeverity.warning,
+          'modes.$mi.actions.${rows.last}.pin',
+          '${entry.key} 在本模式被多行输出，行序在后的赋值会覆盖前面的结果',
+          'mappings',
+        );
       }
     }
   }

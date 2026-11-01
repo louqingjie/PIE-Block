@@ -750,6 +750,22 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
     };
     for (var i = 0; i < c.modeCount!; i++) {
       final mode = c.modes[i], body = <String>[];
+      // 同一引脚的多条「直接」行：每行原本生成 `duty = 按下 ? 值 : 0`，
+      // 后一行在按键未按下时会写 0，把前一行刚写入的值清掉——表现为
+      // 「B 反转按下没反应，C 正转正常」。这里按引脚合并成一条
+      // if/else-if 链（行序在后的优先，全部松开归零），单行配置的输出
+      // 保持逐字节不变。
+      final directMotorRows = <int, List<int>>{};
+      for (var index = 0; index < mode.actions.length; index++) {
+        final action = mode.actions[index];
+        if (action.outputKind != ActionOutputKind.pin) continue;
+        if (action.inputKind != ActionInputKind.remote) continue;
+        if (action.mode != ControlMode.direct) continue;
+        final slot = expansionPins.indexOf(action.pin!);
+        if (slot < 0) continue;
+        if (c.pwm.pinRoles[action.pin!] == PinRole.servo) continue;
+        directMotorRows.putIfAbsent(slot, () => <int>[]).add(index);
+      }
       final modeVariableTypes = <String, ExpressionType>{...globalVariables};
       final localVariables = <String, ExpressionType>{};
       for (final action in mode.actions) {
@@ -833,9 +849,7 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
         }
         final sign = a.direction == Direction.forward ? '' : '-';
         final isAxis = a.key!.endsWith('X') || a.key!.endsWith('Y');
-        final read = isAxis
-            ? 'valueOfRoker[${a.key!.startsWith('L') ? 0 : 1}][${a.key!.endsWith('X') ? 0 : 1}]'
-            : 'RcKeyValueRead(${_key(a.key!)})';
+        final read = _readOfKey(a.key!);
         if (_isFrictionMode(a.mode)) {
           final parameter = a.parameter!.toInt();
           switch (a.mode!) {
@@ -981,9 +995,24 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
               '    if (dutyOfMotor[$slot] < ${bounds.low}) dutyOfMotor[$slot] = ${bounds.low}; else if (dutyOfMotor[$slot] > ${bounds.high}) dutyOfMotor[$slot] = ${bounds.high};',
             );
           } else if (a.mode == ControlMode.direct) {
-            body.add(
-              '    dutyOfMotor[$slot] = $read ? $sign${a.parameter!.toInt()} : 0;',
-            );
+            final merged = directMotorRows[slot];
+            if (merged == null || merged.length < 2) {
+              body.add(
+                '    dutyOfMotor[$slot] = $read ? $sign${a.parameter!.toInt()} : 0;',
+              );
+            } else {
+              // 链在首行处一次性输出，后续同引脚的行跳过，避免互相清零。
+              if (merged.first != actionIndex) continue;
+              for (var index = merged.length - 1; index >= 0; index--) {
+                final row = mode.actions[merged[index]];
+                final rowSign = row.direction == Direction.forward ? '' : '-';
+                final head = index == merged.length - 1 ? 'if' : 'else if';
+                body.add(
+                  '    $head (${_readOfKey(row.key!)}) dutyOfMotor[$slot] = $rowSign${row.parameter!.toInt()};',
+                );
+              }
+              body.add('    else dutyOfMotor[$slot] = 0;');
+            }
           } else if (a.mode == ControlMode.speed) {
             body.add(
               '    dutyOfMotor[$slot] = (int)(((int32_t)$read * ${a.parameter!.toInt()}L) / 2047L);',

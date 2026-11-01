@@ -48,6 +48,8 @@
 
 工程动作的 `mode` 支持 `direct`、`incremental`、`speed`、`accelerate`、`single`、`continuous`、`frictionToggle`、`frictionStep`、`frictionContinuous` 和 `frictionAxis`。数字按键控制舵机时可使用 `direct`（按键上升沿到达相对中位点的预设角度）、`single`（按键上升沿按灵敏度单次增加）或 `continuous`（按住期间按灵敏度逐主循环增加）。`direct` 的 `parameter` 为 0–90 的整数目标角度，方向决定中位点两侧；`single` 和 `continuous` 的 `parameter` 保存最多两位小数的角度灵敏度；其他动作参数仍为整数。格式 17 起动作行还保存 `input_kind`（`remote`/`unspecified`）、`output_kind`（`pin`/`integer`/`rational`）、`variable` 与 `expression`：`input_kind == unspecified` 的行使用 `expression` 单条受限表达式，`output_kind` 非 `pin` 时输出到同名变量。
 
+同一模式里多行输出到同一个电机引脚时，`direct` 行会按行序合并成一条 `if / else if / else` 链：行序在后的优先，全部松开输出 0。因此「B 反向、C 正向」这类双键正反转直接用两条 `direct` 行即可，不会出现后一行把前一行清成 0 的情况。其余组合（`direct` 与 `speed`/`accelerate` 混用、两条表达式行写同一引脚等）仍按行序覆盖，校验器会给出「在本模式被多行输出」的警告。
+
 摩擦轮专用控制方式（仅 P64/P66 角色为摩擦轮、PWMA 为 50Hz 时可用，要求配置 `pwm.friction_max_duties`）：
 - `frictionToggle` 启停：按键边沿在 0 与 `parameter`（1–100，目标油门 %）之间切换；不使用方向；
 - `frictionStep` 单次：每次按键按 `parameter`（1–100 %）加/减，方向决定加减；
