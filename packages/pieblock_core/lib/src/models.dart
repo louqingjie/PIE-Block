@@ -91,7 +91,11 @@ abstract final class EngineerPinCapabilities {
     PinRole.motor || PinRole.jitterMotor => motorPins.contains(pin),
     PinRole.friction => frictionPins.contains(pin),
     PinRole.servo => servoPins.contains(pin),
-    PinRole.unused => expansionPins.contains(pin),
+    // 主控板 MP03/MP74 是专用舵机口：不能当电机/摩擦轮脚用；但工程不用
+    // 这两个口时应允许显式标为「未使用」，否则角色被强制成舵机、无法
+    // 表达「本工程不接主舵机」。
+    PinRole.unused =>
+      expansionPins.contains(pin) || mainServoPins.contains(pin),
   };
 }
 
@@ -274,6 +278,18 @@ class PwmGroupConfig {
 
   /// P64/P66 满油占空比（500–800 整百）；仅摩擦轮专用控制方式使用。
   final Map<String, int> frictionMaxDuties;
+
+  /// 引脚的最终输出角色。
+  ///
+  /// 扩展板引脚必须显式配置；主控板 MP03/MP74 是专用舵机口，旧工程文件里
+  /// 没有记录它们的角色，按历史行为默认当作舵机，显式配置为「未使用」时
+  /// 才不再输出舵机信号。
+  PinRole? roleOf(String pin) =>
+      pinRoles[pin] ?? (mainServoPins.contains(pin) ? PinRole.servo : null);
+
+  /// 该引脚是否作为舵机输出（主控板引脚缺省按舵机处理）。
+  bool isServoPin(String pin) => roleOf(pin) == PinRole.servo;
+
   PwmGroupConfig copyWith({
     Object? pwma = _unset,
     Object? pwmb = _unset,
@@ -297,7 +313,10 @@ class PwmGroupConfig {
     'pwma': pwma?.name,
     'pwmb': pwmb?.name,
     'buzzer_disabled': buzzerDisabled,
-    'pin_roles': {for (final pin in expansionPins) pin: pinRoles[pin]?.name},
+    'pin_roles': {
+      for (final pin in [...expansionPins, ...mainServoPins])
+        pin: pinRoles[pin]?.name,
+    },
     'servo_mids': {
       for (final pin in [...expansionPins, ...mainServoPins])
         pin: servoMids[pin],

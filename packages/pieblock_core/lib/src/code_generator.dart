@@ -262,7 +262,9 @@ $turnReverse    dutyOfMotor[${_slot(c.leftFront.pin)}] = ${_dir(c.leftFront.dire
       '    ExpansionBoradControl(Init_Order, ${List.filled(4, _frequency(pwm.pwma!)).join(', ')}, ${List.filled(4, _frequency(pwm.pwmb!)).join(', ')});',
     ];
     for (final pin in mainServoPins) {
-      if (!usedPins.contains(pin)) continue;
+      // 主控板 MP03/MP74 只有角色为舵机（缺省即舵机）时才输出舵机信号；
+      // 显式标为「未使用」的工程不会再初始化这两个口。
+      if (!usedPins.contains(pin) || !pwm.isServoPin(pin)) continue;
       lines.add(
         '    PWM_Init(PWMB_CH${pin == 'MP74' ? '1_P74' : '4_P03'}, 50, ${_servoDuty(pwm.servoMids[pin])});',
       );
@@ -657,8 +659,8 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
         final action = actions[actionIndex];
         final isServoButton =
             digitalRemoteKeys.contains(action.key) &&
-            (mainServoPins.contains(action.pin) ||
-                c.pwm.pinRoles[action.pin] == PinRole.servo);
+            action.pin != null &&
+            c.pwm.isServoPin(action.pin!);
         if (!isServoButton) continue;
         if (action.mode == ControlMode.single ||
             action.mode == ControlMode.continuous) {
@@ -931,7 +933,7 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
           continue;
         }
         final slot = expansionPins.indexOf(a.pin!);
-        final role = slot >= 0 ? c.pwm.pinRoles[a.pin!] : PinRole.servo;
+        final role = c.pwm.roleOf(a.pin!);
         if (slot >= 0) {
           if (role == PinRole.servo) {
             final home = _servoDuty(c.pwm.servoMids[a.pin!]);
@@ -1298,8 +1300,10 @@ ${List.generate(c.modeCount!, (modeIndex) {
       for (final pin in usedPins)
         if (expansionPins.contains(pin) && c.pwm.pinRoles[pin] == PinRole.servo)
           'dutyOfMotor[${expansionPins.indexOf(pin)}]',
-      if (usedPins.contains('MP03')) 'mainServoDuty[0]',
-      if (usedPins.contains('MP74')) 'mainServoDuty[1]',
+      if (usedPins.contains('MP03') && c.pwm.isServoPin('MP03'))
+        'mainServoDuty[0]',
+      if (usedPins.contains('MP74') && c.pwm.isServoPin('MP74'))
+        'mainServoDuty[1]',
     ];
     final engineerFeedbackChecks = <String>[];
     for (var index = 0; index < servoExpressions.length; index++) {
@@ -1398,8 +1402,8 @@ $frictionUpdateCall        ExpansionBoradControl(Dir_Change_Order, $directionArg
         Ms_Delay(EXPANSION_FRAME_GAP_MS);
         ExpansionBoradControl(Duty_Change_Order, abs(dutyOfMotor[0]),abs(dutyOfMotor[1]),abs(dutyOfMotor[2]),abs(dutyOfMotor[3]),abs(dutyOfMotor[4]),abs(dutyOfMotor[5]),abs(dutyOfMotor[6]),abs(dutyOfMotor[7]));
         Ms_Delay(EXPANSION_FRAME_GAP_MS);
-${usedPins.contains('MP03') ? '        PWM_SET_Frequency(PWMB_CH4_P03, 50, mainServoDuty[0]);' : ''}
-${usedPins.contains('MP74') ? '        PWM_SET_Frequency(PWMB_CH1_P74, 50, mainServoDuty[1]);' : ''}
+${usedPins.contains('MP03') && c.pwm.isServoPin('MP03') ? '        PWM_SET_Frequency(PWMB_CH4_P03, 50, mainServoDuty[0]);' : ''}
+${usedPins.contains('MP74') && c.pwm.isServoPin('MP74') ? '        PWM_SET_Frequency(PWMB_CH1_P74, 50, mainServoDuty[1]);' : ''}
 ${engineerFeedback.isEmpty ? '' : '        UpdateServoFeedback();'}
         Ms_Delay(10);
     }

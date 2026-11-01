@@ -78,9 +78,10 @@ class _PwmPage extends ConsumerWidget {
                   children: [
                     for (final pin in [...expansionPins, ...mainServoPins])
                       () {
-                        final isServo =
-                            mainServoPins.contains(pin) ||
-                            pwm.pinRoles[pin] == PinRole.servo;
+                        // 主控板 MP03/MP74 缺省按舵机处理，可在「舵机」与
+                        // 「未使用」之间选择；选未使用时不显示也不校验行程参数。
+                        final role = pwm.roleOf(pin);
+                        final isServo = role == PinRole.servo;
                         final isFriction =
                             (pin == 'P64' || pin == 'P66') &&
                             pwm.pinRoles[pin] == PinRole.friction;
@@ -119,26 +120,17 @@ class _PwmPage extends ConsumerWidget {
                                   path: 'pwm.pin_roles.$pin',
                                   child: DropdownButtonFormField<PinRole>(
                                     key: ValueKey('pwm.pin_roles.$pin'),
-                                    initialValue: mainServoPins.contains(pin)
-                                        ? PinRole.servo
-                                        : pwm.pinRoles[pin],
+                                    initialValue: role,
                                     decoration: _fieldDecoration(
                                       ref,
                                       'pwm.pin_roles.$pin',
                                       pin,
                                     ),
-                                    items: _roleItems(pin, pwm.pinRoles[pin]),
-                                    onChanged: mainServoPins.contains(pin)
-                                        ? null
-                                        : (v) {
-                                            final roles = {
-                                              ...pwm.pinRoles,
-                                              pin: v!,
-                                            };
-                                            update(
-                                              pwm.copyWith(pinRoles: roles),
-                                            );
-                                          },
+                                    items: _roleItems(pin, role),
+                                    onChanged: (v) {
+                                      final roles = {...pwm.pinRoles, pin: v!};
+                                      update(pwm.copyWith(pinRoles: roles));
+                                    },
                                   ),
                                 ),
                               ),

@@ -1099,6 +1099,18 @@ abstract final class ProjectValidator {
       }
     }
     for (final pin in mainServoPins) {
+      // 主控板 MP03/MP74 缺省按舵机处理（旧工程文件没有显式角色）；显式选
+      // 「未使用」时不再校验舵机行程参数。
+      final role = config.pwm.roleOf(pin);
+      if (role != null && !EngineerPinCapabilities.supportsRole(pin, role)) {
+        issue(
+          IssueSeverity.error,
+          'pwm.pin_roles.$pin',
+          '$pin 不支持${_engineerRoleLabel(role)}',
+          'pwm',
+        );
+      }
+      if (role != PinRole.servo) continue;
       _range(
         config.pwm.servoMids[pin],
         -90,
@@ -1324,9 +1336,7 @@ abstract final class ProjectValidator {
         if (rows.length < 2) continue;
         final actions = rows.map((ai) => mode.actions[ai]).toList();
         final pin = entry.key;
-        final servo =
-            mainServoPins.contains(pin) ||
-            config.pwm.pinRoles[pin] == PinRole.servo;
+        final servo = config.pwm.isServoPin(pin);
         final bool clobbers;
         final String message;
         if (servo) {
@@ -1475,9 +1485,7 @@ abstract final class ProjectValidator {
     }
 
     if (pinOutput && inputUnspecified && action.pin != null) {
-      final role = mainServoPins.contains(action.pin)
-          ? PinRole.servo
-          : config.pwm.pinRoles[action.pin];
+      final role = config.pwm.roleOf(action.pin!);
       if (role == PinRole.friction) {
         issue(
           IssueSeverity.error,
@@ -1593,11 +1601,7 @@ abstract final class ProjectValidator {
         'mappings',
       );
     }
-    final role = action.pin == null
-        ? null
-        : mainServoPins.contains(action.pin)
-        ? PinRole.servo
-        : config.pwm.pinRoles[action.pin];
+    final role = action.pin == null ? null : config.pwm.roleOf(action.pin!);
     final motor = role != null && _motorRole(role);
     final friction = role == PinRole.friction;
     final hasFrictionControl = _hasFrictionControl(config);

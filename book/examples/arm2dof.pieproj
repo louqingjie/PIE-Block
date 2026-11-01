@@ -53,7 +53,9 @@
         "P74": "unused",
         "P75": "unused",
         "P76": "unused",
-        "P77": "unused"
+        "P77": "unused",
+        "MP03": null,
+        "MP74": null
       },
       "servo_mids": {
         "P60": null,

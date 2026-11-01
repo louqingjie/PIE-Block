@@ -50,7 +50,9 @@
         "P74": "motor",
         "P75": "motor",
         "P76": "motor",
-        "P77": "motor"
+        "P77": "motor",
+        "MP03": null,
+        "MP74": null
       },
       "servo_mids": {
         "P60": 0,

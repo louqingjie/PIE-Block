@@ -233,7 +233,7 @@ class _EngineerMappingsPageState extends ConsumerState<_EngineerMappingsPage> {
                   index: index,
                   action: action,
                   preserveChassis: preserveChassis,
-                  pinRoles: c.pwm.pinRoles,
+                  pwm: c.pwm,
                   fieldPath: 'modes.$selected.actions.$index',
                   onChanged: (a) {
                     final actions = [...mode.actions];
@@ -265,7 +265,7 @@ class _ActionRow extends ConsumerWidget {
     required this.index,
     required this.action,
     required this.preserveChassis,
-    required this.pinRoles,
+    required this.pwm,
     required this.fieldPath,
     required this.onChanged,
     required this.onRemove,
@@ -274,7 +274,7 @@ class _ActionRow extends ConsumerWidget {
   final int index;
   final ActionMapping action;
   final bool preserveChassis;
-  final Map<String, PinRole> pinRoles;
+  final PwmGroupConfig pwm;
   final String fieldPath;
   final ValueChanged<ActionMapping> onChanged;
   final VoidCallback onRemove;
@@ -285,11 +285,7 @@ class _ActionRow extends ConsumerWidget {
         ? remoteKeys.where((key) => key != 'LX' && key != 'LY').toList()
         : remoteKeys;
     final visibleInputs = _includeCurrent(availableInputs, action.key);
-    final role = action.pin == null
-        ? null
-        : mainServoPins.contains(action.pin)
-        ? PinRole.servo
-        : pinRoles[action.pin];
+    final role = action.pin == null ? null : pwm.roleOf(action.pin!);
     final isAxis = axisRemoteInputs.contains(action.key);
     final isButton = digitalRemoteKeys.contains(action.key);
     final isMotorRole =
@@ -327,8 +323,12 @@ class _ActionRow extends ConsumerWidget {
     ];
     final usablePins = <String>[
       for (final pin in expansionPins)
-        if (pinRoles[pin] != null && pinRoles[pin] != PinRole.unused) pin,
-      ...mainServoPins,
+        if (pwm.pinRoles[pin] != null && pwm.pinRoles[pin] != PinRole.unused)
+          pin,
+      // 主控板 MP03/MP74 缺省按舵机可选；显式标为「未使用」后不再出现在
+      // 动作输出引脚中，避免生成引用未使用口的动作行。
+      for (final pin in mainServoPins)
+        if (pwm.isServoPin(pin)) pin,
     ];
     final visiblePins = _includeCurrent(usablePins, action.pin);
     final usesSensitivity =

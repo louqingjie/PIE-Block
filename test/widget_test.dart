@@ -2328,8 +2328,10 @@ void main() {
       PinRole.jitterMotor,
       PinRole.unused,
     ]);
-    expect(roles('MP03'), const [PinRole.servo]);
-    expect(field('MP03').onChanged, isNull);
+    expect(roles('MP03'), const [PinRole.servo, PinRole.unused]);
+    expect(field('MP03').onChanged, isNotNull);
+    // 主控板舵机口缺省按舵机处理，中位/限幅照常显示。
+    expect(find.byKey(const ValueKey('pwm.servo_mids.MP03')), findsOneWidget);
 
     final unsupported = field('P64').items!
         .singleWhere((item) => item.value == PinRole.motor);
@@ -2353,6 +2355,53 @@ void main() {
             as EngineerConfig;
     expect(updated.pwm.pinRoles['P64'], PinRole.friction);
     expect(find.textContaining('P64 不支持平滑电机'), findsNothing);
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
+  testWidgets('工程 PWM 页主控板舵机口可选未使用并隐藏舵机参数', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _StaticProjectController(_engineerDocument(), 1),
+          ),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('pwm.servo_mids.MP03')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('pwm.servo_min_limits.MP03')),
+      findsOneWidget,
+    );
+
+    final mp03 = find.byKey(const ValueKey('pwm.pin_roles.MP03'));
+    await tester.ensureVisible(mp03);
+    await tester.tap(mp03);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('未使用').last);
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(WizardScreen)),
+    );
+    final updated =
+        container.read(appControllerProvider).document!.config
+            as EngineerConfig;
+    expect(updated.pwm.roleOf('MP03'), PinRole.unused);
+    expect(find.byKey(const ValueKey('pwm.servo_mids.MP03')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('pwm.servo_min_limits.MP03')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('pwm.servo_max_limits.MP03')),
+      findsNothing,
+    );
+    // 未动过的 MP74 仍按缺省舵机处理。
+    expect(find.byKey(const ValueKey('pwm.servo_mids.MP74')), findsOneWidget);
     await tester.pump(const Duration(milliseconds: 600));
   });
 

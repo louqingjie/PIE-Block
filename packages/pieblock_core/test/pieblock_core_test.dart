@@ -567,6 +567,7 @@ void main() {
       for (final pin in mainServoPins) {
         expect(EngineerPinCapabilities.allowedRoles(pin), const [
           PinRole.servo,
+          PinRole.unused,
         ]);
       }
       for (final pin in [...expansionPins, ...mainServoPins]) {
@@ -575,6 +576,162 @@ void main() {
           isTrue,
         );
       }
+    });
+
+    test('主控板舵机口缺省按舵机处理，可显式标为未使用', () {
+      final legacy = PwmGroupConfig();
+      expect(legacy.roleOf('MP03'), PinRole.servo);
+      expect(legacy.roleOf('MP74'), PinRole.servo);
+      expect(legacy.roleOf('P60'), isNull);
+
+      final unused = PwmGroupConfig(pinRoles: {'MP03': PinRole.unused});
+      expect(unused.roleOf('MP03'), PinRole.unused);
+      expect(unused.roleOf('MP74'), PinRole.servo);
+      expect(unused.isServoPin('MP03'), isFalse);
+      expect(unused.isServoPin('MP74'), isTrue);
+      // 主控板引脚仍不能当电机/摩擦轮脚用。
+      expect(
+        EngineerPinCapabilities.supportsRole('MP03', PinRole.motor),
+        isFalse,
+      );
+      expect(
+        EngineerPinCapabilities.supportsRole('MP03', PinRole.friction),
+        isFalse,
+      );
+    });
+
+    test('主控板舵机口标为未使用后不再校验行程参数', () {
+      EngineerConfig withMain(String pin, PinRole role) {
+        final source = completeEngineer();
+        return source.copyWith(
+          pwm: source.pwm.copyWith(
+            pinRoles: {...source.pwm.pinRoles, pin: role},
+            servoMaxLimits: {...source.pwm.servoMaxLimits, pin: 120},
+          ),
+        );
+      }
+
+      // 缺省（旧工程没有角色记录）= 舵机，越界行程参数照旧报错。
+      final servo = withMain('MP03', PinRole.servo);
+      expect(
+        ProjectValidator.validate(servo)
+            .where((issue) => issue.fieldPath == 'pwm.servo_max_limits.MP03'),
+        isNotEmpty,
+      );
+
+      // 显式未使用：忽略残留的行程参数，也不阻止生成代码。
+      final unused = withMain('MP03', PinRole.unused);
+      expect(
+        ProjectValidator.validate(unused)
+            .where((issue) => issue.fieldPath == 'pwm.servo_max_limits.MP03'),
+        isEmpty,
+      );
+      expect(() => CodeGenerator.generate(unused), returnsNormally);
+    });
+
+    test('动作引用已标未使用的主控板引脚时报错并阻止生成', () {
+      final source = completeEngineer();
+      final config = source.copyWith(
+        pwm: source.pwm.copyWith(
+          pinRoles: {...source.pwm.pinRoles, 'MP03': PinRole.unused},
+        ),
+        modes: [
+          EngineerModeConfig(
+            preserveChassis: true,
+            actions: [
+              ActionMapping(
+                key: 'A',
+                direction: Direction.forward,
+                mode: ControlMode.direct,
+                parameter: 30,
+                pin: 'MP03',
+              ),
+            ],
+          ),
+        ],
+      );
+      expect(
+        ProjectValidator.validate(config).where(
+          (issue) =>
+              issue.fieldPath == 'modes.0.actions.0.pin' &&
+              issue.message.contains('未使用'),
+        ),
+        hasLength(1),
+      );
+      expect(() => CodeGenerator.generate(config), throwsStateError);
+    });
+
+    test('旧工程未记录主控板角色时仍按舵机生成输出', () {
+      final source = completeEngineer();
+      final config = source.copyWith(
+        modes: [
+          EngineerModeConfig(
+            preserveChassis: true,
+            actions: [
+              ActionMapping(
+                key: 'A',
+                direction: Direction.forward,
+                mode: ControlMode.direct,
+                parameter: 30,
+                pin: 'MP03',
+              ),
+            ],
+          ),
+        ],
+      );
+      final code = CodeGenerator.generate(config);
+      expect(code, contains('PWM_Init(PWMB_CH4_P03, 50, 750)'));
+      expect(
+        code,
+        contains('PWM_SET_Frequency(PWMB_CH4_P03, 50, mainServoDuty[0]);'),
+      );
+    });
+
+    test('主控板未使用角色可随项目保存并恢复', () {
+      final source = completeEngineer();
+      final config = source.copyWith(
+        pwm: source.pwm.copyWith(
+          pinRoles: {...source.pwm.pinRoles, 'MP74': PinRole.unused},
+        ),
+      );
+      final document = ProjectDocument.create(
+        '主控板未使用',
+        ProjectKind.engineer,
+      ).copyWith(config: config);
+      final json = jsonDecode(jsonEncode(document.toJson())) as Map;
+      expect(
+        ((json['config'] as Map)['pwm'] as Map)['pin_roles'],
+        containsPair('MP74', 'unused'),
+      );
+      final restored = ProjectDocument.fromJson(
+        Map<String, Object?>.from(json),
+      );
+      expect(
+        (restored.config as EngineerConfig).pwm.roleOf('MP74'),
+        PinRole.unused,
+      );
+      expect(
+        (restored.config as EngineerConfig).pwm.roleOf('MP03'),
+        PinRole.servo,
+      );
+    });
+
+    test('标为未使用的主控板舵机口不再生成初始化与周期输出', () {
+      final source = completeEngineer();
+      final config = source.copyWith(
+        pwm: source.pwm.copyWith(
+          pinRoles: {
+            ...source.pwm.pinRoles,
+            'MP03': PinRole.unused,
+            'MP74': PinRole.unused,
+          },
+        ),
+      );
+      final code = CodeGenerator.generate(config);
+      expect(code, isNot(contains('PWM_Init(PWMB_CH4_P03')));
+      expect(code, isNot(contains('PWM_Init(PWMB_CH1_P74')));
+      expect(code, isNot(contains('PWM_SET_Frequency(PWMB_CH4_P03')));
+      expect(code, isNot(contains('PWM_SET_Frequency(PWMB_CH1_P74')));
     });
 
     test('非法角色被保留并产生单一字段错误且阻止生成', () {
