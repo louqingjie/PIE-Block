@@ -23,7 +23,7 @@ done
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
-version="$(sed -n 's/^version:[[:space:]]*\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\).*/\1/p' pubspec.yaml | head -1)"
+version="$(sed -n 's/^version:[[:space:]]*\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\(-[0-9A-Za-z.]*\)\?\).*/\1/p' pubspec.yaml | head -1)"
 if [ -z "$version" ]; then
   echo "无法从 pubspec.yaml 解析 version 行。" >&2
   exit 1

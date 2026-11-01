@@ -222,7 +222,7 @@ jobs:
         shell: pwsh
         run: |
           $pubspec = Get-Content -LiteralPath 'pubspec.yaml' -Raw
-          $versionMatch = [regex]::Match($pubspec, '(?m)^version:\s*(\d+\.\d+\.\d+)')
+          $versionMatch = [regex]::Match($pubspec, '(?m)^version:\s*(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)')
           if (!$versionMatch.Success) {
               throw '无法从 pubspec.yaml 解析 version 行。'
           }

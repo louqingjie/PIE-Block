@@ -22,10 +22,10 @@ $outputDir = Join-Path $repoRoot 'output'
 
 # --- 版本号：以 pubspec.yaml 为单一来源 ---
 $pubspec = Get-Content -LiteralPath (Join-Path $repoRoot 'pubspec.yaml') -Raw
-if ($pubspec -notmatch '(?m)^version:\s*(\d+)\.(\d+)\.(\d+)') {
+if ($pubspec -notmatch '(?m)^version:\s*(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)') {
     throw '无法从 pubspec.yaml 解析 version 行。'
 }
-$version = "$($Matches[1]).$($Matches[2]).$($Matches[3])"
+$version = $Matches[1]
 
 # --- 内置 SDCC 工具链前置检查：必须是 Windows 版，否则便携版无法编译固件 ---
 $bundleManifest = Join-Path $repoRoot 'vendor\sdcc-toolchain\bundle_manifest.json'

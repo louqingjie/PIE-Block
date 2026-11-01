@@ -572,7 +572,7 @@ jobs:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
           $pubspec = Get-Content -Raw -LiteralPath 'pubspec.yaml'
-          $versionMatch = [regex]::Match($pubspec, '(?m)^version:\s*(\d+\.\d+\.\d+)')
+          $versionMatch = [regex]::Match($pubspec, '(?m)^version:\s*(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)')
           if (!$versionMatch.Success) { throw '无法从 pubspec.yaml 解析 version 行。' }
           $version = $versionMatch.Groups[1].Value
           New-Item -ItemType Directory -Force -Path 'output' | Out-Null
