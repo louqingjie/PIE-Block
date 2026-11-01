@@ -272,7 +272,7 @@ jobs:
         run: |
           set -euo pipefail
           tag="${GITHUB_REF_NAME#v}"
-          version="$(grep -m1 -oP '^version:\s*\K[0-9]+\.[0-9]+\.[0-9]+' pubspec.yaml)"
+          version="$(grep -m1 -oP '^version:\s*\K[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.]+)?' pubspec.yaml)"
           if [ "$tag" != "$version" ]; then
             echo "::error::标签 $GITHUB_REF_NAME 与 pubspec.yaml 的 $version 不一致，请先提升版本号再打标签。"
             exit 1
@@ -303,6 +303,11 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           notes="docs/releases/$version.md"
           arguments=(--verify-tag --title "PIE-Block $version")
+          # 预发布版本（带 -alpha/-beta/-rc 后缀）在 GitHub 上标记为 prerelease，
+          # 这样 /releases/latest 不会被内测版顶掉。
+          if [[ "$version" == *-* ]]; then
+            arguments+=(--prerelease)
+          fi
           if [ -f "$notes" ]; then
             arguments+=(--notes-file "$notes")
           else
