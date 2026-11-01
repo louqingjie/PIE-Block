@@ -499,6 +499,36 @@ ProjectDocument _engineerDocument() {
   );
 }
 
+ProjectDocument _engineerTableDocument() {
+  final source = ProjectDocument.create('动作表测试', ProjectKind.engineer);
+  return source.copyWith(
+    config: EngineerConfig(
+      chassis: const ChassisConfig(enabled: false),
+      pwm: PwmGroupConfig(
+        pwma: PwmFrequency.hz50,
+        pwmb: PwmFrequency.hz10000,
+        pinRoles: const {'P60': PinRole.servo, 'P62': PinRole.unused},
+        servoMids: const {'P60': 0},
+      ),
+      modeCount: 1,
+      modes: [
+        EngineerModeConfig(
+          actionTables: [
+            ActionTable(
+              key: 'A',
+              previousKey: 'D',
+              steps: 3,
+              rows: const [
+                ActionTableRow(pin: 'P60', values: [-30, 0, 45]),
+              ],
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
+}
+
 ProjectDocument _engineerDragDocument() {
   final source = _engineerDocument();
   final config = source.config as EngineerConfig;
@@ -1077,6 +1107,58 @@ void main() {
     expect(tests[2].pin, before[1].pin);
     expect(tester.takeException(), isNull);
     await tester.pump(const Duration(milliseconds: 600));
+  });
+
+  testWidgets('工程动作表以可展开卡片编辑，触发语义带后缀', (tester) async {
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1200, 1000);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _StaticProjectController(_engineerTableDocument(), 3),
+          ),
+          deployControllerProvider.overrideWith(_FakeDeployController.new),
+        ],
+        child: MaterialApp(
+          theme: ThemeData(useMaterial3: true),
+          home: const WizardScreen(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 收起状态显示摘要；展开后出现档位表头。
+    expect(find.textContaining('动作表 1'), findsOneWidget);
+    expect(find.textContaining('键 A'), findsOneWidget);
+    await tester.tap(find.byTooltip('展开动作表'));
+    await tester.pumpAndSettle();
+    expect(find.text('档 1'), findsOneWidget);
+    expect(find.text('档 3'), findsOneWidget);
+
+    // 编辑第 2 档的单元格。
+    final cell = find.byKey(
+      const ValueKey('modes.0.action_tables.0.rows.0.values.1'),
+    );
+    await tester.ensureVisible(cell);
+    await tester.pumpAndSettle();
+    await tester.enterText(cell, '15');
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(WizardScreen)),
+    );
+    final config =
+        container.read(appControllerProvider).document!.config
+            as EngineerConfig;
+    expect(
+      config.modes.first.actionTables.single.rows.single.values[1],
+      15,
+    );
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('工程动作行可拖动排序且浮层不越出列表', (tester) async {
@@ -2443,7 +2525,7 @@ void main() {
     final direct = modeField(0).items!
         .singleWhere((item) => item.value == ControlMode.direct);
     expect(direct.enabled, isTrue);
-    expect((direct.child as Text).data, '直接');
+    expect((direct.child as Text).data, '直接（按下）');
     expect(modes(1), const [ControlMode.direct, ControlMode.incremental]);
     expect(modes(2), const [ControlMode.direct]);
 
@@ -2464,7 +2546,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(mode);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('单次').last);
+    await tester.tap(find.text('单次（按下）').last);
     await tester.pumpAndSettle();
 
     final parameter = find.byKey(const ValueKey('modes.0.actions.0.parameter'));
