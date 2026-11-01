@@ -210,7 +210,7 @@ EngineerConfig servoButtonEngineer({
 
 void main() {
   group('项目格式与进度', () {
-    test('格式 17 往返并保存向导进度', () {
+    test('工程存档往返并保存向导进度', () {
       final source = ProjectDocument.create('步兵测试', ProjectKind.infantry)
           .copyWith(
             guideProgress: const GuideProgress(
@@ -223,7 +223,10 @@ void main() {
           jsonDecode(jsonEncode(source.toJson())) as Map,
         ),
       );
-      expect(source.toJson()['format_version'], 17);
+      expect(
+        source.toJson()['format_version'],
+        ProjectDocument.formatVersion,
+      );
       expect(restored.guideProgress.currentStepId, 'controls');
       expect(restored.guideProgress.visitedStepIds, hasLength(3));
       expect((source.toJson()['config']! as Map), isNot(contains('pwm')));
@@ -982,6 +985,313 @@ void main() {
         code,
         contains('ModeSwitchFeedback(currentMode); remoteLinkIdle = 0;'),
       );
+    });
+  });
+
+  group('格式兼容（正式发布后）', () {
+    Map<String, Object?> fixture(String name) => Map<String, Object?>.from(
+      jsonDecode(File('test/fixtures/$name').readAsStringSync()) as Map,
+    );
+
+    test('格式 17 的工程/步兵存档可直接打开，动作表缺省为空', () {
+      for (final name in const [
+        'format17_engineer.pieproj',
+        'format17_infantry.pieproj',
+      ]) {
+        final document = ProjectDocument.fromJson(fixture(name));
+        expect(
+          ProjectValidator.validate(document.config)
+              .where((issue) => issue.severity == IssueSeverity.error),
+          isEmpty,
+          reason: name,
+        );
+      }
+      final engineer = ProjectDocument.fromJson(
+        fixture('format17_engineer.pieproj'),
+      );
+      final config = engineer.config as EngineerConfig;
+      expect(config.modes.every((mode) => mode.actionTables.isEmpty), isTrue);
+      // 旧存档的生成结果里不应出现动作表代码。
+      expect(
+        CodeGenerator.generate(config),
+        isNot(contains('UpdateActionTables')),
+      );
+    });
+
+    test('17 存档保存后升为当前版本，且不凭空写出空动作表', () {
+      final document = ProjectDocument.fromJson(
+        fixture('format17_engineer.pieproj'),
+      );
+      final encoded = document.toJson();
+      expect(encoded['format_version'], ProjectDocument.formatVersion);
+      final modes = ((encoded['config'] as Map)['modes'] as List)
+          .cast<Map<Object?, Object?>>();
+      expect(
+        modes.every((mode) => !mode.containsKey('action_tables')),
+        isTrue,
+      );
+    });
+
+    test('过旧与过新的格式给出明确提示', () {
+      expect(
+        () => ProjectDocument.fromJson({'format_version': 16}),
+        throwsA(
+          isA<FormatException>().having(
+            (error) => error.message,
+            'message',
+            contains('过旧'),
+          ),
+        ),
+      );
+      expect(
+        () => ProjectDocument.fromJson({
+          'format_version': ProjectDocument.formatVersion + 1,
+        }),
+        throwsA(
+          isA<FormatException>().having(
+            (error) => error.message,
+            'message',
+            contains('请升级'),
+          ),
+        ),
+      );
+    });
+  });
+
+  group('工程动作表', () {
+    EngineerConfig tableEngineer({
+      int modeCount = 1,
+      List<EngineerModeConfig>? modes,
+      List<ActionTable>? tables,
+      List<ActionMapping>? actions,
+      SwitchStrategy? strategy,
+      String? switchKey,
+    }) => EngineerConfig(
+      remote: const RemoteConfig(channel: 36, deadzone: 100),
+      chassis: const ChassisConfig(enabled: false),
+      pwm: PwmGroupConfig(
+        pwma: PwmFrequency.hz50,
+        pwmb: PwmFrequency.hz10000,
+        pinRoles: {
+          'P60': PinRole.servo,
+          'P62': PinRole.servo,
+          'P64': PinRole.unused,
+          'P66': PinRole.unused,
+          for (final pin in const ['P74', 'P75', 'P76', 'P77'])
+            pin: PinRole.motor,
+        },
+        servoMids: const {'P60': 0, 'P62': 0, 'MP03': 0, 'MP74': 0},
+      ),
+      modeCount: modeCount,
+      switchStrategy: strategy,
+      modeSwitchKey: switchKey,
+      modes: modes ??
+          [
+            EngineerModeConfig(
+              actions: actions ?? const [],
+              actionTables: tables ?? const [],
+            ),
+            for (var i = 1; i < modeCount; i++) EngineerModeConfig(),
+          ],
+    );
+
+    ActionTable servoTable({String key = 'A', String? previousKey = 'D'}) =>
+        ActionTable(
+          key: key,
+          previousKey: previousKey,
+          steps: 3,
+          rows: const [
+            ActionTableRow(pin: 'P60', values: [-30, 0, 45]),
+            ActionTableRow(pin: 'MP03', values: [0, 20, -20]),
+          ],
+        );
+
+    test('动作表 JSON 往返', () {
+      final config = tableEngineer(tables: [servoTable()]);
+      final document = ProjectDocument.create(
+        '动作表测试',
+        ProjectKind.engineer,
+      ).copyWith(config: config);
+      final restored = ProjectDocument.fromJson(
+        Map<String, Object?>.from(
+          jsonDecode(jsonEncode(document.toJson())) as Map,
+        ),
+      );
+      final table = (restored.config as EngineerConfig)
+          .modes
+          .first
+          .actionTables
+          .single;
+      expect(table.key, 'A');
+      expect(table.previousKey, 'D');
+      expect(table.steps, 3);
+      expect(table.rows.map((row) => row.values).toList(), [
+        [-30, 0, 45],
+        [0, 20, -20],
+      ]);
+    });
+
+    test('键与引脚冲突、档数与取值校验', () {
+      Iterable<String> messages(EngineerConfig config) => ProjectValidator
+          .validate(config)
+          .where((issue) => issue.severity == IssueSeverity.error)
+          .map((issue) => issue.message);
+
+      // 表键与动作行按键冲突。
+      expect(
+        messages(
+          tableEngineer(
+            actions: [
+              ActionMapping(
+                key: 'A',
+                direction: Direction.forward,
+                mode: ControlMode.direct,
+                parameter: 30,
+                pin: 'P62',
+              ),
+            ],
+            tables: [servoTable()],
+          ),
+        ),
+        contains(contains('已被本模式动作行使用')),
+      );
+      // 表引脚与动作行引脚冲突。
+      expect(
+        messages(
+          tableEngineer(
+            actions: [
+              ActionMapping(
+                key: 'B',
+                direction: Direction.forward,
+                mode: ControlMode.direct,
+                parameter: 30,
+                pin: 'P60',
+              ),
+            ],
+            tables: [
+              ActionTable(
+                key: 'A',
+                steps: 3,
+                rows: const [
+                  ActionTableRow(pin: 'P60', values: [0, 10, 20]),
+                ],
+              ),
+            ],
+          ),
+        ),
+        contains(contains('已被本模式动作行使用')),
+      );
+      // 档位数越界。
+      expect(
+        messages(
+          tableEngineer(
+            tables: [
+              ActionTable(
+                key: 'A',
+                steps: 9,
+                rows: [ActionTableRow(pin: 'P60', values: List.filled(9, 0))],
+              ),
+            ],
+          ),
+        ),
+        contains(contains('档位数必须在 2–8 之间')),
+      );
+      // 某档未填写。
+      expect(
+        messages(
+          tableEngineer(
+            tables: [
+              ActionTable(
+                key: 'A',
+                steps: 3,
+                rows: const [
+                  ActionTableRow(pin: 'P60', values: [0, null, 20]),
+                ],
+              ),
+            ],
+          ),
+        ),
+        contains(contains('尚未填写')),
+      );
+      // 上一档键与下一档键相同。
+      expect(
+        messages(
+          tableEngineer(
+            tables: [servoTable(previousKey: 'A')],
+          ),
+        ),
+        contains('上一档键不能与下一档键相同'),
+      );
+      // 摩擦轮引脚不能放进动作表（显式把 P64 标为摩擦轮）。
+      final frictionBase = tableEngineer(
+        tables: [
+          ActionTable(
+            key: 'A',
+            steps: 3,
+            rows: const [
+              ActionTableRow(pin: 'P64', values: [0, 10, 20]),
+            ],
+          ),
+        ],
+      );
+      expect(
+        messages(
+          frictionBase.copyWith(
+            pwm: frictionBase.pwm.copyWith(
+              pinRoles: {...frictionBase.pwm.pinRoles, 'P64': PinRole.friction},
+            ),
+          ),
+        ),
+        contains(contains('摩擦轮引脚')),
+      );
+    });
+
+    test('生成按档切换、循环与上一档分支，并把表引脚并入输出', () {
+      final code = CodeGenerator.generate(tableEngineer(tables: [servoTable()]));
+      expect(code, contains('static void ApplyTable0(uint8_t step)'));
+      expect(code, contains('case 3:'));
+      expect(code, contains('tableStep[0] >= 3 ? 1 : tableStep[0] + 1'));
+      expect(code, contains('tableStep[0] <= 1 ? 3 : tableStep[0] - 1'));
+      expect(code, contains('static void ResetActionTables(void)'));
+      // -30° → 750 - 167 = 583；MP03 的 20° → 861。
+      expect(code, contains('dutyOfMotor[0] = 583;'));
+      expect(code, contains('mainServoDuty[0] = 861;'));
+      // 表引脚并入 usedPins：主控板舵机有 PWM 初始化。
+      expect(code, contains('PWM_Init(PWMB_CH4_P03'));
+      // 表键有自己的档位提示音，不参与遥控输入提示的按键快照。
+      expect(
+        code,
+        isNot(contains('if (RcKeyValueRead(KEY_OFFSET_A)) keys |=')),
+      );
+    });
+
+    test('多模式：动作表按模式分发，切模式重置档位', () {
+      final code = CodeGenerator.generate(
+        tableEngineer(
+          modeCount: 2,
+          strategy: SwitchStrategy.cycle,
+          switchKey: 'E',
+          modes: [
+            EngineerModeConfig(actionTables: [servoTable()]),
+            EngineerModeConfig(
+              actionTables: [
+                ActionTable(
+                  key: 'B',
+                  steps: 2,
+                  rows: const [
+                    ActionTableRow(pin: 'P74', values: [3000, -3000]),
+                  ],
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+      expect(code, contains('case 1:'));
+      expect(code, contains('UpdateTable0();'));
+      expect(code, contains('case 2:'));
+      expect(code, contains('UpdateTable1();'));
+      expect(code, contains('ResetActionTables();'));
     });
   });
 
@@ -3182,7 +3492,10 @@ void main() {
       expect(action.outputKind, ActionOutputKind.integer);
       expect(action.variableName, 'count');
       expect(action.expression, 'LX + 1');
-      expect(source.toJson()['format_version'], 17);
+      expect(
+        source.toJson()['format_version'],
+        ProjectDocument.formatVersion,
+      );
     });
   });
   group('工程摩擦轮控制', () {

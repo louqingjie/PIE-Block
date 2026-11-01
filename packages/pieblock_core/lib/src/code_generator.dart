@@ -334,6 +334,134 @@ ${keyChecks.join('\n')}
 ''';
   }
 
+  /// 生成工程「按键动作表」状态机。
+  ///
+  /// 每张表一个档位计数：下一档键上升沿 `step = step >= N ? 1 : step + 1`，
+  /// 可选的上一档键反向循环；切换后把该档整列值写入输出并保持，蜂鸣器可用
+  /// 时按档位音高提示。表只在所属模式内响应（`UpdateActionTables` 按
+  /// `currentMode` 分发），切模式时计数清零。
+  static String _actionTableCode(EngineerConfig c) {
+    final tables = <({int mode, ActionTable table})>[];
+    for (var mi = 0; mi < c.modeCount!; mi++) {
+      for (final table in c.modes[mi].actionTables) {
+        tables.add((mode: mi, table: table));
+      }
+    }
+    if (tables.isEmpty) return '';
+    final buzzer = !c.pwm.buzzerDisabled;
+    final buffer = StringBuffer(
+      '/* 按键动作表：按一次前进一档，到最后一档后回到第一档 */\n',
+    );
+    if (buzzer) {
+      buffer.write(
+        '#define ACTION_TABLE_TONE_MS 80\n'
+        'static const uint16_t actionTableTones[8] = '
+        '{880, 1047, 1319, 1568, 1975, 2349, 2637, 2794};\n',
+      );
+    }
+    buffer.write(
+      'static uint8_t tableStep[${tables.length}] = '
+      '{${List.filled(tables.length, '0').join(', ')}};\n'
+      'static uint8_t tableNextLast[${tables.length}] = '
+      '{${List.filled(tables.length, '0').join(', ')}};\n'
+      'static uint8_t tablePrevLast[${tables.length}] = '
+      '{${List.filled(tables.length, '0').join(', ')}};\n',
+    );
+    if (buzzer) {
+      buffer.write(
+        '\nstatic void TableTone(uint8_t step)\n'
+        '{\n'
+        '    if (step >= 1 && step <= 8) '
+        'Beep(actionTableTones[step - 1], ACTION_TABLE_TONE_MS);\n'
+        '}\n',
+      );
+    }
+    for (var k = 0; k < tables.length; k++) {
+      final table = tables[k].table;
+      final steps = table.steps!;
+      buffer.write('\nstatic void ApplyTable$k(uint8_t step)\n{\n');
+      buffer.write('    switch (step) {\n');
+      for (var step = 1; step <= steps; step++) {
+        buffer.write('        case $step:\n');
+        for (final row in table.rows) {
+          final pin = row.pin!;
+          final value = row.values[step - 1]!;
+          if (c.pwm.roleOf(pin) == PinRole.servo) {
+            final bounds = _servoBounds(c.pwm, pin);
+            final duty = _servoDuty(
+              (c.pwm.servoMids[pin] ?? 0) + value,
+            ).clamp(bounds.low, bounds.high);
+            final slot = expansionPins.indexOf(pin);
+            if (slot >= 0) {
+              buffer.write('            dutyOfMotor[$slot] = $duty;\n');
+            } else {
+              buffer.write(
+                '            mainServoDuty[${pin == 'MP74' ? 1 : 0}] = $duty;\n',
+              );
+            }
+          } else {
+            buffer.write(
+              '            dutyOfMotor[${expansionPins.indexOf(pin)}] = $value;\n',
+            );
+          }
+        }
+        buffer.write('            break;\n');
+      }
+      buffer.write('    }\n}\n');
+    }
+    for (var k = 0; k < tables.length; k++) {
+      final table = tables[k].table;
+      final steps = table.steps!;
+      final nextKey = _key(table.key!);
+      final tone = buzzer ? '        TableTone(tableStep[$k]);\n' : '';
+      buffer.write('\nstatic void UpdateTable$k(void)\n{\n');
+      buffer.write(
+        '    if (RcKeyValueRead($nextKey) && !tableNextLast[$k]) {\n'
+        '        tableStep[$k] = (uint8_t)'
+        '(tableStep[$k] >= $steps ? 1 : tableStep[$k] + 1);\n'
+        '        ApplyTable$k(tableStep[$k]);\n'
+        '$tone'
+        '    }\n'
+        '    tableNextLast[$k] = RcKeyValueRead($nextKey);\n',
+      );
+      if (table.previousKey != null) {
+        final prevKey = _key(table.previousKey!);
+        buffer.write(
+          '    if (RcKeyValueRead($prevKey) && !tablePrevLast[$k]) {\n'
+          '        tableStep[$k] = (uint8_t)'
+          '(tableStep[$k] <= 1 ? $steps : tableStep[$k] - 1);\n'
+          '        ApplyTable$k(tableStep[$k]);\n'
+          '$tone'
+          '    }\n'
+          '    tablePrevLast[$k] = RcKeyValueRead($prevKey);\n',
+        );
+      }
+      buffer.write('}\n');
+    }
+    buffer.write(
+      '\nstatic void UpdateActionTables(void)\n{\n'
+      '    switch (currentMode) {\n',
+    );
+    final modesWithTables = <int, List<int>>{};
+    for (var k = 0; k < tables.length; k++) {
+      modesWithTables.putIfAbsent(tables[k].mode, () => <int>[]).add(k);
+    }
+    for (final entry in modesWithTables.entries) {
+      buffer.write('    case ${entry.key + 1}:\n');
+      for (final k in entry.value) {
+        buffer.write('        UpdateTable$k();\n');
+      }
+      buffer.write('        break;\n');
+    }
+    buffer.write('    }\n}\n');
+    buffer.write('\nstatic void ResetActionTables(void)\n{\n');
+    for (var k = 0; k < tables.length; k++) {
+      buffer.write('    tableStep[$k] = 0;\n');
+    }
+    buffer.write('}\n');
+    return buffer.toString();
+  }
+
   static String _infantry(InfantryConfig c) {
     final frictionEnabled = c.frictionMode == FrictionMode.brushlessEsc;
     final feederSlot = _slot(c.feederPin);
@@ -789,9 +917,14 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
       }
     }
     final usedPins = <String>{
-      for (final mode in c.modes.take(c.modeCount!))
+      for (final mode in c.modes.take(c.modeCount!)) ...[
         for (final action in mode.actions)
           if (action.pin != null) action.pin!,
+        // 动作表的引脚也要初始化 PWM、纳入主控板舵机的周期输出。
+        for (final table in mode.actionTables)
+          for (final row in table.rows)
+            if (row.pin != null) row.pin!,
+      ],
     };
     final expressionHelpers = <String>{};
     final expressionEmitter = ExpressionEmitter(
@@ -1396,20 +1529,26 @@ ${engineerFeedbackChecks.join('\n')}
 }
 ''';
     // 模式切换键已有 ModeSwitchFeedback，遥控输入提示要跳过它们，避免双响。
+    // 动作表的按键也有自己的档位提示音，同样跳过。
     final remoteSilentKeys = <String?>{
       if (c.modeCount! > 1 && c.switchStrategy == SwitchStrategy.cycle)
         c.modeSwitchKey,
       if (c.modeCount! > 1 && c.switchStrategy == SwitchStrategy.direct)
         ...c.modeKeys.take(c.modeCount!),
+      for (final mode in c.modes.take(c.modeCount!))
+        for (final table in mode.actionTables) ...[table.key, table.previousKey],
     }.whereType<String>().toSet();
     final remoteFeedback = _remoteFeedback(
       buzzerDisabled: c.pwm.buzzerDisabled,
       silentKeys: remoteSilentKeys,
     );
+    final actionTableCode = _actionTableCode(c);
     // 模式切换的提示音会阻塞约 1s，必须重置链路空闲计数，否则会被误判掉线。
     final linkIdleReset = remoteFeedback.isEmpty ? '' : ' remoteLinkIdle = 0;';
+    // 切模式后动作表的档位计数清零，下一次按键从第一档开始。
+    final tableReset = actionTableCode.isEmpty ? '' : ' ResetActionTables();';
     final transitionCall =
-        ' PrepareMode(currentMode);${feedbackEnabled ? ' ModeSwitchFeedback(currentMode);' : ''}$linkIdleReset';
+        ' PrepareMode(currentMode);${feedbackEnabled ? ' ModeSwitchFeedback(currentMode);' : ''}$linkIdleReset$tableReset';
     final switchLogic = c.modeCount == 1
         ? '// 单模式，无需切换'
         : c.switchStrategy == SwitchStrategy.cycle
@@ -1436,6 +1575,7 @@ $prepareMode
 $servoButtonSync
 $frictionSync$engineerFeedback
 $remoteFeedback
+$actionTableCode
 
 ${c.chassis.enabled ? _chassis(c.chassis) : ''}
 ${modeFunctions.join('\n\n')}
@@ -1478,7 +1618,7 @@ ${servoButtonEdgeActions.isEmpty ? '' : '''        if (servoButtonStateMode != c
             SyncServoButtonKeys(currentMode);
             servoButtonStateMode = currentMode;
         }'''}
-$frictionSyncCall        switch (currentMode) {
+$frictionSyncCall${actionTableCode.isEmpty ? '' : '        UpdateActionTables();\n'}        switch (currentMode) {
 ${cases.join('\n')}
         }
 $frictionUpdateCall        ExpansionBoradControl(Dir_Change_Order, $directionArgs);

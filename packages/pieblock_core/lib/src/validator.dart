@@ -1373,6 +1373,169 @@ abstract final class ProjectValidator {
           'mappings',
         );
       }
+      _actionTables(config, mode, mi, switchKeys, issue);
+    }
+  }
+
+  /// 校验按键动作表：键/上一档键、档位数、每行引脚与逐档数值。
+  static void _actionTables(
+    EngineerConfig config,
+    EngineerModeConfig mode,
+    int modeIndex,
+    Set<String> switchKeys,
+    _AddIssue issue,
+  ) {
+    final tables = mode.actionTables;
+    if (tables.isEmpty) return;
+    // 本模式里已经被动作行占用的按键与引脚。
+    final actionKeys = <String>{
+      for (final action in mode.actions)
+        if (action.key != null) action.key!,
+    };
+    final actionPins = <String>{
+      for (final action in mode.actions)
+        if (action.pin != null) action.pin!,
+    };
+    final usedKeys = <String>{};
+    final usedPins = <String>{};
+    for (var ti = 0; ti < tables.length; ti++) {
+      final table = tables[ti];
+      final base = 'modes.$modeIndex.action_tables.$ti';
+      final steps = table.steps;
+      _range(steps, 2, 8, '$base.steps', '档位数', 'mappings', issue);
+
+      void checkKey(String? key, String path, String label) {
+        if (key == null) return;
+        if (!digitalRemoteKeys.contains(key)) {
+          issue(IssueSeverity.error, path, '$label必须是数字按键', 'mappings');
+          return;
+        }
+        if (switchKeys.contains(key)) {
+          issue(IssueSeverity.error, path, '$label与模式切换按键冲突', 'mappings');
+        }
+        if (actionKeys.contains(key)) {
+          issue(
+            IssueSeverity.error,
+            path,
+            '按键 $key 已被本模式动作行使用，不能同时作为$label',
+            'mappings',
+          );
+        }
+        if (!usedKeys.add(key)) {
+          issue(
+            IssueSeverity.error,
+            path,
+            '按键 $key 已被本模式其他动作表使用',
+            'mappings',
+          );
+        }
+      }
+
+      checkKey(table.key, '$base.key', '下一档键');
+      if (table.key == null) {
+        issue(
+          IssueSeverity.error,
+          '$base.key',
+          '下一档键尚未选择',
+          'mappings',
+          ValidationIssueKind.required,
+        );
+      }
+      if (table.previousKey != null) {
+        if (table.previousKey == table.key) {
+          issue(
+            IssueSeverity.error,
+            '$base.prev_key',
+            '上一档键不能与下一档键相同',
+            'mappings',
+          );
+        } else {
+          checkKey(table.previousKey, '$base.prev_key', '上一档键');
+        }
+      }
+      if (table.rows.isEmpty) {
+        issue(
+          IssueSeverity.error,
+          '$base.rows',
+          '动作表至少需要一行输出',
+          'mappings',
+          ValidationIssueKind.required,
+        );
+      }
+      for (var ri = 0; ri < table.rows.length; ri++) {
+        final row = table.rows[ri];
+        final rowPath = '$base.rows.$ri';
+        _choice(row.pin, '$rowPath.pin', '引脚', 'mappings', issue);
+        final pin = row.pin;
+        var role = PinRole.motor;
+        if (pin != null) {
+          final resolved = config.pwm.roleOf(pin);
+          if (resolved == null) {
+            issue(IssueSeverity.error, '$rowPath.pin', '未知引脚 $pin', 'mappings');
+          } else if (resolved == PinRole.unused) {
+            issue(
+              IssueSeverity.error,
+              '$rowPath.pin',
+              '$pin 未启用，不能用于动作表',
+              'mappings',
+            );
+          } else if (resolved == PinRole.friction) {
+            issue(
+              IssueSeverity.error,
+              '$rowPath.pin',
+              '$pin 是摩擦轮引脚，必须用摩擦轮控制方式，不能放进动作表',
+              'mappings',
+            );
+          } else {
+            role = resolved;
+          }
+          if (actionPins.contains(pin)) {
+            issue(
+              IssueSeverity.error,
+              '$rowPath.pin',
+              '引脚 $pin 已被本模式动作行使用，不能再放进动作表',
+              'mappings',
+            );
+          }
+          if (!usedPins.add(pin)) {
+            issue(
+              IssueSeverity.error,
+              '$rowPath.pin',
+              '引脚 $pin 在本模式动作表里重复出现',
+              'mappings',
+            );
+          }
+        }
+        if (steps == null) continue;
+        if (row.values.length != steps) {
+          issue(
+            IssueSeverity.error,
+            '$rowPath.values',
+            '每个引脚的档位值数量必须等于档位数（$steps）',
+            'mappings',
+          );
+        }
+        for (var ci = 0; ci < steps && ci < row.values.length; ci++) {
+          final value = row.values[ci];
+          final valuePath = '$rowPath.values.$ci';
+          final label = '第 ${ci + 1} 档';
+          if (value == null) {
+            issue(
+              IssueSeverity.error,
+              valuePath,
+              '$label尚未填写',
+              'mappings',
+              ValidationIssueKind.required,
+            );
+            continue;
+          }
+          if (role == PinRole.servo) {
+            _range(value, -90, 90, valuePath, '$label角度', 'mappings', issue);
+          } else {
+            _range(value, -10000, 10000, valuePath, '$label duty', 'mappings', issue);
+          }
+        }
+      }
     }
   }
 

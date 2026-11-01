@@ -599,6 +599,29 @@ List<(String, ProjectConfig)> engineerVariants() {
       ],
     ),
   );
+  // 按键动作表：档位循环 + 上一档键
+  add(
+    'action-table',
+    engineerBase(
+      chassisEnabled: false,
+      modes: [
+        EngineerModeConfig(
+          actionTables: [
+            ActionTable(
+              key: 'A',
+              previousKey: 'D',
+              steps: 3,
+              rows: const [
+                ActionTableRow(pin: 'P60', values: [-30, 0, 45]),
+                ActionTableRow(pin: 'MP03', values: [0, 20, -20]),
+                ActionTableRow(pin: 'P74', values: [3000, -3000, 0]),
+              ],
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
   // 模式数量 × 切换策略
   for (final count in [1, 2, 3, 4]) {
     for (final strategy in SwitchStrategy.values) {
@@ -1542,6 +1565,141 @@ List<Scenario> scenarios() {
       }
       if (!beepAt(log, 1319, 12000, 15500)) {
         failures.add('重新连上后没有提示音（1319Hz）');
+      }
+      return failures;
+    },
+  ));
+
+  // --- 工程：按键动作表（档位循环 / 上一档 / 切模式清零） ---
+  List<int> tableDuties(RunLog log, int slot, int fromMs, int toMs) => log
+      .dutyFrames()
+      .where((f) => f.ms >= fromMs && f.ms < toMs)
+      .map((f) => f.duties[slot])
+      .toList();
+
+  scenarios.add(Scenario(
+    'eng-table-cycle',
+    engineerBase(
+      chassisEnabled: false,
+      modes: [
+        EngineerModeConfig(actionTables: [
+          ActionTable(key: 'A', steps: 3, rows: const [
+            ActionTableRow(pin: 'P74', values: [1000, 2000, 3000]),
+          ]),
+        ]),
+      ],
+    ),
+    15000,
+    [
+      (3000, 'A', 1), (3200, 'A', 0),
+      (5000, 'A', 1), (5200, 'A', 0),
+      (7000, 'A', 1), (7200, 'A', 0),
+      (9000, 'A', 1), (9200, 'A', 0),
+    ],
+    (log) {
+      final failures = <String>[];
+      const windows = [
+        (3200, 4900, 1000, '第 1 档'),
+        (5200, 6900, 2000, '第 2 档'),
+        (7200, 8900, 3000, '第 3 档'),
+        (9200, 14000, 1000, '第 4 次按键应回到第 1 档'),
+      ];
+      for (final (from, to, expected, label) in windows) {
+        final duties = tableDuties(log, 4, from, to);
+        if (duties.isEmpty) {
+          failures.add('$label 窗口内没有占空比帧');
+        } else if (duties.any((value) => value != expected)) {
+          failures.add('$label 占空比应为 $expected（得到 ${duties.last}）');
+        }
+      }
+      // 档位提示音：第 1 档 880Hz。
+      final tones = log.pwmChannel(101).where((p) => p.duty == 5000);
+      if (!tones.any((p) => p.freq == 880 && p.ms >= 3000 && p.ms < 3400)) {
+        failures.add('切到第 1 档没有 880Hz 提示音');
+      }
+      if (!tones.any((p) => p.freq == 1319 && p.ms >= 7000 && p.ms < 7400)) {
+        failures.add('切到第 3 档没有 1319Hz 提示音');
+      }
+      return failures;
+    },
+  ));
+
+  scenarios.add(Scenario(
+    'eng-table-prev',
+    engineerBase(
+      chassisEnabled: false,
+      modes: [
+        EngineerModeConfig(actionTables: [
+          ActionTable(key: 'A', previousKey: 'D', steps: 3, rows: const [
+            ActionTableRow(pin: 'P74', values: [1000, 2000, 3000]),
+          ]),
+        ]),
+      ],
+    ),
+    14000,
+    [
+      (3000, 'D', 1), (3200, 'D', 0),
+      (5000, 'D', 1), (5200, 'D', 0),
+      (7000, 'A', 1), (7200, 'A', 0),
+    ],
+    (log) {
+      final failures = <String>[];
+      const windows = [
+        (3200, 4900, 3000, '上一档键首次按下应落到最后一档'),
+        (5200, 6900, 2000, '再按上一档应退到第 2 档'),
+        (7200, 13000, 3000, '下一档键从第 2 档前进应回到第 3 档'),
+      ];
+      for (final (from, to, expected, label) in windows) {
+        final duties = tableDuties(log, 4, from, to);
+        if (duties.isEmpty) {
+          failures.add('$label 窗口内没有占空比帧');
+        } else if (duties.any((value) => value != expected)) {
+          failures.add('$label 占空比应为 $expected（得到 ${duties.last}）');
+        }
+      }
+      return failures;
+    },
+  ));
+
+  scenarios.add(Scenario(
+    'eng-table-mode-reset',
+    engineerBase(
+      chassisEnabled: false,
+      modeCount: 2,
+      strategy: SwitchStrategy.direct,
+      modeKeys: ['↑', '↓'],
+      modes: [
+        EngineerModeConfig(),
+        EngineerModeConfig(actionTables: [
+          ActionTable(key: 'A', steps: 3, rows: const [
+            ActionTableRow(pin: 'P74', values: [1000, 2000, 3000]),
+          ]),
+        ]),
+      ],
+    ),
+    18000,
+    [
+      (2000, '↓', 1), (2200, '↓', 0),
+      (4000, 'A', 1), (4200, 'A', 0),
+      (6000, 'A', 1), (6200, 'A', 0),
+      (8000, '↑', 1), (8200, '↑', 0),
+      (10000, '↓', 1), (10200, '↓', 0),
+      (12000, 'A', 1), (12200, 'A', 0),
+    ],
+    (log) {
+      final failures = <String>[];
+      const windows = [
+        (4200, 5900, 1000, '第一次按键应进入第 1 档'),
+        (6200, 7900, 2000, '第二次按键应进入第 2 档'),
+        (12200, 17000, 1000, '切换模式回来后第一次按键应重新从第 1 档开始'),
+      ];
+      for (final (from, to, expected, label) in windows) {
+        final duties = tableDuties(log, 4, from, to);
+        if (duties.isEmpty) {
+          failures.add('$label 窗口内没有占空比帧');
+        } else if (duties.any((value) => value != expected)) {
+          failures.add('$label 占空比应为 $expected（得到 ${duties.last}）');
+        }
       }
       return failures;
     },

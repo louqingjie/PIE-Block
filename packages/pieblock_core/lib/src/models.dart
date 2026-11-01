@@ -1615,28 +1615,113 @@ class ActionMapping {
   );
 }
 
+/// 动作表的一行：一个输出引脚在各档位的目标值。
+///
+/// 舵机是带符号的相对归中角度（−90~90），电机是带符号 duty（−10000~10000）；
+/// 长度等于所属动作表的档数。
+class ActionTableRow {
+  const ActionTableRow({this.pin, List<int?>? values})
+    : values = values ?? const [];
+  final String? pin;
+  final List<int?> values;
+  ActionTableRow copyWith({Object? pin = _unset, List<int?>? values}) =>
+      ActionTableRow(
+        pin: identical(pin, _unset) ? this.pin : pin as String?,
+        values: values ?? this.values,
+      );
+  Map<String, Object?> toJson() => {'pin': pin, 'values': values};
+  factory ActionTableRow.fromJson(Map<String, Object?> j) => ActionTableRow(
+    pin: j['pin']?.toString(),
+    values: [
+      for (final value in j['values'] as List? ?? const [])
+        (value as num?)?.toInt(),
+    ],
+  );
+}
+
+/// 动作表：一个按键循环切换的一组档位。
+///
+/// 每按一次「下一档键」前进一档（到最后一档后回到第一档），可选「上一档键」
+/// 反向循环；每次切档把该列的值整体写入对应引脚并保持。
+class ActionTable {
+  ActionTable({
+    String? id,
+    this.key,
+    this.previousKey,
+    this.steps,
+    List<ActionTableRow>? rows,
+  }) : id = id ?? DateTime.now().microsecondsSinceEpoch.toString(),
+       rows = List.unmodifiable(rows ?? const []);
+  final String id;
+  final String? key;
+  final String? previousKey;
+  final int? steps;
+  final List<ActionTableRow> rows;
+  ActionTable copyWith({
+    Object? key = _unset,
+    Object? previousKey = _unset,
+    Object? steps = _unset,
+    List<ActionTableRow>? rows,
+  }) => ActionTable(
+    id: id,
+    key: identical(key, _unset) ? this.key : key as String?,
+    previousKey: identical(previousKey, _unset)
+        ? this.previousKey
+        : previousKey as String?,
+    steps: identical(steps, _unset) ? this.steps : steps as int?,
+    rows: List.unmodifiable(rows ?? this.rows),
+  );
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'key': key,
+    'prev_key': previousKey,
+    'steps': steps,
+    'rows': rows.map((row) => row.toJson()).toList(),
+  };
+  factory ActionTable.fromJson(Map<String, Object?> j) => ActionTable(
+    id: j['id']?.toString(),
+    key: j['key']?.toString(),
+    previousKey: j['prev_key']?.toString(),
+    steps: (j['steps'] as num?)?.toInt(),
+    rows: [
+      for (final row in j['rows'] as List? ?? const [])
+        if (row is Map) ActionTableRow.fromJson(Map<String, Object?>.from(row)),
+    ],
+  );
+}
+
 class EngineerModeConfig {
   EngineerModeConfig({
     String? id,
     this.preserveChassis = false,
     List<ActionMapping>? actions,
+    List<ActionTable>? actionTables,
   }) : id = id ?? DateTime.now().microsecondsSinceEpoch.toString(),
-       actions = List.unmodifiable(actions ?? []);
+       actions = List.unmodifiable(actions ?? []),
+       actionTables = List.unmodifiable(actionTables ?? []);
   final String id;
   final bool preserveChassis;
   final List<ActionMapping> actions;
+
+  /// 按键动作表：每张表由一个按键循环切档（格式 18 新增，旧存档读入为空）。
+  final List<ActionTable> actionTables;
   EngineerModeConfig copyWith({
     bool? preserveChassis,
     List<ActionMapping>? actions,
+    List<ActionTable>? actionTables,
   }) => EngineerModeConfig(
     id: id,
     preserveChassis: preserveChassis ?? this.preserveChassis,
     actions: actions ?? this.actions,
+    actionTables: actionTables ?? this.actionTables,
   );
   Map<String, Object?> toJson() => {
     'id': id,
     'preserve_chassis': preserveChassis,
     'actions': actions.map((a) => a.toJson()).toList(),
+    // 为空时省略，格式 17 存档读入再保存不会凭空多出字段。
+    if (actionTables.isNotEmpty)
+      'action_tables': actionTables.map((t) => t.toJson()).toList(),
   };
   factory EngineerModeConfig.fromJson(Map<String, Object?> j) =>
       EngineerModeConfig(
@@ -1648,6 +1733,11 @@ class EngineerModeConfig {
                   ActionMapping.fromJson(Map<String, Object?>.from(a as Map)),
             )
             .toList(),
+        actionTables: [
+          for (final table in j['action_tables'] as List? ?? const [])
+            if (table is Map)
+              ActionTable.fromJson(Map<String, Object?>.from(table)),
+        ],
       );
 }
 
@@ -1801,7 +1891,17 @@ class ProjectDocument {
     required this.config,
     required this.guideProgress,
   });
-  static const formatVersion = 17;
+  /// 当前写出的存档格式。
+  ///
+  /// 格式 18 起项目已正式发布：新增字段必须可选，旧格式必须能读入，见
+  /// [oldestSupportedFormatVersion] 与 [ProjectDocument.fromJson]。
+  static const formatVersion = 18;
+
+  /// 仍可读入的最旧格式：1.7.0 正式发布时使用的格式 17。
+  ///
+  /// 17 → 18 的差异只有可选的 `modes[].action_tables`（缺省为空表），
+  /// 其余字段语义不变，因此无需额外迁移。
+  static const oldestSupportedFormatVersion = 17;
   final String name;
   final ProjectKind kind;
   final DateTime createdAt, updatedAt;
@@ -1845,9 +1945,21 @@ class ProjectDocument {
     'config': config.toJson(),
   };
   factory ProjectDocument.fromJson(Map<String, Object?> j) {
-    if ((j['format_version'] as num?)?.toInt() != formatVersion) {
-      throw const FormatException('不受支持的项目格式，请在对应旧版 PIE-Block 中打开');
+    // 正式发布后：旧格式必须能读入，新格式给出明确的升级提示。
+    final version = (j['format_version'] as num?)?.toInt();
+    if (version == null || version < oldestSupportedFormatVersion) {
+      throw FormatException(
+        '工程格式版本 ${version ?? '缺失'} 过旧，请使用 PIE-Block 1.7 或更新版本打开'
+        '（本版本支持 $oldestSupportedFormatVersion–$formatVersion）',
+      );
     }
+    if (version > formatVersion) {
+      throw FormatException(
+        '工程由更新版本的 PIE-Block 创建（格式 $version），请升级后再打开'
+        '（本版本支持 $oldestSupportedFormatVersion–$formatVersion）',
+      );
+    }
+    // 17 → 18：仅新增可选的 modes[].action_tables，缺省为空表。
     final kind = enumValue(
           ProjectKind.values,
           j['project_kind'],

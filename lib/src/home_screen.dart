@@ -495,7 +495,7 @@ class HomeScreen extends ConsumerWidget {
                                 title: '打开已有项目',
                                 // 版本号取自代码而不是写死，避免每次升格式都漏改文案。
                                 subtitle:
-                                    '仅支持当前格式 ${ProjectDocument.formatVersion} 的 .pieproj',
+                                    '支持格式 ${ProjectDocument.oldestSupportedFormatVersion}–${ProjectDocument.formatVersion} 的 .pieproj',
                                 button: '打开项目',
                                 accent: AppBrand.coral,
                                 foreground: AppBrand.onCoral,

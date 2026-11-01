@@ -117,6 +117,10 @@ stc32g/toolchain/mcs251-tests/build/
 !book/examples/
 !book/examples/*.pieproj
 
+# 格式兼容回归样本（旧格式存档）必须入库，否则兼容性用例在 CI 上找不到文件。
+!packages/pieblock_core/test/fixtures/
+!packages/pieblock_core/test/fixtures/*.pieproj
+
 # Local ISP/flash debug scratch (do not commit)
 STC32G.pdf
 _probe_*
