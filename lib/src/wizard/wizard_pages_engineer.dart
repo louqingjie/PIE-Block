@@ -767,7 +767,7 @@ class _ActionTableCardState extends ConsumerState<_ActionTableCard> {
   void _update(ActionTable table) => widget.onChanged(table);
 
   ActionTable _withSteps(ActionTable table, int? value) {
-    final steps = value == null ? null : value.clamp(2, 8).toInt();
+    final steps = value?.clamp(2, 8).toInt();
     return table.copyWith(
       steps: value,
       rows: steps == null
