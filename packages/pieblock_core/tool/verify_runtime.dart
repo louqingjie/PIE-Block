@@ -1408,6 +1408,64 @@ List<Scenario> scenarios() {
     },
   ));
 
+  // --- 工程：同一电机引脚两条「直接」行（双键正反转） ---
+  // 回归：两行原本都写成 `duty = 按下 ? 值 : 0`，后一行在按键未按下时
+  // 会把前一行刚写入的值清成 0，实机上表现为「反向键按下没反应」。
+  scenarios.add(Scenario(
+    'eng-motor-direct-two-keys',
+    engineerBase(
+      chassisEnabled: false,
+      pwma: PwmFrequency.hz10000,
+      roles: {
+        for (final pin in expansionPins)
+          pin: (pin == 'P64' || pin == 'P66') ? PinRole.unused : PinRole.motor,
+      },
+      modes: [
+        EngineerModeConfig(actions: [
+          action('B', pin: 'P74', mode: ControlMode.direct, direction: Direction.reverse, parameter: 10000),
+          action('C', pin: 'P74', mode: ControlMode.direct, direction: Direction.forward, parameter: 10000),
+        ]),
+      ],
+    ),
+    12000,
+    [
+      (3000, 'B', 1), (5000, 'B', 0),
+      (7000, 'C', 1), (9000, 'C', 0),
+    ],
+    (log) {
+      final failures = <String>[];
+      final duty = log.dutyFrames();
+      final dir = log.dirFrames();
+      List<FrameLine> window(int from, int to) =>
+          duty.where((f) => f.ms >= from && f.ms < to).toList();
+      final reverse = window(3200, 4900);
+      if (reverse.isEmpty) {
+        failures.add('反向键按住期间没有任何占空比帧');
+      } else if (reverse.any((f) => f.duties[4] != 10000)) {
+        failures.add('反向键按住期间占空比应为 10000（得到 ${reverse.last.duties[4]}）');
+      }
+      final reverseDir = dir.where((f) => f.ms >= 3200 && f.ms < 4900);
+      if (reverseDir.isEmpty || reverseDir.any((d) => d.duties[4] != 0)) {
+        failures.add('反向键按住期间方向位应为 0');
+      }
+      final idle = window(5200, 6900);
+      if (idle.isEmpty || idle.any((f) => f.duties[4] != 0)) {
+        failures.add('松开后电机应停机');
+      }
+      final forward = window(7200, 8900);
+      if (forward.isEmpty) {
+        failures.add('正向键按住期间没有任何占空比帧');
+      } else if (forward.any((f) => f.duties[4] != 10000)) {
+        failures.add('正向键按住期间占空比应为 10000（得到 ${forward.last.duties[4]}）');
+      }
+      final forwardDir = dir.where((f) => f.ms >= 7200 && f.ms < 8900);
+      if (forwardDir.isEmpty || forwardDir.any((d) => d.duties[4] != 1)) {
+        failures.add('正向键按住期间方向位应为 1');
+      }
+      return failures;
+    },
+  ));
+
   return scenarios;
 }
 

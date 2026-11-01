@@ -634,6 +634,99 @@ void main() {
     });
   });
 
+  group('工程电机同引脚多行', () {
+    EngineerConfig motorDoubleKey({
+      ControlMode first = ControlMode.direct,
+      ControlMode second = ControlMode.direct,
+    }) => EngineerConfig(
+      remote: const RemoteConfig(channel: 36, deadzone: 100),
+      chassis: const ChassisConfig(enabled: false),
+      pwm: PwmGroupConfig(
+        pwma: PwmFrequency.hz10000,
+        pwmb: PwmFrequency.hz10000,
+        pinRoles: {
+          'P60': PinRole.servo,
+          'P62': PinRole.servo,
+          'P64': PinRole.unused,
+          'P66': PinRole.unused,
+          for (final pin in const ['P74', 'P75', 'P76', 'P77'])
+            pin: PinRole.motor,
+        },
+        servoMids: const {'P60': 0, 'P62': 0, 'MP03': 0, 'MP74': 0},
+      ),
+      modeCount: 1,
+      modes: [
+        EngineerModeConfig(
+          preserveChassis: false,
+          actions: [
+            ActionMapping(
+              key: 'B',
+              direction: Direction.reverse,
+              mode: first,
+              parameter: 10000,
+              pin: 'P74',
+            ),
+            ActionMapping(
+              key: 'C',
+              direction: Direction.forward,
+              mode: second,
+              parameter: 10000,
+              pin: 'P74',
+            ),
+          ],
+        ),
+      ],
+    );
+
+    test('两条「直接」行合并成一条优先级链，不再互相清零', () {
+      final code = CodeGenerator.generate(motorDoubleKey());
+      expect(
+        code,
+        contains(
+          '    if (RcKeyValueRead(KEY_OFFSET_C)) dutyOfMotor[4] = 10000;\n'
+          '    else if (RcKeyValueRead(KEY_OFFSET_B)) dutyOfMotor[4] = -10000;\n'
+          '    else dutyOfMotor[4] = 0;',
+        ),
+      );
+      // 旧写法会把先写入的 -10000 在同一周期清成 0。
+      expect(code, isNot(contains('dutyOfMotor[4] = RcKeyValueRead(')));
+    });
+
+    test('单行「直接」保持原来的三目输出（金样不变）', () {
+      final config = motorDoubleKey();
+      final single = config.copyWith(
+        modes: [
+          EngineerModeConfig(
+            preserveChassis: false,
+            actions: [config.modes.single.actions.first],
+          ),
+        ],
+      );
+      expect(
+        CodeGenerator.generate(single),
+        contains(
+          '    dutyOfMotor[4] = RcKeyValueRead(KEY_OFFSET_B) ? -10000 : 0;',
+        ),
+      );
+    });
+
+    test('「直接」+「速度」仍按行序覆盖并给出警告', () {
+      final config = motorDoubleKey(second: ControlMode.speed);
+      expect(
+        ProjectValidator.validate(config)
+            .where((issue) => issue.severity == IssueSeverity.warning)
+            .map((issue) => issue.message),
+        contains('P74 在本模式被多行输出，行序在后的赋值会覆盖前面的结果'),
+      );
+      // 全部是「直接」时生成器已合并，不应再提示覆盖。
+      expect(
+        ProjectValidator.validate(motorDoubleKey())
+            .where((issue) => issue.message.contains('在本模式被多行输出')),
+        isEmpty,
+      );
+    });
+  });
+
   group('工程舵机按键控制', () {
     Iterable<ValidationIssue> parameterIssues(num parameter) =>
         ProjectValidator.validate(servoButtonEngineer(parameter: parameter))
