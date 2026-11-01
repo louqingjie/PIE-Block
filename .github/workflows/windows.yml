@@ -49,7 +49,34 @@ jobs:
           done
 
       - name: 应用静态分析
-        run: flutter analyze
+        run: |
+          set +e
+          flutter analyze --format=json > analyze.json 2>&1
+          code=$?
+          python3 - <<'PY'
+          import json
+          issues = []
+          for line in open('analyze.json', encoding='utf-8', errors='replace'):
+              line = line.strip()
+              if not line.startswith('{'):
+                  continue
+              try:
+                  item = json.loads(line)
+              except json.JSONDecodeError:
+                  continue
+              if item.get('type') == 'issue':
+                  issues.append(item)
+          for item in issues[:10]:
+              loc = item.get('location') or {}
+              start = loc.get('start') or {}
+              file = loc.get('file') or 'analyze'
+              line_no = start.get('line') or 1
+              msg = (item.get('message') or '').replace(chr(10), ' ')[:900]
+              code = item.get('code') or ''
+              print(f'::error file={file},line={line_no}::{code} {msg}')
+          print(f'::notice::{len(issues)} analyzer issues')
+          PY
+          exit $code
 
       - name: 应用测试
         run: flutter test
