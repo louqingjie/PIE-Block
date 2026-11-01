@@ -1159,6 +1159,11 @@ void main() {
       15,
     );
     expect(tester.takeException(), isNull);
+    // 收尾：结束输入焦点并等 500ms 自动保存的防抖计时器跑完，避免
+    // widget 树销毁时仍有 pending timer 导致用例失败。
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 600));
   });
 
   testWidgets('工程动作行可拖动排序且浮层不越出列表', (tester) async {
