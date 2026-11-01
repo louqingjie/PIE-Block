@@ -51,33 +51,25 @@ jobs:
       - name: 应用静态分析
         run: |
           set +e
-          flutter analyze --format=json > analyze.json 2>&1
+          flutter analyze > analyze.log 2>&1
           code=$?
-          python3 - <<'PY'
-          import json
+          ANALYZE_EXIT=$code python3 - <<'PY'
+          import os
+          import re
+          lines = open('analyze.log', encoding='utf-8', errors='replace').read().splitlines()
           issues = []
-          for line in open('analyze.json', encoding='utf-8', errors='replace'):
-              line = line.strip()
-              if not line.startswith('{'):
-                  continue
-              try:
-                  item = json.loads(line)
-              except json.JSONDecodeError:
-                  continue
-              if item.get('type') == 'issue':
-                  issues.append(item)
-          for item in issues[:10]:
-              loc = item.get('location') or {}
-              start = loc.get('start') or {}
-              file = loc.get('file') or 'analyze'
-              line_no = start.get('line') or 1
-              msg = (item.get('message') or '').replace(chr(10), ' ')[:900]
-              code = item.get('code') or ''
-              print(f'::error file={file},line={line_no}::{code} {msg}')
-          print(f'::notice::{len(issues)} analyzer issues')
+          for line in lines:
+              m = re.match(r'^\s*(error|warning|info)\s+.\s+(.*?)\s+.\s+(\S+?):(\d+):(\d+)\s+.\s+(\S+)?', line)
+              if m:
+                  issues.append(m.groups())
+          for sev, msg, file, line_no, col, code in issues[:10]:
+              print(f'::error file={file},line={line_no}::{sev}: {msg} [{code}]')
+          print(f'::notice::{len(issues)} issues, exit={os.environ.get("ANALYZE_EXIT")}')
+          if not issues:
+              tail = ' | '.join(lines[-12:])[:900]
+              print(f'::error::{tail}')
           PY
           exit $code
-
       - name: 应用测试
         run: flutter test
 
