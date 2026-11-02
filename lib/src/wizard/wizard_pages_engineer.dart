@@ -383,7 +383,7 @@ class _ActionRow extends ConsumerWidget {
             ControlMode.incremental => '步进角度 °',
             ControlMode.speed => '最大速度 duty',
             ControlMode.accelerate => '加速度 duty/周期',
-            ControlMode.direct => role == PinRole.servo ? '目标角度 °' : '占空比 duty',
+            ControlMode.direct => role == PinRole.servo ? '目标角度 °' : '转速 duty',
             ControlMode.frictionToggle => '目标油门 %',
             ControlMode.frictionStep => '每次油门 %',
             ControlMode.frictionContinuous => '每秒油门 %',
@@ -1023,7 +1023,7 @@ class _ActionTableCardState extends ConsumerState<_ActionTableCard> {
                         : null,
                     fieldPath:
                         '${widget.fieldPath}.rows.$rowIndex.values.$step',
-                    // 舵机填相对中位的角度，电机/抖动电机填转速占空比。
+                    // 舵机填相对中位的角度，电机/抖动电机填转速。
                     label: switch (table.rows[rowIndex].pin) {
                       final pin? when widget.pwm.isServoPin(pin) => '角度',
                       null => '数值',

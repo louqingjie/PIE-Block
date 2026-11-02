@@ -140,11 +140,11 @@ class _StepAuditionButton extends StatelessWidget {
   }
 }
 
-/// 复核页里单个调试项的一句话摘要。摩擦轮项直接就是目标占空比。
+/// 复核页里单个调试项的一句话摘要。摩擦轮项直接就是目标转速。
 String _debugDriveSummary(DebugTestItem item) => switch (item.driveType) {
   DebugDriveType.motor => '电机 ${item.value ?? '未填写'}',
   DebugDriveType.servo => '舵机 ${item.value ?? '未填写'}°',
-  DebugDriveType.friction => '摩擦轮目标占空比 ${item.value ?? '未填写'}',
+  DebugDriveType.friction => '摩擦轮目标转速 ${item.value ?? '未填写'}',
   null => '未选择驱动',
 };
 
@@ -237,7 +237,7 @@ class _DebugTestsPage extends ConsumerWidget {
             };
             final valueLabel = switch (item.driveType) {
               DebugDriveType.servo => '角度',
-              DebugDriveType.friction => '最大占空比',
+              DebugDriveType.friction => '最大转速',
               _ => '速度',
             };
             return Card(

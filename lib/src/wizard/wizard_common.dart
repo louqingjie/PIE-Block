@@ -202,8 +202,8 @@ String _fieldLabel(String path) {
     'controls.friction_key': '摩擦轮开关键',
     'controls.friction_up_key': '摩擦轮增速键',
     'controls.friction_down_key': '摩擦轮减速键',
-    'controls.friction_p64_max_duty': 'P64 最大占空比',
-    'controls.friction_p66_max_duty': 'P66 最大占空比',
+    'controls.friction_p64_max_duty': 'P64 最大转速',
+    'controls.friction_p66_max_duty': 'P66 最大转速',
     'controls.friction_level_step': '油门步长',
     'pwm.pwma': 'PWMA 频率',
     'pwm.pwmb': 'PWMB 频率',
@@ -229,7 +229,7 @@ String _fieldLabel(String path) {
   if (path.contains('servo_mids')) return '舵机中位';
   if (path.contains('servo_min_limits')) return '舵机顺时针限幅';
   if (path.contains('servo_max_limits')) return '舵机逆时针限幅';
-  if (path.contains('friction_max_duties')) return '摩擦轮满油占空比';
+  if (path.contains('friction_max_duties')) return '摩擦轮满油转速';
   if (path.contains('pin_roles')) return '输出角色';
   return path;
 }

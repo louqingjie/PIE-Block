@@ -459,11 +459,11 @@ void main() {
 
       expect(
         messages(completeInfantry().copyWith(frictionP64MaxDuty: 750)),
-        contains(contains('P64 摩擦轮最大占空比必须是 500–800 内的整百值')),
+        contains(contains('P64 摩擦轮最大转速必须是 500–800 内的整百值')),
       );
       expect(
         messages(completeInfantry().copyWith(frictionP66MaxDuty: 900)),
-        contains(contains('P66 摩擦轮最大占空比必须在 500–800 之间')),
+        contains(contains('P66 摩擦轮最大转速必须在 500–800 之间')),
       );
       expect(
         messages(completeInfantry().copyWith(frictionLevelStep: 0)),
@@ -2183,7 +2183,7 @@ void main() {
       for (final duty in const [400, 900]) {
         expect(
           messages(duty),
-          contains(contains('P64 摩擦轮目标占空比必须在 500–800 之间')),
+          contains(contains('P64 摩擦轮目标转速必须在 500–800 之间')),
         );
         expect(
           issues(duty)
@@ -3597,7 +3597,7 @@ void main() {
       );
       expect(
         frictionErrors(missing).map((issue) => issue.message),
-        contains('P66 摩擦轮满油占空比尚未填写'),
+        contains('P66 摩擦轮满油转速尚未填写'),
       );
 
       final wrongFrequency = frictionEngineer().copyWith(

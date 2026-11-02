@@ -228,13 +228,13 @@ abstract final class ProjectValidator {
             issue,
           );
         case DebugDriveType.friction:
-          // 调试项的摩擦轮直接给目标占空比，不再走「油门 → 满油上限」换算。
+          // 调试项的摩擦轮直接给目标转速，不再走「油门 → 满油上限」换算。
           _range(
             item.value,
             Friction.minMaxDuty,
             Friction.maxMaxDuty,
             '$base.value',
-            '${item.pin} 摩擦轮目标占空比',
+            '${item.pin} 摩擦轮目标转速',
             'tests',
             issue,
           );
@@ -242,7 +242,7 @@ abstract final class ProjectValidator {
             issue(
               IssueSeverity.warning,
               '$base.value',
-              '${item.pin} 摩擦轮目标占空比低于 ${Friction.lowDutyWarning}，'
+              '${item.pin} 摩擦轮目标转速低于 ${Friction.lowDutyWarning}，'
                   '可能带不动摩擦轮，观察不到有效结论',
               'tests',
             );
@@ -689,12 +689,12 @@ abstract final class ProjectValidator {
       for (final maxDuty in [
         (
           path: 'controls.friction_p64_max_duty',
-          label: 'P64 摩擦轮最大占空比',
+          label: 'P64 摩擦轮最大转速',
           value: config.frictionP64MaxDuty,
         ),
         (
           path: 'controls.friction_p66_max_duty',
-          label: 'P66 摩擦轮最大占空比',
+          label: 'P66 摩擦轮最大转速',
           value: config.frictionP66MaxDuty,
         ),
       ]) {
@@ -1144,7 +1144,7 @@ abstract final class ProjectValidator {
         issue(
           IssueSeverity.error,
           'pwm.friction_max_duties.$pin',
-          '$pin 摩擦轮满油占空比必须是 500–800 内的整百值',
+          '$pin 摩擦轮满油转速必须是 500–800 内的整百值',
           'pwm',
         );
       }
@@ -1161,7 +1161,7 @@ abstract final class ProjectValidator {
         issue(
           IssueSeverity.error,
           'pwm.friction_max_duties.$pin',
-          '$pin 摩擦轮满油占空比尚未填写',
+          '$pin 摩擦轮满油转速尚未填写',
           'pwm',
         );
       }
@@ -1825,7 +1825,7 @@ abstract final class ProjectValidator {
         issue(
           IssueSeverity.warning,
           '$path.mode',
-          '摩擦轮脚上的旧控制方式直接写占空比，不受安全斜坡保护',
+          '摩擦轮脚上的旧控制方式直接写转速，不受安全斜坡保护',
           'mappings',
         );
       }

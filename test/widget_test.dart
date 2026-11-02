@@ -1322,11 +1322,11 @@ void main() {
       find.byIcon(Icons.drag_indicator, skipOffstage: false),
       findsNWidgets(10),
     );
-    // 摩擦轮项直接填目标占空比；页面上不再有独立的 P64/P66 满油上限字段。
-    expect(find.text('最大占空比', skipOffstage: false), findsNWidgets(2));
+    // 摩擦轮项直接填目标转速；页面上不再有独立的 P64/P66 满油上限字段。
+    expect(find.text('最大转速', skipOffstage: false), findsNWidgets(2));
     expect(find.text('油门', skipOffstage: false), findsNothing);
-    expect(find.text('P64 最大占空比', skipOffstage: false), findsNothing);
-    expect(find.text('P66 最大占空比', skipOffstage: false), findsNothing);
+    expect(find.text('P64 最大转速', skipOffstage: false), findsNothing);
+    expect(find.text('P66 最大转速', skipOffstage: false), findsNothing);
     expect(find.text('测试时长', skipOffstage: false), findsNothing);
     expect(tester.takeException(), isNull);
 
@@ -2883,8 +2883,8 @@ void main() {
     expect(find.text('LX'), findsNothing);
     expect(find.text('LY'), findsNothing);
 
-    final maxDutyTop = tester.getTopLeft(find.text('P64 最大占空比')).dy;
-    final p66MaxDutyTop = tester.getTopLeft(find.text('P66 最大占空比')).dy;
+    final maxDutyTop = tester.getTopLeft(find.text('P64 最大转速')).dy;
+    final p66MaxDutyTop = tester.getTopLeft(find.text('P66 最大转速')).dy;
     final stepTop = tester.getTopLeft(find.text('每次油门步长')).dy;
     expect((maxDutyTop - p66MaxDutyTop).abs(), lessThan(1));
     expect((maxDutyTop - stepTop).abs(), lessThan(1));
@@ -3248,8 +3248,8 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('单发时长'), findsOneWidget);
-    expect(find.text('P64 最大占空比'), findsOneWidget);
-    expect(find.text('P66 最大占空比'), findsOneWidget);
+    expect(find.text('P64 最大转速'), findsOneWidget);
+    expect(find.text('P66 最大转速'), findsOneWidget);
     expect(find.text('每次油门步长'), findsOneWidget);
 
     await tester.tap(find.text('阻塞开环单发'));
@@ -3263,8 +3263,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('不使用').last);
     await tester.pumpAndSettle();
-    expect(find.text('P64 最大占空比'), findsNothing);
-    expect(find.text('P66 最大占空比'), findsNothing);
+    expect(find.text('P64 最大转速'), findsNothing);
+    expect(find.text('P66 最大转速'), findsNothing);
     expect(find.text('每次油门步长'), findsNothing);
   });
 

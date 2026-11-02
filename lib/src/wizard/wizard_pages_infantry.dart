@@ -747,7 +747,7 @@ class _InfantryControlsPage extends ConsumerWidget {
                       if (pin != 'P64') const SizedBox(width: 12),
                       Expanded(
                         child: _NumberField(
-                          label: '$pin 最大占空比',
+                          label: '$pin 最大转速',
                           fieldPath:
                               'controls.friction_${pin.toLowerCase()}_max_duty',
                           suffix: 'duty',
@@ -781,7 +781,7 @@ class _InfantryControlsPage extends ConsumerWidget {
                   '${Friction.minMaxDuty}–${Friction.maxMaxDuty} 的整百值）。'
                   '油门 0~${Friction.levelMax}% 按 '
                   'duty = ${Friction.startDuty} + 油门 ÷ ${Friction.levelMax} × (该侧上限 − ${Friction.startDuty}) '
-                  '换算成两侧各自的占空比，'
+                  '换算成两侧各自的转速，'
                   '${Friction.startDuty} duty 是电调启动信号固定不变，输出逐周期 ±1 平滑变化；'
                   '按下开关键是先保持 ${Friction.startDuty} duty 1 秒完成电调激活，再爬目标。',
                 ),
