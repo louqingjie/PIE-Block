@@ -961,7 +961,7 @@ class _ActionTableCardState extends ConsumerState<_ActionTableCard> {
       columnWidths: {
         0: const FixedColumnWidth(148),
         for (var step = 0; step < steps; step++)
-          step + 1: const FixedColumnWidth(84),
+          step + 1: const FixedColumnWidth(148),
         steps + 1: const FixedColumnWidth(44),
       },
       children: [
@@ -1023,6 +1023,12 @@ class _ActionTableCardState extends ConsumerState<_ActionTableCard> {
                         : null,
                     fieldPath:
                         '${widget.fieldPath}.rows.$rowIndex.values.$step',
+                    // 舵机填相对中位的角度，电机/抖动电机填转速占空比。
+                    hint: switch (table.rows[rowIndex].pin) {
+                      final pin? when widget.pwm.isServoPin(pin) => '角度',
+                      null => '数值',
+                      _ => '转速',
+                    },
                     onChanged: (value) =>
                         _updateCell(table, rowIndex, step, value),
                   ),
@@ -1045,17 +1051,19 @@ class _ActionTableCardState extends ConsumerState<_ActionTableCard> {
   }
 }
 
-/// 动作表格子里的紧凑整数输入框：沿用焦点绑定与字段错误描边。
+/// 动作表格子里的整数输入框：尺寸与引脚下拉框一致，沿用焦点绑定与字段错误描边。
 class _TableCellField extends ConsumerStatefulWidget {
   const _TableCellField({
     required this.value,
     required this.onChanged,
     required this.fieldPath,
+    required this.hint,
   });
 
   final int? value;
   final ValueChanged<int?> onChanged;
   final String fieldPath;
+  final String hint;
 
   @override
   ConsumerState<_TableCellField> createState() => _TableCellFieldState();
@@ -1115,12 +1123,6 @@ class _TableCellFieldState extends ConsumerState<_TableCellField> {
 
   @override
   Widget build(BuildContext context) {
-    final issue = _fieldIssue(ref, widget.fieldPath);
-    final color = issue == null
-        ? null
-        : issue.severity == IssueSeverity.error
-        ? Theme.of(context).colorScheme.error
-        : AppStatusColors.warn(Theme.of(context).brightness);
     return _FieldAnchor(
       path: widget.fieldPath,
       focusHandledByChild: true,
@@ -1130,25 +1132,12 @@ class _TableCellFieldState extends ConsumerState<_TableCellField> {
         initialValue: widget.value?.toString() ?? '',
         keyboardType: const TextInputType.numberWithOptions(signed: true),
         textAlign: TextAlign.center,
-        style: const TextStyle(fontSize: 13),
         inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'-?\d*'))],
-        decoration: InputDecoration(
-          isDense: true,
-          hintText: '—',
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 8,
-            vertical: 10,
-          ),
-          enabledBorder: color == null
-              ? null
-              : OutlineInputBorder(
-                  borderSide: BorderSide(color: color, width: 1.5),
-                ),
-          focusedBorder: color == null
-              ? null
-              : OutlineInputBorder(
-                  borderSide: BorderSide(color: color, width: 2),
-                ),
+        decoration: _fieldDecoration(
+          ref,
+          widget.fieldPath,
+          '',
+          hint: widget.hint,
         ),
         onChanged: (text) =>
             widget.onChanged(text.isEmpty ? null : int.tryParse(text)),
