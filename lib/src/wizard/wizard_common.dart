@@ -244,7 +244,6 @@ InputDecoration _fieldDecoration(
   String path,
   String label, {
   String? suffix,
-  String? hint,
 }) {
   final issue = _fieldIssue(ref, path);
   final brightness = Theme.of(ref.context).brightness;
@@ -255,7 +254,6 @@ InputDecoration _fieldDecoration(
       : AppStatusColors.warn(brightness);
   return InputDecoration(
     labelText: label,
-    hintText: hint,
     suffixText: suffix,
     suffixIcon: issue == null
         ? null

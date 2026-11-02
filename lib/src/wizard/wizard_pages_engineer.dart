@@ -1024,7 +1024,7 @@ class _ActionTableCardState extends ConsumerState<_ActionTableCard> {
                     fieldPath:
                         '${widget.fieldPath}.rows.$rowIndex.values.$step',
                     // 舵机填相对中位的角度，电机/抖动电机填转速占空比。
-                    hint: switch (table.rows[rowIndex].pin) {
+                    label: switch (table.rows[rowIndex].pin) {
                       final pin? when widget.pwm.isServoPin(pin) => '角度',
                       null => '数值',
                       _ => '转速',
@@ -1057,13 +1057,13 @@ class _TableCellField extends ConsumerStatefulWidget {
     required this.value,
     required this.onChanged,
     required this.fieldPath,
-    required this.hint,
+    required this.label,
   });
 
   final int? value;
   final ValueChanged<int?> onChanged;
   final String fieldPath;
-  final String hint;
+  final String label;
 
   @override
   ConsumerState<_TableCellField> createState() => _TableCellFieldState();
@@ -1136,9 +1136,8 @@ class _TableCellFieldState extends ConsumerState<_TableCellField> {
         decoration: _fieldDecoration(
           ref,
           widget.fieldPath,
-          '',
-          hint: widget.hint,
-        ),
+          widget.label,
+        ).copyWith(floatingLabelBehavior: FloatingLabelBehavior.always),
         onChanged: (text) =>
             widget.onChanged(text.isEmpty ? null : int.tryParse(text)),
       ),
