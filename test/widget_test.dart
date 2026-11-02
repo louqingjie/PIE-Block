@@ -690,6 +690,27 @@ ProjectDocument _engineerFrictionDocument() {
   );
 }
 
+ProjectDocument _engineerFrictionContinuousDocument() {
+  final source = _engineerFrictionDocument();
+  final config = source.config as EngineerConfig;
+  final mode = config.modes.single;
+  return source.copyWith(
+    config: config.copyWith(
+      modes: [
+        mode.copyWith(
+          actions: [
+            mode.actions.single.copyWith(
+              mode: ControlMode.frictionContinuous,
+              direction: Direction.forward,
+              parameter: 50,
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
+}
+
 ProjectDocument _debugDocument() {
   final source = ProjectDocument.create('调试测试', ProjectKind.debug);
   return source.copyWith(
@@ -4401,6 +4422,38 @@ void main() {
       find.byKey(const ValueKey('modes.0.actions.0.direction')),
       findsNothing,
     );
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
+  testWidgets('摩擦轮油门持续显示油门增减而不是正反转', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _StaticProjectController(
+              _engineerFrictionContinuousDocument(),
+              3,
+            ),
+          ),
+          deployControllerProvider.overrideWith(_FakeDeployController.new),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final direction = find.byKey(const ValueKey('modes.0.actions.0.direction'));
+    expect(direction, findsOneWidget);
+    expect(
+      find.descendant(of: direction, matching: find.text('油门调整')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: direction, matching: find.text('增加')),
+      findsOneWidget,
+    );
+    expect(find.descendant(of: direction, matching: find.text('方向')), findsNothing);
+    expect(find.descendant(of: direction, matching: find.text('正')), findsNothing);
     await tester.pump(const Duration(milliseconds: 600));
   });
 

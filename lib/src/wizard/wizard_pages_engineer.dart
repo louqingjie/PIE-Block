@@ -461,6 +461,12 @@ class _ActionRow extends ConsumerWidget {
         !inputUnspecified &&
         action.mode != ControlMode.frictionToggle &&
         action.mode != ControlMode.frictionAxis;
+    // 摩擦轮的「方向」只表示油门增加/减少，不代表电机反转；标签必须写清楚，
+    // 避免和普通电机的正/反转混淆。
+    final frictionThrottleDirection =
+        role == PinRole.friction &&
+        (action.mode == ControlMode.frictionStep ||
+            action.mode == ControlMode.frictionContinuous);
     final inputChoices = <String>[unspecifiedInputToken, ...visibleInputs];
     final inputValue = inputUnspecified ? unspecifiedInputToken : action.key;
     final outputChoices = <String>[
@@ -565,12 +571,20 @@ class _ActionRow extends ConsumerWidget {
             child: DropdownButtonFormField(
               key: ValueKey('$fieldPath.direction'),
               initialValue: action.direction,
-              decoration: _fieldDecoration(ref, '$fieldPath.direction', '方向'),
+              decoration: _fieldDecoration(
+                ref,
+                '$fieldPath.direction',
+                frictionThrottleDirection ? '油门调整' : '方向',
+              ),
               items: Direction.values
                   .map(
                     (e) => DropdownMenuItem(
                       value: e,
-                      child: Text(e == Direction.forward ? '正' : '反'),
+                      child: Text(
+                        frictionThrottleDirection
+                            ? (e == Direction.forward ? '增加' : '减少')
+                            : (e == Direction.forward ? '正' : '反'),
+                      ),
                     ),
                   )
                   .toList(),
