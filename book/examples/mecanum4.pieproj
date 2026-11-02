@@ -1,5 +1,5 @@
 {
-  "format_version": 18,
+  "format_version": 19,
   "name": "教材示例：四轮麦轮工程",
   "project_kind": "engineer",
   "created_at": "2026-01-01T00:00:00.000Z",
@@ -120,7 +120,6 @@
             "pin": null,
             "variable": "vx",
             "expression": "-LY",
-            "direction": null,
             "mode": null,
             "parameter": null
           },
@@ -132,7 +131,6 @@
             "pin": null,
             "variable": "vy",
             "expression": "-LX",
-            "direction": null,
             "mode": null,
             "parameter": null
           },
@@ -144,7 +142,6 @@
             "pin": "P74",
             "variable": null,
             "expression": "(vx-vy)*10000/2047",
-            "direction": null,
             "mode": null,
             "parameter": null
           },
@@ -156,7 +153,6 @@
             "pin": "P75",
             "variable": null,
             "expression": "(vx+vy)*10000/2047",
-            "direction": null,
             "mode": null,
             "parameter": null
           },
@@ -168,7 +164,6 @@
             "pin": "P76",
             "variable": null,
             "expression": "(vx+vy)*10000/2047",
-            "direction": null,
             "mode": null,
             "parameter": null
           },
@@ -180,7 +175,6 @@
             "pin": "P77",
             "variable": null,
             "expression": "(vx-vy)*10000/2047",
-            "direction": null,
             "mode": null,
             "parameter": null
           }

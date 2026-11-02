@@ -219,7 +219,6 @@ EngineerConfig _engineerAdvanced(SwitchStrategy strategy) => EngineerConfig(
         ActionMapping(
           id: 'servo-single',
           key: 'A',
-          direction: Direction.forward,
           mode: ControlMode.single,
           parameter: 5.5,
           pin: 'P60',
@@ -227,15 +226,13 @@ EngineerConfig _engineerAdvanced(SwitchStrategy strategy) => EngineerConfig(
         ActionMapping(
           id: 'servo-continuous',
           key: 'B',
-          direction: Direction.reverse,
           mode: ControlMode.continuous,
-          parameter: 5,
+          parameter: -5,
           pin: 'P60',
         ),
         ActionMapping(
           id: 'main-servo-continuous',
           key: 'D',
-          direction: Direction.forward,
           mode: ControlMode.continuous,
           parameter: 0.5,
           pin: 'MP03',
@@ -243,7 +240,6 @@ EngineerConfig _engineerAdvanced(SwitchStrategy strategy) => EngineerConfig(
         ActionMapping(
           id: 'servo-direct-preset',
           key: '→',
-          direction: Direction.forward,
           mode: ControlMode.direct,
           parameter: 45,
           pin: 'P60',
@@ -251,7 +247,6 @@ EngineerConfig _engineerAdvanced(SwitchStrategy strategy) => EngineerConfig(
         ActionMapping(
           id: 'motor-direct',
           key: 'C',
-          direction: Direction.forward,
           mode: ControlMode.direct,
           parameter: 4000,
           pin: 'P62',
@@ -264,7 +259,6 @@ EngineerConfig _engineerAdvanced(SwitchStrategy strategy) => EngineerConfig(
         ActionMapping(
           id: 'motor-speed',
           key: 'RX',
-          direction: Direction.forward,
           mode: ControlMode.speed,
           parameter: 5000,
           pin: 'P64',
@@ -272,7 +266,6 @@ EngineerConfig _engineerAdvanced(SwitchStrategy strategy) => EngineerConfig(
         ActionMapping(
           id: 'motor-accelerate',
           key: 'RY',
-          direction: Direction.reverse,
           mode: ControlMode.accelerate,
           parameter: 100,
           pin: 'P66',

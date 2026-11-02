@@ -166,7 +166,6 @@ ProjectConfig _engineer() {
           ActionMapping(
             id: 'template-1-1',
             key: 'A',
-            direction: Direction.forward,
             mode: ControlMode.single,
             parameter: 5,
             pin: 'P60',
@@ -174,7 +173,6 @@ ProjectConfig _engineer() {
           ActionMapping(
             id: 'template-1-2',
             key: 'B',
-            direction: Direction.forward,
             mode: ControlMode.continuous,
             parameter: 3,
             pin: 'P62',
@@ -191,9 +189,8 @@ ProjectConfig _engineer() {
           ActionMapping(
             id: 'template-1-4',
             key: 'D',
-            direction: Direction.reverse,
             mode: ControlMode.frictionStep,
-            parameter: 10,
+            parameter: -10,
             pin: 'P66',
           ),
         ],
@@ -205,7 +202,6 @@ ProjectConfig _engineer() {
           ActionMapping(
             id: 'template-2-1',
             key: 'LX',
-            direction: Direction.forward,
             mode: ControlMode.incremental,
             parameter: 20,
             pin: 'P60',
@@ -220,9 +216,8 @@ ProjectConfig _engineer() {
           ActionMapping(
             id: 'template-2-3',
             key: 'D',
-            direction: Direction.reverse,
             mode: ControlMode.direct,
-            parameter: 45,
+            parameter: -45,
             pin: 'P62',
           ),
         ],
@@ -236,7 +231,6 @@ ProjectConfig _debug() {
     pin: pin,
     enabled: true,
     driveType: DebugDriveType.motor,
-    direction: Direction.forward,
     value: 5000,
     durationMs: 3000,
   );
@@ -264,7 +258,6 @@ ProjectConfig _debug() {
         pin: 'MP03',
         enabled: true,
         driveType: DebugDriveType.servo,
-        direction: Direction.forward,
         value: 45,
         durationMs: 3000,
       ),
@@ -272,7 +265,6 @@ ProjectConfig _debug() {
         pin: 'MP74',
         enabled: true,
         driveType: DebugDriveType.servo,
-        direction: Direction.forward,
         value: 45,
         durationMs: 3000,
       ),

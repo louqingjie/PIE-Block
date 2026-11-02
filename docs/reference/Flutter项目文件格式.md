@@ -1,12 +1,12 @@
 # Flutter 项目文件格式
 
-> 注意：`reference/schemas/` 下的 JSON Schema 由已停用的旧版 Godot CLI 生成，字段结构停留在旧格式；格式 18 以本文档与代码实现为准，暂不把旧 schema 作为校验依据。
+> 注意：`reference/schemas/` 下的 JSON Schema 由已停用的旧版 Godot CLI 生成，字段结构停留在旧格式；格式 19 以本文档与代码实现为准，暂不把旧 schema 作为校验依据。
 
-`.pieproj` 是 UTF-8 JSON 文件。格式 18 使用稳定语义字段，不包含 UI 控件路径或生成代码，并保存可恢复的向导进度。
+`.pieproj` 是 UTF-8 JSON 文件。格式 19 使用稳定语义字段，不包含 UI 控件路径或生成代码，并保存可恢复的向导进度。
 
 ```json
 {
-  "format_version": 18,
+  "format_version": 19,
   "name": "我的机器人",
   "project_kind": "infantry",
   "created_at": "2026-08-25T01:00:00.000Z",
@@ -38,7 +38,7 @@
 
 新项目的必填数值、枚举、按键、IO、方向、驱动类型、工程 PWM 和模式策略均为 `null`，应用不会替用户提前选择。纯可选开关默认关闭。
 
-新建弹窗有一个默认关闭的「模板工程」开关。只有显式打开它时，配置才整份取自 `assets/templates/<kind>.pieproj`；项目文件本身不写入任何模板标记，创建出来就是普通项目，`name`、两个时间戳和 `guide_progress` 都按本次创建重新生成。模板文件同为 `format_version: 17`，格式版本变更时必须用 `dart run tool/generate_project_templates.dart` 重存四份模板，否则 `test/project_templates_test.dart` 会失败。步兵模板的拨弹电机落在固定 50Hz 的 PWMA（四轮已占满固定 10000Hz 的 PWMB），因此会带一条「电机可能一卡一卡」提示，这是既定取舍而非模板缺陷。
+新建弹窗有一个默认关闭的「模板工程」开关。只有显式打开它时，配置才整份取自 `assets/templates/<kind>.pieproj`；项目文件本身不写入任何模板标记，创建出来就是普通项目，`name`、两个时间戳和 `guide_progress` 都按本次创建重新生成。模板文件同为当前格式版本，格式版本变更时必须用 `dart run tool/generate_project_templates.dart` 重存四份模板，否则 `test/project_templates_test.dart` 会失败。步兵模板的拨弹电机落在固定 50Hz 的 PWMA（四轮已占满固定 10000Hz 的 PWMB），因此会带一条「电机可能一卡一卡」提示，这是既定取舍而非模板缺陷。
 
 步兵和工程项目的 `chassis.turn_reversed` 是共用底盘校准项，默认 `false`；启用后仅反转水平摇杆及左右方向键产生的转向量，不改变直行、倒车、冲刺或单轮方向配置。格式 17 起 `chassis.enabled` 表示是否启用预制四轮底盘，默认 `true`；仅工程项目允许设为 `false`，此时四轮 IO/方向/速度不再必填，原底盘引脚可被动作行使用；步兵项目必须保持启用。
 
@@ -46,7 +46,7 @@
 
 工程项目 PWM 的 `servo_min_limits` 与 `servo_max_limits` 使用同一套两侧行程语义：`servo_max_limits` 为逆时针一侧（非负），`servo_min_limits` 为顺时针一侧（非正），界面按「逆时针限幅」「顺时针限幅」显示；两侧上限同样受 `servo_mids` 的归中偏移约束（逆时针 ≤ `90 − mid`、顺时针 ≤ `90 + mid`），越界会作为错误阻止生成代码，留空表示该侧走满电气行程。
 
-工程动作的 `mode` 支持 `direct`、`incremental`、`speed`、`accelerate`、`single`、`continuous`、`frictionToggle`、`frictionStep`、`frictionContinuous` 和 `frictionAxis`。数字按键控制舵机时可使用 `direct`（按键上升沿到达相对中位点的预设角度）、`single`（按键上升沿按灵敏度单次增加）或 `continuous`（按住期间按灵敏度逐主循环增加）。`direct` 的 `parameter` 为 0–90 的整数目标角度，方向决定中位点两侧；`single` 和 `continuous` 的 `parameter` 保存最多两位小数的角度灵敏度；其他动作参数仍为整数。格式 17 起动作行还保存 `input_kind`（`remote`/`unspecified`）、`output_kind`（`pin`/`integer`/`rational`）、`variable` 与 `expression`：`input_kind == unspecified` 的行使用 `expression` 单条受限表达式，`output_kind` 非 `pin` 时输出到同名变量。
+工程动作的 `mode` 支持 `direct`、`incremental`、`speed`、`accelerate`、`single`、`continuous`、`frictionToggle`、`frictionStep`、`frictionContinuous` 和 `frictionAxis`。数字按键控制舵机时可使用 `direct`（按键上升沿到达相对中位点的预设角度）、`single`（按键上升沿按灵敏度单次增加）或 `continuous`（按住期间按灵敏度逐主循环增加）。格式 19 起动作行不再保存 `direction`，方向由 `parameter` 正负表示：`direct` 的 `parameter` 为带符号整数（舵机 −90–90、电机 −10000–10000），正负决定中位点两侧与转向；`single` 和 `continuous` 的 `parameter` 保存带符号、最多两位小数的角度灵敏度；`speed`/`accelerate` 等由摇杆方向决定的模式参数仍为非负幅值。其他动作参数仍为整数。格式 17 起动作行还保存 `input_kind`（`remote`/`unspecified`）、`output_kind`（`pin`/`integer`/`rational`）、`variable` 与 `expression`：`input_kind == unspecified` 的行使用 `expression` 单条受限表达式，`output_kind` 非 `pin` 时输出到同名变量。
 
 同一模式里多行输出到同一个电机引脚时，`direct` 行会按行序合并成一条 `if / else if / else` 链：行序在后的优先，全部松开输出 0。因此「B 反向、C 正向」这类双键正反转直接用两条 `direct` 行即可，不会出现后一行把前一行清成 0 的情况。其余组合（`direct` 与 `speed`/`accelerate` 混用、两条表达式行写同一引脚等）仍按行序覆盖，校验器会给出「在本模式被多行输出」的警告。
 
@@ -80,16 +80,16 @@
 - 档位提示音受「禁用蜂鸣器反馈」控制：每次切档响一声与档位对应的短音（880/1047/1319/1568/1975/2349/2637/2794 Hz），该键也不再触发遥控输入提示音，避免双响。
 
 摩擦轮专用控制方式（仅 P64/P66 角色为摩擦轮、PWMA 为 50Hz 时可用，要求配置 `pwm.friction_max_duties`）：
-- `frictionToggle` 启停：按键边沿在 0 与 `parameter`（1–100，目标油门 %）之间切换；不使用方向；
-- `frictionStep` 单次：每次按键按 `parameter`（1–100 %）加/减，方向决定加减；
-- `frictionContinuous` 持续：按住期间按 `parameter`（1–100 %/秒）加/减，方向决定加减；
+- `frictionToggle` 启停：按键边沿在 0 与 `parameter`（1–100，目标油门 %）之间切换；
+- `frictionStep` 单次：每次按键按 `parameter`（−100–100 %）加/减，正数增加、负数减少；
+- `frictionContinuous` 持续：按住期间按 `parameter`（−100–100 %/秒）加/减，正数增加、负数减少；
 - `frictionAxis` 摇杆油门：仅摇杆轴输入，满杆按 `parameter`（1–100 %/秒）加/减，方向由轴符号决定。
 
 P64/P66 共享同一油门百分比，各自按 `friction_max_duties` 映射目标占空比；实际占空比按步兵摩擦轮同一套安全栈（500 启动、1000ms 激活、±1 duty/主循环、停机斜坡、上限保护）逼近。旧控制方式写在摩擦轮脚上仍可生成，但会给出「不受安全斜坡保护」提示；同一配置里不能与新摩擦轮方式混用。
 
 ## 工程变量与表达式
 
-`input_kind` 为 `unspecified` 的动作行使用 `expression` 保存**单条受限表达式**（不是多语句 C 代码）；表达式行不保存方向、控制方式与参数。`output_kind` 为 `pin` 时表达式结果直接写入引脚，为 `integer`/`rational` 时写入 `variable` 指定的变量。
+`input_kind` 为 `unspecified` 的动作行使用 `expression` 保存**单条受限表达式**（不是多语句 C 代码）；表达式行不保存控制方式与参数。`output_kind` 为 `pin` 时表达式结果直接写入引脚，为 `integer`/`rational` 时写入 `variable` 指定的变量。
 
 变量规则：
 - 变量名必须是合法 C 标识符，且不能与内置输入、常量、函数名或 C 关键字冲突；每个模式内同名变量只能出现一次。
@@ -105,7 +105,7 @@ P64/P66 共享同一油门百分比，各自按 `friction_max_duties` 映射目�
 
 步兵配置不保存 `pwm`：PWMA 固定为 50Hz，PWMB 固定为 10000Hz，其他引脚角色由实际选择自动推导。只有 `friction_mode` 为 `brushlessEsc` 时 P64/P66 才固定用于摩擦轮；选择 `disabled` 时两端口释放。工程配置继续保存 `pwm`，允许配置分组频率、引脚角色、舵机中位与 `friction_max_duties`（P64/P66 满油占空比，500–800 整百；摩擦轮专用控制方式使用）。工程 `pin_roles` 也覆盖主控板舵机口 MP03/MP74：这两个口只能选 `servo`（舵机）或 `unused`（未使用），旧工程文件没有记录它们时按历史行为默认当作 `servo`；标为 `unused` 后不再初始化主控板舵机输出，也不需要（且不校验）中位与限幅，动作行不能引用它。
 
-调试配置保存 `tests` 数组，数组顺序就是固件执行顺序。默认项目包含 P60、P62、P64、P66、P74、P75、P76、P77、MP03、MP74 十个固定引脚各一条；同一引脚可以配置多条测试（复制按钮会在源项下方插入一条同配置测试），但数组必须至少覆盖全部十个固定引脚。每项可带可选的 `id`（复制操作生成，用于列表稳定标识），并保存 `enabled`、`drive_type` 和 `value`；电机和舵机额外保存 `direction` 与 `duration_ms`，摩擦轮不保存方向与时长，测试期间也不发送方向帧。摩擦轮仅限 P64/P66：`value` 就是**目标占空比**本身（500–800，写成这张卡实测想跑的占空比），先给 `500` 启动占空比保持 1 秒完成电调激活，再逐周期平滑渐变到该目标，停留 1.5 秒后归零；低于 `600` 时只给一条提醒（可能带不动摩擦轮）。调试项目不再保存 `friction_*_max_duty`，也不再做「油门 → 满油上限」换算。
+调试配置保存 `tests` 数组，数组顺序就是固件执行顺序。默认项目包含 P60、P62、P64、P66、P74、P75、P76、P77、MP03、MP74 十个固定引脚各一条；同一引脚可以配置多条测试（复制按钮会在源项下方插入一条同配置测试），但数组必须至少覆盖全部十个固定引脚。每项可带可选的 `id`（复制操作生成，用于列表稳定标识），并保存 `enabled`、`drive_type` 和 `value`；电机与舵机额外保存 `duration_ms`，摩擦轮不保存时长，测试期间也不发送方向帧。格式 19 起不再保存 `direction`：电机 `value` 为带符号速度（−10000–10000），舵机 `value` 为带符号角度（−90–90），正负即原来的正/反向。摩擦轮仅限 P64/P66：`value` 就是**目标转速**本身（500–800，写成这张卡实测想跑的转速），先给 `500` 启动占空比保持 1 秒完成电调激活，再逐周期平滑渐变到该目标，停留 1.5 秒后归零；低于 `600` 时只给一条提醒（可能带不动摩擦轮）。调试项目不再保存 `friction_*_max_duty`，也不再做「油门 → 满油上限」换算。
 
 音乐配置保存 `ticks_per_quarter`、`source_name`、`track_name`、`notes`、`overlap_mode`、`new_note_interrupts`、`tempo_events` 和 `time_signature_events`。每个音符保存稳定 `id`、`pitch`、`start_tick` 和 `duration_ticks`，音符之间允许重叠。P33 蜂鸣器同时只能发一个音，因此按 `overlap_mode` 做单音裁决：`highest` 取高音、`lowest` 取低音、`nearest` 取最接近上一个有效发声音高的音符（曲首没有参照时取最高音）；`new_note_interrupts` 为真时后起始的音符会打断仍在发声的音符（被打断的尾巴不发声，卷帘里显示为灰色）。同一 tick 起始的一组音符按同一策略挑一个发声，其余整段不发声。不发声的音符/片段在卷帘里变灰，但数据仍完整保留并参与 MIDI 导出。速度事件保存每四分音符微秒数，拍号事件保存分子和分母，两类事件都从 tick 0 开始并严格递增。项目不保存原始 MIDI 字节、力度、乐器、通道或控制器。
 
@@ -133,8 +133,9 @@ duty(引脚) = 500 + 油门% × (该引脚满油上限 − 500) ÷ 100
 
 项目文件自 1.7.0 起随正式版本发布，兼容策略为「写入升版、读取兼容」：
 
-- 当前应用写入 **格式 18**，可读入 **格式 17–18**（`ProjectDocument.oldestSupportedFormatVersion` 至 `ProjectDocument.formatVersion`）。
-- 17 → 18 的唯一差异是工程模式新增可选的 `modes[].action_tables`（按键动作表）。缺少该字段视为空列表，其余字段语义不变，因此旧存档打开后行为与生成代码保持不变；一旦编辑保存，文件按格式 18 写回（自动升级）。
-- 旧版 PIE-Block 无法打开格式 18 的文件，会提示升级；新版不会把文件写回旧格式，也不做静默降级。
+- 当前应用写入 **格式 19**，可读入 **格式 17–19**（`ProjectDocument.oldestSupportedFormatVersion` 至 `ProjectDocument.formatVersion`）。
+- 17 → 18：工程模式新增可选的 `modes[].action_tables`（按键动作表）。缺少该字段视为空列表，其余字段语义不变。
+- 18 → 19：动作行与调试测试项移除 `direction`，方向并入 `parameter` / `value` 正负。读入 17/18 存档时，`direction == reverse` 会折算成对应数值取负（只对原本使用方向的控制方式生效：`direct`、`incremental`、`single`、`continuous`、`frictionStep`、`frictionContinuous` 与调试项电机/舵机）；摩擦轮调试项的 `value` 不受 direction 影响，速度/增速等原本忽略方向的模式也不再取负。编辑保存后按格式 19 写回（自动升级）。
+- 旧版 PIE-Block（支持到格式 18）无法打开格式 19 的文件，会提示升级；新版不会把文件写回旧格式，也不做静默降级。
 - 格式 16 及更早版本属于未发布格式，应用仍会拒绝打开并提示使用对应旧版处理。
-- 兼容回归样本固定在 `packages/pieblock_core/test/fixtures/`（格式 17 的工程与步兵存档），修改格式时必须保持这些用例通过。
+- 兼容回归样本固定在 `packages/pieblock_core/test/fixtures/`（格式 17 的工程/步兵存档与格式 18 的方向迁移样本），修改格式时必须保持这些用例通过。

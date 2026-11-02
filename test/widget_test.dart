@@ -540,7 +540,6 @@ ProjectDocument _engineerDragDocument() {
             ActionMapping(
               id: 'drag-a',
               key: 'A',
-              direction: Direction.forward,
               mode: ControlMode.direct,
               parameter: 3000,
               pin: 'P60',
@@ -548,7 +547,6 @@ ProjectDocument _engineerDragDocument() {
             ActionMapping(
               id: 'drag-b',
               key: 'B',
-              direction: Direction.forward,
               mode: ControlMode.direct,
               parameter: 5000,
               pin: 'P60',
@@ -575,21 +573,18 @@ ProjectDocument _engineerServoButtonDocument() {
           actions: [
             ActionMapping(
               key: 'A',
-              direction: Direction.forward,
               mode: ControlMode.direct,
               parameter: 30,
               pin: 'P60',
             ),
             ActionMapping(
               key: 'RX',
-              direction: Direction.forward,
               mode: ControlMode.direct,
               parameter: 30,
               pin: 'MP03',
             ),
             ActionMapping(
               key: 'B',
-              direction: Direction.forward,
               mode: ControlMode.direct,
               parameter: 4000,
               pin: 'P62',
@@ -629,7 +624,6 @@ ProjectDocument _engineerExpressionDocument({
             expression == null
                 ? ActionMapping(
                     key: 'A',
-                    direction: Direction.forward,
                     mode: ControlMode.direct,
                     parameter: 4000,
                     pin: 'P60',
@@ -701,7 +695,6 @@ ProjectDocument _engineerFrictionContinuousDocument() {
           actions: [
             mode.actions.single.copyWith(
               mode: ControlMode.frictionContinuous,
-              direction: Direction.forward,
               parameter: 50,
             ),
           ],
@@ -720,14 +713,12 @@ ProjectDocument _debugDocument() {
           pin: 'P64',
           enabled: true,
           driveType: DebugDriveType.friction,
-          direction: Direction.forward,
           value: 800,
         ),
         const DebugTestItem(
           pin: 'P66',
           enabled: true,
           driveType: DebugDriveType.friction,
-          direction: Direction.forward,
           value: 700,
         ),
         for (final pin in debugPins.where(
@@ -1122,7 +1113,6 @@ void main() {
     expect(tests[1].pin, tests[0].pin);
     expect(tests[1].enabled, tests[0].enabled);
     expect(tests[1].driveType, tests[0].driveType);
-    expect(tests[1].direction, tests[0].direction);
     expect(tests[1].value, tests[0].value);
     expect(tests[1].durationMs, tests[0].durationMs);
     expect(tests[2].pin, before[1].pin);
@@ -1289,7 +1279,6 @@ void main() {
     expect(actions[1].id, isNot(actions[0].id));
     expect(actions[1].key, actions[0].key);
     expect(actions[1].pin, actions[0].pin);
-    expect(actions[1].direction, actions[0].direction);
     expect(actions[1].mode, actions[0].mode);
     expect(actions[1].parameter, actions[0].parameter);
     expect(actions[2].id, before[1].id);
@@ -2596,7 +2585,7 @@ void main() {
         )
         .decoration
         ?.labelText;
-    expect(parameterLabel(), '目标角度 °');
+    expect(parameterLabel(), '目标角度 °（带符号）');
     expect(find.text('控制方式与输入类型或 IO 输出角色不匹配'), findsNothing);
 
     final mode = find.byKey(const ValueKey('modes.0.actions.0.mode'));
@@ -2610,7 +2599,7 @@ void main() {
     final parameter = find.byKey(const ValueKey('modes.0.actions.0.parameter'));
     await tester.ensureVisible(parameter);
     await tester.pumpAndSettle();
-    expect(parameterLabel(), '灵敏度 °/周期');
+    expect(parameterLabel(), '灵敏度 °/周期（带符号）');
     await tester.enterText(parameter, '10.01');
     await tester.pumpAndSettle();
     expect(find.text('舵机角度变化速度可能过快'), findsNothing);
@@ -4425,7 +4414,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 600));
   });
 
-  testWidgets('摩擦轮油门持续显示油门增减而不是正反转', (tester) async {
+  testWidgets('摩擦轮油门持续用带符号参数表示增减', (tester) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -4442,18 +4431,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final direction = find.byKey(const ValueKey('modes.0.actions.0.direction'));
-    expect(direction, findsOneWidget);
     expect(
-      find.descendant(of: direction, matching: find.text('油门调整')),
-      findsOneWidget,
+      find.byKey(const ValueKey('modes.0.actions.0.direction')),
+      findsNothing,
     );
-    expect(
-      find.descendant(of: direction, matching: find.text('增加')),
-      findsOneWidget,
-    );
-    expect(find.descendant(of: direction, matching: find.text('方向')), findsNothing);
-    expect(find.descendant(of: direction, matching: find.text('正')), findsNothing);
+    expect(find.text('每秒油门 %（正加负减）'), findsOneWidget);
     await tester.pump(const Duration(milliseconds: 600));
   });
 
@@ -4484,7 +4466,7 @@ void main() {
     expect(config.pwm.frictionMaxDuties['P64'], 750);
     await tester.pump(const Duration(milliseconds: 600));
   });
-  testWidgets('工程表达式行显示表达式并隐藏方向与控制方式', (tester) async {
+  testWidgets('工程表达式行显示表达式并隐藏控制方式', (tester) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [

@@ -10,22 +10,19 @@ DebugConfig _debugConfig() => DebugConfig(
       pin: 'P64',
       enabled: true,
       driveType: DebugDriveType.friction,
-      direction: Direction.forward,
       value: 800,
     ),
     const DebugTestItem(
       pin: 'P66',
       enabled: true,
       driveType: DebugDriveType.friction,
-      direction: Direction.forward,
       value: 600,
     ),
     const DebugTestItem(
       pin: 'MP03',
       enabled: true,
       driveType: DebugDriveType.servo,
-      direction: Direction.reverse,
-      value: 30,
+      value: -30,
       durationMs: 4200,
     ),
     for (final pin in debugPins.where(

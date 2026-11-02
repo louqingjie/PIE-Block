@@ -78,22 +78,19 @@ DebugConfig completeDebug() => DebugConfig(
       pin: 'P64',
       enabled: true,
       driveType: DebugDriveType.friction,
-      direction: Direction.forward,
       value: 800,
     ),
     const DebugTestItem(
       pin: 'P66',
       enabled: true,
       driveType: DebugDriveType.friction,
-      direction: Direction.forward,
       value: 600,
     ),
     const DebugTestItem(
       pin: 'MP03',
       enabled: true,
       driveType: DebugDriveType.servo,
-      direction: Direction.reverse,
-      value: 30,
+      value: -30,
       durationMs: 4200,
     ),
     for (final pin in debugPins.where(
@@ -134,21 +131,18 @@ EngineerConfig advancedEngineer({
       actions: [
         ActionMapping(
           key: 'A',
-          direction: Direction.forward,
           mode: ControlMode.single,
           parameter: 5.5,
           pin: 'P60',
         ),
         ActionMapping(
           key: 'B',
-          direction: Direction.reverse,
           mode: ControlMode.continuous,
-          parameter: 5,
+          parameter: -5,
           pin: 'P60',
         ),
         ActionMapping(
           key: 'C',
-          direction: Direction.forward,
           mode: ControlMode.direct,
           parameter: 4000,
           pin: 'P62',
@@ -159,14 +153,12 @@ EngineerConfig advancedEngineer({
       actions: [
         ActionMapping(
           key: 'RX',
-          direction: Direction.forward,
           mode: ControlMode.speed,
           parameter: 5000,
           pin: 'P64',
         ),
         ActionMapping(
           key: 'RY',
-          direction: Direction.forward,
           mode: ControlMode.accelerate,
           parameter: 100,
           pin: 'P66',
@@ -183,7 +175,6 @@ EngineerConfig servoButtonEngineer({
   num parameter = 1.25,
   String key = 'A',
   String pin = 'P60',
-  Direction direction = Direction.forward,
 }) {
   final source = completeEngineer();
   return source.copyWith(
@@ -197,7 +188,6 @@ EngineerConfig servoButtonEngineer({
         actions: [
           ActionMapping(
             key: key,
-            direction: direction,
             mode: mode,
             parameter: parameter,
             pin: pin,
@@ -298,7 +288,6 @@ void main() {
       final source = ActionMapping(
         id: 'servo-button',
         key: 'A',
-        direction: Direction.forward,
         mode: ControlMode.single,
         parameter: 1.25,
         pin: 'P60',
@@ -329,7 +318,6 @@ void main() {
         ActionMapping(
           id: 'source-pin',
           key: 'A',
-          direction: Direction.forward,
           mode: ControlMode.single,
           parameter: 1.25,
           pin: 'P60',
@@ -366,21 +354,22 @@ void main() {
       expect(restored.guideProgress.currentStepId, 'tests');
       final config = restored.config as DebugConfig;
       expect(config.tests.first.pin, 'P64');
-      expect(config.tests.first.direction, isNull);
       expect(config.tests[2].durationMs, 4200);
+      expect(config.tests[2].value, -30);
       expect(config.tests.first.toJson(), isNot(contains('direction')));
       expect(config.tests.first.toJson(), isNot(contains('duration_ms')));
-      // 调试项目的摩擦轮项直接保存目标占空比，不再有独立的上限字段。
+      // 调试项目的摩擦轮项直接保存目标转速，不再有独立的上限字段。
       expect(config.tests.first.value, 800);
       expect(config.tests[1].value, 600);
       expect(config.toJson(), isNot(contains('friction_p64_max_duty')));
       expect(config.toJson(), isNot(contains('friction_p66_max_duty')));
 
+      // 旧存档里摩擦轮项即使写了 direction，也不把目标转速取负。
       final legacyFriction = DebugTestItem.fromJson({
         ...config.tests.first.toJson(),
         'direction': Direction.reverse.name,
       });
-      expect(legacyFriction.direction, isNull);
+      expect(legacyFriction.value, 800);
     });
 
     test('新项目必填项为空且不能生成', () {
@@ -644,7 +633,6 @@ void main() {
             actions: [
               ActionMapping(
                 key: 'A',
-                direction: Direction.forward,
                 mode: ControlMode.direct,
                 parameter: 30,
                 pin: 'MP03',
@@ -673,7 +661,6 @@ void main() {
             actions: [
               ActionMapping(
                 key: 'A',
-                direction: Direction.forward,
                 mode: ControlMode.direct,
                 parameter: 30,
                 pin: 'MP03',
@@ -821,14 +808,12 @@ void main() {
     }) => withActions([
       ActionMapping(
         key: 'B',
-        direction: Direction.reverse,
         mode: first,
-        parameter: 10000,
+        parameter: -10000,
         pin: 'P74',
       ),
       ActionMapping(
         key: 'C',
-        direction: Direction.forward,
         mode: second,
         parameter: 10000,
         pin: 'P74',
@@ -893,14 +878,12 @@ void main() {
           withActions([
             ActionMapping(
               key: 'A',
-              direction: Direction.forward,
               mode: ControlMode.direct,
               parameter: 30,
               pin: 'P60',
             ),
             ActionMapping(
               key: 'RX',
-              direction: Direction.forward,
               mode: ControlMode.direct,
               parameter: 30,
               pin: 'P60',
@@ -915,16 +898,14 @@ void main() {
           withActions([
             ActionMapping(
               key: 'A',
-              direction: Direction.forward,
               mode: ControlMode.single,
               parameter: 1,
               pin: 'P60',
             ),
             ActionMapping(
               key: 'B',
-              direction: Direction.reverse,
               mode: ControlMode.single,
-              parameter: 1,
+              parameter: -1,
               pin: 'P60',
             ),
           ]),
@@ -1029,6 +1010,39 @@ void main() {
       expect(
         modes.every((mode) => !mode.containsKey('action_tables')),
         isTrue,
+      );
+    });
+
+    test('格式 18 的方向字段迁移为参数/数值正负', () {
+      final engineer = ProjectDocument.fromJson(
+        fixture('format18_engineer.pieproj'),
+      );
+      final config = engineer.config as EngineerConfig;
+      final step = config.modes.first.actions.firstWhere(
+        (action) => action.id == 'template-1-4',
+      );
+      expect(step.parameter, -10);
+
+      final encoded = engineer.toJson();
+      final encodedModes = (encoded['config'] as Map)['modes'] as List;
+      final encodedActions = (encodedModes.first as Map)['actions'] as List;
+      expect(
+        encodedActions.every((action) => !(action as Map).containsKey('direction')),
+        isTrue,
+      );
+      expect(encoded['format_version'], ProjectDocument.formatVersion);
+
+      final debug = ProjectDocument.fromJson(fixture('format18_debug.pieproj'));
+      final debugConfig = debug.config as DebugConfig;
+      expect(debugConfig.tests.firstWhere((t) => t.pin == 'MP03').value, 45);
+      expect(
+        (debug.toJson()['config'] as Map)['tests'] as List,
+        everyElement(isNot(contains('direction'))),
+      );
+      expect(
+        ProjectValidator.validate(config)
+            .where((issue) => issue.severity == IssueSeverity.error),
+        isEmpty,
       );
     });
 
@@ -1144,7 +1158,6 @@ void main() {
             actions: [
               ActionMapping(
                 key: 'A',
-                direction: Direction.forward,
                 mode: ControlMode.direct,
                 parameter: 30,
                 pin: 'P62',
@@ -1162,7 +1175,6 @@ void main() {
             actions: [
               ActionMapping(
                 key: 'B',
-                direction: Direction.forward,
                 mode: ControlMode.direct,
                 parameter: 30,
                 pin: 'P60',
@@ -1302,7 +1314,8 @@ void main() {
 
     test('灵敏度范围、精度和速度警告正确', () {
       expect(parameterIssues(10), isEmpty);
-      for (final value in [10.01, 20]) {
+      expect(parameterIssues(-10), isEmpty);
+      for (final value in [10.01, 20, -10.01, -20]) {
         final warning = parameterIssues(value).single;
         expect(warning.severity, IssueSeverity.warning);
         expect(warning.message, '舵机角度变化速度可能过快');
@@ -1312,7 +1325,7 @@ void main() {
         contains('servoButtonRemainder'),
       );
 
-      for (final value in [0, -0.01, 20.01, 1.234]) {
+      for (final value in [0, 20.01, -20.01, 1.234]) {
         final issues = parameterIssues(value).toList();
         expect(
           issues.where((issue) => issue.severity == IssueSeverity.error),
@@ -1365,15 +1378,15 @@ void main() {
       );
     });
 
-    test('直接预设点位使用整数角度范围且不产生灵敏度警告', () {
-      for (final value in [0, 90]) {
+    test('直接预设点位使用带符号整数角度范围且不产生灵敏度警告', () {
+      for (final value in [0, 90, -90]) {
         final issues = ProjectValidator.validate(
           servoButtonEngineer(mode: ControlMode.direct, parameter: value),
         ).where((issue) => issue.fieldPath == 'modes.0.actions.0.parameter');
         expect(issues, isEmpty);
       }
 
-      for (final value in [-1, 90.01, 91]) {
+      for (final value in [90.01, 91, -90.01, -91]) {
         final config = servoButtonEngineer(
           mode: ControlMode.direct,
           parameter: value,
@@ -1666,7 +1679,6 @@ void main() {
             pin: 'MP03',
             enabled: true,
             driveType: DebugDriveType.motor,
-            direction: Direction.forward,
             value: 100,
           ),
           for (final pin in debugPins.where((pin) => pin != 'MP03'))
@@ -1685,7 +1697,6 @@ void main() {
         pin: 'P60',
         enabled: true,
         driveType: DebugDriveType.motor,
-        direction: Direction.forward,
         value: 5000,
         durationMs: 2000,
       );
@@ -1727,6 +1738,8 @@ void main() {
       });
       expect(config.tests.where((item) => item.pin == 'P60'), hasLength(2));
       expect(config.tests[1].id, 'copy-60');
+      // 旧存档的 reverse 方向折算成负值。
+      expect(config.tests[1].value, -5000);
       expect(config.tests.map((item) => item.pin).toSet(), containsAll(debugPins));
       final restored = DebugConfig.fromJson(
         Map<String, Object?>.from(
@@ -1744,7 +1757,6 @@ void main() {
             pin: 'P60',
             enabled: true,
             driveType: DebugDriveType.motor,
-            direction: Direction.forward,
             value: 5000,
             durationMs: 1000,
           ),
@@ -1752,8 +1764,7 @@ void main() {
             pin: 'P60',
             enabled: true,
             driveType: DebugDriveType.motor,
-            direction: Direction.reverse,
-            value: 5000,
+            value: -5000,
             durationMs: 1000,
           ),
           for (final pin in debugPins.where((value) => value != 'P60'))
@@ -1772,7 +1783,6 @@ void main() {
             pin: 'P60',
             enabled: true,
             driveType: DebugDriveType.motor,
-            direction: Direction.forward,
             value: 5000,
             durationMs: 1000,
           ),
@@ -1791,7 +1801,6 @@ void main() {
             pin: 'P60',
             enabled: true,
             driveType: DebugDriveType.motor,
-            direction: Direction.forward,
             value: 3000,
             durationMs: 1000,
           ),
@@ -1799,8 +1808,7 @@ void main() {
             pin: 'P60',
             enabled: true,
             driveType: DebugDriveType.motor,
-            direction: Direction.reverse,
-            value: 6000,
+            value: -6000,
             durationMs: 2000,
           ),
           for (final pin in debugPins.where((value) => value != 'P60'))
@@ -1839,7 +1847,7 @@ void main() {
     });
 
     test('P64/P66 摩擦轮不发方向帧且不要求配置方向', () {
-      String generateFor(String pin, {Direction? legacyDirection}) {
+      String generateFor(String pin) {
         return CodeGenerator.generate(
           DebugConfig(
             tests: [
@@ -1847,7 +1855,6 @@ void main() {
                 pin: pin,
                 enabled: true,
                 driveType: DebugDriveType.friction,
-                direction: legacyDirection,
                 value: pin == 'P64' ? 800 : 700,
               ),
               for (final candidate in debugPins.where((value) => value != pin))
@@ -1858,7 +1865,7 @@ void main() {
       }
 
       // 摩擦轮方向固定，测试不再发送方向帧：设定频率后直接跑斜坡。
-      final p64 = generateFor('P64', legacyDirection: Direction.reverse);
+      final p64 = generateFor('P64');
       expect(p64, isNot(contains('ExpansionBoradControl(Dir_Change_Order')));
       expect(
         p64.indexOf('ExpansionBoradControl(Init_Order'),
@@ -1881,7 +1888,6 @@ void main() {
               pin: 'P60',
               enabled: true,
               driveType: DebugDriveType.motor,
-              direction: Direction.forward,
               value: 2000,
               durationMs: 3000,
             ),
@@ -2216,22 +2222,29 @@ void main() {
       }
     });
 
-    test('电机和舵机仍要求配置方向', () {
-      final invalid = DebugConfig(
+    test('调试项的电机/舵机数值用正负表示方向', () {
+      DebugConfig withValue(int value) => DebugConfig(
         tests: [
-          const DebugTestItem(
+          DebugTestItem(
             pin: 'P60',
             enabled: true,
             driveType: DebugDriveType.motor,
-            value: 1000,
+            value: value,
           ),
           for (final pin in debugPins.where((pin) => pin != 'P60'))
             DebugTestItem(pin: pin),
         ],
       );
       expect(
-        ProjectValidator.validate(invalid).map((issue) => issue.fieldPath),
-        contains('tests.0.direction'),
+        ProjectValidator.validate(withValue(-1000))
+            .where((issue) => issue.severity == IssueSeverity.error),
+        isEmpty,
+      );
+      expect(
+        ProjectValidator.validate(withValue(-10001)).map(
+          (issue) => issue.fieldPath,
+        ),
+        contains('tests.0.value'),
       );
     });
   });
@@ -2725,16 +2738,14 @@ void main() {
             actions: [
               ActionMapping(
                 key: 'A',
-                direction: Direction.forward,
                 mode: ControlMode.single,
                 parameter: 1.25,
                 pin: 'P60',
               ),
               ActionMapping(
                 key: 'B',
-                direction: Direction.reverse,
                 mode: ControlMode.continuous,
-                parameter: 0.5,
+                parameter: -0.5,
                 pin: 'MP03',
               ),
             ],
@@ -2743,9 +2754,8 @@ void main() {
             actions: [
               ActionMapping(
                 key: 'C',
-                direction: Direction.reverse,
                 mode: ControlMode.single,
-                parameter: 0.01,
+                parameter: -0.01,
                 pin: 'MP74',
               ),
             ],
@@ -2800,16 +2810,14 @@ void main() {
             actions: [
               ActionMapping(
                 key: 'A',
-                direction: Direction.forward,
                 mode: ControlMode.direct,
                 parameter: 90,
                 pin: 'P60',
               ),
               ActionMapping(
                 key: 'B',
-                direction: Direction.reverse,
                 mode: ControlMode.direct,
-                parameter: 90,
+                parameter: -90,
                 pin: 'MP03',
               ),
             ],
@@ -3387,7 +3395,6 @@ void main() {
           actions: [
             ActionMapping(
               key: 'LX',
-              direction: Direction.forward,
               mode: ControlMode.speed,
               parameter: 5000,
               pin: 'P60',
@@ -3533,16 +3540,14 @@ void main() {
             ),
             ActionMapping(
               key: 'B',
-              direction: Direction.forward,
               mode: ControlMode.frictionStep,
               parameter: 10,
               pin: 'P64',
             ),
             ActionMapping(
               key: 'C',
-              direction: Direction.reverse,
               mode: ControlMode.frictionContinuous,
-              parameter: 20,
+              parameter: -20,
               pin: 'P66',
             ),
           ],
@@ -3615,7 +3620,6 @@ void main() {
             actions: [
               ActionMapping(
                 key: 'RX',
-                direction: Direction.forward,
                 mode: ControlMode.speed,
                 parameter: 5000,
                 pin: 'P64',
@@ -3795,7 +3799,6 @@ void main() {
           withAction(
             ActionMapping(
               key: 'A',
-              direction: Direction.forward,
               mode: ControlMode.direct,
               parameter: 4000,
               pin: 'P60',
@@ -3823,7 +3826,6 @@ void main() {
           withAction(
             ActionMapping(
               key: 'A',
-              direction: Direction.forward,
               mode: ControlMode.direct,
               parameter: 4000,
               pin: 'P60',

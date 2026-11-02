@@ -247,7 +247,6 @@ void main() {
           expect(action.outputKind, expected.outputKind);
           expect(action.variableName, expected.variable);
           expect(action.pin, expected.pin);
-          expect(action.direction, isNull);
           expect(action.mode, isNull);
           expect(action.parameter, isNull);
         }

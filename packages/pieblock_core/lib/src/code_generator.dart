@@ -1050,7 +1050,6 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
           modeVariableTypes[_variableKey(a)] = variableType;
           continue;
         }
-        final sign = a.direction == Direction.forward ? '' : '-';
         final isAxis = a.key!.endsWith('X') || a.key!.endsWith('Y');
         final read = _readOfKey(a.key!);
         if (_isFrictionMode(a.mode)) {
@@ -1064,38 +1063,44 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
               body.add('    frictionKeyLast[$index] = $read;');
             case ControlMode.frictionStep:
               final index = frictionKeyIndexes['$i:$actionIndex']!;
-              final forward = a.direction == Direction.forward;
+              final delta = parameter >= 0 ? '+ $parameter' : '- ${-parameter}';
               body.add('    if ($read && !frictionKeyLast[$index]) {');
-              if (forward) {
-                body.add(
-                  '        if (frictionLevel + $parameter > FRICTION_LEVEL_MAX) frictionLevel = FRICTION_LEVEL_MAX;',
-                );
-                body.add('        else frictionLevel += $parameter;');
-              } else {
-                body.add(
-                  '        if (frictionLevel > $parameter) frictionLevel -= $parameter;',
-                );
-                body.add('        else frictionLevel = 0;');
-              }
+              body.add(
+                '        if (frictionLevel $delta > FRICTION_LEVEL_MAX) frictionLevel = FRICTION_LEVEL_MAX;',
+              );
+              body.add(
+                '        else if (frictionLevel $delta < 0) frictionLevel = 0;',
+              );
+              body.add('        else frictionLevel $delta;');
               body.add('    }');
               body.add('    frictionKeyLast[$index] = $read;');
             case ControlMode.frictionContinuous:
               final index = frictionRateIndexes['$i:$actionIndex']!;
-              final forward = a.direction == Direction.forward;
               body.add('    if ($read) {');
               body.add('        frictionRateAcc[$index] += $parameter;');
-              body.add(
-                '        while (frictionRateAcc[$index] >= FRICTION_RATE_LOOPS) {',
-              );
-              body.add(
-                '            frictionRateAcc[$index] -= FRICTION_RATE_LOOPS;',
-              );
-              body.add(
-                forward
-                    ? '            if (frictionLevel < FRICTION_LEVEL_MAX) frictionLevel++;'
-                    : '            if (frictionLevel > 0) frictionLevel--;',
-              );
-              body.add('        }');
+              if (parameter >= 0) {
+                body.add(
+                  '        while (frictionRateAcc[$index] >= FRICTION_RATE_LOOPS) {',
+                );
+                body.add(
+                  '            frictionRateAcc[$index] -= FRICTION_RATE_LOOPS;',
+                );
+                body.add(
+                  '            if (frictionLevel < FRICTION_LEVEL_MAX) frictionLevel++;',
+                );
+                body.add('        }');
+              } else {
+                body.add(
+                  '        while (frictionRateAcc[$index] <= -FRICTION_RATE_LOOPS) {',
+                );
+                body.add(
+                  '            frictionRateAcc[$index] += FRICTION_RATE_LOOPS;',
+                );
+                body.add(
+                  '            if (frictionLevel > 0) frictionLevel--;',
+                );
+                body.add('        }');
+              }
               body.add('    } else {');
               body.add('        frictionRateAcc[$index] = 0;');
               body.add('    }');
@@ -1141,9 +1146,7 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
             if (!isAxis) {
               if (a.mode == ControlMode.direct) {
                 final edgeIndex = servoButtonEdgeIndexes['$i:$actionIndex']!;
-                final signedAngle =
-                    (a.direction == Direction.forward ? 1 : -1) *
-                    a.parameter!.toInt();
+                final signedAngle = a.parameter!.toInt();
                 final bounds = _servoBounds(c.pwm, a.pin!);
                 final target = _servoDuty(
                   (c.pwm.servoMids[a.pin!] ?? 0) + signedAngle,
@@ -1158,10 +1161,7 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
                   servoButtonRemainderIndexes['$i:$actionIndex']!;
               final sensitivityHundredths = (a.parameter!.toDouble() * 100)
                   .round();
-              final signedNumerator =
-                  (a.direction == Direction.forward ? 1 : -1) *
-                  sensitivityHundredths *
-                  1000;
+              final signedNumerator = sensitivityHundredths * 1000;
               final edgeIndex = a.mode == ControlMode.single
                   ? servoButtonEdgeIndexes['$i:$actionIndex']!
                   : null;
@@ -1187,7 +1187,7 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
             }
             final parameter = a.parameter!.toInt();
             final delta =
-                '$sign(int)((float)$read * $parameter * 1000.0f / 180.0f / 2047.0f)';
+                '(int)((float)$read * $parameter * 1000.0f / 180.0f / 2047.0f)';
             if (a.mode == ControlMode.direct) {
               body.add('    dutyOfMotor[$slot] = $home + $delta;');
             } else {
@@ -1201,17 +1201,16 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
             final merged = directMotorRows[slot];
             if (merged == null || merged.length < 2) {
               body.add(
-                '    dutyOfMotor[$slot] = $read ? $sign${a.parameter!.toInt()} : 0;',
+                '    dutyOfMotor[$slot] = $read ? ${a.parameter!.toInt()} : 0;',
               );
             } else {
               // 链在首行处一次性输出，后续同引脚的行跳过，避免互相清零。
               if (merged.first != actionIndex) continue;
               for (var index = merged.length - 1; index >= 0; index--) {
                 final row = mode.actions[merged[index]];
-                final rowSign = row.direction == Direction.forward ? '' : '-';
                 final head = index == merged.length - 1 ? 'if' : 'else if';
                 body.add(
-                  '    $head (${_readOfKey(row.key!)}) dutyOfMotor[$slot] = $rowSign${row.parameter!.toInt()};',
+                  '    $head (${_readOfKey(row.key!)}) dutyOfMotor[$slot] = ${row.parameter!.toInt()};',
                 );
               }
               body.add('    else dutyOfMotor[$slot] = 0;');
@@ -1235,9 +1234,7 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
           if (!isAxis) {
             if (a.mode == ControlMode.direct) {
               final edgeIndex = servoButtonEdgeIndexes['$i:$actionIndex']!;
-              final signedAngle =
-                  (a.direction == Direction.forward ? 1 : -1) *
-                  a.parameter!.toInt();
+              final signedAngle = a.parameter!.toInt();
               final bounds = _servoBounds(c.pwm, a.pin!);
               final target = _servoDuty(
                 (c.pwm.servoMids[a.pin!] ?? 0) + signedAngle,
@@ -1252,10 +1249,7 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
                 servoButtonRemainderIndexes['$i:$actionIndex']!;
             final sensitivityHundredths = (a.parameter!.toDouble() * 100)
                 .round();
-            final signedNumerator =
-                (a.direction == Direction.forward ? 1 : -1) *
-                sensitivityHundredths *
-                1000;
+            final signedNumerator = sensitivityHundredths * 1000;
             final edgeIndex = a.mode == ControlMode.single
                 ? servoButtonEdgeIndexes['$i:$actionIndex']!
                 : null;
@@ -1281,7 +1275,7 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
           }
           final parameter = a.parameter!.toInt();
           final delta =
-              '$sign(int)((float)$read * $parameter * 1000.0f / 180.0f / 2047.0f)';
+              '(int)((float)$read * $parameter * 1000.0f / 180.0f / 2047.0f)';
           if (a.mode == ControlMode.direct) {
             body.add('    mainServoDuty[$mainIndex] = $home + $delta;');
           } else {
@@ -1661,7 +1655,6 @@ ${engineerFeedback.isEmpty ? '' : '        UpdateServoFeedback();'}
     final groupFrequencies = <int>[50, 50];
     for (var index = 0; index < active.length; index++) {
       final item = active[index];
-      final direction = item.direction == Direction.forward ? 1 : 0;
       final slot = expansionPins.indexOf(item.pin);
       final friction = item.driveType == DebugDriveType.friction;
       final frequency = friction || item.driveType == DebugDriveType.servo
@@ -1690,7 +1683,7 @@ ${engineerFeedback.isEmpty ? '' : '        UpdateServoFeedback();'}
       ];
       if (slot < 0) {
         final channel = item.pin == 'MP74' ? 'PWMB_CH1_P74' : 'PWMB_CH4_P03';
-        final angle = direction == 1 ? item.value! : -item.value!;
+        final angle = item.value!;
         lines
           ..add('    PWM_Init($channel, 50, ${_servoDuty(angle)});')
           ..add('    Ms_Delay(${item.durationMs});')
@@ -1708,14 +1701,13 @@ ${engineerFeedback.isEmpty ? '' : '        UpdateServoFeedback();'}
           ..add('    FrictionRampTo($slot, 0);');
       } else {
         final servo = item.driveType == DebugDriveType.servo;
-        final duty = servo
-            ? _servoDuty(direction == 1 ? item.value! : -item.value!)
-            : item.value!;
+        final value = item.value!;
+        final duty = servo ? _servoDuty(value) : value.abs();
         if (needInit) lines.add('    Ms_Delay(20);');
         if (!servo) {
           lines
             ..add(
-              '    ExpansionBoradControl(Dir_Change_Order, ${values(slot, direction)});',
+              '    ExpansionBoradControl(Dir_Change_Order, ${values(slot, value >= 0 ? 1 : 0)});',
             )
             ..add('    Ms_Delay(EXPANSION_FRAME_GAP_MS);');
         }

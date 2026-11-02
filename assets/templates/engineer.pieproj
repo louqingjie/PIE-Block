@@ -1,5 +1,5 @@
 {
-  "format_version": 18,
+  "format_version": 19,
   "name": "模板工程",
   "project_kind": "engineer",
   "created_at": "2026-01-01T00:00:00.000Z",
@@ -117,7 +117,6 @@
             "pin": "P60",
             "variable": null,
             "expression": null,
-            "direction": "forward",
             "mode": "single",
             "parameter": 5
           },
@@ -129,7 +128,6 @@
             "pin": "P62",
             "variable": null,
             "expression": null,
-            "direction": "forward",
             "mode": "continuous",
             "parameter": 3
           },
@@ -141,7 +139,6 @@
             "pin": "P64",
             "variable": null,
             "expression": null,
-            "direction": null,
             "mode": "frictionToggle",
             "parameter": 100
           },
@@ -153,9 +150,8 @@
             "pin": "P66",
             "variable": null,
             "expression": null,
-            "direction": "reverse",
             "mode": "frictionStep",
-            "parameter": 10
+            "parameter": -10
           }
         ]
       },
@@ -171,7 +167,6 @@
             "pin": "P60",
             "variable": null,
             "expression": null,
-            "direction": "forward",
             "mode": "incremental",
             "parameter": 20
           },
@@ -183,7 +178,6 @@
             "pin": "P64",
             "variable": null,
             "expression": null,
-            "direction": null,
             "mode": "frictionAxis",
             "parameter": 50
           },
@@ -195,9 +189,8 @@
             "pin": "P62",
             "variable": null,
             "expression": null,
-            "direction": "reverse",
             "mode": "direct",
-            "parameter": 45
+            "parameter": -45
           }
         ]
       }

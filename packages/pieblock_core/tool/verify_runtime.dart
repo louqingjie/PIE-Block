@@ -415,9 +415,18 @@ ActionMapping action(
   pin: pin,
   variableName: variable,
   expression: expression,
-  direction: direction,
   mode: mode,
-  parameter: parameter,
+  // 旧参数用 direction 表达方向，这里折算成参数正负；速度/增速等模式不再取负。
+  parameter: direction == Direction.reverse &&
+          parameter != null &&
+          (mode == ControlMode.direct ||
+              mode == ControlMode.incremental ||
+              mode == ControlMode.single ||
+              mode == ControlMode.continuous ||
+              mode == ControlMode.frictionStep ||
+              mode == ControlMode.frictionContinuous)
+      ? -parameter
+      : parameter,
 );
 
 // ---------------------------------------------------------------------------
@@ -1816,7 +1825,7 @@ Future<int> main(List<String> args) async {
             final act = c.modes[m].actions[a];
             print(
               '  debug mode$m#$a: key=${act.key} pin=${act.pin} '
-              'dir=${act.direction?.name} mode=${act.mode?.name} '
+              'mode=${act.mode?.name} '
               'param=${act.parameter} role=${act.pin == null ? "?" : c.pwm.pinRoles[act.pin!]?.name}',
             );
           }

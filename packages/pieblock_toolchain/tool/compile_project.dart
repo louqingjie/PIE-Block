@@ -44,7 +44,6 @@ Future<void> main(List<String> args) async {
           debug.tests.first.copyWith(
             enabled: true,
             driveType: DebugDriveType.servo,
-            direction: Direction.forward,
             value: 45,
           ),
           ...debug.tests.skip(1),

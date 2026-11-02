@@ -160,15 +160,6 @@ abstract final class ProjectValidator {
         issue,
       );
       final drive = item.driveType;
-      if (drive != DebugDriveType.friction) {
-        _choice(
-          item.direction,
-          '$base.direction',
-          '${item.pin} 方向',
-          'tests',
-          issue,
-        );
-      }
       if (mainServoPins.contains(item.pin) &&
           drive != null &&
           drive != DebugDriveType.servo) {
@@ -192,7 +183,7 @@ abstract final class ProjectValidator {
         case DebugDriveType.motor:
           _range(
             item.value,
-            0,
+            -10000,
             10000,
             '$base.value',
             '${item.pin} 电机速度',
@@ -211,7 +202,7 @@ abstract final class ProjectValidator {
         case DebugDriveType.servo:
           _range(
             item.value,
-            0,
+            -90,
             90,
             '$base.value',
             '${item.pin} 舵机角度',
@@ -1614,9 +1605,6 @@ abstract final class ProjectValidator {
     }
     if (inputUnspecified) {
       _choice(action.expression, '$path.expression', '表达式', 'mappings', issue);
-      if (action.direction != null) {
-        issue(IssueSeverity.error, '$path.direction', '表达式行不使用方向', 'mappings');
-      }
       if (action.mode != null) {
         issue(IssueSeverity.error, '$path.mode', '表达式行不使用控制方式', 'mappings');
       }
@@ -1636,9 +1624,6 @@ abstract final class ProjectValidator {
         }
       }
     } else {
-      if (action.direction != null) {
-        issue(IssueSeverity.error, '$path.direction', '变量赋值行不使用方向', 'mappings');
-      }
       if (action.mode != null) {
         issue(IssueSeverity.error, '$path.mode', '变量赋值行不使用控制方式', 'mappings');
       }
@@ -1719,12 +1704,6 @@ abstract final class ProjectValidator {
     }
     _choice(action.key, '$path.key', '动作输入', 'mappings', issue);
     final frictionMode = _isFrictionMode(action.mode);
-    final directionOptional =
-        action.mode == ControlMode.frictionToggle ||
-        action.mode == ControlMode.frictionAxis;
-    if (!directionOptional) {
-      _choice(action.direction, '$path.direction', '动作方向', 'mappings', issue);
-    }
     _choice(action.mode, '$path.mode', '控制方式', 'mappings', issue);
     _choice(action.pin, '$path.pin', '动作 IO', 'mappings', issue);
     if (action.key != null && !remoteKeys.contains(action.key)) {
@@ -1805,14 +1784,6 @@ abstract final class ProjectValidator {
           'mappings',
         );
       }
-      if (directionOptional && action.direction != null) {
-        issue(
-          IssueSeverity.error,
-          '$path.direction',
-          '该摩擦轮控制方式不使用方向',
-          'mappings',
-        );
-      }
     } else if (friction) {
       if (hasFrictionControl) {
         issue(
@@ -1871,7 +1842,7 @@ abstract final class ProjectValidator {
       case ControlMode.incremental:
         _actionIntegerRange(
           action.parameter,
-          0,
+          -90,
           90,
           '$path.parameter',
           '舵机增量',
@@ -1886,18 +1857,18 @@ abstract final class ProjectValidator {
             'mappings',
           );
         }
-        if ((action.parameter ?? 0) > 30) {
+        if ((action.parameter ?? 0).abs() > 30) {
           issue(
             IssueSeverity.warning,
             '$path.parameter',
-            '单次增量偏大，建议使用 1–30°',
+            '单次增量偏大，建议使用 −30–30°',
             'mappings',
           );
         }
       case ControlMode.direct:
         _actionIntegerRange(
           action.parameter,
-          0,
+          motor ? -10000 : -90,
           motor ? 10000 : 90,
           '$path.parameter',
           motor ? '电机速度' : '舵机角度',
@@ -1929,23 +1900,39 @@ abstract final class ProjectValidator {
       case ControlMode.frictionStep:
         _actionIntegerRange(
           action.parameter,
-          1,
+          -100,
           100,
           '$path.parameter',
           '单次油门 %',
           'mappings',
           issue,
         );
+        if (action.parameter == 0) {
+          issue(
+            IssueSeverity.error,
+            '$path.parameter',
+            '单次油门不能为 0，用正负表示加/减',
+            'mappings',
+          );
+        }
       case ControlMode.frictionContinuous:
         _actionIntegerRange(
           action.parameter,
-          1,
+          -100,
           100,
           '$path.parameter',
           '持续油门 %/秒',
           'mappings',
           issue,
         );
+        if (action.parameter == 0) {
+          issue(
+            IssueSeverity.error,
+            '$path.parameter',
+            '持续油门不能为 0，用正负表示加/减',
+            'mappings',
+          );
+        }
       case ControlMode.frictionAxis:
         _actionIntegerRange(
           action.parameter,
@@ -1994,8 +1981,13 @@ abstract final class ProjectValidator {
       return;
     }
     final numeric = value.toDouble();
-    if (!numeric.isFinite || numeric <= 0 || numeric > 20) {
-      issue(IssueSeverity.error, path, '舵机灵敏度必须大于 0 且不超过 20', 'mappings');
+    if (!numeric.isFinite || numeric == 0 || numeric.abs() > 20) {
+      issue(
+        IssueSeverity.error,
+        path,
+        '舵机灵敏度绝对值必须大于 0 且不超过 20，正负表示方向',
+        'mappings',
+      );
       return;
     }
     final hundredths = numeric * 100;
@@ -2003,7 +1995,7 @@ abstract final class ProjectValidator {
       issue(IssueSeverity.error, path, '舵机灵敏度最多保留两位小数', 'mappings');
       return;
     }
-    if (numeric > 10) {
+    if (numeric.abs() > 10) {
       issue(IssueSeverity.warning, path, '舵机角度变化速度可能过快', 'mappings');
     }
   }

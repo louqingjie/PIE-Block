@@ -409,7 +409,6 @@ class DebugTestItem {
     required this.pin,
     this.enabled = false,
     this.driveType,
-    this.direction,
     this.value,
     this.durationMs = 3000,
   });
@@ -417,10 +416,10 @@ class DebugTestItem {
   final String pin;
   final bool enabled;
   final DebugDriveType? driveType;
-  final Direction? direction;
 
-  /// 电机项=速度，舵机项=角度，摩擦轮项=目标占空比
-  /// （[Friction.minMaxDuty]–[Friction.maxMaxDuty]，低于 [Friction.lowDutyWarning] 会提醒）。
+  /// 电机项=带符号速度（−10000~10000），舵机项=带符号角度（−90~90），
+  /// 摩擦轮项=目标转速（[Friction.minMaxDuty]–[Friction.maxMaxDuty]，
+  /// 低于 [Friction.lowDutyWarning] 会提醒）。方向由数值正负表示。
   final int? value;
   final int durationMs;
 
@@ -433,7 +432,6 @@ class DebugTestItem {
     Object? id = _unset,
     bool? enabled,
     Object? driveType = _unset,
-    Object? direction = _unset,
     Object? value = _unset,
     int? durationMs,
   }) => DebugTestItem(
@@ -443,9 +441,6 @@ class DebugTestItem {
     driveType: identical(driveType, _unset)
         ? this.driveType
         : driveType as DebugDriveType?,
-    direction: identical(direction, _unset)
-        ? this.direction
-        : direction as Direction?,
     value: identical(value, _unset) ? this.value : value as int?,
     durationMs: durationMs ?? this.durationMs,
   );
@@ -458,7 +453,6 @@ class DebugTestItem {
     'pin': pin,
     'enabled': enabled,
     'drive_type': driveType?.name,
-    if (driveType != DebugDriveType.friction) 'direction': direction?.name,
     'value': value,
     if (driveType != DebugDriveType.friction) 'duration_ms': durationMs,
   };
@@ -468,15 +462,24 @@ class DebugTestItem {
       DebugDriveType.values,
       json['drive_type'],
     );
+    final rawValue = (json['value'] as num?)?.toInt();
+    // 17/18 存档用独立的 direction 字段表示方向，19 起方向并入数值正负。
+    final legacyDirection = nullableEnumValue(
+      Direction.values,
+      json['direction'],
+    );
+    final signedValue =
+        driveType != DebugDriveType.friction &&
+            legacyDirection == Direction.reverse &&
+            rawValue != null
+        ? -rawValue
+        : rawValue;
     return DebugTestItem(
       id: json['id']?.toString(),
       pin: json['pin']?.toString() ?? '',
       enabled: json['enabled'] as bool? ?? false,
       driveType: driveType,
-      direction: driveType == DebugDriveType.friction
-          ? null
-          : nullableEnumValue(Direction.values, json['direction']),
-      value: (json['value'] as num?)?.toInt(),
+      value: signedValue,
       durationMs: (json['duration_ms'] as num?)?.toInt() ?? 3000,
     );
   }
@@ -1521,7 +1524,6 @@ class ActionMapping {
     this.pin,
     this.variableName,
     this.expression,
-    this.direction,
     this.mode,
     this.parameter,
   }) : id = id ?? DateTime.now().microsecondsSinceEpoch.toString();
@@ -1532,8 +1534,9 @@ class ActionMapping {
   final String? pin;
   final String? variableName;
   final String? expression;
-  final Direction? direction;
   final ControlMode? mode;
+
+  /// 带符号参数：正负表示原来「方向」字段的朝向。
   final num? parameter;
   ActionMapping copyWith({
     Object? inputKind = _unset,
@@ -1542,7 +1545,6 @@ class ActionMapping {
     Object? pin = _unset,
     Object? variableName = _unset,
     Object? expression = _unset,
-    Object? direction = _unset,
     Object? mode = _unset,
     Object? parameter = _unset,
   }) => ActionMapping(
@@ -1561,13 +1563,8 @@ class ActionMapping {
     expression: identical(expression, _unset)
         ? this.expression
         : expression as String?,
-    direction: identical(direction, _unset)
-        ? this.direction
-        : direction as Direction?,
     mode: identical(mode, _unset) ? this.mode : mode as ControlMode?,
-    parameter: identical(parameter, _unset)
-        ? this.parameter
-        : parameter as num?,
+    parameter: identical(parameter, _unset) ? this.parameter : parameter as num?,
   );
   /// 复制动作配置，保留字段并生成新的 id。
   ActionMapping duplicate() => ActionMapping(
@@ -1577,7 +1574,6 @@ class ActionMapping {
     pin: pin,
     variableName: variableName,
     expression: expression,
-    direction: direction,
     mode: mode,
     parameter: parameter,
   );
@@ -1589,30 +1585,51 @@ class ActionMapping {
     'pin': pin,
     'variable': variableName,
     'expression': expression,
-    'direction': direction?.name,
     'mode': mode?.name,
     'parameter': parameter,
   };
-  factory ActionMapping.fromJson(Map<String, Object?> j) => ActionMapping(
-    id: j['id']?.toString(),
-    inputKind: enumValue(
-      ActionInputKind.values,
-      j['input_kind'],
-      ActionInputKind.remote,
-    ),
-    key: j['key']?.toString(),
-    outputKind: enumValue(
-      ActionOutputKind.values,
-      j['output_kind'],
-      ActionOutputKind.pin,
-    ),
-    pin: j['pin']?.toString(),
-    variableName: j['variable']?.toString(),
-    expression: j['expression']?.toString(),
-    direction: nullableEnumValue(Direction.values, j['direction']),
-    mode: nullableEnumValue(ControlMode.values, j['mode']),
-    parameter: j['parameter'] as num?,
-  );
+  factory ActionMapping.fromJson(Map<String, Object?> j) {
+    final mode = nullableEnumValue(ControlMode.values, j['mode']);
+    final parameter = j['parameter'] as num?;
+    // 17/18 存档用独立的 direction 字段表示方向，19 起方向并入参数正负。
+    // 只有方向真正参与生成的控制方式才折算；速度/增速/启停/摇杆油门原本忽略方向。
+    final legacyDirection = nullableEnumValue(
+      Direction.values,
+      j['direction'],
+    );
+    final signedByDirection =
+        legacyDirection == Direction.reverse &&
+        switch (mode) {
+          ControlMode.direct ||
+          ControlMode.incremental ||
+          ControlMode.single ||
+          ControlMode.continuous ||
+          ControlMode.frictionStep ||
+          ControlMode.frictionContinuous => true,
+          _ => false,
+        };
+    return ActionMapping(
+      id: j['id']?.toString(),
+      inputKind: enumValue(
+        ActionInputKind.values,
+        j['input_kind'],
+        ActionInputKind.remote,
+      ),
+      key: j['key']?.toString(),
+      outputKind: enumValue(
+        ActionOutputKind.values,
+        j['output_kind'],
+        ActionOutputKind.pin,
+      ),
+      pin: j['pin']?.toString(),
+      variableName: j['variable']?.toString(),
+      expression: j['expression']?.toString(),
+      mode: mode,
+      parameter: signedByDirection && parameter != null
+          ? -parameter
+          : parameter,
+    );
+  }
 }
 
 /// 动作表的一行：一个输出引脚在各档位的目标值。
@@ -1895,12 +1912,13 @@ class ProjectDocument {
   ///
   /// 格式 18 起项目已正式发布：新增字段必须可选，旧格式必须能读入，见
   /// [oldestSupportedFormatVersion] 与 [ProjectDocument.fromJson]。
-  static const formatVersion = 18;
+  static const formatVersion = 19;
 
   /// 仍可读入的最旧格式：1.7.0 正式发布时使用的格式 17。
   ///
-  /// 17 → 18 的差异只有可选的 `modes[].action_tables`（缺省为空表），
-  /// 其余字段语义不变，因此无需额外迁移。
+  /// 17 → 18 新增可选的 `modes[].action_tables`（缺省为空表）。
+  /// 18 → 19 移除动作行与调试测试项的方向字段，方向并入参数/数值正负；
+  /// 读入旧档时按原来的 `direction == reverse` 取负迁移。
   static const oldestSupportedFormatVersion = 17;
   final String name;
   final ProjectKind kind;
@@ -1960,6 +1978,7 @@ class ProjectDocument {
       );
     }
     // 17 → 18：仅新增可选的 modes[].action_tables，缺省为空表。
+    // 18 → 19：动作/调试测试项的方向由数值正负表示，解析时折叠旧 direction。
     final kind = enumValue(
           ProjectKind.values,
           j['project_kind'],

@@ -378,15 +378,17 @@ class _ActionRow extends ConsumerWidget {
         action.mode == ControlMode.single ||
         action.mode == ControlMode.continuous;
     final parameterLabel = usesSensitivity
-        ? '灵敏度 °/周期'
+        ? '灵敏度 °/周期（带符号）'
         : switch (action.mode) {
-            ControlMode.incremental => '步进角度 °',
+            ControlMode.incremental => '步进角度 °（带符号）',
             ControlMode.speed => '最大速度 duty',
             ControlMode.accelerate => '加速度 duty/周期',
-            ControlMode.direct => role == PinRole.servo ? '目标角度 °' : '转速 duty',
+            ControlMode.direct => role == PinRole.servo
+                ? '目标角度 °（带符号）'
+                : '转速 duty（带符号）',
             ControlMode.frictionToggle => '目标油门 %',
-            ControlMode.frictionStep => '每次油门 %',
-            ControlMode.frictionContinuous => '每秒油门 %',
+            ControlMode.frictionStep => '每次油门 %（正加负减）',
+            ControlMode.frictionContinuous => '每秒油门 %（正加负减）',
             ControlMode.frictionAxis => '满杆每秒 %',
             ControlMode.single || ControlMode.continuous || null => '参数',
           };
@@ -456,17 +458,6 @@ class _ActionRow extends ConsumerWidget {
     final inputUnspecified = action.inputKind == ActionInputKind.unspecified;
     final variableOutput = action.outputKind != ActionOutputKind.pin;
     final pinOutput = !variableOutput;
-    final directionVisible =
-        pinOutput &&
-        !inputUnspecified &&
-        action.mode != ControlMode.frictionToggle &&
-        action.mode != ControlMode.frictionAxis;
-    // 摩擦轮的「方向」只表示油门增加/减少，不代表电机反转；标签必须写清楚，
-    // 避免和普通电机的正/反转混淆。
-    final frictionThrottleDirection =
-        role == PinRole.friction &&
-        (action.mode == ControlMode.frictionStep ||
-            action.mode == ControlMode.frictionContinuous);
     final inputChoices = <String>[unspecifiedInputToken, ...visibleInputs];
     final inputValue = inputUnspecified ? unspecifiedInputToken : action.key;
     final outputChoices = <String>[
@@ -502,7 +493,6 @@ class _ActionRow extends ConsumerWidget {
                   action.copyWith(
                     inputKind: ActionInputKind.unspecified,
                     key: null,
-                    direction: null,
                     mode: null,
                     parameter: null,
                   ),
@@ -545,7 +535,6 @@ class _ActionRow extends ConsumerWidget {
                         ? ActionOutputKind.integer
                         : ActionOutputKind.rational,
                     pin: null,
-                    direction: null,
                     mode: null,
                     parameter: null,
                   ),
@@ -563,36 +552,6 @@ class _ActionRow extends ConsumerWidget {
           ),
         ),
       ),
-      if (directionVisible) ...[
-        const SizedBox(width: 8),
-        Expanded(
-          child: _FieldAnchor(
-            path: '$fieldPath.direction',
-            child: DropdownButtonFormField(
-              key: ValueKey('$fieldPath.direction'),
-              initialValue: action.direction,
-              decoration: _fieldDecoration(
-                ref,
-                '$fieldPath.direction',
-                frictionThrottleDirection ? '油门调整' : '方向',
-              ),
-              items: Direction.values
-                  .map(
-                    (e) => DropdownMenuItem(
-                      value: e,
-                      child: Text(
-                        frictionThrottleDirection
-                            ? (e == Direction.forward ? '增加' : '减少')
-                            : (e == Direction.forward ? '正' : '反'),
-                      ),
-                    ),
-                  )
-                  .toList(),
-              onChanged: (v) => onChanged(action.copyWith(direction: v)),
-            ),
-          ),
-        ),
-      ],
       if (pinOutput && !inputUnspecified) ...[
         const SizedBox(width: 8),
         Expanded(
@@ -615,13 +574,18 @@ class _ActionRow extends ConsumerWidget {
                 );
               }).toList(),
               onChanged: (v) {
-                final clearsDirection =
+                // 摇杆/启停类模式的方向由输入符号决定，参数只保留幅值。
+                final unsigned =
+                    v == ControlMode.speed ||
+                    v == ControlMode.accelerate ||
                     v == ControlMode.frictionToggle ||
                     v == ControlMode.frictionAxis;
                 onChanged(
                   action.copyWith(
                     mode: v,
-                    direction: clearsDirection ? null : action.direction,
+                    parameter: unsigned && action.parameter != null
+                        ? action.parameter!.abs()
+                        : action.parameter,
                   ),
                 );
               },

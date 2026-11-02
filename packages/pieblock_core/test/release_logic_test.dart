@@ -96,7 +96,6 @@ EngineerConfig _engineer({
             ActionMapping(
               key: 'A',
               pin: 'P60',
-              direction: Direction.forward,
               mode: ControlMode.direct,
               parameter: 45,
             ),
@@ -166,7 +165,6 @@ void main() {
                 ActionMapping(
                   key: 'LX',
                   pin: 'P60',
-                  direction: Direction.forward,
                   mode: ControlMode.accelerate,
                   parameter: 10000,
                 ),
@@ -204,7 +202,6 @@ void main() {
                 ActionMapping(
                   key: 'LX',
                   pin: 'P60',
-                  direction: Direction.forward,
                   mode: ControlMode.speed,
                   parameter: 8000,
                 ),
@@ -279,7 +276,6 @@ void main() {
                 ActionMapping(
                   key: 'LC',
                   pin: 'P60',
-                  direction: Direction.forward,
                   mode: ControlMode.direct,
                   parameter: 45,
                 ),
@@ -301,7 +297,6 @@ void main() {
                 ActionMapping(
                   key: 'LC',
                   pin: 'P60',
-                  direction: Direction.forward,
                   mode: ControlMode.direct,
                   parameter: 45,
                 ),

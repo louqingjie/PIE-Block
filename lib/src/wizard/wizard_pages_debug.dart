@@ -236,9 +236,9 @@ class _DebugTestsPage extends ConsumerWidget {
               DebugDriveType.friction => '摩擦轮',
             };
             final valueLabel = switch (item.driveType) {
-              DebugDriveType.servo => '角度',
+              DebugDriveType.servo => '角度（带符号）',
               DebugDriveType.friction => '最大转速',
-              _ => '速度',
+              _ => '速度（带符号）',
             };
             return Card(
               key: itemKeys[index],
@@ -280,8 +280,6 @@ class _DebugTestsPage extends ConsumerWidget {
                       _FormRow(
                         fieldPaths: [
                           '$base.drive_type',
-                          if (item.driveType != DebugDriveType.friction)
-                            '$base.direction',
                           '$base.value',
                           if (item.driveType != DebugDriveType.friction)
                             '$base.duration_ms',
@@ -309,48 +307,11 @@ class _DebugTestsPage extends ConsumerWidget {
                                 ],
                                 onChanged: (value) => replace(
                                   index,
-                                  item.copyWith(
-                                    driveType: value,
-                                    direction: value == DebugDriveType.friction
-                                        ? null
-                                        : item.direction,
-                                  ),
+                                  item.copyWith(driveType: value),
                                 ),
                               ),
                             ),
                           ),
-                          if (item.driveType != DebugDriveType.friction) ...[
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: _FieldAnchor(
-                                path: '$base.direction',
-                                child: DropdownButtonFormField<Direction>(
-                                  initialValue: item.direction,
-                                  decoration: _fieldDecoration(
-                                    ref,
-                                    '$base.direction',
-                                    '方向',
-                                  ),
-                                  items: Direction.values
-                                      .map(
-                                        (value) => DropdownMenuItem(
-                                          value: value,
-                                          child: Text(
-                                            value == Direction.forward
-                                                ? '正向'
-                                                : '反向',
-                                          ),
-                                        ),
-                                      )
-                                      .toList(),
-                                  onChanged: (value) => replace(
-                                    index,
-                                    item.copyWith(direction: value),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
                           const SizedBox(width: 12),
                           Expanded(
                             child: _NumberField(
