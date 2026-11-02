@@ -59,6 +59,13 @@ class _PwmPage extends ConsumerWidget {
                     ),
                 ],
               ),
+              if (pwm.pwma == PwmFrequency.hz10000 &&
+                  pwm.pwmb == PwmFrequency.hz10000) ...[
+                const SizedBox(height: 12),
+                const _WarningBanner(
+                  'PWMA 与 PWMB 都选择了 10000 Hz：50 Hz 的舵机和摩擦轮将无法使用，请至少把一组改回 50 Hz。',
+                ),
+              ],
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('禁用蜂鸣器反馈'),

@@ -2445,6 +2445,38 @@ void main() {
     await tester.pump(const Duration(milliseconds: 600));
   });
 
+  testWidgets('工程 PWM 两组频率都选 10000 Hz 时提示舵机与摩擦轮不可用', (tester) async {
+    Future<void> pump(ProjectDocument document) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appControllerProvider.overrideWith(
+              () => _StaticProjectController(document, 1),
+            ),
+          ],
+          child: const MaterialApp(home: WizardScreen()),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    await pump(_engineerDocument());
+    expect(find.textContaining('舵机和摩擦轮将无法使用'), findsNothing);
+    // 先卸载旧树，确保下一份文档会重建控制器而不是复用首次状态。
+    await tester.pumpWidget(const SizedBox.shrink());
+
+    final source = _engineerDocument();
+    final config = source.config as EngineerConfig;
+    await pump(
+      source.copyWith(
+        config: config.copyWith(
+          pwm: config.pwm.copyWith(pwma: PwmFrequency.hz10000),
+        ),
+      ),
+    );
+    expect(find.textContaining('舵机和摩擦轮将无法使用'), findsOneWidget);
+  });
+
   testWidgets('工程 PWM 页主控板舵机口可选未使用并隐藏舵机参数', (tester) async {
     await tester.pumpWidget(
       ProviderScope(

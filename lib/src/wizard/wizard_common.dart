@@ -357,6 +357,33 @@ class _InfoBanner extends StatelessWidget {
   }
 }
 
+/// 与 [_InfoBanner] 同尺寸的警示条，用于提示配置组合会导致功能不可用。
+class _WarningBanner extends StatelessWidget {
+  const _WarningBanner(this.text);
+  final String text;
+  @override
+  Widget build(BuildContext context) {
+    final brightness = Theme.of(context).brightness;
+    final foreground = AppStatusColors.onWarnContainer(brightness);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+      decoration: ShapeDecoration(
+        color: AppStatusColors.warnContainer(brightness),
+        shape: AppShape.md,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.warning_amber_rounded, size: 18, color: foreground),
+          const SizedBox(width: 10),
+          Expanded(child: Text(text, style: TextStyle(color: foreground))),
+        ],
+      ),
+    );
+  }
+}
+
 /// 可排序卡片之间的纵向间隙，拖拽浮层要按它把阴影收进卡片本体。
 const double _reorderCardGap = 12;
 
