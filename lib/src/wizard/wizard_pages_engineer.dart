@@ -755,7 +755,16 @@ class _ActionTableCardState extends ConsumerState<_ActionTableCard> {
   /// 新建的动作表默认展开；已有动作表默认收起，避免占满列表。
   late bool _expanded = widget.table.key == null;
 
+  /// 档位较多时表格会超出卡片宽度，横向滚动条需要显式控制器。
+  final ScrollController _horizontalScroll = ScrollController();
+
   static const _noPrevious = '__none__';
+
+  @override
+  void dispose() {
+    _horizontalScroll.dispose();
+    super.dispose();
+  }
 
   List<String> get _availablePins => [
     for (final pin in [...expansionPins, ...mainServoPins])
@@ -913,9 +922,18 @@ class _ActionTableCardState extends ConsumerState<_ActionTableCard> {
                 ],
               ),
               const SizedBox(height: 14),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: _buildTable(table, steps),
+              Scrollbar(
+                controller: _horizontalScroll,
+                thumbVisibility: true,
+                scrollbarOrientation: ScrollbarOrientation.bottom,
+                child: SingleChildScrollView(
+                  controller: _horizontalScroll,
+                  scrollDirection: Axis.horizontal,
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: _buildTable(table, steps),
+                  ),
+                ),
               ),
               const SizedBox(height: 4),
               Align(

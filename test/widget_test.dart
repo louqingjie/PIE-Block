@@ -1360,6 +1360,64 @@ void main() {
     await tester.pump(const Duration(milliseconds: 600));
   });
 
+  testWidgets('工程动作表档位过多时提供横向滚动条', (tester) async {
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1000, 1000);
+
+    final source = _engineerTableDocument();
+    final config = source.config as EngineerConfig;
+    final mode = config.modes.single;
+    final base = mode.actionTables.single;
+    final table = base.copyWith(
+      steps: 8,
+      rows: [
+        base.rows.first.copyWith(values: List.filled(8, 10)),
+      ],
+    );
+    final document = source.copyWith(
+      config: config.copyWith(
+        modes: [mode.copyWith(actionTables: [table])],
+      ),
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _StaticProjectController(document, 3),
+          ),
+          deployControllerProvider.overrideWith(_FakeDeployController.new),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('展开动作表').first);
+    await tester.pumpAndSettle();
+
+    final card = find.byKey(ValueKey('action-table-card-${table.id}'));
+    final scrollbarFinder = find.descendant(
+      of: card,
+      matching: find.byType(Scrollbar),
+    );
+    expect(scrollbarFinder, findsOneWidget);
+    final scrollbar = tester.widget<Scrollbar>(scrollbarFinder);
+    expect(scrollbar.thumbVisibility, isTrue);
+    final controller = scrollbar.controller!;
+    expect(controller.hasClients, isTrue);
+    expect(controller.position.maxScrollExtent, greaterThan(0));
+
+    controller.jumpTo(controller.position.maxScrollExtent);
+    await tester.pumpAndSettle();
+    expect(controller.offset, greaterThan(0));
+    expect(tester.takeException(), isNull);
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
   testWidgets('调试向导展示可排序十路测试和动态摩擦轮字段', (tester) async {
     // 试听面板默认用 flutter_soloud，测试里没有原生动态库，必须注入假实现。
     final preview = _FakeDebugCuePreview();
