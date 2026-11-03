@@ -230,6 +230,14 @@ class _EngineerMappingsPageState extends ConsumerState<_EngineerMappingsPage> {
                             ..removeAt(tableIndex);
                           updateMode(mode.copyWith(actionTables: tables));
                         },
+                        onDuplicate: () {
+                          final tables = [...mode.actionTables];
+                          tables.insert(
+                            tableIndex + 1,
+                            mode.actionTables[tableIndex].duplicate(),
+                          );
+                          updateMode(mode.copyWith(actionTables: tables));
+                        },
                       ),
                       const SizedBox(height: 12),
                     ],
@@ -728,6 +736,7 @@ class _ActionTableCard extends ConsumerStatefulWidget {
     required this.fieldPath,
     required this.onChanged,
     required this.onRemove,
+    required this.onDuplicate,
   });
 
   final int index;
@@ -736,6 +745,7 @@ class _ActionTableCard extends ConsumerStatefulWidget {
   final String fieldPath;
   final ValueChanged<ActionTable> onChanged;
   final VoidCallback onRemove;
+  final VoidCallback onDuplicate;
 
   @override
   ConsumerState<_ActionTableCard> createState() => _ActionTableCardState();
@@ -818,6 +828,11 @@ class _ActionTableCardState extends ConsumerState<_ActionTableCard> {
                     '${summary.isEmpty ? '' : ' · $summary'}',
                     style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
+                ),
+                IconButton(
+                  onPressed: widget.onDuplicate,
+                  tooltip: '复制动作表',
+                  icon: const Icon(Icons.copy),
                 ),
                 IconButton(
                   onPressed: widget.onRemove,

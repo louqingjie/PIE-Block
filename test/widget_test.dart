@@ -1311,6 +1311,55 @@ void main() {
     await tester.pump(const Duration(milliseconds: 600));
   });
 
+  testWidgets('工程动作表可复制到源表下方', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _StaticProjectController(_engineerTableDocument(), 3),
+          ),
+          deployControllerProvider.overrideWith(_FakeDeployController.new),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(WizardScreen)),
+    );
+    EngineerConfig config() =>
+        container.read(appControllerProvider).document!.config as EngineerConfig;
+    final source = config().modes.first.actionTables.single;
+    expect(source.key, 'A');
+
+    final copyButton = find.byTooltip('复制动作表').first;
+    await tester.ensureVisible(copyButton);
+    await tester.pumpAndSettle();
+    await tester.tap(copyButton);
+    await tester.pumpAndSettle();
+
+    final tables = config().modes.first.actionTables;
+    expect(tables, hasLength(2));
+    final copy = tables[1];
+    expect(copy.id, isNot(source.id));
+    expect(copy.key, source.key);
+    expect(copy.previousKey, source.previousKey);
+    expect(copy.steps, source.steps);
+    expect(
+      copy.rows.map((row) => row.pin).toList(),
+      source.rows.map((row) => row.pin).toList(),
+    );
+    expect(
+      copy.rows.map((row) => row.values).toList(),
+      source.rows.map((row) => row.values).toList(),
+    );
+    expect(tester.takeException(), isNull);
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
   testWidgets('调试向导展示可排序十路测试和动态摩擦轮字段', (tester) async {
     // 试听面板默认用 flutter_soloud，测试里没有原生动态库，必须注入假实现。
     final preview = _FakeDebugCuePreview();

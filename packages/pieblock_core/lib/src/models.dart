@@ -1732,6 +1732,16 @@ class ActionTable {
     steps: identical(steps, _unset) ? this.steps : steps as int?,
     rows: List.unmodifiable(rows ?? this.rows),
   );
+  static int _duplicateSerial = 0;
+
+  /// 复制动作表，保留字段并生成新的 id。
+  ActionTable duplicate() => ActionTable(
+    id: '$id-copy-${DateTime.now().microsecondsSinceEpoch}-${_duplicateSerial++}',
+    key: key,
+    previousKey: previousKey,
+    steps: steps,
+    rows: rows,
+  );
   Map<String, Object?> toJson() => {
     'id': id,
     'key': key,

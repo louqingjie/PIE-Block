@@ -1173,6 +1173,23 @@ void main() {
       ]);
     });
 
+    test('动作表复制保留字段并生成新 id', () {
+      final source = servoTable();
+      final copy = source.duplicate();
+      expect(copy.id, isNot(source.id));
+      expect(copy.key, source.key);
+      expect(copy.previousKey, source.previousKey);
+      expect(copy.steps, source.steps);
+      expect(
+        copy.rows.map((row) => row.pin).toList(),
+        source.rows.map((row) => row.pin).toList(),
+      );
+      expect(
+        copy.rows.map((row) => row.values).toList(),
+        source.rows.map((row) => row.values).toList(),
+      );
+    });
+
     test('键与引脚冲突、档数与取值校验', () {
       Iterable<String> messages(EngineerConfig config) => ProjectValidator
           .validate(config)
