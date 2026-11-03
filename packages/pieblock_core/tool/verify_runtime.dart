@@ -1298,6 +1298,21 @@ List<Scenario> scenarios() {
       if (off.any((f) => f.duties[4] != 0 || f.duties[5] != 0)) {
         failures.add('关闭后 P74/P75 未停机');
       }
+      // 斜坡期间蜂鸣频率跟随当前占空比（500 启动值以上、上限以内）。
+      bool toneBetween(int fromMs, int toMs) => log
+          .pwmChannel(101)
+          .any((p) =>
+              p.duty == 5000 &&
+              p.freq > 500 &&
+              p.freq <= 600 &&
+              p.ms >= fromMs &&
+              p.ms < toMs);
+      if (!toneBetween(3500, 10000)) {
+        failures.add('加速斜坡没有随占空比变化的提示音');
+      }
+      if (!toneBetween(16500, 20000)) {
+        failures.add('减速斜坡没有随占空比变化的提示音');
+      }
       return failures;
     },
   ));

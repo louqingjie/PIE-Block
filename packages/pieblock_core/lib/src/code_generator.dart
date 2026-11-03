@@ -1472,10 +1472,21 @@ ${List.generate(c.modeCount!, (modeIndex) {
         '    lastServoFeedback[$index] = $expression;',
       );
     }
-    final engineerFeedback = c.pwm.buzzerDisabled || servoExpressions.isEmpty
+    final frictionFeedbackCondition = frictionStackEnabled
+        ? [
+            for (final pin in frictionRolePins)
+              'frictionDuty$pin != frictionTargetDuty$pin',
+          ].join(' || ')
+        : '';
+    final frictionFeedbackTonePin = frictionRolePins.isEmpty
+        ? ''
+        : frictionRolePins.first;
+    final hasEngineerFeedback =
+        servoExpressions.isNotEmpty || frictionStackEnabled;
+    final engineerFeedback = c.pwm.buzzerDisabled || !hasEngineerFeedback
         ? ''
         : '''static uint8_t servoFeedbackInitialized = 0;
-static uint16_t lastServoFeedback[${servoExpressions.length}] = {0};
+static uint16_t lastServoFeedback[${servoExpressions.isEmpty ? 1 : servoExpressions.length}] = {0};
 static void UpdateServoFeedback(void)
 {
     uint8_t changed = 0;
@@ -1483,6 +1494,7 @@ static void UpdateServoFeedback(void)
 ${engineerFeedbackChecks.join('\n')}
     if (!servoFeedbackInitialized) { servoFeedbackInitialized = 1; changed = 0; }
     if (changed) PWM_SET_Frequency(BUZZER_CH, feedbackDuty, 5000);
+${frictionStackEnabled ? '    else if (frictionActivateLoops == 0 && ($frictionFeedbackCondition)) PWM_SET_Frequency(BUZZER_CH, frictionDuty$frictionFeedbackTonePin, 5000);' : ''}
     else PWM_SET_Frequency(BUZZER_CH, 500, 0);
 }
 ''';

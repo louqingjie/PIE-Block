@@ -3756,6 +3756,34 @@ void main() {
       expect(code, isNot(contains('dutyOfMotor[3] = frictionDutyP')));
     });
 
+    test('摩擦轮加减速斜坡用当前占空比发声，关闭蜂鸣器后不生成', () {
+      final config = arbitraryFriction(
+        {'P74': PinRole.friction, 'P75': PinRole.friction},
+        duties: const {'P74': 600, 'P75': 800},
+        actionPin: 'P74',
+      );
+      final code = CodeGenerator.generate(config);
+      expect(code, contains('static void UpdateServoFeedback(void)'));
+      expect(
+        code,
+        contains(
+          'else if (frictionActivateLoops == 0 && ('
+          'frictionDutyP74 != frictionTargetDutyP74 || '
+          'frictionDutyP75 != frictionTargetDutyP75)) '
+          'PWM_SET_Frequency(BUZZER_CH, frictionDutyP74, 5000);',
+        ),
+      );
+      expect(code, contains('        UpdateServoFeedback();'));
+
+      final muted = config.copyWith(
+        pwm: config.pwm.copyWith(buzzerDisabled: true),
+      );
+      expect(
+        CodeGenerator.generate(muted),
+        isNot(contains('UpdateServoFeedback')),
+      );
+    });
+
     test('主控板 MP03/MP74 可作摩擦轮并走主控 PWM 输出', () {
       final config = arbitraryFriction(
         {'MP03': PinRole.friction, 'MP74': PinRole.friction},
