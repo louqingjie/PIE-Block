@@ -2534,6 +2534,144 @@ void main() {
     await tester.pump(const Duration(milliseconds: 600));
   });
 
+  testWidgets('工程 PWM 页只为已使能引脚显示备注并保存', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _StaticProjectController(_engineerDocument(), 1),
+          ),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // P60 是平滑电机，MP03/MP74 缺省为舵机 → 备注框可见；P62 未选角色 → 不可见。
+    expect(find.byKey(const ValueKey('pwm.pin_notes.P60')), findsOneWidget);
+    expect(find.byKey(const ValueKey('pwm.pin_notes.MP03')), findsOneWidget);
+    expect(find.byKey(const ValueKey('pwm.pin_notes.MP74')), findsOneWidget);
+    expect(find.byKey(const ValueKey('pwm.pin_notes.P62')), findsNothing);
+
+    final noteField = find.byKey(const ValueKey('pwm.pin_notes.MP03'));
+    await tester.ensureVisible(noteField);
+    await tester.enterText(noteField, '工程一级舵机');
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(WizardScreen)),
+    );
+    EngineerConfig config() =>
+        container.read(appControllerProvider).document!.config
+            as EngineerConfig;
+    expect(config().pwm.pinNotes['MP03'], '工程一级舵机');
+
+    // 先结束输入焦点，再切到未使用：备注框隐藏，配置保留。
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+    final mp03 = find.byKey(const ValueKey('pwm.pin_roles.MP03'));
+    await tester.ensureVisible(mp03);
+    await tester.tap(mp03);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('未使用').last);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('pwm.pin_notes.MP03')), findsNothing);
+    expect(config().pwm.pinNotes['MP03'], '工程一级舵机');
+
+    // 恢复舵机后旧备注重新出现。
+    await tester.ensureVisible(mp03);
+    await tester.tap(mp03);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('舵机').last);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('pwm.pin_notes.MP03')), findsOneWidget);
+    expect(find.text('工程一级舵机'), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
+  testWidgets('工程动作映射引脚下拉显示备注', (tester) async {
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1200, 1000);
+    final source = _engineerDocument();
+    final config = source.config as EngineerConfig;
+    final document = source.copyWith(
+      config: config.copyWith(
+        chassis: const ChassisConfig(enabled: false),
+        pwm: config.pwm.copyWith(
+          pinRoles: const {'P60': PinRole.servo, 'P62': PinRole.unused},
+          servoMids: const {'P60': 0, 'MP03': 0, 'MP74': 0},
+          pinNotes: const {'P60': '抬升舵机', 'MP03': '工程一级舵机'},
+        ),
+        modes: [
+          EngineerModeConfig(
+            actions: [
+              ActionMapping(
+                key: 'A',
+                mode: ControlMode.direct,
+                parameter: 30,
+                pin: 'MP03',
+              ),
+            ],
+            actionTables: [
+              ActionTable(
+                key: 'B',
+                steps: 2,
+                rows: const [ActionTableRow(pin: 'P60', values: [0, 15])],
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _StaticProjectController(document, 3),
+          ),
+          deployControllerProvider.overrideWith(_FakeDeployController.new),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 动作表默认收起，展开后才能检查动作表里的引脚标签。
+    final expandTable = find.byTooltip('展开动作表');
+    await tester.ensureVisible(expandTable);
+    await tester.pumpAndSettle();
+    await tester.tap(expandTable);
+    await tester.pumpAndSettle();
+
+    List<String?> itemLabels(String fieldPath) {
+      final dropdown = tester.widget<DropdownButton<String>>(
+        find.descendant(
+          of: find.byKey(ValueKey(fieldPath), skipOffstage: false),
+          matching: find.byType(DropdownButton<String>, skipOffstage: false),
+        ),
+      );
+      return [for (final item in dropdown.items!) (item.child as Text).data];
+    }
+
+    expect(find.text('MP03（工程一级舵机）'), findsWidgets);
+    expect(
+      find.text('P60（抬升舵机）', skipOffstage: false),
+      findsWidgets,
+    );
+    expect(
+      itemLabels('modes.0.actions.0.pin'),
+      contains('MP03（工程一级舵机）'),
+    );
+    expect(
+      itemLabels('modes.0.action_tables.0.rows.0.pin'),
+      contains('P60（抬升舵机）'),
+    );
+  });
+
   testWidgets('工程按键舵机显示直接单次持续及对应参数规则', (tester) async {
     await tester.pumpWidget(
       ProviderScope(

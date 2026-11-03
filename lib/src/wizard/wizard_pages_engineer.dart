@@ -517,14 +517,18 @@ class _ActionRow extends ConsumerWidget {
           child: DropdownButtonFormField<String>(
             key: ValueKey('$fieldPath.pin'),
             initialValue: outputValue,
+            isExpanded: true,
             decoration: _fieldDecoration(ref, '$fieldPath.pin', '输出'),
             items: outputChoices.map((e) {
               final label = switch (e) {
                 integerOutputToken => '整数',
                 rationalOutputToken => '有理数',
-                _ => e,
+                _ => _pinLabel(pwm, e),
               };
-              return DropdownMenuItem(value: e, child: Text(label));
+              return DropdownMenuItem(
+                value: e,
+                child: Text(label, overflow: TextOverflow.ellipsis),
+              );
             }).toList(),
             onChanged: (v) {
               if (v == null) return;
@@ -700,6 +704,12 @@ class _ActionRow extends ConsumerWidget {
 
   bool secondaryFieldsNotEmpty(bool pinOutput, bool inputUnspecified) =>
       pinOutput && !inputUnspecified;
+}
+
+/// 动作映射里引脚下拉的显示名：有备注时写成 `引脚（备注）`。
+String _pinLabel(PwmGroupConfig pwm, String pin) {
+  final note = pwm.pinNotes[pin];
+  return note == null ? pin : '$pin（$note）';
 }
 
 /// 动作表里可配置的输出引脚：舵机、电机、抖动电机；摩擦轮与未使用口排除。
@@ -923,7 +933,7 @@ class _ActionTableCardState extends ConsumerState<_ActionTableCard> {
     return Table(
       defaultVerticalAlignment: TableCellVerticalAlignment.middle,
       columnWidths: {
-        0: const FixedColumnWidth(148),
+        0: const FixedColumnWidth(240),
         for (var step = 0; step < steps; step++)
           step + 1: const FixedColumnWidth(148),
         steps + 1: const FixedColumnWidth(44),
@@ -968,7 +978,13 @@ class _ActionTableCardState extends ConsumerState<_ActionTableCard> {
                         _availablePins,
                         table.rows[rowIndex].pin,
                       ))
-                        DropdownMenuItem(value: pin, child: Text(pin)),
+                        DropdownMenuItem(
+                          value: pin,
+                          child: Text(
+                            _pinLabel(widget.pwm, pin),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
                     ],
                     onChanged: (value) {
                       final rows = [...table.rows];

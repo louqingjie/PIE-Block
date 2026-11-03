@@ -231,6 +231,7 @@ String _fieldLabel(String path) {
   if (path.contains('servo_max_limits')) return '舵机逆时针限幅';
   if (path.contains('friction_max_duties')) return '摩擦轮满油转速';
   if (path.contains('pin_roles')) return '输出角色';
+  if (path.contains('pin_notes')) return '引脚备注';
   return path;
 }
 

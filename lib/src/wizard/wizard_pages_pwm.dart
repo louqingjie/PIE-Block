@@ -78,6 +78,8 @@ class _PwmPage extends ConsumerWidget {
           const SizedBox(height: 18),
           _Section(
             title: '引脚输出角色',
+            subtitle:
+                '备注为选填，会显示在动作映射的引脚选择中，例如“MP03（工程一级舵机）”。',
             children: [
               LayoutBuilder(
                 builder: (context, constraints) => Wrap(
@@ -89,6 +91,7 @@ class _PwmPage extends ConsumerWidget {
                         // 主控板 MP03/MP74 缺省按舵机处理，可在「舵机」与
                         // 「未使用」之间选择；选未使用时不显示也不校验行程参数。
                         final role = pwm.roleOf(pin);
+                        final enabled = role != null && role != PinRole.unused;
                         final isServo = role == PinRole.servo;
                         final isFriction =
                             (pin == 'P64' || pin == 'P66') &&
@@ -225,6 +228,21 @@ class _PwmPage extends ConsumerWidget {
                                         ),
                                       );
                                     },
+                                  ),
+                                ),
+                              if (enabled)
+                                SizedBox(
+                                  width: rowWidth,
+                                  child: _TextField(
+                                    label: '备注（选填）',
+                                    hint: '例如：工程一级舵机',
+                                    fieldPath: 'pwm.pin_notes.$pin',
+                                    value: pwm.pinNotes[pin],
+                                    onChanged: (v) => update(
+                                      pwm.copyWith(
+                                        pinNotes: {...pwm.pinNotes, pin: v},
+                                      ),
+                                    ),
                                   ),
                                 ),
                             ],
