@@ -1017,7 +1017,7 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
               body.add(
                 '        else if (frictionLevel $delta < 0) frictionLevel = 0;',
               );
-              body.add('        else frictionLevel $delta;');
+              body.add('        else frictionLevel = frictionLevel $delta;');
               body.add('    }');
               body.add('    frictionKeyLast[$index] = $read;');
             case ControlMode.frictionContinuous:

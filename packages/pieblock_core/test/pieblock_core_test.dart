@@ -3704,6 +3704,9 @@ void main() {
       expect(code, contains('UpdateFriction();'));
       expect(code, contains('SyncFrictionKeys(currentMode)'));
       expect(code, contains('frictionLevel = frictionLevel > 0 ? 0 : 100'));
+      // 档位加减必须是赋值，曾经生成过 `frictionLevel + 10;` 这种空表达式，
+      // 导致降档键按下后油门不变（eng-friction 运行时场景失败）。
+      expect(code, contains('else frictionLevel = frictionLevel + 10;'));
       expect(code, contains('frictionRateAcc['));
       // PrepareMode 不归零摩擦轮槽，否则会直接断输出。
       final prepare = code.substring(
