@@ -902,11 +902,17 @@ class _ActionTableCardState extends ConsumerState<_ActionTableCard> {
                           ))
                             DropdownMenuItem(value: key, child: Text(key)),
                         ],
-                        onChanged: (value) => _update(
-                          table.copyWith(
-                            previousKey: value == _noPrevious ? null : value,
-                          ),
-                        ),
+                        onChanged: (value) {
+                          final previousKey = value == _noPrevious
+                              ? null
+                              : value;
+                          _update(
+                            table.copyWith(
+                              previousKey: previousKey,
+                              wrap: previousKey == null ? true : table.wrap,
+                            ),
+                          );
+                        },
                       ),
                     ),
                   ),
@@ -920,6 +926,23 @@ class _ActionTableCardState extends ConsumerState<_ActionTableCard> {
                     ),
                   ),
                 ],
+              ),
+              _FieldAnchor(
+                path: '${widget.fieldPath}.wrap',
+                focusHandledByChild: true,
+                child: SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('越界重复'),
+                  subtitle: Text(
+                    table.previousKey == null
+                        ? '只有下一档键时固定开启：最后一档后回到第一档'
+                        : '开启后到首尾档循环；关闭后到达首尾档时停住',
+                  ),
+                  value: table.previousKey == null ? true : table.wrap,
+                  onChanged: table.previousKey == null
+                      ? null
+                      : (value) => _update(table.copyWith(wrap: value)),
+                ),
               ),
               const SizedBox(height: 14),
               Scrollbar(

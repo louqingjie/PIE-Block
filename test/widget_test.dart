@@ -1418,6 +1418,70 @@ void main() {
     await tester.pump(const Duration(milliseconds: 600));
   });
 
+  testWidgets('动作表越界重复仅在指定上一档键时可关闭', (tester) async {
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1200, 1000);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _StaticProjectController(_engineerTableDocument(), 3),
+          ),
+          deployControllerProvider.overrideWith(_FakeDeployController.new),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final expandButton = find.byTooltip('展开动作表').first;
+    await tester.ensureVisible(expandButton);
+    await tester.pumpAndSettle();
+    await tester.tap(expandButton);
+    await tester.pumpAndSettle();
+
+    final wrapLabel = find.text('越界重复');
+    await tester.ensureVisible(wrapLabel);
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(WizardScreen)),
+    );
+    EngineerConfig config() =>
+        container.read(appControllerProvider).document!.config as EngineerConfig;
+    SwitchListTile wrapSwitch() =>
+        tester.widget<SwitchListTile>(find.byType(SwitchListTile));
+
+    expect(wrapLabel, findsOneWidget);
+    expect(wrapSwitch().value, isTrue);
+    expect(wrapSwitch().onChanged, isNotNull);
+
+    await tester.tap(wrapLabel);
+    await tester.pumpAndSettle();
+    expect(config().modes.first.actionTables.single.wrap, isFalse);
+
+    final prevField = find.byKey(
+      const ValueKey('modes.0.action_tables.0.prev_key'),
+    );
+    await tester.ensureVisible(prevField);
+    await tester.tap(prevField);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('不使用').last);
+    await tester.pumpAndSettle();
+
+    final table = config().modes.first.actionTables.single;
+    expect(table.previousKey, isNull);
+    expect(table.wrap, isTrue);
+    expect(wrapSwitch().value, isTrue);
+    expect(wrapSwitch().onChanged, isNull);
+    expect(tester.takeException(), isNull);
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
   testWidgets('调试向导展示可排序十路测试和动态摩擦轮字段', (tester) async {
     // 试听面板默认用 flutter_soloud，测试里没有原生动态库，必须注入假实现。
     final preview = _FakeDebugCuePreview();
