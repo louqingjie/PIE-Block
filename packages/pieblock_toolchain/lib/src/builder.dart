@@ -12,6 +12,7 @@ import 'compiler_backend.dart';
 import 'file_ops.dart';
 import 'hex_validator.dart';
 import 'models.dart';
+import 'sdcc_object_cache.dart';
 import 'sdcc_runtime_deployer.dart';
 import 'tool_output_text.dart';
 
@@ -482,7 +483,16 @@ class FirmwareBuilder {
     final directObjects = <String>[];
     final libraryObjects = <String>[];
     final librarySources = sources.$2.toSet();
+    final objectCache = SdccObjectCache(
+      runtimeRoot: _runtimeRoot,
+      compilerFingerprint: request.compilerFingerprint,
+      project: project,
+    );
+    await objectCache.pruneOtherFingerprints();
     var warningCount = 0;
+    var reusedCount = 0;
+    var compiledCount = 0;
+    var cacheWriteWarningEmitted = false;
     for (var index = 0; index < sources.$1.length; index++) {
       final relative = sources.$1[index];
       final isMain = relative.endsWith('/src/main.c');
@@ -493,6 +503,24 @@ class FirmwareBuilder {
         output.path,
         '${p.basenameWithoutExtension(source)}_$index.rel',
       );
+      if (!isMain) {
+        final cached = await objectCache.lookup(relative, object);
+        if (cached != null) {
+          reusedCount++;
+          warningCount += cached.warningCount;
+          emit(
+            BuildStage.compiling,
+            '[${index + 1}/${sources.$1.length}] 复用缓存 $relative',
+            current: index + 1,
+            total: sources.$1.length,
+          );
+          (librarySources.contains(relative)
+                  ? libraryObjects
+                  : directObjects)
+              .add(object);
+          continue;
+        }
+      }
       emit(
         BuildStage.compiling,
         '[${index + 1}/${sources.$1.length}] 编译 $relative',
@@ -513,7 +541,9 @@ class FirmwareBuilder {
         emit,
         BuildStage.compiling,
       );
-      warningCount += _visibleWarningCount(run.output);
+      final compileWarnings = _visibleWarningCount(run.output);
+      warningCount += compileWarnings;
+      compiledCount++;
       if (run.exitCode != 0 || _canceled) {
         return _RawBuildResult(
           false,
@@ -521,8 +551,34 @@ class FirmwareBuilder {
           warningCount: warningCount,
         );
       }
+      if (!isMain) {
+        try {
+          await objectCache.store(
+            relative,
+            object,
+            warningCount: compileWarnings,
+          );
+        } on Object catch (error) {
+          if (!cacheWriteWarningEmitted) {
+            emit(
+              BuildStage.compiling,
+              '目标文件缓存写入失败，本次构建继续：$error',
+              level: BuildEventLevel.warning,
+            );
+            cacheWriteWarningEmitted = true;
+          }
+        }
+      }
       (librarySources.contains(relative) ? libraryObjects : directObjects).add(
         object,
+      );
+    }
+    if (reusedCount > 0) {
+      emit(
+        BuildStage.compiling,
+        '增量编译：复用 $reusedCount 个模块，重新编译 $compiledCount 个模块',
+        current: sources.$1.length,
+        total: sources.$1.length,
       );
     }
     final sharedLibrary = File(p.join(output.path, 'stc32g_shared.lib'));
