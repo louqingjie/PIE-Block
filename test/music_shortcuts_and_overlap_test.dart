@@ -85,7 +85,7 @@ class _StaticProjectController extends AppController {
 }
 
 ProjectDocument _document(List<MusicNote> notes) {
-  final source = ProjectDocument.create('快捷键测试', ProjectKind.music);
+  final source = ProjectDocument.create(ProjectKind.music);
   return source.copyWith(
     config: MusicConfig(
       sourceName: 'shortcuts.mid',

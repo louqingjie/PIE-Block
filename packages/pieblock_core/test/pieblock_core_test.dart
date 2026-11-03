@@ -201,7 +201,7 @@ EngineerConfig servoButtonEngineer({
 void main() {
   group('项目格式与进度', () {
     test('工程存档往返并保存向导进度', () {
-      final source = ProjectDocument.create('步兵测试', ProjectKind.infantry)
+      final source = ProjectDocument.create(ProjectKind.infantry)
           .copyWith(
             guideProgress: const GuideProgress(
               currentStepId: 'controls',
@@ -217,6 +217,9 @@ void main() {
         source.toJson()['format_version'],
         ProjectDocument.formatVersion,
       );
+      expect(source.toJson().containsKey('name'), isFalse);
+      expect(source.sourceFormatVersion, ProjectDocument.formatVersion);
+      expect(restored.sourceFormatVersion, ProjectDocument.formatVersion);
       expect(restored.guideProgress.currentStepId, 'controls');
       expect(restored.guideProgress.visitedStepIds, hasLength(3));
       expect((source.toJson()['config']! as Map), isNot(contains('pwm')));
@@ -342,7 +345,6 @@ void main() {
 
     test('调试项目顺序与配置可往返', () {
       final source = ProjectDocument.create(
-        '调试测试',
         ProjectKind.debug,
       ).copyWith(config: completeDebug());
       final restored = ProjectDocument.fromJson(
@@ -374,14 +376,13 @@ void main() {
 
     test('新项目必填项为空且不能生成', () {
       final config =
-          ProjectDocument.create('空白', ProjectKind.infantry).config
+          ProjectDocument.create(ProjectKind.infantry).config
               as InfantryConfig;
       expect(config.remote.channel, isNull);
       expect(config.chassis.leftFront.pin, isNull);
       expect(config.feedMode, isNull);
       expect(config.frictionMode, isNull);
       final engineerJson = ProjectDocument.create(
-        '空白工程',
         ProjectKind.engineer,
       ).config.toJson();
       expect((engineerJson['pwm']! as Map)['pwma'], isNull);
@@ -534,7 +535,7 @@ void main() {
       addTearDown(() => dir.delete(recursive: true));
       final path = '${dir.path}${Platform.pathSeparator}demo.pieproj';
       const repository = ProjectRepository();
-      await repository.create(path, '工程测试', ProjectKind.engineer);
+      await repository.create(path, ProjectKind.engineer);
       expect((await repository.open(path)).kind, ProjectKind.engineer);
       expect(File('$path.tmp').existsSync(), isFalse);
     });
@@ -685,7 +686,6 @@ void main() {
         ),
       );
       final document = ProjectDocument.create(
-        '主控板未使用',
         ProjectKind.engineer,
       ).copyWith(config: config);
       final json = jsonDecode(jsonEncode(document.toJson())) as Map;
@@ -757,7 +757,6 @@ void main() {
 
       final invalid = withRole('P64', PinRole.motor);
       final document = ProjectDocument.create(
-        '非法工程配置',
         ProjectKind.engineer,
       ).copyWith(config: invalid);
       final restored = ProjectDocument.fromJson(
@@ -1005,6 +1004,7 @@ void main() {
       );
       final encoded = document.toJson();
       expect(encoded['format_version'], ProjectDocument.formatVersion);
+      expect(encoded.containsKey('name'), isFalse);
       final modes = ((encoded['config'] as Map)['modes'] as List)
           .cast<Map<Object?, Object?>>();
       expect(
@@ -1050,6 +1050,7 @@ void main() {
       final document = ProjectDocument.fromJson(
         fixture('format19_engineer.pieproj'),
       );
+      expect(document.sourceFormatVersion, 19);
       final config = document.config as EngineerConfig;
       expect(config.pwm.pinNotes, isEmpty);
       expect(
@@ -1060,9 +1061,33 @@ void main() {
 
       final encoded = document.toJson();
       expect(encoded['format_version'], ProjectDocument.formatVersion);
+      expect(encoded.containsKey('name'), isFalse);
       expect(
         (encoded['config'] as Map)['pwm'] as Map,
         isNot(contains('pin_notes')),
+      );
+    });
+
+    test('格式 20 的工程存档可打开，旧 name 被忽略且引脚备注保留', () {
+      final document = ProjectDocument.fromJson(
+        fixture('format20_engineer.pieproj'),
+      );
+      expect(document.sourceFormatVersion, 20);
+      expect(document.copyWith().sourceFormatVersion, 20);
+      final config = document.config as EngineerConfig;
+      expect(config.pwm.pinNotes, const {'MP03': '工程一级舵机'});
+      expect(
+        ProjectValidator.validate(config)
+            .where((issue) => issue.severity == IssueSeverity.error),
+        isEmpty,
+      );
+
+      final encoded = document.toJson();
+      expect(encoded['format_version'], ProjectDocument.formatVersion);
+      expect(encoded.containsKey('name'), isFalse);
+      expect(
+        ((encoded['config'] as Map)['pwm'] as Map)['pin_notes'],
+        const {'MP03': '工程一级舵机'},
       );
     });
 
@@ -1179,7 +1204,6 @@ void main() {
     test('动作表 JSON 往返', () {
       final config = tableEngineer(tables: [servoTable()]);
       final document = ProjectDocument.create(
-        '动作表测试',
         ProjectKind.engineer,
       ).copyWith(config: config);
       final restored = ProjectDocument.fromJson(
@@ -3511,7 +3535,7 @@ void main() {
     });
 
     test('格式 17 新字段往返', () {
-      final source = ProjectDocument.create('格式 17', ProjectKind.engineer)
+      final source = ProjectDocument.create(ProjectKind.engineer)
           .copyWith(
             config: chassislessEngineer().copyWith(
               pwm: PwmGroupConfig(

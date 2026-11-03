@@ -110,7 +110,6 @@ class _CapturingCreateController extends AppController {
   @override
   Future<bool> createProject(
     String path,
-    String name,
     ProjectKind kind, {
     ProjectConfig? template,
   }) async {
@@ -124,7 +123,7 @@ class _CapturingCreateController extends AppController {
 class _InfantryStartController extends AppController {
   @override
   AppState build() => AppState(
-    document: ProjectDocument.create('步兵测试', ProjectKind.infantry),
+    document: ProjectDocument.create(ProjectKind.infantry),
     saveStatus: SaveStatus.saved,
   );
 }
@@ -135,7 +134,8 @@ class _PageTransitionController extends AppController {
 
   void enterEditor() {
     state = AppState(
-      document: ProjectDocument.create('动画测试', ProjectKind.infantry),
+      document: ProjectDocument.create(ProjectKind.infantry),
+      path: '动画测试.pieproj',
       saveStatus: SaveStatus.saved,
     );
   }
@@ -194,14 +194,16 @@ class _GeneratedCodeController extends AppController {
 }
 
 class _StaticProjectController extends AppController {
-  _StaticProjectController(this.document, this.step);
+  _StaticProjectController(this.document, this.step, {this.path});
 
   final ProjectDocument document;
   final int step;
+  final String? path;
 
   @override
   AppState build() => AppState(
     document: document,
+    path: path,
     step: step,
     maxVisitedStep: step,
     saveStatus: SaveStatus.saved,
@@ -412,7 +414,7 @@ class _FakeDebugCuePreview implements DebugCuePreviewService {
 }
 
 ProjectDocument _infantryDocument() {
-  final source = ProjectDocument.create('步兵测试', ProjectKind.infantry);
+  final source = ProjectDocument.create(ProjectKind.infantry);
   return source.copyWith(
     config: InfantryConfig(
       remote: const RemoteConfig(channel: 36, deadzone: 100),
@@ -483,7 +485,7 @@ InfantryConfig _currentInfantry(WidgetTester tester) {
 }
 
 ProjectDocument _engineerDocument() {
-  final source = ProjectDocument.create('工程测试', ProjectKind.engineer);
+  final source = ProjectDocument.create(ProjectKind.engineer);
   return source.copyWith(
     config: EngineerConfig(
       pwm: PwmGroupConfig(
@@ -500,7 +502,7 @@ ProjectDocument _engineerDocument() {
 }
 
 ProjectDocument _engineerTableDocument() {
-  final source = ProjectDocument.create('动作表测试', ProjectKind.engineer);
+  final source = ProjectDocument.create(ProjectKind.engineer);
   return source.copyWith(
     config: EngineerConfig(
       chassis: const ChassisConfig(enabled: false),
@@ -705,7 +707,7 @@ ProjectDocument _engineerFrictionContinuousDocument() {
 }
 
 ProjectDocument _debugDocument() {
-  final source = ProjectDocument.create('调试测试', ProjectKind.debug);
+  final source = ProjectDocument.create(ProjectKind.debug);
   return source.copyWith(
     config: DebugConfig(
       tests: [
@@ -731,7 +733,7 @@ ProjectDocument _debugDocument() {
 }
 
 ProjectDocument _musicDocument() {
-  final source = ProjectDocument.create('音乐测试', ProjectKind.music);
+  final source = ProjectDocument.create(ProjectKind.music);
   return source.copyWith(
     config: MusicConfig(
       sourceName: 'test.mid',
@@ -949,6 +951,28 @@ void main() {
       findsNothing,
     );
     expect(find.text('动画测试'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('向导标题只取项目文件名并去掉扩展名', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _StaticProjectController(
+              _infantryDocument(),
+              0,
+              path: '射手.pieproj',
+            ),
+          ),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('射手'), findsOneWidget);
+    expect(find.textContaining('.pieproj'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

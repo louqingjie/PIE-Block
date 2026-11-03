@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
@@ -70,7 +71,7 @@ Future<String> _writeProject(
   final path = '${directory.path}${Platform.pathSeparator}$name.pieproj';
   await const ProjectRepository().save(
     path,
-    ProjectDocument.create(name, kind),
+    ProjectDocument.create(kind),
   );
   return path;
 }
@@ -287,13 +288,78 @@ void main() {
     });
   });
 
+  group('项目显示名与打开时自动升级', () {
+    test('显示名只取文件名并去掉 pieproj 后缀', () {
+      expect(projectDisplayName('射手.pieproj'), '射手');
+      expect(projectDisplayName('我的机器人.PIEPROJ'), '我的机器人');
+      expect(projectDisplayName(null), '未命名项目');
+      expect(projectDisplayName('   '), '未命名项目');
+      expect(
+        projectDisplayName(
+          'content://com.android.externalstorage.documents/document/'
+          'primary%3ADocuments%2Frobot.pieproj',
+        ),
+        'robot',
+      );
+    });
+
+    test('打开旧格式项目会立即重写为当前格式并去掉 name', () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'pieblock_upgrade_',
+      );
+      addTearDown(() => directory.delete(recursive: true));
+      final path = '${directory.path}${Platform.pathSeparator}legacy.pieproj';
+      final legacy = ProjectDocument.create(ProjectKind.engineer).toJson()
+        ..['format_version'] = 20
+        ..['name'] = '旧工程';
+      await File(path).writeAsString(jsonEncode(legacy));
+
+      final container = _containerFor(
+        _SettingsController(_MemorySettings(null)),
+      );
+      addTearDown(container.dispose);
+      final controller = container.read(appControllerProvider.notifier);
+
+      expect(await controller.openProject(path), isTrue);
+      final state = container.read(appControllerProvider);
+      expect(state.path, path);
+      expect(state.document!.sourceFormatVersion, 20);
+
+      final saved = jsonDecode(await File(path).readAsString()) as Map;
+      expect(saved['format_version'], ProjectDocument.formatVersion);
+      expect(saved.containsKey('name'), isFalse);
+    });
+
+    test('打开当前格式项目不会重写文件', () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'pieblock_no_upgrade_',
+      );
+      addTearDown(() => directory.delete(recursive: true));
+      final path = '${directory.path}${Platform.pathSeparator}current.pieproj';
+      await const ProjectRepository().save(
+        path,
+        ProjectDocument.create(ProjectKind.infantry),
+      );
+      final before = await File(path).readAsString();
+
+      final container = _containerFor(
+        _SettingsController(_MemorySettings(null)),
+      );
+      addTearDown(container.dispose);
+      final controller = container.read(appControllerProvider.notifier);
+
+      expect(await controller.openProject(path), isTrue);
+      expect(await File(path).readAsString(), before);
+    });
+  });
+
   test('打开项目后最近项目里记录该项目的类型', () async {
     final directory = await Directory.systemTemp.createTemp('pieblock_recent_');
     addTearDown(() => directory.delete(recursive: true));
     final path = '${directory.path}${Platform.pathSeparator}robot.pieproj';
     await const ProjectRepository().save(
       path,
-      ProjectDocument.create('robot', ProjectKind.engineer),
+      ProjectDocument.create(ProjectKind.engineer),
     );
 
     final container = ProviderContainer();

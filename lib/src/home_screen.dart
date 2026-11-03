@@ -328,7 +328,6 @@ class HomeScreen extends ConsumerWidget {
                             Navigator.pop(context);
                             await appController.createProject(
                               projectPath,
-                              projectName,
                               projectKind,
                               template: template,
                             );
@@ -553,7 +552,7 @@ class HomeScreen extends ConsumerWidget {
                                       recentProjectIcon(entry.$2.kind),
                                     ),
                                     title: Text(
-                                      AppDocumentIo.displayName(entry.$2.path),
+                                      projectDisplayName(entry.$2.path),
                                     ),
                                     subtitle: Text(
                                       entry.$2.path,

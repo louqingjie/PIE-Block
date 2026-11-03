@@ -35,7 +35,7 @@ Future<void> main(List<String> args) async {
       runtimeRoot: Directory.fromUri(work.uri.resolve('runtime')).path,
       workRoot: Directory.fromUri(work.uri.resolve('builds')).path,
     );
-    final document = ProjectDocument.create('verify', kind);
+    final document = ProjectDocument.create(kind);
     // 新建工程不预填必填配置。为使代码生成可用，补上与向导最小操作等价的
     // 确定性内容：调试工程启用第一个调试项；音乐工程添加单个音符。
     final config = switch (document.config) {

@@ -26,12 +26,8 @@ class ProjectRepository {
 
   static String _key(String reference) => '$_prefix$reference';
 
-  Future<ProjectDocument> create(
-    String path,
-    String name,
-    ProjectKind kind,
-  ) async {
-    final document = ProjectDocument.create(name, kind);
+  Future<ProjectDocument> create(String path, ProjectKind kind) async {
+    final document = ProjectDocument.create(kind);
     await save(path, document);
     return document;
   }

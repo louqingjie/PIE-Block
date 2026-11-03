@@ -88,6 +88,21 @@ class AppState {
   );
 }
 
+const _projectFileSuffix = '.pieproj';
+
+/// 项目显示名：只取自文件名，剥掉 `.pieproj` 后缀；没有可用路径时用占位名。
+String projectDisplayName(String? reference) {
+  final path = reference?.trim() ?? '';
+  if (path.isEmpty) return '未命名项目';
+  final fileName = AppDocumentIo.displayName(path);
+  if (!fileName.toLowerCase().endsWith(_projectFileSuffix)) return fileName;
+  final name = fileName.substring(
+    0,
+    fileName.length - _projectFileSuffix.length,
+  );
+  return name.isEmpty ? '未命名项目' : name;
+}
+
 final appControllerProvider = NotifierProvider<AppController, AppState>(
   AppController.new,
 );
@@ -271,7 +286,6 @@ class AppController extends Notifier<AppState> {
 
   Future<bool> createProject(
     String path,
-    String name,
     ProjectKind kind, {
     ProjectConfig? template,
   }) async {
@@ -282,17 +296,13 @@ class AppController extends Notifier<AppState> {
           isContentUri || trimmed.toLowerCase().endsWith('.pieproj')
           ? trimmed
           : '$trimmed.pieproj';
-      final created = ProjectDocument.create(name.trim(), kind);
-      // 模板只替换 config：名称、时间戳和引导进度都按本次创建重新生成，
+      final created = ProjectDocument.create(kind);
+      // 模板只替换 config：时间戳和引导进度都按本次创建重新生成，
       // 项目文件里也不留任何「来自模板」的痕迹。
       final document = template == null
           ? created
           : created.copyWith(config: template);
-      if (isContentUri) {
-        await _documentIo.write(normalized, _encodeDocument(document));
-      } else {
-        await _repository.save(normalized, document);
-      }
+      await _writeProject(document, normalized);
       _adopt(document, normalized);
       return true;
     } catch (error) {
@@ -308,7 +318,7 @@ class AppController extends Notifier<AppState> {
   Future<bool> importProject(SelectedDocument selected) async {
     try {
       final document = _decodeDocument(selected.bytes);
-      await _repository.save(selected.reference, document);
+      await _writeProject(document, selected.reference);
       _adopt(document, selected.reference);
       return true;
     } catch (error) {
@@ -323,7 +333,24 @@ class AppController extends Notifier<AppState> {
       final document = Uri.tryParse(reference)?.scheme == 'content'
           ? _decodeDocument(await _documentIo.read(reference))
           : await _repository.open(reference);
+      // 旧版本存档在首次打开时直接重写为当前格式；写回失败不阻止打开。
+      Object? upgradeError;
+      if (document.sourceFormatVersion < ProjectDocument.formatVersion) {
+        try {
+          await _writeProject(document, reference);
+        } catch (error) {
+          upgradeError = error;
+        }
+      }
       _adopt(document, reference);
+      if (upgradeError != null) {
+        state = state.copyWith(
+          saveStatus: SaveStatus.failed,
+          message:
+              '项目已打开，但自动升级到格式 '
+              '${ProjectDocument.formatVersion} 失败：$upgradeError',
+        );
+      }
       return true;
     } catch (error) {
       final recent = state.recentProjects
@@ -333,6 +360,16 @@ class AppController extends Notifier<AppState> {
       unawaited(_saveSettings());
       return false;
     }
+  }
+
+  Future<void> _writeProject(
+    ProjectDocument document,
+    String reference,
+  ) {
+    if (_isContentUri(reference)) {
+      return _documentIo.write(reference, _encodeDocument(document));
+    }
+    return _repository.save(reference, document);
   }
 
   void _adopt(ProjectDocument document, String path) {
@@ -387,11 +424,7 @@ class AppController extends Notifier<AppState> {
     if (document == null || path == null) return;
     state = state.copyWith(saveStatus: SaveStatus.saving);
     try {
-      if (Uri.tryParse(path)?.scheme == 'content') {
-        await _documentIo.write(path, _encodeDocument(document));
-      } else {
-        await _repository.save(path, document);
-      }
+      await _writeProject(document, path);
       state = state.copyWith(saveStatus: SaveStatus.saved);
     } catch (error) {
       state = state.copyWith(

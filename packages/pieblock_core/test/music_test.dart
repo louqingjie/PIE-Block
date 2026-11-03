@@ -19,7 +19,6 @@ void main() {
   group('音乐项目', () {
     test('创建、JSON 往返与重叠设置默认值', () {
       final document = ProjectDocument.create(
-        '音乐测试',
         ProjectKind.music,
       ).copyWith(config: musicConfig());
       final restored = ProjectDocument.fromJson(document.toJson());

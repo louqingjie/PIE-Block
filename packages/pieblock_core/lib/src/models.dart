@@ -1936,18 +1936,18 @@ class GuideProgress {
 
 class ProjectDocument {
   const ProjectDocument({
-    required this.name,
     required this.kind,
     required this.createdAt,
     required this.updatedAt,
     required this.config,
     required this.guideProgress,
+    this.sourceFormatVersion = ProjectDocument.formatVersion,
   });
   /// 当前写出的存档格式。
   ///
   /// 格式 18 起项目已正式发布：新增字段必须可选，旧格式必须能读入，见
   /// [oldestSupportedFormatVersion] 与 [ProjectDocument.fromJson]。
-  static const formatVersion = 20;
+  static const formatVersion = 21;
 
   /// 仍可读入的最旧格式：1.7.0 正式发布时使用的格式 17。
   ///
@@ -1956,16 +1956,22 @@ class ProjectDocument {
   /// 读入旧档时按原来的 `direction == reverse` 取负迁移。
   /// 19 → 20 新增可选的 `pwm.pin_notes`（工程引脚备注，缺省为空），仅用于
   /// 界面在动作映射的引脚选择中显示 `引脚（备注）`。
+  /// 20 → 21 移除 `name`：项目名称只取自文件名；读入旧档时忽略该字段，
+  /// 控制器在首次打开旧版本项目后自动把文件重写为当前格式。
   static const oldestSupportedFormatVersion = 17;
-  final String name;
   final ProjectKind kind;
   final DateTime createdAt, updatedAt;
   final ProjectConfig config;
   final GuideProgress guideProgress;
-  factory ProjectDocument.create(String name, ProjectKind kind) {
+
+  /// 读取时存档的 `format_version`；仅运行时使用，不写回文件。
+  ///
+  /// 新建项目默认为当前格式。控制器据此判断打开的是否为需要自动升级的旧档。
+  final int sourceFormatVersion;
+
+  factory ProjectDocument.create(ProjectKind kind) {
     final now = DateTime.now().toUtc();
     return ProjectDocument(
-      name: name,
       kind: kind,
       createdAt: now,
       updatedAt: now,
@@ -1979,20 +1985,18 @@ class ProjectDocument {
     );
   }
   ProjectDocument copyWith({
-    String? name,
     ProjectConfig? config,
     GuideProgress? guideProgress,
   }) => ProjectDocument(
-    name: name ?? this.name,
     kind: kind,
     createdAt: createdAt,
     updatedAt: DateTime.now().toUtc(),
     config: config ?? this.config,
     guideProgress: guideProgress ?? this.guideProgress,
+    sourceFormatVersion: sourceFormatVersion,
   );
   Map<String, Object?> toJson() => {
     'format_version': formatVersion,
-    'name': name,
     'project_kind': kind.name,
     'created_at': createdAt.toIso8601String(),
     'updated_at': updatedAt.toIso8601String(),
@@ -2017,6 +2021,7 @@ class ProjectDocument {
     // 17 → 18：仅新增可选的 modes[].action_tables，缺省为空表。
     // 18 → 19：动作/调试测试项的方向由数值正负表示，解析时折叠旧 direction。
     // 19 → 20：仅新增可选的 pwm.pin_notes，缺省为空，无迁移动作。
+    // 20 → 21：移除 name，读入时忽略，项目名称由调用方从文件名派生。
     final kind = enumValue(
           ProjectKind.values,
           j['project_kind'],
@@ -2025,7 +2030,6 @@ class ProjectDocument {
         config = Map<String, Object?>.from(j['config'] as Map? ?? {}),
         now = DateTime.now().toUtc();
     return ProjectDocument(
-      name: j['name']?.toString() ?? '未命名项目',
       kind: kind,
       createdAt: DateTime.tryParse(j['created_at']?.toString() ?? '') ?? now,
       updatedAt: DateTime.tryParse(j['updated_at']?.toString() ?? '') ?? now,
@@ -2039,6 +2043,7 @@ class ProjectDocument {
         ProjectKind.debug => DebugConfig.fromJson(config),
         ProjectKind.music => MusicConfig.fromJson(config),
       },
+      sourceFormatVersion: version,
     );
   }
 }

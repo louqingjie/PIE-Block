@@ -21,6 +21,11 @@ void main() {
         ProjectDocument.formatVersion,
         reason: '模板必须与当前项目格式版本一致，否则 fromJson 会直接拒绝',
       );
+      expect(
+        json.containsKey('name'),
+        isFalse,
+        reason: '格式 21 起项目名称只取自文件名，模板不应再写 name',
+      );
       final document = ProjectDocument.fromJson(Map<String, Object?>.from(json));
       expect(document.kind, kind);
 

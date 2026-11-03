@@ -112,7 +112,7 @@ class _StaticProjectController extends AppController {
 }
 
 ProjectDocument _dragDocument() {
-  final source = ProjectDocument.create('拖动测试', ProjectKind.music);
+  final source = ProjectDocument.create(ProjectKind.music);
   return source.copyWith(
     config: MusicConfig(
       sourceName: 'drag.mid',
@@ -132,7 +132,7 @@ ProjectDocument _dragDocument() {
 /// 短音符文档：60 tick 只有 15px 宽（x 240..255），用来验证调时值命中区随宽度
 /// 收缩（min(10, max(3, width*0.25)) = 3.75px）后，短音符左侧仍留得下整体拖动区。
 ProjectDocument _shortNoteDocument() {
-  final source = ProjectDocument.create('短音符测试', ProjectKind.music);
+  final source = ProjectDocument.create(ProjectKind.music);
   return source.copyWith(
     config: MusicConfig(
       sourceName: 'short.mid',

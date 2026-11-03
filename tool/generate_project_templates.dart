@@ -58,7 +58,6 @@ void main() {
 ProjectDocument _document(ProjectKind kind, ProjectConfig config) {
   final createdAt = DateTime.utc(2026, 1, 1);
   return ProjectDocument(
-    name: '模板工程',
     kind: kind,
     createdAt: createdAt,
     updatedAt: createdAt,
