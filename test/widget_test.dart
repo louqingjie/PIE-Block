@@ -2434,6 +2434,7 @@ void main() {
     expect(roles('P60'), const [
       PinRole.motor,
       PinRole.servo,
+      PinRole.friction,
       PinRole.jitterMotor,
       PinRole.unused,
     ]);
@@ -2446,10 +2447,15 @@ void main() {
     expect(roles('P74'), const [
       PinRole.motor,
       PinRole.servo,
+      PinRole.friction,
       PinRole.jitterMotor,
       PinRole.unused,
     ]);
-    expect(roles('MP03'), const [PinRole.servo, PinRole.unused]);
+    expect(roles('MP03'), const [
+      PinRole.servo,
+      PinRole.friction,
+      PinRole.unused,
+    ]);
     expect(field('MP03').onChanged, isNotNull);
     // 主控板舵机口缺省按舵机处理，中位/限幅照常显示。
     expect(find.byKey(const ValueKey('pwm.servo_mids.MP03')), findsOneWidget);
@@ -2476,6 +2482,100 @@ void main() {
             as EngineerConfig;
     expect(updated.pwm.pinRoles['P64'], PinRole.friction);
     expect(find.textContaining('P64 不支持平滑电机'), findsNothing);
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
+  testWidgets('工程任意输出脚可设为摩擦轮并显示满油转速', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _StaticProjectController(_engineerDocument(), 1),
+          ),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    Future<void> selectFriction(String pin) async {
+      final field = find.byKey(ValueKey('pwm.pin_roles.$pin'));
+      await tester.ensureVisible(field);
+      await tester.tap(field);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('摩擦轮').last);
+      await tester.pumpAndSettle();
+    }
+
+    await selectFriction('P74');
+    expect(
+      find.byKey(
+        const ValueKey('pwm.friction_max_duties.P74'),
+        skipOffstage: false,
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('pwm.servo_mids.P74'), skipOffstage: false),
+      findsNothing,
+    );
+
+    await selectFriction('MP03');
+    expect(
+      find.byKey(
+        const ValueKey('pwm.friction_max_duties.MP03'),
+        skipOffstage: false,
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('pwm.servo_mids.MP03'), skipOffstage: false),
+      findsNothing,
+    );
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(WizardScreen)),
+    );
+    final updated =
+        container.read(appControllerProvider).document!.config
+            as EngineerConfig;
+    expect(updated.pwm.pinRoles['P74'], PinRole.friction);
+    expect(updated.pwm.pinRoles['MP03'], PinRole.friction);
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
+  testWidgets('MP03 设为摩擦轮后可作为动作输出', (tester) async {
+    final source = _engineerDocument();
+    final config = source.config as EngineerConfig;
+    final document = source.copyWith(
+      config: config.copyWith(
+        pwm: config.pwm.copyWith(
+          pinRoles: {...config.pwm.pinRoles, 'MP03': PinRole.friction},
+        ),
+      ),
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _StaticProjectController(document, 3),
+          ),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final dropdown = tester.widget<DropdownButton<String>>(
+      find.descendant(
+        of: find.byKey(const ValueKey('modes.0.actions.0.pin')),
+        matching: find.byType(DropdownButton<String>),
+      ),
+    );
+    expect(
+      dropdown.items!.map((item) => (item.child as Text).data),
+      contains(contains('MP03')),
+    );
     await tester.pump(const Duration(milliseconds: 600));
   });
 
@@ -2897,9 +2997,8 @@ void main() {
     config = _currentInfantry(tester);
     expect(config.yawActuators.single.midOffset, 30);
     expect(config.yawActuators.single.maxLimit, 61);
-    final issue = ProjectValidator.validate(
-      config,
-    ).singleWhere((i) => i.fieldPath == 'gimbal.yaw.0.max_limit');
+    final issue = ProjectValidator.validate(config)
+        .singleWhere((i) => i.fieldPath == 'gimbal.yaw.0.max_limit');
     expect(issue.severity, IssueSeverity.error);
     expect(issue.message, 'Yaw 逆时针限幅必须在 0–60 之间');
     expect(() => CodeGenerator.generate(config), throwsA(isA<StateError>()));

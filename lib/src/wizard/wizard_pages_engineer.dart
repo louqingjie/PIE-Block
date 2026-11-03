@@ -369,9 +369,9 @@ class _ActionRow extends ConsumerWidget {
         if (pwm.pinRoles[pin] != null && pwm.pinRoles[pin] != PinRole.unused)
           pin,
       // 主控板 MP03/MP74 缺省按舵机可选；显式标为「未使用」后不再出现在
-      // 动作输出引脚中，避免生成引用未使用口的动作行。
+      // 动作输出引脚中，设为摩擦轮时同样可以作为动作输出。
       for (final pin in mainServoPins)
-        if (pwm.isServoPin(pin)) pin,
+        if (pwm.isServoPin(pin) || pwm.roleOf(pin) == PinRole.friction) pin,
     ];
     final visiblePins = _includeCurrent(usablePins, action.pin);
     final usesSensitivity =

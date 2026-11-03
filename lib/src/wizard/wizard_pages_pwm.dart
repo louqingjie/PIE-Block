@@ -93,7 +93,6 @@ class _PwmPage extends ConsumerWidget {
                         final enabled = role != null && role != PinRole.unused;
                         final isServo = role == PinRole.servo;
                         final isFriction =
-                            (pin == 'P64' || pin == 'P66') &&
                             pwm.pinRoles[pin] == PinRole.friction;
                         final ccw = pwm.servoMaxLimits[pin];
                         final cw = pwm.servoMinLimits[pin] == null
