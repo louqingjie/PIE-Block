@@ -277,10 +277,10 @@ $turnReverse    dutyOfMotor[${_slot(c.leftFront.pin)}] = ${_dir(c.leftFront.dire
 
   /// 生成工程「按键动作表」状态机。
   ///
-  /// 每张表一个档位计数：下一档键上升沿 `step = step >= N ? 1 : step + 1`，
-  /// 可选的上一档键反向循环；切换后把该档整列值写入输出并保持，蜂鸣器可用
-  /// 时按档位音高提示。表只在所属模式内响应（`UpdateActionTables` 按
-  /// `currentMode` 分发），切模式时计数清零。
+  /// 每张表一个档位计数：下一档键上升沿前进一档，越界重复开启时到最后一档
+  /// 后回到第一档，关闭时停在最后一档；上一档键同理。切换后把该档整列值
+  /// 写入输出并保持，蜂鸣器可用时按档位音高提示。表只在所属模式内响应
+  /// （`UpdateActionTables` 按 `currentMode` 分发），切模式时计数清零。
   static String _actionTableCode(EngineerConfig c) {
     final tables = <({int mode, ActionTable table})>[];
     for (var mi = 0; mi < c.modeCount!; mi++) {
@@ -291,7 +291,7 @@ $turnReverse    dutyOfMotor[${_slot(c.leftFront.pin)}] = ${_dir(c.leftFront.dire
     if (tables.isEmpty) return '';
     final buzzer = !c.pwm.buzzerDisabled;
     final buffer = StringBuffer(
-      '/* 按键动作表：按一次前进一档，到最后一档后回到第一档 */\n',
+      '/* 按键动作表：按一次前进一档，越界重复开启时循环，关闭时在两端停住 */\n',
     );
     if (buzzer) {
       buffer.write(
@@ -355,11 +355,13 @@ $turnReverse    dutyOfMotor[${_slot(c.leftFront.pin)}] = ${_dir(c.leftFront.dire
       final steps = table.steps!;
       final nextKey = _key(table.key!);
       final tone = buzzer ? '        TableTone(tableStep[$k]);\n' : '';
+      final nextStep = table.wrap
+          ? '(tableStep[$k] >= $steps ? 1 : tableStep[$k] + 1)'
+          : '(tableStep[$k] < $steps ? tableStep[$k] + 1 : $steps)';
       buffer.write('\nstatic void UpdateTable$k(void)\n{\n');
       buffer.write(
         '    if (RcKeyValueRead($nextKey) && !tableNextLast[$k]) {\n'
-        '        tableStep[$k] = (uint8_t)'
-        '(tableStep[$k] >= $steps ? 1 : tableStep[$k] + 1);\n'
+        '        tableStep[$k] = (uint8_t)$nextStep;\n'
         '        ApplyTable$k(tableStep[$k]);\n'
         '$tone'
         '    }\n'
@@ -367,10 +369,13 @@ $turnReverse    dutyOfMotor[${_slot(c.leftFront.pin)}] = ${_dir(c.leftFront.dire
       );
       if (table.previousKey != null) {
         final prevKey = _key(table.previousKey!);
+        final prevStep = table.wrap
+            ? '(tableStep[$k] <= 1 ? $steps : tableStep[$k] - 1)'
+            : '(tableStep[$k] <= 1 ? (tableStep[$k] == 0 ? $steps : 1) : '
+                  'tableStep[$k] - 1)';
         buffer.write(
           '    if (RcKeyValueRead($prevKey) && !tablePrevLast[$k]) {\n'
-          '        tableStep[$k] = (uint8_t)'
-          '(tableStep[$k] <= 1 ? $steps : tableStep[$k] - 1);\n'
+          '        tableStep[$k] = (uint8_t)$prevStep;\n'
           '        ApplyTable$k(tableStep[$k]);\n'
           '$tone'
           '    }\n'

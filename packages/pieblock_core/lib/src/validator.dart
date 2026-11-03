@@ -1453,6 +1453,14 @@ abstract final class ProjectValidator {
           checkKey(table.previousKey, '$base.prev_key', '上一档键');
         }
       }
+      if (!table.wrap && table.previousKey == null) {
+        issue(
+          IssueSeverity.error,
+          '$base.wrap',
+          '只有下一档键时必须开启越界重复',
+          'mappings',
+        );
+      }
       if (table.rows.isEmpty) {
         issue(
           IssueSeverity.error,

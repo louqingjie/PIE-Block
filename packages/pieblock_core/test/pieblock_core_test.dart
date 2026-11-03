@@ -1039,6 +1039,30 @@ void main() {
       );
     });
 
+    test('格式 21 的工程存档可打开，动作表越界重复默认开启', () {
+      final document = ProjectDocument.fromJson(
+        fixture('format21_engineer.pieproj'),
+      );
+      expect(document.sourceFormatVersion, 21);
+      final config = document.config as EngineerConfig;
+      final table = config.modes.first.actionTables.single;
+      expect(table.key, 'A');
+      expect(table.previousKey, 'D');
+      expect(table.wrap, isTrue);
+      expect(
+        ProjectValidator.validate(config)
+            .where((issue) => issue.severity == IssueSeverity.error),
+        isEmpty,
+      );
+
+      final encoded = document.toJson();
+      expect(encoded['format_version'], ProjectDocument.formatVersion);
+      final tables =
+          (((encoded['config'] as Map)['modes'] as List).first as Map)['action_tables']
+              as List;
+      expect((tables.first as Map)['wrap'], isTrue);
+    });
+
     test('过旧与过新的格式给出明确提示', () {
       expect(
         () => ProjectDocument.fromJson({'format_version': 16}),
@@ -1167,6 +1191,7 @@ void main() {
       expect(table.key, 'A');
       expect(table.previousKey, 'D');
       expect(table.steps, 3);
+      expect(table.wrap, isTrue);
       expect(table.rows.map((row) => row.values).toList(), [
         [-30, 0, 45],
         [0, 20, -20],
@@ -1174,12 +1199,13 @@ void main() {
     });
 
     test('动作表复制保留字段并生成新 id', () {
-      final source = servoTable();
+      final source = servoTable().copyWith(wrap: false);
       final copy = source.duplicate();
       expect(copy.id, isNot(source.id));
       expect(copy.key, source.key);
       expect(copy.previousKey, source.previousKey);
       expect(copy.steps, source.steps);
+      expect(copy.wrap, isFalse);
       expect(
         copy.rows.map((row) => row.pin).toList(),
         source.rows.map((row) => row.pin).toList(),
@@ -1187,6 +1213,60 @@ void main() {
       expect(
         copy.rows.map((row) => row.values).toList(),
         source.rows.map((row) => row.values).toList(),
+      );
+    });
+
+    test('旧动作表缺少 wrap 时按越界重复开启读入', () {
+      final legacy = ActionTable.fromJson({
+        'id': 'legacy',
+        'key': 'A',
+        'prev_key': 'D',
+        'steps': 2,
+        'rows': [
+          {'pin': 'P60', 'values': [0, 10]},
+        ],
+      });
+      expect(legacy.wrap, isTrue);
+      expect(legacy.copyWith(wrap: false).wrap, isFalse);
+    });
+
+    test('越界重复关闭时生成首尾停住分支', () {
+      final wrapCode = CodeGenerator.generate(
+        tableEngineer(tables: [servoTable()]),
+      );
+      expect(
+        wrapCode,
+        contains('tableStep[0] >= 3 ? 1 : tableStep[0] + 1'),
+      );
+      expect(
+        wrapCode,
+        contains('tableStep[0] <= 1 ? 3 : tableStep[0] - 1'),
+      );
+
+      final noWrapCode = CodeGenerator.generate(
+        tableEngineer(tables: [servoTable().copyWith(wrap: false)]),
+      );
+      expect(
+        noWrapCode,
+        contains('tableStep[0] < 3 ? tableStep[0] + 1 : 3'),
+      );
+      expect(
+        noWrapCode,
+        contains(
+          'tableStep[0] <= 1 ? (tableStep[0] == 0 ? 3 : 1) : tableStep[0] - 1',
+        ),
+      );
+    });
+
+    test('只有下一档键时关闭越界重复会报错', () {
+      final issues = ProjectValidator.validate(
+        tableEngineer(
+          tables: [servoTable(previousKey: null).copyWith(wrap: false)],
+        ),
+      ).where((issue) => issue.severity == IssueSeverity.error);
+      expect(
+        issues.map((issue) => issue.message),
+        contains('只有下一档键时必须开启越界重复'),
       );
     });
 

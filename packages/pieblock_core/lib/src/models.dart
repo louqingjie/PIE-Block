@@ -1702,8 +1702,9 @@ class ActionTableRow {
 
 /// 动作表：一个按键循环切换的一组档位。
 ///
-/// 每按一次「下一档键」前进一档（到最后一档后回到第一档），可选「上一档键」
-/// 反向循环；每次切档把该列的值整体写入对应引脚并保持。
+/// 每按一次「下一档键」前进一档；「越界重复」开启时到最后一档后回到第一档，
+/// 关闭时停在最后一档。可选「上一档键」反向切换，同样受越界重复控制。
+/// 每次切档把该列的值整体写入对应引脚并保持。
 class ActionTable {
   ActionTable({
     String? id,
@@ -1711,6 +1712,7 @@ class ActionTable {
     this.previousKey,
     this.steps,
     List<ActionTableRow>? rows,
+    this.wrap = true,
   }) : id = id ?? DateTime.now().microsecondsSinceEpoch.toString(),
        rows = List.unmodifiable(rows ?? const []);
   final String id;
@@ -1718,11 +1720,16 @@ class ActionTable {
   final String? previousKey;
   final int? steps;
   final List<ActionTableRow> rows;
+
+  /// 到最后一档后是否回到第一档；关闭后下一档键停在最后一档，
+  /// 上一档键停在第一档。只有下一档键时强制开启。
+  final bool wrap;
   ActionTable copyWith({
     Object? key = _unset,
     Object? previousKey = _unset,
     Object? steps = _unset,
     List<ActionTableRow>? rows,
+    bool? wrap,
   }) => ActionTable(
     id: id,
     key: identical(key, _unset) ? this.key : key as String?,
@@ -1731,6 +1738,7 @@ class ActionTable {
         : previousKey as String?,
     steps: identical(steps, _unset) ? this.steps : steps as int?,
     rows: List.unmodifiable(rows ?? this.rows),
+    wrap: wrap ?? this.wrap,
   );
   static int _duplicateSerial = 0;
 
@@ -1741,6 +1749,7 @@ class ActionTable {
     previousKey: previousKey,
     steps: steps,
     rows: rows,
+    wrap: wrap,
   );
   Map<String, Object?> toJson() => {
     'id': id,
@@ -1748,6 +1757,7 @@ class ActionTable {
     'prev_key': previousKey,
     'steps': steps,
     'rows': rows.map((row) => row.toJson()).toList(),
+    'wrap': wrap,
   };
   factory ActionTable.fromJson(Map<String, Object?> j) => ActionTable(
     id: j['id']?.toString(),
@@ -1758,6 +1768,7 @@ class ActionTable {
       for (final row in j['rows'] as List? ?? const [])
         if (row is Map) ActionTableRow.fromJson(Map<String, Object?>.from(row)),
     ],
+    wrap: j['wrap'] as bool? ?? true,
   );
 }
 
@@ -1966,7 +1977,7 @@ class ProjectDocument {
   ///
   /// 格式 18 起项目已正式发布：新增字段必须可选，旧格式必须能读入，见
   /// [oldestSupportedFormatVersion] 与 [ProjectDocument.fromJson]。
-  static const formatVersion = 21;
+  static const formatVersion = 22;
 
   /// 仍可读入的最旧格式：1.7.0 正式发布时使用的格式 17。
   ///
@@ -1977,6 +1988,8 @@ class ProjectDocument {
   /// 界面在动作映射的引脚选择中显示 `引脚（备注）`。
   /// 20 → 21 移除 `name`：项目名称只取自文件名；读入旧档时忽略该字段，
   /// 控制器在首次打开旧版本项目后自动把文件重写为当前格式。
+  /// 21 → 22 动作表新增可选的 `wrap`（越界重复，缺省开启）；读入旧档时
+  /// 按原来的循环行为迁移，不要求用户重新配置。
   static const oldestSupportedFormatVersion = 17;
   final ProjectKind kind;
   final DateTime createdAt, updatedAt;

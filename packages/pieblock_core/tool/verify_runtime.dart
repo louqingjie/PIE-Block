@@ -1720,6 +1720,57 @@ List<Scenario> scenarios() {
   ));
 
   scenarios.add(Scenario(
+    'eng-table-no-wrap',
+    engineerBase(
+      chassisEnabled: false,
+      modes: [
+        EngineerModeConfig(actionTables: [
+          ActionTable(
+            key: 'A',
+            previousKey: 'D',
+            steps: 3,
+            wrap: false,
+            rows: const [
+              ActionTableRow(pin: 'P74', values: [1000, 2000, 3000]),
+            ],
+          ),
+        ]),
+      ],
+    ),
+    18000,
+    [
+      (3000, 'A', 1), (3200, 'A', 0),
+      (5000, 'A', 1), (5200, 'A', 0),
+      (7000, 'A', 1), (7200, 'A', 0),
+      (9000, 'A', 1), (9200, 'A', 0),
+      (11000, 'D', 1), (11200, 'D', 0),
+      (13000, 'D', 1), (13200, 'D', 0),
+      (15000, 'D', 1), (15200, 'D', 0),
+    ],
+    (log) {
+      final failures = <String>[];
+      const windows = [
+        (3200, 4900, 1000, '第一次按下一档应进入第 1 档'),
+        (5200, 6900, 2000, '第二次按下一档应进入第 2 档'),
+        (7200, 8900, 3000, '第三次按下一档应进入第 3 档'),
+        (9200, 10900, 3000, '关闭越界重复后，第 4 次按下一档应停在第 3 档'),
+        (11200, 12900, 2000, '按上一档应退到第 2 档'),
+        (13200, 14900, 1000, '再按上一档应退到第 1 档'),
+        (15200, 17500, 1000, '停在第 1 档后继续按上一档不应回绕到第 3 档'),
+      ];
+      for (final (from, to, expected, label) in windows) {
+        final duties = tableDuties(log, 4, from, to);
+        if (duties.isEmpty) {
+          failures.add('$label 窗口内没有占空比帧');
+        } else if (duties.any((value) => value != expected)) {
+          failures.add('$label 占空比应为 $expected（得到 ${duties.last}）');
+        }
+      }
+      return failures;
+    },
+  ));
+
+  scenarios.add(Scenario(
     'eng-table-mode-reset',
     engineerBase(
       chassisEnabled: false,
