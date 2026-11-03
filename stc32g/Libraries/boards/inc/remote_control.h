@@ -10,8 +10,6 @@
 
 #include "common.h"
 
-extern volatile uint32_t rc_packet_count; /* valid remote frame counter */
-
 // �������
 //--------------------------------------------------------------
 typedef enum

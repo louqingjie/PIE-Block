@@ -9,9 +9,6 @@
 #include "nrf24l01.h"
 #include "main.h"
 
-/* valid remote frame counter: generated firmware uses it for link feedback */
-volatile uint32_t rc_packet_count = 0;
-
 RC_ctrl_t rc_ctrl;   // ң����ʵ�廯
 SendPack_t sendpack; // ��������ʵ�廯
 
@@ -51,7 +48,6 @@ uint8_t Rc_unpack_data(uint8_t *data_t)
   rc_ctrl.rocker.value[2] = (int16_t)(data_t[5] | data_t[6] << 8);
   rc_ctrl.rocker.value[3] = (int16_t)(data_t[7] | data_t[8] << 8);
   rc_ctrl.key.value = (uint16_t)(data_t[9] | data_t[10] << 8);
-  rc_packet_count++;
   return 1;
 }
 

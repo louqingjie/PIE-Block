@@ -43,8 +43,6 @@ int _inputId(String input) => switch (input) {
   'D' => 16 + 9,
   'LC' => 16 + 10,
   'RC' => 16 + 11,
-  // 伪输入：遥控链路开关。1 = 每轮都能收到有效帧（rc_packet_count 自增）。
-  'LINK' => 200,
   _ => throw ArgumentError('未知输入 $input'),
 };
 
@@ -122,15 +120,12 @@ static const int g_eventCount = (int)(sizeof(g_events) / sizeof(g_events[0]));
 static int g_eventIdx = 0;
 static int g_rocker[4] = {0, 0, 0, 0};
 static int g_key[16] = {0};
-static int g_link = 1; /* 1 = 遥控链路正常，nrf_handler 每轮都能收到有效帧 */
-volatile uint32_t rc_packet_count = 0;
 
 static void PbPump(void)
 {
     while (g_eventIdx < g_eventCount && g_events[g_eventIdx].at <= g_ms) {
         const PbEvent *e = &g_events[g_eventIdx++];
         if (e->id < 4) g_rocker[e->id] = e->value;
-        else if (e->id == 200) g_link = e->value;
         else g_key[e->id - 16] = e->value;
     }
 }
@@ -174,7 +169,7 @@ void PWM_SET_Frequency(int channel, int frequency, int duty)
 
 uint8_t RcKeyValueRead(int key) { PbPump(); return (uint8_t)(g_key[key] != 0); }
 int RcRockerValueRead(int rocker) { PbPump(); return g_rocker[rocker]; }
-void nrf_handler(void) { PbPump(); if (g_link) rc_packet_count++; }
+void nrf_handler(void) { PbPump(); }
 
 int main(void)
 {
@@ -1498,82 +1493,6 @@ List<Scenario> scenarios() {
       final forwardDir = dir.where((f) => f.ms >= 7200 && f.ms < 8900);
       if (forwardDir.isEmpty || forwardDir.any((d) => d.duties[4] != 1)) {
         failures.add('正向键按住期间方向位应为 1');
-      }
-      return failures;
-    },
-  ));
-
-  // --- 遥控反馈：连上/输入/掉线/重连 的蜂鸣提示 ---
-  // 断言只看蜂鸣器通道（101）里 duty=5000 的“发声”帧，按频率区分音型：
-  // 1319=连上/重连，1568=输入，392=掉线；舵机位置反馈的音高落在 250~1250。
-  bool beepAt(RunLog log, int frequency, int fromMs, int toMs) => log
-      .pwmChannel(101)
-      .any((p) => p.duty == 5000 && p.freq == frequency && p.ms >= fromMs && p.ms < toMs);
-
-  scenarios.add(Scenario(
-    'inf-remote-feedback',
-    infantryBase(frictionMode: FrictionMode.disabled),
-    16000,
-    [
-      (3000, 'B', 1), (3200, 'B', 0),
-      (6000, 'LINK', 0),
-      (10000, 'LINK', 1),
-    ],
-    (log) {
-      final failures = <String>[];
-      if (!beepAt(log, 1319, 0, 3000)) {
-        failures.add('上电后没有链路连上提示音（1319Hz）');
-      }
-      if (!beepAt(log, 1568, 2900, 4200)) {
-        failures.add('按键后没有输入提示音（1568Hz）');
-      }
-      if (!beepAt(log, 392, 6500, 10000)) {
-        failures.add('掉线后没有低音提示（392Hz）');
-      }
-      if (!beepAt(log, 1319, 10000, 15500)) {
-        failures.add('重新连上后没有提示音（1319Hz）');
-      }
-      return failures;
-    },
-  ));
-
-  scenarios.add(Scenario(
-    'eng-remote-feedback',
-    engineerBase(
-      chassisEnabled: false,
-      modeCount: 2,
-      strategy: SwitchStrategy.direct,
-      modeKeys: ['↑', '↓'],
-      modes: [
-        EngineerModeConfig(actions: [
-          action('B', pin: 'P74', mode: ControlMode.direct, direction: Direction.forward, parameter: 10000),
-        ]),
-        EngineerModeConfig(actions: const []),
-      ],
-    ),
-    16000,
-    [
-      (3000, '↑', 1), (3200, '↑', 0), // 模式切换键：只应有 ModeSwitchFeedback
-      (5000, 'B', 1), (5200, 'B', 0), // 动作键：应有输入提示音
-      (8000, 'LINK', 0),
-      (12000, 'LINK', 1),
-    ],
-    (log) {
-      final failures = <String>[];
-      if (!beepAt(log, 1319, 0, 3000)) {
-        failures.add('上电后没有链路连上提示音（1319Hz）');
-      }
-      if (beepAt(log, 1568, 2900, 4200)) {
-        failures.add('模式切换键 ↑ 不应触发输入提示音');
-      }
-      if (!beepAt(log, 1568, 4900, 6500)) {
-        failures.add('动作键 B 没有输入提示音（1568Hz）');
-      }
-      if (!beepAt(log, 392, 8500, 12000)) {
-        failures.add('掉线后没有低音提示（392Hz）');
-      }
-      if (!beepAt(log, 1319, 12000, 15500)) {
-        failures.add('重新连上后没有提示音（1319Hz）');
       }
       return failures;
     },

@@ -272,68 +272,6 @@ $turnReverse    dutyOfMotor[${_slot(c.leftFront.pin)}] = ${_dir(c.leftFront.dire
     return lines.join('\n');
   }
 
-  /// 遥控反馈：收到数据帧、按键/摇杆动作、链路掉线时用蜂鸣器提示。
-  ///
-  /// 依赖板级库的 `rc_packet_count`（每收到一帧有效数据自增，见
-  /// `remote_control.c` 的 `Rc_unpack_data`）。[silentKeys] 里的按键不参与
-  /// 输入提示——工程多模式下它们是模式切换键，已经有 [ModeSwitchFeedback]。
-  static String _remoteFeedback({
-    required bool buzzerDisabled,
-    required Set<String> silentKeys,
-  }) {
-    if (buzzerDisabled) return '';
-    String bit(int index) =>
-        '0x${(1 << index).toRadixString(16).padLeft(4, '0')}';
-    final keyChecks = <String>[];
-    var bitIndex = 0;
-    for (final key in digitalRemoteKeys) {
-      if (silentKeys.contains(key)) continue;
-      keyChecks.add(
-        '    if (RcKeyValueRead(${_key(key)})) keys |= ${bit(bitIndex)};',
-      );
-      bitIndex++;
-    }
-    return '''/* 遥控反馈：收包计数判断链路，按键/摇杆动作给短音提示 */
-#define REMOTE_BEEP_INPUT_HZ     1568
-#define REMOTE_BEEP_LINK_HZ      1319
-#define REMOTE_BEEP_LOST_HZ       392
-#define REMOTE_LINK_TIMEOUT_LOOPS  33  /* 约 1s：33 轮 × ~30ms */
-
-static uint32_t remotePacketLast = 0;
-static uint16_t remoteKeyLast = 0;
-static uint8_t remoteAxisLast = 0;
-static uint8_t remoteLinkUp = 0;
-static uint8_t remoteLinkIdle = 0;
-static uint8_t remoteFeedbackReady = 0;
-
-static void UpdateRemoteFeedback(void)
-{
-    uint16_t keys = 0;
-    uint8_t axes = 0;
-    uint8_t pressed;
-    if (rc_packet_count != remotePacketLast) {
-        remotePacketLast = rc_packet_count;
-        remoteLinkIdle = 0;
-        if (!remoteLinkUp) { remoteLinkUp = 1; Beep(REMOTE_BEEP_LINK_HZ, 100); }
-    } else if (remoteLinkUp && ++remoteLinkIdle > REMOTE_LINK_TIMEOUT_LOOPS) {
-        remoteLinkUp = 0;
-        remoteLinkIdle = 0;
-        Beep(REMOTE_BEEP_LOST_HZ, 120);
-    }
-${keyChecks.join('\n')}
-    if (valueOfRoker[0][0] != 0) axes |= 0x01;
-    if (valueOfRoker[0][1] != 0) axes |= 0x02;
-    if (valueOfRoker[1][0] != 0) axes |= 0x04;
-    if (valueOfRoker[1][1] != 0) axes |= 0x08;
-    pressed = (uint8_t)(((keys & ~remoteKeyLast) != 0) || ((axes & ~remoteAxisLast) != 0));
-    remoteKeyLast = keys;
-    remoteAxisLast = axes;
-    if (!remoteFeedbackReady) { remoteFeedbackReady = 1; return; }
-    if (pressed) Beep(REMOTE_BEEP_INPUT_HZ, 25);
-}
-''';
-  }
-
   /// 生成工程「按键动作表」状态机。
   ///
   /// 每张表一个档位计数：下一档键上升沿 `step = step >= N ? 1 : step + 1`，
@@ -766,17 +704,12 @@ ${frictionEnabled ? '    else if (frictionActivateLoops == 0 && (frictionDutyP64
     else PWM_SET_Frequency(BUZZER_CH, 500, 0);
 }
 ''';
-    final remoteFeedback = _remoteFeedback(
-      buzzerDisabled: c.buzzerDisabled,
-      silentKeys: const {},
-    );
     return '''${_header(c, '步兵机器人控制代码', c.buzzerDisabled)}
 $frictionDefines
 $dutyDeclarations
 $frictionGlobals
 $frictionHelpers
 $buzzerFeedback
-$remoteFeedback
 
 ${_chassis(c.chassis)}
 void All_Init(void)
@@ -824,7 +757,6 @@ void main(void)
     while (1) {
         nrf_handler(); // 轮询 NRF 接收（P2.6 中断已关）
         ReadControllerInputs();
-${remoteFeedback.isEmpty ? '' : '        UpdateRemoteFeedback();'}
 $arrowUpdate
         CalculateChassis();
         UpdateGimbal();
@@ -1522,27 +1454,11 @@ ${engineerFeedbackChecks.join('\n')}
     else PWM_SET_Frequency(BUZZER_CH, 500, 0);
 }
 ''';
-    // 模式切换键已有 ModeSwitchFeedback，遥控输入提示要跳过它们，避免双响。
-    // 动作表的按键也有自己的档位提示音，同样跳过。
-    final remoteSilentKeys = <String?>{
-      if (c.modeCount! > 1 && c.switchStrategy == SwitchStrategy.cycle)
-        c.modeSwitchKey,
-      if (c.modeCount! > 1 && c.switchStrategy == SwitchStrategy.direct)
-        ...c.modeKeys.take(c.modeCount!),
-      for (final mode in c.modes.take(c.modeCount!))
-        for (final table in mode.actionTables) ...[table.key, table.previousKey],
-    }.whereType<String>().toSet();
-    final remoteFeedback = _remoteFeedback(
-      buzzerDisabled: c.pwm.buzzerDisabled,
-      silentKeys: remoteSilentKeys,
-    );
     final actionTableCode = _actionTableCode(c);
-    // 模式切换的提示音会阻塞约 1s，必须重置链路空闲计数，否则会被误判掉线。
-    final linkIdleReset = remoteFeedback.isEmpty ? '' : ' remoteLinkIdle = 0;';
     // 切模式后动作表的档位计数清零，下一次按键从第一档开始。
     final tableReset = actionTableCode.isEmpty ? '' : ' ResetActionTables();';
     final transitionCall =
-        ' PrepareMode(currentMode);${feedbackEnabled ? ' ModeSwitchFeedback(currentMode);' : ''}$linkIdleReset$tableReset';
+        ' PrepareMode(currentMode);${feedbackEnabled ? ' ModeSwitchFeedback(currentMode);' : ''}$tableReset';
     final switchLogic = c.modeCount == 1
         ? '// 单模式，无需切换'
         : c.switchStrategy == SwitchStrategy.cycle
@@ -1568,7 +1484,6 @@ $feedback
 $prepareMode
 $servoButtonSync
 $frictionSync$engineerFeedback
-$remoteFeedback
 $actionTableCode
 
 ${c.chassis.enabled ? _chassis(c.chassis) : ''}
@@ -1606,7 +1521,6 @@ void main(void)
     while (1) {
         nrf_handler(); // 轮询 NRF 接收（P2.6 中断已关）
         ReadControllerInputs();
-${remoteFeedback.isEmpty ? '' : '        UpdateRemoteFeedback();'}
         $switchLogic
 ${servoButtonEdgeActions.isEmpty ? '' : '''        if (servoButtonStateMode != currentMode) {
             SyncServoButtonKeys(currentMode);

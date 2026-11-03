@@ -914,60 +914,6 @@ void main() {
     });
   });
 
-  group('遥控反馈蜂鸣', () {
-    test('步兵生成收包计数读入与输入提示，关闭蜂鸣器后整段不生成', () {
-      final code = CodeGenerator.generate(completeInfantry());
-      expect(code, contains('static void UpdateRemoteFeedback(void)'));
-      expect(code, contains('if (rc_packet_count != remotePacketLast)'));
-      expect(code, contains('Beep(REMOTE_BEEP_INPUT_HZ, 25);'));
-      expect(
-        code,
-        contains('        ReadControllerInputs();\n        UpdateRemoteFeedback();'),
-      );
-
-      final muted = completeInfantry().copyWith(buzzerDisabled: true);
-      expect(
-        CodeGenerator.generate(muted),
-        isNot(contains('UpdateRemoteFeedback')),
-      );
-    });
-
-    test('工程多模式：模式切换键不参与输入提示', () {
-      final cycle = CodeGenerator.generate(advancedEngineer());
-      expect(
-        cycle,
-        isNot(contains('RcKeyValueRead(KEY_OFFSET_1)) keys |=')),
-        reason: '循环切换键 E 已有 ModeSwitchFeedback',
-      );
-      expect(cycle, contains('RcKeyValueRead(KEY_OFFSET_UP)) keys |='));
-
-      final direct = CodeGenerator.generate(
-        advancedEngineer(strategy: SwitchStrategy.direct),
-      );
-      for (final key in const [
-        'KEY_OFFSET_1',
-        'KEY_OFFSET_UP',
-        'KEY_OFFSET_DOWN',
-        'KEY_OFFSET_LEFT',
-      ]) {
-        expect(
-          direct,
-          isNot(contains('RcKeyValueRead($key)) keys |=')),
-          reason: '$key 是模式切换键',
-        );
-      }
-      expect(direct, contains('RcKeyValueRead(KEY_OFFSET_A)) keys |='));
-    });
-
-    test('模式切换后重置链路空闲计数，避免被误判掉线', () {
-      final code = CodeGenerator.generate(advancedEngineer());
-      expect(
-        code,
-        contains('ModeSwitchFeedback(currentMode); remoteLinkIdle = 0;'),
-      );
-    });
-  });
-
   group('格式兼容（正式发布后）', () {
     Map<String, Object?> fixture(String name) => Map<String, Object?>.from(
       jsonDecode(File('test/fixtures/$name').readAsStringSync()) as Map,
@@ -1350,11 +1296,6 @@ void main() {
       expect(code, contains('mainServoDuty[0] = 861;'));
       // 表引脚并入 usedPins：主控板舵机有 PWM 初始化。
       expect(code, contains('PWM_Init(PWMB_CH4_P03'));
-      // 表键有自己的档位提示音，不参与遥控输入提示的按键快照。
-      expect(
-        code,
-        isNot(contains('if (RcKeyValueRead(KEY_OFFSET_A)) keys |=')),
-      );
     });
 
     test('多模式：动作表按模式分发，切模式重置档位', () {
