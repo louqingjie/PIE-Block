@@ -67,8 +67,9 @@ abstract final class Friction {
   /// 占空比太低时摩擦轮可能带不动，测试观察不到有效结论。
   static const lowDutyWarning = 650;
 
-  /// 摩擦轮允许占用的引脚。
-  static const pins = EngineerPinCapabilities.frictionPins;
+  /// 旧工程、步兵与调试工程沿用的默认摩擦轮引脚；工程所有输出脚都可以
+  /// 选择摩擦轮角色，能力判断见 [EngineerPinCapabilities.supportsRole]。
+  static const pins = EngineerPinCapabilities.legacyFrictionPins;
 
   /// 把 [level] 百分比油门按 [maxDuty] 映射为占空比。
   static int dutyOfLevel(int level, int maxDuty) {
@@ -80,8 +81,15 @@ abstract final class Friction {
 /// Hardware capabilities for engineer-project output pins.
 abstract final class EngineerPinCapabilities {
   static const motorPins = ['P60', 'P62', 'P74', 'P75', 'P76', 'P77'];
-  static const frictionPins = ['P64', 'P66'];
-  static const servoPins = [...expansionPins, ...mainServoPins];
+
+  /// 工程全部输出脚：8 个扩展板脚 + 主控板 MP03/MP74。
+  static const allOutputPins = [...expansionPins, ...mainServoPins];
+
+  /// 旧工程、步兵和调试工程沿用的默认摩擦轮脚；工程其余输出脚也可以
+  /// 选择摩擦轮角色，见 [supportsRole]。
+  static const legacyFrictionPins = ['P64', 'P66'];
+
+  static const servoPins = allOutputPins;
 
   static List<PinRole> allowedRoles(String pin) => PinRole.values
       .where((role) => supportsRole(pin, role))
@@ -89,13 +97,11 @@ abstract final class EngineerPinCapabilities {
 
   static bool supportsRole(String pin, PinRole role) => switch (role) {
     PinRole.motor || PinRole.jitterMotor => motorPins.contains(pin),
-    PinRole.friction => frictionPins.contains(pin),
-    PinRole.servo => servoPins.contains(pin),
-    // 主控板 MP03/MP74 是专用舵机口：不能当电机/摩擦轮脚用；但工程不用
-    // 这两个口时应允许显式标为「未使用」，否则角色被强制成舵机、无法
-    // 表达「本工程不接主舵机」。
-    PinRole.unused =>
-      expansionPins.contains(pin) || mainServoPins.contains(pin),
+    PinRole.friction => allOutputPins.contains(pin),
+    PinRole.servo => allOutputPins.contains(pin),
+    // 主控板 MP03/MP74 不能当电机脚用，但可以作舵机、摩擦轮或显式
+    // 「未使用」，否则角色被强制成舵机、无法表达「本工程不接主舵机」。
+    PinRole.unused => allOutputPins.contains(pin),
   };
 }
 
@@ -290,7 +296,8 @@ class PwmGroupConfig {
   /// servoMinLimits 为顺时针一侧（非正）；未填的一侧走满电气行程。
   final Map<String, int> servoMinLimits, servoMaxLimits;
 
-  /// P64/P66 满油占空比（500–800 整百）；仅摩擦轮专用控制方式使用。
+  /// 每个摩擦轮脚各自的满油占空比（500–800 整百）；仅摩擦轮专用控制方式
+  /// 使用，多个摩擦轮脚共享同一油门百分比。
   final Map<String, int> frictionMaxDuties;
 
   /// 引脚备注（选填）：仅用于界面在动作映射的引脚选择中显示
@@ -299,9 +306,9 @@ class PwmGroupConfig {
 
   /// 引脚的最终输出角色。
   ///
-  /// 扩展板引脚必须显式配置；主控板 MP03/MP74 是专用舵机口，旧工程文件里
-  /// 没有记录它们的角色，按历史行为默认当作舵机，显式配置为「未使用」时
-  /// 才不再输出舵机信号。
+  /// 扩展板引脚必须显式配置；主控板 MP03/MP74 旧工程文件里没有记录角色，
+  /// 按历史行为默认当作舵机，显式配置为「未指定/摩擦轮/未使用」时按配置
+  /// 输出。
   PinRole? roleOf(String pin) =>
       pinRoles[pin] ?? (mainServoPins.contains(pin) ? PinRole.servo : null);
 
@@ -357,8 +364,10 @@ class PwmGroupConfig {
           pin: servoMaxLimits[pin],
       },
       'friction_max_duties': {
-        for (final pin in EngineerPinCapabilities.frictionPins)
-          pin: frictionMaxDuties[pin],
+        for (final pin in EngineerPinCapabilities.allOutputPins)
+          if (EngineerPinCapabilities.legacyFrictionPins.contains(pin) ||
+              frictionMaxDuties.containsKey(pin))
+            pin: frictionMaxDuties[pin],
       },
     };
   }

@@ -669,7 +669,7 @@ List<(String, ProjectConfig)> engineerVariants() {
         for (final pin in expansionPins)
           pin: pin == 'P60' || pin == 'P62'
               ? PinRole.servo
-              : EngineerPinCapabilities.frictionPins.contains(pin)
+              : EngineerPinCapabilities.legacyFrictionPins.contains(pin)
               ? PinRole.friction
               : PinRole.motor,
       },
@@ -778,12 +778,21 @@ List<(String, ProjectConfig)> randomSamples(int count, int seed) {
           ? {'P74', 'P75', 'P76', 'P77'}
           : <String>{};
       final frictionControl = random.nextBool();
+      PinRole randomRole(String pin) {
+        // 随机变体只沿用旧的 P64/P66 摩擦轮组合；其他脚随机到摩擦轮会缺少
+        // 满油上限或触发分组频率冲突。
+        final pool = EngineerPinCapabilities.allowedRoles(pin)
+            .where((role) => role != PinRole.friction)
+            .toList();
+        return pool[random.nextInt(pool.length)];
+      }
+
       final roles = <String, PinRole>{
         for (final pin in expansionPins)
           pin: switch (pin) {
             'P64' || 'P66' when frictionControl => PinRole.friction,
             _ when chassisUsed.contains(pin) => PinRole.motor,
-            _ => PinRole.values[random.nextInt(PinRole.values.length)],
+            _ => randomRole(pin),
           },
       };
       // 角色必须落在硬件能力内；底盘脚强制电机。
@@ -1238,6 +1247,112 @@ List<Scenario> scenarios() {
       }
       final off = duty.where((f) => f.ms > 26000);
       if (off.any((f) => f.duties[2] != 0)) failures.add('关闭后未停机');
+      return failures;
+    },
+  ));
+
+  // --- 工程：任意扩展脚作摩擦轮（P74/P75 共享油门，PWMB=50Hz） ---
+  scenarios.add(Scenario(
+    'eng-friction-p74',
+    engineerBase(
+      chassisEnabled: false,
+      pwmb: PwmFrequency.hz50,
+      roles: const {
+        'P60': PinRole.unused,
+        'P62': PinRole.unused,
+        'P64': PinRole.unused,
+        'P66': PinRole.unused,
+        'P74': PinRole.friction,
+        'P75': PinRole.friction,
+        'P76': PinRole.unused,
+        'P77': PinRole.unused,
+      },
+      frictionMax: const {'P74': 600, 'P75': 700},
+      modes: [
+        EngineerModeConfig(actions: [
+          action('A', pin: 'P74', mode: ControlMode.frictionToggle, parameter: 100),
+        ]),
+      ],
+    ),
+    24000,
+    [
+      (2000, 'A', 1), (2120, 'A', 0), // 开 → 油门 100
+      (16000, 'A', 1), (16120, 'A', 0), // 关
+    ],
+    (log) {
+      final failures = <String>[];
+      final duty = log.dutyFrames();
+      List<int> settled(int slot) => duty
+          .where((f) => f.ms > 10000 && f.ms < 14000)
+          .map((f) => f.duties[slot])
+          .toList();
+      final p74 = settled(4);
+      final p75 = settled(5);
+      if (p74.isEmpty || p74.last != 600) {
+        failures.add('P74 未按满油上限到 600（${p74.isEmpty ? '?' : p74.last}）');
+      }
+      if (p75.isEmpty || p75.last != 700) {
+        failures.add('P75 未按满油上限到 700（${p75.isEmpty ? '?' : p75.last}）');
+      }
+      final off = duty.where((f) => f.ms > 20000);
+      if (off.any((f) => f.duties[4] != 0 || f.duties[5] != 0)) {
+        failures.add('关闭后 P74/P75 未停机');
+      }
+      return failures;
+    },
+  ));
+
+  // --- 工程：主控板 MP03/MP74 作摩擦轮（主控 PWM 直出） ---
+  scenarios.add(Scenario(
+    'eng-friction-main',
+    engineerBase(
+      chassisEnabled: false,
+      roles: const {
+        'P60': PinRole.unused,
+        'P62': PinRole.unused,
+        'P64': PinRole.unused,
+        'P66': PinRole.unused,
+        'P74': PinRole.unused,
+        'P75': PinRole.unused,
+        'P76': PinRole.unused,
+        'P77': PinRole.unused,
+        'MP03': PinRole.friction,
+        'MP74': PinRole.friction,
+      },
+      frictionMax: const {'MP03': 600, 'MP74': 700},
+      modes: [
+        EngineerModeConfig(actions: [
+          action('A', pin: 'MP03', mode: ControlMode.frictionToggle, parameter: 100),
+        ]),
+      ],
+    ),
+    24000,
+    [
+      (2000, 'A', 1), (2120, 'A', 0), // 开 → 油门 100
+      (16000, 'A', 1), (16120, 'A', 0), // 关
+    ],
+    (log) {
+      final failures = <String>[];
+      int settledDuty(int channel, String label) {
+        final values = log
+            .pwmChannel(channel)
+            .where((p) => p.freq == 50 && p.ms > 10000 && p.ms < 14000)
+            .map((p) => p.duty)
+            .toList();
+        final expected = label == 'MP03' ? 600 : 700;
+        if (values.isEmpty || values.last != expected) {
+          failures.add('$label 未按满油上限到 $expected（${values.isEmpty ? '?' : values.last}）');
+        }
+        final off = log
+            .pwmChannel(channel)
+            .where((p) => p.ms > 20000)
+            .map((p) => p.duty);
+        if (off.any((duty) => duty != 0)) failures.add('关闭后 $label 未停机');
+        return 0;
+      }
+
+      settledDuty(201, 'MP03');
+      settledDuty(202, 'MP74');
       return failures;
     },
   ));

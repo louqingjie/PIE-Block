@@ -262,11 +262,14 @@ $turnReverse    dutyOfMotor[${_slot(c.leftFront.pin)}] = ${_dir(c.leftFront.dire
       '    ExpansionBoradControl(Init_Order, ${List.filled(4, _frequency(pwm.pwma!)).join(', ')}, ${List.filled(4, _frequency(pwm.pwmb!)).join(', ')});',
     ];
     for (final pin in mainServoPins) {
-      // 主控板 MP03/MP74 只有角色为舵机（缺省即舵机）时才输出舵机信号；
-      // 显式标为「未使用」的工程不会再初始化这两个口。
-      if (!usedPins.contains(pin) || !pwm.isServoPin(pin)) continue;
+      // 主控板 MP03/MP74 是固定 50Hz 舵机口。舵机角色沿用「被动作使用才
+      // 初始化」；摩擦轮角色由共享油门驱动，无论是否被动作引用都要初始化。
+      final role = pwm.roleOf(pin);
+      final servo = role == PinRole.servo && usedPins.contains(pin);
+      final friction = role == PinRole.friction;
+      if (!servo && !friction) continue;
       lines.add(
-        '    PWM_Init(PWMB_CH${pin == 'MP74' ? '1_P74' : '4_P03'}, 50, ${_servoDuty(pwm.servoMids[pin])});',
+        '    PWM_Init(PWMB_CH${pin == 'MP74' ? '1_P74' : '4_P03'}, 50, ${servo ? _servoDuty(pwm.servoMids[pin]) : 0});',
       );
     }
     return lines.join('\n');
@@ -821,6 +824,12 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
     final hasFrictionControl = c.modes
         .take(c.modeCount!)
         .any((mode) => mode.actions.any((a) => _isFrictionMode(a.mode)));
+    // 所有角色为摩擦轮的输出脚共享同一油门；按扩展脚、主控脚的自然顺序
+    // 生成，旧工程只有 P64/P66 时与旧输出保持一致。
+    final frictionRolePins = [
+      for (final pin in EngineerPinCapabilities.allOutputPins)
+        if (c.pwm.roleOf(pin) == PinRole.friction) pin,
+    ];
     if (hasFrictionControl) {
       for (var modeIndex = 0; modeIndex < c.modeCount!; modeIndex++) {
         final actions = c.modes[modeIndex].actions;
@@ -1251,7 +1260,10 @@ ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
           }
         : <int>{};
     final frictionSlots = hasFrictionControl
-        ? {_slot('P64'), _slot('P66')}
+        ? {
+            for (final pin in frictionRolePins)
+              if (expansionPins.contains(pin)) expansionPins.indexOf(pin),
+          }
         : <int>{};
     final prepareCases = <String>[];
     for (var i = 0; i < c.modeCount!; i++) {
@@ -1288,9 +1300,58 @@ ${prepareCases.join('\n')}
     }
 }
 ''';
-    final frictionP64Max = c.pwm.frictionMaxDuties['P64'] ?? 800;
-    final frictionP66Max = c.pwm.frictionMaxDuties['P66'] ?? 800;
-    final frictionSupport = hasFrictionControl
+    final frictionStackEnabled =
+        hasFrictionControl && frictionRolePins.isNotEmpty;
+    final frictionMaxDefines = [
+      for (final pin in frictionRolePins)
+        '#define FRICTION_MAX_DUTY_$pin ${c.pwm.frictionMaxDuties[pin] ?? 800}',
+    ].join('\n');
+    final frictionTargetDeclarations = [
+      for (final pin in frictionRolePins)
+        'uint16_t frictionTargetDuty$pin = 0;',
+    ].join('\n');
+    final frictionDutyDeclarations = [
+      for (final pin in frictionRolePins) 'uint16_t frictionDuty$pin = 0;',
+    ].join('\n');
+    final frictionTargetUpdates = [
+      for (final pin in frictionRolePins)
+        '''    frictionTargetDuty$pin = frictionLevel > 0
+        ? FrictionDutyOfLevel(frictionLevel, FRICTION_MAX_DUTY_$pin) : 0;''',
+    ].join('\n');
+    final firstFrictionPin = frictionRolePins.isEmpty
+        ? ''
+        : frictionRolePins.first;
+    final frictionActivationCheck = firstFrictionPin.isEmpty
+        ? ''
+        : '''    if (frictionLevel > 0 && frictionDuty$firstFrictionPin == 0
+        && frictionTargetDuty$firstFrictionPin >= FRICTION_START_DUTY)
+        frictionActivateLoops = FRICTION_ACTIVATE_LOOPS;''';
+    final frictionActivationSet = [
+      for (final pin in frictionRolePins)
+        '        frictionDuty$pin = FRICTION_START_DUTY;',
+    ].join('\n');
+    // 斜坡逐脚展开，避免 SDCC C251 在「数组 + 运行时变址」上取错字节。
+    final frictionRamps = [
+      for (final pin in frictionRolePins)
+        '''        if (frictionTargetDuty$pin >= FRICTION_START_DUTY && frictionDuty$pin < FRICTION_START_DUTY)
+            frictionDuty$pin = FRICTION_START_DUTY;
+        else if (frictionDuty$pin < frictionTargetDuty$pin)
+            frictionDuty$pin += FRICTION_RAMP_STEP;
+        else if (frictionDuty$pin > frictionTargetDuty$pin) {
+            if (frictionTargetDuty$pin == 0 && frictionDuty$pin <= FRICTION_START_DUTY)
+                frictionDuty$pin = 0;
+            else
+                frictionDuty$pin -= FRICTION_RAMP_STEP;
+        }''',
+    ].join('\n');
+    final frictionWrites = [
+      for (final pin in frictionRolePins)
+        if (expansionPins.contains(pin))
+          '    dutyOfMotor[${expansionPins.indexOf(pin)}] = frictionDuty$pin;'
+        else
+          '    mainServoDuty[${pin == 'MP74' ? 1 : 0}] = frictionDuty$pin;',
+    ].join('\n');
+    final frictionSupport = frictionStackEnabled
         ? '''#define FRICTION_START_DUTY 500
 #define FRICTION_LEVEL_MAX 100
 #define FRICTION_RAMP_STEP 1
@@ -1298,13 +1359,10 @@ ${prepareCases.join('\n')}
 #define FRICTION_LOOP_MS 20
 #define FRICTION_ACTIVATE_LOOPS ((FRICTION_ACTIVATE_MS + FRICTION_LOOP_MS - 1) / FRICTION_LOOP_MS)
 #define FRICTION_RATE_LOOPS 50
-#define FRICTION_MAX_DUTY_P64 $frictionP64Max
-#define FRICTION_MAX_DUTY_P66 $frictionP66Max
+$frictionMaxDefines
 uint8_t frictionLevel = 0;
-uint16_t frictionTargetDutyP64 = 0;
-uint16_t frictionTargetDutyP66 = 0;
-uint16_t frictionDutyP64 = 0;
-uint16_t frictionDutyP66 = 0;
+$frictionTargetDeclarations
+$frictionDutyDeclarations
 uint8_t frictionActivateLoops = 0;
 ${frictionKeyActions.isEmpty ? '' : 'uint8_t frictionKeyLast[${frictionKeyActions.length}] = {0};'}
 ${frictionRateActions.isEmpty ? '' : 'int32_t frictionRateAcc[${frictionRateActions.length}] = {0};'}
@@ -1316,41 +1374,15 @@ static uint16_t FrictionDutyOfLevel(uint8_t level, uint16_t maxDuty)
 static void UpdateFriction(void)
 {
     if (frictionLevel == 0) frictionActivateLoops = 0;
-    frictionTargetDutyP64 = frictionLevel > 0
-        ? FrictionDutyOfLevel(frictionLevel, FRICTION_MAX_DUTY_P64) : 0;
-    frictionTargetDutyP66 = frictionLevel > 0
-        ? FrictionDutyOfLevel(frictionLevel, FRICTION_MAX_DUTY_P66) : 0;
-    if (frictionLevel > 0 && frictionDutyP64 == 0
-        && frictionTargetDutyP64 >= FRICTION_START_DUTY)
-        frictionActivateLoops = FRICTION_ACTIVATE_LOOPS;
+$frictionTargetUpdates
+$frictionActivationCheck
     if (frictionActivateLoops > 0) {
         frictionActivateLoops--;
-        frictionDutyP64 = FRICTION_START_DUTY;
-        frictionDutyP66 = FRICTION_START_DUTY;
+$frictionActivationSet
     } else {
-        if (frictionTargetDutyP64 >= FRICTION_START_DUTY && frictionDutyP64 < FRICTION_START_DUTY)
-            frictionDutyP64 = FRICTION_START_DUTY;
-        else if (frictionDutyP64 < frictionTargetDutyP64)
-            frictionDutyP64 += FRICTION_RAMP_STEP;
-        else if (frictionDutyP64 > frictionTargetDutyP64) {
-            if (frictionTargetDutyP64 == 0 && frictionDutyP64 <= FRICTION_START_DUTY)
-                frictionDutyP64 = 0;
-            else
-                frictionDutyP64 -= FRICTION_RAMP_STEP;
-        }
-        if (frictionTargetDutyP66 >= FRICTION_START_DUTY && frictionDutyP66 < FRICTION_START_DUTY)
-            frictionDutyP66 = FRICTION_START_DUTY;
-        else if (frictionDutyP66 < frictionTargetDutyP66)
-            frictionDutyP66 += FRICTION_RAMP_STEP;
-        else if (frictionDutyP66 > frictionTargetDutyP66) {
-            if (frictionTargetDutyP66 == 0 && frictionDutyP66 <= FRICTION_START_DUTY)
-                frictionDutyP66 = 0;
-            else
-                frictionDutyP66 -= FRICTION_RAMP_STEP;
-        }
+$frictionRamps
     }
-    dutyOfMotor[${_slot('P64')}] = frictionDutyP64;
-    dutyOfMotor[${_slot('P66')}] = frictionDutyP66;
+$frictionWrites
 }
 '''
         : '';
@@ -1474,12 +1506,32 @@ ${engineerFeedbackChecks.join('\n')}
       final role = c.pwm.pinRoles[expansionPins[slot]];
       return role == PinRole.servo ? '1' : 'dutyOfMotor[$slot]>=0';
     }).join(',');
+    String mainServoUpdate(String pin, int index) {
+      final role = c.pwm.roleOf(pin);
+      final channel = pin == 'MP74' ? 'PWMB_CH1_P74' : 'PWMB_CH4_P03';
+      if (role == PinRole.servo) {
+        return usedPins.contains(pin)
+            ? '        PWM_SET_Frequency($channel, 50, mainServoDuty[$index]);'
+            : '';
+      }
+      // 摩擦轮角色由共享油门驱动，无论是否被动作引用都要周期输出。
+      return role == PinRole.friction
+          ? '        PWM_SET_Frequency($channel, 50, mainServoDuty[$index]);'
+          : '';
+    }
+
+    final mainServoDutyDeclaration =
+        'int mainServoDuty[2] = {${_servoDuty(c.pwm.servoMids['MP03'])}, ${_servoDuty(c.pwm.servoMids['MP74'])}};';
+    // 主控板脚作摩擦轮时，UpdateFriction 要在声明之前写 mainServoDuty，
+    // 因此提前声明；其余配置保持原来的声明位置与生成字节。
+    final earlyMainServoDuty = frictionRolePins.any(
+      (pin) => mainServoPins.contains(pin),
+    );
     return '''${_header(c, '工程机器人控制代码', c.pwm.buzzerDisabled)}
-$frictionSupport${expressionPrelude}uint8_t currentMode = 1;
+${earlyMainServoDuty ? '$mainServoDutyDeclaration\n' : ''}$frictionSupport${expressionPrelude}uint8_t currentMode = 1;
 uint8_t lastSwitch = 0;
 uint8_t modeKeyLast[4] = {0};
-int mainServoDuty[2] = {${_servoDuty(c.pwm.servoMids['MP03'])}, ${_servoDuty(c.pwm.servoMids['MP74'])}};
-$servoButtonDeclarations
+${earlyMainServoDuty ? '' : '$mainServoDutyDeclaration\n'}$servoButtonDeclarations
 $feedback
 $prepareMode
 $servoButtonSync
@@ -1533,8 +1585,8 @@ $frictionUpdateCall        ExpansionBoradControl(Dir_Change_Order, $directionArg
         Ms_Delay(EXPANSION_FRAME_GAP_MS);
         ExpansionBoradControl(Duty_Change_Order, abs(dutyOfMotor[0]),abs(dutyOfMotor[1]),abs(dutyOfMotor[2]),abs(dutyOfMotor[3]),abs(dutyOfMotor[4]),abs(dutyOfMotor[5]),abs(dutyOfMotor[6]),abs(dutyOfMotor[7]));
         Ms_Delay(EXPANSION_FRAME_GAP_MS);
-${usedPins.contains('MP03') && c.pwm.isServoPin('MP03') ? '        PWM_SET_Frequency(PWMB_CH4_P03, 50, mainServoDuty[0]);' : ''}
-${usedPins.contains('MP74') && c.pwm.isServoPin('MP74') ? '        PWM_SET_Frequency(PWMB_CH1_P74, 50, mainServoDuty[1]);' : ''}
+${mainServoUpdate('MP03', 0)}
+${mainServoUpdate('MP74', 1)}
 ${engineerFeedback.isEmpty ? '' : '        UpdateServoFeedback();'}
         Ms_Delay(10);
     }

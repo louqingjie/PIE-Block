@@ -1128,7 +1128,7 @@ abstract final class ProjectValidator {
     }
 
     final frictionControl = _hasFrictionControl(config);
-    for (final pin in EngineerPinCapabilities.frictionPins) {
+    for (final pin in EngineerPinCapabilities.allOutputPins) {
       final maxDuty = config.pwm.frictionMaxDuties[pin];
       if (maxDuty != null &&
           (maxDuty < 500 || maxDuty > 800 || maxDuty % 100 != 0)) {
@@ -1139,26 +1139,35 @@ abstract final class ProjectValidator {
           'pwm',
         );
       }
-      if (!frictionControl) continue;
-      if (config.pwm.pinRoles[pin] != PinRole.friction) {
-        issue(
-          IssueSeverity.error,
-          'pwm.pin_roles.$pin',
-          '使用摩擦轮控制时 $pin 的输出角色必须是摩擦轮',
-          'pwm',
-        );
-      }
-      if (maxDuty == null) {
-        issue(
-          IssueSeverity.error,
-          'pwm.friction_max_duties.$pin',
-          '$pin 摩擦轮满油转速尚未填写',
-          'pwm',
-        );
-      }
     }
-    if (frictionControl && config.pwm.pwma != PwmFrequency.hz50) {
-      issue(IssueSeverity.error, 'pwm.pwma', '使用摩擦轮控制时 PWMA 必须为 50Hz', 'pwm');
+    if (frictionControl) {
+      final frictionPins = [
+        for (final pin in EngineerPinCapabilities.allOutputPins)
+          if (config.pwm.roleOf(pin) == PinRole.friction) pin,
+      ];
+      for (final pin in frictionPins) {
+        if (config.pwm.frictionMaxDuties[pin] == null) {
+          issue(
+            IssueSeverity.error,
+            'pwm.friction_max_duties.$pin',
+            '$pin 摩擦轮满油转速尚未填写',
+            'pwm',
+          );
+        }
+      }
+      // 扩展脚按所在组校验频率：PWMA=P60/P62/P64/P66，PWMB=P74/P75/P76/P77。
+      // MP03/MP74 是主控板固定 50Hz 舵机口，不受两组频率影响。
+      final expansionFrictionPins = frictionPins.where(
+        (pin) => expansionPins.contains(pin),
+      );
+      if (expansionFrictionPins.any((pin) => expansionPins.indexOf(pin) < 4) &&
+          config.pwm.pwma != PwmFrequency.hz50) {
+        issue(IssueSeverity.error, 'pwm.pwma', '使用摩擦轮控制时 PWMA 必须为 50Hz', 'pwm');
+      }
+      if (expansionFrictionPins.any((pin) => expansionPins.indexOf(pin) >= 4) &&
+          config.pwm.pwmb != PwmFrequency.hz50) {
+        issue(IssueSeverity.error, 'pwm.pwmb', '使用摩擦轮控制时 PWMB 必须为 50Hz', 'pwm');
+      }
     }
 
     _range(config.modeCount, 1, 4, 'modes.count', '模式数量', 'strategy', issue);
@@ -1746,6 +1755,10 @@ abstract final class ProjectValidator {
     final role = action.pin == null ? null : config.pwm.roleOf(action.pin!);
     final motor = role != null && _motorRole(role);
     final friction = role == PinRole.friction;
+    // 主控板 MP03/MP74 是新增的摩擦轮能力，只允许走安全栈专用控制方式；
+    // 扩展脚上的旧 raw 控制方式仍需兼容旧工程。
+    final mainFriction =
+        friction && action.pin != null && mainServoPins.contains(action.pin);
     final hasFrictionControl = _hasFrictionControl(config);
     if (role == PinRole.unused) {
       issue(
@@ -1760,7 +1773,7 @@ abstract final class ProjectValidator {
         issue(
           IssueSeverity.error,
           '$path.pin',
-          '摩擦轮专用控制方式只能用于角色为摩擦轮的 P64/P66',
+          '摩擦轮专用控制方式只能用于角色为摩擦轮的输出引脚',
           'mappings',
         );
       }
@@ -1804,7 +1817,17 @@ abstract final class ProjectValidator {
     final allowed = role == null
         ? const <ControlMode>[]
         : role == PinRole.friction
-        ? (isAxis
+        ? mainFriction
+              ? (isAxis
+                    ? const [ControlMode.frictionAxis]
+                    : isButton
+                    ? const [
+                        ControlMode.frictionToggle,
+                        ControlMode.frictionStep,
+                        ControlMode.frictionContinuous,
+                      ]
+                    : const <ControlMode>[])
+              : isAxis
               ? const [
                   ControlMode.frictionAxis,
                   ControlMode.speed,
@@ -1817,7 +1840,7 @@ abstract final class ProjectValidator {
                   ControlMode.frictionContinuous,
                   ControlMode.direct,
                 ]
-              : const <ControlMode>[])
+              : const <ControlMode>[]
         : motor
         ? (isAxis
               ? const [ControlMode.speed, ControlMode.accelerate]

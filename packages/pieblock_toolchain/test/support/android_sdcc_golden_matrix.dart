@@ -184,7 +184,7 @@ PwmGroupConfig _engineerPwm({bool advanced = false}) => PwmGroupConfig(
     for (final pin in expansionPins)
       pin: advanced && pin == 'P60'
           ? PinRole.servo
-          : EngineerPinCapabilities.frictionPins.contains(pin)
+          : EngineerPinCapabilities.legacyFrictionPins.contains(pin)
           ? PinRole.friction
           : PinRole.motor,
   },

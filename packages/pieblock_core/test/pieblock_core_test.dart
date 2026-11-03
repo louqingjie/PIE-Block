@@ -62,7 +62,7 @@ EngineerConfig completeEngineer() => EngineerConfig(
     pwmb: PwmFrequency.hz10000,
     pinRoles: {
       for (final pin in expansionPins)
-        pin: EngineerPinCapabilities.frictionPins.contains(pin)
+        pin: EngineerPinCapabilities.legacyFrictionPins.contains(pin)
             ? PinRole.friction
             : PinRole.motor,
     },
@@ -113,7 +113,7 @@ EngineerConfig advancedEngineer({
     pinRoles: {
       'P60': PinRole.servo,
       for (final pin in expansionPins.where((pin) => pin != 'P60'))
-        pin: EngineerPinCapabilities.frictionPins.contains(pin)
+        pin: EngineerPinCapabilities.legacyFrictionPins.contains(pin)
             ? PinRole.friction
             : PinRole.motor,
     },
@@ -546,26 +546,29 @@ void main() {
       const motorRoles = [
         PinRole.motor,
         PinRole.servo,
+        PinRole.friction,
         PinRole.jitterMotor,
         PinRole.unused,
       ];
-      const frictionRoles = [PinRole.servo, PinRole.friction, PinRole.unused];
+      const frictionOnlyRoles = [PinRole.servo, PinRole.friction, PinRole.unused];
+      const allOutputRoles = [PinRole.servo, PinRole.friction, PinRole.unused];
 
       for (final pin in EngineerPinCapabilities.motorPins) {
         expect(EngineerPinCapabilities.allowedRoles(pin), motorRoles);
       }
-      for (final pin in EngineerPinCapabilities.frictionPins) {
-        expect(EngineerPinCapabilities.allowedRoles(pin), frictionRoles);
+      for (final pin in EngineerPinCapabilities.legacyFrictionPins) {
+        expect(EngineerPinCapabilities.allowedRoles(pin), frictionOnlyRoles);
       }
       for (final pin in mainServoPins) {
-        expect(EngineerPinCapabilities.allowedRoles(pin), const [
-          PinRole.servo,
-          PinRole.unused,
-        ]);
+        expect(EngineerPinCapabilities.allowedRoles(pin), allOutputRoles);
       }
-      for (final pin in [...expansionPins, ...mainServoPins]) {
+      for (final pin in EngineerPinCapabilities.allOutputPins) {
         expect(
           EngineerPinCapabilities.supportsRole(pin, PinRole.servo),
+          isTrue,
+        );
+        expect(
+          EngineerPinCapabilities.supportsRole(pin, PinRole.friction),
           isTrue,
         );
       }
@@ -582,14 +585,14 @@ void main() {
       expect(unused.roleOf('MP74'), PinRole.servo);
       expect(unused.isServoPin('MP03'), isFalse);
       expect(unused.isServoPin('MP74'), isTrue);
-      // 主控板引脚仍不能当电机/摩擦轮脚用。
+      // 主控板引脚不能当电机脚用，但可以作摩擦轮。
       expect(
         EngineerPinCapabilities.supportsRole('MP03', PinRole.motor),
         isFalse,
       );
       expect(
         EngineerPinCapabilities.supportsRole('MP03', PinRole.friction),
-        isFalse,
+        isTrue,
       );
     });
 
@@ -737,8 +740,7 @@ void main() {
       for (final invalid in [
         ('P64', PinRole.motor),
         ('P66', PinRole.jitterMotor),
-        ('P60', PinRole.friction),
-        ('P74', PinRole.friction),
+        ('MP03', PinRole.motor),
       ]) {
         final config = withRole(invalid.$1, invalid.$2);
         final issues = ProjectValidator.validate(config)
@@ -3668,6 +3670,143 @@ void main() {
         ProjectValidator.validate(legacy)
             .where((issue) => issue.severity == IssueSeverity.error),
         isEmpty,
+      );
+    });
+
+    EngineerConfig arbitraryFriction(
+      Map<String, PinRole> roles, {
+      Map<String, int> duties = const {},
+      PwmFrequency pwma = PwmFrequency.hz50,
+      PwmFrequency pwmb = PwmFrequency.hz50,
+      String actionPin = 'P74',
+      ControlMode mode = ControlMode.frictionToggle,
+    }) => EngineerConfig(
+      remote: const RemoteConfig(channel: 36, deadzone: 100),
+      chassis: const ChassisConfig(enabled: false),
+      pwm: PwmGroupConfig(
+        pwma: pwma,
+        pwmb: pwmb,
+        pinRoles: {
+          for (final pin in EngineerPinCapabilities.allOutputPins)
+            pin: roles[pin] ?? PinRole.unused,
+        },
+        servoMids: const {'MP03': 0, 'MP74': 0},
+        frictionMaxDuties: duties,
+      ),
+      modeCount: 1,
+      modes: [
+        EngineerModeConfig(
+          actions: [
+            ActionMapping(
+              key: 'A',
+              mode: mode,
+              parameter: 100,
+              pin: actionPin,
+            ),
+          ],
+        ),
+      ],
+    );
+
+    test('10 个输出脚都可设为摩擦轮并生成共享安全栈', () {
+      final config = arbitraryFriction(
+        {for (final pin in EngineerPinCapabilities.allOutputPins) pin: PinRole.friction},
+        duties: {
+          for (final pin in EngineerPinCapabilities.allOutputPins) pin: 700,
+        },
+        actionPin: 'P60',
+      );
+      expect(frictionErrors(config), isEmpty);
+      final code = CodeGenerator.generate(config);
+      for (final pin in EngineerPinCapabilities.allOutputPins) {
+        expect(code, contains('#define FRICTION_MAX_DUTY_$pin 700'));
+      }
+      expect(code, contains('dutyOfMotor[0] = frictionDutyP60;'));
+      expect(code, contains('dutyOfMotor[4] = frictionDutyP74;'));
+      expect(code, contains('mainServoDuty[0] = frictionDutyMP03;'));
+      expect(code, contains('mainServoDuty[1] = frictionDutyMP74;'));
+      expect(code, contains('PWM_Init(PWMB_CH4_P03, 50, 0);'));
+      expect(code, contains('PWM_Init(PWMB_CH1_P74, 50, 0);'));
+      expect(
+        code,
+        contains('PWM_SET_Frequency(PWMB_CH4_P03, 50, mainServoDuty[0]);'),
+      );
+      expect(
+        code,
+        contains('PWM_SET_Frequency(PWMB_CH1_P74, 50, mainServoDuty[1]);'),
+      );
+    });
+
+    test('P74/P75 共享油门并按各自满油上限映射', () {
+      final config = arbitraryFriction(
+        {'P74': PinRole.friction, 'P75': PinRole.friction},
+        duties: const {'P74': 600, 'P75': 800},
+        actionPin: 'P74',
+      );
+      expect(frictionErrors(config), isEmpty);
+      final code = CodeGenerator.generate(config);
+      expect(code, contains('#define FRICTION_MAX_DUTY_P74 600'));
+      expect(code, contains('#define FRICTION_MAX_DUTY_P75 800'));
+      expect(code, contains('frictionTargetDutyP74'));
+      expect(code, contains('frictionTargetDutyP75'));
+      expect(code, contains('dutyOfMotor[4] = frictionDutyP74;'));
+      expect(code, contains('dutyOfMotor[5] = frictionDutyP75;'));
+      // 原 P64/P66 槽位不再被摩擦轮写入。
+      expect(code, isNot(contains('dutyOfMotor[2] = frictionDutyP')));
+      expect(code, isNot(contains('dutyOfMotor[3] = frictionDutyP')));
+    });
+
+    test('主控板 MP03/MP74 可作摩擦轮并走主控 PWM 输出', () {
+      final config = arbitraryFriction(
+        {'MP03': PinRole.friction, 'MP74': PinRole.friction},
+        duties: const {'MP03': 700, 'MP74': 800},
+        pwmb: PwmFrequency.hz10000,
+        actionPin: 'MP03',
+      );
+      expect(frictionErrors(config), isEmpty);
+      final code = CodeGenerator.generate(config);
+      expect(code, contains('#define FRICTION_MAX_DUTY_MP03 700'));
+      expect(code, contains('#define FRICTION_MAX_DUTY_MP74 800'));
+      expect(code, contains('mainServoDuty[0] = frictionDutyMP03;'));
+      expect(code, contains('mainServoDuty[1] = frictionDutyMP74;'));
+      expect(code, contains('PWM_Init(PWMB_CH4_P03, 50, 0);'));
+      expect(code, contains('PWM_Init(PWMB_CH1_P74, 50, 0);'));
+      expect(
+        code,
+        contains('PWM_SET_Frequency(PWMB_CH4_P03, 50, mainServoDuty[0]);'),
+      );
+      expect(
+        code,
+        contains('PWM_SET_Frequency(PWMB_CH1_P74, 50, mainServoDuty[1]);'),
+      );
+    });
+
+    test('新摩擦轮脚的分组频率、满油上限与主控旧控制方式会报错', () {
+      final wrongPwmb = arbitraryFriction(
+        {'P74': PinRole.friction},
+        duties: const {'P74': 700},
+        pwmb: PwmFrequency.hz10000,
+      );
+      expect(
+        frictionErrors(wrongPwmb).map((issue) => issue.message),
+        contains('使用摩擦轮控制时 PWMB 必须为 50Hz'),
+      );
+
+      final missingDuty = arbitraryFriction({'P74': PinRole.friction});
+      expect(
+        frictionErrors(missingDuty).map((issue) => issue.message),
+        contains('P74 摩擦轮满油转速尚未填写'),
+      );
+
+      final legacyMain = arbitraryFriction(
+        {'MP03': PinRole.friction},
+        duties: const {'MP03': 700},
+        actionPin: 'MP03',
+        mode: ControlMode.direct,
+      );
+      expect(
+        frictionErrors(legacyMain).map((issue) => issue.message),
+        contains('控制方式与输入类型或 IO 输出角色不匹配'),
       );
     });
   });
