@@ -1,4 +1,4 @@
-// 教材第 1、3、4、6、7、8、9、10 章的软件截图生成器。
+// 教材第 1、2、3、4、6、7、8、9、10 章的软件截图生成器。
 //
 // ⚠️ 手动运行，刻意放在 `tool/` 下：`flutter test` 默认只收集 `test/`。
 //
@@ -25,6 +25,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:pieblock_app/src/asm_preview_controller.dart';
 import 'package:pieblock_app/src/controller.dart';
 import 'package:pieblock_app/src/deploy_controller.dart';
 import 'package:pieblock_app/src/design/app_theme.dart';
@@ -65,6 +66,48 @@ class _FakeDeployController extends DeployController {
 
   @override
   void cancelAll() {}
+}
+
+/// 烧录页截图用：带一份真实构建产物的状态，不真的编译也不碰硬件。
+class _BuiltDeployController extends DeployController {
+  _BuiltDeployController(this._state);
+
+  final DeployState _state;
+
+  @override
+  DeployState build() => _state;
+
+  @override
+  Future<void> prepare(
+    ProjectConfig config,
+    CompilerKind compiler, {
+    String? keilRoot,
+  }) async {}
+
+  @override
+  Future<void> refreshDevices() async {}
+
+  @override
+  void cancelAll() {}
+}
+
+/// 生成代码页截图用：直接给出已编译好的列表文件，跳过真实构建。
+class _ReadyAsmPreviewController extends AsmPreviewController {
+  _ReadyAsmPreviewController(this._listing);
+
+  final String _listing;
+
+  @override
+  AsmPreviewState build() => AsmPreviewState(
+    activity: AsmPreviewActivity.ready,
+    listing: _listing,
+  );
+
+  @override
+  Future<void> compile(ProjectConfig config) async {}
+
+  @override
+  Future<void> recompile(ProjectConfig config) async {}
 }
 
 Future<ProjectDocument> _loadExample(String fileName) async {
@@ -140,6 +183,8 @@ Future<GlobalKey> _pump(
   WidgetTester tester, {
   required Widget child,
   required int logicalHeight,
+  DeployState? deployState,
+  String? asmListing,
 }) async {
   tester.view.devicePixelRatio = 2;
   tester.view.physicalSize = Size(_logicalWidth * 2, logicalHeight * 2);
@@ -154,7 +199,15 @@ Future<GlobalKey> _pump(
       key: boundaryKey,
       child: ProviderScope(
         overrides: [
-          deployControllerProvider.overrideWith(_FakeDeployController.new),
+          deployControllerProvider.overrideWith(
+            deployState == null
+                ? _FakeDeployController.new
+                : () => _BuiltDeployController(deployState),
+          ),
+          if (asmListing != null)
+            asmPreviewControllerProvider.overrideWith(
+              () => _ReadyAsmPreviewController(asmListing),
+            ),
         ],
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
@@ -175,15 +228,21 @@ Future<GlobalKey> _pumpWizard(
   required ProjectDocument document,
   required int step,
   required int logicalHeight,
+  String? projectPath,
+  DeployState? deployState,
+  String? asmListing,
 }) => _pump(
   tester,
   logicalHeight: logicalHeight,
+  deployState: deployState,
+  asmListing: asmListing,
   child: ProviderScope(
     overrides: [
       appControllerProvider.overrideWith(
         () => _StaticAppController(
           AppState(
             document: document,
+            path: projectPath,
             step: step,
             maxVisitedStep: step,
             saveStatus: SaveStatus.saved,
@@ -295,6 +354,9 @@ void main() {
   late ProjectDocument infantry;
   late ProjectDocument debug;
   late ProjectDocument music;
+  late ProjectDocument chapterTwo;
+  late String chapterTwoListing;
+  late DeployState chapterTwoDeploy;
 
   setUpAll(() async {
     await _loadBookFonts();
@@ -304,6 +366,109 @@ void main() {
     _expectNoErrors('infantry-standard.pieproj', infantry);
     _expectNoErrors('debug-checklist.pieproj', debug);
     _expectNoErrors('music-twinkle.pieproj', music);
+
+    // 第 2 章：调试工程“电机测试”，只启用 P60 一路电机（电机 / 5000 / 3000 ms）。
+    chapterTwo = ProjectDocument.create(ProjectKind.debug).copyWith(
+      config: DebugConfig(
+        tests: <DebugTestItem>[
+          for (final pin in debugPins)
+            pin == 'P60'
+                ? const DebugTestItem(
+                    pin: 'P60',
+                    enabled: true,
+                    driveType: DebugDriveType.motor,
+                    value: 5000,
+                    durationMs: 3000,
+                  )
+                : DebugTestItem(pin: pin),
+        ],
+      ),
+    );
+
+    // 第 2 章的汇编与烧录截图引用真实构建产物：
+    // 先运行 `dart run tool/build_book_firmware.dart` 生成 build/book_firmware。
+    final listingFile = File(
+      'build/book_firmware/debug-checklist/main.rst',
+    );
+    final buildFile = File('build/book_firmware/debug-checklist/build.json');
+    expect(
+      listingFile.existsSync(),
+      isTrue,
+      reason: '缺少 ${listingFile.path}，先运行 dart run tool/build_book_firmware.dart',
+    );
+    expect(
+      buildFile.existsSync(),
+      isTrue,
+      reason: '缺少 ${buildFile.path}，先运行 dart run tool/build_book_firmware.dart',
+    );
+    chapterTwoListing = listingFile
+        .readAsLinesSync()
+        .take(220)
+        .join('\n');
+    final build = jsonDecode(buildFile.readAsStringSync()) as Map<String, Object?>;
+    chapterTwoDeploy = DeployState(
+      compilerFingerprint: '内置 SDCC C251',
+      artifact: BuildArtifact(
+        hexPath: build['hex']! as String,
+        hexSha256: build['hexSha256']! as String,
+        fingerprint: 'book-screenshot',
+        sourceSha256: 'book-screenshot',
+        compiler: CompilerKind.sdcc,
+        compilerFingerprint: '内置 SDCC C251',
+        templateVersion: '21',
+        builtAt: DateTime.parse(build['builtAt']! as String),
+        byteCount: build['hexBytes']! as int,
+        warningCount: build['warnings']! as int,
+      ),
+    );
+  });
+
+  _screenshotTest('2-1 调试测试序列：启用 P60', (tester) async {
+    final key = await _pumpWizard(
+      tester,
+      document: chapterTwo,
+      step: 0,
+      logicalHeight: 900,
+      projectPath: '电机测试.pieproj',
+    );
+    await _saveScreenshot(tester, key, 'ch02/2-1-tests.png');
+  });
+
+  _screenshotTest('2-2 检查与摘要：0 错误 0 警告', (tester) async {
+    final key = await _pumpWizard(
+      tester,
+      document: chapterTwo,
+      step: 1,
+      logicalHeight: 900,
+      projectPath: '电机测试.pieproj',
+    );
+    await _saveScreenshot(tester, key, 'ch02/2-2-review.png');
+  });
+
+  _screenshotTest('2-3 生成代码：汇编列表 main.rst', (tester) async {
+    final key = await _pumpWizard(
+      tester,
+      document: chapterTwo,
+      step: 2,
+      logicalHeight: 900,
+      projectPath: '电机测试.pieproj',
+      asmListing: chapterTwoListing,
+    );
+    await tester.tap(find.text('汇编'));
+    await _settle(tester);
+    await _saveScreenshot(tester, key, 'ch02/2-3-listing.png');
+  });
+
+  _screenshotTest('2-4 烧录页：构建产物', (tester) async {
+    final key = await _pumpWizard(
+      tester,
+      document: chapterTwo,
+      step: 3,
+      logicalHeight: 900,
+      projectPath: '电机测试.pieproj',
+      deployState: chapterTwoDeploy,
+    );
+    await _saveScreenshot(tester, key, 'ch02/2-4-deploy.png');
   });
 
   _screenshotTest('1-1 首页', (tester) async {

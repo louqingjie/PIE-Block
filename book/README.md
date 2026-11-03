@@ -95,10 +95,12 @@ flutter test test/book_examples_test.dart     # 校验、生成 C、试算断言
 flutter test tool/book_screenshots_test.dart
 ```
 
-重新生成第 1、3、4、6、7、8、9、10 章软件截图（会覆盖
+重新生成第 1、2、3、4、6、7、8、9、10 章软件截图（会覆盖
 `image/ch01…ch10/*.png`）：
 
 ```bash
+# 第 2 章的汇编与烧录图引用真实构建产物，先跑一次固件构建
+dart run tool/build_book_firmware.dart
 flutter test tool/book_screenshots_chapters_test.dart
 ```
 
