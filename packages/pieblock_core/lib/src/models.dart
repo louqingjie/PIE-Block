@@ -252,6 +252,18 @@ class ChassisConfig {
   );
 }
 
+/// 清理引脚备注：去掉首尾空白，丢弃空备注，避免把空串写进存档。
+Map<String, String> _normalizePinNotes(Map<String, String>? notes) {
+  final result = <String, String>{};
+  for (final entry in (notes ?? const <String, String>{}).entries) {
+    final text = entry.value.trim();
+    if (text.isNotEmpty) result[entry.key] = text;
+  }
+  return result;
+}
+
+const _pwmPins = [...expansionPins, ...mainServoPins];
+
 class PwmGroupConfig {
   PwmGroupConfig({
     this.pwma,
@@ -262,11 +274,13 @@ class PwmGroupConfig {
     Map<String, int>? servoMinLimits,
     Map<String, int>? servoMaxLimits,
     Map<String, int>? frictionMaxDuties,
+    Map<String, String>? pinNotes,
   }) : pinRoles = Map.unmodifiable(pinRoles ?? const {}),
        servoMids = Map.unmodifiable(servoMids ?? const {}),
        servoMinLimits = Map.unmodifiable(servoMinLimits ?? const {}),
        servoMaxLimits = Map.unmodifiable(servoMaxLimits ?? const {}),
-       frictionMaxDuties = Map.unmodifiable(frictionMaxDuties ?? const {});
+       frictionMaxDuties = Map.unmodifiable(frictionMaxDuties ?? const {}),
+       pinNotes = Map.unmodifiable(_normalizePinNotes(pinNotes));
   final PwmFrequency? pwma, pwmb;
   final bool buzzerDisabled;
   final Map<String, PinRole> pinRoles;
@@ -278,6 +292,10 @@ class PwmGroupConfig {
 
   /// P64/P66 满油占空比（500–800 整百）；仅摩擦轮专用控制方式使用。
   final Map<String, int> frictionMaxDuties;
+
+  /// 引脚备注（选填）：仅用于界面在动作映射的引脚选择中显示
+  /// `引脚（备注）`，不参与校验与代码生成。
+  final Map<String, String> pinNotes;
 
   /// 引脚的最终输出角色。
   ///
@@ -299,6 +317,7 @@ class PwmGroupConfig {
     Map<String, int>? servoMinLimits,
     Map<String, int>? servoMaxLimits,
     Map<String, int>? frictionMaxDuties,
+    Map<String, String>? pinNotes,
   }) => PwmGroupConfig(
     pwma: identical(pwma, _unset) ? this.pwma : pwma as PwmFrequency?,
     pwmb: identical(pwmb, _unset) ? this.pwmb : pwmb as PwmFrequency?,
@@ -308,32 +327,41 @@ class PwmGroupConfig {
     servoMinLimits: servoMinLimits ?? this.servoMinLimits,
     servoMaxLimits: servoMaxLimits ?? this.servoMaxLimits,
     frictionMaxDuties: frictionMaxDuties ?? this.frictionMaxDuties,
+    pinNotes: pinNotes ?? this.pinNotes,
   );
-  Map<String, Object?> toJson() => {
-    'pwma': pwma?.name,
-    'pwmb': pwmb?.name,
-    'buzzer_disabled': buzzerDisabled,
-    'pin_roles': {
-      for (final pin in [...expansionPins, ...mainServoPins])
-        pin: pinRoles[pin]?.name,
-    },
-    'servo_mids': {
-      for (final pin in [...expansionPins, ...mainServoPins])
-        pin: servoMids[pin],
-    },
-    'servo_min_limits': {
-      for (final pin in [...expansionPins, ...mainServoPins])
-        pin: servoMinLimits[pin],
-    },
-    'servo_max_limits': {
-      for (final pin in [...expansionPins, ...mainServoPins])
-        pin: servoMaxLimits[pin],
-    },
-    'friction_max_duties': {
-      for (final pin in EngineerPinCapabilities.frictionPins)
-        pin: frictionMaxDuties[pin],
-    },
-  };
+  Map<String, Object?> toJson() {
+    final notes = <String, String>{};
+    for (final pin in _pwmPins) {
+      final note = pinNotes[pin];
+      if (note != null) notes[pin] = note;
+    }
+    return {
+      'pwma': pwma?.name,
+      'pwmb': pwmb?.name,
+      'buzzer_disabled': buzzerDisabled,
+      'pin_roles': {
+        for (final pin in [...expansionPins, ...mainServoPins])
+          pin: pinRoles[pin]?.name,
+      },
+      if (notes.isNotEmpty) 'pin_notes': notes,
+      'servo_mids': {
+        for (final pin in [...expansionPins, ...mainServoPins])
+          pin: servoMids[pin],
+      },
+      'servo_min_limits': {
+        for (final pin in [...expansionPins, ...mainServoPins])
+          pin: servoMinLimits[pin],
+      },
+      'servo_max_limits': {
+        for (final pin in [...expansionPins, ...mainServoPins])
+          pin: servoMaxLimits[pin],
+      },
+      'friction_max_duties': {
+        for (final pin in EngineerPinCapabilities.frictionPins)
+          pin: frictionMaxDuties[pin],
+      },
+    };
+  }
   factory PwmGroupConfig.fromJson(Map<String, Object?> j) {
     final roles = <String, PinRole>{};
     for (final e in Map<String, Object?>.from(
@@ -365,6 +393,12 @@ class PwmGroupConfig {
       final value = (e.value as num?)?.toInt();
       if (value != null) frictionMaxDuties[e.key] = value;
     }
+    final pinNotes = <String, String>{};
+    for (final e in Map<String, Object?>.from(
+      j['pin_notes'] as Map? ?? {},
+    ).entries) {
+      if (e.value case final String note) pinNotes[e.key] = note;
+    }
     return PwmGroupConfig(
       pwma: nullableEnumValue(PwmFrequency.values, j['pwma']),
       pwmb: nullableEnumValue(PwmFrequency.values, j['pwmb']),
@@ -374,6 +408,7 @@ class PwmGroupConfig {
       servoMinLimits: limits('servo_min_limits'),
       servoMaxLimits: limits('servo_max_limits'),
       frictionMaxDuties: frictionMaxDuties,
+      pinNotes: pinNotes,
     );
   }
 }
@@ -1912,13 +1947,15 @@ class ProjectDocument {
   ///
   /// 格式 18 起项目已正式发布：新增字段必须可选，旧格式必须能读入，见
   /// [oldestSupportedFormatVersion] 与 [ProjectDocument.fromJson]。
-  static const formatVersion = 19;
+  static const formatVersion = 20;
 
   /// 仍可读入的最旧格式：1.7.0 正式发布时使用的格式 17。
   ///
   /// 17 → 18 新增可选的 `modes[].action_tables`（缺省为空表）。
   /// 18 → 19 移除动作行与调试测试项的方向字段，方向并入参数/数值正负；
   /// 读入旧档时按原来的 `direction == reverse` 取负迁移。
+  /// 19 → 20 新增可选的 `pwm.pin_notes`（工程引脚备注，缺省为空），仅用于
+  /// 界面在动作映射的引脚选择中显示 `引脚（备注）`。
   static const oldestSupportedFormatVersion = 17;
   final String name;
   final ProjectKind kind;
@@ -1979,6 +2016,7 @@ class ProjectDocument {
     }
     // 17 → 18：仅新增可选的 modes[].action_tables，缺省为空表。
     // 18 → 19：动作/调试测试项的方向由数值正负表示，解析时折叠旧 direction。
+    // 19 → 20：仅新增可选的 pwm.pin_notes，缺省为空，无迁移动作。
     final kind = enumValue(
           ProjectKind.values,
           j['project_kind'],

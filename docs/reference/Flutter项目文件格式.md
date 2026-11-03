@@ -1,12 +1,12 @@
 # Flutter 项目文件格式
 
-> 注意：`reference/schemas/` 下的 JSON Schema 由已停用的旧版 Godot CLI 生成，字段结构停留在旧格式；格式 19 以本文档与代码实现为准，暂不把旧 schema 作为校验依据。
+> 注意：`reference/schemas/` 下的 JSON Schema 由已停用的旧版 Godot CLI 生成，字段结构停留在旧格式；格式 20 以本文档与代码实现为准，暂不把旧 schema 作为校验依据。
 
-`.pieproj` 是 UTF-8 JSON 文件。格式 19 使用稳定语义字段，不包含 UI 控件路径或生成代码，并保存可恢复的向导进度。
+`.pieproj` 是 UTF-8 JSON 文件。格式 20 使用稳定语义字段，不包含 UI 控件路径或生成代码，并保存可恢复的向导进度。
 
 ```json
 {
-  "format_version": 19,
+  "format_version": 20,
   "name": "我的机器人",
   "project_kind": "infantry",
   "created_at": "2026-08-25T01:00:00.000Z",
@@ -45,6 +45,8 @@
 步兵云台执行器的舵机保存可选的 `min_limit` 与 `max_limit`（相对归中位置的角度）：`max_limit` 为逆时针一侧（非负），`min_limit` 为顺时针一侧（非正），界面按限幅大小显示为「逆时针限幅」「顺时针限幅」。留空表示该侧走满物理行程；填写时逆时针限幅必须在 `0–(90 − mid_offset)` 内、顺时针限幅必须在 `0–(90 + mid_offset)` 内，越界会作为错误阻止生成代码。同轴多个舵机按各侧最紧的限幅取交集执行。
 
 工程项目 PWM 的 `servo_min_limits` 与 `servo_max_limits` 使用同一套两侧行程语义：`servo_max_limits` 为逆时针一侧（非负），`servo_min_limits` 为顺时针一侧（非正），界面按「逆时针限幅」「顺时针限幅」显示；两侧上限同样受 `servo_mids` 的归中偏移约束（逆时针 ≤ `90 − mid`、顺时针 ≤ `90 + mid`），越界会作为错误阻止生成代码，留空表示该侧走满电气行程。
+
+工程项目的 `pwm.pin_notes`（格式 20 起）保存可选的引脚备注，例如 `{"MP03": "工程一级舵机"}`。备注只用于动作映射页的引脚选择显示 `MP03（工程一级舵机）`，方便区分同型号的多路输出；缺省为空，不参与校验，也不影响生成代码。备注以引脚名为键，保存时只写出固定引脚顺序中的非空备注。
 
 工程动作的 `mode` 支持 `direct`、`incremental`、`speed`、`accelerate`、`single`、`continuous`、`frictionToggle`、`frictionStep`、`frictionContinuous` 和 `frictionAxis`。数字按键控制舵机时可使用 `direct`（按键上升沿到达相对中位点的预设角度）、`single`（按键上升沿按灵敏度单次增加）或 `continuous`（按住期间按灵敏度逐主循环增加）。格式 19 起动作行不再保存 `direction`，方向由 `parameter` 正负表示：`direct` 的 `parameter` 为带符号整数（舵机 −90–90、电机 −10000–10000），正负决定中位点两侧与转向；`single` 和 `continuous` 的 `parameter` 保存带符号、最多两位小数的角度灵敏度；`speed`/`accelerate` 等由摇杆方向决定的模式参数仍为非负幅值。其他动作参数仍为整数。格式 17 起动作行还保存 `input_kind`（`remote`/`unspecified`）、`output_kind`（`pin`/`integer`/`rational`）、`variable` 与 `expression`：`input_kind == unspecified` 的行使用 `expression` 单条受限表达式，`output_kind` 非 `pin` 时输出到同名变量。
 
@@ -103,7 +105,7 @@ P64/P66 共享同一油门百分比，各自按 `friction_max_duties` 映射目�
 - 表达式在桌面端另有编译门禁与试算对话框；Web/Android 仅做 Dart 解析器校验。
 
 
-步兵配置不保存 `pwm`：PWMA 固定为 50Hz，PWMB 固定为 10000Hz，其他引脚角色由实际选择自动推导。只有 `friction_mode` 为 `brushlessEsc` 时 P64/P66 才固定用于摩擦轮；选择 `disabled` 时两端口释放。工程配置继续保存 `pwm`，允许配置分组频率、引脚角色、舵机中位与 `friction_max_duties`（P64/P66 满油占空比，500–800 整百；摩擦轮专用控制方式使用）。工程 `pin_roles` 也覆盖主控板舵机口 MP03/MP74：这两个口只能选 `servo`（舵机）或 `unused`（未使用），旧工程文件没有记录它们时按历史行为默认当作 `servo`；标为 `unused` 后不再初始化主控板舵机输出，也不需要（且不校验）中位与限幅，动作行不能引用它。
+步兵配置不保存 `pwm`：PWMA 固定为 50Hz，PWMB 固定为 10000Hz，其他引脚角色由实际选择自动推导。只有 `friction_mode` 为 `brushlessEsc` 时 P64/P66 才固定用于摩擦轮；选择 `disabled` 时两端口释放。工程配置继续保存 `pwm`，允许配置分组频率、引脚角色、引脚备注、舵机中位与 `friction_max_duties`（P64/P66 满油占空比，500–800 整百；摩擦轮专用控制方式使用）。工程 `pin_roles` 也覆盖主控板舵机口 MP03/MP74：这两个口只能选 `servo`（舵机）或 `unused`（未使用），旧工程文件没有记录它们时按历史行为默认当作 `servo`；标为 `unused` 后不再初始化主控板舵机输出，也不需要（且不校验）中位与限幅，动作行不能引用它。
 
 调试配置保存 `tests` 数组，数组顺序就是固件执行顺序。默认项目包含 P60、P62、P64、P66、P74、P75、P76、P77、MP03、MP74 十个固定引脚各一条；同一引脚可以配置多条测试（复制按钮会在源项下方插入一条同配置测试），但数组必须至少覆盖全部十个固定引脚。每项可带可选的 `id`（复制操作生成，用于列表稳定标识），并保存 `enabled`、`drive_type` 和 `value`；电机与舵机额外保存 `duration_ms`，摩擦轮不保存时长，测试期间也不发送方向帧。格式 19 起不再保存 `direction`：电机 `value` 为带符号速度（−10000–10000），舵机 `value` 为带符号角度（−90–90），正负即原来的正/反向。摩擦轮仅限 P64/P66：`value` 就是**目标转速**本身（500–800，写成这张卡实测想跑的转速），先给 `500` 启动占空比保持 1 秒完成电调激活，再逐周期平滑渐变到该目标，停留 1.5 秒后归零；低于 `600` 时只给一条提醒（可能带不动摩擦轮）。调试项目不再保存 `friction_*_max_duty`，也不再做「油门 → 满油上限」换算。
 
@@ -133,9 +135,10 @@ duty(引脚) = 500 + 油门% × (该引脚满油上限 − 500) ÷ 100
 
 项目文件自 1.7.0 起随正式版本发布，兼容策略为「写入升版、读取兼容」：
 
-- 当前应用写入 **格式 19**，可读入 **格式 17–19**（`ProjectDocument.oldestSupportedFormatVersion` 至 `ProjectDocument.formatVersion`）。
+- 当前应用写入 **格式 20**，可读入 **格式 17–20**（`ProjectDocument.oldestSupportedFormatVersion` 至 `ProjectDocument.formatVersion`）。
 - 17 → 18：工程模式新增可选的 `modes[].action_tables`（按键动作表）。缺少该字段视为空列表，其余字段语义不变。
 - 18 → 19：动作行与调试测试项移除 `direction`，方向并入 `parameter` / `value` 正负。读入 17/18 存档时，`direction == reverse` 会折算成对应数值取负（只对原本使用方向的控制方式生效：`direct`、`incremental`、`single`、`continuous`、`frictionStep`、`frictionContinuous` 与调试项电机/舵机）；摩擦轮调试项的 `value` 不受 direction 影响，速度/增速等原本忽略方向的模式也不再取负。编辑保存后按格式 19 写回（自动升级）。
-- 旧版 PIE-Block（支持到格式 18）无法打开格式 19 的文件，会提示升级；新版不会把文件写回旧格式，也不做静默降级。
+- 19 → 20：工程项目新增可选的 `pwm.pin_notes`（引脚备注）。缺少该字段视为空表，生成代码、校验规则与旧存档行为完全一致；编辑保存后按格式 20 写回（自动升级）。
+- 旧版 PIE-Block（支持到格式 19）无法打开格式 20 的文件，会提示升级；新版不会把文件写回旧格式，也不做静默降级。
 - 格式 16 及更早版本属于未发布格式，应用仍会拒绝打开并提示使用对应旧版处理。
-- 兼容回归样本固定在 `packages/pieblock_core/test/fixtures/`（格式 17 的工程/步兵存档与格式 18 的方向迁移样本），修改格式时必须保持这些用例通过。
+- 兼容回归样本固定在 `packages/pieblock_core/test/fixtures/`（格式 17 的工程/步兵存档、格式 18 的方向迁移样本与格式 19 的工程存档），修改格式时必须保持这些用例通过。

@@ -1046,6 +1046,26 @@ void main() {
       );
     });
 
+    test('格式 19 的工程存档可打开，引脚备注缺省为空', () {
+      final document = ProjectDocument.fromJson(
+        fixture('format19_engineer.pieproj'),
+      );
+      final config = document.config as EngineerConfig;
+      expect(config.pwm.pinNotes, isEmpty);
+      expect(
+        ProjectValidator.validate(config)
+            .where((issue) => issue.severity == IssueSeverity.error),
+        isEmpty,
+      );
+
+      final encoded = document.toJson();
+      expect(encoded['format_version'], ProjectDocument.formatVersion);
+      expect(
+        (encoded['config'] as Map)['pwm'] as Map,
+        isNot(contains('pin_notes')),
+      );
+    });
+
     test('过旧与过新的格式给出明确提示', () {
       expect(
         () => ProjectDocument.fromJson({'format_version': 16}),
@@ -1069,6 +1089,42 @@ void main() {
           ),
         ),
       );
+    });
+  });
+
+  group('工程引脚备注', () {
+    test('引脚备注可往返，空白备注不写出', () {
+      final pwm = PwmGroupConfig(
+        pinNotes: const {
+          'MP03': '  工程一级舵机 ',
+          'P74': '左前轮',
+          'P60': '   ',
+        },
+      );
+      expect(pwm.pinNotes, const {'MP03': '工程一级舵机', 'P74': '左前轮'});
+
+      final json = jsonDecode(jsonEncode(pwm.toJson())) as Map;
+      expect(json['pin_notes'], const {'MP03': '工程一级舵机', 'P74': '左前轮'});
+      final restored = PwmGroupConfig.fromJson(
+        Map<String, Object?>.from(json),
+      );
+      expect(restored.pinNotes, pwm.pinNotes);
+      expect(PwmGroupConfig().toJson(), isNot(contains('pin_notes')));
+    });
+
+    test('引脚备注不影响校验与生成代码', () {
+      final base = advancedEngineer();
+      final annotated = base.copyWith(
+        pwm: base.pwm.copyWith(
+          pinNotes: const {'P60': '一级舵机', 'MP03': '工程一级舵机'},
+        ),
+      );
+      String issues(EngineerConfig config) => [
+        for (final issue in ProjectValidator.validate(config))
+          '${issue.severity.name}:${issue.fieldPath}:${issue.message}',
+      ].join('\n');
+      expect(issues(annotated), issues(base));
+      expect(CodeGenerator.generate(annotated), CodeGenerator.generate(base));
     });
   });
 
