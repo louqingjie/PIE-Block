@@ -223,10 +223,10 @@ ActionMapping _wheelRow(String pin, String expression) => ActionMapping(
 );
 
 List<ActionMapping> _mecanumDirectRows() => [
-  _wheelRow('P74', '(-LY-LX-(LEFT-RIGHT)*1000)*10000/2047'),
-  _wheelRow('P75', '(-LY+LX+(LEFT-RIGHT)*1000)*10000/2047'),
-  _wheelRow('P76', '(-LY+LX-(LEFT-RIGHT)*1000)*10000/2047'),
-  _wheelRow('P77', '(-LY-LX+(LEFT-RIGHT)*1000)*10000/2047'),
+  _wheelRow('P74', '(-LY-LX+0.5*RX)*10000/2047'),
+  _wheelRow('P75', '(-LY+LX-0.5*RX)*10000/2047'),
+  _wheelRow('P76', '(-LY+LX+0.5*RX)*10000/2047'),
+  _wheelRow('P77', '(-LY-LX-0.5*RX)*10000/2047'),
 ];
 
 void main() {
