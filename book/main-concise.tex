@@ -60,6 +60,7 @@
 % 表格自动适应正文宽度
 \usepackage{tabularx}
 \usepackage{float}
+\usepackage{needspace}
 
 % 示意图：动作行、动作表与底盘构型
 \usepackage{tikz}
@@ -76,6 +77,27 @@
     \draw[very thick, pieblockteal] (#3:1.0) -- ++({#3+#4}:0.75);
     \fill[black!60] ($(#3:1.0)+({#3+#4}:0.75)$) circle (0.05);
     \fill[pieblockteal] (0,0) circle (0.09);
+  \end{scope}
+}
+
+% 麦轮俯视图标：参数为 x、y 与辊子斜率（+1/-1）
+\newcommand{\mecwheel}[3]{%
+  \draw[fill=black!12, rounded corners=2pt, draw=black!30]
+    (#1-0.30,#2-0.12) rectangle (#1+0.30,#2+0.12);
+  \foreach \d in {-0.22,-0.11,0,0.11,0.22} {
+    \draw[pieblockteal, thick]
+      (#1+\d-0.08*#3,#2-0.10) -- (#1+\d+0.08*#3,#2+0.10);
+  }
+}
+
+% 全向轮俯视图标：参数为轮心方位角；轮体沿切向，辊子轴线沿半径
+\newcommand{\omniwheel}[1]{%
+  \begin{scope}[rotate=#1]
+    \draw[fill=black!12, rounded corners=2pt, draw=black!30]
+      (0.83,-0.31) rectangle (1.07,0.31);
+    \foreach \d in {-0.20,0,0.20} {
+      \draw[pieblockteal, thick] (0.85,\d) -- (1.05,\d);
+    }
   \end{scope}
 }
 

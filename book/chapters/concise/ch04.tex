@@ -26,7 +26,7 @@
     构型 & 特点 & 配置要点 \\
     \midrule
     四轮麦克纳姆轮 & 可前后、左右平移与原地旋转 & 四个轮电机作为独立输出，用动作行把摇杆输入分配到各轮 \\
-    三轮全向轮 & 三轮 120 度布置，可全向平移 & 三个轮电机独立输出，按实际安装方位分配 \\
+    全向轮（三轮或四轮） & 三轮 120 度或四轮 90 度布置，可全向平移 & 三个或四个轮电机独立输出，按实际安装方位分配 \\
     二自由度机械臂 & 两个舵机，平面内抓放 & 两个舵机端口，配合动作表按档位切换姿态 \\
     底盘与机械臂组合 & 移动与作业合为一体 & 保留预制底盘，另用动作行与动作表控制机械臂 \\
     特殊构型步兵 & 全向底盘加云台、拨弹与摩擦轮 & 关闭预制底盘，用动作行重建底盘解算与武器控制 \\
@@ -51,19 +51,15 @@
 
 \begin{figure}[htbp]
   \centering
-  \begin{tikzpicture}[scale=1.0]
-    % 四轮麦克纳姆轮
+  \begin{tikzpicture}[scale=0.82]
+    % 四轮麦克纳姆轮：辊子方向交替成 X 形
     \begin{scope}[shift={(0,0)}]
       \draw[rounded corners=6pt, fill=black!4, draw=black!25]
         (-1.15,-0.95) rectangle (1.15,0.95);
-      \foreach \x/\y in {-0.9/0.7, 0.9/0.7, -0.9/-0.7, 0.9/-0.7} {
-        \draw[fill=black!12, rounded corners=2pt, draw=black!30]
-          (\x-0.30,\y-0.12) rectangle (\x+0.30,\y+0.12);
-        \foreach \d in {-0.22,-0.11,0,0.11,0.22} {
-          \draw[pieblockteal, thick]
-            (\x+\d-0.08,\y-0.10) -- (\x+\d+0.08,\y+0.10);
-        }
-      }
+      \mecwheel{-0.9}{0.7}{1}
+      \mecwheel{0.9}{0.7}{-1}
+      \mecwheel{-0.9}{-0.7}{-1}
+      \mecwheel{0.9}{-0.7}{1}
       \draw[-{Stealth}, thick] (0,1.05) -- (0,1.55)
         node[above,font=\scriptsize]{前进 $+x$};
       \draw[-{Stealth}, thick] (0,0) -- (-0.65,0)
@@ -71,21 +67,15 @@
       \draw[-{Stealth}, thick] (1.35,0)
         arc[start angle=0,end angle=70,radius=0.40]
         node[right,font=\scriptsize]{$\omega_z$};
-      \node[font=\small] at (0,-1.32) {麦克纳姆轮：四轮，45° 辊子};
+      \node[font=\scriptsize, align=center] at (0,-1.35) {麦克纳姆轮\\四轮，45° 辊子};
     \end{scope}
-    % 三轮全向轮
-    \begin{scope}[shift={(5.3,0)}]
+    % 三轮全向轮：轮体沿切向，辊子轴线沿半径
+    \begin{scope}[shift={(4.6,0)}]
       \draw[rounded corners=6pt, fill=black!4, draw=black!25]
         (-1.00,-0.95) rectangle (1.00,0.95);
-      \foreach \a in {30,150,270} {
-        \begin{scope}[rotate=\a]
-          \draw[fill=black!12, rounded corners=2pt, draw=black!30]
-            (0.78,-0.12) rectangle (1.12,0.12);
-          \foreach \d in {0.84,0.94,1.04} {
-            \draw[pieblockteal, thick] (\d,-0.10) -- (\d,0.10);
-          }
-        \end{scope}
-      }
+      \omniwheel{30}
+      \omniwheel{150}
+      \omniwheel{270}
       \draw[-{Stealth}, thick] (0,1.05) -- (0,1.55)
         node[above,font=\scriptsize]{前进 $+x$};
       \draw[-{Stealth}, thick] (0,0) -- (-0.65,0)
@@ -93,13 +83,33 @@
       \draw[-{Stealth}, thick] (1.35,0)
         arc[start angle=0,end angle=70,radius=0.40]
         node[right,font=\scriptsize]{$\omega_z$};
-      \node[font=\small] at (0,-1.32) {全向轮：三轮，90° 辊子};
+      \node[font=\scriptsize, align=center] at (0,-1.35) {全向轮\\三轮，90° 辊子};
+    \end{scope}
+    % 四轮全向轮
+    \begin{scope}[shift={(9.2,0)}]
+      \draw[rounded corners=6pt, fill=black!4, draw=black!25]
+        (-1.00,-0.95) rectangle (1.00,0.95);
+      \omniwheel{45}
+      \omniwheel{135}
+      \omniwheel{225}
+      \omniwheel{315}
+      \draw[-{Stealth}, thick] (0,1.05) -- (0,1.55)
+        node[above,font=\scriptsize]{前进 $+x$};
+      \draw[-{Stealth}, thick] (0,0) -- (-0.65,0)
+        node[left,font=\scriptsize]{左移 $+y$};
+      \draw[-{Stealth}, thick] (1.35,0)
+        arc[start angle=0,end angle=70,radius=0.40]
+        node[right,font=\scriptsize]{$\omega_z$};
+      \node[font=\scriptsize, align=center] at (0,-1.35) {全向轮\\四轮，90° 辊子};
     \end{scope}
   \end{tikzpicture}
-  \caption{麦轮与全向轮布置示意：左侧四轮麦轮的辊子与轮轴成 45 度，右侧三轮全向轮的
-  辊子与轮轴成 90 度、三轮相隔 120 度}
+  \caption{轮系布置示意：左为四轮麦轮，中为三轮全向轮，右为四轮全向轮}
   \label{fig:concise-wheels}
 \end{figure}
+
+麦轮四角的辊子方向必须交替成 X 形：左前与右后同向，右前与左后反向。四个轮子的辊子
+同向安装时只能像普通轮子一样前后滚动，无法横移。全向轮的轮体沿圆周切向安装，辊子轴线
+沿半径方向；三轮相隔 120 度，四轮相隔 90 度。
 
 设车体前方为 $+x$、左方为 $+y$、逆时针旋转为正，四个轮子按左前、右前、左后、右后
 布置，$L$ 为前后轮距、$W$ 为左右轮距，$k=(L+W)/2$。忽略辊子滑移时，四个轮子的等效
@@ -136,11 +146,11 @@ v_{\mathrm{RR}} &= V_x - V_y + k\omega_z.
 右前、左后与直行方向相同；原地左转时左侧两轮向后、右侧两轮向前。表中符号按上述坐标
 与轮位约定，实车若某轮方向相反，在配置中把该轮方向取反即可，不必改接线。
 
-\subsection{全向轮}
+\subsection{三轮全向轮}
 
 全向轮的轮毂外缘装有一圈与轮轴成 90 度的辊子。轮子只能沿滚动方向主动
 出力，横向运动由辊子自由滑动实现；三个轮子相隔 120 度布置，即可合成任意方向的平移与
-旋转（图~\ref{fig:concise-wheels} 右）。
+旋转（图~\ref{fig:concise-wheels} 中）。
 
 取三个轮子的轮心方位角为 30 度、150 度、270 度，轮心位于半径 $R$ 的圆周上，滚动方向
 沿圆周切向。忽略辊子滑移时，三个轮子的等效线速度为：
@@ -173,6 +183,156 @@ v_3 &= V_x + R\omega_z.
 左移时轮 1 与轮 2 方向相反、轮 3 为零，原地旋转时三轮同向。与麦轮相比，全向轮的
 辊子磨损较小、结构更简单，但三轮布置的承载与越障能力一般。
 
+\subsection{四轮全向轮}
+
+全向轮也可以采用四轮布置：轮心方位角为 45 度、135 度、225 度、315 度，轮体仍沿圆周
+切向，辊子轴线沿半径（图~\ref{fig:concise-wheels} 右）。忽略辊子滑移时，四个轮子的
+等效线速度为：
+\[
+\begin{aligned}
+v_1 &= -0.707V_x + 0.707V_y + R\omega_z,\\
+v_2 &= -0.707V_x - 0.707V_y + R\omega_z,\\
+v_3 &= +0.707V_x - 0.707V_y + R\omega_z,\\
+v_4 &= +0.707V_x + 0.707V_y + R\omega_z.
+\end{aligned}
+\]
+
+\begin{table}[htbp]
+  \centering
+  \small
+  \setlength{\tabcolsep}{5pt}
+  \begin{tabular}{@{}lccccccc@{}}
+    \toprule
+    工况 & $V_x$ & $V_y$ & $\omega_z$ & 轮 1 & 轮 2 & 轮 3 & 轮 4 \\
+    \midrule
+    直行 & 1.0 & 0 & 0 & $-0.71$ & $-0.71$ & $+0.71$ & $+0.71$ \\
+    左移 & 0 & 1.0 & 0 & $+0.71$ & $-0.71$ & $-0.71$ & $+0.71$ \\
+    原地左转 & 0 & 0 & 1.0 & $+0.20$ & $+0.20$ & $+0.20$ & $+0.20$ \\
+    \bottomrule
+  \end{tabular}
+  \caption{四轮全向轮解算示例（取 $R=0.2$\,m，轮心方位角 45°、135°、225°、315°）}
+  \label{tab:concise-omni4}
+\end{table}
+
+四轮全向轮直行时对角两轮同向、相邻两轮反向，左移时四条对角线上两两反向，原地旋转时
+四轮同向。四轮支撑比三轮稳定，承载能力也更好，代价是多一个轮子与一行输出；三轮则
+结构简单、重量轻，适合轻量机构。
+
+\subsection{把解算写成动作行}
+\label{sec:concise-wheel-rows}
+
+三种构型都按“输入绑定—中间计算—轮子输出”三层填写。轮子表达式里只使用中间变量，
+不要把摇杆轴、方向键的原始输入直接写进轮子表达式；这样每一行的含义都能直接读懂。
+
+第一层是输入绑定：输入下拉框选择手柄轴或按键，输出选“整数”，变量名照填，表达式
+留空，输入值会直接写入变量。四条绑定行三种构型通用：
+
+\begin{center}
+  \footnotesize
+  \setlength{\tabcolsep}{4pt}
+  \begin{tabularx}{\linewidth}{@{}l l l l X@{}}
+    \toprule
+    行类型 & 输入 & 输出 & 变量名 & 表达式 \\
+    \midrule
+    绑定 & LY（左摇杆纵向） & 整数 & \texttt{joyY} & 留空 \\
+    绑定 & LX（左摇杆横向） & 整数 & \texttt{joyX} & 留空 \\
+    绑定 & ←（左方向键） & 整数 & \texttt{keyLeft} & 留空 \\
+    绑定 & →（右方向键） & 整数 & \texttt{keyRight} & 留空 \\
+    \midrule
+    计算 & 未指定 & 整数 & \texttt{forward} & \texttt{-joyY} \\
+    计算 & 未指定 & 整数 & \texttt{left} & \texttt{joyX} \\
+    计算 & 未指定 & 整数 & \texttt{turn} & \texttt{(keyLeft-keyRight)*1000} \\
+    \bottomrule
+  \end{tabularx}
+\end{center}
+
+其中 \texttt{joyY} 上推为负，取反后 \texttt{forward} 向前为正；\texttt{joyX} 左推为正，
+直接作为 \texttt{left}；\texttt{keyLeft}、\texttt{keyRight} 为 0 或 1，二者相减得到
+\texttt{turn}，左转键按下时为正（逆时针）。\texttt{turn} 中的 1000 是示例转向增益，
+按实车调整。
+
+第二层是轮子输出：输入选“未指定”，输出选对应引脚，表达式只使用
+\texttt{forward}、\texttt{left}、\texttt{turn}。
+
+\noindent\textbf{麦轮四轮}
+
+\begin{center}
+  \footnotesize
+  \setlength{\tabcolsep}{4pt}
+  \begin{tabularx}{\linewidth}{@{}l l X@{}}
+    \toprule
+    行类型 & 输出引脚 & 表达式 \\
+    \midrule
+    引脚 & P74（左前） & \texttt{(forward-left-turn)*10000/2047} \\
+    引脚 & P75（右前） & \texttt{(forward+left+turn)*10000/2047} \\
+    引脚 & P76（左后） & \texttt{(forward+left-turn)*10000/2047} \\
+    引脚 & P77（右后） & \texttt{(forward-left+turn)*10000/2047} \\
+    \bottomrule
+  \end{tabularx}
+\end{center}
+
+若某个轮子实际转向相反，在该轮表达式前加负号。
+
+\noindent\textbf{三轮全向轮}
+
+\begin{center}
+  \footnotesize
+  \setlength{\tabcolsep}{4pt}
+  \begin{tabularx}{\linewidth}{@{}l l X@{}}
+    \toprule
+    行类型 & 输出引脚 & 表达式 \\
+    \midrule
+    引脚 & P74（轮 1） & \texttt{(-0.5*forward+0.866*left+turn)*10000/2047} \\
+    引脚 & P75（轮 2） & \texttt{(-0.5*forward-0.866*left+turn)*10000/2047} \\
+    引脚 & P76（轮 3） & \texttt{(forward+turn)*10000/2047} \\
+    \bottomrule
+  \end{tabularx}
+\end{center}
+
+\needspace{8\baselineskip}
+\noindent\textbf{四轮全向轮}
+
+\begin{center}
+  \footnotesize
+  \setlength{\tabcolsep}{4pt}
+  \begin{tabularx}{\linewidth}{@{}l l X@{}}
+    \toprule
+    行类型 & 输出引脚 & 表达式 \\
+    \midrule
+    引脚 & P74（轮 1） & \texttt{(-0.707*forward+0.707*left+turn)*10000/2047} \\
+    引脚 & P75（轮 2） & \texttt{(-0.707*forward-0.707*left+turn)*10000/2047} \\
+    引脚 & P76（轮 3） & \texttt{(0.707*forward-0.707*left+turn)*10000/2047} \\
+    引脚 & P77（轮 4） & \texttt{(0.707*forward+0.707*left+turn)*10000/2047} \\
+    \bottomrule
+  \end{tabularx}
+\end{center}
+
+四轮麦轮与四轮全向都用 P74--P77；三轮全向只用 P74--P76。输出超过 $\pm10000$ 时软件
+自动限幅，转向与平移同时推满会以限幅后的值为准。
+
+随书示例 \texttt{mecanum4.pieproj}、\texttt{omni3.pieproj} 仍把 LX、LY 直接写进表达式，
+且未包含转向行；本节改为先绑定变量。示例以右方为 $+y$，本节以左方为 $+y$，两者符号
+相反，导入示例后不要直接混用。
+
+按表填写后的界面见图~\ref{fig:concise-mecanum-binding}--\ref{fig:concise-wheel-outputs}。
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.90\linewidth]{image/ch04/4-2-mecanum-rows-top.png}
+  \caption{动作映射页顶部：LY、LX、←、→ 四条输入绑定行分别写入 \texttt{joyY}、
+  \texttt{joyX}、\texttt{keyLeft}、\texttt{keyRight}}
+  \label{fig:concise-mecanum-binding}
+\end{figure}
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.90\linewidth]{image/ch04/4-3-mecanum-outputs-crop.png}\\[2mm]
+  \includegraphics[width=0.90\linewidth]{image/ch04/4-4-omni4-outputs-crop.png}
+  \caption{上：麦轮的中间变量 \texttt{turn} 与 P74--P77 输出；下：四轮全向的
+  \texttt{turn} 与 P74--P77 输出，三轮全向只保留 P74--P76，表达式按表填写}
+  \label{fig:concise-wheel-outputs}
+\end{figure}
+
 \subsection{选型对比}
 
 \begin{table}[htbp]
@@ -184,9 +344,9 @@ v_3 &= V_x + R\omega_z.
     \toprule
     项目 & 麦克纳姆轮 & 全向轮 \\
     \midrule
-    轮数与布置 & 四轮矩形布置 & 三轮 120 度布置 \\
+    轮数与布置 & 四轮矩形布置 & 三轮 120 度或四轮 90 度布置 \\
     平移与旋转 & 前后、左右、原地旋转 & 前后、左右、原地旋转 \\
-    承载与稳定 & 四轮支撑，较好 & 三轮支撑，一般 \\
+    承载与稳定 & 四轮支撑，较好 & 三轮一般，四轮较好 \\
     结构与维护 & 辊子多、磨损与效率损失较大 & 结构简单、辊子磨损较小 \\
     适用场景 & 场地平整、需要频繁横向平移 & 轻量、结构简单、以平移为主 \\
     \bottomrule
@@ -304,6 +464,8 @@ P74--P77 默认属于 10000\,Hz 组，通常只接平滑电机；若要接摩擦
 按 A 一次，肩关节到达 $+40^\circ$；按 B 一次，肘关节在肩关节基础上到达 $+50^\circ$。
 两行互不干扰，组合成一个位姿。需要腕关节时再增加一行；需要多个位姿时改用动作表。
 
+底盘的全向解算动作行见第~\ref{sec:concise-wheel-rows}~节，本节只示例单个关节的位置设置。
+
 \section{动作表}
 
 动作表用于“一个按键走完一段流程”的机构，例如机械臂抓放、多档位伸缩。与动作行的
@@ -361,7 +523,8 @@ P74--P77 默认属于 10000\,Hz 组，通常只接平滑电机；若要接摩擦
 \section{用工程项目配置特殊构型步兵}
 
 特殊构型步兵指底盘不是标准四轮、但仍保留云台、拨弹与摩擦轮的步兵。常见方案是麦轮
-四轮底盘或全向三轮底盘。工程项目可以重建底盘解算，同时保留步兵的武器控制。
+四轮底盘、全向三轮底盘或全向四轮底盘。工程项目可以重建底盘解算，同时保留步兵的
+武器控制。
 
 配置顺序如下：
 
@@ -369,39 +532,32 @@ P74--P77 默认属于 10000\,Hz 组，通常只接平滑电机；若要接摩擦
   \item \textbf{新建工程项目}，在“遥控器与底盘”页填写通道号与死区；
   \item \textbf{关闭预制底盘}：把“启用底盘控制”开关关闭，释放四个底盘引脚，
         LX、LY 才能作为动作输入；
-  \item \textbf{分配引脚}：轮电机接 P74--P77（平滑电机组），拨弹电机接 P60 或 P62，
-        云台舵机接 MP03、MP74，摩擦轮接 P64、P66；在“PWM 与引脚”页为每个引脚
-        选择角色并设置频率；
-  \item \textbf{设置云台}：在 PWM 页为 MP03、MP74 填写中位与限幅，在动作映射页为
-        Yaw、Pitch 各加一行，输入 RX、RY，控制方式选“增量（累加）”；
-  \item \textbf{配置底盘解算}：先把 LX、LY 与转向输入分为前进、左移、旋转三个量，
-        再按第~\ref{sec:concise-wheel-kinematics}~节的轮速关系为四个轮电机各加一行输出；
-        三轮全向底盘只用三个轮电机，按 120 度布置分配；
-  \item \textbf{配置武器}：拨弹用“直接（按住）”，摩擦轮用“启停（按下）”与
-        “油门单次（按下）”，按键分配与步兵项目一致；
-  \item \textbf{检查与烧录}：完成检查、编译与烧录，按第~\ref{ch:concise-debug}~章的
-        流程操作。
+  \item \textbf{分配引脚}：四轮接 P74--P77，三轮接 P74--P76；拨弹接 P60 或 P62，
+        云台接 MP03、MP74，摩擦轮接 P64、P66；在“PWM 与引脚”页设置角色与分组频率；
+  \item \textbf{设置云台}：在 PWM 页填写中位与限幅；动作页为 Yaw、Pitch 各加一行，
+        输入 RX、RY，选“增量（累加）”；
+  \item \textbf{配置底盘解算}：按第~\ref{sec:concise-wheel-rows}~节先绑定 LY、LX、
+        ←、→ 四个输入，再计算 \texttt{forward}、\texttt{left}、\texttt{turn}，
+        最后填写轮电机输出；三轮三行，四轮四行；
+  \item \textbf{配置武器}：拨弹用“直接（按住）”；摩擦轮用“启停（按下）”与
+        “油门单次（按下）”；按键与步兵项目一致；
+  \item \textbf{检查与烧录}：完成检查、编译与烧录，按第~\ref{ch:concise-debug}~章操作。
 \end{enumerate}
 
-动作行的分工可参考表~\ref{tab:concise-special-infantry}。其中底盘解算行的具体表达式
-不在本简明版展开。
+动作行的分工可参考表~\ref{tab:concise-special-infantry}。
 
-完整的配置可参考随书示例 \texttt{mecanum4.pieproj} 与 \texttt{omni3.pieproj}。
-
-\begin{table}[htbp]
+\begin{table}[H]
   \centering
   \small
-  \begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{0.18\linewidth}
-      >{\raggedright\arraybackslash}p{0.16\linewidth}
+  \begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}p{0.20\linewidth}
       >{\raggedright\arraybackslash}p{0.18\linewidth}
+      >{\raggedright\arraybackslash}p{0.20\linewidth}
       >{\raggedright\arraybackslash}X@{}}
     \toprule
     功能 & 输入 & 输出 & 配置要点 \\
     \midrule
-    底盘解算 & LX、LY、转向输入 & 变量 & 用变量行组合平移与转向分量 \\
-    四轮输出 & 解算变量 & P74--P77 & 每个轮电机一行 \\
-    云台 Yaw & RX & MP03 & 增量（累加），低速验证行程 \\
-    云台 Pitch & RY & MP74 & 增量（累加），低速验证行程 \\
+    底盘解算与轮速输出 & LX、LY、方向键 & 变量 $\rightarrow$ P74--P77 & 先绑定摇杆，再算 forward/left/turn，最后每轮一行（三轮用 P74--P76） \\
+    云台 Yaw/Pitch & RX、RY & MP03、MP74 & 增量（累加），低速验证行程 \\
     拨弹 & E & P60 & 直接（按住），按住持续拨弹 \\
     摩擦轮 & A、B、C & P64、P66 & 启停、油门单次，两侧分别设最大转速 \\
     \bottomrule
@@ -409,6 +565,9 @@ P74--P77 默认属于 10000\,Hz 组，通常只接平滑电机；若要接摩擦
   \caption{特殊构型步兵的动作行分工示例}
   \label{tab:concise-special-infantry}
 \end{table}
+
+随书示例 \texttt{mecanum4.pieproj}、\texttt{omni3.pieproj} 可对照参考；四轮全向
+按第~\ref{sec:concise-wheel-rows}~节的四轮表填写。
 
 配置时注意三点。第一，轮电机必须落在平滑电机组，拨弹与摩擦轮落在 50\,Hz 组；两组
 频率不同，不能把拨弹电机接到轮电机组。第二，云台舵机的方向、中位与限幅要在 PWM 页
@@ -429,7 +588,7 @@ P74--P77 默认属于 10000\,Hz 组，通常只接平滑电机；若要接摩擦
 \begin{enumerate}
   \item 车体架空，可能干涉的机构拆下或脱离负载；
   \item 速度、角度、油门都取小值，逐行动作验证方向与幅度；
-  \item 特殊构型底盘先验证四个轮子的转向，再验证直行、左移与旋转；
+  \item 特殊构型底盘先逐个轮子验证转向，再验证直行、左移与旋转；
   \item 确认单个动作正常后，再验证同时输入与模式切换；
   \item 切换模式，确认未映射的电机停止、舵机保持，且没有意外动作；
   \item 全部通过后落地，先低速、空载运行，再逐步增加负载。
