@@ -1,6 +1,7 @@
 # LaTeX 编译中间文件
 *.aux
 *.bbl
+*.bbl-SAVE-ERROR
 *.bcf
 *.blg
 *.fdb_latexmk

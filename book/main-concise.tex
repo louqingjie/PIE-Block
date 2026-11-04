@@ -61,6 +61,24 @@
 \usepackage{tabularx}
 \usepackage{float}
 
+% 示意图：动作行、动作表与底盘构型
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,calc}
+
+% 二自由度机械臂示意图：参数为 x、y、肩关节角度、肘关节相对角度
+\newcommand{\piearm}[4]{%
+  \begin{scope}[shift={(#1,#2)}]
+    \fill[black!8] (-0.55,-0.10) rectangle (0.55,0.04);
+    \draw[black!30] (-0.55,0.04) -- (0.55,0.04);
+    \draw[very thick, pieblockteal] (0,0) -- ++(#3:1.0);
+    \fill[white] (#3:1.0) circle (0.07);
+    \draw[pieblockteal, thick] (#3:1.0) circle (0.07);
+    \draw[very thick, pieblockteal] (#3:1.0) -- ++({#3+#4}:0.75);
+    \fill[black!60] ($(#3:1.0)+({#3+#4}:0.75)$) circle (0.05);
+    \fill[pieblockteal] (0,0) circle (0.09);
+  \end{scope}
+}
+
 \begin{document}
 
 \maketitle
