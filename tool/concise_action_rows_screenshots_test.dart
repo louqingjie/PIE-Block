@@ -1,22 +1,11 @@
-// 《PIE-Block 软件与应用（简明版）》第 4 章动作行截图生成器。
+// 《PIE-Block 软件与应用（简明版）》第 5 章动作行截图生成器。
 //
 // 运行命令（仓库根目录）：
 //
 //     flutter test tool/concise_action_rows_screenshots_test.dart
 //
 // 生成以下图片：
-//     book/image/ch04/4-2-mecanum-rows-top.png
-//     book/image/ch04/4-3-mecanum-rows-bottom.png
-//     book/image/ch04/4-4-omni4-rows.png
-//
-// 书中使用裁剪后的输出行图片；生成原图后执行：
-//     python -c "from PIL import Image; \
-//       Image.open('book/image/ch04/4-3-mecanum-rows-bottom.png') \
-//         .crop((330,1010,2078,2360)) \
-//         .save('book/image/ch04/4-3-mecanum-outputs-crop.png'); \
-//       Image.open('book/image/ch04/4-4-omni4-rows.png') \
-//         .crop((330,1010,2078,2360)) \
-//         .save('book/image/ch04/4-4-omni4-outputs-crop.png')"
+//     book/image/ch05/5-3-mecanum-direct.png
 
 import 'dart:convert';
 import 'dart:io';
@@ -226,51 +215,6 @@ ProjectDocument _withActions(
   return base.copyWith(config: engineer.copyWith(modes: [mode]));
 }
 
-List<ActionMapping> _bindingAndCalculationRows() => [
-  ActionMapping(
-    inputKind: ActionInputKind.remote,
-    key: 'LY',
-    outputKind: ActionOutputKind.integer,
-    variableName: 'joyY',
-  ),
-  ActionMapping(
-    inputKind: ActionInputKind.remote,
-    key: 'LX',
-    outputKind: ActionOutputKind.integer,
-    variableName: 'joyX',
-  ),
-  ActionMapping(
-    inputKind: ActionInputKind.remote,
-    key: '←',
-    outputKind: ActionOutputKind.integer,
-    variableName: 'keyLeft',
-  ),
-  ActionMapping(
-    inputKind: ActionInputKind.remote,
-    key: '→',
-    outputKind: ActionOutputKind.integer,
-    variableName: 'keyRight',
-  ),
-  ActionMapping(
-    inputKind: ActionInputKind.unspecified,
-    outputKind: ActionOutputKind.integer,
-    variableName: 'forward',
-    expression: '-joyY',
-  ),
-  ActionMapping(
-    inputKind: ActionInputKind.unspecified,
-    outputKind: ActionOutputKind.integer,
-    variableName: 'left',
-    expression: 'joyX',
-  ),
-  ActionMapping(
-    inputKind: ActionInputKind.unspecified,
-    outputKind: ActionOutputKind.integer,
-    variableName: 'turn',
-    expression: '(keyLeft-keyRight)*1000',
-  ),
-];
-
 ActionMapping _wheelRow(String pin, String expression) => ActionMapping(
   inputKind: ActionInputKind.unspecified,
   outputKind: ActionOutputKind.pin,
@@ -278,28 +222,12 @@ ActionMapping _wheelRow(String pin, String expression) => ActionMapping(
   expression: expression,
 );
 
-List<ActionMapping> _mecanumRows() => [
-  ..._bindingAndCalculationRows(),
-  _wheelRow('P74', '(forward-left-turn)*10000/2047'),
-  _wheelRow('P75', '(forward+left+turn)*10000/2047'),
-  _wheelRow('P76', '(forward+left-turn)*10000/2047'),
-  _wheelRow('P77', '(forward-left+turn)*10000/2047'),
+List<ActionMapping> _mecanumDirectRows() => [
+  _wheelRow('P74', '(-LY-LX-(LEFT-RIGHT)*1000)*10000/2047'),
+  _wheelRow('P75', '(-LY+LX+(LEFT-RIGHT)*1000)*10000/2047'),
+  _wheelRow('P76', '(-LY+LX-(LEFT-RIGHT)*1000)*10000/2047'),
+  _wheelRow('P77', '(-LY-LX+(LEFT-RIGHT)*1000)*10000/2047'),
 ];
-
-List<ActionMapping> _omni4Rows() => [
-  ..._bindingAndCalculationRows(),
-  _wheelRow('P74', '(-0.707*forward+0.707*left+turn)*10000/2047'),
-  _wheelRow('P75', '(-0.707*forward-0.707*left+turn)*10000/2047'),
-  _wheelRow('P76', '(0.707*forward-0.707*left+turn)*10000/2047'),
-  _wheelRow('P77', '(0.707*forward+0.707*left+turn)*10000/2047'),
-];
-
-Future<void> _scrollToBottom(WidgetTester tester) async {
-  final scrollView = find.byType(SingleChildScrollView).first;
-  final lastField = find.byType(TextField).last;
-  await tester.dragUntilVisible(lastField, scrollView, const Offset(0, -300));
-  await tester.pumpAndSettle();
-}
 
 void main() {
   testWidgets('动作行填写截图', (tester) async {
@@ -310,34 +238,15 @@ void main() {
 
       final base = _loadExample('mecanum4.pieproj');
 
-      final mecanum = _withActions(base, _mecanumRows());
-      _expectNoErrors('mecanum4.pieproj（分层行）', mecanum);
+      final mecanum = _withActions(base, _mecanumDirectRows());
+      _expectNoErrors('mecanum4.pieproj（直接表达式）', mecanum);
       var key = await _pumpWizard(
         tester,
         document: mecanum,
         step: 3,
-        logicalHeight: 1400,
+        logicalHeight: 1350,
       );
-      await _saveScreenshot(tester, key, 'ch04/4-2-mecanum-rows-top.png');
-      key = await _pumpWizard(
-        tester,
-        document: mecanum,
-        step: 3,
-        logicalHeight: 1800,
-      );
-      await _scrollToBottom(tester);
-      await _saveScreenshot(tester, key, 'ch04/4-3-mecanum-rows-bottom.png');
-
-      final omni4 = _withActions(base, _omni4Rows());
-      _expectNoErrors('omni4（分层行）', omni4);
-      key = await _pumpWizard(
-        tester,
-        document: omni4,
-        step: 3,
-        logicalHeight: 1800,
-      );
-      await _scrollToBottom(tester);
-      await _saveScreenshot(tester, key, 'ch04/4-4-omni4-rows.png');
+      await _saveScreenshot(tester, key, 'ch05/5-3-mecanum-direct.png');
     } finally {
       debugDefaultTargetPlatformOverride = null;
       debugDisableShadows = true;

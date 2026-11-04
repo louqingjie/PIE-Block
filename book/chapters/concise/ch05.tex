@@ -218,44 +218,39 @@ v_4 &= +0.707V_x + 0.707V_y + R\omega_z.
 四轮同向。四轮支撑比三轮稳定，承载能力也更好，代价是多一个轮子与一行输出；三轮则
 结构简单、重量轻，适合轻量机构。
 
-\subsection{把解算写成动作行}
+\subsection{内置输入与轮速动作行}
 \label{sec:concise-wheel-rows}
 
-三种构型都按“输入绑定—中间计算—轮子输出”三层填写。轮子表达式里只使用中间变量，
-不要把摇杆轴、方向键的原始输入直接写进轮子表达式；这样每一行的含义都能直接读懂。
+动作行表达式可以直接读取手柄轴与按键，不需要先把它们绑定到变量。常用的内置输入见
+表~\ref{tab:concise-builtin-inputs}。
 
-第一层是输入绑定：输入下拉框选择手柄轴或按键，输出选“整数”，变量名照填，表达式
-留空，输入值会直接写入变量。四条绑定行三种构型通用：
-
-\begin{center}
-  \footnotesize
-  \setlength{\tabcolsep}{4pt}
-  \begin{tabularx}{\linewidth}{@{}l l l l X@{}}
+\begin{table}[htbp]
+  \centering
+  \small
+  \begin{tabularx}{\linewidth}{@{}l l X@{}}
     \toprule
-    行类型 & 输入 & 输出 & 变量名 & 表达式 \\
+    表达式名 & 含义 & 典型用法 \\
     \midrule
-    绑定 & LY（左摇杆纵向） & 整数 & \texttt{joyY} & 留空 \\
-    绑定 & LX（左摇杆横向） & 整数 & \texttt{joyX} & 留空 \\
-    绑定 & ←（左方向键） & 整数 & \texttt{keyLeft} & 留空 \\
-    绑定 & →（右方向键） & 整数 & \texttt{keyRight} & 留空 \\
-    \midrule
-    计算 & 未指定 & 整数 & \texttt{forward} & \texttt{-joyY} \\
-    计算 & 未指定 & 整数 & \texttt{left} & \texttt{joyX} \\
-    计算 & 未指定 & 整数 & \texttt{turn} & \texttt{(keyLeft-keyRight)*1000} \\
+    \texttt{LX} & 左摇杆水平，左推为正 & 左移；右推为负 \\
+    \texttt{LY} & 左摇杆垂直，上推为负 & 前进用 \texttt{-LY} \\
+    \texttt{RX} & 右摇杆水平 & 云台 Yaw \\
+    \texttt{RY} & 右摇杆垂直 & 云台 Pitch \\
+    \texttt{UP/DOWN/LEFT/RIGHT} & 方向键，按下为 1 & \texttt{(LEFT-RIGHT)*1000} 转向 \\
+    \texttt{A}--\texttt{E} & 字母键，按下为 1 & 拨弹、摩擦轮 \\
+    \texttt{LC/RC} & 左右摇杆按下，按下为 1 & 底盘冲刺、云台归中 \\
     \bottomrule
   \end{tabularx}
-\end{center}
+  \caption{动作行表达式可直接使用的内置输入}
+  \label{tab:concise-builtin-inputs}
+\end{table}
 
-其中 \texttt{joyY} 上推为负，取反后 \texttt{forward} 向前为正；\texttt{joyX} 左推为正，
-直接作为 \texttt{left}；\texttt{keyLeft}、\texttt{keyRight} 为 0 或 1，二者相减得到
-\texttt{turn}，左转键按下时为正（逆时针）。\texttt{turn} 中的 1000 是示例转向增益，
-按实车调整。
+表达式还可以使用常量 \texttt{pi}、\texttt{e}，以及函数 \texttt{abs}、\texttt{min}、
+\texttt{max}、\texttt{sign}、\texttt{sqrt}、\texttt{atan2}；例如 \texttt{abs(LX)}、
+\texttt{max(LY,0)}。这些内置名字是只读的，不能作为变量名或输出变量；自己定义变量时
+也不能与它们重名。
 
-变量名可以按用途自取，但必须是合法 C 标识符，且不能与内置输入（LX、LY、←、→ 等）、
-常量、函数或 C 关键字重名；例如把变量命名为 LX，检查页会报错并阻止生成。
-
-第二层是轮子输出：输入选“未指定”，输出选对应引脚，表达式只使用
-\texttt{forward}、\texttt{left}、\texttt{turn}。
+三种构型的轮速可以直接写成动作行：输入选“未指定”，输出选对应引脚，表达式里直接写
+内置输入，不再额外套变量。
 
 \noindent\textbf{麦轮四轮}
 
@@ -266,15 +261,13 @@ v_4 &= +0.707V_x + 0.707V_y + R\omega_z.
     \toprule
     行类型 & 输出引脚 & 表达式 \\
     \midrule
-    引脚 & P74（左前） & \texttt{(forward-left-turn)*10000/2047} \\
-    引脚 & P75（右前） & \texttt{(forward+left+turn)*10000/2047} \\
-    引脚 & P76（左后） & \texttt{(forward+left-turn)*10000/2047} \\
-    引脚 & P77（右后） & \texttt{(forward-left+turn)*10000/2047} \\
+    引脚 & P74（左前） & \texttt{(-LY-LX-(LEFT-RIGHT)*1000)*10000/2047} \\
+    引脚 & P75（右前） & \texttt{(-LY+LX+(LEFT-RIGHT)*1000)*10000/2047} \\
+    引脚 & P76（左后） & \texttt{(-LY+LX-(LEFT-RIGHT)*1000)*10000/2047} \\
+    引脚 & P77（右后） & \texttt{(-LY-LX+(LEFT-RIGHT)*1000)*10000/2047} \\
     \bottomrule
   \end{tabularx}
 \end{center}
-
-若某个轮子实际转向相反，在该轮表达式前加负号。
 
 \noindent\textbf{三轮全向轮}
 
@@ -285,9 +278,9 @@ v_4 &= +0.707V_x + 0.707V_y + R\omega_z.
     \toprule
     行类型 & 输出引脚 & 表达式 \\
     \midrule
-    引脚 & P74（轮 1） & \texttt{(-0.5*forward+0.866*left+turn)*10000/2047} \\
-    引脚 & P75（轮 2） & \texttt{(-0.5*forward-0.866*left+turn)*10000/2047} \\
-    引脚 & P76（轮 3） & \texttt{(forward+turn)*10000/2047} \\
+    引脚 & P74（轮 1） & \texttt{(0.5*LY+0.866*LX+(LEFT-RIGHT)*1000)*10000/2047} \\
+    引脚 & P75（轮 2） & \texttt{(0.5*LY-0.866*LX+(LEFT-RIGHT)*1000)*10000/2047} \\
+    引脚 & P76（轮 3） & \texttt{(-LY+(LEFT-RIGHT)*1000)*10000/2047} \\
     \bottomrule
   \end{tabularx}
 \end{center}
@@ -302,38 +295,32 @@ v_4 &= +0.707V_x + 0.707V_y + R\omega_z.
     \toprule
     行类型 & 输出引脚 & 表达式 \\
     \midrule
-    引脚 & P74（轮 1） & \texttt{(-0.707*forward+0.707*left+turn)*10000/2047} \\
-    引脚 & P75（轮 2） & \texttt{(-0.707*forward-0.707*left+turn)*10000/2047} \\
-    引脚 & P76（轮 3） & \texttt{(0.707*forward-0.707*left+turn)*10000/2047} \\
-    引脚 & P77（轮 4） & \texttt{(0.707*forward+0.707*left+turn)*10000/2047} \\
+    引脚 & P74（轮 1） & \texttt{(0.707*LY+0.707*LX+(LEFT-RIGHT)*1000)*10000/2047} \\
+    引脚 & P75（轮 2） & \texttt{(0.707*LY-0.707*LX+(LEFT-RIGHT)*1000)*10000/2047} \\
+    引脚 & P76（轮 3） & \texttt{(-0.707*LY-0.707*LX+(LEFT-RIGHT)*1000)*10000/2047} \\
+    引脚 & P77（轮 4） & \texttt{(-0.707*LY+0.707*LX+(LEFT-RIGHT)*1000)*10000/2047} \\
     \bottomrule
   \end{tabularx}
 \end{center}
 
+表达式可以按三块读：前进 \texttt{-LY}、左移 \texttt{LX}、转向
+\texttt{(LEFT-RIGHT)*1000}。例如麦轮左前 = 前进 $-$ 左移 $-$ 转向。\texttt{1000} 是
+示例转向增益，按实车调整；若某个轮子实际转向相反，在该轮表达式前加负号。
+
 四轮麦轮与四轮全向都用 P74--P77；三轮全向只用 P74--P76。输出超过 $\pm10000$ 时软件
 自动限幅，转向与平移同时推满会以限幅后的值为准。
 
-随书示例 \texttt{mecanum4.pieproj}、\texttt{omni3.pieproj} 仍把 LX、LY 直接写进表达式，
-且未包含转向行；本节改为先绑定变量。示例以右方为 $+y$，本节以左方为 $+y$，两者符号
-相反，导入示例后不要直接混用。
+随书示例 \texttt{mecanum4.pieproj}、\texttt{omni3.pieproj} 也直接使用 LX、LY；示例
+以右方为 $+y$，本节以左方为 $+y$，两者符号相反，导入示例后不要直接混用。
 
-按表填写后的界面见图~\ref{fig:concise-mecanum-binding}--\ref{fig:concise-wheel-outputs}。
+按表填写后的界面见图~\ref{fig:concise-wheel-rows}。
 
-\begin{figure}[htbp]
+\begin{figure}[H]
   \centering
-  \includegraphics[width=0.90\linewidth]{image/ch04/4-2-mecanum-rows-top.png}
-  \caption{动作映射页顶部：LY、LX、←、→ 四条输入绑定行分别写入 \texttt{joyY}、
-  \texttt{joyX}、\texttt{keyLeft}、\texttt{keyRight}}
-  \label{fig:concise-mecanum-binding}
-\end{figure}
-
-\begin{figure}[htbp]
-  \centering
-  \includegraphics[width=0.88\linewidth]{image/ch04/4-3-mecanum-outputs-crop.png}\\[2mm]
-  \includegraphics[width=0.88\linewidth]{image/ch04/4-4-omni4-outputs-crop.png}
-  \caption{上：麦轮的中间变量 \texttt{turn} 与 P74--P77 输出；下：四轮全向的
-  \texttt{turn} 与 P74--P77 输出，三轮全向只保留 P74--P76，表达式按表填写}
-  \label{fig:concise-wheel-outputs}
+  \includegraphics[width=0.90\linewidth]{image/ch05/5-3-mecanum-direct.png}
+  \caption{动作映射页：麦轮四行直接使用 LY、LX、LEFT、RIGHT 的轮速表达式；全向轮
+  界面相同，只改变输出行数与表达式}
+  \label{fig:concise-wheel-rows}
 \end{figure}
 
 \subsection{选型对比}
@@ -540,9 +527,8 @@ P74--P77 默认属于 10000\,Hz 组，通常只接平滑电机；若要接摩擦
         云台接 MP03、MP74，摩擦轮接 P64、P66；在“PWM 与引脚”页设置角色与分组频率；
   \item \textbf{设置云台}：在 PWM 页填写中位与限幅；动作页为 Yaw、Pitch 各加一行，
         输入 RX、RY，选“增量（累加）”；
-  \item \textbf{配置底盘解算}：按第~\ref{sec:concise-wheel-rows}~节先绑定 LY、LX、
-        ←、→ 四个输入，再计算 \texttt{forward}、\texttt{left}、\texttt{turn}，
-        最后填写轮电机输出；三轮三行，四轮四行；
+  \item \textbf{配置底盘解算}：按第~\ref{sec:concise-wheel-rows}~节直接用 LY、LX、
+        LEFT、RIGHT 填写轮电机输出；三轮三行，四轮四行；
   \item \textbf{配置武器}：拨弹用“直接（按住）”，扳机键 E、反向拨弹键 D；摩擦轮用
         “启停（按下）”与“油门单次（按下）”，按键 A、B、C；与步兵项目的标准分工一致；
   \item \textbf{检查与烧录}：完成检查、编译与烧录，按第~\ref{ch:concise-debug}~章操作。
@@ -560,7 +546,7 @@ P74--P77 默认属于 10000\,Hz 组，通常只接平滑电机；若要接摩擦
     \toprule
     功能 & 输入 & 输出 & 配置要点 \\
     \midrule
-    底盘解算与轮速输出 & LX、LY、方向键 & 变量 $\rightarrow$ P74--P77 & 先绑定摇杆，再算 forward/left/turn，最后每轮一行（三轮用 P74--P76） \\
+    底盘解算与轮速输出 & LX、LY、LEFT、RIGHT & P74--P77 & 直接在轮速表达式中使用内置输入，每个轮电机一行（三轮用 P74--P76） \\
     云台 Yaw/Pitch & RX、RY & MP03、MP74 & 增量（累加），低速验证行程 \\
     拨弹 & E & P60 & 直接（按住），按住持续拨弹 \\
     摩擦轮 & A、B、C & P64、P66 & 启停、油门单次，两侧分别设最大转速 \\
