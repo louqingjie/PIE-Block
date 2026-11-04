@@ -12,6 +12,10 @@
 Widget 树渲染的软件截图、Wikimedia Commons 的 CC 授权实物照片，以及由
 内置 SDCC 真实编译产出的代码/HEX 摘录。
 
+另有《PIE-Block 软件与应用（简明版）》，面向首次使用的参赛队员，只保留必要的操作
+步骤，不包含程序、汇编与实现细节；源文件为 `main-concise.tex` 与
+`chapters/concise/`。
+
 ## 目录结构
 
 ```
@@ -60,6 +64,13 @@ latexmk -xelatex main.tex
 ```
 
 手动顺序：`xelatex main.tex` → `biber main` → `xelatex main.tex` → `xelatex main.tex`。
+
+简明版《PIE-Block 软件与应用（简明版）》使用独立的主文件，内容只保留必要操作步骤，
+不包含程序、汇编与实现细节：
+
+```bash
+latexmk -xelatex main-concise.tex
+```
 
 **不想装 TeX**：把 `book/` 目录压缩成 zip，在 Overleaf 里 `New Project → Upload Project`，
 然后在 `Menu → Compiler` 选择 **XeLaTeX** 即可。

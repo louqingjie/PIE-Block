@@ -1,0 +1,88 @@
+% ============================================================================
+%  PIE-Block 软件与应用（简明版）
+%  ---------------------------------------------------------------------------
+%  编译方式：XeLaTeX -> Biber -> XeLaTeX -> XeLaTeX
+%  推荐命令：latexmk -xelatex main-concise.tex（在 book/ 目录下执行）
+%  说明：本书是《PIE-Block 软件与应用》的简明版，只保留必要操作步骤，
+%        不包含程序、汇编与实现细节。
+% ============================================================================
+\documentclass[lang=cn,10pt,scheme=chinese,color=blue]{elegantbook}
+
+% ---------------------------- 封面 ------------------------------------------
+\title{\texorpdfstring{%
+  \setlength{\parskip}{0pt}%
+  {\fontsize{32}{40}\selectfont PIE-Block 软件与应用\par}%
+  \vspace{4pt}%
+  {\fontsize{18}{24}\selectfont\mdseries （简明版）\par}%
+  \vspace{14pt}%
+  {\fontsize{13}{17}\selectfont\bfseries\color{darkgray}%
+    首都师范大学 RoboMaster 机甲大师赛机器人图形化配置集成开发环境\par}%
+  \vspace{-15pt}%
+  {\fontsize{11}{15}\selectfont\mdseries\color{darkgray}%
+    Capital Normal University RoboMaster Competition: Graphical Configuration IDE for Robots}%
+}{PIE-Block 软件与应用（简明版）}}
+
+% 饰线、页脚线使用 PIE-Block 品牌青绿色（#087F8C）
+\definecolor{pieblockteal}{HTML}{087F8C}
+\colorlet{coverlinecolor}{pieblockteal}
+
+% 自行排版封面：150mm 横幅 + 4mm 饰线 + 20mm 左缩进的书名块 + 页脚收口
+\makeatletter
+\renewcommand{\maketitle}{%
+  \hypersetup{pageanchor=false}%
+  \pagenumbering{Alph}%
+  \begin{titlepage}%
+    \newgeometry{margin=0in}%
+    \parindent=0pt%
+    \noindent\includegraphics[width=\linewidth]{image/cover.jpg}\par\nointerlineskip
+    {\color{coverlinecolor}\hrule width \linewidth height 4mm}%
+    \vspace{41mm}%
+    \noindent\hspace*{20mm}%
+    \begin{minipage}{\dimexpr\linewidth-40mm\relax}%
+      \bfseries\Huge\@title\par
+    \end{minipage}\par
+    \vfill
+    \noindent\hspace*{20mm}%
+    \begin{minipage}{\dimexpr\linewidth-40mm\relax}%
+      {\color{coverlinecolor}\hrule width \linewidth height 0.4pt}%
+      \vspace{2.5mm}%
+      {\small\color{gray}PIE-Block 项目组\hfill pieblock.asia}%
+    \end{minipage}\par
+    \vspace{16mm}%
+  \end{titlepage}%
+  \restoregeometry
+  \thispagestyle{empty}}
+\makeatother
+
+% 目录只显示到节，保持简明
+\setcounter{tocdepth}{1}
+
+% 表格自动适应正文宽度
+\usepackage{tabularx}
+\usepackage{float}
+
+\begin{document}
+
+\maketitle
+
+\frontmatter
+\tableofcontents
+
+% 使用说明
+\include{chapters/concise/preface}
+
+\mainmatter
+
+% ------------------------------- 正文 ---------------------------------------
+\include{chapters/concise/ch01}
+\include{chapters/concise/ch02}
+\include{chapters/concise/ch03}
+\include{chapters/concise/ch04}
+\include{chapters/concise/ch05}
+
+\appendix
+
+% ------------------------------- 附录 ---------------------------------------
+\include{chapters/concise/appendix-a}
+
+\end{document}
