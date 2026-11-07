@@ -37,8 +37,9 @@
 # 签名：
 #   - 配置 ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS /
 #     ANDROID_KEY_PASSWORD 四个 Secrets 后构建正式签名 Release 产物；
-#   - 未配置时按 Flutter 模板惯例退回 debug 签名（可安装验收、不可上架），
-#     并且打 v* 标签发版会被强制拦截，避免把非正式签名的包发到公开 Release。
+#   - 未配置时按 Flutter 模板惯例退回 debug 签名（可安装验收、不可上架）；
+#     仅正式标签（不含 -alpha/-beta/-rc 后缀）强制要求签名配置，预发布标签放行，
+#     以便内测包用 debug 签名发到公开 Release 供验收。
 
 name: Android 构建
 
