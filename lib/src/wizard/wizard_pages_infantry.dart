@@ -316,6 +316,7 @@ class _InfantryMechanismPage extends ConsumerWidget {
                   fieldPath: midPath,
                   suffix: '°',
                   value: mid,
+                  signed: true,
                   onChanged: (v) => updateAt((a) => a.copyWith(midOffset: v)),
                 ),
               ),

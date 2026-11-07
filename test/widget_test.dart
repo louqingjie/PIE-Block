@@ -598,6 +598,79 @@ ProjectDocument _engineerServoButtonDocument() {
   );
 }
 
+/// 单条按键动作的参数输入夹具：用于验证带符号参数在各类控制方式下可编辑。
+ProjectDocument _engineerParameterDocument(
+  ControlMode mode,
+  num parameter, {
+  String key = 'A',
+}) {
+  final source = _engineerDocument();
+  final config = source.config as EngineerConfig;
+  return source.copyWith(
+    config: config.copyWith(
+      pwm: config.pwm.copyWith(
+        pinRoles: const {'P60': PinRole.servo},
+        servoMids: const {'P60': 0},
+      ),
+      modes: [
+        EngineerModeConfig(
+          preserveChassis: true,
+          actions: [
+            ActionMapping(
+              key: key,
+              mode: mode,
+              parameter: parameter,
+              pin: 'P60',
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
+}
+
+/// 进入工程「动作映射」页，返回参数输入框的 finder 与读取存档的回调。
+Future<void> _pumpParameterField(
+  WidgetTester tester,
+  ControlMode mode,
+  num parameter, {
+  String key = 'A',
+}) async {
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [
+        appControllerProvider.overrideWith(
+          () => _StaticProjectController(
+            _engineerParameterDocument(mode, parameter, key: key),
+            3,
+          ),
+        ),
+      ],
+      child: const MaterialApp(home: WizardScreen()),
+    ),
+  );
+  await tester.pumpAndSettle();
+}
+
+const _parameterFieldKey = ValueKey('modes.0.actions.0.parameter');
+
+EditableText _parameterEditable(WidgetTester tester) => tester.widget<EditableText>(
+  find.descendant(
+    of: find.byKey(_parameterFieldKey, skipOffstage: false),
+    matching: find.byType(EditableText),
+    skipOffstage: false,
+  ),
+);
+
+num? _storedParameter(WidgetTester tester) {
+  final container = ProviderScope.containerOf(
+    tester.element(find.byType(WizardScreen)),
+  );
+  final config = container.read(appControllerProvider).document!.config
+      as EngineerConfig;
+  return config.modes.first.actions.first.parameter;
+}
+
 ProjectDocument _engineerExpressionDocument({
   String? expression,
   bool variableOutput = false,
@@ -3060,6 +3133,68 @@ void main() {
     expect(updated.modes.first.actions.first.mode, ControlMode.single);
     expect(updated.modes.first.actions.first.parameter, 1.23);
     await tester.pump(const Duration(milliseconds: 600));
+  });
+
+  testWidgets('工程单次与持续灵敏度可输入负号并使用带符号键盘', (tester) async {
+    for (final mode in const [ControlMode.single, ControlMode.continuous]) {
+      await _pumpParameterField(tester, mode, 1.5);
+      final field = find.byKey(_parameterFieldKey);
+      await tester.ensureVisible(field);
+      await tester.pumpAndSettle();
+      expect(_parameterEditable(tester).keyboardType.signed, isTrue);
+      // 取消「方向」下拉后，卡片说明必须提示负号即反向。
+      expect(find.textContaining('灵敏度填负数即反向'), findsWidgets);
+      await tester.enterText(field, '-1.5');
+      await tester.pumpAndSettle();
+      expect(_parameterEditable(tester).controller.text, '-1.5');
+      expect(_storedParameter(tester), -1.5);
+      // 等自动保存的防抖定时器跑完，否则测试结束时会报「Timer 仍挂起」。
+      await tester.pump(const Duration(milliseconds: 600));
+      // 下一轮换配置前清空树，避免复用上一轮的输入框状态。
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+    }
+  });
+
+  testWidgets('工程直接模式目标角度可输入负号并使用带符号键盘', (tester) async {
+    await _pumpParameterField(tester, ControlMode.direct, 30);
+    final field = find.byKey(_parameterFieldKey);
+    await tester.ensureVisible(field);
+    await tester.pumpAndSettle();
+    expect(_parameterEditable(tester).keyboardType.signed, isTrue);
+    await tester.enterText(field, '-30');
+    await tester.pumpAndSettle();
+    expect(_parameterEditable(tester).controller.text, '-30');
+    expect(_storedParameter(tester), -30);
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
+  testWidgets('工程摇杆速度参数保持无符号且拒绝负号', (tester) async {
+    await _pumpParameterField(
+      tester,
+      ControlMode.speed,
+      3000,
+      key: 'RX',
+    );
+    final field = find.byKey(_parameterFieldKey);
+    await tester.ensureVisible(field);
+    await tester.pumpAndSettle();
+    expect(_parameterEditable(tester).keyboardType.signed, isFalse);
+    await tester.enterText(field, '-3000');
+    await tester.pumpAndSettle();
+    expect(_parameterEditable(tester).controller.text, '3000');
+    expect(_storedParameter(tester), 3000);
+  });
+
+  testWidgets('工程参数输入框拒绝中间的负号并保留原值', (tester) async {
+    await _pumpParameterField(tester, ControlMode.direct, 30);
+    final field = find.byKey(_parameterFieldKey);
+    await tester.ensureVisible(field);
+    await tester.pumpAndSettle();
+    await tester.enterText(field, '30-');
+    await tester.pumpAndSettle();
+    expect(_parameterEditable(tester).controller.text, '30');
+    expect(_storedParameter(tester), 30);
   });
 
   testWidgets('工程 PWM 页舵机行提供逆时针顺时针限幅输入且非舵机行不显示', (tester) async {

@@ -150,6 +150,7 @@ class _PwmPage extends ConsumerWidget {
                                     label: '中位°',
                                     fieldPath: 'pwm.servo_mids.$pin',
                                     value: pwm.servoMids[pin],
+                                    signed: true,
                                     onChanged: (v) {
                                       final mids = {...pwm.servoMids};
                                       if (v == null) {

@@ -320,6 +320,8 @@ class _DebugTestsPage extends ConsumerWidget {
                                   ? 'duty'
                                   : null,
                               value: item.value,
+                              signed: item.driveType !=
+                                  DebugDriveType.friction,
                               fieldPath: '$base.value',
                               onChanged: (value) =>
                                   replace(index, item.copyWith(value: value)),

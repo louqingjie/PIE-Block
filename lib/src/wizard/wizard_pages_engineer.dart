@@ -385,6 +385,17 @@ class _ActionRow extends ConsumerWidget {
     final usesSensitivity =
         action.mode == ControlMode.single ||
         action.mode == ControlMode.continuous;
+    // 摇杆/启停类模式的方向由输入符号决定，参数只保留幅值；其余模式（含
+    // 摩擦轮油门加减）用参数的正负表示方向，输入框必须允许负号。
+    final signedParameter = switch (action.mode) {
+      ControlMode.direct ||
+      ControlMode.incremental ||
+      ControlMode.single ||
+      ControlMode.continuous ||
+      ControlMode.frictionStep ||
+      ControlMode.frictionContinuous => true,
+      _ => false,
+    };
     final parameterLabel = usesSensitivity
         ? '灵敏度 °/周期（带符号）'
         : switch (action.mode) {
@@ -436,11 +447,16 @@ class _ActionRow extends ConsumerWidget {
       if (mode == null) return null;
       if (role == PinRole.servo) {
         return switch (mode) {
-          ControlMode.direct =>
-            isAxis ? '随摇杆实时跟随目标角度' : '按一下到达目标角度，松开保持',
-          ControlMode.incremental => '每周期按摇杆量累加角度',
-          ControlMode.single => '每按一次增加一档角度，松开保持',
-          ControlMode.continuous => '按住期间持续增加角度，松开保持',
+          // 1.8.0-beta.1 起取消「方向」下拉，界面上必须明确提示负号即反向。
+          ControlMode.direct => isAxis
+              ? '随摇杆实时跟随目标角度'
+              : '按一下到达目标角度，松开保持；角度填负数即反向',
+          ControlMode.incremental =>
+            '每周期按摇杆量累加角度；步进角度填负数即反向',
+          ControlMode.single =>
+            '每按一次增加一档角度，松开保持；灵敏度填负数即反向',
+          ControlMode.continuous =>
+            '按住期间持续增加角度，松开保持；灵敏度填负数即反向',
           _ => null,
         };
       }
@@ -614,12 +630,14 @@ class _ActionRow extends ConsumerWidget {
                   label: parameterLabel,
                   fieldPath: '$fieldPath.parameter',
                   value: action.parameter?.toDouble(),
+                  signed: signedParameter,
                   onChanged: (v) => onChanged(action.copyWith(parameter: v)),
                 )
               : _NumberField(
                   label: parameterLabel,
                   fieldPath: '$fieldPath.parameter',
                   value: action.parameter?.toInt(),
+                  signed: signedParameter,
                   onChanged: (v) => onChanged(action.copyWith(parameter: v)),
                 ),
         ),
@@ -1168,7 +1186,14 @@ class _TableCellFieldState extends ConsumerState<_TableCellField> {
         initialValue: widget.value?.toString() ?? '',
         keyboardType: const TextInputType.numberWithOptions(signed: true),
         textAlign: TextAlign.center,
-        inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'-?\d*'))],
+        // 只允许开头一个负号，避免 "30-" 这类中间符号通过过滤却解析失败。
+        inputFormatters: [
+          TextInputFormatter.withFunction(
+            (oldValue, newValue) => RegExp(r'^-?\d*$').hasMatch(newValue.text)
+                ? newValue
+                : oldValue,
+          ),
+        ],
         decoration: _fieldDecoration(
           ref,
           widget.fieldPath,

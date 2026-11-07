@@ -47,8 +47,10 @@ class _Section extends StatelessWidget {
 
 /// 整数 / 小数通用的数值输入框。
 ///
-/// `T` 为 [int] 时只接受整数（允许负号）；为 [double] 时允许最多两位小数，
-/// 初始值里的 `.0` 会被省略。两种模式共用焦点绑定、字段定位与错误装饰。
+/// `T` 为 [int] 时只接受整数；为 [double] 时允许最多两位小数，初始值里的
+/// `.0` 会被省略。带符号字段（方向、中位偏移等）需传 `signed: true`，否则
+/// 软键盘不提供负号键、小数正则也会拒绝负号。两种模式共用焦点绑定、字段
+/// 定位与错误装饰。
 class _NumberField<T extends num> extends ConsumerStatefulWidget {
   const _NumberField({
     required this.label,
@@ -56,6 +58,7 @@ class _NumberField<T extends num> extends ConsumerStatefulWidget {
     required this.onChanged,
     this.suffix,
     this.fieldPath,
+    this.signed = false,
   });
 
   final String label;
@@ -63,6 +66,9 @@ class _NumberField<T extends num> extends ConsumerStatefulWidget {
   final ValueChanged<T?> onChanged;
   final String? suffix;
   final String? fieldPath;
+
+  /// 是否允许负号：同时决定软键盘类型与输入白名单。
+  final bool signed;
 
   @override
   ConsumerState<_NumberField<T>> createState() => _NumberFieldState<T>();
@@ -142,22 +148,28 @@ class _NumberFieldState<T extends num> extends ConsumerState<_NumberField<T>> {
 
   @override
   Widget build(BuildContext context) {
+    // 整串匹配：不合法的输入保留旧值，避免 allow(RegExp(r'-?\d*')) 把
+    // "30-" 这类中间负号拼回去，界面显示与解析出的参数不一致。
+    final pattern = switch ((_isDecimal, widget.signed)) {
+      (true, true) => RegExp(r'^-?\d*(?:\.\d{0,2})?$'),
+      (true, false) => RegExp(r'^\d*(?:\.\d{0,2})?$'),
+      (false, true) => RegExp(r'^-?\d*$'),
+      (false, false) => RegExp(r'^\d*$'),
+    };
     final field = TextFormField(
       key: ValueKey(widget.fieldPath ?? widget.label),
       focusNode: _focusNode,
       initialValue: _initialText,
-      keyboardType: _isDecimal
-          ? const TextInputType.numberWithOptions(decimal: true)
-          : TextInputType.number,
-      inputFormatters: _isDecimal
-          ? [
-              TextInputFormatter.withFunction((oldValue, newValue) {
-                final valid = RegExp(r'^\d*(?:\.\d{0,2})?$')
-                    .hasMatch(newValue.text);
-                return valid ? newValue : oldValue;
-              }),
-            ]
-          : [FilteringTextInputFormatter.allow(RegExp(r'-?\d*'))],
+      keyboardType: TextInputType.numberWithOptions(
+        decimal: _isDecimal,
+        signed: widget.signed,
+      ),
+      inputFormatters: [
+        TextInputFormatter.withFunction(
+          (oldValue, newValue) =>
+              pattern.hasMatch(newValue.text) ? newValue : oldValue,
+        ),
+      ],
       decoration: widget.fieldPath == null
           ? InputDecoration(labelText: widget.label, suffixText: widget.suffix)
           : _fieldDecoration(
