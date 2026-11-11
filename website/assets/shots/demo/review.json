@@ -68,7 +68,7 @@
     "friction_key": "A",
     "friction_up_key": "B",
     "friction_down_key": "C",
-    "friction_p64_max_duty": 777,
+    "friction_p64_max_duty": 900,
     "friction_p66_max_duty": 700,
     "friction_level_step": 10,
     "zero_enabled": false,
