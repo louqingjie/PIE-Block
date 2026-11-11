@@ -698,14 +698,6 @@ abstract final class ProjectValidator {
           'controls',
           issue,
         );
-        if (maxDuty.value != null && maxDuty.value! % 100 != 0) {
-          issue(
-            IssueSeverity.error,
-            maxDuty.path,
-            '${maxDuty.label}必须是 ${Friction.minMaxDuty}–${Friction.maxMaxDuty} 内的整百值',
-            'controls',
-          );
-        }
       }
       _range(
         config.frictionLevelStep,
@@ -1129,16 +1121,16 @@ abstract final class ProjectValidator {
 
     final frictionControl = _hasFrictionControl(config);
     for (final pin in EngineerPinCapabilities.allOutputPins) {
-      final maxDuty = config.pwm.frictionMaxDuties[pin];
-      if (maxDuty != null &&
-          (maxDuty < 500 || maxDuty > 800 || maxDuty % 100 != 0)) {
-        issue(
-          IssueSeverity.error,
-          'pwm.friction_max_duties.$pin',
-          '$pin 摩擦轮满油转速必须是 500–800 内的整百值',
-          'pwm',
-        );
-      }
+      _range(
+        config.pwm.frictionMaxDuties[pin],
+        Friction.minMaxDuty,
+        Friction.maxMaxDuty,
+        'pwm.friction_max_duties.$pin',
+        '$pin 摩擦轮满油转速',
+        'pwm',
+        issue,
+        required: false,
+      );
     }
     if (frictionControl) {
       final frictionPins = [

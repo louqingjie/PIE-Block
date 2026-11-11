@@ -779,7 +779,7 @@ class _InfantryControlsPage extends ConsumerWidget {
                 const SizedBox(height: 10),
                 _InfoBanner(
                   '无刷电调固定占用 P64/P66，两个引脚各自一个满油上限（须为 '
-                  '${Friction.minMaxDuty}–${Friction.maxMaxDuty} 的整百值）。'
+                  '${Friction.minMaxDuty}–${Friction.maxMaxDuty} 的整数）。'
                   '油门 0~${Friction.levelMax}% 按 '
                   'duty = ${Friction.startDuty} + 油门 ÷ ${Friction.levelMax} × (该侧上限 − ${Friction.startDuty}) '
                   '换算成两侧各自的转速，'

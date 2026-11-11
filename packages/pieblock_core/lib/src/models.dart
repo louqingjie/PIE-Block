@@ -296,7 +296,7 @@ class PwmGroupConfig {
   /// servoMinLimits 为顺时针一侧（非正）；未填的一侧走满电气行程。
   final Map<String, int> servoMinLimits, servoMaxLimits;
 
-  /// 每个摩擦轮脚各自的满油占空比（500–800 整百）；仅摩擦轮专用控制方式
+  /// 每个摩擦轮脚各自的满油占空比（500–800 整数）；仅摩擦轮专用控制方式
   /// 使用，多个摩擦轮脚共享同一油门百分比。
   final Map<String, int> frictionMaxDuties;
 

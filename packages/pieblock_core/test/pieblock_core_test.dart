@@ -441,19 +441,31 @@ void main() {
       expect(Friction.dutyOfLevel(200, 800), 800);
     });
 
-    test('摩擦轮两侧上限各自校验且油门步长限定在量程内', () {
+    test('摩擦轮两侧上限允许 500–800 内任意整数且油门步长限定在量程内', () {
       List<String> messages(InfantryConfig config) =>
           ProjectValidator.validate(config)
               .map((issue) => issue.message)
               .toList();
 
-      expect(
-        messages(completeInfantry().copyWith(frictionP64MaxDuty: 750)),
-        contains(contains('P64 摩擦轮最大转速必须是 500–800 内的整百值')),
-      );
+      // 上限不再要求整百，500–800 内任意整数都合法。
+      for (final duty in [500, 501, 750, 799, 800]) {
+        expect(
+          messages(completeInfantry().copyWith(frictionP64MaxDuty: duty))
+              .where((message) => message.contains('P64 摩擦轮最大转速')),
+          isEmpty,
+        );
+      }
       expect(
         messages(completeInfantry().copyWith(frictionP66MaxDuty: 900)),
         contains(contains('P66 摩擦轮最大转速必须在 500–800 之间')),
+      );
+      expect(
+        messages(completeInfantry().copyWith(frictionP66MaxDuty: 499)),
+        contains(contains('P66 摩擦轮最大转速必须在 500–800 之间')),
+      );
+      expect(
+        messages(completeInfantry().copyWith(frictionP64MaxDuty: 801)),
+        contains(contains('P64 摩擦轮最大转速必须在 500–800 之间')),
       );
       expect(
         messages(completeInfantry().copyWith(frictionLevelStep: 0)),
@@ -3726,6 +3738,23 @@ void main() {
       expect(
         frictionErrors(missing).map((issue) => issue.message),
         contains('P66 摩擦轮满油转速尚未填写'),
+      );
+
+      final nonHundred = frictionEngineer().copyWith(
+        pwm: frictionEngineer().pwm.copyWith(
+          frictionMaxDuties: const {'P64': 751, 'P66': 799},
+        ),
+      );
+      expect(frictionErrors(nonHundred), isEmpty);
+
+      final outOfRange = frictionEngineer().copyWith(
+        pwm: frictionEngineer().pwm.copyWith(
+          frictionMaxDuties: const {'P64': 801, 'P66': 799},
+        ),
+      );
+      expect(
+        frictionErrors(outOfRange).map((issue) => issue.message),
+        contains('P64 摩擦轮满油转速必须在 500–800 之间'),
       );
 
       final wrongFrequency = frictionEngineer().copyWith(
