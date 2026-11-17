@@ -2611,7 +2611,7 @@ void main() {
     expect(config.chassis.turnReversed, isTrue);
     container.read(appControllerProvider.notifier).goToStep(3);
     await tester.pumpAndSettle();
-    expect(find.text('左右转向：反向'), findsOneWidget);
+    expect(find.textContaining('左右转向：反向'), findsOneWidget);
     await tester.pump(const Duration(milliseconds: 600));
   });
 
@@ -2640,6 +2640,97 @@ void main() {
         container.read(appControllerProvider).document!.config
             as EngineerConfig;
     expect(config.chassis.turnReversed, isTrue);
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
+  testWidgets('底盘转向灵敏度滑块与数值框联动并校验范围', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _ConfiguredRemoteController(_infantryDocument()),
+          ),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final field = find.byKey(const ValueKey('chassis.turn_sensitivity'));
+    expect(field, findsOneWidget);
+    expect(find.text('转向灵敏度'), findsOneWidget);
+    final slider = find.byType(Slider);
+    expect(slider, findsOneWidget);
+    expect(tester.widget<Slider>(slider).value, 100);
+    expect(tester.widget<TextFormField>(field).controller!.text, '100');
+
+    // 拖动滑块（直接触发 onChanged）应同步到配置与数值框。
+    tester.widget<Slider>(slider).onChanged!(150);
+    await tester.pumpAndSettle();
+    expect(_currentInfantry(tester).chassis.turnSensitivity, 150);
+    expect(tester.widget<Slider>(slider).value, 150);
+    expect(tester.widget<TextFormField>(field).controller!.text, '150');
+
+    await tester.ensureVisible(field);
+    await tester.enterText(field, '250');
+    await tester.pumpAndSettle();
+    expect(_currentInfantry(tester).chassis.turnSensitivity, 250);
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+    expect(find.textContaining('转向灵敏度必须在 10–200 之间'), findsWidgets);
+    await tester.pump(const Duration(milliseconds: 600));
+  });
+
+  testWidgets('步兵云台 Yaw 与 Pitch 灵敏度独立可调并提示过快', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appControllerProvider.overrideWith(
+            () => _StaticProjectController(_infantryDocument(), 1),
+          ),
+        ],
+        child: const MaterialApp(home: WizardScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final yawField = find.byKey(const ValueKey('gimbal.yaw.sensitivity'));
+    final pitchField = find.byKey(const ValueKey('gimbal.pitch.sensitivity'));
+    expect(yawField, findsOneWidget);
+    expect(pitchField, findsOneWidget);
+    expect(find.text('Yaw 灵敏度'), findsOneWidget);
+    expect(find.text('Pitch 灵敏度'), findsOneWidget);
+
+    await tester.ensureVisible(yawField);
+    await tester.enterText(yawField, '150');
+    await tester.pumpAndSettle();
+    await tester.enterText(pitchField, '70');
+    await tester.pumpAndSettle();
+
+    var config = _currentInfantry(tester);
+    expect(config.yawSensitivity, 150);
+    expect(config.pitchSensitivity, 70);
+    final code = CodeGenerator.generate(config);
+    expect(
+      code,
+      contains(
+        'yawDuty += (int)((float)valueOfRoker[1][0] * 3.00f / 2047.0f * 5.555556f);',
+      ),
+    );
+    expect(
+      code,
+      contains(
+        'pitchDuty += (int)((float)valueOfRoker[1][1] * 1.40f / 2047.0f * 5.555556f);',
+      ),
+    );
+
+    await tester.enterText(pitchField, '160');
+    await tester.pumpAndSettle();
+    config = _currentInfantry(tester);
+    expect(config.pitchSensitivity, 160);
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Pitch 灵敏度高于 150%'), findsWidgets);
     await tester.pump(const Duration(milliseconds: 600));
   });
 
@@ -4869,6 +4960,11 @@ void main() {
       find.byKey(const ValueKey('chassis.left_front.pin')),
       findsOneWidget,
     );
+    // 工程车启用预制底盘时同样可以调转向灵敏度。
+    expect(
+      find.byKey(const ValueKey('chassis.turn_sensitivity')),
+      findsOneWidget,
+    );
     final switchFinder = find.byKey(const ValueKey('chassis.enabled'));
     expect(switchFinder, findsOneWidget);
     await tester.ensureVisible(switchFinder);
@@ -4876,6 +4972,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const ValueKey('chassis.left_front.pin')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('chassis.turn_sensitivity')),
+      findsNothing,
+    );
     final container = ProviderScope.containerOf(
       tester.element(find.byType(WizardScreen)),
     );

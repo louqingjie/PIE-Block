@@ -237,6 +237,19 @@ class _RemotePage extends ConsumerWidget {
                 const _InfoBanner(
                   '速度单位为 duty，范围 0–10000；建议普通速度不低于 4000、冲刺速度不低于 9000。未启用冲刺时冲刺速度不会参与控制。',
                 ),
+                const SizedBox(height: 14),
+                _SensitivitySlider(
+                  label: '转向灵敏度',
+                  fieldPath: 'chassis.turn_sensitivity',
+                  value: ch.turnSensitivity,
+                  onChanged: (v) =>
+                      updateChassis(ch.copyWith(turnSensitivity: v)),
+                ),
+                const SizedBox(height: 10),
+                const _InfoBanner(
+                  '转向灵敏度 10–200% 只缩放左右转向量，前后移动不受影响；100% 与旧版行为一致。'
+                  '高于 150% 时转向与前后移动叠加可能超出单轮 duty 上限。',
+                ),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('按下左摇杆启用冲刺'),

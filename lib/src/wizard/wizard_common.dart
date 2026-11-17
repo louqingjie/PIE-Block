@@ -190,6 +190,9 @@ String _fieldLabel(String path) {
     'remote.deadzone': '摇杆死区',
     'chassis.normal_speed': '普通速度',
     'chassis.sprint_speed': '冲刺速度',
+    'chassis.turn_sensitivity': '转向灵敏度',
+    'gimbal.yaw.sensitivity': 'Yaw 灵敏度',
+    'gimbal.pitch.sensitivity': 'Pitch 灵敏度',
     'mechanism.feeder_pin': '拨弹电机 IO',
     'mechanism.feeder_direction': '拨弹电机方向',
     'controls.arrow_behavior': '方向键用途',
@@ -222,6 +225,7 @@ String _fieldLabel(String path) {
   if (path.endsWith('.min_limit')) return '顺时针限幅';
   if (path.endsWith('.max_limit')) return '逆时针限幅';
   if (path.endsWith('.mode')) return '控制方式';
+  if (path.endsWith('.sensitivity')) return '灵敏度';
   if (path.endsWith('.parameter')) return '参数';
   if (path.endsWith('.key')) return '输入';
   if (path.endsWith('.variable')) return '变量名';

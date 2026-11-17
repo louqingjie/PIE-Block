@@ -101,7 +101,8 @@ class _ReviewPage extends ConsumerWidget {
                   ),
                   subtitle: config.chassis.enabled
                       ? Text(
-                          config.chassis.turnReversed ? '左右转向：反向' : '左右转向：标准',
+                          '${config.chassis.turnReversed ? '左右转向：反向' : '左右转向：标准'}'
+                          ' · 转向灵敏度 ${config.chassis.turnSensitivity}%',
                         )
                       : null,
                 ),
@@ -125,6 +126,12 @@ class _ReviewPage extends ConsumerWidget {
                         : config.frictionMode == FrictionMode.disabled
                         ? '摩擦轮：不使用，P64/P66 已释放'
                         : '摩擦轮：未选择',
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.tune),
+                  title: Text(
+                    '云台灵敏度：Yaw ${config.yawSensitivity}% · Pitch ${config.pitchSensitivity}%',
                   ),
                 ),
                 for (final assignment in InfantryPinPlanner.derive(

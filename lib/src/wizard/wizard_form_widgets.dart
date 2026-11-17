@@ -293,3 +293,157 @@ class _TextFieldState extends ConsumerState<_TextField> {
           );
   }
 }
+
+/// 百分比灵敏度：滑块按 5% 吸附提交，右侧数值框可直接键入整数。
+///
+/// 数值框不拦截越界值（与 [_NumberField] 一致），由校验器在字段下方提示；
+/// 滑块只负责显示，超出范围时按边界定位，避免 [Slider] 断言失败。
+class _SensitivitySlider extends ConsumerStatefulWidget {
+  const _SensitivitySlider({
+    required this.label,
+    required this.fieldPath,
+    required this.value,
+    required this.onChanged,
+  });
+
+  static const min = 10, max = 200, step = 5;
+
+  final String label;
+  final String fieldPath;
+  final int value;
+  final ValueChanged<int> onChanged;
+
+  @override
+  ConsumerState<_SensitivitySlider> createState() => _SensitivitySliderState();
+}
+
+class _SensitivitySliderState extends ConsumerState<_SensitivitySlider> {
+  late final TextEditingController _controller = TextEditingController(
+    text: '${widget.value}',
+  );
+  FocusNode? _focusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _bindFocusNode();
+  }
+
+  @override
+  void didUpdateWidget(covariant _SensitivitySlider oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.fieldPath != widget.fieldPath) {
+      _unbindFocusNode(oldWidget.fieldPath);
+      _bindFocusNode();
+      _syncText();
+      return;
+    }
+    // 输入框聚焦时不回填，避免打字过程中光标被拉到末尾。
+    if (oldWidget.value != widget.value && !_focused) _syncText();
+  }
+
+  bool get _focused => _focusNode?.hasFocus ?? false;
+
+  void _bindFocusNode() {
+    final node = FocusNode(debugLabel: widget.fieldPath)
+      ..addListener(_handleFocusChange);
+    _focusNode = node;
+    _fieldFocusNodes[widget.fieldPath] = node;
+  }
+
+  void _unbindFocusNode(String path) {
+    final node = _focusNode;
+    if (node == null) return;
+    if (identical(_fieldFocusNodes[path], node)) _fieldFocusNodes.remove(path);
+    node.removeListener(_handleFocusChange);
+    node.dispose();
+    _focusNode = null;
+  }
+
+  void _handleFocusChange() {
+    final controller = ref.read(_activeInputFieldProvider.notifier);
+    if (_focused) {
+      controller.focus(widget.fieldPath);
+      return;
+    }
+    controller.blur(widget.fieldPath);
+    // 清空或输入中途失去焦点时，回到配置里的真实值。
+    _syncText();
+  }
+
+  void _syncText() {
+    final text = '${widget.value}';
+    if (_controller.text == text) return;
+    _controller.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+  }
+
+  @override
+  void dispose() {
+    _unbindFocusNode(widget.fieldPath);
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final sliderValue = widget.value
+        .clamp(_SensitivitySlider.min, _SensitivitySlider.max)
+        .toDouble();
+    return _FieldAnchor(
+      path: widget.fieldPath,
+      focusHandledByChild: true,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(widget.label, style: Theme.of(context).textTheme.labelLarge),
+          const SizedBox(height: 4),
+          _FormRow(
+            fieldPaths: [widget.fieldPath],
+            children: [
+              Expanded(
+                child: Slider(
+                  value: sliderValue,
+                  min: _SensitivitySlider.min.toDouble(),
+                  max: _SensitivitySlider.max.toDouble(),
+                  divisions:
+                      (_SensitivitySlider.max - _SensitivitySlider.min) ~/
+                      _SensitivitySlider.step,
+                  label: '${widget.value}%',
+                  onChanged: (value) => widget.onChanged(value.round()),
+                ),
+              ),
+              const SizedBox(width: 12),
+              SizedBox(
+                width: _isCompact(context) ? 96 : 116,
+                child: TextFormField(
+                  key: ValueKey(widget.fieldPath),
+                  controller: _controller,
+                  focusNode: _focusNode,
+                  textAlign: TextAlign.end,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    LengthLimitingTextInputFormatter(3),
+                  ],
+                  decoration: _fieldDecoration(
+                    ref,
+                    widget.fieldPath,
+                    '百分比',
+                    suffix: '%',
+                  ),
+                  onChanged: (text) {
+                    final value = int.tryParse(text);
+                    if (value != null) widget.onChanged(value);
+                  },
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
