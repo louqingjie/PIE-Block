@@ -44,7 +44,9 @@ class McpService extends Notifier<McpServiceState> {
     _switching = true;
     try {
       final bridge = await _bridgeFile();
-      final server = McpHttpServer(mcp: McpServer(host: _HostBinding(ref)));
+      final server = McpHttpServer(
+        mcp: McpServer(host: _HostBinding(ref, onRecord: appendAudit)),
+      );
       await server.start(bridgeFile: bridge);
       if (!ref.mounted) {
         // 启动过程中应用被关掉了：直接收摊，别留一个没人管的监听端口。
@@ -114,9 +116,15 @@ class McpService extends Notifier<McpServiceState> {
 
 /// 把契约层的 `McpHost` 接到应用状态上。
 class _HostBinding implements McpHost {
-  _HostBinding(this.ref);
+  _HostBinding(this.ref, {required this.onRecord});
 
   final Ref ref;
+
+  /// 由 `McpService` 直接传入自己的审计方法。
+  ///
+  /// 这里不能 `ref.read(mcpServiceProvider.notifier)`：那会让服务 provider
+  /// 在自己构造宿主时依赖自己，Riverpod 直接断言失败，所有工具调用都报 -32603。
+  final void Function(McpAuditEntry entry) onRecord;
 
   @override
   String get appVersion => app_info.appVersion;
@@ -153,6 +161,5 @@ class _HostBinding implements McpHost {
   ) => ref.read(mcpApprovalControllerProvider.notifier).enqueue(plan, request);
 
   @override
-  void record(McpAuditEntry entry) =>
-      ref.read(mcpServiceProvider.notifier).appendAudit(entry);
+  void record(McpAuditEntry entry) => onRecord(entry);
 }
