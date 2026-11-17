@@ -218,6 +218,9 @@ class McpHttpServer {
     await response.close();
   }
 
+  /// 生成一个新的访问令牌。宿主可以把它持久化，避免重启后客户端要重配。
+  static String generateToken() => _randomToken();
+
   static String _randomToken() {
     final random = Random.secure();
     final bytes = List<int>.generate(24, (_) => random.nextInt(256));

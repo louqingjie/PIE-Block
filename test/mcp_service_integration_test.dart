@@ -28,6 +28,22 @@ class _DocController extends AppController {
   AppState build() => AppState(document: document);
 }
 
+Future<McpServiceState> _wait(
+  ProviderContainer container, {
+  required bool running,
+  String? previousToken,
+}) async {
+  for (var attempt = 0; attempt < 100; attempt += 1) {
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    final state = container.read(mcpServiceProvider);
+    if (state.running == running &&
+        (previousToken == null || state.token != previousToken)) {
+      return state;
+    }
+  }
+  throw StateError('等待 MCP 服务状态超时：running=$running');
+}
+
 void main() {
   test('本地服务能完整响应工具调用（审计不得造成 provider 自依赖）', () async {
     final directory = await Directory.systemTemp.createTemp('pieblock_mcp_service');
@@ -85,5 +101,53 @@ void main() {
     expect((data['project'] as Map)['kind'], 'infantry');
 
     container.read(appControllerProvider.notifier).setMcpEnabled(false);
+  });
+
+  test('端口与令牌跨重启保持，只有主动重置才变化', () async {
+    final directory = await Directory.systemTemp.createTemp('pieblock_mcp_identity');
+    final previousPathProvider = PathProviderPlatform.instance;
+    PathProviderPlatform.instance = _FakePathProvider(directory);
+    addTearDown(() {
+      PathProviderPlatform.instance = previousPathProvider;
+      directory.deleteSync(recursive: true);
+    });
+
+    final container = ProviderContainer(
+      overrides: [
+        appControllerProvider.overrideWith(
+          () => _DocController(ProjectDocument.create(ProjectKind.infantry)),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    final app = container.read(appControllerProvider.notifier);
+    final service = container.read(mcpServiceProvider.notifier);
+
+    app.setMcpEnabled(true);
+    final first = await _wait(container, running: true);
+    expect(first.endpoint, contains(':${McpService.defaultPort}/mcp'));
+
+    app.setMcpEnabled(false);
+    await _wait(container, running: false);
+    expect(File('${directory.path}${Platform.pathSeparator}mcp-bridge.json')
+        .existsSync(), isFalse);
+
+    app.setMcpEnabled(true);
+    final second = await _wait(container, running: true);
+    expect(second.endpoint, first.endpoint);
+    expect(second.token, first.token);
+    expect(File('${directory.path}${Platform.pathSeparator}mcp-identity.json')
+        .existsSync(), isTrue);
+
+    await service.rotateToken();
+    final third = await _wait(
+      container,
+      running: true,
+      previousToken: first.token,
+    );
+    expect(third.endpoint, first.endpoint);
+    expect(third.token, isNot(first.token));
+
+    app.setMcpEnabled(false);
   });
 }

@@ -77,7 +77,8 @@ class McpPanel extends ConsumerWidget {
                 const SizedBox(height: 8),
                 Text(
                   '把复制到的 JSON 贴进客户端（CodeBuddy / Qoder / DSH 等）的 MCP 配置里，'
-                  '重启客户端后即可连接。网页版与手机版不提供这个服务。',
+                  '重启客户端后即可连接。端口与令牌已保存在本机，以后重启 PIE-Block '
+                  '无需重新配置客户端。网页版与手机版不提供这个服务。',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ] else if (enabled && service.error != null)
@@ -117,6 +118,11 @@ class McpPanel extends ConsumerWidget {
           child: const Text('关闭'),
         ),
         if (enabled)
+          TextButton(
+            onPressed: () => _rotateToken(context, ref),
+            child: const Text('重置令牌'),
+          ),
+        if (enabled)
           FilledButton.tonal(
             onPressed: () => ref.read(mcpServiceProvider.notifier).restart(),
             child: const Text('重启服务'),
@@ -147,6 +153,35 @@ class McpPanel extends ConsumerWidget {
           Expanded(child: SelectableText(value, style: style)),
         ],
       ),
+    );
+  }
+
+  Future<void> _rotateToken(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('重置访问令牌？'),
+        content: const Text(
+          '重置后现有客户端会连不上，需要重新复制一次配置。'
+          '只有怀疑令牌泄露时才需要这么做。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('重置'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+    await ref.read(mcpServiceProvider.notifier).rotateToken();
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('令牌已重置，请重新复制客户端配置')),
     );
   }
 

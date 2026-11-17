@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -23,6 +24,9 @@ final mcpServiceProvider = NotifierProvider<McpService, McpServiceState>(
 class McpService extends Notifier<McpServiceState> {
   static const _maxAudit = 100;
 
+  /// 固定默认端口，配合持久化的 token，客户端只需配置一次。
+  static const defaultPort = 47173;
+
   McpHttpServer? _server;
   bool _switching = false;
 
@@ -43,11 +47,13 @@ class McpService extends Notifier<McpServiceState> {
     if (_server != null || _switching) return;
     _switching = true;
     try {
+      final identity = await _loadIdentity();
       final bridge = await _bridgeFile();
       final server = McpHttpServer(
         mcp: McpServer(host: _HostBinding(ref, onRecord: appendAudit)),
+        token: identity.token,
       );
-      await server.start(bridgeFile: bridge);
+      await server.start(port: identity.port, bridgeFile: bridge);
       if (!ref.mounted) {
         // 启动过程中应用被关掉了：直接收摊，别留一个没人管的监听端口。
         await server.stop();
@@ -95,10 +101,28 @@ class McpService extends Notifier<McpServiceState> {
     await server?.stop();
   }
 
-  /// 重启：端口和 token 都会变，客户端需要重新读 `mcp-bridge.json`。
+  /// 重启：端口和 token 都保持不变，客户端配置无需改动。
   Future<void> restart() async {
     await stop();
     await start();
+  }
+
+  /// 换一个新令牌：只有怀疑令牌泄露时才用，客户端要重新配一次。
+  Future<void> rotateToken() async {
+    final file = await _identityFile();
+    if (file.existsSync()) await file.delete();
+    await restart();
+  }
+
+  /// 改端口：默认端口被占用时用；同样要重新配一次客户端。
+  Future<void> setPort(int port) async {
+    if (port < 1024 || port > 65535) {
+      throw ArgumentError.value(port, 'port', '端口必须在 1024–65535 之间');
+    }
+    final file = await _identityFile();
+    if (file.existsSync()) await file.delete();
+    await _loadIdentity(preferredPort: port);
+    await restart();
   }
 
   void appendAudit(McpAuditEntry entry) {
@@ -111,6 +135,63 @@ class McpService extends Notifier<McpServiceState> {
   Future<String> _bridgeFile() async {
     final directory = await getApplicationSupportDirectory();
     return '${directory.path}${Platform.pathSeparator}mcp-bridge.json';
+  }
+
+  /// 端口与令牌存在独立的 `mcp-identity.json`，退出时不删。
+  ///
+  /// 它和 `mcp-bridge.json` 分开：后者是运行时的发现文件，每次启动重写、退出
+  /// 删除；前者是本机身份，让客户端永远不用重新配置。
+  Future<File> _identityFile() async {
+    final directory = await getApplicationSupportDirectory();
+    return File(
+      '${directory.path}${Platform.pathSeparator}mcp-identity.json',
+    );
+  }
+
+  Future<({int port, String token})> _loadIdentity({
+    int? preferredPort,
+  }) async {
+    final file = await _identityFile();
+    try {
+      if (file.existsSync()) {
+        final decoded = jsonDecode(await file.readAsString());
+        if (decoded is Map) {
+          final port = (decoded['port'] as num?)?.toInt();
+          final token = decoded['token']?.toString();
+          if (decoded['schema'] == 1 &&
+              port != null &&
+              port > 0 &&
+              port <= 65535 &&
+              token != null &&
+              token.isNotEmpty) {
+            return (port: port, token: token);
+          }
+        }
+      }
+    } on FormatException {
+      // 文件坏了就重建，不让它把服务卡死。
+    }
+    final identity = (
+      port: preferredPort ?? defaultPort,
+      token: McpHttpServer.generateToken(),
+    );
+    await file.parent.create(recursive: true);
+    await file.writeAsString(
+      '${const JsonEncoder.withIndent('  ').convert({
+        'schema': 1,
+        'port': identity.port,
+        'token': identity.token,
+      })}\n',
+      flush: true,
+    );
+    if (!Platform.isWindows) {
+      try {
+        await Process.run('chmod', ['600', file.path]);
+      } on ProcessException {
+        // 没有 chmod 的环境跳过。
+      }
+    }
+    return identity;
   }
 }
 
