@@ -1,12 +1,12 @@
 # Flutter 项目文件格式
 
-> 注意：`reference/schemas/` 下的 JSON Schema 由已停用的旧版 Godot CLI 生成，字段结构停留在旧格式；格式 22 以本文档与代码实现为准，暂不把旧 schema 作为校验依据。
+> 注意：`reference/schemas/` 下的 JSON Schema 由已停用的旧版 Godot CLI 生成，字段结构停留在旧格式；格式 23 以本文档与代码实现为准，暂不把旧 schema 作为校验依据。
 
-`.pieproj` 是 UTF-8 JSON 文件。格式 22 使用稳定语义字段，不包含 UI 控件路径或生成代码，并保存可恢复的向导进度。
+`.pieproj` 是 UTF-8 JSON 文件。格式 23 使用稳定语义字段，不包含 UI 控件路径或生成代码，并保存可恢复的向导进度。
 
 ```json
 {
-  "format_version": 22,
+  "format_version": 23,
   "project_kind": "infantry",
   "created_at": "2026-08-25T01:00:00.000Z",
   "updated_at": "2026-08-25T01:05:00.000Z",
@@ -16,10 +16,16 @@
   },
   "config": {
     "remote": {"channel": null, "deadzone": null},
-    "chassis": {"enabled": true, "turn_reversed": false},
+    "chassis": {
+      "enabled": true,
+      "turn_reversed": false,
+      "turn_sensitivity": 100
+    },
     "feeder_pin": null,
     "yaw": [{"drive": null, "pin": null}],
     "pitch": [{"drive": null, "pin": null}],
+    "yaw_sensitivity": 100,
+    "pitch_sensitivity": 100,
     "friction_mode": null,
     "friction_p64_max_duty": null,
     "friction_p66_max_duty": null,
@@ -31,7 +37,7 @@
 
 `project_kind` 支持 `infantry`、`engineer`、`debug` 与 `music`。枚举保存稳定英文值，中文只用于界面展示。
 
-项目名称不写入存档：格式 21 起删除 `name`，界面标题与最近项目名称都取文件名（去掉 `.pieproj` 后缀）。打开格式 17–21 的旧项目时，应用会在打开流程中自动把文件重写为当前格式；写回失败只提示，不影响打开。
+项目名称不写入存档：格式 21 起删除 `name`，界面标题与最近项目名称都取文件名（去掉 `.pieproj` 后缀）。打开格式 17–22 的旧项目时，应用会在打开流程中自动把文件重写为当前格式；写回失败只提示，不影响打开。
 
 `current_step_id` 和 `visited_step_ids` 使用稳定步骤 ID；重开项目后恢复离开时的页面和已访问范围。步骤变化与配置变化使用同一自动保存流程。
 
@@ -42,6 +48,8 @@
 新建弹窗有一个默认关闭的「模板工程」开关。只有显式打开它时，配置才整份取自 `assets/templates/<kind>.pieproj`；项目文件本身不写入任何模板标记，创建出来就是普通项目，两个时间戳和 `guide_progress` 都按本次创建重新生成。模板文件同为当前格式版本，格式版本变更时必须用 `dart run tool/generate_project_templates.dart` 重存四份模板，否则 `test/project_templates_test.dart` 会失败。步兵模板的拨弹电机落在固定 50Hz 的 PWMA（四轮已占满固定 10000Hz 的 PWMB），因此会带一条「电机可能一卡一卡」提示，这是既定取舍而非模板缺陷。
 
 步兵和工程项目的 `chassis.turn_reversed` 是共用底盘校准项，默认 `false`；启用后仅反转水平摇杆及左右方向键产生的转向量，不改变直行、倒车、冲刺或单轮方向配置。格式 17 起 `chassis.enabled` 表示是否启用预制四轮底盘，默认 `true`；仅工程项目允许设为 `false`，此时四轮 IO/方向/速度不再必填，原底盘引脚可被动作行使用；步兵项目必须保持启用。
+
+格式 23 起，步兵与工程的 `chassis.turn_sensitivity` 保存底盘转向灵敏度百分比（整数 10–200，缺省 `100`），只缩放水平摇杆与左右方向键产生的转向量，不改变前后移动、冲刺与单轮方向；`100` 与旧版生成的 `CalculateChassis` 完全一致。步兵的 `yaw_sensitivity` 与 `pitch_sensitivity` 保存云台各轴灵敏度（同为正整数 10–200，缺省 `100`），按轴作用于该轴全部执行器：舵机按比例缩放每主循环的摇杆增量，电机按比例缩放满杆占空比，`100` 时生成代码与旧版逐字节相同。超过 150% 只给出「变化可能过快 / 轮速可能超出 duty 上限」的警告，不阻止生成代码；超出 10–200 则作为错误阻止生成。
 
 步兵云台执行器的舵机保存可选的 `min_limit` 与 `max_limit`（相对归中位置的角度）：`max_limit` 为逆时针一侧（非负），`min_limit` 为顺时针一侧（非正），界面按限幅大小显示为「逆时针限幅」「顺时针限幅」。留空表示该侧走满物理行程；填写时逆时针限幅必须在 `0–(90 − mid_offset)` 内、顺时针限幅必须在 `0–(90 + mid_offset)` 内，越界会作为错误阻止生成代码。同轴多个舵机按各侧最紧的限幅取交集执行。
 
@@ -138,12 +146,13 @@ duty(引脚) = 500 + 油门% × (该引脚满油上限 − 500) ÷ 100
 
 项目文件自 1.7.0 起随正式版本发布，兼容策略为「写入升版、读取兼容」：
 
-- 当前应用写入 **格式 22**，可读入 **格式 17–22**（`ProjectDocument.oldestSupportedFormatVersion` 至 `ProjectDocument.formatVersion`）。
+- 当前应用写入 **格式 23**，可读入 **格式 17–23**（`ProjectDocument.oldestSupportedFormatVersion` 至 `ProjectDocument.formatVersion`）。
 - 17 → 18：工程模式新增可选的 `modes[].action_tables`（按键动作表）。缺少该字段视为空列表，其余字段语义不变。
 - 18 → 19：动作行与调试测试项移除 `direction`，方向并入 `parameter` / `value` 正负。读入 17/18 存档时，`direction == reverse` 会折算成对应数值取负（只对原本使用方向的控制方式生效：`direct`、`incremental`、`single`、`continuous`、`frictionStep`、`frictionContinuous` 与调试项电机/舵机）；摩擦轮调试项的 `value` 不受 direction 影响，速度/增速等原本忽略方向的模式也不再取负。编辑保存后按格式 19 写回（自动升级）。
 - 19 → 20：工程项目新增可选的 `pwm.pin_notes`（引脚备注）。缺少该字段视为空表，生成代码、校验规则与旧存档行为完全一致；编辑保存后按格式 20 写回（自动升级）。
 - 20 → 21：移除 `name` 字段，项目名称只取自文件名；读入旧档时忽略该字段。打开格式 17–20 的项目后应用会自动把它重写为格式 21（无需先编辑保存）；写回失败时项目仍可打开，只给出提示。
 - 21 → 22：动作表新增可选的 `wrap`（越界重复），缺省 `true`。读入旧档时保持原来的循环行为；只有下一档键时该值必须为 `true`。编辑保存后按格式 22 写回（自动升级）。
-- 旧版 PIE-Block（支持到格式 21）无法打开格式 22 的文件，会提示升级；新版不会把文件写回旧格式，也不做静默降级。
+- 22 → 23：新增可选的 `chassis.turn_sensitivity` 与步兵 `yaw_sensitivity` / `pitch_sensitivity`（灵敏度百分比，缺省 `100`）。缺少这些字段时按 `100` 读入，校验规则与生成代码保持旧版语义；编辑保存后按格式 23 写回（自动升级）。
+- 旧版 PIE-Block（支持到格式 22）无法打开格式 23 的文件，会提示升级；新版不会把文件写回旧格式，也不做静默降级。
 - 格式 16 及更早版本属于未发布格式，应用仍会拒绝打开并提示使用对应旧版处理。
-- 兼容回归样本固定在 `packages/pieblock_core/test/fixtures/`（格式 17 的工程/步兵存档、格式 18 的方向迁移样本、格式 19 与格式 20 的工程存档、格式 21 的动作表存档），修改格式时必须保持这些用例通过。
+- 兼容回归样本固定在 `packages/pieblock_core/test/fixtures/`（格式 17 的工程/步兵存档、格式 18 的方向迁移样本、格式 19/20/21 的工程存档、格式 22 的工程与步兵存档），修改格式时必须保持这些用例通过。
