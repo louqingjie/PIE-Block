@@ -240,6 +240,10 @@ void ReadControllerInputs(void)
     if (RcKeyValueRead(KEY_OFFSET_Rocker11)) speed = ultraSpeed;
 '''
         : '';
+    // 灵敏度只缩放转向量：100% 不生成额外语句，保持旧档生成的代码不变。
+    final turnScale = c.turnSensitivity == 100
+        ? ''
+        : '    turnSpeed = (int)(((int32_t)turnSpeed * ${c.turnSensitivity}L) / 100L);\n';
     final turnReverse = c.turnReversed ? '    turnSpeed = -turnSpeed;\n' : '';
     return '''
 void CalculateChassis(void)
@@ -249,7 +253,7 @@ void CalculateChassis(void)
     int turnSpeed;$sprint
     baseSpeed = (int)(((int32_t)-valueOfRoker[0][1] * (int32_t)speed) / 2047L);
     turnSpeed = (int)(((int32_t)-valueOfRoker[0][0] * (int32_t)speed) / 2047L);
-$turnReverse    dutyOfMotor[${_slot(c.leftFront.pin)}] = ${_dir(c.leftFront.direction!) == 1 ? '' : '-'}baseSpeed ${_dir(c.leftFront.direction!) == 1 ? '-' : '+'} turnSpeed;
+$turnScale$turnReverse    dutyOfMotor[${_slot(c.leftFront.pin)}] = ${_dir(c.leftFront.direction!) == 1 ? '' : '-'}baseSpeed ${_dir(c.leftFront.direction!) == 1 ? '-' : '+'} turnSpeed;
     dutyOfMotor[${_slot(c.leftRear.pin)}] = ${_dir(c.leftRear.direction!) == 1 ? '' : '-'}baseSpeed ${_dir(c.leftRear.direction!) == 1 ? '-' : '+'} turnSpeed;
     dutyOfMotor[${_slot(c.rightFront.pin)}] = ${_dir(c.rightFront.direction!) == 1 ? '-' : ''}baseSpeed ${_dir(c.rightFront.direction!) == 1 ? '-' : '+'} turnSpeed;
     dutyOfMotor[${_slot(c.rightRear.pin)}] = ${_dir(c.rightRear.direction!) == 1 ? '-' : ''}baseSpeed ${_dir(c.rightRear.direction!) == 1 ? '-' : '+'} turnSpeed;
@@ -458,6 +462,8 @@ $turnReverse    dutyOfMotor[${_slot(c.leftFront.pin)}] = ${_dir(c.leftFront.dire
     String actuatorUpdate({required bool yaw, required int index}) {
       final actuator = actuatorAt(yaw: yaw, index: index)!;
       final rocker = yaw ? 'valueOfRoker[1][0]' : 'valueOfRoker[1][1]';
+      // 灵敏度按轴生效：100% 时沿用原来的系数，旧档生成结果逐字节不变。
+      final sensitivity = yaw ? c.yawSensitivity : c.pitchSensitivity;
       if (actuator.drive == DriveType.servo) {
         final variable = dutyName(yaw: yaw, index: index);
         final home = _servoDuty(actuator.midOffset);
@@ -467,11 +473,16 @@ $turnReverse    dutyOfMotor[${_slot(c.leftFront.pin)}] = ${_dir(c.leftFront.dire
         final low = (home + _dutySpan(limits.min)).clamp(250, 1250);
         final high = (home + _dutySpan(limits.max)).clamp(250, 1250);
         final sign = actuator.direction == Direction.forward ? '' : '-';
-        return '''    $variable += (int)((float)$sign$rocker * 2.0f / 2047.0f * 5.555556f);
+        // 满杆每主循环的角度 = 2° × 灵敏度；整数百分比换算后最多两位小数。
+        final span = sensitivity == 100
+            ? '2.0f'
+            : '${(2.0 * sensitivity / 100).toStringAsFixed(2)}f';
+        return '''    $variable += (int)((float)$sign$rocker * $span / 2047.0f * 5.555556f);
     if ($variable < $low) $variable = $low; if ($variable > $high) $variable = $high;''';
       }
       final sign = actuator.direction == Direction.forward ? '' : '-';
-      return '    dutyOfMotor[${_slot(actuator.pin)}] = $sign(int)(((int32_t)$rocker * 10000L) / 2047L);';
+      final duty = sensitivity == 100 ? 10000 : 100 * sensitivity;
+      return '    dutyOfMotor[${_slot(actuator.pin)}] = $sign(int)(((int32_t)$rocker * ${duty}L) / 2047L);';
     }
 
     final gimbalBlocks = <String>[

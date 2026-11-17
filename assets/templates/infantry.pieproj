@@ -1,5 +1,5 @@
 {
-  "format_version": 22,
+  "format_version": 23,
   "project_kind": "infantry",
   "created_at": "2026-01-01T00:00:00.000Z",
   "updated_at": "2026-01-01T00:00:00.000Z",
@@ -35,7 +35,8 @@
       "normal_speed": 6000,
       "sprint_speed": null,
       "sprint_enabled": false,
-      "turn_reversed": false
+      "turn_reversed": false,
+      "turn_sensitivity": 100
     },
     "feeder_pin": "P60",
     "feeder_direction": "forward",
@@ -59,6 +60,8 @@
         "max_limit": 60
       }
     ],
+    "yaw_sensitivity": 100,
+    "pitch_sensitivity": 100,
     "arrow_behavior": "move",
     "feed_mode": "blockingOpenLoop",
     "trigger_key": "E",

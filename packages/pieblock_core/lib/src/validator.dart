@@ -129,6 +129,24 @@ abstract final class ProjectValidator {
           'remote',
         );
       }
+      _range(
+        config.chassis.turnSensitivity,
+        10,
+        200,
+        'chassis.turn_sensitivity',
+        '转向灵敏度',
+        'remote',
+        issue,
+      );
+      if (config.chassis.turnSensitivity > 150 &&
+          config.chassis.turnSensitivity <= 200) {
+        issue(
+          IssueSeverity.warning,
+          'chassis.turn_sensitivity',
+          '转向灵敏度高于 150%，与前后移动叠加后轮速可能超出 duty 上限',
+          'remote',
+        );
+      }
       _chassis(config.chassis, issue);
     }
   }
@@ -817,6 +835,24 @@ abstract final class ProjectValidator {
 
   static void _axis(InfantryConfig config, bool yaw, _AddIssue issue) {
     final name = yaw ? 'Yaw' : 'Pitch';
+    final sensitivity = yaw ? config.yawSensitivity : config.pitchSensitivity;
+    _range(
+      sensitivity,
+      10,
+      200,
+      'gimbal.${yaw ? 'yaw' : 'pitch'}.sensitivity',
+      '$name 灵敏度',
+      'mechanism',
+      issue,
+    );
+    if (sensitivity > 150 && sensitivity <= 200) {
+      issue(
+        IssueSeverity.warning,
+        'gimbal.${yaw ? 'yaw' : 'pitch'}.sensitivity',
+        '$name 灵敏度高于 150%，满杆时角度变化可能过快',
+        'mechanism',
+      );
+    }
     final actuators = config.actuators(yaw);
     for (var index = 0; index < actuators.length; index += 1) {
       final actuator = actuators[index];

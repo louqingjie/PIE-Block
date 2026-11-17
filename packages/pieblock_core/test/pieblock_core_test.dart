@@ -1075,6 +1075,41 @@ void main() {
       expect((tables.first as Map)['wrap'], isTrue);
     });
 
+    test('格式 22 的存档可打开，灵敏度缺省 100 且重存为当前格式', () {
+      final infantry = ProjectDocument.fromJson(
+        fixture('format22_infantry.pieproj'),
+      );
+      expect(infantry.sourceFormatVersion, 22);
+      final infantryConfig = infantry.config as InfantryConfig;
+      expect(infantryConfig.yawSensitivity, 100);
+      expect(infantryConfig.pitchSensitivity, 100);
+      expect(infantryConfig.chassis.turnSensitivity, 100);
+      expect(
+        CodeGenerator.generate(infantryConfig),
+        isNot(contains('turnSpeed = (int)(((int32_t)turnSpeed')),
+      );
+
+      final engineer = ProjectDocument.fromJson(
+        fixture('format22_engineer.pieproj'),
+      );
+      expect(engineer.sourceFormatVersion, 22);
+      final engineerConfig = engineer.config as EngineerConfig;
+      expect(engineerConfig.chassis.turnSensitivity, 100);
+
+      for (final document in [infantry, engineer]) {
+        final encoded = document.toJson();
+        expect(encoded['format_version'], ProjectDocument.formatVersion);
+        expect(
+          ((encoded['config'] as Map)['chassis'] as Map)['turn_sensitivity'],
+          100,
+        );
+      }
+      expect(
+        (infantry.toJson()['config'] as Map)['yaw_sensitivity'],
+        100,
+      );
+    });
+
     test('过旧与过新的格式给出明确提示', () {
       expect(
         () => ProjectDocument.fromJson({'format_version': 16}),
@@ -3017,6 +3052,68 @@ void main() {
       expect(reversed.replaceFirst('    $inversion\n', ''), standard);
     });
 
+    test('底盘转向灵敏度按百分比缩放且 100% 不生成额外语句', () {
+      final base = completeInfantry();
+      final standard = CodeGenerator.generate(base);
+      expect(standard, isNot(contains('turnSpeed * ')));
+
+      final scaled = CodeGenerator.generate(
+        base.copyWith(
+          chassis: base.chassis.copyWith(turnSensitivity: 130),
+        ),
+      );
+      const scale = '    turnSpeed = (int)(((int32_t)turnSpeed * 130L) / 100L);\n';
+      expect(scaled, contains(scale.trim()));
+      expect(scaled.replaceFirst(scale, ''), standard);
+    });
+
+    test('云台灵敏度按轴缩放舵机步进与电机占空比', () {
+      final base = completeInfantry();
+      final standard = CodeGenerator.generate(base);
+      expect(
+        standard,
+        contains(
+          'yawDuty += (int)((float)valueOfRoker[1][0] * 2.0f / 2047.0f * 5.555556f);',
+        ),
+      );
+
+      final scaled = CodeGenerator.generate(
+        base.copyWith(yawSensitivity: 150, pitchSensitivity: 70),
+      );
+      expect(
+        scaled,
+        contains(
+          'yawDuty += (int)((float)valueOfRoker[1][0] * 3.00f / 2047.0f * 5.555556f);',
+        ),
+      );
+      expect(
+        scaled,
+        contains(
+          'pitchDuty += (int)((float)valueOfRoker[1][1] * 1.40f / 2047.0f * 5.555556f);',
+        ),
+      );
+      expect(scaled, isNot(contains('* 2.0f / 2047.0f')));
+
+      final motorScaled = CodeGenerator.generate(
+        base.copyWith(
+          yawActuators: const [
+            AxisActuator(
+              drive: DriveType.motor,
+              pin: 'P62',
+              direction: Direction.forward,
+            ),
+          ],
+          yawSensitivity: 120,
+        ),
+      );
+      expect(
+        motorScaled,
+        contains(
+          'dutyOfMotor[1] = (int)(((int32_t)valueOfRoker[1][0] * 12000L) / 2047L);',
+        ),
+      );
+    });
+
     test('云台舵机方向反向时对摇杆增量取反', () {
       final forward = CodeGenerator.generate(completeInfantry());
       expect(
@@ -4377,6 +4474,93 @@ void main() {
       );
       final result = EngineerPreview.evaluateMode(config, 0, const {});
       expect(result.rows.single.error, contains('未定义变量'));
+    });
+  });
+
+  group('灵敏度', () {
+    test('字段缺省 100 且可往返保存', () {
+      final config = completeInfantry();
+      final json = config.toJson();
+      expect(json['yaw_sensitivity'], 100);
+      expect(json['pitch_sensitivity'], 100);
+      expect((json['chassis'] as Map)['turn_sensitivity'], 100);
+
+      final restored = InfantryConfig.fromJson(
+        Map<String, Object?>.from(
+          jsonDecode(jsonEncode(config.toJson())) as Map,
+        ),
+      );
+      expect(restored.yawSensitivity, 100);
+      expect(restored.pitchSensitivity, 100);
+      expect(restored.chassis.turnSensitivity, 100);
+
+      final custom = config.copyWith(
+        yawSensitivity: 130,
+        pitchSensitivity: 45,
+        chassis: config.chassis.copyWith(turnSensitivity: 80),
+      );
+      final roundTrip = InfantryConfig.fromJson(
+        Map<String, Object?>.from(
+          jsonDecode(jsonEncode(custom.toJson())) as Map,
+        ),
+      );
+      expect(roundTrip.yawSensitivity, 130);
+      expect(roundTrip.pitchSensitivity, 45);
+      expect(roundTrip.chassis.turnSensitivity, 80);
+      expect(roundTrip.toJson()['yaw_sensitivity'], 130);
+    });
+
+    test('超出 10–200 报错，高于 150 仅提示', () {
+      Iterable<ValidationIssue> issuesFor(InfantryConfig config) =>
+          ProjectValidator.validate(config).where(
+            (issue) => issue.fieldPath.endsWith('.sensitivity') ||
+                issue.fieldPath == 'chassis.turn_sensitivity',
+          );
+
+      final config = completeInfantry().copyWith(
+        yawSensitivity: 250,
+        pitchSensitivity: 160,
+        chassis: completeInfantry().chassis.copyWith(turnSensitivity: 5),
+      );
+      final issues = issuesFor(config);
+      expect(
+        issues.singleWhere(
+          (issue) => issue.fieldPath == 'gimbal.yaw.sensitivity',
+        ).message,
+        'Yaw 灵敏度必须在 10–200 之间',
+      );
+      expect(
+        issues.singleWhere(
+          (issue) => issue.fieldPath == 'gimbal.yaw.sensitivity',
+        ).severity,
+        IssueSeverity.error,
+      );
+      final pitch = issues.singleWhere(
+        (issue) => issue.fieldPath == 'gimbal.pitch.sensitivity',
+      );
+      expect(pitch.severity, IssueSeverity.warning);
+      expect(pitch.message, 'Pitch 灵敏度高于 150%，满杆时角度变化可能过快');
+      final turn = issues.singleWhere(
+        (issue) => issue.fieldPath == 'chassis.turn_sensitivity',
+      );
+      expect(turn.severity, IssueSeverity.error);
+      expect(turn.message, '转向灵敏度必须在 10–200 之间');
+      expect(() => CodeGenerator.generate(config), throwsA(isA<StateError>()));
+
+      expect(issuesFor(completeInfantry()), isEmpty);
+    });
+
+    test('转向灵敏度高于 150 只提示不阻止生成', () {
+      final base = completeInfantry();
+      final config = base.copyWith(
+        chassis: base.chassis.copyWith(turnSensitivity: 180),
+      );
+      final warnings = ProjectValidator.validate(config).where(
+        (issue) => issue.fieldPath == 'chassis.turn_sensitivity',
+      );
+      expect(warnings.single.severity, IssueSeverity.warning);
+      expect(warnings.single.message, contains('高于 150%'));
+      expect(() => CodeGenerator.generate(config), returnsNormally);
     });
   });
 }

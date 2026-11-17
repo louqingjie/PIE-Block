@@ -190,6 +190,7 @@ class ChassisConfig {
     this.sprintSpeed,
     this.sprintEnabled = false,
     this.turnReversed = false,
+    this.turnSensitivity = 100,
   });
   factory ChassisConfig.defaults() => const ChassisConfig();
 
@@ -201,6 +202,9 @@ class ChassisConfig {
   final WheelConfig leftFront, leftRear, rightFront, rightRear;
   final int? normalSpeed, sprintSpeed;
   final bool sprintEnabled, turnReversed;
+
+  /// 底盘转向灵敏度百分比：只缩放左右转向量，100 为旧版行为。
+  final int turnSensitivity;
   ChassisConfig copyWith({
     bool? enabled,
     WheelConfig? leftFront,
@@ -211,6 +215,7 @@ class ChassisConfig {
     Object? sprintSpeed = _unset,
     bool? sprintEnabled,
     bool? turnReversed,
+    int? turnSensitivity,
   }) => ChassisConfig(
     enabled: enabled ?? this.enabled,
     leftFront: leftFront ?? this.leftFront,
@@ -225,6 +230,7 @@ class ChassisConfig {
         : sprintSpeed as int?,
     sprintEnabled: sprintEnabled ?? this.sprintEnabled,
     turnReversed: turnReversed ?? this.turnReversed,
+    turnSensitivity: turnSensitivity ?? this.turnSensitivity,
   );
   Map<String, Object?> toJson() => {
     'enabled': enabled,
@@ -236,6 +242,7 @@ class ChassisConfig {
     'sprint_speed': sprintSpeed,
     'sprint_enabled': sprintEnabled,
     'turn_reversed': turnReversed,
+    'turn_sensitivity': turnSensitivity,
   };
   factory ChassisConfig.fromJson(Map<String, Object?> j) => ChassisConfig(
     enabled: j['enabled'] as bool? ?? true,
@@ -255,6 +262,7 @@ class ChassisConfig {
     sprintSpeed: (j['sprint_speed'] as num?)?.toInt(),
     sprintEnabled: j['sprint_enabled'] as bool? ?? false,
     turnReversed: j['turn_reversed'] as bool? ?? false,
+    turnSensitivity: (j['turn_sensitivity'] as num?)?.toInt() ?? 100,
   );
 }
 
@@ -834,6 +842,8 @@ class InfantryConfig extends RobotConfig {
     this.feederDirection,
     List<AxisActuator> yawActuators = const [AxisActuator()],
     List<AxisActuator> pitchActuators = const [AxisActuator()],
+    this.yawSensitivity = 100,
+    this.pitchSensitivity = 100,
     this.arrowBehavior,
     this.feedMode,
     this.triggerKey,
@@ -865,6 +875,9 @@ class InfantryConfig extends RobotConfig {
   final FrictionMode? frictionMode;
   final Direction? feederDirection;
   final List<AxisActuator> yawActuators, pitchActuators;
+
+  /// 云台轴灵敏度百分比：同轴多个执行器共用，100 为旧版行为。
+  final int yawSensitivity, pitchSensitivity;
   final int? triggerSpeed,
       triggerTimeMs,
       frictionP64MaxDuty,
@@ -881,6 +894,8 @@ class InfantryConfig extends RobotConfig {
     Object? feederDirection = _unset,
     Object? yawActuators = _unset,
     Object? pitchActuators = _unset,
+    int? yawSensitivity,
+    int? pitchSensitivity,
     Object? arrowBehavior = _unset,
     Object? feedMode = _unset,
     Object? triggerKey = _unset,
@@ -911,6 +926,8 @@ class InfantryConfig extends RobotConfig {
     pitchActuators: identical(pitchActuators, _unset)
         ? this.pitchActuators
         : List<AxisActuator>.from(pitchActuators as List),
+    yawSensitivity: yawSensitivity ?? this.yawSensitivity,
+    pitchSensitivity: pitchSensitivity ?? this.pitchSensitivity,
     arrowBehavior: identical(arrowBehavior, _unset)
         ? this.arrowBehavior
         : arrowBehavior as ArrowBehavior?,
@@ -961,6 +978,8 @@ class InfantryConfig extends RobotConfig {
     'feeder_direction': feederDirection?.name,
     'yaw': [for (final actuator in yawActuators) actuator.toJson()],
     'pitch': [for (final actuator in pitchActuators) actuator.toJson()],
+    'yaw_sensitivity': yawSensitivity,
+    'pitch_sensitivity': pitchSensitivity,
     'arrow_behavior': arrowBehavior?.name,
     'feed_mode': feedMode?.name,
     'trigger_key': triggerKey,
@@ -996,6 +1015,8 @@ class InfantryConfig extends RobotConfig {
       ),
       yawActuators: actuators('yaw'),
       pitchActuators: actuators('pitch'),
+      yawSensitivity: (j['yaw_sensitivity'] as num?)?.toInt() ?? 100,
+      pitchSensitivity: (j['pitch_sensitivity'] as num?)?.toInt() ?? 100,
       arrowBehavior: nullableEnumValue(
         ArrowBehavior.values,
         j['arrow_behavior'],
@@ -1977,7 +1998,7 @@ class ProjectDocument {
   ///
   /// 格式 18 起项目已正式发布：新增字段必须可选，旧格式必须能读入，见
   /// [oldestSupportedFormatVersion] 与 [ProjectDocument.fromJson]。
-  static const formatVersion = 22;
+  static const formatVersion = 23;
 
   /// 仍可读入的最旧格式：1.7.0 正式发布时使用的格式 17。
   ///
@@ -1990,6 +2011,9 @@ class ProjectDocument {
   /// 控制器在首次打开旧版本项目后自动把文件重写为当前格式。
   /// 21 → 22 动作表新增可选的 `wrap`（越界重复，缺省开启）；读入旧档时
   /// 按原来的循环行为迁移，不要求用户重新配置。
+  /// 22 → 23 新增可选的云台/底盘转向灵敏度百分比（`yaw_sensitivity`、
+  /// `pitch_sensitivity`、`chassis.turn_sensitivity`，缺省 100），缺省与旧档
+  /// 生成代码完全一致。
   static const oldestSupportedFormatVersion = 17;
   final ProjectKind kind;
   final DateTime createdAt, updatedAt;
