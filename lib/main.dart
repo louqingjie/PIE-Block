@@ -9,6 +9,8 @@ import 'src/design/app_theme.dart';
 import 'src/platform/host_bridge.dart';
 import 'src/deploy_controller.dart';
 import 'src/home_screen.dart';
+import 'src/mcp/mcp_approval_dialog.dart';
+import 'src/mcp/mcp_service.dart';
 import 'src/wizard_screen.dart';
 
 void main() => runApp(const ProviderScope(child: PieBlockApp()));
@@ -29,9 +31,12 @@ class _PieBlockAppState extends ConsumerState<PieBlockApp> {
     // 首帧出来才算真的能用：官网把 Web 版嵌在 iframe 里，收到这个信号
     // 之前一直显示加载态，超时就退回静态示例。
     WidgetsBinding.instance.addPostFrameCallback((_) => notifyHostReady());
+    // 初始化 MCP 服务：它自己监听 mcp_enabled 决定起停，默认关闭时什么都不做。
+    ref.read(mcpServiceProvider.notifier);
     _lifecycle = AppLifecycleListener(
       onExitRequested: () async {
         ref.read(deployControllerProvider.notifier).cancelAll();
+        await ref.read(mcpServiceProvider.notifier).stop();
         await ref.read(appControllerProvider.notifier).saveNow();
         return AppExitResponse.exit;
       },
@@ -72,6 +77,9 @@ class _PieBlockAppState extends ConsumerState<PieBlockApp> {
       // 也隐藏了主题切换按钮，不会出现两套观感。
       themeMode: kIsWeb ? ThemeMode.dark : state.themeMode,
       home: _AppPageTransition(showEditor: state.document != null),
+      // 审批卡片挂在导航器之上，任何页面都能立刻弹出来。
+      builder: (context, child) =>
+          McpApprovalHost(child: child ?? const SizedBox.shrink()),
     );
   }
 }
