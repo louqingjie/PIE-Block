@@ -12,7 +12,7 @@
 | 里程碑 | 状态 | 说明 |
 | --- | --- | --- |
 | M0 技术验证 | 🟡 收尾 | Rust 工具链、workspace、M0 演示壳、表单/卷帘原型、单元测试、CI 已就绪；待：真实终端键鼠/IME 验证、hidapi 真机、SDCC+HEX 对拍、卷帘体验评审 |
-| M1 领域内核 + CLI | 🟡 进行中 | 已完成：Dart oracle golden 工具、13 份模型 golden、`.pieproj` 模型与 17→23 迁移（逐字节）、16 份校验 golden、公共机器人/步兵/调试校验规则、**表达式解析/求值/C 发射/运行时/模式试算**；待：工程专属规则（含表达式规则）、音乐规则、代码生成、音乐/MIDI/五线谱、CLI |
+| M1 领域内核 + CLI | 🟡 进行中 | 已完成：Dart oracle golden 工具、13 份模型 golden、`.pieproj` 模型与 17→23 迁移（逐字节）、**四类工程中三类校验规则完整对拍**、表达式解析/求值/C 发射/运行时/模式试算；待：音乐校验规则、代码生成、音乐/MIDI/五线谱、CLI |
 | M2 工具链 + HID | ⬜ 未开始 | SDCC/Keil 构建、指纹/缓存、HEX/MAP、LST、hidapi 传输与烧录状态机、udev |
 | M3 TUI 基座 | 🟡 部分前置 | 已有应用循环、主题、三栏布局、焦点、状态栏；待完善文件浏览器、设置、最近项目、自动保存与 PTY 测试框架 |
 | M4 向导表单 | ⬜ 未开始 | 四类工程全部页面与问题跳转 |
@@ -56,8 +56,8 @@
 - `pieblock-core::document`：格式版本门禁（17–23，中文错误文案逐字一致）、向导进度、`to_pretty_string`（2 空格 + 末尾换行）、golden wrapper。
 - `pieblock-core::ids`：Dart 形态的 UTC ISO8601 与 `microsecondsSinceEpoch` 风格 id。
 - `pieblock-core::json`：Dart 宽容语义的数值截断、字符串/布尔/数组读取、`string_enum!` 宏、`ParamNum`（整数/小数参数）。
-- `pieblock-core::validation`：公共机器人规则（遥控器/底盘/四轮共用 IO/冲刺与灵敏度警告）、**步兵专属规则（云台执行器/拨弹/摩擦轮/按键冲突/方向键与 LC·RC 占用/引脚规划与 PWMA 提醒）**、调试工程完整规则（10 路固定引脚、驱动类型、值域、摩擦轮提醒）；16 份校验 golden 中调试/步兵完整列表逐条一致，工程 remote 子集完全一致（专属规则待移植）。
-- `pieblock-core::expression`：表达式解析/类型检查（诊断文案与 UTF-16 偏移一致）、求值（除零→0、负数开方→0、Dart 取模）、C 代码发射（helper 调用与转换格式一致）、运行时 helper 代码、变量名规则、工程模式试算（`EngineerPreview`）；表达式 golden 覆盖 60+ 用例、6 组运行时 helper、变量名校验及工程模板逐模式试算，全部与 Dart 一致。
+- `pieblock-core::validation`：公共机器人规则、步兵专属规则、**工程专属规则（PWM 角色与频率、舵机中位/两侧限幅、模式数量与切换键、动作行控制方式矩阵、表达式/变量规则、按键动作表、摩擦轮安全控制、多行覆盖警告）**、调试工程完整规则；19 份校验 golden 中调试/步兵/工程完整列表逐条一致（仅音乐规则待移植）。- `pieblock-core::expression`：表达式解析/类型检查（诊断文案与 UTF-16 偏移一致）、求值（除零→0、负数开方→0、Dart 取模）、C 代码发射（helper 调用与转换格式一致）、运行时 helper 代码、变量名规则、工程模式试算（`EngineerPreview`）；表达式 golden 覆盖 60+ 用例、6 组运行时 helper、变量名校验及工程模板逐模式试算，全部与 Dart 一致。
+- `pieblock-core::model`：补 `EngineerPinCapabilities`（工程引脚能力）、`Friction` 常量与油门映射、`PwmGroupConfig::role_of/is_servo_pin`，供校验与后续代码生成共用。
 - `pieblock-core::ids`：补上 Dart `toIso8601String` 的规则——微秒为 0 时 3 位小数，否则 6 位。
 
 ## M0 演示壳命令
