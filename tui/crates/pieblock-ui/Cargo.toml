@@ -6,6 +6,8 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+crossterm.workspace = true
+pieblock-core.workspace = true
 ratatui.workspace = true
 unicode-width.workspace = true
 
