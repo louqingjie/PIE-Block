@@ -113,3 +113,5 @@ cd tui
 - 工程 PWM 页：`engineer_pwm_page(config)` 提供 PWMA/PWMB 频率（50Hz/10kHz）、蜂鸣器禁用开关，并按配置中出现过的引脚动态生成每引脚字段（角色 舵机/电机/摩擦轮/抖动电机/未使用、舵机中位与双向限幅、摩擦轮最大 duty、备注）；字段路径对齐 `pwm.<pin>.*`，供审查页跳转；测试覆盖频率切换/蜂鸣器开关/引脚字段存在，工程向导现有遥控器 + PWM 两页。
 
 - 工程策略页：`engineer_strategy_page(config)` 提供模式数量（1–4）、切换策略（循环/数字直选）、循环切换键，以及按模式动态生成的数字直选键与「保留底盘」开关；路径对齐 `modes.count/modes.switch_strategy/modes.switch_key/modes.keys.<i>/modes.<i>.preserve_chassis`，供审查页跳转；工程向导现有遥控器、PWM、策略三页。
+
+- 工程动作映射页：`engineer_mappings_page(config)` 为每个模式现有动作行动态生成 6 个字段（按键、输入类型 遥控/未指定、输出类型 引脚/整数/小数、引脚、变量名、表达式、控制方式 6 种）；路径对齐 `modes.<m>.actions.<a>.*`；工程向导现有遥控器、PWM、策略、动作映射四页；动作增删/排序与动作表（键位矩阵）留待下一轮。
