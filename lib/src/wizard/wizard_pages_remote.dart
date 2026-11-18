@@ -247,7 +247,7 @@ class _RemotePage extends ConsumerWidget {
                 ),
                 const SizedBox(height: 10),
                 const _InfoBanner(
-                  '转向灵敏度 10–200% 只缩放左右转向量，前后移动不受影响；100% 与旧版行为一致。'
+                  '转向灵敏度 10–200% 只缩放左右转向量，前后移动不受影响；'
                   '高于 150% 时转向与前后移动叠加可能超出单轮 duty 上限。',
                 ),
                 SwitchListTile(

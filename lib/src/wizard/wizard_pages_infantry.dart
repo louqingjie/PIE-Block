@@ -392,11 +392,6 @@ class _InfantryMechanismPage extends ConsumerWidget {
                   : c.copyWith(pitchSensitivity: v),
             ),
           ),
-          const SizedBox(height: 6),
-          Text(
-            '同轴多个执行器共用该灵敏度；100% 为旧版跟随速度，限位仍然生效。',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
         ],
       );
     }
