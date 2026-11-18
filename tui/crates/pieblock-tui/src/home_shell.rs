@@ -79,6 +79,8 @@ pub struct Shell {
     pub code: Option<pieblock_ui::CodeView>,
     pub code_export_name: String,
     pub glossary: Option<pieblock_ui::GlossaryState>,
+    pub pending_proposal: Option<pieblock_core::proposal::ProjectProposal>,
+    pub proposal_mode: bool,
     pub build_log: Option<pieblock_ui::CodeView>,
     pub build_listing: Option<pieblock_ui::CodeView>,
     pub build_ok: bool,
@@ -133,6 +135,8 @@ impl Shell {
             code: None,
             code_export_name: "main.c".to_owned(),
             glossary: None,
+            pending_proposal: None,
+            proposal_mode: false,
             build_log: None,
             build_listing: None,
             build_ok: false,
@@ -258,6 +262,88 @@ impl Shell {
     fn enter_project(&mut self) {
         self.screen = Screen::Project;
         self.overlay = Overlay::None;
+        self.proposal_mode = false;
+        self.refresh_proposal();
+    }
+
+    fn refresh_proposal(&mut self) {
+        self.pending_proposal = None;
+        let Some(session) = self.workspace.session.as_ref() else {
+            return;
+        };
+        let project = session.path.display().to_string();
+        let proposed = pieblock_core::proposal::proposal_path_for(&project);
+        let Ok(text) = std::fs::read_to_string(proposed) else {
+            return;
+        };
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else {
+            return;
+        };
+        let Ok(proposal) = pieblock_core::proposal::ProjectProposal::from_json(&value) else {
+            return;
+        };
+        if proposal.document.kind != session.document.kind {
+            return;
+        }
+        if !pieblock_core::proposal::new_validation_errors(
+            &session.document.config,
+            &proposal.document.config,
+        )
+        .is_empty()
+        {
+            return;
+        }
+        self.pending_proposal = Some(proposal);
+    }
+
+    fn preview_proposal(&mut self) {
+        self.refresh_proposal();
+        let Some(proposal) = self.pending_proposal.as_ref() else {
+            self.message =
+                Some("没有待处理的 AI 提案（工程旁未找到合法 .proposed 文件）".to_owned());
+            return;
+        };
+        let mut lines = vec![
+            "AI 提案预览".to_owned(),
+            format!(
+                "工具：{}",
+                proposal
+                    .tool
+                    .clone()
+                    .unwrap_or_else(|| "（未注明）".to_owned())
+            ),
+            format!("生成时间：{}", proposal.created_at),
+            format!("改动字段：{} 个", proposal.changed_paths.len()),
+        ];
+        for path in &proposal.changed_paths {
+            lines.push(format!("  - {path}"));
+        }
+        lines.push(String::new());
+        lines.push("按 Y 应用提案并保存；Esc 返回（提案文件保留）".to_owned());
+        self.code_export_name = "proposal.txt".to_owned();
+        self.code = Some(pieblock_ui::CodeView::new("AI 提案预览", &lines.join("\n")));
+        self.proposal_mode = true;
+        self.screen = Screen::Code;
+    }
+
+    fn apply_proposal(&mut self) {
+        let Some(proposal) = self.pending_proposal.take() else {
+            return;
+        };
+        let Some(session) = self.workspace.session.as_mut() else {
+            return;
+        };
+        session.document.config = proposal.document.config.clone();
+        let config = session.document.config.clone();
+        let project = session.path.display().to_string();
+        self.workspace.update_config(config);
+        self.workspace.save_now();
+        let proposed = pieblock_core::proposal::proposal_path_for(&project);
+        let _ = std::fs::remove_file(proposed);
+        self.proposal_mode = false;
+        self.screen = Screen::Project;
+        self.message = Some("已应用 AI 提案并保存工程".to_owned());
+        self.refresh_proposal();
     }
 
     fn handle_project_key(&mut self, key: KeyEvent) {
@@ -274,6 +360,7 @@ impl Shell {
             KeyCode::Char('i') => self.begin_midi_import(),
             KeyCode::Char('x') => self.export_midi(),
             KeyCode::Char('g') => self.enter_staff(),
+            KeyCode::Char('v') => self.preview_proposal(),
             KeyCode::Char('s') => self.settings_screen(),
             KeyCode::F(5) => self.save(),
             _ => {}
@@ -609,6 +696,17 @@ impl Shell {
     }
 
     fn handle_code_key(&mut self, key: KeyEvent) {
+        if self.proposal_mode {
+            match key.code {
+                KeyCode::Char('y') => self.apply_proposal(),
+                KeyCode::Esc => {
+                    self.proposal_mode = false;
+                    self.screen = Screen::Project;
+                }
+                _ => {}
+            }
+            return;
+        }
         if let Some(glossary) = self.glossary.as_mut() {
             if glossary.handle_key(key) {
                 self.glossary = None;
@@ -1781,6 +1879,18 @@ impl Shell {
             Line::from(Span::styled(
                 validation_summary(&session.document.config),
                 self.palette.warn(),
+            )),
+            Line::from(Span::styled(
+                self.pending_proposal.as_ref().map_or_else(
+                    || "AI 提案：无待处理提案".to_owned(),
+                    |proposal| {
+                        format!(
+                            "AI 提案：{} 处改动待处理 · V 预览/应用",
+                            proposal.changed_paths.len()
+                        )
+                    },
+                ),
+                self.palette.accent(),
             )),
             Line::from(""),
             Line::from(Span::styled(
@@ -3282,6 +3392,72 @@ mod glossary_tests {
         assert_eq!(shell.screen, Screen::Code);
         shell.handle_key(key(KeyCode::Esc));
         assert_eq!(shell.screen, Screen::Project);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod proposal_tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn proposal_can_be_previewed_and_applied() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target")
+            .join(format!("shell-proposal-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("dir");
+        let template = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../..")
+            .join("assets/templates/infantry.pieproj");
+        let project = dir.join("infantry.pieproj");
+        std::fs::copy(&template, &project).expect("copy template");
+        let mut shell = Shell::with_data_dir(dir.join("data"), dir.clone());
+        shell.workspace.open(&project).expect("open");
+        shell.enter_project();
+        let document = shell
+            .workspace
+            .session
+            .as_ref()
+            .expect("session")
+            .document
+            .clone();
+        let mut candidate = document.to_json();
+        candidate["config"]["remote"]["channel"] = serde_json::json!(5);
+        let proposal = pieblock_core::proposal::ProjectProposal::create(
+            &document,
+            &candidate,
+            &pieblock_core::sha256_hex(b"proposal-test"),
+            Some("tui-test".to_owned()),
+            pieblock_core::now_iso8601(),
+        )
+        .expect("proposal");
+        let proposed = pieblock_core::proposal::proposal_path_for(&project.display().to_string());
+        std::fs::write(
+            &proposed,
+            pieblock_core::proposal::encode_proposal(&proposal),
+        )
+        .expect("write proposal");
+        shell.refresh_proposal();
+        assert!(shell.pending_proposal.is_some());
+        shell.handle_key(key(KeyCode::Char('v')));
+        assert_eq!(shell.screen, Screen::Code);
+        assert!(shell.proposal_mode);
+        shell.handle_key(key(KeyCode::Char('y')));
+        assert_eq!(shell.screen, Screen::Project);
+        let session = shell.workspace.session.as_ref().expect("session");
+        match &session.document.config {
+            pieblock_core::model::ProjectConfig::Infantry(infantry) => {
+                assert_eq!(infantry.remote.channel, Some(5));
+            }
+            other => panic!("unexpected config: {other:?}"),
+        }
+        assert!(!std::path::Path::new(&proposed).exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
