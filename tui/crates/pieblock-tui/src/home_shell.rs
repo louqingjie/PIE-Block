@@ -449,7 +449,8 @@ impl Shell {
                     self.message = Some("工程路径不能为空".to_owned());
                     return;
                 }
-                match self.workspace.create(&path, kind, None) {
+                let template = find_template_config(kind);
+                match self.workspace.create(&path, kind, template) {
                     Ok(session) => {
                         self.message = Some(format!("已创建：{}", session.display_name()));
                         self.home_selected = 0;
@@ -3149,6 +3150,84 @@ mod staff_tests {
         assert!(compact.contains('●'));
         shell.handle_key(key(KeyCode::Esc));
         assert_eq!(shell.screen, Screen::Project);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+fn template_root_candidates() -> Vec<PathBuf> {
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if let Ok(directory) = std::env::var("PIEBLOCK_TEMPLATE_DIR") {
+        candidates.push(PathBuf::from(directory));
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            candidates.push(parent.join("assets").join("templates"));
+            candidates.push(
+                parent
+                    .join("data")
+                    .join("pieblock_runtime")
+                    .join("templates"),
+            );
+        }
+    }
+    if let Ok(cwd) = std::env::current_dir() {
+        let mut cursor = Some(cwd);
+        for _ in 0..8 {
+            let Some(directory) = cursor else {
+                break;
+            };
+            candidates.push(directory.join("assets").join("templates"));
+            cursor = directory.parent().map(Path::to_path_buf);
+        }
+    }
+    candidates
+}
+
+/// 按工程类型读取打包的模板配置（与 Flutter 新建工程一致的默认值）。
+fn find_template_config(kind: ProjectKind) -> Option<pieblock_core::model::ProjectConfig> {
+    for root in template_root_candidates() {
+        let path = root.join(format!("{}.pieproj", kind.as_str()));
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else {
+            continue;
+        };
+        let Ok(document) = pieblock_core::ProjectDocument::from_json(&value) else {
+            continue;
+        };
+        if document.kind == kind {
+            return Some(document.config);
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod template_tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn new_project_uses_packaged_template() {
+        let Some(template) = find_template_config(ProjectKind::Infantry) else {
+            return;
+        };
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target")
+            .join(format!("shell-template-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("dir");
+        let mut shell = Shell::with_data_dir(dir.join("data"), dir.clone());
+        shell.handle_key(key(KeyCode::Char('n')));
+        shell.handle_key(key(KeyCode::Enter));
+        shell.handle_key(key(KeyCode::Enter));
+        let session = shell.workspace.session.as_ref().expect("session");
+        assert_eq!(session.document.config, template);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
