@@ -5,21 +5,31 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// 当前 UTC 时间的 Dart `toIso8601String()` 形态：`YYYY-MM-DDTHH:MM:SS.mmmZ`。
+/// 当前 UTC 时间的 Dart `toIso8601String()` 形态。
+///
+/// Dart 规则：微秒为 0 时输出 3 位毫秒（`.000Z`）；微秒非 0 时输出 6 位
+/// （`.004500Z`）。两者都要与存档/黄金文本对齐。
 #[must_use]
 pub fn now_iso8601() -> String {
     let duration = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default();
     let total_seconds = duration.as_secs();
-    let millis = duration.subsec_millis();
+    let micros = duration.subsec_micros();
     let days = i64::try_from(total_seconds / 86_400).unwrap_or(0);
     let seconds_of_day = total_seconds % 86_400;
     let (year, month, day) = civil_from_days(days);
     let hour = seconds_of_day / 3_600;
     let minute = (seconds_of_day % 3_600) / 60;
     let second = seconds_of_day % 60;
-    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}.{millis:03}Z")
+    let (millis, micros) = (micros / 1_000, micros % 1_000);
+    if micros == 0 {
+        format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}.{millis:03}Z")
+    } else {
+        format!(
+            "{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}.{millis:03}{micros:03}Z"
+        )
+    }
 }
 
 /// 与 Dart `DateTime.now().microsecondsSinceEpoch.toString()` 对齐的新 id。
@@ -64,7 +74,10 @@ mod tests {
     #[test]
     fn iso8601_shape_matches_dart() {
         let text = now_iso8601();
-        assert_eq!(text.len(), 24, "got {text}");
+        assert!(
+            text.len() == 24 || text.len() == 27,
+            "Dart 输出 3 或 6 位小数，got {text}"
+        );
         assert!(text.ends_with('Z'));
         assert_eq!(&text[4..5], "-");
         assert_eq!(&text[10..11], "T");
