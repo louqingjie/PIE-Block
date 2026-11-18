@@ -1055,10 +1055,17 @@ dependencies = [
 [[package]]
 name = "pieblock-hid"
 version = "0.1.0"
+dependencies = [
+ "pieblock-toolchain",
+ "serde_json",
+]
 
 [[package]]
 name = "pieblock-toolchain"
 version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
 
 [[package]]
 name = "pieblock-tui"
