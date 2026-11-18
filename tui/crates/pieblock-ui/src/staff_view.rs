@@ -54,23 +54,6 @@ pub fn staff_text(music: &MusicConfig, width: usize, clef: i64) -> Vec<String> {
                 *cell = '●';
             }
         }
-        // 越界音符画短加线。
-        let mut ledger_step = if step > 10 {
-            10
-        } else if step < -2 {
-            -2
-        } else {
-            step
-        };
-        while ledger_step > 10 || ledger_step < BOTTOM_STEP {
-            let row = row_of(ledger_step);
-            if let Some(cell_row) = cells.get_mut(row) {
-                for cell in cell_row.iter_mut().skip(column.saturating_sub(1)).take(3) {
-                    *cell = '─';
-                }
-            }
-            ledger_step += if ledger_step > 10 { -2 } else { 2 };
-        }
     }
     cells
         .into_iter()
