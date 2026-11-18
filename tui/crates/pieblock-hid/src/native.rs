@@ -21,12 +21,17 @@ pub struct NativeHidTransport {
 impl NativeHidTransport {
     /// 初始化 hidapi；失败时返回带上下文的错误。
     pub fn new() -> Result<Self, TransportError> {
+        Self::with_cancel_flag(Arc::new(AtomicBool::new(false)))
+    }
+
+    /// 使用外部取消标志初始化（烧录 worker 的超时/取消会置位该标志）。
+    pub fn with_cancel_flag(cancelled: Arc<AtomicBool>) -> Result<Self, TransportError> {
         let api = HidApi::new()
             .map_err(|error| TransportError::new(format!("初始化 hidapi 失败：{error}")))?;
         Ok(Self {
             api: Some(api),
             device: None,
-            cancelled: Arc::new(AtomicBool::new(false)),
+            cancelled,
         })
     }
 

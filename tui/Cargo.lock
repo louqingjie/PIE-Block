@@ -1070,6 +1070,7 @@ name = "pieblock-hid"
 version = "0.1.0"
 dependencies = [
  "hidapi",
+ "pieblock-core",
  "pieblock-toolchain",
  "serde_json",
 ]

@@ -9,6 +9,8 @@ pub mod flasher;
 pub mod native;
 pub mod protocol;
 pub mod transport;
+pub mod udev;
+pub mod worker;
 
 /// STC32G 主控板 USB ISP 的厂商 ID。
 pub const VID: u16 = 0x34BF;
@@ -32,6 +34,8 @@ pub use flasher::{FlashEvent, FlashOptions, FlashResult, FlashStage, HidFlasher}
 pub use native::NativeHidTransport;
 pub use protocol::{FlashBlock, HidProtocol, HidProtocolError};
 pub use transport::{HidTransport, TransportError};
+pub use udev::{UdevInstallOutcome, UdevInstallResult, install_default, is_installed};
+pub use worker::{FLASH_TIMEOUT, FlashOperation, start_flash, start_flash_with_timeout};
 
 /// M2 阶段能力描述。
 #[must_use]
