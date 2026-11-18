@@ -316,3 +316,38 @@ fn engineer_pwm_page_edits_frequency_and_buzzer() {
         assert!(page.fields.iter().any(|field| field.path == path.as_str()));
     }
 }
+
+#[test]
+fn engineer_strategy_page_edits_mode_count_and_strategy() {
+    use pieblock_ui::engineer_strategy_page;
+
+    let config = engineer_config();
+    let page = engineer_strategy_page(&config);
+    assert!(page.fields.len() >= 5);
+    assert_eq!(page.fields[0].path, "modes.count");
+    assert!(
+        page.fields
+            .iter()
+            .any(|field| field.path == "modes.switch_strategy")
+    );
+    assert!(
+        page.fields
+            .iter()
+            .any(|field| field.path == "modes.0.preserve_chassis")
+    );
+    let mut state = FormState::new(config);
+    assert_eq!(clear_editing(&mut state, &page, "3"), FormAction::Changed);
+    match &state.config {
+        ProjectConfig::Engineer(value) => assert_eq!(value.mode_count, Some(3)),
+        other => panic!("unexpected config: {other:?}"),
+    }
+    state.selected = 1;
+    assert_eq!(
+        state.handle_key(&page, key(KeyCode::Enter)),
+        FormAction::Changed
+    );
+    match &state.config {
+        ProjectConfig::Engineer(value) => assert!(value.switch_strategy.is_some()),
+        other => panic!("unexpected config: {other:?}"),
+    }
+}

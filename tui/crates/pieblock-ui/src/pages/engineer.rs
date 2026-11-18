@@ -245,3 +245,168 @@ pub fn engineer_pwm_page(config: &ProjectConfig) -> FormPage {
         fields,
     }
 }
+
+const STRATEGY_CHOICES: [Choice; 2] = [
+    Choice {
+        value: "cycle",
+        label: "循环切换",
+    },
+    Choice {
+        value: "direct",
+        label: "数字直选",
+    },
+];
+
+fn engineer_mode_count(config: &ProjectConfig) -> usize {
+    match config {
+        ProjectConfig::Engineer(value) => value.modes.len(),
+        _ => 0,
+    }
+}
+
+/// 「策略与模式」页（工程）：模式数量、切换策略/按键、保留底盘开关。
+#[must_use]
+pub fn engineer_strategy_page(config: &ProjectConfig) -> FormPage {
+    let mut fields: Vec<FormField> = Vec::new();
+    fields.push(FormField {
+        id: "modes.count",
+        path: "modes.count",
+        label: "模式数量".to_owned(),
+        help: "工程模式数量，范围 1–4；新增模式在「动作映射」页配置。",
+        kind: FieldKind::Number {
+            min: 1,
+            max: 4,
+            step: 1,
+            unit: "",
+        },
+        get: Box::new(|config| {
+            FieldValue::Int(match config {
+                ProjectConfig::Engineer(value) => value.mode_count.unwrap_or(2),
+                _ => 1,
+            })
+        }),
+        set: Box::new(|config, value| {
+            if let (ProjectConfig::Engineer(engineer), FieldValue::Int(number)) = (config, value) {
+                engineer.mode_count = Some(number);
+            }
+        }),
+    });
+    fields.push(FormField {
+        id: "modes.switch_strategy",
+        path: "modes.switch_strategy",
+        label: "切换策略".to_owned(),
+        help: "循环切换用一个按键轮换模式；数字直选为每个模式分配数字键。",
+        kind: FieldKind::Choice(&STRATEGY_CHOICES),
+        get: Box::new(|config| {
+            FieldValue::Choice(match config {
+                ProjectConfig::Engineer(value) => value
+                    .switch_strategy
+                    .map_or_else(String::new, |strategy| strategy.as_str().to_owned()),
+                _ => String::new(),
+            })
+        }),
+        set: Box::new(|config, value| {
+            if let (ProjectConfig::Engineer(engineer), FieldValue::Choice(choice)) = (config, value)
+            {
+                engineer.switch_strategy =
+                    pieblock_core::model::SwitchStrategy::from_str_lenient(&choice);
+            }
+        }),
+    });
+    fields.push(FormField {
+        id: "modes.switch_key",
+        path: "modes.switch_key",
+        label: "循环切换键".to_owned(),
+        help: "循环策略时使用的数字遥控按键，如 NUM_1。",
+        kind: FieldKind::Text {
+            max_len: 16,
+            placeholder: "（未设置）",
+        },
+        get: Box::new(|config| {
+            FieldValue::Text(match config {
+                ProjectConfig::Engineer(value) => value.mode_switch_key.clone().unwrap_or_default(),
+                _ => String::new(),
+            })
+        }),
+        set: Box::new(|config, value| {
+            if let (ProjectConfig::Engineer(engineer), FieldValue::Text(text)) = (config, value) {
+                let text = text.trim();
+                engineer.mode_switch_key = if text.is_empty() {
+                    None
+                } else {
+                    Some(text.to_owned())
+                };
+            }
+        }),
+    });
+    for index in 0..engineer_mode_count(config) {
+        let key_path: &'static str = Box::leak(format!("modes.keys.{index}").into_boxed_str());
+        let preserve_path: &'static str =
+            Box::leak(format!("modes.{index}.preserve_chassis").into_boxed_str());
+        fields.push(FormField {
+            id: key_path,
+            path: key_path,
+            label: format!("模式 {} 按键", index + 1),
+            help: "数字直选策略下该模式的数字按键，如 NUM_2。",
+            kind: FieldKind::Text {
+                max_len: 16,
+                placeholder: "（未设置）",
+            },
+            get: Box::new(move |config| {
+                FieldValue::Text(match config {
+                    ProjectConfig::Engineer(value) => value
+                        .mode_keys
+                        .get(index)
+                        .cloned()
+                        .flatten()
+                        .unwrap_or_default(),
+                    _ => String::new(),
+                })
+            }),
+            set: Box::new(move |config, value| {
+                if let (ProjectConfig::Engineer(engineer), FieldValue::Text(text)) = (config, value)
+                {
+                    while engineer.mode_keys.len() <= index {
+                        engineer.mode_keys.push(None);
+                    }
+                    let text = text.trim();
+                    engineer.mode_keys[index] = if text.is_empty() {
+                        None
+                    } else {
+                        Some(text.to_owned())
+                    };
+                }
+            }),
+        });
+        fields.push(FormField {
+            id: preserve_path,
+            path: preserve_path,
+            label: format!("模式 {} 保留底盘", index + 1),
+            help: "启用后该模式沿用上一模式的底盘输出；未启用底盘控制时不能开启。",
+            kind: FieldKind::Toggle,
+            get: Box::new(move |config| {
+                FieldValue::Bool(match config {
+                    ProjectConfig::Engineer(value) => value
+                        .modes
+                        .get(index)
+                        .is_some_and(|mode| mode.preserve_chassis),
+                    _ => false,
+                })
+            }),
+            set: Box::new(move |config, value| {
+                if let (ProjectConfig::Engineer(engineer), FieldValue::Bool(flag)) = (config, value)
+                {
+                    if let Some(mode) = engineer.modes.get_mut(index) {
+                        mode.preserve_chassis = flag;
+                    }
+                }
+            }),
+        });
+    }
+    FormPage {
+        id: "strategy",
+        title: "第 3 步：策略与模式",
+        subtitle: "配置工程模式数量、切换策略与每个模式的切换键/底盘保留。",
+        fields,
+    }
+}

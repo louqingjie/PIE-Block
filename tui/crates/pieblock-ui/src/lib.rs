@@ -7,8 +7,8 @@ pub mod theme;
 
 pub use form::{FieldKind, FieldValue, FormAction, FormField, FormPage, FormState};
 pub use pages::{
-    debug_tests_page, engineer_pins, engineer_pwm_page, infantry_controls_page,
-    infantry_mechanism_page, remote_page, wizard_pages,
+    debug_tests_page, engineer_pins, engineer_pwm_page, engineer_strategy_page,
+    infantry_controls_page, infantry_mechanism_page, remote_page, wizard_pages,
 };
 pub use screens::{
     BrowserAction, BrowserEntry, FileBrowser, HomeView, RecentItem, SettingRow, draw_browser,
