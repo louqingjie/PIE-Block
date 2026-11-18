@@ -51,6 +51,12 @@ void main() {
     expect(find.text('查看'), findsOneWidget);
     expect(find.text('应用'), findsOneWidget);
     expect(find.text('丢弃'), findsOneWidget);
+    // 主题把 bannerTheme 统一设成错误色；提案横幅必须显式覆盖，不能是红色。
+    final scheme = Theme.of(
+      tester.element(find.byType(ProposalBanner)),
+    ).colorScheme;
+    final banner = tester.widget<MaterialBanner>(find.byType(MaterialBanner));
+    expect(banner.backgroundColor, scheme.surfaceContainerHigh);
   });
 
   testWidgets('无法读取的提案显示错误与丢弃', (tester) async {
@@ -69,6 +75,13 @@ void main() {
 
     expect(find.textContaining('AI 提案无法读取'), findsOneWidget);
     expect(find.text('丢弃'), findsOneWidget);
+    final scheme = Theme.of(
+      tester.element(find.byType(ProposalBanner)),
+    ).colorScheme;
+    expect(
+      tester.widget<MaterialBanner>(find.byType(MaterialBanner)).backgroundColor,
+      scheme.errorContainer,
+    );
   });
 
   testWidgets('改动对话框展示字段差异与警告', (tester) async {

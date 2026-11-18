@@ -13,16 +13,17 @@ class ProposalBanner extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(proposalServiceProvider);
     if (state.status == ProposalStatus.none) return const SizedBox.shrink();
-    final scheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
 
     if (state.isInvalid) {
       return MaterialBanner(
         backgroundColor: scheme.errorContainer,
-        leading: Icon(Icons.error_outline, color: scheme.onErrorContainer),
-        content: Text(
-          'AI 提案无法读取：${state.error ?? '未知错误'}',
-          style: TextStyle(color: scheme.onErrorContainer),
+        contentTextStyle: theme.textTheme.bodyMedium?.copyWith(
+          color: scheme.onErrorContainer,
         ),
+        leading: Icon(Icons.error_outline, color: scheme.onErrorContainer),
+        content: Text('AI 提案无法读取：${state.error ?? '未知错误'}'),
         actions: [
           TextButton(
             onPressed: () =>
@@ -35,7 +36,13 @@ class ProposalBanner extends ConsumerWidget {
 
     final proposal = state.proposal!;
     final flags = [if (state.stale) '基于旧版本', if (state.dirty) '你有未保存的改动'];
+    // 主题把 bannerTheme 统一设成了错误色（给校验失败提示用），提案不是错误，
+    // 必须显式覆盖，否则横幅会渲染成红色。
     return MaterialBanner(
+      backgroundColor: scheme.surfaceContainerHigh,
+      contentTextStyle: theme.textTheme.bodyMedium?.copyWith(
+        color: scheme.onSurface,
+      ),
       leading: Icon(Icons.auto_awesome, color: scheme.primary),
       content: Text(
         'AI 提交了改动提案：${proposal.changedPaths.length} 处改动'
