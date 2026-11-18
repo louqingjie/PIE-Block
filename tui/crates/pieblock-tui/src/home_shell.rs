@@ -1142,6 +1142,12 @@ impl Shell {
                         return;
                     }
                 }
+                if self.pages[index].id == "tests" {
+                    if let Some(delta) = debug_reorder_delta(key.code) {
+                        self.apply_debug_reorder(delta);
+                        return;
+                    }
+                }
                 if self.pages[index].id == "mappings" {
                     if let Some(action) = mapping_action(key.code) {
                         self.apply_mapping_action(action);
@@ -1337,6 +1343,51 @@ impl Shell {
             }
             self.form = Some(next);
             self.message = Some("动作映射已更新".to_owned());
+        }
+    }
+
+    fn apply_debug_reorder(&mut self, delta: i64) {
+        let path = self.selected_actuator_path();
+        let Some(index) = path.and_then(parse_debug_path) else {
+            return;
+        };
+        let Some(form) = self.form.as_mut() else {
+            return;
+        };
+        let mut changed = false;
+        let mut target = index;
+        if let pieblock_core::model::ProjectConfig::Debug(config) = &mut form.config {
+            let next = i64::try_from(index).unwrap_or(0) + delta;
+            if next >= 0 && (next as usize) < config.tests.len() {
+                let next = next as usize;
+                config.tests.swap(index, next);
+                target = next;
+                changed = true;
+            }
+        }
+        if !changed {
+            return;
+        }
+        let config = form.config.clone();
+        self.workspace.update_config(config.clone());
+        let kind = self
+            .workspace
+            .session
+            .as_ref()
+            .map(|session| session.document.kind);
+        if let Some(kind) = kind {
+            self.pages = wizard_pages(kind, &config);
+            let mut next_form = FormState::new(config);
+            let prefix = format!("tests.{target}.");
+            if let Some(position) = self.pages.get(self.wizard_index).and_then(|page| {
+                page.fields
+                    .iter()
+                    .position(|field| field.path.starts_with(prefix.as_str()))
+            }) {
+                next_form.selected = position;
+            }
+            self.form = Some(next_form);
+            self.message = Some("测试序列顺序已调整".to_owned());
         }
     }
 
@@ -2390,6 +2441,72 @@ mod midi_import_tests {
             }
             other => panic!("unexpected config: {other:?}"),
         }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+fn debug_reorder_delta(code: KeyCode) -> Option<i64> {
+    match code {
+        KeyCode::Char('J') => Some(1),
+        KeyCode::Char('K') => Some(-1),
+        _ => None,
+    }
+}
+
+fn parse_debug_path(path: &str) -> Option<usize> {
+    let rest = path.strip_prefix("tests.")?;
+    rest.split('.').next()?.parse().ok()
+}
+
+#[cfg(test)]
+mod debug_reorder_tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn debug_tests_can_be_reordered() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target")
+            .join(format!("shell-debug-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("dir");
+        let mut shell = Shell::with_data_dir(dir.join("data"), dir.clone());
+        shell.handle_key(key(KeyCode::Char('n')));
+        for _ in 0..2 {
+            shell.handle_key(key(KeyCode::Down));
+        }
+        shell.handle_key(key(KeyCode::Enter));
+        shell.handle_key(key(KeyCode::Enter));
+        shell.handle_key(key(KeyCode::Enter));
+        assert_eq!(shell.screen, Screen::Wizard);
+        let (first, second) = match &shell
+            .workspace
+            .session
+            .as_ref()
+            .expect("session")
+            .document
+            .config
+        {
+            pieblock_core::model::ProjectConfig::Debug(config) => {
+                (config.tests[0].pin.clone(), config.tests[1].pin.clone())
+            }
+            other => panic!("unexpected config: {other:?}"),
+        };
+        shell.handle_key(key(KeyCode::Char('J')));
+        let (after_first, after_second) = match &shell.form.as_ref().expect("form").config {
+            pieblock_core::model::ProjectConfig::Debug(config) => {
+                (config.tests[0].pin.clone(), config.tests[1].pin.clone())
+            }
+            other => panic!("unexpected config: {other:?}"),
+        };
+        assert_eq!(after_first, second);
+        assert_eq!(after_second, first);
+        shell.handle_key(key(KeyCode::Esc));
+        assert_eq!(shell.screen, Screen::Project);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
