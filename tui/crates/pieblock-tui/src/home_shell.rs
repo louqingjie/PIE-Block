@@ -1542,11 +1542,16 @@ impl Shell {
                 form.render(frame, chunks[0], page, &self.palette);
             }
         }
-        let status = format!(
+        let mut status = format!(
             "第 {}/{} 页 · PgUp/PgDn 翻页 · Esc 保存返回",
             index + 1,
             self.pages.len().max(1)
         );
+        if let (Some(form), Some(page)) = (self.form.as_ref(), self.pages.get(index)) {
+            if let Some(issue) = selected_field_issue(&form.config, page, form.selected) {
+                status.push_str(&format!(" · ⚠ {issue}"));
+            }
+        }
         draw_status(
             frame,
             chunks[1],
@@ -2986,5 +2991,45 @@ mod help_tests {
         shell.handle_key(key(KeyCode::F(1)));
         assert_eq!(shell.overlay, Overlay::None);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+fn selected_field_issue(
+    config: &pieblock_core::model::ProjectConfig,
+    page: &pieblock_ui::FormPage,
+    selected: usize,
+) -> Option<String> {
+    let path = page.fields.get(selected)?.path;
+    let issues = pieblock_core::validate(config);
+    issues
+        .iter()
+        .find(|issue| {
+            issue.field_path == path
+                || issue.field_path.starts_with(&format!("{path}."))
+                || path.starts_with(&format!("{}.", issue.field_path))
+        })
+        .map(|issue| issue.message.clone())
+}
+
+#[cfg(test)]
+mod live_issue_tests {
+    use super::*;
+
+    #[test]
+    fn selected_field_issue_reports_channel_error() {
+        let mut config =
+            pieblock_core::ProjectDocument::create(pieblock_core::ProjectKind::Infantry).config;
+        if let pieblock_core::model::ProjectConfig::Infantry(infantry) = &mut config {
+            infantry.remote.channel = Some(999);
+        }
+        let page = pieblock_ui::remote_page(pieblock_core::ProjectKind::Infantry);
+        let selected = page
+            .fields
+            .iter()
+            .position(|field| field.path == "remote.channel")
+            .expect("channel field");
+        let issue = selected_field_issue(&config, &page, selected).expect("issue");
+        assert!(!issue.is_empty());
+        assert!(issue.contains("通道"));
     }
 }
