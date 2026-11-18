@@ -31,6 +31,7 @@ pub enum Screen {
     Code,
     Build,
     Piano,
+    Playback,
     Browser(FileBrowser),
     Settings,
 }
@@ -77,6 +78,7 @@ pub struct Shell {
     pub build_listing: Option<pieblock_ui::CodeView>,
     pub build_ok: bool,
     pub piano: Option<pieblock_ui::PianoRoll>,
+    pub playback: Option<pieblock_ui::Playback>,
     quit: bool,
 }
 
@@ -125,6 +127,7 @@ impl Shell {
             build_listing: None,
             build_ok: false,
             piano: None,
+            playback: None,
             quit: false,
         }
     }
@@ -144,6 +147,9 @@ impl Shell {
                 }
             }
             self.workspace.tick(Instant::now());
+            if let Some(playback) = self.playback.as_mut() {
+                playback.tick(Instant::now());
+            }
             if self.quit {
                 return Ok(());
             }
@@ -167,6 +173,7 @@ impl Shell {
             Screen::Code => self.handle_code_key(key),
             Screen::Build => self.handle_build_key(key),
             Screen::Piano => self.handle_piano_key(key),
+            Screen::Playback => self.handle_playback_key(key),
             Screen::Browser(mut browser) => {
                 self.handle_browser_key(key, &mut browser);
                 if matches!(self.screen, Screen::Browser(_)) {
@@ -241,6 +248,7 @@ impl Shell {
             KeyCode::Char('c') => self.enter_code(),
             KeyCode::Char('b') => self.enter_build(),
             KeyCode::Char('m') => self.enter_piano(),
+            KeyCode::Char('p') => self.enter_playback(),
             KeyCode::Char('s') => self.settings_screen(),
             KeyCode::F(5) => self.save(),
             _ => {}
@@ -503,6 +511,43 @@ impl Shell {
         let area = frame.area();
         if let Some(code) = self.code.as_mut() {
             code.render(frame, area, true, &self.palette, self.message.as_deref());
+        }
+    }
+
+    fn enter_playback(&mut self) {
+        let Some(session) = self.workspace.session.as_ref() else {
+            return;
+        };
+        match &session.document.config {
+            pieblock_core::model::ProjectConfig::Music(music) => {
+                self.playback = Some(pieblock_ui::Playback::new(music));
+                self.message = None;
+                self.screen = Screen::Playback;
+            }
+            _ => {
+                self.message = Some("播放预览仅用于音乐工程".to_owned());
+            }
+        }
+    }
+
+    fn handle_playback_key(&mut self, key: KeyEvent) {
+        let Some(action) = self
+            .playback
+            .as_mut()
+            .map(|playback| playback.handle_key(key))
+        else {
+            self.screen = Screen::Project;
+            return;
+        };
+        if action == pieblock_ui::PlaybackAction::Close {
+            self.screen = Screen::Project;
+        }
+    }
+
+    fn draw_playback(&mut self, frame: &mut Frame) {
+        let area = frame.area();
+        if let Some(playback) = self.playback.as_mut() {
+            playback.render(frame, area, &self.palette);
         }
     }
 
@@ -1155,6 +1200,7 @@ impl Shell {
             Screen::Code => self.draw_code(frame),
             Screen::Build => self.draw_build(frame),
             Screen::Piano => self.draw_piano(frame),
+            Screen::Playback => self.draw_playback(frame),
             Screen::Browser(browser) => {
                 draw_browser(frame, frame.area(), &browser, &self.palette);
                 self.draw_status(frame);
@@ -2019,6 +2065,49 @@ mod piano_tests {
         }
         let text = std::fs::read_to_string(&session.path).expect("saved");
         assert!(text.contains("\"notes\""));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod playback_tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn playback_opens_and_closes() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target")
+            .join(format!("shell-playback-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("dir");
+        let mut shell = Shell::with_data_dir(dir.join("data"), dir.clone());
+        shell.handle_key(key(KeyCode::Char('n')));
+        for _ in 0..3 {
+            shell.handle_key(key(KeyCode::Down));
+        }
+        shell.handle_key(key(KeyCode::Enter));
+        shell.handle_key(key(KeyCode::Enter));
+        shell.handle_key(key(KeyCode::Char('m')));
+        shell.handle_key(key(KeyCode::Char('a')));
+        shell.handle_key(key(KeyCode::Esc));
+        assert_eq!(shell.screen, Screen::Project);
+        shell.handle_key(key(KeyCode::Char('p')));
+        assert_eq!(shell.screen, Screen::Playback);
+        assert!(
+            shell
+                .playback
+                .as_ref()
+                .is_some_and(|p| p.duration_tick >= 1)
+        );
+        shell.handle_key(key(KeyCode::Char(' ')));
+        assert!(shell.playback.as_ref().is_some_and(|p| p.playing));
+        shell.handle_key(key(KeyCode::Esc));
+        assert_eq!(shell.screen, Screen::Project);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

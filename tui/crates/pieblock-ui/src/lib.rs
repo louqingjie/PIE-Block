@@ -4,6 +4,7 @@ pub mod code_view;
 pub mod form;
 pub mod pages;
 pub mod piano_roll;
+pub mod playback;
 pub mod screens;
 pub mod theme;
 
@@ -15,6 +16,7 @@ pub use pages::{
     remote_page, wizard_pages,
 };
 pub use piano_roll::{PianoAction, PianoRoll};
+pub use playback::{Playback, PlaybackAction};
 pub use screens::{
     BrowserAction, BrowserEntry, FileBrowser, HomeView, RecentItem, SettingRow, draw_browser,
     draw_dialog, draw_home, draw_settings, draw_status,
