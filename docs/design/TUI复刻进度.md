@@ -14,7 +14,7 @@
 | M0 技术验证 | 🟡 收尾 | Rust 工具链、workspace、M0 演示壳、表单/卷帘原型、单元测试、CI 已就绪；待：真实终端键鼠/IME 验证、hidapi 真机、SDCC+HEX 对拍、卷帘体验评审 |
 | M1 领域内核 + CLI | ✅ 完成 | 模型/迁移/校验/表达式/四类 C 生成/音乐时间轴/MIDI/五线谱固件表/CLI validate·codegen·propose 全部移植，golden 逐字节对拍（模型 13、校验 24、表达式 60+、codegen 17、CLI validate/codegen 42、CLI propose 7、MIDI 3+往返）；五线谱布局渲染留待 M6 |
 | M2 工具链 + HID | 🟡 进行中 | 已完成：Intel HEX 解析、主控板应用区校验、SDCC HEX/MAP 布局校验（13+13+6 golden）、HID 帧/报告/块映射、烧录状态机（9 场景对拍）、运行时部署（staging/校验/rename/退避/清理）、目标文件缓存、SDCC 构建计划与中断声明头、**原生 hidapi 传输（Windows/Linux，含取消标志）**、**FirmwareBuilder SDCC 全流程（指纹→部署→逐源编译/对象缓存→共享库→链接→HEX/MAP 校验→列表文件→产物入库）与产物仓库**、**烧录 worker（HEX 哈希校验/90s 硬超时/取消/事件通道）与 Linux udev 规则检测/安装**；待：Keil 构建、真机烧录 |
-| M3 TUI 基座 | 🟡 部分前置 | 已有应用循环、主题、三栏布局、焦点、状态栏；待完善文件浏览器、设置、最近项目、自动保存与 PTY 测试框架 |
+| M3 TUI 基座 | 🟡 进行中 | 已有应用循环、主题、三栏布局、焦点、状态栏；新增：设置持久化（主题/最近项目/编译器/Keil 路径/引导开关）、`settings.json` 原子写、最近项目旧格式迁移与失效清理、`.pieproj` 打开/新建/保存（旧格式自动升版，原子写）、500ms 防抖自动保存、工作区会话状态；待：文件浏览器/首页/设置页 UI 接线、PTY 快照（80×24/120×36） |
 | M4 向导表单 | ⬜ 未开始 | 四类工程全部页面与问题跳转 |
 | M5 检查/代码/汇编/表达式 | ⬜ 未开始 | |
 | M6 音乐编辑器 + 音频 | ⬜ 未开始 | 卷帘原型已在 M0 演示壳中 |
@@ -78,6 +78,13 @@
 - `pieblock-hid::worker`：烧录任务线程——HEX 存在 + LF 规范化 SHA-256 比对 → 应用区布局校验 → 传输层工厂（接收取消标志）→ 烧录状态机；90 秒硬超时/主动取消置位标志并改写结果为「烧录超过 90 秒，已自动取消 / 已取消烧录」；事件 mpsc + 结果通道，`cancel()`/`try_recv_event()`/`wait()`。测试覆盖成功、超时、HEX 哈希不匹配。
 - `pieblock-hid::udev`：内嵌 `70-pieblock-hid.rules` 与安装脚本；`is_installed`（非 Linux 恒 true）、`pkexec /bin/sh -c` 安装（规则 base64 经 `$1` 传入，不落临时文件），退出码映射 0 成功 / 10 无 udevadm / 126 取消授权 / 127 未授权，pkexec 缺失与 2 分钟超时分类；`UdevCommandRunner` 可注入测试。base64 与退出码映射测试通过。
 - 待硬件：真机烧录与 SDCC 构建 HEX 对拍（需要主控板与 SDCC 环境）。
+
+## M3 已完成（进行中）
+
+- `pieblock-tui::settings`：应用设置（主题 system/light/dark、最近项目、编译器、Keil 路径、两个引导开关）与 Flutter `settings.json` 字段对齐；读取容错、最近项目新/旧格式（`{path,kind}` / 纯路径）解析、最多 8 条、`load_cleaned` 清理已不存在的项目并补读类型；同目录临时文件 + rename 原子写；设置写失败不打断应用。
+- `pieblock-tui::session`：`ProjectSession` 新建（可选模板只替换配置）/打开/保存；打开时旧格式（17–22）自动迁移并写回当前格式（写回失败仍可打开并给提示）；`save_now` 使用原子写；`update_config` 更新时间戳并置「保存中」；文件名显示名、类型补读。
+- `pieblock-tui::workspace`：工作区把设置、最近项目、当前工程串起来；`create/open` 自动记录最近项目并持久化设置；`update_config` + `Autosave`（500ms 防抖）`tick()` 到点自动保存；主题循环、保存状态/标题/错误文案；测试覆盖新建/编辑/自动保存/主题持久化/打开失败。
+- `pieblock-ui` 已有主题/布局/焦点基础；下一步接入首页/文件浏览器/设置页与 PTY 快照测试。
 
 
 
