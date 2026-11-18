@@ -8,3 +8,7 @@ environment:
 dependencies:
   pieblock_core:
     path: ../../../packages/pieblock_core
+  pieblock_toolchain:
+    path: ../../../packages/pieblock_toolchain
+  pieblock_hid:
+    path: ../../../packages/pieblock_hid

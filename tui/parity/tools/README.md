@@ -81,6 +81,24 @@ dart run bin/export_midi_goldens.dart
 （轨道/音符/速度/拍号/选中轨道配置）、running status 手工样本与 5 类错误文案。
 Rust 侧要求写出字节逐字节一致、解析结构与错误文案完全一致。
 
+## 生成 HEX/MAP 与 HID golden
+
+```powershell
+cd tui/parity/tools
+dart run bin/export_m2_goldens.dart
+```
+
+输出 `tui/parity/golden/m2/m2.json`：
+
+- `hexParse` / `hexValidate`：13 种 HEX 文本（合法、扩展地址、空文件、缺区、坏
+  校验和、非法字符、错误记录类型等）的解析镜像与应用区校验文案；
+- `mapValidate`：SDCC HEX/MAP 布局（HOME/CSEG/XSEG/DSEG、缺符号、缺 MAP）；
+- `packets` / `reports` / `blocks`：HID 帧、报告拆分、HEX→块映射固定向量；
+- `flasher`：脚本化假设备下 9 个烧录场景的事件序列、结果、写出报告与关闭状态。
+
+Rust 侧分别由 `pieblock-toolchain/tests/hex_golden.rs` 与
+`pieblock-hid/tests/hid_golden.rs` 消费。
+
 ## 生成提案与 CLI propose golden
 
 ```powershell
