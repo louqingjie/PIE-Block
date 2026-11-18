@@ -169,3 +169,6 @@ cd tui
 
 - 发布决策记录（2026-11，用户确认）：① 先完成人工验收再发布（不现在打 Tag）；② 当前无 STC32G 硬件，真实烧录验收记为阻塞项；③ 终端人工走查由项目所有者按 `docs/design/TUI人工验收指南.md` 执行。
 - 人工验收支持：新增 `--diagnostics`（平台/数据目录/运行时资源/SDCC 与 stc32g_sdcc/模板目录/HID 设备数/Linux udev/Keil 环境）不启动 TUI 即可输出；新增人工验收指南（Windows Terminal/conhost、Linux 终端、硬件烧录、Keil 与决策记录）；README 补充诊断命令。
+
+- 发布包自包含性验证（2026-11）：在无关工作目录运行解压后的 `pieblock-tui.exe --diagnostics`，运行时资源与模板均定位到发布包内 `data/pieblock_runtime` 与 `assets/templates`（SDCC/stc32g_sdcc 均为 true），HID 设备数 0；重新构建 release 并打包，Windows 包 SHA-256 `83c8391eb1543dd44e6a6f8e85087e86505c0fe06bae2816f6a9042558c1b08f`（22.7MB，解压 98.3MB）。
+- 清理：移除未使用的步兵「高级设置」占位函数（归中/蜂鸣器开关已在控制页实现），减少误导性待办。

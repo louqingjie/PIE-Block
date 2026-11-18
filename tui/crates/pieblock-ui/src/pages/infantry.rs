@@ -645,9 +645,3 @@ pub fn infantry_controls_page() -> FormPage {
         fields,
     }
 }
-
-/// 保留给后续高级设置页（零点校准/蜂鸣器）。
-#[must_use]
-pub fn infantry_advanced_fields() -> Vec<FormField> {
-    Vec::new()
-}
