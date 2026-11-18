@@ -11,10 +11,12 @@ mod json;
 pub mod document;
 mod ids;
 pub mod model;
+pub mod validation;
 
 use serde::{Deserialize, Serialize};
 
 pub use document::{DocumentError, GuideProgress, ProjectDocument};
+pub use validation::{IssueSeverity, ValidationIssue, ValidationIssueKind, validate};
 
 /// 当前 `.pieproj` 格式版本（与 Flutter 版 `ProjectDocument.formatVersion` 对齐）。
 pub const FORMAT_VERSION: u32 = 23;
