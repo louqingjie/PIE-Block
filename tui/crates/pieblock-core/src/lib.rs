@@ -1,12 +1,20 @@
-//! PIE-Block 领域核心（TUI 移植的起点）。
+//! PIE-Block 领域核心（TUI 移植）。
 //!
-//! M0 只包含格式常量、工程类型与向导步骤；M1 按计划移植模型/JSON/校验/代码生成等。
-//! 本 crate 不依赖终端与 I/O，保持可被 TUI、CLI 与未来 MCP 复用。
+//! 与 Flutter 版 `packages/pieblock_core` 保持行为一致：模型/JSON/迁移在这里，
+//! 不依赖终端与 I/O。校验器与代码生成在 M1 后续提交补齐。
+//!
+//! M0 已包含：格式常量、工程类型与向导步骤；M1 增加 `.pieproj` 模型与迁移。
 
-pub mod ids;
-pub mod json;
+#[macro_use]
+mod json;
+
+pub mod document;
+mod ids;
+pub mod model;
 
 use serde::{Deserialize, Serialize};
+
+pub use document::{DocumentError, GuideProgress, ProjectDocument};
 
 /// 当前 `.pieproj` 格式版本（与 Flutter 版 `ProjectDocument.formatVersion` 对齐）。
 pub const FORMAT_VERSION: u32 = 23;
@@ -43,6 +51,41 @@ impl ProjectKind {
             Self::Debug => "调试项目",
             Self::Music => "音乐项目",
         }
+    }
+
+    /// 存档中使用的稳定英文名。
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Infantry => "infantry",
+            Self::Engineer => "engineer",
+            Self::Debug => "debug",
+            Self::Music => "music",
+        }
+    }
+
+    /// Dart `enumValue(ProjectKind.values, raw, infantry)` 语义。
+    #[must_use]
+    pub fn from_str_lenient(text: &str) -> Option<Self> {
+        match text {
+            "infantry" => Some(Self::Infantry),
+            "engineer" => Some(Self::Engineer),
+            "debug" => Some(Self::Debug),
+            "music" => Some(Self::Music),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn from_value(value: Option<&serde_json::Value>) -> Option<Self> {
+        value
+            .and_then(serde_json::Value::as_str)
+            .and_then(Self::from_str_lenient)
+    }
+
+    #[must_use]
+    pub fn from_value_or(value: Option<&serde_json::Value>, fallback: Self) -> Self {
+        Self::from_value(value).unwrap_or(fallback)
     }
 
     /// 该类型工程的向导步骤（顺序即界面顺序）。
@@ -157,16 +200,15 @@ const MUSIC_STEPS: &[Step] = &[
 mod tests {
     use super::*;
 
+    const PROJECT_KIND_STEP_COUNTS: [usize; 4] = [6, 7, 4, 4];
+
     #[test]
     fn step_counts_match_flutter_controller() {
-        assert_eq!(PROJECT_KIND_STEP_COUNTS, [6, 7, 4, 4]);
         for kind in ProjectKind::ALL {
             let expected = PROJECT_KIND_STEP_COUNTS[kind as usize];
             assert_eq!(kind.steps().len(), expected, "kind={kind:?}");
         }
     }
-
-    const PROJECT_KIND_STEP_COUNTS: [usize; 4] = [6, 7, 4, 4];
 
     #[test]
     fn step_ids_are_stable_and_unique() {
@@ -192,6 +234,7 @@ mod tests {
             assert_eq!(serde_json::to_string(&kind).unwrap(), json);
             let back: ProjectKind = serde_json::from_str(json).unwrap();
             assert_eq!(back, kind);
+            assert_eq!(kind.as_str(), json.trim_matches('"'));
         }
     }
 

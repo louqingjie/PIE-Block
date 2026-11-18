@@ -59,32 +59,6 @@ pub fn to_dart_string(value: &Value) -> String {
 }
 
 #[must_use]
-pub fn opt_int_to_json(value: Option<i64>) -> Value {
-    value.map_or(Value::Null, Value::from)
-}
-
-#[must_use]
-pub fn opt_string_to_json(value: Option<&str>) -> Value {
-    value.map_or(Value::Null, |text| Value::String(text.to_owned()))
-}
-
-#[must_use]
-pub fn string_list(map: &JsonMap, key: &str) -> Vec<String> {
-    match field(map, key) {
-        Some(Value::Array(items)) => items.iter().map(to_dart_string).collect(),
-        _ => Vec::new(),
-    }
-}
-
-#[must_use]
-pub fn map_list<'a>(map: &'a JsonMap, key: &str) -> Vec<&'a JsonMap> {
-    match field(map, key) {
-        Some(Value::Array(items)) => items.iter().filter_map(Value::as_object).collect(),
-        _ => Vec::new(),
-    }
-}
-
-#[must_use]
 pub fn child_map<'a>(map: &'a JsonMap, key: &str) -> Option<&'a JsonMap> {
     as_map(field(map, key))
 }
