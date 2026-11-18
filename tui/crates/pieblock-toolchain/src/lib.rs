@@ -5,6 +5,8 @@
 //! SDCC 构建计划（清单解析/中断声明头/编译链接参数）。
 //! 后续提交补齐 FirmwareBuilder（调用 SDCC/Keil）、产物仓库与 LST/HEX 校验整合。
 
+pub mod artifact_repository;
+pub mod builder;
 pub mod file_ops;
 pub mod hex;
 pub mod models;
@@ -12,6 +14,11 @@ pub mod sdcc_build_plan;
 pub mod sdcc_object_cache;
 pub mod sdcc_runtime_deployer;
 
+pub use artifact_repository::BuildArtifactRepository;
+pub use builder::{
+    FirmwareBuilder, ProcessOutput, ProcessRunner, SystemProcessRunner, firmware_content_hash,
+    firmware_project_for,
+};
 pub use file_ops::{copy_directory, retry_file_system};
 pub use hex::{HexImage, HexValidationResult, IntelHexValidator};
 pub use models::{
