@@ -70,3 +70,14 @@ dart run bin/export_cli_goldens.dart
 stderr 逐字节）。Rust 侧集成测试用同一份工程快照调用 `pieblock-cli` 对拍；
 音乐工程与未移植的生成路径暂时跳过。
 
+## 生成 MIDI golden
+
+```powershell
+cd tui/parity/tools
+dart run bin/export_midi_goldens.dart
+```
+
+输出 `tui/parity/golden/midi/midi.json`：3 份音乐配置的写出字节、往返解析结构
+（轨道/音符/速度/拍号/选中轨道配置）、running status 手工样本与 5 类错误文案。
+Rust 侧要求写出字节逐字节一致、解析结构与错误文案完全一致。
+

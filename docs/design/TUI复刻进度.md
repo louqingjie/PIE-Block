@@ -12,7 +12,7 @@
 | 里程碑 | 状态 | 说明 |
 | --- | --- | --- |
 | M0 技术验证 | 🟡 收尾 | Rust 工具链、workspace、M0 演示壳、表单/卷帘原型、单元测试、CI 已就绪；待：真实终端键鼠/IME 验证、hidapi 真机、SDCC+HEX 对拍、卷帘体验评审 |
-| M1 领域内核 + CLI | 🟡 进行中 | 已完成：Dart oracle golden 工具、13 份模型 golden、`.pieproj` 模型与 17→23 迁移（逐字节）、调试/步兵/工程/音乐校验规则完整对拍、表达式解析/求值/C 发射/试算、调试/步兵/工程 C 代码生成逐字节对拍、音乐时间轴（重叠裁决/片段/重叠计数）、CLI validate/codegen 与 Dart CLI 逐字节对拍；待：音乐 C 代码生成与五线谱模块、MIDI 导入导出、CLI propose |
+| M1 领域内核 + CLI | 🟡 进行中 | 已完成：Dart oracle golden 工具、13 份模型 golden、`.pieproj` 模型与 17→23 迁移（逐字节）、调试/步兵/工程/音乐校验规则完整对拍、表达式解析/求值/C 发射/试算、调试/步兵/工程 C 代码生成逐字节对拍、音乐时间轴、**MIDI 导入导出（写出字节/解析结构/错误文案）**、CLI validate/codegen 与 Dart CLI 逐字节对拍；待：音乐 C 代码生成与五线谱模块、CLI propose |
 | M2 工具链 + HID | ⬜ 未开始 | SDCC/Keil 构建、指纹/缓存、HEX/MAP、LST、hidapi 传输与烧录状态机、udev |
 | M3 TUI 基座 | 🟡 部分前置 | 已有应用循环、主题、三栏布局、焦点、状态栏；待完善文件浏览器、设置、最近项目、自动保存与 PTY 测试框架 |
 | M4 向导表单 | ⬜ 未开始 | 四类工程全部页面与问题跳转 |
@@ -61,6 +61,7 @@
 - `pieblock-core::codegen` + `debug_cues`：调试/步兵/**工程** C 代码生成逐字节对拍（含头部/安全网/底盘/云台/拨弹/摩擦轮/无感蜂鸣反馈；工程含 PWM 初始化、模式状态机、动作行矩阵、按键动作表、表达式行与 `/*@expr:*\` 行号映射）；生成前校验门禁与 Dart 文案一致；15 份 codegen golden 中调试 3 份、步兵 4 份、工程 8 份逐字节一致，音乐待移植。调试提示音曲谱常量与步序映射已移植（供固件与后续试听共用）。
 - `pieblock-cli`：`validate`/`codegen` 已接领域内核，stdout/stderr/退出码与 Dart CLI 逐字节对拍（21 份工程 × validate/codegen；当前对拍 38 个用例，音乐跳过）；版本不兼容、校验失败、`--out` 写文件等路径一致。21 份 CLI 用工程快照落在 `tui/parity/cli/projects/`。
 - `pieblock-core::music` + 音乐校验：重叠裁决（同 tick 选音、打断/策略比较、已打断不恢复）、发声区间、重叠处数、tick→微秒（含变速）、蜂鸣器片段合并；音乐校验覆盖调号/PPQ/音符 ID 与音高/时值/速度事件/拍号/重叠提醒/片段数/总时长。校验 golden 扩到 **24 份**（音乐 5 份完整列表逐条一致；仅五线谱固件预算提醒待 staff 模块移植）。
+- `pieblock-core::midi`：MIDI Format 0/1 解析（running status、变速/拍号/调号 meta、鼓通道过滤、VLQ、容错文案）、写回（Format 0 单轨、调号/速度/拍号/音符事件排序、轨道名 UTF-8）、`select_track` 生成音乐配置；golden 覆盖 3 份写出字节逐字节 + 往返解析结构 + running status 手工样本 + 5 类错误文案，全部一致。
 - `pieblock-core::ids`：补上 Dart `toIso8601String` 的规则——微秒为 0 时 3 位小数，否则 6 位。
 
 ## M0 演示壳命令
