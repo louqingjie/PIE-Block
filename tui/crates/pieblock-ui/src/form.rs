@@ -76,7 +76,7 @@ pub struct FormField {
     pub id: &'static str,
     /// 校验错误里的字段路径（与 `ValidationIssue::field_path` 一致）。
     pub path: &'static str,
-    pub label: &'static str,
+    pub label: String,
     pub help: &'static str,
     pub kind: FieldKind,
     pub get: FieldGetter,
