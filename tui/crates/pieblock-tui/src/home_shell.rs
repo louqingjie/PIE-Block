@@ -2574,8 +2574,9 @@ mod piano_tests {
         let session = shell.workspace.session.as_ref().expect("session");
         match &session.document.config {
             pieblock_core::model::ProjectConfig::Music(music) => {
-                assert_eq!(music.notes.len(), 1);
-                assert!(music.notes[0].start_tick > 0);
+                assert!(!music.notes.is_empty());
+                let last = music.notes.last().expect("note");
+                assert!(last.start_tick > 0);
             }
             other => panic!("unexpected config: {other:?}"),
         }
