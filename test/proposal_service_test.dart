@@ -127,4 +127,47 @@ void main() {
     expect(inspection.status, ProposalStatus.invalid);
     expect(inspection.error, contains('错误'));
   });
+
+  test('工程本身有错误：保留既有错误的提案可以 pending，并提示剩余错误数', () {
+    // 基线是错误状态（通道 999），候选保留这个错误、只改普通速度。
+    final invalidBase = _withChannel(projectJsonWithSpeed(4000), 999);
+    final invalidText = jsonEncode(invalidBase);
+    File(projectPath).writeAsStringSync(invalidText);
+    final invalidDocument = ProjectDocument.fromJson(
+      Map<String, Object?>.from(jsonDecode(invalidText) as Map),
+    );
+    final proposal = ProjectProposal.create(
+      base: invalidDocument,
+      candidateJson: _withSpeed(invalidBase, 4321),
+      baseSha256: sha256Hex(utf8.encode(invalidText)),
+    );
+    writeProposalText(encodeProposal(proposal));
+
+    final inspection = inspectProposalFile(projectPath, invalidDocument);
+    expect(inspection.status, ProposalStatus.pending);
+    expect(inspection.remainingErrors, 1);
+    expect(inspection.stale, isFalse);
+    expect(inspection.dirty, isFalse);
+    expect(inspection.proposal!.changedPaths, contains('chassis.normal_speed'));
+  });
+}
+
+Map<String, Object?> _withChannel(Map<String, Object?> json, int channel) {
+  final copy = jsonDecode(jsonEncode(json)) as Map<String, Object?>;
+  final config = Map<String, Object?>.from(copy['config']! as Map);
+  final remote = Map<String, Object?>.from(config['remote']! as Map);
+  remote['channel'] = channel;
+  config['remote'] = remote;
+  copy['config'] = config;
+  return copy;
+}
+
+Map<String, Object?> _withSpeed(Map<String, Object?> json, int speed) {
+  final copy = jsonDecode(jsonEncode(json)) as Map<String, Object?>;
+  final config = Map<String, Object?>.from(copy['config']! as Map);
+  final chassis = Map<String, Object?>.from(config['chassis']! as Map);
+  chassis['normal_speed'] = speed;
+  config['chassis'] = chassis;
+  copy['config'] = config;
+  return copy;
 }

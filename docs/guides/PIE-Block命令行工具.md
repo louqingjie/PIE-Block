@@ -102,8 +102,10 @@ pieblock-cli propose .\robot.pieproj --config .\robot.candidate.pieproj
 
 - **不会修改 `robot.pieproj`**；用户在 PIE-Block 里打开该工程时会看到顶部横幅，
   可查看逐字段差异、应用或丢弃。应用后工程才写入，且支持一步撤销；
-- 候选必须是完整的 `.pieproj`：工程类型必须一致，配置必须能通过校验，且每个写出的
-  字段值必须能被项目模型原样读回（拼错的枚举、未知字段会被拒绝，不会静默变成默认值）；
+- 候选必须是完整的 `.pieproj`：工程类型必须一致，且每个写出的字段值必须能被项目模型
+  原样读回（拼错的枚举、未知字段会被拒绝，不会静默变成默认值）；
+- 候选**不得引入新的 error 级校验问题**；工程本身还没配置完时，已有错误允许保留——
+  AI 不需要先把无关字段填完。应用里会提示「工程仍有 N 个错误」；
 - 已有待确认提案时默认拒绝，退出码 6；确认覆盖时加 `--force`；
 - 提案带 `baseSha256`：应用侧发现工程在提案生成后又被保存过，会提示「基于旧版本」；
 - 应用/丢弃后，应用会写 `robot.pieproj.proposed.result`（`{"status":"applied"|"discarded"}`），
@@ -154,7 +156,8 @@ pieblock-cli propose robot.pieproj --config robot.candidate.pieproj
 2. 工程文件路径以用户给出的为准；没有给出时只在当前目录找唯一的 `*.pieproj`，有多个就询问；
 3. 先 `validate` 再 `codegen`；`codegen` 失败时把 stderr 的错误清单转述给用户；
 4. **改配置一律走 `propose`**：复制工程 → 在副本上改 → `propose --config`；不要直接改
-   `.pieproj`，也不要指望 CLI 会写工程——写入由用户在应用里确认；
+   `.pieproj`，也不要指望 CLI 会写工程——写入由用户在应用里确认。工程还没配置完也能
+   propose，只要不新增校验错误；
 5. `propose` 返回 6 时说明用户还没处理上一份提案：不要自动加 `--force`，先问用户；
 6. 不要尝试让 CLI 编译或烧录，它不提供这两个动作。
 

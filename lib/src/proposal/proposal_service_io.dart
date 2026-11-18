@@ -40,20 +40,26 @@ ProposalInspection inspectProposalFile(
     if (proposal.document.kind != current.kind) {
       return ProposalInspection.invalid('提案的工程类型与当前工程不一致', path: path);
     }
-    final errors = ProjectValidator.validate(proposal.document.config)
-        .where((issue) => issue.severity == IssueSeverity.error)
-        .toList();
-    if (errors.isNotEmpty) {
+    // 工程可能本来就没配置完：只拒绝候选**新增**的校验错误。
+    final newErrors = newValidationErrors(
+      base: current.config,
+      candidate: proposal.document.config,
+    );
+    if (newErrors.isNotEmpty) {
       return ProposalInspection.invalid(
-        '提案配置存在 ${errors.length} 个错误：${errors.first.message}',
+        '提案引入了 ${newErrors.length} 个新的校验错误：${newErrors.first.message}',
         path: path,
       );
     }
+    final remainingErrors = ProjectValidator.validate(proposal.document.config)
+        .where((issue) => issue.severity == IssueSeverity.error)
+        .length;
     return ProposalInspection(
       status: ProposalStatus.pending,
       proposal: proposal,
       stale: _isStale(projectPath, proposal.baseSha256),
       dirty: _isDirty(projectPath, current),
+      remainingErrors: remainingErrors,
       proposalPath: path,
     );
   } on ProposalException catch (error) {

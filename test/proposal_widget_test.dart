@@ -36,6 +36,7 @@ void main() {
                 proposal: proposal,
                 stale: true,
                 dirty: true,
+                remainingErrors: 1,
                 proposalPath: r'C:\tmp\robot.pieproj.proposed',
               ),
             ),
@@ -48,13 +49,13 @@ void main() {
     expect(find.textContaining('AI 提交了改动提案'), findsOneWidget);
     expect(find.textContaining('基于旧版本'), findsOneWidget);
     expect(find.textContaining('未保存'), findsOneWidget);
+    expect(find.textContaining('工程仍有 1 个错误'), findsOneWidget);
     expect(find.text('查看'), findsOneWidget);
     expect(find.text('应用'), findsOneWidget);
     expect(find.text('丢弃'), findsOneWidget);
     // 主题把 bannerTheme 统一设成错误色；提案横幅必须显式覆盖，不能是红色。
-    final scheme = Theme.of(
-      tester.element(find.byType(ProposalBanner)),
-    ).colorScheme;
+    final scheme = Theme.of(tester.element(find.byType(ProposalBanner)))
+        .colorScheme;
     final banner = tester.widget<MaterialBanner>(find.byType(MaterialBanner));
     expect(banner.backgroundColor, scheme.surfaceContainerHigh);
   });
@@ -75,11 +76,12 @@ void main() {
 
     expect(find.textContaining('AI 提案无法读取'), findsOneWidget);
     expect(find.text('丢弃'), findsOneWidget);
-    final scheme = Theme.of(
-      tester.element(find.byType(ProposalBanner)),
-    ).colorScheme;
+    final scheme = Theme.of(tester.element(find.byType(ProposalBanner)))
+        .colorScheme;
     expect(
-      tester.widget<MaterialBanner>(find.byType(MaterialBanner)).backgroundColor,
+      tester
+          .widget<MaterialBanner>(find.byType(MaterialBanner))
+          .backgroundColor,
       scheme.errorContainer,
     );
   });
@@ -94,6 +96,7 @@ void main() {
             proposal: proposal,
             stale: true,
             dirty: true,
+            remainingErrors: 2,
           ),
         ),
       ),
@@ -103,6 +106,7 @@ void main() {
     expect(find.textContaining('chassis.normal_speed'), findsOneWidget);
     expect(find.textContaining('基于旧版本'), findsOneWidget);
     expect(find.textContaining('未保存'), findsOneWidget);
+    expect(find.textContaining('工程本身还有 2 个校验错误'), findsOneWidget);
     expect(find.text('应用'), findsOneWidget);
     expect(find.text('取消'), findsOneWidget);
   });

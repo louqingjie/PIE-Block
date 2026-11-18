@@ -151,6 +151,54 @@ void main() {
     );
   });
 
+  test('工程本身有错误时，提案只对新增错误负责', () {
+    // 基线：遥控器通道 999 不合法（模拟用户配置到一半的状态）。
+    final invalidBaseJson = _withNestedValue(baseJson, [
+      'remote',
+      'channel',
+    ], 999);
+    final invalidBase = ProjectDocument.fromJson(invalidBaseJson);
+    expect(
+      ProjectValidator.validate(invalidBase.config)
+          .where((issue) => issue.severity == IssueSeverity.error),
+      isNotEmpty,
+    );
+
+    // 只改一个无关字段、保留既有错误：允许。
+    final allowedJson = _withNestedValue(invalidBaseJson, [
+      'chassis',
+      'normal_speed',
+    ], 4200);
+    final proposal = ProjectProposal.create(
+      base: invalidBase,
+      candidateJson: allowedJson,
+      baseSha256: baseHash,
+    );
+    expect(proposal.changedPaths, contains('chassis.normal_speed'));
+
+    // 候选新引入一个错误：拒绝，并且只报新增的那个。
+    final badJson = _withNestedValue(invalidBaseJson, [
+      'chassis',
+      'normal_speed',
+    ], -1);
+    expect(
+      () => ProjectProposal.create(
+        base: invalidBase,
+        candidateJson: badJson,
+        baseSha256: baseHash,
+      ),
+      throwsA(
+        isA<ProposalException>()
+            .having((error) => error.code, 'code', 'invalid_config')
+            .having(
+              (error) => error.fields,
+              'fields',
+              contains('chassis.normal_speed'),
+            ),
+      ),
+    );
+  });
+
   test('提案文件 schema 不合法：拒绝', () {
     final proposal = ProjectProposal.create(
       base: base,

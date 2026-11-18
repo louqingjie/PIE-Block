@@ -13,12 +13,14 @@ class ProposalDiffDialog extends StatelessWidget {
     required this.proposal,
     this.stale = false,
     this.dirty = false,
+    this.remainingErrors = 0,
   });
 
   final ProjectConfig current;
   final ProjectProposal proposal;
   final bool stale;
   final bool dirty;
+  final int remainingErrors;
 
   static const _maxRows = 200;
 
@@ -49,6 +51,14 @@ class ProposalDiffDialog extends StatelessWidget {
                 icon: Icons.edit_note,
                 color: scheme.error,
                 text: '当前有未保存的改动，应用提案会覆盖它们。',
+              ),
+            if (remainingErrors > 0)
+              _Warning(
+                icon: Icons.info_outline,
+                color: scheme.tertiary,
+                text:
+                    '工程本身还有 $remainingErrors 个校验错误；本提案没有新增错误，'
+                    '应用后这些错误仍会保留。',
               ),
             Text(
               '共 ${changes.length} 处改动',

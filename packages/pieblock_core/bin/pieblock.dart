@@ -132,6 +132,7 @@ void _describe() {
         'stdout': 'JSON: {ok, proposal, changed, paths, baseSha256, createdAt}',
         'stderr': '提案摘要；失败时给出字段路径',
         'note': '只写 <工程>.proposed，不改工程；候选必须是完整 .pieproj，'
+            '且不得引入新的 error 级校验问题（工程原有的错误允许保留）；'
             '应用会在用户确认后写入。已有提案时需 --force 覆盖。',
       },
       {

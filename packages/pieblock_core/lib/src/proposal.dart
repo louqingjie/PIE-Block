@@ -45,7 +45,7 @@ final _sha256Pattern = RegExp(r'^[0-9a-f]{64}$');
 /// - `unsupported_schema` / `invalid_document`：文件结构问题；
 /// - `kind_mismatch`：候选工程类型与目标工程不一致；
 /// - `unroundtripped_value`：字段值无法被项目模型原样读回（拼错、类型不对等）；
-/// - `invalid_config`：校验器报 error；
+/// - `invalid_config`：候选**新增**了 error 级校验问题；
 /// - `empty_changes`：候选与目标没有差异。
 class ProposalException implements Exception {
   const ProposalException(this.code, this.message, {this.fields = const []});
@@ -182,14 +182,17 @@ class ProjectProposal {
       );
     }
 
-    final errors = ProjectValidator.validate(candidate.config)
-        .where((issue) => issue.severity == IssueSeverity.error)
-        .toList();
-    if (errors.isNotEmpty) {
+    final newErrors = newValidationErrors(
+      base: base.config,
+      candidate: candidate.config,
+    );
+    if (newErrors.isNotEmpty) {
+      final baseErrorCount = _errorIssues(base.config).length;
       throw ProposalException(
         'invalid_config',
-        '候选配置存在 ${errors.length} 个错误',
-        fields: [for (final issue in errors) issue.fieldPath],
+        '候选引入了 ${newErrors.length} 个新的校验错误'
+            '（工程原有 $baseErrorCount 个错误不算在内）',
+        fields: [for (final issue in newErrors) issue.fieldPath],
       );
     }
 
@@ -230,6 +233,31 @@ List<ProposalChange> diffConfigs(
   _collectChanges(before, after, '', changes);
   return changes;
 }
+
+/// 候选相对基线**新增**的 error 级校验问题。
+///
+/// 工程可能本来就处于「没配置完」的状态（用户填到一半就保存），所以提案
+/// 不以「整体无错误」为前提，只禁止 AI 让工程变差。比较键是
+/// `字段路径 + 错误文案`：既有错误原样保留不算新增；同一字段换成另一种
+/// 错误仍算新增。
+List<ValidationIssue> newValidationErrors({
+  required ProjectConfig base,
+  required ProjectConfig candidate,
+}) {
+  final baseline = {for (final issue in _errorIssues(base)) _issueKey(issue)};
+  return [
+    for (final issue in _errorIssues(candidate))
+      if (!baseline.contains(_issueKey(issue))) issue,
+  ];
+}
+
+List<ValidationIssue> _errorIssues(ProjectConfig config) =>
+    ProjectValidator.validate(config)
+        .where((issue) => issue.severity == IssueSeverity.error)
+        .toList();
+
+String _issueKey(ValidationIssue issue) =>
+    '${issue.fieldPath}\u0000${issue.message}';
 
 /// 找出候选 JSON 里「写进去但模型读不回来」的字段。
 ///

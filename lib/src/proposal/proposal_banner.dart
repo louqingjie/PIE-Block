@@ -35,7 +35,11 @@ class ProposalBanner extends ConsumerWidget {
     }
 
     final proposal = state.proposal!;
-    final flags = [if (state.stale) '基于旧版本', if (state.dirty) '你有未保存的改动'];
+    final flags = [
+      if (state.stale) '基于旧版本',
+      if (state.dirty) '你有未保存的改动',
+      if (state.remainingErrors > 0) '工程仍有 ${state.remainingErrors} 个错误',
+    ];
     // 主题把 bannerTheme 统一设成了错误色（给校验失败提示用），提案不是错误，
     // 必须显式覆盖，否则横幅会渲染成红色。
     return MaterialBanner(
@@ -77,6 +81,7 @@ class ProposalBanner extends ConsumerWidget {
         proposal: proposal,
         stale: state.stale,
         dirty: state.dirty,
+        remainingErrors: state.remainingErrors,
       ),
     );
     if (apply == true && context.mounted) await _apply(context, ref);

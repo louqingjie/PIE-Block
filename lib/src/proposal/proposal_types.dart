@@ -20,6 +20,7 @@ class ProposalInspection {
     this.error,
     this.stale = false,
     this.dirty = false,
+    this.remainingErrors = 0,
     this.proposalPath,
   });
 
@@ -43,6 +44,9 @@ class ProposalInspection {
 
   /// 应用内存里有未保存的改动，应用提案会覆盖它们。
   final bool dirty;
+
+  /// 应用后工程仍会剩下的 error 级问题数（提案没有新增，只是工程本来没配完）。
+  final int remainingErrors;
 
   final String? proposalPath;
 

@@ -94,6 +94,42 @@ void main() {
     expect(File(proposalPathFor(project.path)).existsSync(), isFalse);
   });
 
+  test('工程本身有错误：保留既有错误的提案允许提交，新增错误仍拒绝', () {
+    // 基线是「没配置完」的工程：通道 999 不合法，但可以继续提出别的改动。
+    final invalidBase = _changedJson(['remote', 'channel'], 999);
+    project.writeAsStringSync(jsonEncode(invalidBase));
+
+    Map<String, Object?> withNormalSpeed(Object? speed) {
+      final copy = jsonDecode(jsonEncode(invalidBase)) as Map<String, Object?>;
+      final config = Map<String, Object?>.from(copy['config']! as Map);
+      final chassis = Map<String, Object?>.from(config['chassis']! as Map);
+      chassis['normal_speed'] = speed;
+      config['chassis'] = chassis;
+      copy['config'] = config;
+      return copy;
+    }
+
+    final edited = candidate(withNormalSpeed(4200));
+    final r = _run(['propose', project.path, '--config', edited.path]);
+    expect(r.exitCode, 0, reason: r.stderr as String);
+    final proposalJson = jsonDecode(
+      File(proposalPathFor(project.path)).readAsStringSync(),
+    ) as Map<String, Object?>;
+    expect(proposalJson['changedPaths'], contains('chassis.normal_speed'));
+
+    // 候选再引入一个错误（普通速度 -1）：仍要拒绝，且只报新增的字段。
+    final bad = candidate(withNormalSpeed(-1), name: 'bad-new-error.pieproj');
+    final rejected = _run([
+      'propose',
+      project.path,
+      '--config',
+      bad.path,
+      '--force',
+    ]);
+    expect(rejected.exitCode, 2, reason: rejected.stderr as String);
+    expect(rejected.stderr, contains('chassis.normal_speed'));
+  });
+
   test('未知字段无法往返：exit 2，stderr 给出字段路径', () {
     final json = _changedJson(['chassis', 'normal_speed'], 4200);
     final config = Map<String, Object?>.from(json['config']! as Map);
