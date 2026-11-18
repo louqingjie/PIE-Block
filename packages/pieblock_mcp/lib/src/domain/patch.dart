@@ -279,7 +279,7 @@ Object? _navigate(
   return cursor;
 }
 
-/// 一条改动，用于人工审批时展示。
+/// 一条改动，供调用方展示 diff。
 class McpDiffEntry {
   const McpDiffEntry({
     required this.path,
@@ -304,7 +304,7 @@ class McpDiffEntry {
   };
 }
 
-/// 待审批的补丁。
+/// 待应用的补丁。
 class McpPatchPlan {
   McpPatchPlan({
     required this.patchId,

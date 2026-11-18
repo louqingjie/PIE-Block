@@ -3,7 +3,7 @@
 // 用法：dart run tool/mcp_smoke.dart
 //
 // 覆盖：initialize → tools/list → handshake → get_context → propose → apply
-// → 校验 revision 与配置确实变了。审批在这里自动通过，真实宿主会弹卡片。
+// → 校验 revision 与配置确实变了。写入在这里直接放行，真实宿主也直接写入。
 
 import 'dart:convert';
 import 'dart:io';

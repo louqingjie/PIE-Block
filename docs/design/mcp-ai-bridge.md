@@ -1,4 +1,4 @@
-# AI 接入（MCP）：契约、审批与边界
+# AI 接入（MCP）：契约、授权与边界
 
 面向外部 AI Agent 的接入层，首版（P0）只做**桌面端本地服务 + 契约包**，不内嵌任何
 Agent 运行时，也不改写任何第三方客户端的配置文件。
@@ -15,8 +15,8 @@ DSH 等客户端作为调用方接进来。换客户端不需要改代码，改�
    不依赖 Flutter，`dart test` 独立验收。
 2. **写入口唯一**。AI 的改动最终落到 `AppController.updateConfig`，与界面手改共用
    校验、撤销与 500ms 防抖保存。
-3. **人在回路不依赖客户端**。写操作在 PIE-Block 窗口里弹卡片确认；客户端支不支持
-   工具审批都不影响这条路径。
+3. **授权集中在开关上**。不逐次弹确认卡片：打开「AI 接入」即表示信任该客户端，
+   不信任时关掉开关或重置令牌即可切断。
 
 ## 分层
 
@@ -72,7 +72,7 @@ token 首次启动随机生成），**退出不删**。因此重启 PIE-Block �
 | `pieblock_get_context` | 指定步骤的字段清单：路径、中文名、当前值、范围、枚举 | 无 |
 | `pieblock_validate` | 对当前或传入配置跑 `ProjectValidator` | 无 |
 | `pieblock_propose_patch` | ops → `patchId` + diff + 改动后的 issues | 无（只有缓存） |
-| `pieblock_apply_patch` | 提交 `patchId`，等窗口确认后写入 | **写项目** |
+| `pieblock_apply_patch` | 提交 `patchId`，revision 未变时直接写入 | **写项目** |
 | `pieblock_generate_code` | 分页返回 `main.c` 片段 | 无 |
 
 编译与烧录**不暴露**：这两个动作出错代价是硬件，不值得为省几次点击开放。
@@ -101,17 +101,19 @@ token 首次启动随机生成），**退出不删**。因此重启 PIE-Block �
 ### 并发
 
 所有工具带 revision。`propose` 校验 `baseRevision`，过期返回 `stale_revision`；
-`apply` 提交 `patchId`（不重发 ops），取出即作废，避免客户端重试写两次；确认期间
-项目被改动则返回 `conflict` → `stale_revision`。不自动合并、不自动重试。
+`apply` 提交 `patchId`（不重发 ops），取出即作废，避免客户端重试写两次；`propose`
+之后项目被改动则返回 `conflict` → `stale_revision`。不自动合并、不自动重试。
 
 `revision` 只存在于内存：`updateConfig` 与打开/新建项目各 +1，单调递增不重置。
 不写进 `.pieproj`，不改 `formatVersion`。
 
-## 审批与安全
+## 授权与安全
 
 - 默认关闭，需要用户在首页「AI 接入」里显式打开。
-- `apply` 在窗口里弹卡片：逐条 diff、改动后的错误数、120 秒倒计时；超时即拒绝。
-- 开关关闭、应用退出时立刻停服、删发现文件、拒绝所有挂起请求。
+- 开启后 `apply` 直接改配置并自动保存，**不逐次弹确认**。这是有意取舍：确认卡片
+  一直弹不出来会让自动化链路直接失效；授权交给开关，用户随时可关。
+- 不信任某个客户端时：关掉开关停服，或点面板里的「重置令牌」让旧配置失效。
+- 开关关闭、应用退出时立刻停服并删发现文件。
 - 审计只记「时间、工具、结果码、revision 变化」，不记 token 与文档正文。
 - 服务仅本机可达；局域网与公网都连不上。
 
@@ -124,10 +126,10 @@ dart test
 dart run tool/mcp_smoke.dart     # 起服务 → 握手 → 读上下文 → propose → apply
 ```
 
-冒烟脚本自带宿主、自动放行审批，覆盖完整链路与 stale revision 用例。
+冒烟脚本自带宿主、直接放行写入，覆盖完整链路与 stale revision 用例。
 
 真机验收用 CodeBuddy：首页打开「AI 接入」→ 复制客户端配置 → 粘进客户端的 MCP
-设置 → 重启客户端 → 让它读一次上下文并提一个改动 → 在 PIE-Block 窗口点确认。
+设置 → 重启客户端 → 让它读一次上下文并提一个改动 → 看 revision 是否 +1。
 
 ## 后续阶段（未实现）
 

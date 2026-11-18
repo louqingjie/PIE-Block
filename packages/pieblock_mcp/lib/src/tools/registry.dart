@@ -138,9 +138,9 @@ class McpToolRegistry {
       name: 'pieblock_apply_patch',
       title: '应用配置改动',
       description:
-          '提交先前 propose 得到的 patchId。补丁只能使用一次；'
-          'PIE-Block 窗口会弹出确认卡片，用户同意且项目 revision 未变时才真正写入。'
-          '返回 denied 表示用户拒绝，approval_timeout 表示确认超时，stale_revision 表示期间项目被改过。',
+          '提交先前 propose 得到的 patchId。补丁只能使用一次；项目 revision 未变时'
+          '直接写入并自动保存。返回 stale_revision 表示期间项目被改过，'
+          'denied 表示项目已关闭。外部 AI 的写入权限由 PIE-Block 的 AI 接入开关控制。',
       inputSchema: {
         'type': 'object',
         'properties': {
@@ -371,7 +371,7 @@ class McpToolRegistry {
     );
     return McpToolResult.ok(
       '补丁 ${plan.patchId} 准备就绪，共 ${plan.diff.length} 处改动；'
-      'apply 前需要用户在窗口内确认。',
+      'apply 会直接写入项目。',
       {
         'patchId': plan.patchId,
         'baseRevision': plan.baseRevision,
@@ -436,12 +436,12 @@ class McpToolRegistry {
       case McpApplyOutcome.timeout:
         throw PatchException(
           McpToolErrorCode.approvalTimeout,
-          result.message ?? '等待用户确认超时',
+          result.message ?? '宿主未在时限内完成应用',
         );
       case McpApplyOutcome.conflict:
         throw PatchException(
           McpToolErrorCode.staleRevision,
-          result.message ?? '确认期间项目被改动，改动未应用',
+          result.message ?? '项目在应用前被改动，改动未应用',
           details: {'currentRevision': host.revision},
         );
     }

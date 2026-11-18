@@ -51,7 +51,7 @@ class McpPanel extends ConsumerWidget {
                 title: const Text('允许外部 AI 读写当前项目'),
                 subtitle: Text(
                   mcpSupported
-                      ? '只监听本机 127.0.0.1。任何改动都会先弹确认卡片，你点了应用才会写进项目。'
+                      ? '只监听本机 127.0.0.1。开启后，连接的 AI 可直接读取和修改当前项目；不需要时关掉开关即可。'
                       : service.error ?? '当前平台不支持本地 MCP 服务',
                 ),
               ),
@@ -88,7 +88,7 @@ class McpPanel extends ConsumerWidget {
                 )
               else if (!enabled)
                 Text(
-                  '开启后，外部 AI 可以读取字段含义、提出配置改动，但每次写入都要你在这里确认。',
+                  '开启后，外部 AI 可以读取字段含义并直接修改配置。关掉开关或重置令牌即可断开。',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               const SizedBox(height: 20),

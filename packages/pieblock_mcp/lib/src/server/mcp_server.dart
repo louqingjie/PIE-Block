@@ -16,7 +16,7 @@ PIE-Block 是 RoboMaster 机器人的图形化配置工具。推荐流程：
 1. pieblock_handshake 看当前项目与 revision；
 2. pieblock_get_context 读要改的字段（只有这里列出的字段可写）；
 3. pieblock_propose_patch 提交改动草案，读 diff 与改动后的校验结果；
-4. 把改动讲给用户听，再 pieblock_apply_patch；用户在窗口里点确认后才会写入。
+4. 把改动讲给用户听，再 pieblock_apply_patch；revision 未变时直接写入并自动保存。
 revision 过期就重新读上下文，不要重试同一份补丁。''';
 
 /// MCP 会话。

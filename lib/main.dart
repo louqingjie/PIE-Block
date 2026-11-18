@@ -9,7 +9,6 @@ import 'src/design/app_theme.dart';
 import 'src/platform/host_bridge.dart';
 import 'src/deploy_controller.dart';
 import 'src/home_screen.dart';
-import 'src/mcp/mcp_approval_dialog.dart';
 import 'src/mcp/mcp_service.dart';
 import 'src/wizard_screen.dart';
 
@@ -77,9 +76,6 @@ class _PieBlockAppState extends ConsumerState<PieBlockApp> {
       // 也隐藏了主题切换按钮，不会出现两套观感。
       themeMode: kIsWeb ? ThemeMode.dark : state.themeMode,
       home: _AppPageTransition(showEditor: state.document != null),
-      // 审批卡片挂在导航器之上，任何页面都能立刻弹出来。
-      builder: (context, child) =>
-          McpApprovalHost(child: child ?? const SizedBox.shrink()),
     );
   }
 }

@@ -10,7 +10,6 @@ import 'package:pieblock_mcp/pieblock_mcp.dart';
 
 import '../controller.dart';
 import '../version.dart' as app_info;
-import 'approval_controller.dart';
 import 'mcp_models.dart';
 
 /// 本地 MCP 服务。
@@ -82,13 +81,6 @@ class McpService extends Notifier<McpServiceState> {
   Future<void> stop() async {
     await _shutdown();
     if (!ref.mounted) return;
-    try {
-      ref
-          .read(mcpApprovalControllerProvider.notifier)
-          .rejectAll('MCP 服务已关闭，改动未应用');
-    } catch (_) {
-      // 容器已经销毁时读不到，忽略即可。
-    }
     if (state.running) {
       state = McpServiceState(error: state.error, audit: state.audit);
     }
@@ -108,20 +100,25 @@ class McpService extends Notifier<McpServiceState> {
   }
 
   /// 换一个新令牌：只有怀疑令牌泄露时才用，客户端要重新配一次。
+  ///
+  /// 端口保持不变，否则会在别的客户端配置里留下一个无效端口。
   Future<void> rotateToken() async {
+    final current = await _loadIdentity();
     final file = await _identityFile();
     if (file.existsSync()) await file.delete();
+    await _loadIdentity(preferredPort: current.port);
     await restart();
   }
 
-  /// 改端口：默认端口被占用时用；同样要重新配一次客户端。
+  /// 改端口：默认端口被占用时用；令牌保持不变，客户端只改 URL 即可。
   Future<void> setPort(int port) async {
     if (port < 1024 || port > 65535) {
       throw ArgumentError.value(port, 'port', '端口必须在 1024–65535 之间');
     }
+    final current = await _loadIdentity();
     final file = await _identityFile();
     if (file.existsSync()) await file.delete();
-    await _loadIdentity(preferredPort: port);
+    await _loadIdentity(preferredPort: port, preferredToken: current.token);
     await restart();
   }
 
@@ -150,6 +147,7 @@ class McpService extends Notifier<McpServiceState> {
 
   Future<({int port, String token})> _loadIdentity({
     int? preferredPort,
+    String? preferredToken,
   }) async {
     final file = await _identityFile();
     try {
@@ -173,7 +171,7 @@ class McpService extends Notifier<McpServiceState> {
     }
     final identity = (
       port: preferredPort ?? defaultPort,
-      token: McpHttpServer.generateToken(),
+      token: preferredToken ?? McpHttpServer.generateToken(),
     );
     await file.parent.create(recursive: true);
     await file.writeAsString(
@@ -239,7 +237,27 @@ class _HostBinding implements McpHost {
   Future<McpApplyResult> apply(
     McpPatchPlan plan,
     McpApprovalRequest request,
-  ) => ref.read(mcpApprovalControllerProvider.notifier).enqueue(plan, request);
+  ) async {
+    // 不做逐次弹窗：开关本身就是授权。关掉 MCP 或重置令牌即可切断外部写入。
+    final state = ref.read(appControllerProvider);
+    if (state.document == null) {
+      return const McpApplyResult(
+        McpApplyOutcome.denied,
+        message: '项目已关闭，改动未应用',
+      );
+    }
+    if (plan.baseRevision != state.revision) {
+      return McpApplyResult(
+        McpApplyOutcome.conflict,
+        message: '项目已被改动（当前 revision ${state.revision}），改动未应用',
+      );
+    }
+    ref.read(appControllerProvider.notifier).updateConfig(plan.config);
+    return McpApplyResult(
+      McpApplyOutcome.applied,
+      revision: state.revision + 1,
+    );
+  }
 
   @override
   void record(McpAuditEntry entry) => onRecord(entry);

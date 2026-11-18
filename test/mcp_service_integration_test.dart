@@ -28,6 +28,22 @@ class _DocController extends AppController {
   AppState build() => AppState(document: document);
 }
 
+/// 固定端口可能被用户正在运行的 PIE-Block 占用，测试里先挑一个空闲端口。
+Future<int> _freePort() async {
+  final socket = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+  final port = socket.port;
+  await socket.close();
+  return port;
+}
+
+Future<void> _seedIdentity(Directory directory, int port, String token) async {
+  await File(
+    '${directory.path}${Platform.pathSeparator}mcp-identity.json',
+  ).writeAsString(
+    jsonEncode({'schema': 1, 'port': port, 'token': token}),
+  );
+}
+
 Future<McpServiceState> _wait(
   ProviderContainer container, {
   required bool running,
@@ -47,6 +63,8 @@ Future<McpServiceState> _wait(
 void main() {
   test('本地服务能完整响应工具调用（审计不得造成 provider 自依赖）', () async {
     final directory = await Directory.systemTemp.createTemp('pieblock_mcp_service');
+    final testPort = await _freePort();
+    await _seedIdentity(directory, testPort, 'test-token');
     final previousPathProvider = PathProviderPlatform.instance;
     PathProviderPlatform.instance = _FakePathProvider(directory);
     addTearDown(() {
@@ -105,6 +123,8 @@ void main() {
 
   test('端口与令牌跨重启保持，只有主动重置才变化', () async {
     final directory = await Directory.systemTemp.createTemp('pieblock_mcp_identity');
+    final testPort = await _freePort();
+    await _seedIdentity(directory, testPort, 'test-token');
     final previousPathProvider = PathProviderPlatform.instance;
     PathProviderPlatform.instance = _FakePathProvider(directory);
     addTearDown(() {
@@ -125,7 +145,7 @@ void main() {
 
     app.setMcpEnabled(true);
     final first = await _wait(container, running: true);
-    expect(first.endpoint, contains(':${McpService.defaultPort}/mcp'));
+    expect(first.endpoint, contains(':$testPort/mcp'));
 
     app.setMcpEnabled(false);
     await _wait(container, running: false);

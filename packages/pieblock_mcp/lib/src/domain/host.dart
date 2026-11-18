@@ -38,7 +38,7 @@ class McpSnapshot {
   final String? path;
 }
 
-/// 审批请求：交给宿主变成一张确认卡片。
+/// 应用请求：携带补丁摘要与基准 revision，宿主自行决定是否放行。
 class McpApprovalRequest {
   const McpApprovalRequest({
     required this.patchId,
@@ -123,7 +123,7 @@ abstract interface class McpHost {
   /// 对给定配置做校验（复用 `ProjectValidator`，不新增规则）。
   List<ValidationIssue> issuesOf(ProjectConfig config);
 
-  /// 等人工确认后落到 `AppController.updateConfig`。
+  /// 由宿主落到 `AppController.updateConfig`；是否弹确认由宿主决定。
   Future<McpApplyResult> apply(
     McpPatchPlan plan,
     McpApprovalRequest request,

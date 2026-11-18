@@ -1,31 +1,4 @@
-import 'dart:async';
-
 import 'package:pieblock_mcp/pieblock_mcp.dart';
-
-/// 一条等待用户确认的 AI 改动。
-///
-/// 这里刻意不放 `Timer` 之外的任何可变状态：取消、超时、同意都由
-/// `McpApprovalController` 通过 [completer] 决定结果，避免两处各记一份。
-class McpPendingApproval {
-  McpPendingApproval({
-    required this.plan,
-    required this.request,
-    required this.deadline,
-    required this.completer,
-  });
-
-  final McpPatchPlan plan;
-  final McpApprovalRequest request;
-  final DateTime deadline;
-  final Completer<McpApplyResult> completer;
-
-  String get patchId => request.patchId;
-
-  Duration get remaining {
-    final left = deadline.difference(DateTime.now());
-    return left.isNegative ? Duration.zero : left;
-  }
-}
 
 /// 本地 MCP 服务的运行状态。
 class McpServiceState {
