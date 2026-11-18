@@ -200,3 +200,40 @@ impl Navigate for FormState {
         }
     }
 }
+
+#[test]
+fn infantry_pages_edit_scalar_fields() {
+    use pieblock_ui::{infantry_controls_page, infantry_mechanism_page};
+
+    let mechanism = infantry_mechanism_page();
+    assert_eq!(mechanism.fields.len(), 4);
+    assert_eq!(mechanism.fields[0].id, "mechanism.feeder_pin");
+    let mut state = FormState::new(infantry_config());
+    state.selected = 2;
+    assert_eq!(
+        clear_editing(&mut state, &mechanism, "150"),
+        FormAction::Changed
+    );
+    match &state.config {
+        ProjectConfig::Infantry(value) => assert_eq!(value.yaw_sensitivity, 150),
+        other => panic!("unexpected config: {other:?}"),
+    }
+
+    let controls = infantry_controls_page();
+    assert_eq!(controls.fields.len(), 13);
+    let trigger_speed = controls
+        .fields
+        .iter()
+        .position(|field| field.id == "controls.trigger_speed")
+        .expect("trigger speed");
+    let mut state = FormState::new(infantry_config());
+    state.selected = trigger_speed;
+    assert_eq!(
+        clear_editing(&mut state, &controls, "5000"),
+        FormAction::Changed
+    );
+    match &state.config {
+        ProjectConfig::Infantry(value) => assert_eq!(value.trigger_speed, Some(5000)),
+        other => panic!("unexpected config: {other:?}"),
+    }
+}

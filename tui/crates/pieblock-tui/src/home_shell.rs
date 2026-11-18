@@ -9,8 +9,8 @@ use pieblock_core::ProjectKind;
 use pieblock_toolchain::models::CompilerKind;
 use pieblock_ui::ThemeMode;
 use pieblock_ui::{
-    BrowserAction, FileBrowser, HomeView, Palette, RecentItem, SettingRow, draw_browser, draw_home,
-    draw_settings, draw_status,
+    BrowserAction, FileBrowser, FormState, HomeView, Palette, RecentItem, SettingRow, draw_browser,
+    draw_home, draw_settings, draw_status, wizard_pages,
 };
 use ratatui::Frame;
 use ratatui::Terminal;
@@ -26,6 +26,7 @@ use crate::workspace::Workspace;
 pub enum Screen {
     Home,
     Project,
+    Wizard,
     Browser(FileBrowser),
     Settings,
 }
@@ -61,6 +62,9 @@ pub struct Shell {
     pub start_dir: PathBuf,
     pub palette: Palette,
     pub message: Option<String>,
+    pub form: Option<FormState>,
+    pub pages: Vec<pieblock_ui::FormPage>,
+    pub wizard_index: usize,
     quit: bool,
 }
 
@@ -98,6 +102,9 @@ impl Shell {
             start_dir,
             palette,
             message: None,
+            form: None,
+            pages: Vec::new(),
+            wizard_index: 0,
             quit: false,
         }
     }
@@ -135,6 +142,7 @@ impl Shell {
         match self.screen.clone() {
             Screen::Home => self.handle_home_key(key),
             Screen::Project => self.handle_project_key(key),
+            Screen::Wizard => self.handle_wizard_key(key),
             Screen::Browser(mut browser) => {
                 self.handle_browser_key(key, &mut browser);
                 if matches!(self.screen, Screen::Browser(_)) {
@@ -204,10 +212,7 @@ impl Shell {
         match key.code {
             KeyCode::Char('q') => self.quit = true,
             KeyCode::Char('h') | KeyCode::Esc => self.screen = Screen::Home,
-            KeyCode::Char('o') => {
-                let directory = self.browser_start_directory();
-                self.screen = Screen::Browser(FileBrowser::new(directory));
-            }
+            KeyCode::Char('o') | KeyCode::Char('w') | KeyCode::Enter => self.enter_wizard(),
             KeyCode::Char('s') => self.settings_screen(),
             KeyCode::F(5) => self.save(),
             _ => {}
@@ -414,6 +419,96 @@ impl Shell {
         }
     }
 
+    fn enter_wizard(&mut self) {
+        let Some(session) = self.workspace.session.as_ref() else {
+            return;
+        };
+        self.pages = wizard_pages(session.document.kind);
+        if self.pages.is_empty() {
+            self.message = Some("该工程类型的向导页尚未移植（M4 进行中）".to_owned());
+            return;
+        }
+        self.wizard_index = 0;
+        self.form = Some(FormState::new(session.document.config.clone()));
+        self.message = None;
+        self.screen = Screen::Wizard;
+    }
+
+    fn commit_wizard_page(&mut self) {
+        if let Some(form) = &self.form {
+            self.workspace.update_config(form.config.clone());
+        }
+    }
+
+    fn leave_wizard(&mut self) {
+        self.commit_wizard_page();
+        self.workspace.save_now();
+        self.message = Some("向导修改已保存".to_owned());
+        self.screen = Screen::Project;
+    }
+
+    fn handle_wizard_key(&mut self, key: KeyEvent) {
+        if self.pages.is_empty() || self.form.is_none() {
+            self.screen = Screen::Project;
+            return;
+        }
+        match key.code {
+            KeyCode::PageDown => {
+                if self.wizard_index + 1 < self.pages.len() {
+                    self.commit_wizard_page();
+                    self.wizard_index += 1;
+                } else {
+                    self.leave_wizard();
+                }
+            }
+            KeyCode::PageUp => {
+                if self.wizard_index > 0 {
+                    self.commit_wizard_page();
+                    self.wizard_index -= 1;
+                } else {
+                    self.leave_wizard();
+                }
+            }
+            KeyCode::Esc | KeyCode::Char('h') => self.leave_wizard(),
+            _ => {
+                let index = self.wizard_index.min(self.pages.len().saturating_sub(1));
+                let page = &self.pages[index];
+                if let Some(form) = self.form.as_mut() {
+                    let action = form.handle_key(page, key);
+                    if action == pieblock_ui::FormAction::Changed {
+                        self.workspace.update_config(form.config.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    fn draw_wizard(&mut self, frame: &mut Frame) {
+        let index = self.wizard_index.min(self.pages.len().saturating_sub(1));
+        let area = frame.area();
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(8), Constraint::Length(1)])
+            .split(area);
+        if let Some(form) = self.form.as_mut() {
+            if let Some(page) = self.pages.get(index) {
+                form.render(frame, chunks[0], page, &self.palette);
+            }
+        }
+        let status = format!(
+            "第 {}/{} 页 · PgUp/PgDn 翻页 · Esc 保存返回",
+            index + 1,
+            self.pages.len().max(1)
+        );
+        draw_status(
+            frame,
+            chunks[1],
+            &status,
+            self.message.as_deref(),
+            &self.palette,
+        );
+    }
+
     fn browser_start_directory(&self) -> PathBuf {
         self.workspace
             .session
@@ -427,6 +522,7 @@ impl Shell {
         match self.screen.clone() {
             Screen::Home => self.draw_home(frame),
             Screen::Project => self.draw_project(frame),
+            Screen::Wizard => self.draw_wizard(frame),
             Screen::Browser(browser) => {
                 draw_browser(frame, frame.area(), &browser, &self.palette);
                 self.draw_status(frame);
@@ -542,7 +638,7 @@ impl Shell {
             ]),
             Line::from(""),
             Line::from(Span::styled(
-                "M4 将在此接入完整向导表单；当前可用：S 保存（Ctrl+S/F5）、O 打开、S 设置、H 首页、Q 退出。",
+                "Enter/E 进入向导表单（M4 进行中）；Ctrl+S/F5 保存、O 打开、S 设置、H 首页、Q 退出。",
                 self.palette.muted(),
             )),
         ];
@@ -857,5 +953,54 @@ mod tests {
         );
         shell.handle_key(key(KeyCode::Esc));
         assert_eq!(shell.screen, Screen::Home);
+    }
+}
+
+#[cfg(test)]
+mod wizard_tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn wizard_flow_edits_channel_and_saves() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target")
+            .join(format!("shell-wizard-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("dir");
+        let mut shell = Shell::with_data_dir(dir.join("data"), dir.clone());
+        shell.handle_key(key(KeyCode::Char('n')));
+        shell.handle_key(key(KeyCode::Enter));
+        shell.handle_key(key(KeyCode::Enter));
+        assert_eq!(shell.screen, Screen::Project);
+        shell.handle_key(key(KeyCode::Enter));
+        assert_eq!(shell.screen, Screen::Wizard);
+        assert_eq!(shell.pages.len(), 3);
+        // 第一页第一个字段：通道号。
+        shell.handle_key(key(KeyCode::Enter));
+        for _ in 0..8 {
+            shell.handle_key(key(KeyCode::Backspace));
+        }
+        shell.handle_key(key(KeyCode::Char('5')));
+        shell.handle_key(key(KeyCode::Char('5')));
+        shell.handle_key(key(KeyCode::Enter));
+        shell.handle_key(key(KeyCode::PageDown));
+        assert_eq!(shell.wizard_index, 1);
+        shell.handle_key(key(KeyCode::Esc));
+        assert_eq!(shell.screen, Screen::Project);
+        let session = shell.workspace.session.as_ref().expect("session");
+        match &session.document.config {
+            pieblock_core::model::ProjectConfig::Infantry(value) => {
+                assert_eq!(value.remote.channel, Some(55));
+            }
+            other => panic!("unexpected config: {other:?}"),
+        }
+        let text = std::fs::read_to_string(&session.path).expect("saved file");
+        assert!(text.contains("55"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
