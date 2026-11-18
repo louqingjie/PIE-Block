@@ -1,0 +1,714 @@
+{
+  "writeCases": [
+    {
+      "name": "music_template",
+      "document": {
+        "format_version": 23,
+        "project_kind": "music",
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "updated_at": "2026-01-01T00:00:00.000Z",
+        "guide_progress": {
+          "current_step_id": "music",
+          "visited_step_ids": [
+            "music"
+          ]
+        },
+        "config": {
+          "ticks_per_quarter": 480,
+          "source_name": null,
+          "track_name": "一闪一闪亮晶晶",
+          "notes": [
+            {
+              "id": "n1",
+              "pitch": 60,
+              "start_tick": 0,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n2",
+              "pitch": 60,
+              "start_tick": 480,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n3",
+              "pitch": 67,
+              "start_tick": 960,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n4",
+              "pitch": 67,
+              "start_tick": 1440,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n5",
+              "pitch": 69,
+              "start_tick": 1920,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n6",
+              "pitch": 69,
+              "start_tick": 2400,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n7",
+              "pitch": 67,
+              "start_tick": 2880,
+              "duration_ticks": 960
+            },
+            {
+              "id": "n8",
+              "pitch": 65,
+              "start_tick": 3840,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n9",
+              "pitch": 65,
+              "start_tick": 4320,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n10",
+              "pitch": 64,
+              "start_tick": 4800,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n11",
+              "pitch": 64,
+              "start_tick": 5280,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n12",
+              "pitch": 62,
+              "start_tick": 5760,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n13",
+              "pitch": 62,
+              "start_tick": 6240,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n14",
+              "pitch": 60,
+              "start_tick": 6720,
+              "duration_ticks": 960
+            }
+          ],
+          "overlap_mode": "nearest",
+          "new_note_interrupts": true,
+          "key_signature_fifths": 0,
+          "tempo_events": [
+            {
+              "tick": 0,
+              "microseconds_per_quarter": 500000
+            }
+          ],
+          "time_signature_events": [
+            {
+              "tick": 0,
+              "numerator": 4,
+              "denominator": 4
+            }
+          ]
+        }
+      },
+      "hex": "4d546864000000060000000101e04d54726b000000b000ff0315e4b880e997aae4b880e997aae4baaee699b6e699b600ff5902000000ff510307a12000ff58040402180800903c648360803c0000903c648360803c0000904364836080430000904364836080430000904564836080450000904564836080450000904364874080430000904164836080410000904164836080410000904064836080400000904064836080400000903e648360803e0000903e648360803e0000903c648740803c0000ff2f00"
+    },
+    {
+      "name": "music_default",
+      "document": {
+        "format_version": 23,
+        "project_kind": "music",
+        "created_at": "2026-11-18T09:01:00.569504Z",
+        "updated_at": "2026-11-18T09:01:00.569504Z",
+        "guide_progress": {
+          "current_step_id": "music",
+          "visited_step_ids": [
+            "music"
+          ]
+        },
+        "config": {
+          "ticks_per_quarter": 480,
+          "source_name": null,
+          "track_name": null,
+          "notes": [],
+          "overlap_mode": "nearest",
+          "new_note_interrupts": true,
+          "key_signature_fifths": 0,
+          "tempo_events": [
+            {
+              "tick": 0,
+              "microseconds_per_quarter": 500000
+            }
+          ],
+          "time_signature_events": [
+            {
+              "tick": 0,
+              "numerator": 4,
+              "denominator": 4
+            }
+          ]
+        }
+      },
+      "hex": "4d546864000000060000000101e04d54726b0000002c00ff030f5049452d426c6f636b204d7573696300ff5902000000ff510307a12000ff58040402180800ff2f00"
+    },
+    {
+      "name": "music_synthetic",
+      "document": {
+        "format_version": 23,
+        "project_kind": "music",
+        "created_at": "2026-11-18T09:01:00.569504Z",
+        "updated_at": "2026-11-18T09:01:00.569504Z",
+        "guide_progress": {
+          "current_step_id": "music",
+          "visited_step_ids": [
+            "music"
+          ]
+        },
+        "config": {
+          "ticks_per_quarter": 480,
+          "source_name": null,
+          "track_name": "测试曲目",
+          "notes": [
+            {
+              "id": "n1",
+              "pitch": 60,
+              "start_tick": 0,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n2",
+              "pitch": 64,
+              "start_tick": 0,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n3",
+              "pitch": 67,
+              "start_tick": 240,
+              "duration_ticks": 720
+            },
+            {
+              "id": "n4",
+              "pitch": 72,
+              "start_tick": 960,
+              "duration_ticks": 240
+            }
+          ],
+          "overlap_mode": "highest",
+          "new_note_interrupts": false,
+          "key_signature_fifths": -3,
+          "tempo_events": [
+            {
+              "tick": 0,
+              "microseconds_per_quarter": 500000
+            },
+            {
+              "tick": 960,
+              "microseconds_per_quarter": 400000
+            }
+          ],
+          "time_signature_events": [
+            {
+              "tick": 0,
+              "numerator": 3,
+              "denominator": 4
+            },
+            {
+              "tick": 1440,
+              "numerator": 4,
+              "denominator": 4
+            }
+          ]
+        }
+      },
+      "hex": "4d546864000000060000000101e04d54726b0000005d00ff030ce6b58be8af95e69bb2e79bae00ff5902fd0000ff510307a12000ff58040302180800903c640090406481709043648170803c00008040008360ff5103061a80008043000090486481708048008170ff58040402180800ff2f00"
+    }
+  ],
+  "parseCases": [
+    {
+      "name": "music_template_roundtrip",
+      "hex": "4d546864000000060000000101e04d54726b000000b000ff0315e4b880e997aae4b880e997aae4baaee699b6e699b600ff5902000000ff510307a12000ff58040402180800903c648360803c0000903c648360803c0000904364836080430000904364836080430000904564836080450000904564836080450000904364874080430000904164836080410000904164836080410000904064836080400000904064836080400000903e648360803e0000903e648360803e0000903c648740803c0000ff2f00",
+      "format": 0,
+      "ticksPerQuarter": 480,
+      "keySignatureFifths": 0,
+      "tracks": [
+        {
+          "name": "一闪一闪亮晶晶",
+          "melodicNoteCount": 14,
+          "playable": true,
+          "polyphonic": false,
+          "endTick": 7680,
+          "notes": [
+            {
+              "pitch": 60,
+              "channel": 0,
+              "startTick": 0,
+              "durationTicks": 480
+            },
+            {
+              "pitch": 60,
+              "channel": 0,
+              "startTick": 480,
+              "durationTicks": 480
+            },
+            {
+              "pitch": 67,
+              "channel": 0,
+              "startTick": 960,
+              "durationTicks": 480
+            },
+            {
+              "pitch": 67,
+              "channel": 0,
+              "startTick": 1440,
+              "durationTicks": 480
+            },
+            {
+              "pitch": 69,
+              "channel": 0,
+              "startTick": 1920,
+              "durationTicks": 480
+            },
+            {
+              "pitch": 69,
+              "channel": 0,
+              "startTick": 2400,
+              "durationTicks": 480
+            },
+            {
+              "pitch": 67,
+              "channel": 0,
+              "startTick": 2880,
+              "durationTicks": 960
+            },
+            {
+              "pitch": 65,
+              "channel": 0,
+              "startTick": 3840,
+              "durationTicks": 480
+            },
+            {
+              "pitch": 65,
+              "channel": 0,
+              "startTick": 4320,
+              "durationTicks": 480
+            },
+            {
+              "pitch": 64,
+              "channel": 0,
+              "startTick": 4800,
+              "durationTicks": 480
+            },
+            {
+              "pitch": 64,
+              "channel": 0,
+              "startTick": 5280,
+              "durationTicks": 480
+            },
+            {
+              "pitch": 62,
+              "channel": 0,
+              "startTick": 5760,
+              "durationTicks": 480
+            },
+            {
+              "pitch": 62,
+              "channel": 0,
+              "startTick": 6240,
+              "durationTicks": 480
+            },
+            {
+              "pitch": 60,
+              "channel": 0,
+              "startTick": 6720,
+              "durationTicks": 960
+            }
+          ]
+        }
+      ],
+      "tempoEvents": [
+        {
+          "tick": 0,
+          "microsecondsPerQuarter": 500000
+        }
+      ],
+      "timeSignatureEvents": [
+        {
+          "tick": 0,
+          "numerator": 4,
+          "denominator": 4
+        }
+      ],
+      "selectedTrack": {
+        "ticks_per_quarter": 480,
+        "source_name": null,
+        "track_name": "一闪一闪亮晶晶",
+        "notes": [
+          {
+            "id": "m0",
+            "pitch": 60,
+            "start_tick": 0,
+            "duration_ticks": 480
+          },
+          {
+            "id": "m1",
+            "pitch": 60,
+            "start_tick": 480,
+            "duration_ticks": 480
+          },
+          {
+            "id": "m2",
+            "pitch": 67,
+            "start_tick": 960,
+            "duration_ticks": 480
+          },
+          {
+            "id": "m3",
+            "pitch": 67,
+            "start_tick": 1440,
+            "duration_ticks": 480
+          },
+          {
+            "id": "m4",
+            "pitch": 69,
+            "start_tick": 1920,
+            "duration_ticks": 480
+          },
+          {
+            "id": "m5",
+            "pitch": 69,
+            "start_tick": 2400,
+            "duration_ticks": 480
+          },
+          {
+            "id": "m6",
+            "pitch": 67,
+            "start_tick": 2880,
+            "duration_ticks": 960
+          },
+          {
+            "id": "m7",
+            "pitch": 65,
+            "start_tick": 3840,
+            "duration_ticks": 480
+          },
+          {
+            "id": "m8",
+            "pitch": 65,
+            "start_tick": 4320,
+            "duration_ticks": 480
+          },
+          {
+            "id": "m9",
+            "pitch": 64,
+            "start_tick": 4800,
+            "duration_ticks": 480
+          },
+          {
+            "id": "m10",
+            "pitch": 64,
+            "start_tick": 5280,
+            "duration_ticks": 480
+          },
+          {
+            "id": "m11",
+            "pitch": 62,
+            "start_tick": 5760,
+            "duration_ticks": 480
+          },
+          {
+            "id": "m12",
+            "pitch": 62,
+            "start_tick": 6240,
+            "duration_ticks": 480
+          },
+          {
+            "id": "m13",
+            "pitch": 60,
+            "start_tick": 6720,
+            "duration_ticks": 960
+          }
+        ],
+        "overlap_mode": "nearest",
+        "new_note_interrupts": true,
+        "key_signature_fifths": 0,
+        "tempo_events": [
+          {
+            "tick": 0,
+            "microseconds_per_quarter": 500000
+          }
+        ],
+        "time_signature_events": [
+          {
+            "tick": 0,
+            "numerator": 4,
+            "denominator": 4
+          }
+        ]
+      }
+    },
+    {
+      "name": "music_default_roundtrip",
+      "hex": "4d546864000000060000000101e04d54726b0000002c00ff030f5049452d426c6f636b204d7573696300ff5902000000ff510307a12000ff58040402180800ff2f00",
+      "format": 0,
+      "ticksPerQuarter": 480,
+      "keySignatureFifths": 0,
+      "tracks": [
+        {
+          "name": "PIE-Block Music",
+          "melodicNoteCount": 0,
+          "playable": false,
+          "polyphonic": false,
+          "endTick": 0,
+          "notes": []
+        }
+      ],
+      "tempoEvents": [
+        {
+          "tick": 0,
+          "microsecondsPerQuarter": 500000
+        }
+      ],
+      "timeSignatureEvents": [
+        {
+          "tick": 0,
+          "numerator": 4,
+          "denominator": 4
+        }
+      ]
+    },
+    {
+      "name": "music_synthetic_roundtrip",
+      "hex": "4d546864000000060000000101e04d54726b0000005d00ff030ce6b58be8af95e69bb2e79bae00ff5902fd0000ff510307a12000ff58040302180800903c640090406481709043648170803c00008040008360ff5103061a80008043000090486481708048008170ff58040402180800ff2f00",
+      "format": 0,
+      "ticksPerQuarter": 480,
+      "keySignatureFifths": -3,
+      "tracks": [
+        {
+          "name": "测试曲目",
+          "melodicNoteCount": 4,
+          "playable": true,
+          "polyphonic": true,
+          "endTick": 1200,
+          "notes": [
+            {
+              "pitch": 60,
+              "channel": 0,
+              "startTick": 0,
+              "durationTicks": 480
+            },
+            {
+              "pitch": 64,
+              "channel": 0,
+              "startTick": 0,
+              "durationTicks": 480
+            },
+            {
+              "pitch": 67,
+              "channel": 0,
+              "startTick": 240,
+              "durationTicks": 720
+            },
+            {
+              "pitch": 72,
+              "channel": 0,
+              "startTick": 960,
+              "durationTicks": 240
+            }
+          ]
+        }
+      ],
+      "tempoEvents": [
+        {
+          "tick": 0,
+          "microsecondsPerQuarter": 500000
+        },
+        {
+          "tick": 960,
+          "microsecondsPerQuarter": 400000
+        }
+      ],
+      "timeSignatureEvents": [
+        {
+          "tick": 0,
+          "numerator": 3,
+          "denominator": 4
+        },
+        {
+          "tick": 1440,
+          "numerator": 4,
+          "denominator": 4
+        }
+      ],
+      "selectedTrack": {
+        "ticks_per_quarter": 480,
+        "source_name": null,
+        "track_name": "测试曲目",
+        "notes": [
+          {
+            "id": "m0",
+            "pitch": 64,
+            "start_tick": 0,
+            "duration_ticks": 480
+          },
+          {
+            "id": "m1",
+            "pitch": 60,
+            "start_tick": 0,
+            "duration_ticks": 480
+          },
+          {
+            "id": "m2",
+            "pitch": 67,
+            "start_tick": 240,
+            "duration_ticks": 720
+          },
+          {
+            "id": "m3",
+            "pitch": 72,
+            "start_tick": 960,
+            "duration_ticks": 240
+          }
+        ],
+        "overlap_mode": "nearest",
+        "new_note_interrupts": true,
+        "key_signature_fifths": -3,
+        "tempo_events": [
+          {
+            "tick": 0,
+            "microseconds_per_quarter": 500000
+          },
+          {
+            "tick": 960,
+            "microseconds_per_quarter": 400000
+          }
+        ],
+        "time_signature_events": [
+          {
+            "tick": 0,
+            "numerator": 3,
+            "denominator": 4
+          },
+          {
+            "tick": 1440,
+            "numerator": 4,
+            "denominator": 4
+          }
+        ]
+      }
+    },
+    {
+      "name": "bad_header",
+      "hex": "4e4f5045",
+      "error": "不是标准 MIDI 文件"
+    },
+    {
+      "name": "format2",
+      "hex": "4d54686400000006000200010060",
+      "error": "不支持 MIDI Format 2"
+    },
+    {
+      "name": "smpte",
+      "hex": "4d5468640000000600000001e728",
+      "error": "不支持 SMPTE 时间格式"
+    },
+    {
+      "name": "ppq_zero",
+      "hex": "4d54686400000006000000010000",
+      "error": "MIDI PPQ 不能为 0"
+    },
+    {
+      "name": "truncated_header",
+      "hex": "4d546864000000060000",
+      "error": "MIDI 文件意外结束"
+    },
+    {
+      "name": "running_status_handcrafted",
+      "hex": "4d546864000000060000000100604d54726b0000002d00ff030361626300ff510307a12000ff58040402180800ff5902fd0000903c64604064603c0000400000ff2f00",
+      "format": 0,
+      "ticksPerQuarter": 96,
+      "keySignatureFifths": -3,
+      "tracks": [
+        {
+          "name": "abc",
+          "melodicNoteCount": 2,
+          "playable": true,
+          "polyphonic": true,
+          "endTick": 192,
+          "notes": [
+            {
+              "pitch": 60,
+              "channel": 0,
+              "startTick": 0,
+              "durationTicks": 192
+            },
+            {
+              "pitch": 64,
+              "channel": 0,
+              "startTick": 96,
+              "durationTicks": 96
+            }
+          ]
+        }
+      ],
+      "tempoEvents": [
+        {
+          "tick": 0,
+          "microsecondsPerQuarter": 500000
+        }
+      ],
+      "timeSignatureEvents": [
+        {
+          "tick": 0,
+          "numerator": 4,
+          "denominator": 4
+        }
+      ],
+      "selectedTrack": {
+        "ticks_per_quarter": 96,
+        "source_name": null,
+        "track_name": "abc",
+        "notes": [
+          {
+            "id": "m0",
+            "pitch": 60,
+            "start_tick": 0,
+            "duration_ticks": 192
+          },
+          {
+            "id": "m1",
+            "pitch": 64,
+            "start_tick": 96,
+            "duration_ticks": 96
+          }
+        ],
+        "overlap_mode": "nearest",
+        "new_note_interrupts": true,
+        "key_signature_fifths": -3,
+        "tempo_events": [
+          {
+            "tick": 0,
+            "microseconds_per_quarter": 500000
+          }
+        ],
+        "time_signature_events": [
+          {
+            "tick": 0,
+            "numerator": 4,
+            "denominator": 4
+          }
+        ]
+      }
+    }
+  ]
+}

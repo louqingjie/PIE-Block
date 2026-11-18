@@ -13,6 +13,7 @@ pub mod debug_cues;
 pub mod document;
 pub mod expression;
 mod ids;
+pub mod midi;
 pub mod model;
 pub mod music;
 pub mod validation;
@@ -22,6 +23,7 @@ use serde::{Deserialize, Serialize};
 pub use codegen::{GeneratedProgram, GenerationError, generate, generate_program};
 pub use document::{DocumentError, GuideProgress, ProjectDocument};
 pub use expression::{Expr, ExpressionDiagnostic, ExpressionType, ParsedExpression, parse};
+pub use midi::{MidiCodec, MidiError, MidiFileData, MidiTrackData};
 pub use music::{MusicSegment, MusicSoundingSpan, MusicTimeline};
 pub use validation::{IssueSeverity, ValidationIssue, ValidationIssueKind, validate};
 
