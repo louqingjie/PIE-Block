@@ -88,7 +88,7 @@ class AppDocumentIo {
       canCreateDirectories: true,
     );
     if (location == null) return null;
-    if (bytes != null) await File(location.path).writeAsBytes(bytes);
+    if (bytes != null) await _writeAtomically(File(location.path), bytes);
     return location.path;
   }
 
@@ -111,7 +111,32 @@ class AppDocumentIo {
       });
       return;
     }
-    await File(reference).writeAsBytes(bytes);
+    await _writeAtomically(File(reference), bytes);
+  }
+
+  /// 先写同目录的临时文件，再原子替换目标。
+  ///
+  /// 桌面端每 500ms 防抖自动保存，CLI、编辑器或另一个 Agent 可能正在读同一个
+  /// `.pieproj`；直接覆盖会让它们读到半截 JSON。临时文件与目标同目录，保证
+  /// rename 发生在同一卷上（跨卷 rename 会退化成复制，失去原子性）。
+  static Future<void> _writeAtomically(File file, Uint8List bytes) async {
+    await file.parent.create(recursive: true);
+    final temp = File(
+      '${file.path}.tmp-${DateTime.now().microsecondsSinceEpoch}',
+    );
+    try {
+      await temp.writeAsBytes(bytes, flush: true);
+      await temp.rename(file.path);
+    } catch (_) {
+      if (await temp.exists()) {
+        try {
+          await temp.delete();
+        } on FileSystemException {
+          // 清理失败不影响把原始错误传出去。
+        }
+      }
+      rethrow;
+    }
   }
 
   static bool _isContentUri(String reference) =>

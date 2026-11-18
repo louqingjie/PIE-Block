@@ -1,3 +1,6 @@
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pieblock_app/src/platform/document_io.dart';
 
@@ -20,5 +23,23 @@ void main() {
       ),
       '我的机器人.pieproj (2).json',
     );
+  });
+
+  test('桌面端写入先落临时文件再原子替换，不留下临时文件', () async {
+    final directory = Directory.systemTemp.createTempSync('pieblock-doc-io-');
+    final target = File(
+      '${directory.path}${Platform.pathSeparator}robot.pieproj',
+    )..writeAsStringSync('old');
+    try {
+      const io = AppDocumentIo();
+      await io.write(target.path, Uint8List.fromList('new'.codeUnits));
+      expect(target.readAsStringSync(), 'new');
+      final leftovers = directory
+          .listSync()
+          .where((entity) => entity.path != target.path);
+      expect(leftovers, isEmpty);
+    } finally {
+      directory.deleteSync(recursive: true);
+    }
   });
 }

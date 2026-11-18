@@ -68,9 +68,16 @@ if (!$SkipBuild) {
     }
 }
 
+# --- 编译独立 CLI（pie-block.exe，无需用户安装 Dart SDK）---
+# 放进 Release\cli，Inno 的 recursesubdirs 会自动打进安装包 {app}\cli。
+$cliDir = Join-Path $releaseDir 'cli'
+& (Join-Path $PSScriptRoot 'build_cli.ps1') -Target windows-x64 -OutDir $cliDir
+if ($LASTEXITCODE -ne 0) { throw '构建独立 CLI 失败。' }
+
 # --- Release 产物完整性校验：不能只拷 exe，工具链与固件模板必须齐全 ---
 $required = @(
     'PIE-Block.exe',
+    'cli\pie-block.exe',
     'pieblock_hid.dll',
     'flutter_windows.dll',
     'data\icudtl.dat',
