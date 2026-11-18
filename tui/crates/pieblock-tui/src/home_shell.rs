@@ -33,6 +33,7 @@ pub enum Screen {
     Piano,
     Playback,
     Flash,
+    Staff,
     Browser(FileBrowser),
     Settings,
 }
@@ -85,6 +86,7 @@ pub struct Shell {
     pub flash: Option<pieblock_ui::FlashState>,
     pub flash_hex: Option<(PathBuf, String)>,
     pub flash_op: Option<pieblock_hid::FlashOperation>,
+    pub staff_clef: i64,
     quit: bool,
 }
 
@@ -137,6 +139,7 @@ impl Shell {
             flash: None,
             flash_hex: None,
             flash_op: None,
+            staff_clef: 0,
             quit: false,
         }
     }
@@ -189,6 +192,7 @@ impl Shell {
             Screen::Piano => self.handle_piano_key(key),
             Screen::Playback => self.handle_playback_key(key),
             Screen::Flash => self.handle_flash_key(key),
+            Screen::Staff => self.handle_staff_key(key),
             Screen::Browser(mut browser) => {
                 self.handle_browser_key(key, &mut browser);
                 if matches!(self.screen, Screen::Browser(_)) {
@@ -267,6 +271,7 @@ impl Shell {
             KeyCode::Char('f') => self.enter_flash(),
             KeyCode::Char('i') => self.begin_midi_import(),
             KeyCode::Char('x') => self.export_midi(),
+            KeyCode::Char('g') => self.enter_staff(),
             KeyCode::Char('s') => self.settings_screen(),
             KeyCode::F(5) => self.save(),
             _ => {}
@@ -733,6 +738,68 @@ impl Shell {
         if let Some(flash) = self.flash.as_mut() {
             flash.render(frame, area, &self.palette);
         }
+    }
+
+    fn enter_staff(&mut self) {
+        let Some(session) = self.workspace.session.as_ref() else {
+            return;
+        };
+        if !matches!(
+            session.document.config,
+            pieblock_core::model::ProjectConfig::Music(_)
+        ) {
+            self.message = Some("五线谱视图仅用于音乐工程".to_owned());
+            return;
+        }
+        self.message = None;
+        self.screen = Screen::Staff;
+    }
+
+    fn handle_staff_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('h') => self.screen = Screen::Project,
+            KeyCode::Char('c') => self.staff_clef = if self.staff_clef == 0 { 1 } else { 0 },
+            _ => {}
+        }
+    }
+
+    fn draw_staff(&mut self, frame: &mut Frame) {
+        let area = frame.area();
+        let Some(session) = self.workspace.session.as_ref() else {
+            return;
+        };
+        let pieblock_core::model::ProjectConfig::Music(music) = &session.document.config else {
+            return;
+        };
+        let width = usize::from(area.width.saturating_sub(2));
+        let staff = pieblock_ui::staff_text(music, width, self.staff_clef);
+        let mut lines: Vec<Line> = vec![
+            Line::from(Span::styled(
+                pieblock_ui::staff_header(music),
+                self.palette.title(),
+            )),
+            Line::from(""),
+        ];
+        for row in staff {
+            lines.push(Line::from(Span::styled(row, self.palette.text())));
+        }
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            format!("音符：{}", pieblock_ui::staff_legend(music)),
+            self.palette.muted(),
+        )));
+        lines.push(Line::from(Span::styled(
+            "C 切换高音/低音谱号 · Esc 返回",
+            self.palette.accent(),
+        )));
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(self.palette.border_focused())
+            .title(Span::styled(
+                "五线谱",
+                ratatui::style::Style::default().add_modifier(ratatui::style::Modifier::BOLD),
+            ));
+        frame.render_widget(Paragraph::new(lines).block(block), area);
     }
 
     fn enter_playback(&mut self) {
@@ -1581,6 +1648,7 @@ impl Shell {
             Screen::Piano => self.draw_piano(frame),
             Screen::Playback => self.draw_playback(frame),
             Screen::Flash => self.draw_flash(frame),
+            Screen::Staff => self.draw_staff(frame),
             Screen::Browser(browser) => {
                 draw_browser(frame, frame.area(), &browser, &self.palette);
                 self.draw_status(frame);
@@ -3031,5 +3099,56 @@ mod live_issue_tests {
         let issue = selected_field_issue(&config, &page, selected).expect("issue");
         assert!(!issue.is_empty());
         assert!(issue.contains("通道"));
+    }
+}
+
+#[cfg(test)]
+mod staff_tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn staff_view_opens_toggles_clef_and_closes() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target")
+            .join(format!("shell-staff-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("dir");
+        let mut shell = Shell::with_data_dir(dir.join("data"), dir.clone());
+        shell.handle_key(key(KeyCode::Char('n')));
+        for _ in 0..3 {
+            shell.handle_key(key(KeyCode::Down));
+        }
+        shell.handle_key(key(KeyCode::Enter));
+        shell.handle_key(key(KeyCode::Enter));
+        shell.handle_key(key(KeyCode::Char('m')));
+        shell.handle_key(key(KeyCode::Char('a')));
+        shell.handle_key(key(KeyCode::Esc));
+        shell.handle_key(key(KeyCode::Char('g')));
+        assert_eq!(shell.screen, Screen::Staff);
+        assert_eq!(shell.staff_clef, 0);
+        shell.handle_key(key(KeyCode::Char('c')));
+        assert_eq!(shell.staff_clef, 1);
+        let backend = ratatui::backend::TestBackend::new(110, 32);
+        let mut terminal = ratatui::Terminal::new(backend).expect("terminal");
+        terminal.draw(|frame| shell.draw(frame)).expect("draw");
+        let buffer = terminal.backend().buffer();
+        let area = *buffer.area();
+        let mut text = String::new();
+        for y in area.y..area.y + area.height {
+            for x in area.x..area.x + area.width {
+                text.push_str(buffer[(x, y)].symbol());
+            }
+        }
+        let compact: String = text.chars().filter(|ch| !ch.is_whitespace()).collect();
+        assert!(compact.contains("五线谱"));
+        assert!(compact.contains('●'));
+        shell.handle_key(key(KeyCode::Esc));
+        assert_eq!(shell.screen, Screen::Project);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

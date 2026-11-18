@@ -7,6 +7,7 @@ pub mod pages;
 pub mod piano_roll;
 pub mod playback;
 pub mod screens;
+pub mod staff_view;
 pub mod theme;
 
 pub use code_view::CodeView;
@@ -23,4 +24,5 @@ pub use screens::{
     BrowserAction, BrowserEntry, FileBrowser, HomeView, RecentItem, SettingRow, draw_browser,
     draw_dialog, draw_home, draw_settings, draw_status,
 };
+pub use staff_view::{staff_header, staff_legend, staff_text};
 pub use theme::{Palette, ThemeMode};
