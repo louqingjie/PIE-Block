@@ -1,10 +1,11 @@
 # PIE-Block TUI 复刻实现计划
 
 > 基线：`main@a9143e6`（2026-11-18；`pubspec.yaml` 1.8.0+14；`.pieproj` 格式 **23**，可读 17–23）。
-> 已确认：MCP 本地服务不做（`a9143e6 refactor(mcp): 下架未发布的 MCP 接入功能`），本计划不包含 MCP；
-> 架构保留 `Host` 抽象，未来恢复时可在不改核心的前提下加回。
-> 目标：用非 Flutter / 非 Dart 的终端 UI（TUI）复刻桌面端**全部功能与全部 UI 内容**；Windows 与 Linux 一等支持，
-> macOS 二等支持；键盘全功能可用，鼠标作为增强。
+> 已确认（2026-11-18）：MCP 本地服务不做，plan 不包含 MCP，架构保留 `Host` 抽象；
+> **实现语言确定为 Rust**；**TUI 采用自身鲜明的终端设计风格，不追求与 Flutter 视觉一致**；
+> **1.0 只覆盖 Windows 与 Linux**（macOS 暂不纳入，保留可移植性，后续可单独立项）。
+> 目标：用 Rust 终端 UI 复刻桌面端**全部功能与 UI 信息内容**（页面、字段、状态、文案、操作、数据），
+> 以 TUI 原生交互与视觉呈现；键盘全功能可用，鼠标作为增强。
 
 ## 0. 一页结论
 
@@ -13,13 +14,13 @@
 | 实现语言 | **Rust**（edition 2024，stable；发布产物不含 Dart/Flutter 运行时） |
 | TUI 框架 | **ratatui 0.30.x** + **crossterm 0.29**（自建事件源抽象层；Windows 如 bracketed paste 不满足可切 **termina 0.4** 后端） |
 | 交互组件 | **tui-textarea-2 0.14**（代码区/多行文本）、自研表单引擎、自研钢琴卷帘/动作表控件、**arboard 3.7**（剪贴板）、**syntect 或自研词法高亮** |
-| 系统能力 | **hidapi 2.6**（Windows 纯 `windows-sys`、Linux 静态 hidraw、macOS IOKit）、**rodio 0.23**（试听，可选）、**sha2**、**clap**（CLI）、**serde/serde_json**、**unicode-width/unicode-segmentation** |
-| 交付形态 | 单仓库 `tui/` Cargo workspace；`pieblock-tui`、`pieblock-cli` 两个二进制；Windows MSI/zip、Linux tar.gz/deb、macOS tar.gz |
+| 系统能力 | **hidapi 2.6**（Windows 纯 `windows-sys`、Linux 静态 hidraw）、**rodio 0.23**（试听，可选）、**sha2**、**clap**（CLI）、**serde/serde_json**、**unicode-width/unicode-segmentation** |
+| 交付形态 | 单仓库 `tui/` Cargo workspace；`pieblock-tui`、`pieblock-cli` 两个二进制；Windows MSI/zip、Linux tar.gz/deb |
 | 功能范围 | 四类工程（步兵/工程/调试/音乐）、全部向导字段、校验、C/汇编预览、SDCC/Keil 编译、HEX 校验、USB-HID 烧录、音乐卷帘/MIDI/试听、CLI、设置/最近项目/自动保存、主题与全部中文文案；**不含** Web/Android/MCP/云端编译/串口/蓝牙/3D 仿真 |
-| “全部 UI 内容” | 信息架构、文案、状态、操作、数据 100% 对等；呈现形式按终端能力适配（见 §1.2 白名单），不承诺像素/字体/动画一致 |
+| “全部 UI 内容” | 信息架构、字段、文案、状态、操作、数据 100% 对等；视觉与交互采用 TUI 原生设计（见 §1.2/§5.0），不照搬 Flutter 的视觉与动画 |
 | 代码规模 | Flutter 版需复刻的业务代码约 2.6 万行（应用层 1.53 万 + 核心/工具链/HID 库 1.18 万；核心包另有约 0.73 万行测试与 0.24 万行工具可作基准）；预计 Rust 3.5–4.5 万行（含测试） |
-| 工期 | 2 名开发 + 0.5 测试/硬件约 **8–10 个月到 1.0**；单人约 **12–15 个月**（见 §8） |
-| 首要风险 | 跨语言逐字节/逐文案一致、钢琴卷帘与复杂表单的终端交互、Windows 粘贴/IME、macOS 工具链与 HID 属于新平台工作 |
+| 工期 | 2 名开发 + 0.5 测试/硬件约 **8–9 个月到 1.0**；单人约 **12–15 个月**（见 §8） |
+| 首要风险 | 跨语言逐字节/逐文案一致、钢琴卷帘与复杂表单的终端交互、Windows 粘贴/IME、HID 真机与工具链打包 |
 | 第一步 | 2–3 周 **M0 技术验证**（输入/IME、hidapi 真机烧录、SDCC 与 HEX 对拍、钢琴卷帘原型），通过后再进入 M1 |
 
 ## 1. 范围与“完整复刻”的定义
@@ -42,34 +43,46 @@
 | CLI | `pieblock-cli describe/validate/codegen`、stdout/stderr 分工、JSON 契约、退出码 0–5、`--out`、UTF-8 中文输出、与 GUI 完全一致的校验与生成结果 |
 | 文案 | 全部界面标题/副标题/分区/字段标签/单位/按钮/对话框/空态/错误/警告/提示/日志中文文案，语义与措辞与 Flutter 版一致 |
 
-### 1.2 终端适配（功能保留、形态变更，需签字确认）
+### 1.2 视觉与交互策略：TUI 原生，不逐项对齐 Flutter
 
-| Flutter 形态 | TUI 形态 | 理由 |
-| --- | --- | --- |
-| M3 圆角/连续曲率/阴影/渐变/Cookie 装饰形状 | 边框字符（`─│╭╮╰╯`）、颜色层级、反色选中 | 终端无像素绘制 |
-| 页面滑入、fade-through、按压缩放、骨架呼吸、波浪进度 | 无动画或单色进度条/静态骨架；提供 `减少动态效果` 等价开关（默认静态） | 终端刷新语义与可读性 |
-| 图片：W.PIE Logo/词标、开关实物图 | 文本词标 `W.PIE`/`PIE-Block`；烧录前改为文字清单 + 字符示意图；可选 sixel/kitty 图片（仅当终端支持，非默认） | 终端图片协议跨平台不可靠 |
-| 原生文件选择器（file_selector） | 内置文件浏览器（路径输入、目录列表、驱动器/家目录、最近目录、`.pieproj` 过滤）；可选“用系统方式打开” | 键盘优先、跨平台一致 |
-| 悬停卡片（汇编术语、Tooltip） | 焦点/光标处 token 详情面板（底部或右侧），Enter 展开完整卡片；鼠标悬停仍可触发 | 终端无可靠 hover |
-| 拖拽排序/拖拽调时长 | `Alt+↑/↓` 移动、`＋/－` 或 `[`/`]` 调时长、鼠标拖拽同样可用 | 键鼠双通道 |
-| 滑块（灵敏度） | 数字输入 + `←/→` 按 5 步进，显示百分比 | 保持精度 |
-| 钢琴卷帘手势 | 网格光标 + 键位编辑（选择/画笔/删除/平移）、框选、鼠标拖拽/滚轮 | 终端字符网格 |
-| Web 强制暗色、Android SAF/OTG | 不复刻（TUI 仅在桌面运行） | 平台不适用 |
-| 云端编译/串口/蓝牙/3D 仿真 | 原版也不提供，保持不提供 | 范围一致 |
+**已确认**：不要求 TUI 与 Flutter 的视觉效果统一。TUI 允许并鼓励形成自己的设计语言；验收只要求“功能、信息、文案、状态、数据”对等，
+视觉与交互按终端习惯重新设计。
+
+TUI 原生设计原则（详细规范见 §5.0）：
+
+1. 信息密度与键盘效率优先；鼠标为增强，不是前提。
+2. 不复制 M3 视觉：不使用像素图片、转场动画、连续曲率、阴影、渐变。
+3. 页面/字段/状态/文案一一可达，但布局、控件、配色、焦点模型由 TUI 自主设计。
+4. 允许并鼓励 TUI 特有交互：命令面板、多窗格、快速跳转、状态栏、行内编辑、文本导出。
+5. 品牌元素可选保留（PIE-Block 文本标识、青蓝/珊瑚强调色），不作为验收项。
+
+下表只是“Flutter 提供的能力如何在 TUI 中实现”的候选做法，不是视觉复刻承诺：
+
+| 能力 | TUI 候选实现 |
+| --- | --- |
+| 品牌/图片 | 文本词标、字符装饰；图片协议仅作可选彩蛋 |
+| 动画/进度 | 静态状态 + 进度条 + 日志，不做动画 |
+| 原生文件对话框 | 内置文件浏览器（路径输入/补全/最近目录） |
+| 悬停信息 | 焦点 token 详情栏 + `Enter` 固定卡片 |
+| 拖拽排序/调时长 | `Alt+↑/↓` 移动、`[`/`]` 调时长；鼠标拖拽增强 |
+| 滑块 | 直接数字输入 + `←/→` 步进 |
+| 钢琴卷帘 | 字符网格 + 工具模式 + 键位编辑/框选 |
+| 平台专属 UI（Web/Android） | 不复刻 |
 
 ### 1.3 明确不做
 
 - Flutter/Dart 作为运行时或依赖进入 TUI 发布产物；TUI 不调用 `pieblock-cli` 旧二进制、不依赖 Flutter 安装。
 - MCP 本地服务（已下架）；`keil_server/` 云端编译；Web 版与 Android 版 UI；串口/蓝牙烧录；3D 仿真。
+- **macOS：1.0 不纳入**（不构建、不测试、不发包；代码保持可移植，后续可单独立项）。
 - 对 `.pieproj` 新格式的“扩展升级”：TUI 与 Flutter 版共用格式 23，不单方面升版。
 
 ### 1.4 验收原则
 
 1. **功能对等**：§6 对等矩阵中 P0 项全部有 TUI 入口且行为一致。
 2. **信息对等**：所有字段、单位、范围提示、错误/警告、帮助文案在 TUI 可见；`parity/manifest.yaml` 逐项登记。
-3. **操作对等**：所有 Flutter 鼠标/触摸操作都有键盘等价路径；常用操作提供鼠标路径。
+3. **操作对等**：所有 Flutter 操作都有键盘等价路径；常用操作提供鼠标路径。
 4. **数据对等**：读入 fixture 17–23 全部通过；保存结果语义等价（目标为逐字节等价）；生成的 `main.c`、校验 JSON、CLI 输出与 Flutter 实现逐字节/逐字段一致。
-5. **视觉适配白名单**：§1.2 之外的任何表现差异都算缺陷。
+5. **TUI 风格一致性**：以 §5.0 设计规范为准，不要求与 Flutter 视觉一致；不依赖颜色传达关键信息，80×24 可用，键盘可完成全部 P0 操作。
 
 ## 2. 基线盘点（复刻对象）
 
@@ -78,6 +91,7 @@
 - 应用版本 1.8.0+14，CI 固定 Flutter 3.47.1；`lib/` 为 Flutter 应用（15,270 行 Dart），业务逻辑集中在 5 个包。
 - 项目文件格式 23（`ProjectDocument.formatVersion`），兼容 17–23；`README.md` 仍写“格式 22”，以代码与格式文档为准。
 - 当前发布平台：Windows（安装包/单文件便携版/zip）、Linux x64（tar.gz）、Web（只读演示）、Android（不发布正式包）；**macOS 无构建目录**。
+- TUI 1.0 目标平台：**Windows 10/11 x64 + Linux x64（glibc）**；macOS 暂不纳入。
 
 ### 2.2 Flutter 分层
 
@@ -127,7 +141,7 @@ packages/pieblock_sdcc_native  Android 多进程编译桥（TUI 不需要）
 | 性能/重绘 | 最高（无 GC，钢琴卷帘/大段 C 列表） | 高 | 低（大列表/连续重绘易卡） |
 | 单二进制 | ✅ MSI/zip/tar.gz（cargo-dist） | ✅ CGO=0 全静态；MSI 需另配 | ❌ 需 PyInstaller/Nuitka，体积大、杀软误报 |
 | Windows 输入 | 键位最准；**crossterm 0.29 不解析 bracketed paste**，需 arboard/termina 兜底 | 最好（VT 输入 + 粘贴 + Kitty 协议） | 中 |
-| HID 烧录 | ✅ hidapi：Windows 纯 `windows-sys`、Linux 静态 hidraw、macOS IOKit | 需 cgo（破坏静态交叉编译优势） | 需 hidapi 绑定 |
+| HID 烧录 | ✅ hidapi：Windows 纯 `windows-sys`、Linux 静态 hidraw | 需 cgo（破坏静态交叉编译优势） | 需 hidapi 绑定 |
 | 中文/宽字符 | ✅ ratatui-core 直接用 unicode-width/segmentation，双宽不变量明确 | ✅ uniseg/runewidth 覆盖好 | 中（rich 宽度问题多） |
 | 长期维护 | 强（crates 拆分中，需锁版本） | 强 | 中 |
 | 与本项目模型的契合度 | 高：sealed 类/16 个枚举/大量 `switch` → Rust enum + 穷尽匹配 | 中：缺 sum type，11 个页面分支易漏 | 中 |
@@ -136,11 +150,11 @@ packages/pieblock_sdcc_native  Android 多进程编译桥（TUI 不需要）
 
 1. **模型移植最不易漏分支**：核心包有 4 种 sealed `*Config`、16 个枚举、校验/生成两条大 `switch`；Rust 的 enum + 穷尽匹配能在编译期把“漏处理一种工程类型”变成编译错误。
 2. **单二进制分发最适合学生环境**：MSI + zip + tar.gz，无 Python/Java 运行时，无杀软误报；`cargo-dist` 直接产出 MSI。
-3. **HID 是硬功能**：`hidapi` 在三平台均无需额外 C 库（Windows 用 `windows-sys`、Linux `linux-static-hidraw`、macOS IOKit），可进程内完成烧录；这是 Go 路线必须 cgo 的地方。
+3. **HID 是硬功能**：`hidapi` 在 Windows/Linux 均无需额外 C 库（Windows 用 `windows-sys`、Linux `linux-static-hidraw`），可进程内完成烧录；这是 Go 路线必须 cgo 的地方（macOS 能力暂不纳入 1.0）。
 4. **CJK 可控**：`ratatui-core` 直接吃 `unicode-width`/`unicode-segmentation`/`unicode-truncate`，中文表单和钢琴卷帘的列宽可验证；避免“按字符数当列宽”的经典 panic。
 5. **性能**：钢琴卷帘逐帧渲染、几百行 C/汇编高亮、烧录日志滚动不需要 GC 抖动。
 6. **一套 workspace 同时产出 TUI 与 CLI**：共享 `pieblock-core`，CLI 只依赖核心包，体积极小，天然与 GUI 一致。
-7. **打包与签名链成熟**：cargo-dist（MSI/zip/tar.gz）、cargo-deb、GitHub Actions 三平台原生构建；不依赖交叉编译。
+7. **打包与签名链成熟**：cargo-dist（MSI/zip/tar.gz）、cargo-deb、GitHub Actions 双平台原生构建；不依赖交叉编译。
 
 **主要代价**：Rust 开发速度低于 Go/Python；`tui-textarea` 停滞需换 `tui-textarea-2`；crossterm 0.29 的 Windows 粘贴缺陷需绕行；表单/网格/高亮没有现成组件，是本项目最大工时来源。
 
@@ -167,14 +181,14 @@ packages/pieblock_sdcc_native  Android 多进程编译桥（TUI 不需要）
 
 ### 3.4 “不使用 Flutter/Dart”的边界
 
-- **发布产物零 Dart**：TUI 安装包不包含 Dart VM、Flutter 引擎、`pieblock-cli` 旧二进制；运行时完全静态/动态链接，只依赖系统库（Windows 系统 DLL、Linux glibc/ALSA、macOS 系统框架）。
+- **发布产物零 Dart**：TUI 安装包不包含 Dart VM、Flutter 引擎、`pieblock-cli` 旧二进制；运行时完全静态/动态链接，只依赖系统库（Windows 系统 DLL、Linux glibc/ALSA）。
 - **开发/CI 期允许 Dart 作为“黄金基准生成器”**：仓库里已有完整的 Dart 实现与测试，用它生成并提交 `parity/golden/**`（JSON/C/HEX/MIDI 期望值）；Rust 测试只读这些快照，构建不要求安装 Dart。若要求连开发期也不出现 Dart，则改为一次性人工生成快照并冻结，后续升级需人工维护（需用户决策，见 §12）。
 - 与 Flutter 版**共存**：`tui/` 作为同一仓库子目录，共享 `assets/templates/`、`packages/pieblock_core` 的 fixture、`stc32g_sdcc` 与 `vendor/sdcc-toolchain` 构建产物；Flutter 构建链保持不变。
 
-### 3.5 备选方案触发条件
+### 3.5 语言决策与备选记录
 
-- 若团队无 Rust 经验且交付期紧：M0 决策门可切换到 **Go + Bubble Tea v2**。架构与里程碑不变（`pieblock-core` → Go 包），但 HID 需 cgo、MSI 需另配、音频/打包重估；Windows 交互反而更省事。
-- 若只求 2–4 周演示原型：Python + Textual，不作为产品路线。
+- **已确认（2026-11-18）：Rust**。本计划按 Rust 执行，M0 后不再切换语言。
+- Go + Bubble Tea v2 / Python + Textual 仅作历史备选记录（见 §3.1 对比），不进入当前路线；若后续人力出现重大变化，按 §11 R12 单独立项重评。
 
 ## 4. 总体架构
 
@@ -232,7 +246,7 @@ CLI → core::run(args) → JSON/C → stdout
 ### 4.5 并发、取消与音频
 
 - 构建/烧录在独立线程（`std::thread` + `mpsc` 事件流）；UI 只消费事件，主循环不阻塞。
-- 取消：构建用 `Child::kill` + 进程树终止（Windows Job Object / `taskkill /T`；Linux/macOS 进程组 `killpg`）；烧录通过传输层 cancel 句柄（hidapi 关闭设备 + 超时回退）；90s 看门狗。
+- 取消：构建用 `Child::kill` + 进程树终止（Windows Job Object / `taskkill /T`；Linux 进程组 `killpg`）；烧录通过传输层 cancel 句柄（hidapi 关闭设备 + 超时回退）；90s 看门狗。
 - 音频：独立播放线程（`rodio`），UI 只发“播放/停止/音高”命令；音频不可用时降级 BEL；试听为可选功能，不阻塞核心流程。
 - 设备轮询：部署页每秒一次设备枚举（与 Flutter 一致），空闲时降频。
 
@@ -255,21 +269,36 @@ CLI → core::run(args) → JSON/C → stdout
 4. **对拍范围**：9 份格式 fixture、四类模板、`verify_runtime` 的 27 个变体 + 120 随机工程、350 份生成 C、6 个 HEX 哈希、66 帧五线谱、所有 UI 文案清单。
 5. **禁止静默降级**：遇到无法对拍的行为差异必须显式登记到 `parity/known-deviations.md` 并由维护者签字。
 
-### 4.8 文件、路径与跨平台行为
+### 4.8 文件、路径与跨平台行为（1.0：Windows + Linux）
 
-| 行为 | Windows | Linux | macOS |
-| --- | --- | --- | --- |
-| 应用数据目录 | `%APPDATA%\com.wpie\PIE-Block-TUI\`（独立于 Flutter 版） | `$XDG_DATA_HOME/com.wpie/PIE-Block-TUI/` | `~/Library/Application Support/com.wpie/PIE-Block-TUI/` |
-| 设置 | `settings.json`（字段与 Flutter 版兼容子集：theme/recent/compiler/keil_path/suppress_*） | 同左 | 同左 |
-| 缓存 | 制品、对象缓存、日志子目录；与 Flutter 版分开，避免指纹混用 | 同左 | 同左 |
-| 内置 SDCC | 复用 `vendor/sdcc-toolchain`（Windows 构建产物），按 manifest 哈希部署 | 复用 Linux 构建产物 | **需新增 macOS 构建阶段**（见 §10.4） |
-| Keil | 支持（发现/许可/全量构建） | 理论支持但不承诺（无官方 Keil Linux） | 不支持（无 Keil macOS） |
-| 烧录 | hidapi + Win32 HID | hidapi + hidraw + udev | hidapi + IOKit（新实现，需真机验证） |
-| CLI | 同仓库产物；PATH 维护可选 | 同左，不改 shell rc | 同左 |
+| 行为 | Windows | Linux |
+| --- | --- | --- |
+| 应用数据目录 | `%APPDATA%\com.wpie\PIE-Block-TUI\`（独立于 Flutter 版） | `$XDG_DATA_HOME/com.wpie/PIE-Block-TUI/` |
+| 设置 | `settings.json`（字段与 Flutter 版兼容子集：theme/recent/compiler/keil_path/suppress_*） | 同左 |
+| 缓存 | 制品、对象缓存、日志子目录；与 Flutter 版分开，避免指纹混用 | 同左 |
+| 内置 SDCC | 复用 `vendor/sdcc-toolchain`（Windows 构建产物），按 manifest 哈希部署 | 复用 Linux 构建产物 |
+| Keil | 支持（发现/许可/全量构建） | 理论支持但不承诺（无官方 Keil Linux） |
+| 烧录 | hidapi + Win32 HID | hidapi + hidraw + udev |
+| CLI | 同仓库产物；PATH 维护可选 | 同左，不改 shell rc |
 
-## 5. UI 映射与交互设计
+> macOS 不在 1.0 范围；`pieblock-core` 保持无平台依赖，`hidapi`/音频/路径层按 trait 隔离，便于后续启用。
 
-### 5.1 屏幕映射
+## 5. TUI 设计与功能映射
+
+### 5.0 TUI 设计语言（自身规范）
+
+- **布局**：全屏 alternate screen；顶部标题/面包屑行、主工作区、底部状态栏（保存状态、问题计数、当前键位提示）；宽屏使用多窗格（步骤栏/主内容/详情栏），窄屏单栏。
+- **视觉**：单线/双线边框 + 反色选中 + 语义颜色；无圆角、无阴影、无动画；焦点用反色/边框加粗；错误用 `✖` + 文字，不只靠红色。
+- **信息密度**：一屏尽量展示完整分组；长表单用 Tab/折叠分区；表格支持横向滚动与固定列。
+- **键盘优先**：所有操作都能用键盘完成；`F1` 帮助、`Ctrl+P` 命令面板、`?` 显示当前页快捷键；键位全局一致，冲突有提示。
+- **鼠标增强**：点击/滚轮/拖拽（排序、滚动条、音符），`--no-mouse` 可关闭。
+- **可复制性**：代码/汇编/日志/问题列表支持选中或导出文本；不把关键信息画在不可复制的图形里。
+- **主题**：深色/浅色/高对比三套；`NO_COLOR` 降级；品牌色仅作强调。
+- **终端要求**：UTF-8、支持 ANSI 颜色与鼠标上报；推荐 Windows Terminal / GNOME Terminal / Konsole，最小 80×24。
+
+### 5.1 屏幕映射（功能对等，非视觉复刻）
+
+> 下表描述“信息/能力对应关系”，列出的布局是 TUI 推荐实现，不要求与 Flutter 的排布一致。
 
 | Flutter 界面 | TUI 屏幕 | 布局 |
 | --- | --- | --- |
@@ -289,7 +318,9 @@ CLI → core::run(args) → JSON/C → stdout
 | 12 个对话框 | `Overlay`（居中/底部弹出） | 统一表单式对话框，`Tab` 切按钮，`Esc` 取消，`Enter` 确认 |
 | 消息条/保存徽标/问题摘要 | 状态栏 + 右上角标志 + 右侧详情栏 | 不阻塞编辑；错误需显式确认 |
 
-### 5.2 控件映射
+### 5.2 控件选型（TUI 原生）
+
+> 仅说明信息如何承载；控件外观按 §5.0 设计语言实现，不要求与 Flutter 控件形似。
 
 | Flutter 控件 | TUI 控件 | 键位 |
 | --- | --- | --- |
@@ -408,21 +439,21 @@ CLI → core::run(args) → JSON/C → stdout
 ### 5.9 主题、配色与可访问性
 
 - 主题：浅色/深色/跟随系统（TUI 无法可靠读取系统主题，默认深色，提供显式切换并记忆；可用 `COLORFGBG` 做启发式初值）。
-- 配色：品牌青蓝 `#02ACC0` 为主强调、珊瑚粉 `#EF685D` 为次强调；语义色（成功/警告/错误/选中）与 Flutter 对齐；支持 24-bit、256 色、16 色降级；`NO_COLOR`/`--no-color` 时仅用符号与反色。
+- 配色：TUI 自有语义色板，可选沿用品牌青蓝 `#02ACC0`/珊瑚粉 `#EF685D` 作强调；语义色（成功/警告/错误/选中）按 TUI 规范定义；支持 24-bit、256 色、16 色降级；`NO_COLOR`/`--no-color` 时仅用符号与反色。
 - 不依赖颜色表达危险/错误：同时使用 `✖/⚠/✓`、反色和文本。
 - 字体：终端等宽 + 支持 CJK 的字体（Windows Terminal 默认即可；推荐等距更纱黑/Maple Mono NF + 思源黑体）；避免 EAW=Ambiguous 字符画边框。
 - 减少动态效果：默认关闭闪烁/滚动动画；`--reduced-motion` 强制静态；进度条只在数值变化时刷新。
 - 无障碍边界：TUI 对读屏软件支持有限，文档中明确“键盘全功能、颜色非唯一信息、可导出文本”。
 
-### 5.10 视觉适配例外清单（必须用户签字）
+### 5.10 TUI 风格约定（非 Flutter 适配项）
 
-1. 不渲染 PNG/JPG 图片（Logo、开关实物图、装饰形状），改为文本/字符示意。
-2. 不还原 M3 连续曲率圆角、阴影、渐变、按压动画、页面转场、波浪进度条、骨架呼吸动画。
-3. 不使用原生文件选择器，统一内置文件浏览器。
-4. 悬停卡片改为“焦点 token 详情 + Enter 固定卡片”。
-5. 拖拽排序在纯键盘下用 `Alt+↑/↓`，鼠标拖拽为增强。
-6. 钢琴卷帘以字符网格呈现（每行一个半音/全音，按缩放显示），不还原像素级网格、连续缩放和手势惯性。
-7. 主题切换不跟随系统实时变化（需手动切换）。
+1. 不使用像素图片/动画/渐变/阴影；品牌用文本标识与颜色表示。
+2. 文件选择使用内置文件浏览器，不调用原生对话框（可选“用系统打开”作为辅助）。
+3. 悬停信息以焦点详情栏/固定卡片呈现，鼠标悬停可触发但不作为唯一入口。
+4. 排序/调时长提供键位（`Alt+↑/↓`、`[`/`]`）与鼠标拖拽两条路径。
+5. 钢琴卷帘使用字符网格；播放头、灰显、选中用颜色 + 符号双编码。
+6. 主题手动切换并记忆（终端无法可靠读取系统主题）；`COLORFGBG` 仅作初值。
+7. 提供 `--no-color`、`--no-mouse`、`--reduced-motion` 与 `F1` 帮助，保证受限环境可用。
 
 ## 6. 功能对等矩阵
 
@@ -447,7 +478,7 @@ CLI → core::run(args) → JSON/C → stdout
 | 15 | CLI | `describe/validate/codegen`、stdout/stderr、退出码、`--out`、中文 UTF-8 | P0 | `assert_cmd` + golden |
 | 16 | 文案与语义 | 全部界面/校验/错误/空态/日志中文，措辞一致；`parity/manifest.yaml` 登记 | P0 | 清单评审 + 快照 |
 | 17 | 文件与导出 | `.pieproj`/`main.c`/`main.rst`/HEX 导出、路径输入、覆盖确认、失败提示 | P0 | PTY + 人工 |
-| 18 | 视觉适配 | 主题深浅、选中/焦点/错误非颜色信号、减少动态、无鼠标可用 | P0 | 快照 + 人工 |
+| 18 | TUI 风格与可用性 | TUI 设计语言（§5.0）、主题、选中/焦点/错误非颜色信号、减少动态、无鼠标可用、80×24 | P0 | 快照 + 人工 |
 | 19 | 非功能 | 启动 <500ms、80×24 可用、CJK 对齐、单实例、崩溃恢复、日志 | P0 | benchmark + PTY |
 
 ## 7. 数据兼容与跨语言一致性
@@ -491,7 +522,7 @@ CLI → core::run(args) → JSON/C → stdout
 
 ### 7.6 工具链与 HEX
 
-- 复用现有外部资源：`vendor/sdcc-toolchain`（155 文件/23MB，manifest 逐文件哈希）、`stc32g_sdcc`（`build_manifest.json` 的源顺序/编译/链接参数/库清单）、`stc32g/Libraries`；不重新编译工具链（macOS 除外，见 §10.4）。
+- 复用现有外部资源：`vendor/sdcc-toolchain`（155 文件/23MB，manifest 逐文件哈希）、`stc32g_sdcc`（`build_manifest.json` 的源顺序/编译/链接参数/库清单）、`stc32g/Libraries`；不重新编译工具链。
 - 对齐：运行时部署（`.ready`、哈希校验、staging/rename、8 次退避、残留清理）、构建指纹 `flutter_build_v5|STC32G12K128|kind|compiler|compilerFingerprint|sourceSha256`、制品缓存与对象缓存、HEX/MAP 校验规则、宽松中文路径解码、`main_*.rst` 选取、取消语义。
 - 验收：同一工程在 TUI 与 Flutter 版构建，HEX SHA-256 一致（6 个黄金样本 + 随机组合）；损坏缓存回退；中文用户名路径；取消后不残留进程。
 
@@ -509,9 +540,9 @@ CLI → core::run(args) → JSON/C → stdout
 | **M5** | 检查/代码/汇编/表达式 | 表达式检查与试算、C 代码页、汇编构建与 `main.rst` 渲染、词表详情、导出 | C/汇编与 Flutter 一致；构建进度/失败/重试；搜索/复制/导出 | 5–6 | M4 |
 | **M6** | 音乐与音频 | 钢琴卷帘、选择/编辑/撤销、事件编辑、MIDI、播放/试听、灰显 | 卷帘专项用例通过；MIDI 往返；音频降级 | 6–8 | M4 |
 | **M7** | 烧录页与部署 UI | 编译器选择、产物状态、设备区、进度/日志、安全确认、udev/Keil 对话框、导出 HEX | 真机编译→烧录→导出全链路 | 3–4 | M2/M5 |
-| **M8** | 跨平台/发布 | Windows MSI/zip、Linux tar.gz/deb/udev、macOS 包、CI 矩阵、parity 清单 100%、用户文档、发布说明 | 三平台冒烟；对等清单审计；1.0 验收 | 6–8 | 全部 |
+| **M8** | 跨平台/发布 | Windows MSI/zip、Linux tar.gz/deb/udev、CI 矩阵、parity 清单 100%、用户文档、发布说明 | Windows/Linux 双平台冒烟；对等清单审计；1.0 验收 | 5–7 | 全部 |
 
-**总工作量**：约 **52–67 人周**（含 20% 缓冲）。按 2 名开发 + 0.5 名测试/硬件并行，关键路径约 **34–40 周（8–10 个月）**；单人约 **12–15 个月**。M1 与 M3 可在 M0 后并行，M2/M6 可由第二人分担。
+**总工作量**：约 **50–64 人周**（含 20% 缓冲）。按 2 名开发 + 0.5 名测试/硬件并行，关键路径约 **33–38 周（8–9 个月）**；单人约 **12–15 个月**。M1 与 M3 可在 M0 后并行，M2/M6 可由第二人分担。
 
 ### 8.1 第一个迭代（建议 2 周）任务清单
 
@@ -521,7 +552,7 @@ CLI → core::run(args) → JSON/C → stdout
 4. 实现钢琴卷帘只读原型（网格 + 光标 + 缩放），验证 120×36 下的可读性。
 5. hidapi：枚举 VID 34BF/PID 1001 设备、读写一帧 `info`（真机），记录 Windows/Linux 差异。
 6. 调 SDCC 构建一个模板工程：验证参数、HEX 校验、`main.rst` 读取；与 Flutter 产物 SHA-256 对比。
-7. 输出《M0 验证报告》与 Go/Rust 最终决策。
+7. 输出《M0 验证报告》；语言已定为 Rust，不再做 Go 切换评估。
 
 ## 9. 质量保证与 CI
 
@@ -532,27 +563,26 @@ CLI → core::run(args) → JSON/C → stdout
 | 单元/属性 | 模型/JSON、校验规则、代码生成、表达式、音乐裁决、MIDI、工具链指纹、HID 帧 | `cargo test`、`proptest` | 覆盖核心包 261 用例的等价语义；属性测试 ≥1 万轮 |
 | 黄金对拍 | `parity/golden/**`：.pieproj 字节、校验 JSON、C 文本、CLI JSON、MIDI、五线谱 | 自研 `xtask parity` | 全部通过；任何 golden 变更需评审 |
 | 组件快照 | 主题、表单、表格、卷帘、代码页、对话框、80×24/120×36 布局 | `ratatui::TestBackend` + `insta` | 每个屏幕 ≥1 张快照 |
-| PTY 端到端 | 真实终端字节流：启动→新建→填字段→保存→生成→退出；键鼠脚本 | `portable-pty` + 自研 driver | 三平台各 10+ 场景 |
+| PTY 端到端 | 真实终端字节流：启动→新建→填字段→保存→生成→退出；键鼠脚本 | `portable-pty` + 自研 driver | Windows/Linux 各 10+ 场景 |
 | 契约 | CLI stdout/stderr/退出码；HID 帧固定向量；文件原子写 | `assert_cmd`、固定向量 | 全绿 |
 | 硬件在环 | SDCC 构建、Keil 构建、HID 烧录、udev 授权、导出 HEX | 自托管 Windows/Linux 机器 + 真板 | 每个发布候选跑一次 |
-| 人工验收 | parity 清单、三平台冒烟、真实项目配置、音乐试听 | 验收脚本 + 2 名测试者 | 0 个 P0 缺陷 |
+| 人工验收 | parity 清单、Windows/Linux 双平台冒烟、真实项目配置、音乐试听 | 验收脚本 + 2 名测试者 | 0 个 P0 缺陷 |
 
 ### 9.2 CI 矩阵
 
 | 流水线 | 触发 | 内容 |
 | --- | --- | --- |
 | `tui-quality` | PR/push | `cargo fmt --check`、`clippy -D warnings`、`cargo test`、`cargo-deny`、文档链接检查（ubuntu，~5 分钟） |
-| `tui-matrix` | PR/push | Windows（MSVC）、Linux（glibc）、macOS（arm64）三平台构建 + PTY 快速集 + 快照 |
+| `tui-matrix` | PR/push | Windows（MSVC）、Linux（glibc）双平台构建 + PTY 快速集 + 快照 |
 | `tui-golden` | PR/push | 用提交的 golden 跑全量对拍（不装 Dart，~3 分钟）；每周可选跑一次“Dart oracle 重新生成”任务，发现漂移即失败 |
 | `tui-toolchain` | PR/标签 | 复用现有 SDCC 工具链构建/缓存；校验 `bundle_manifest.json`；TUI 构建产物 + 资源打包 |
-| `tui-release` | tag `tui-v*` | 三平台产物、MSI/zip/tar.gz/deb、校验和、Release 正文（`docs/releases/tui-<版本>.md`） |
+| `tui-release` | tag `tui-v*` | Windows/Linux 产物、MSI/zip/tar.gz/deb、校验和、Release 正文（`docs/releases/tui-<版本>.md`） |
 | `tui-hil` | 手动/夜间（自托管） | 真板烧录、6 个 HEX 对拍、Linux udev、Keil（Windows） |
 
 ### 9.3 硬件在环（HIL）清单
 
 - Windows + 一块 STC32G 主控板：检测、info、编译并烧录、取消、断线重试、90s 超时。
 - Linux + 同板：udev 未装/已装、pkexec 安装、hidraw 权限、写块 65 字节 report ID 语义。
-- macOS（Apple Silicon + Intel 各一）：hidapi 枚举/烧录、SDCC 产物、签名后的 Gatekeeper 行为。
 - Keil：有许可证与无许可证两种状态；`TOOLS.INI` 备份/恢复；受限版日志识别。
 - 中文用户名路径、杀软占用 `runtime`、只读目录等异常环境。
 
@@ -583,8 +613,7 @@ CLI → core::run(args) → JSON/C → stdout
 | --- | --- | --- |
 | Windows x64 | `PIEBlock-TUI-<ver>-windows-x64.msi`、`-portable.zip` | MSI 安装到 `%LOCALAPPDATA%` 或 Program Files；zip 解压即用 |
 | Linux x64 | `PIEBlock-TUI-<ver>-linux-x64.tar.gz`、`.deb` | tar.gz 顶层含 udev 规则与安装脚本；deb 含 `.desktop`（可选） |
-| macOS arm64/x64 | `PIEBlock-TUI-<ver>-macos-<arch>.tar.gz`（可选 `.dmg`） | 未签名版需 `xattr` 说明；签名/公证列为可选里程碑 |
-| 通用 | `pieblock-cli`（三平台） | 与 TUI 同仓不同二进制；可独立分发 |
+| 通用 | `pieblock-cli`（Windows/Linux） | 与 TUI 同仓不同二进制；可独立分发 |
 | 校验 | `SHA256SUMS`、CycloneDX SBOM | 与 Flutter 发布流程一致 |
 
 ### 10.2 安装布局
@@ -613,12 +642,11 @@ PIEBlock-TUI/
 - **图标/商标**：W.PIE/校徽资源版权归项目方；TUI 只输出文本词标，不使用 PNG。
 - 第三方 crate：`cargo-deny` 检查许可证白名单；SBOM 随发布附上。
 
-### 10.4 macOS（新增平台，需单独立项）
+### 10.4 macOS（1.0 不纳入）
 
-- 现状：仓库没有 `macos/` 目录，Flutter 版未构建 macOS；SDCC 构建脚本只有 Windows/Linux；Flutter 的 HID FFI 在 macOS 直接 `UnsupportedError`。因此 macOS 不是“移植”，而是**新平台能力**。
-- 计划：用 `sdcc-c251` 子模块在 macOS 上按 `tools/build_sdcc_*` 同构构建（autotools + clang），产出同布局 `vendor/sdcc-toolchain-macos`；`hidapi` IOKit 后端实现烧录；`cargo-dist` 出通用/双架构包。
-- 降级：若 macOS SDCC 构建或 HID 验证不通过，先发布 **macOS 配置版**（编辑/校验/生成 C/导出 C/CLI/MIDI，不本地编译与烧录），在 UI 中明确说明；编译烧录留到 1.0 之后的独立阶段 **M9（macOS 增强）**，不阻塞 1.0。
-- 签名：初期不签名（与 Flutter 现状一致），文档说明 Gatekeeper 绕过；后续可加 Developer ID + 公证。
+- 已确认 1.0 不构建/不测试/不发布 macOS；仓库与 Flutter 版现状也没有 macOS 前提（无 `macos/` 目录、SDCC 仅 Win/Linux 构建脚本、HID FFI 在 macOS 不支持）。
+- 为未来保留可移植性：`pieblock-core` 不依赖平台；`hidapi`、音频、路径、进程管理通过 trait/feature 隔离；发布脚本按 target 参数化。
+- 若未来单独立项，需要新增：macOS SDCC 工具链构建、IOKit hidapi 传输验证、签名/公证与 Gatekeeper 说明，工作量另估（约 4–8 人周）。
 
 ### 10.5 版本、日志与更新
 
@@ -636,29 +664,28 @@ PIEBlock-TUI/
 | R3 | Windows 终端粘贴不可用（crossterm 0.29 限制） | 高/中 | `arboard` Ctrl+V + `termina` 后端可切换；M0 实测 Windows Terminal ≥1.25 与 conhost；长文本外部编辑器逃生口 |
 | R4 | 中文 IME/宽字符在部分终端错位 | 中/中 | `unicode-width` + 双宽不变量测试；推荐终端清单；不做组合期实时校验；PTY 无法覆盖 IME，列入人工矩阵 |
 | R5 | crossterm 0.30 破坏性升级、ratatui 拆 crate | 中/低 | 锁版本 + 自建事件抽象层；升级单独立项 |
-| R6 | macOS 工具链/HID 是全新工作，超期 | 高/中 | 单列 M9（1.0 后增强）；先发“配置版”；编译烧录作为可选能力，不阻塞 1.0 |
+| R6 | macOS 不在 1.0 范围（已确认） | —/低 | 不构建/不测试/不发包；保持核心无平台依赖与 trait 隔离，未来单独立项 |
 | R7 | 内置 SDCC 体积/GPL 合规 | 中/中 | 复用现有 manifest 与许可文本；发布附源码获取方式；SBOM |
 | R8 | HID 真机行为差异（Linux report ID、时序、重试） | 中/高 | 复用现有协议测试向量；HIL 每个 RC；错误文案与 Flutter 一致 |
 | R9 | 表单/页面数量大导致 UI 工期超支 | 高/中 | 先建表单引擎与代码生成式字段表（字段元数据驱动），再逐页填充；M4 分批交付 |
 | R10 | 双实现长期漂移（Flutter 继续演进） | 高/中 | 提交 golden 对拍 + 每周 CI 校验；约定“格式/代码生成变更必须同步 TUI golden”；明确维护责任人 |
-| R11 | 用户对“所有 UI 内容”的预期与终端现实冲突 | 中/高 | §1.2/§5.10 适配白名单提前签字；每个例外有替代交互与测试 |
-| R12 | Rust 人力不足/学习曲线 | 中/高 | M0 决策门可切 Go；里程碑与接口按语言无关设计 |
+| R11 | TUI 原生风格与用户预期不一致 | 低/中 | 用户已确认不要求与 Flutter 视觉统一；M0 出 2–3 套主题/布局草图供选择；`F1` 帮助说明交互 |
+| R12 | Rust 人力不足/学习曲线 | 中/高 | 语言已确认 Rust；M0 结对/外部支持；模块边界清晰便于分工；不再切换语言 |
 | R13 | 音频在 Linux 缺少 ALSA 头文件/无声卡 | 低/低 | 构建依赖文档；运行时检测失败降级 BEL；`--no-audio` |
 | R14 | 大工程渲染与内存（超长 C/汇编、数千音符） | 低/中 | 视口裁剪、增量渲染、虚拟列表；benchmark 门禁 |
 | R15 | 与 Flutter 版同时编辑同一 `.pieproj` | 低/中 | 原子写 + 文档提示 + 可选文件锁；冲突时以最后保存为准并提示 |
 
 ## 12. 待用户决策
 
-1. **语言确认**：按本计划用 Rust，还是团队更熟 Go（Bubble Tea v2）？M0 结束后不再改语言。
-2. **与 Flutter 版的关系**：长期并存（双实现），还是 TUI 逐步取代 Flutter（单实现）？这决定是否值得投入逐字节对拍与维护成本。
-3. **“全部 UI 内容”的验收口径**：接受 §1.2/§5.10 的终端适配白名单吗？不接受的部分请指出（尤其是图片、动画、原生文件对话框、悬停卡）。
-4. **MCP**：已确认不做；未来若恢复，是否要求 TUI 同步提供（架构已留 `Host` 位）。
-5. **macOS 范围**：只要求“能配置/生成/导出 C/CLI”，还是必须本地编译 + 烧录？后者需追加 macOS 工具链与 HID 验证预算。
-6. **发行与品牌**：TUI 是否以 `PIEBlock-TUI` 独立发布？是否要求与 Flutter 版同版本号/同一下载页？是否需要签名/公证预算？
-7. **是否允许开发期 Dart oracle**：发布产物零 Dart 是硬约束；开发/CI 用现有 Dart 实现生成 golden 是否可接受？若不允许，需要一次性冻结快照并接受人工维护成本。
-8. **最低环境**：Windows 10/11 是否都支持？只支持 Windows Terminal 还是也要兼容 conhost？是否要求 SSH 远程（影响鼠标/剪贴板/图片）？
-9. **数据目录**：TUI 独立数据目录（推荐，避免与 Flutter 设置互相覆盖）还是共享设置？
-10. **人力/日期**：可投入几名开发、目标 1.0 时间；这决定 M0 之后是否需要缩减范围（如先做配置+生成+CLI，烧录与音乐延后）。
+> 已确认：语言 **Rust**；TUI 采用自身风格、**不逐项对齐 Flutter 视觉**；1.0 只做 **Windows/Linux**；**MCP 不做**。
+
+1. **与 Flutter 版的关系**：长期并存（双实现），还是 TUI 逐步取代 Flutter（单实现）？这决定对拍与维护投入。
+2. **最低环境**：Windows 10/11 是否都支持？只支持 Windows Terminal 还是也兼容 conhost？Linux 支持到哪些发行版（glibc 最低版本）？
+3. **是否允许开发期 Dart oracle**：发布产物零 Dart 是硬约束；开发/CI 用现有 Dart 实现生成 golden 是否可接受？若不允许，需一次性冻结快照并接受人工维护成本。
+4. **发行与品牌**：TUI 是否以 `PIEBlock-TUI` 独立发布？是否要求与 Flutter 版同版本号/同一下载页？是否需要 Windows 代码签名预算？
+5. **数据目录**：TUI 独立数据目录（推荐，避免与 Flutter 设置互相覆盖）还是共享设置？
+6. **人力/日期**：可投入几名开发、目标 1.0 时间；这决定 M0 之后是否缩减范围（如先做配置+生成+CLI，烧录与音乐延后）。
+7. **视觉偏好**：TUI 风格是否有参考对象（如 lazygit/k9s/helix 风格）？没有则按 §5.0 默认设计执行。
 
 ## 13. 附录
 
@@ -710,13 +737,13 @@ exceptions:
 - **golden**：由 Flutter 实现生成的期望结果快照，提交到 `parity/golden/`，Rust CI 无需 Dart 即可对拍。
 - **PTY 测试**：在伪终端中启动真实 TUI，注入键鼠字节流并断言屏幕内容。
 - **HIL**：Hardware-in-the-Loop，真实主控板/工具链在环测试。
-- **适配白名单**：§1.2/§5.10 中允许与 Flutter 视觉不一致的项，其余差异视为缺陷。
 
 ### E. 修订记录
 
 | 日期 | 版本 | 说明 |
 | --- | --- | --- |
 | 2026-11-18 | v0.1 | 首版计划；基线 `a9143e6`（1.8.0+14，格式 23），排除已下架 MCP |
+| 2026-11-18 | v0.2 | 按确认修改：语言定为 Rust；TUI 原生风格、不逐项对齐 Flutter；1.0 只做 Windows/Linux（macOS 不纳入） |
 
 
 
