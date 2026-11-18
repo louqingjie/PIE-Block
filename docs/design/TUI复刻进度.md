@@ -5,7 +5,7 @@
 
 ## 状态
 
-**当前：M0 收尾（待人工/硬件验证）+ M1 领域内核进行中**
+**当前：M1 领域内核 + CLI ✅；M2 工具链 + HID 进行中；M0 需人工/硬件验证项待补**
 
 ## 里程碑清单
 
@@ -13,7 +13,7 @@
 | --- | --- | --- |
 | M0 技术验证 | 🟡 收尾 | Rust 工具链、workspace、M0 演示壳、表单/卷帘原型、单元测试、CI 已就绪；待：真实终端键鼠/IME 验证、hidapi 真机、SDCC+HEX 对拍、卷帘体验评审 |
 | M1 领域内核 + CLI | ✅ 完成 | 模型/迁移/校验/表达式/四类 C 生成/音乐时间轴/MIDI/五线谱固件表/CLI validate·codegen·propose 全部移植，golden 逐字节对拍（模型 13、校验 24、表达式 60+、codegen 17、CLI validate/codegen 42、CLI propose 7、MIDI 3+往返）；五线谱布局渲染留待 M6 |
-| M2 工具链 + HID | ⬜ 未开始 | SDCC/Keil 构建、指纹/缓存、HEX/MAP、LST、hidapi 传输与烧录状态机、udev |
+| M2 工具链 + HID | 🟡 进行中 | 已完成：Intel HEX 解析、主控板应用区校验、SDCC HEX/MAP 链接布局校验（13+13+6 golden）、HID 帧/报告/块映射、烧录状态机（重试/探活/中断指引，9 场景对拍）；待：原生 hidapi 传输、SDCC/Keil 构建、指纹/缓存、LST、udev、真机烧录 |
 | M3 TUI 基座 | 🟡 部分前置 | 已有应用循环、主题、三栏布局、焦点、状态栏；待完善文件浏览器、设置、最近项目、自动保存与 PTY 测试框架 |
 | M4 向导表单 | ⬜ 未开始 | 四类工程全部页面与问题跳转 |
 | M5 检查/代码/汇编/表达式 | ⬜ 未开始 | |
@@ -41,12 +41,12 @@
 5. 卷帘与表单在 80×24 / 120×36 的体验评审，确定 M4/M6 的键位与布局。
 6. 确认 TUI 视觉风格（深色/浅色/边框/信息密度）方向。
 
-## 下一步（M1 继续）
+## 下一步（M2 继续）
 
-1. 补全校验器：步兵/工程专属规则（约 1,500 行 Dart）与音乐规则（依赖 `music.dart` / `staff_notation.dart` 移植），把校验 golden 从 remote 子集扩展到完整列表。
-2. 移植表达式解析/求值/C 生成（`expression.dart`）与音乐裁决/MIDI（`music.dart`、`midi_codec.dart`）。
-3. 移植代码生成器（`code_generator.dart`），以 350 份生成 C 与 6 个 HEX 哈希对拍。
-4. 接 CLI 的 `validate`/`codegen`，保持现有 JSON/退出码契约。
+1. hidapi 原生传输：Windows `windows-native` / Linux `linux-static-hidraw`，设备枚举、打开/读/写/取消；真机烧录验证（需主控板）。
+2. SDCC 运行时部署：`.ready`、哈希校验、staging/rename、退避与残留清理；工具链 bundle 指纹。
+3. SDCC/Keil 构建：构建指纹、对象/产物缓存、HEX/MAP/LST 解析与导出；HEX SHA-256 与 Flutter 产物对拍（需 SDCC 与硬件）。
+4. udev 规则检查/安装与 `HidFlasher` 的取消/90s 超时 worker 封装。
 
 ## M1 已完成
 
@@ -66,7 +66,15 @@
 - `pieblock-core::midi`：MIDI Format 0/1 解析（running status、变速/拍号/调号 meta、鼓通道过滤、VLQ、容错文案）、写回（Format 0 单轨、调号/速度/拍号/音符事件排序、轨道名 UTF-8）、`select_track` 生成音乐配置；golden 覆盖 3 份写出字节逐字节 + 往返解析结构 + running status 手工样本 + 5 类错误文案，全部一致。
 - `pieblock-core::ids`：补上 Dart `toIso8601String` 的规则——微秒为 0 时 3 位小数，否则 6 位。
 
-## M0 演示壳命令
+## M2 已完成（进行中）
+
+- `pieblock-toolchain::hex`：Intel HEX 解析（扩展地址类型 2/4、记录类型 1/3/5、空行、长度/校验和/非法字符/类型错误文案）与应用区布局校验（FE0000 用户区、FF0000 向量区、LJMP 复位向量）；SDCC HEX/MAP 链接布局校验（HOME/CSEG/XSEG/DSEG 等区域与启动符号）。Dart golden 覆盖 13 个解析、13 个应用区、6 个 MAP 用例，全部逐字节/逐文案一致。
+- `pieblock-hid::protocol`：帧编码、1ms 报告间隔、65 字节报告拆分、HEX→块映射（用户区首块 `0x32`、后续 `0x12`、向量区 `0x02`、空白补零）、ACK 校验与无响应分类。固定向量 golden 与 Dart 一致。
+- `pieblock-hid::flasher`：连接→擦除→分块写入（同址重发 3 次、50ms 退避）→复位状态机，含进度事件、写入失败/命令异常/帧头异常、`info` 探活与「仍在 ISP / 已掉线」操作指引。9 个脚本化场景的事件序列、结果文案、写出报告、关闭状态全部与 Dart 一致。
+- 生成器：`tui/parity/tools/bin/export_m2_goldens.dart` → `tui/parity/golden/m2/m2.json`。
+- 待硬件：原生 hidapi 传输、真机烧录、SDCC 构建 HEX 对拍（需要主控板与 SDCC 环境）。
+
+
 
 ```powershell
 cd tui
