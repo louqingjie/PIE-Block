@@ -56,6 +56,7 @@ pub enum Overlay {
 pub enum InputPurpose {
     NewProject(ProjectKind),
     KeilPath,
+    MidiPath,
 }
 
 /// M3 交互外壳。
@@ -259,6 +260,7 @@ impl Shell {
             KeyCode::Char('m') => self.enter_piano(),
             KeyCode::Char('p') => self.enter_playback(),
             KeyCode::Char('f') => self.enter_flash(),
+            KeyCode::Char('i') => self.begin_midi_import(),
             KeyCode::Char('s') => self.settings_screen(),
             KeyCode::F(5) => self.save(),
             _ => {}
@@ -415,6 +417,7 @@ impl Shell {
         match purpose {
             InputPurpose::NewProject(kind) => format!("新建{}：工程路径", kind.label()),
             InputPurpose::KeilPath => "Keil C251 安装目录".to_owned(),
+            InputPurpose::MidiPath => "导入 MIDI：文件路径".to_owned(),
         }
     }
 
@@ -439,7 +442,85 @@ impl Shell {
                 self.workspace.set_keil_path(Some(value));
                 self.overlay = Overlay::None;
             }
+            InputPurpose::MidiPath => {
+                self.overlay = Overlay::None;
+                let path = PathBuf::from(value.trim());
+                let bytes = match std::fs::read(&path) {
+                    Ok(bytes) => bytes,
+                    Err(error) => {
+                        self.message = Some(format!("无法读取 MIDI：{error}"));
+                        return;
+                    }
+                };
+                let data = match pieblock_core::midi::MidiCodec::parse(&bytes) {
+                    Ok(data) => data,
+                    Err(error) => {
+                        self.message = Some(format!("MIDI 解析失败：{error}"));
+                        return;
+                    }
+                };
+                let Some((index, _)) = data
+                    .tracks
+                    .iter()
+                    .enumerate()
+                    .find(|(_, track)| track.playable())
+                else {
+                    self.message = Some("MIDI 中没有可播放的旋律轨道".to_owned());
+                    return;
+                };
+                let source_name = path
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned());
+                let music = match data.select_track(
+                    index,
+                    source_name,
+                    pieblock_core::model::MusicOverlapMode::Nearest,
+                    true,
+                ) {
+                    Ok(music) => music,
+                    Err(error) => {
+                        self.message = Some(format!("MIDI 导入失败：{error}"));
+                        return;
+                    }
+                };
+                let track_name = music.track_name.clone().unwrap_or_default();
+                let notes = music.notes.len();
+                let Some(session) = self.workspace.session.as_mut() else {
+                    self.message = Some("请先打开音乐工程".to_owned());
+                    return;
+                };
+                if !matches!(
+                    session.document.config,
+                    pieblock_core::model::ProjectConfig::Music(_)
+                ) {
+                    self.message = Some("MIDI 导入仅用于音乐工程".to_owned());
+                    return;
+                }
+                session.document.config = pieblock_core::model::ProjectConfig::Music(music);
+                let config = session.document.config.clone();
+                self.workspace.update_config(config);
+                self.workspace.save_now();
+                self.message = Some(format!("已导入 MIDI：{track_name}（{notes} 个音符）"));
+            }
         }
+    }
+
+    fn begin_midi_import(&mut self) {
+        let Some(session) = self.workspace.session.as_ref() else {
+            return;
+        };
+        if !matches!(
+            session.document.config,
+            pieblock_core::model::ProjectConfig::Music(_)
+        ) {
+            self.message = Some("MIDI 导入仅用于音乐工程".to_owned());
+            return;
+        }
+        self.overlay = Overlay::Input {
+            title: "导入 MIDI：文件路径".to_owned(),
+            value: self.start_dir.display().to_string() + "\\",
+            purpose: InputPurpose::MidiPath,
+        };
     }
 
     /// 鼠标滚轮移动选择。
@@ -2252,6 +2333,63 @@ mod flash_tests {
         );
         shell.handle_key(key(KeyCode::Esc));
         assert_eq!(shell.screen, Screen::Project);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod midi_import_tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use pieblock_core::{ProjectDocument, ProjectKind};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn midi_import_replaces_music_notes() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target")
+            .join(format!("shell-midi-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("dir");
+        let mut music = match ProjectDocument::create(ProjectKind::Music).config {
+            pieblock_core::model::ProjectConfig::Music(music) => music,
+            other => panic!("unexpected config: {other:?}"),
+        };
+        music.notes.push(pieblock_core::model::MusicNote {
+            id: "1".to_owned(),
+            pitch: 64,
+            start_tick: 0,
+            duration_ticks: 480,
+        });
+        let midi_path = dir.join("import.mid");
+        std::fs::write(&midi_path, pieblock_core::midi::MidiCodec::write(&music)).expect("midi");
+        let mut shell = Shell::with_data_dir(dir.join("data"), dir.clone());
+        shell.handle_key(key(KeyCode::Char('n')));
+        for _ in 0..3 {
+            shell.handle_key(key(KeyCode::Down));
+        }
+        shell.handle_key(key(KeyCode::Enter));
+        shell.handle_key(key(KeyCode::Enter));
+        shell.handle_key(key(KeyCode::Char('i')));
+        shell.overlay = Overlay::Input {
+            title: "导入 MIDI".to_owned(),
+            value: midi_path.display().to_string(),
+            purpose: InputPurpose::MidiPath,
+        };
+        shell.handle_key(key(KeyCode::Enter));
+        assert!(matches!(shell.overlay, Overlay::None));
+        let session = shell.workspace.session.as_ref().expect("session");
+        match &session.document.config {
+            pieblock_core::model::ProjectConfig::Music(music) => {
+                assert_eq!(music.notes.len(), 1);
+                assert_eq!(music.notes[0].pitch, 64);
+                assert_eq!(music.source_name.as_deref(), Some("import.mid"));
+            }
+            other => panic!("unexpected config: {other:?}"),
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -133,3 +133,5 @@ cd tui
 - M7 烧录页（进行中）：工程概览按 F 打开烧录页，进入时探测 STC32G ISP 设备数（未连接时明确提示）；显示 HEX 路径（优先使用本次构建产物，其次工程目录 `main.hex` 并计算 SHA-256）；Enter 通过 `pieblock_hid::start_flash` 后台线程烧录，主循环轮询 `FlashEvent` 更新日志/进度条，C 取消（取消标志 + 传输层中断），成功后记录结果；R 重新探测、Esc 返回。无设备环境测试覆盖探测提示、HEX 校验起步与开始动作；**真实板卡烧录验证仍需硬件，属于外部阻塞项**。
 
 - M8 发布（进行中）：新增 `tui/scripts/package.ps1`（Windows x64 zip + sha256）与 `tui/scripts/package.sh`（Linux x86_64 tar.gz + sha256）：构建 release，按运行时期望布局打包 `pieblock-tui(.exe)` + `data/pieblock_runtime/{sdcc-toolchain,stc32g_sdcc}` + `assets/templates` + README/第三方声明；打包时扫描并拒绝任何 Dart/Flutter 运行时文件；本地实测产出 22.6MB zip（解压 98.1MB，含 SDCC 工具链）。CI `tui.yml` 在 Windows/Linux 各构建、测试后打包并上传工件。发布说明见 `docs/design/TUI发布说明.md`。
+
+- M6 MIDI 导入（已完成）：音乐工程按 i 打开路径输入框，读取 `.mid` 后经 `pieblock_core::midi::MidiCodec::parse` 解析，自动选择第一条可播放旋律轨道（跳过打击乐通道），保留源文件名/音轨名、tick 分辨率、速度/拍号/调号，替换当前音乐工程并通过 `select_track` 生成音符，立即写回保存；解析失败、无可播放轨道、非音乐工程均有明确提示。端到端测试覆盖「写 MIDI → 音乐工程 → i → 路径 → 导入 1 个音符」。
