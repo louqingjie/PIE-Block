@@ -6,6 +6,10 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+pieblock-toolchain = { path = "../pieblock-toolchain" }
+
+[dev-dependencies]
+serde_json.workspace = true
 
 [lints]
 workspace = true
