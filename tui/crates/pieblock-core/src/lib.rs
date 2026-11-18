@@ -3,6 +3,9 @@
 //! M0 只包含格式常量、工程类型与向导步骤；M1 按计划移植模型/JSON/校验/代码生成等。
 //! 本 crate 不依赖终端与 I/O，保持可被 TUI、CLI 与未来 MCP 复用。
 
+pub mod ids;
+pub mod json;
+
 use serde::{Deserialize, Serialize};
 
 /// 当前 `.pieproj` 格式版本（与 Flutter 版 `ProjectDocument.formatVersion` 对齐）。
