@@ -351,3 +351,35 @@ fn engineer_strategy_page_edits_mode_count_and_strategy() {
         other => panic!("unexpected config: {other:?}"),
     }
 }
+
+#[test]
+fn engineer_mappings_page_has_action_rows() {
+    use pieblock_ui::engineer_mappings_page;
+
+    let config = engineer_config();
+    let actions = match &config {
+        ProjectConfig::Engineer(value) => value
+            .modes
+            .iter()
+            .map(|mode| mode.actions.len())
+            .sum::<usize>(),
+        _ => 0,
+    };
+    let page = engineer_mappings_page(&config);
+    assert_eq!(page.id, "mappings");
+    assert_eq!(page.fields.len(), actions * 6);
+    if actions > 0 {
+        let first_path = page.fields[0].path;
+        assert!(first_path.ends_with(".key"));
+        let mut state = FormState::new(config);
+        assert_eq!(
+            clear_editing(&mut state, &page, "NUM_9"),
+            FormAction::Changed
+        );
+        let action = match &state.config {
+            ProjectConfig::Engineer(value) => &value.modes[0].actions[0],
+            other => panic!("unexpected config: {other:?}"),
+        };
+        assert_eq!(action.key.as_deref(), Some("NUM_9"));
+    }
+}

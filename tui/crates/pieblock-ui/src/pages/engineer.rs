@@ -410,3 +410,268 @@ pub fn engineer_strategy_page(config: &ProjectConfig) -> FormPage {
         fields,
     }
 }
+
+const INPUT_CHOICES: [Choice; 2] = [
+    Choice {
+        value: "remote",
+        label: "遥控输入",
+    },
+    Choice {
+        value: "unspecified",
+        label: "未指定",
+    },
+];
+
+const OUTPUT_CHOICES: [Choice; 3] = [
+    Choice {
+        value: "pin",
+        label: "引脚输出",
+    },
+    Choice {
+        value: "integer",
+        label: "整数变量",
+    },
+    Choice {
+        value: "rational",
+        label: "小数变量",
+    },
+];
+
+const CONTROL_MODES: [Choice; 6] = [
+    Choice {
+        value: "direct",
+        label: "直接",
+    },
+    Choice {
+        value: "incremental",
+        label: "增量",
+    },
+    Choice {
+        value: "speed",
+        label: "速度",
+    },
+    Choice {
+        value: "accelerate",
+        label: "加速",
+    },
+    Choice {
+        value: "single",
+        label: "单次",
+    },
+    Choice {
+        value: "continuous",
+        label: "连续",
+    },
+];
+
+fn engineer_action(
+    config: &ProjectConfig,
+    mode: usize,
+    action: usize,
+) -> Option<&pieblock_core::model::ActionMapping> {
+    match config {
+        ProjectConfig::Engineer(value) => value
+            .modes
+            .get(mode)
+            .and_then(|mode| mode.actions.get(action)),
+        _ => None,
+    }
+}
+
+fn engineer_action_mut(
+    config: &mut ProjectConfig,
+    mode: usize,
+    action: usize,
+) -> Option<&mut pieblock_core::model::ActionMapping> {
+    match config {
+        ProjectConfig::Engineer(value) => value
+            .modes
+            .get_mut(mode)
+            .and_then(|mode| mode.actions.get_mut(action)),
+        _ => None,
+    }
+}
+
+fn action_text_field(
+    mode: usize,
+    action: usize,
+    suffix: &str,
+    label: String,
+    help: &'static str,
+    getter: fn(&pieblock_core::model::ActionMapping) -> Option<String>,
+    setter: fn(&mut pieblock_core::model::ActionMapping, Option<String>),
+) -> FormField {
+    let path: &'static str =
+        Box::leak(format!("modes.{mode}.actions.{action}.{suffix}").into_boxed_str());
+    FormField {
+        id: path,
+        path,
+        label,
+        help,
+        kind: FieldKind::Text {
+            max_len: 64,
+            placeholder: "（未设置）",
+        },
+        get: Box::new(move |config| {
+            FieldValue::Text(
+                engineer_action(config, mode, action)
+                    .and_then(getter)
+                    .unwrap_or_default(),
+            )
+        }),
+        set: Box::new(move |config, value| {
+            if let FieldValue::Text(text) = value {
+                if let Some(mapping) = engineer_action_mut(config, mode, action) {
+                    let text = text.trim();
+                    setter(
+                        mapping,
+                        if text.is_empty() {
+                            None
+                        } else {
+                            Some(text.to_owned())
+                        },
+                    );
+                }
+            }
+        }),
+    }
+}
+
+/// 「动作映射」页（工程）：每个模式的现有动作行字段编辑。
+#[must_use]
+pub fn engineer_mappings_page(config: &ProjectConfig) -> FormPage {
+    let mut fields: Vec<FormField> = Vec::new();
+    let mode_count = match config {
+        ProjectConfig::Engineer(value) => value.modes.len(),
+        _ => 0,
+    };
+    for mode in 0..mode_count {
+        let action_count = match config {
+            ProjectConfig::Engineer(value) => {
+                value.modes.get(mode).map_or(0, |mode| mode.actions.len())
+            }
+            _ => 0,
+        };
+        for action in 0..action_count {
+            fields.push(action_text_field(
+                mode,
+                action,
+                "key",
+                format!("模式{} 动作{} 按键", mode + 1, action + 1),
+                "遥控数字按键名，如 NUM_1 / mouse_left。",
+                |mapping| mapping.key.clone(),
+                |mapping, value| mapping.key = value,
+            ));
+            let input_path: &'static str =
+                Box::leak(format!("modes.{mode}.actions.{action}.input_kind").into_boxed_str());
+            fields.push(FormField {
+                id: input_path,
+                path: input_path,
+                label: format!("模式{} 动作{} 输入", mode + 1, action + 1),
+                help: "遥控输入或未指定。",
+                kind: FieldKind::Choice(&INPUT_CHOICES),
+                get: Box::new(move |config| {
+                    FieldValue::Choice(
+                        engineer_action(config, mode, action).map_or_else(String::new, |mapping| {
+                            mapping.input_kind.as_str().to_owned()
+                        }),
+                    )
+                }),
+                set: Box::new(move |config, value| {
+                    if let FieldValue::Choice(choice) = value {
+                        if let Some(mapping) = engineer_action_mut(config, mode, action) {
+                            mapping.input_kind =
+                                pieblock_core::model::ActionInputKind::from_str_lenient(&choice)
+                                    .unwrap_or(pieblock_core::model::ActionInputKind::Remote);
+                        }
+                    }
+                }),
+            });
+            let output_path: &'static str =
+                Box::leak(format!("modes.{mode}.actions.{action}.output_kind").into_boxed_str());
+            fields.push(FormField {
+                id: output_path,
+                path: output_path,
+                label: format!("模式{} 动作{} 输出", mode + 1, action + 1),
+                help: "引脚 / 整数变量 / 小数变量。",
+                kind: FieldKind::Choice(&OUTPUT_CHOICES),
+                get: Box::new(move |config| {
+                    FieldValue::Choice(
+                        engineer_action(config, mode, action).map_or_else(String::new, |mapping| {
+                            mapping.output_kind.as_str().to_owned()
+                        }),
+                    )
+                }),
+                set: Box::new(move |config, value| {
+                    if let FieldValue::Choice(choice) = value {
+                        if let Some(mapping) = engineer_action_mut(config, mode, action) {
+                            mapping.output_kind =
+                                pieblock_core::model::ActionOutputKind::from_str_lenient(&choice)
+                                    .unwrap_or(pieblock_core::model::ActionOutputKind::Pin);
+                        }
+                    }
+                }),
+            });
+            fields.push(action_text_field(
+                mode,
+                action,
+                "pin",
+                format!("模式{} 动作{} 引脚", mode + 1, action + 1),
+                "输出引脚名；输出类型为引脚时使用。",
+                |mapping| mapping.pin.clone(),
+                |mapping, value| mapping.pin = value,
+            ));
+            fields.push(action_text_field(
+                mode,
+                action,
+                "variable",
+                format!("模式{} 动作{} 变量", mode + 1, action + 1),
+                "输出变量名（integer/rational 输出）。",
+                |mapping| mapping.variable_name.clone(),
+                |mapping, value| mapping.variable_name = value,
+            ));
+            fields.push(action_text_field(
+                mode,
+                action,
+                "expression",
+                format!("模式{} 动作{} 表达式", mode + 1, action + 1),
+                "可选表达式（如 LX*100）；语法错误会在审查页提示。",
+                |mapping| mapping.expression.clone(),
+                |mapping, value| mapping.expression = value,
+            ));
+            let mode_path: &'static str =
+                Box::leak(format!("modes.{mode}.actions.{action}.mode").into_boxed_str());
+            fields.push(FormField {
+                id: mode_path,
+                path: mode_path,
+                label: format!("模式{} 动作{} 控制方式", mode + 1, action + 1),
+                help: "直接/增量/速度/加速/单次/连续。",
+                kind: FieldKind::Choice(&CONTROL_MODES),
+                get: Box::new(move |config| {
+                    FieldValue::Choice(engineer_action(config, mode, action).map_or_else(
+                        String::new,
+                        |mapping| {
+                            mapping
+                                .mode
+                                .map_or_else(String::new, |mode| mode.as_str().to_owned())
+                        },
+                    ))
+                }),
+                set: Box::new(move |config, value| {
+                    if let FieldValue::Choice(choice) = value {
+                        if let Some(mapping) = engineer_action_mut(config, mode, action) {
+                            mapping.mode =
+                                pieblock_core::model::ControlMode::from_str_lenient(&choice);
+                        }
+                    }
+                }),
+            });
+        }
+    }
+    FormPage {
+        id: "mappings",
+        title: "第 4 步：动作映射",
+        subtitle: "编辑每个模式的现有动作行（按键、输入/输出类型、引脚/变量/表达式、控制方式）。",
+        fields,
+    }
+}

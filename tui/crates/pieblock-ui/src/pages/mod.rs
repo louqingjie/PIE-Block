@@ -10,7 +10,9 @@ mod infantry;
 mod remote;
 
 pub use debug::debug_tests_page;
-pub use engineer::{engineer_pins, engineer_pwm_page, engineer_strategy_page};
+pub use engineer::{
+    engineer_mappings_page, engineer_pins, engineer_pwm_page, engineer_strategy_page,
+};
 pub use infantry::{infantry_advanced_fields, infantry_controls_page, infantry_mechanism_page};
 pub use remote::{DIRECTION_CHOICES, remote_page};
 
@@ -30,6 +32,7 @@ pub fn wizard_pages(
             remote_page(kind),
             engineer_pwm_page(config),
             engineer_strategy_page(config),
+            engineer_mappings_page(config),
         ],
         ProjectKind::Debug => vec![debug_tests_page()],
         ProjectKind::Music => Vec::new(),
