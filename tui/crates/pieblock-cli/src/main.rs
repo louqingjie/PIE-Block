@@ -1,11 +1,10 @@
-//! `pieblock-cli`：PIE-Block 工程命令行工具（M1 移植中）。
+//! `pieblock-cli`：PIE-Block 工程命令行工具（M1）。
 //!
 //! 契约与 Flutter 版保持一致：stdout 只放机器可读数据，stderr 放人类可读信息；
 //! 退出码 0 成功 / 1 参数错误 / 2 校验失败 / 3 IO 或格式错误 / 4 生成失败 /
-//! 5 内部错误 / 6 已有待处理提案（propose 尚未移植）。
+//! 5 内部错误 / 6 已有待处理提案（需 --force）。
 //!
-//! 已移植：`validate`、`codegen`（调试/步兵工程）；工程/音乐代码生成与
-//! `propose` 在后续提交补齐。
+//! 已移植：`validate`、`codegen`（四类工程）、`propose`（只写 `.proposed`）。
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -14,7 +13,10 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand};
 use pieblock_core::codegen::{GenerationError, generate};
 use pieblock_core::validation::{IssueSeverity, ValidationIssue};
-use pieblock_core::{ProjectDocument, validate};
+use pieblock_core::{
+    ProjectDocument, ProjectProposal, encode_proposal, now_iso8601, proposal_path_for, sha256_hex,
+    validate,
+};
 use serde_json::{Map, Value, json};
 
 const EXIT_USAGE: u8 = 1;
@@ -22,6 +24,7 @@ const EXIT_INVALID: u8 = 2;
 const EXIT_IO: u8 = 3;
 const EXIT_GENERATE: u8 = 4;
 const EXIT_INTERNAL: u8 = 5;
+const EXIT_CONFLICT: u8 = 6;
 
 const TOOL_NAME: &str = "pieblock-cli";
 const CLI_VERSION: &str = "1.0.0";
@@ -52,6 +55,17 @@ enum Command {
         /// 输出文件；省略时写到 stdout。
         #[arg(long)]
         out: Option<PathBuf>,
+    },
+    /// 生成改动提案 `<工程>.proposed`；不直接修改工程。
+    Propose {
+        /// 工程文件路径。
+        path: PathBuf,
+        /// 候选完整 `.pieproj`。
+        #[arg(long)]
+        config: PathBuf,
+        /// 覆盖已有提案。
+        #[arg(long)]
+        force: bool,
     },
     /// 输出机器可读的命令契约（JSON）。
     Describe,
@@ -84,6 +98,11 @@ fn run(cli: Cli) -> Result<u8, String> {
         }
         Command::Validate { path } => validate_command(&path),
         Command::Codegen { path, out } => codegen_command(&path, out.as_deref()),
+        Command::Propose {
+            path,
+            config,
+            force,
+        } => propose_command(&path, &config, force),
     }
 }
 
@@ -108,6 +127,7 @@ fn describe() {
             "commands": [
                 {"name": "validate", "usage": "pieblock-cli validate <工程.pieproj>", "stdout": "JSON: {ok, valid, project:{kind,format,sourceFormat}, counts:{errors,warnings}, issues:[{severity,kind,fieldPath,message,stepId}]}", "note": "无论是否有问题都以 JSON 返回；valid=false 表示存在 error。"},
                 {"name": "codegen", "usage": "pieblock-cli codegen <工程.pieproj> [--out <main.c>]", "stdout": "纯 C 源码（可直接在 shell 里重定向到文件）", "stderr": "人类可读的生成摘要；失败时给出错误清单", "note": "配置有 error 级问题时拒绝生成（与 GUI 行为一致）。"},
+                {"name": "propose", "usage": "pieblock-cli propose <工程.pieproj> --config <候选.pieproj> [--force]", "stdout": "JSON: {ok, proposal, changed, paths, baseSha256, createdAt}", "stderr": "提案摘要；失败时给出字段路径", "note": "只写 <工程>.proposed，不改工程；已有提案时需 --force 覆盖。"},
                 {"name": "describe", "usage": "pieblock-cli describe", "stdout": "本命令契约（JSON）"},
             ],
         }))
@@ -220,6 +240,133 @@ fn codegen_command(path: &Path, out: Option<&Path>) -> Result<u8, String> {
         );
     }
     Ok(0)
+}
+
+fn propose_command(path: &Path, config: &Path, force: bool) -> Result<u8, String> {
+    let base = match load_document(path) {
+        Ok(document) => document,
+        Err(error) => {
+            eprintln!("{error}");
+            return Ok(EXIT_IO);
+        }
+    };
+    let project_path = path.display().to_string();
+    let proposal_path = proposal_path_for(&project_path);
+    if Path::new(&proposal_path).exists() && !force {
+        eprintln!("已存在待确认的提案：{proposal_path}");
+        eprintln!("确认覆盖请加 --force。");
+        return Ok(EXIT_CONFLICT);
+    }
+    let base_bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            eprintln!("读取工程失败：{}\n{error}", path.display());
+            return Ok(EXIT_IO);
+        }
+    };
+    let base_hash = sha256_hex(&base_bytes);
+    let candidate_json = match read_json_object(config, "候选工程") {
+        Ok(json) => json,
+        Err(message) => {
+            eprintln!("{message}");
+            return Ok(EXIT_IO);
+        }
+    };
+    let proposal = match ProjectProposal::create(
+        &base,
+        &candidate_json,
+        &base_hash,
+        Some(format!("{TOOL_NAME}/{CLI_VERSION}")),
+        now_iso8601(),
+    ) {
+        Ok(proposal) => proposal,
+        Err(error) => {
+            eprintln!("提案被拒绝：{}", error.message);
+            if !error.fields.is_empty() {
+                eprintln!("涉及字段：");
+                for field in error.fields.iter().take(20) {
+                    eprintln!("  · {field}");
+                }
+                if error.fields.len() > 20 {
+                    eprintln!("  · …");
+                }
+            }
+            let structural = error.code == "invalid_document" || error.code == "unsupported_schema";
+            return Ok(if structural { EXIT_IO } else { EXIT_INVALID });
+        }
+    };
+    if let Err(error) = write_file_atomically(&proposal_path, &encode_proposal(&proposal)) {
+        eprintln!("写入提案失败：{proposal_path}\n{error}");
+        return Ok(EXIT_IO);
+    }
+    let mut payload = Map::new();
+    payload.insert("ok".to_owned(), Value::Bool(true));
+    payload.insert("proposal".to_owned(), Value::String(proposal_path.clone()));
+    payload.insert(
+        "changed".to_owned(),
+        Value::from(proposal.changed_paths.len()),
+    );
+    payload.insert(
+        "paths".to_owned(),
+        Value::Array(
+            proposal
+                .changed_paths
+                .iter()
+                .map(|path| Value::String(path.clone()))
+                .collect(),
+        ),
+    );
+    payload.insert(
+        "baseSha256".to_owned(),
+        Value::String(proposal.base_sha256.clone()),
+    );
+    payload.insert(
+        "createdAt".to_owned(),
+        Value::String(proposal.created_at.clone()),
+    );
+    println!(
+        "{}",
+        serde_json::to_string(&Value::Object(payload)).map_err(|error| error.to_string())?
+    );
+    eprintln!("已生成提案：{proposal_path}");
+    eprintln!(
+        "共 {} 处改动，等待在 PIE-Block 中确认应用。",
+        proposal.changed_paths.len()
+    );
+    Ok(0)
+}
+
+fn read_json_object(path: &Path, label: &str) -> Result<Value, String> {
+    if !path.exists() {
+        return Err(format!("{label}不存在：{}", path.display()));
+    }
+    let text = std::fs::read_to_string(path)
+        .map_err(|error| format!("读取{label}失败：{}\n{error}", path.display()))?;
+    let value: Value = serde_json::from_str(&text)
+        .map_err(|_| format!("{label}不是合法 JSON：{}", path.display()))?;
+    if !value.is_object() {
+        return Err(format!("{label}内容不是 JSON 对象：{}", path.display()));
+    }
+    Ok(value)
+}
+
+fn write_file_atomically(path: &str, content: &str) -> std::io::Result<()> {
+    let temporary = format!("{path}.tmp-{}", std::process::id());
+    {
+        let mut file = std::fs::File::create(&temporary)?;
+        file.write_all(content.as_bytes())?;
+        file.sync_all()?;
+    }
+    match std::fs::rename(&temporary, path) {
+        Ok(()) => Ok(()),
+        Err(_) => {
+            let target = Path::new(path);
+            if target.exists() {
+                std::fs::remove_file(target)?;
+            }
+            std::fs::rename(&temporary, path)
+        }
+    }
 }
 
 fn load_document(path: &Path) -> Result<ProjectDocument, String> {

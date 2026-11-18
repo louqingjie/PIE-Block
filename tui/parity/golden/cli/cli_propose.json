@@ -1,0 +1,103 @@
+{
+  "cases": [
+    {
+      "name": "success_channel",
+      "args": [
+        "propose",
+        "tui/parity/cli/projects/infantry_template.pieproj",
+        "--config",
+        "tui/parity/cli/propose/infantry_channel.pieproj"
+      ],
+      "preCreateProposal": false,
+      "exitCode": 0,
+      "stdout": "{\"ok\":true,\"proposal\":\"tui/parity/cli/projects/infantry_template.pieproj.proposed\",\"changed\":1,\"paths\":[\"remote.channel\"],\"baseSha256\":\"c68a5dfdee8caaeed5cbc4ccebda5adfba9ee18a47878cc04e75bb543012170d\",\"createdAt\":\"<iso>\"}\n",
+      "stderr": "已生成提案：tui/parity/cli/projects/infantry_template.pieproj.proposed\n共 1 处改动，等待在 PIE-Block 中确认应用。\n",
+      "proposal": "{\n  \"schema\": 1,\n  \"kind\": \"pieblock-proposal\",\n  \"baseSha256\": \"c68a5dfdee8caaeed5cbc4ccebda5adfba9ee18a47878cc04e75bb543012170d\",\n  \"createdAt\": \"<iso>\",\n  \"tool\": \"pieblock-cli/1.0.0\",\n  \"changedPaths\": [\n    \"remote.channel\"\n  ],\n  \"document\": {\n    \"format_version\": 23,\n    \"project_kind\": \"infantry\",\n    \"created_at\": \"2026-01-01T00:00:00.000Z\",\n    \"updated_at\": \"2026-01-01T00:00:00.000Z\",\n    \"guide_progress\": {\n      \"current_step_id\": \"remote\",\n      \"visited_step_ids\": [\n        \"remote\"\n      ]\n    },\n    \"config\": {\n      \"remote\": {\n        \"channel\": 12,\n        \"deadzone\": 100\n      },\n      \"chassis\": {\n        \"enabled\": true,\n        \"left_front\": {\n          \"pin\": \"P74 P24\",\n          \"direction\": \"forward\"\n        },\n        \"left_rear\": {\n          \"pin\": \"P75 P25\",\n          \"direction\": \"forward\"\n        },\n        \"right_front\": {\n          \"pin\": \"P76 P26\",\n          \"direction\": \"reverse\"\n        },\n        \"right_rear\": {\n          \"pin\": \"P77 P27\",\n          \"direction\": \"reverse\"\n        },\n        \"normal_speed\": 6000,\n        \"sprint_speed\": null,\n        \"sprint_enabled\": false,\n        \"turn_reversed\": false,\n        \"turn_sensitivity\": 100\n      },\n      \"feeder_pin\": \"P60\",\n      \"feeder_direction\": \"forward\",\n      \"yaw\": [\n        {\n          \"drive\": \"servo\",\n          \"pin\": \"MP74\",\n          \"direction\": \"forward\",\n          \"mid_offset\": 0,\n          \"min_limit\": -60,\n          \"max_limit\": 60\n        }\n      ],\n      \"pitch\": [\n        {\n          \"drive\": \"servo\",\n          \"pin\": \"MP03\",\n          \"direction\": \"forward\",\n          \"mid_offset\": 0,\n          \"min_limit\": -60,\n          \"max_limit\": 60\n        }\n      ],\n      \"yaw_sensitivity\": 100,\n      \"pitch_sensitivity\": 100,\n      \"arrow_behavior\": \"move\",\n      \"feed_mode\": \"blockingOpenLoop\",\n      \"trigger_key\": \"E\",\n      \"reverse_feed_key\": \"D\",\n      \"trigger_speed\": 6000,\n      \"trigger_time_ms\": 250,\n      \"friction_mode\": \"brushlessEsc\",\n      \"friction_key\": \"A\",\n      \"friction_up_key\": \"B\",\n      \"friction_down_key\": \"C\",\n      \"friction_p64_max_duty\": 700,\n      \"friction_p66_max_duty\": 800,\n      \"friction_level_step\": 10,\n      \"zero_enabled\": false,\n      \"buzzer_disabled\": false\n    }\n  }\n}\n"
+    },
+    {
+      "name": "success_force",
+      "args": [
+        "propose",
+        "tui/parity/cli/projects/infantry_template.pieproj",
+        "--config",
+        "tui/parity/cli/propose/infantry_channel.pieproj",
+        "--force"
+      ],
+      "preCreateProposal": true,
+      "exitCode": 0,
+      "stdout": "{\"ok\":true,\"proposal\":\"tui/parity/cli/projects/infantry_template.pieproj.proposed\",\"changed\":1,\"paths\":[\"remote.channel\"],\"baseSha256\":\"c68a5dfdee8caaeed5cbc4ccebda5adfba9ee18a47878cc04e75bb543012170d\",\"createdAt\":\"<iso>\"}\n",
+      "stderr": "已生成提案：tui/parity/cli/projects/infantry_template.pieproj.proposed\n共 1 处改动，等待在 PIE-Block 中确认应用。\n",
+      "proposal": "{\n  \"schema\": 1,\n  \"kind\": \"pieblock-proposal\",\n  \"baseSha256\": \"c68a5dfdee8caaeed5cbc4ccebda5adfba9ee18a47878cc04e75bb543012170d\",\n  \"createdAt\": \"<iso>\",\n  \"tool\": \"pieblock-cli/1.0.0\",\n  \"changedPaths\": [\n    \"remote.channel\"\n  ],\n  \"document\": {\n    \"format_version\": 23,\n    \"project_kind\": \"infantry\",\n    \"created_at\": \"2026-01-01T00:00:00.000Z\",\n    \"updated_at\": \"2026-01-01T00:00:00.000Z\",\n    \"guide_progress\": {\n      \"current_step_id\": \"remote\",\n      \"visited_step_ids\": [\n        \"remote\"\n      ]\n    },\n    \"config\": {\n      \"remote\": {\n        \"channel\": 12,\n        \"deadzone\": 100\n      },\n      \"chassis\": {\n        \"enabled\": true,\n        \"left_front\": {\n          \"pin\": \"P74 P24\",\n          \"direction\": \"forward\"\n        },\n        \"left_rear\": {\n          \"pin\": \"P75 P25\",\n          \"direction\": \"forward\"\n        },\n        \"right_front\": {\n          \"pin\": \"P76 P26\",\n          \"direction\": \"reverse\"\n        },\n        \"right_rear\": {\n          \"pin\": \"P77 P27\",\n          \"direction\": \"reverse\"\n        },\n        \"normal_speed\": 6000,\n        \"sprint_speed\": null,\n        \"sprint_enabled\": false,\n        \"turn_reversed\": false,\n        \"turn_sensitivity\": 100\n      },\n      \"feeder_pin\": \"P60\",\n      \"feeder_direction\": \"forward\",\n      \"yaw\": [\n        {\n          \"drive\": \"servo\",\n          \"pin\": \"MP74\",\n          \"direction\": \"forward\",\n          \"mid_offset\": 0,\n          \"min_limit\": -60,\n          \"max_limit\": 60\n        }\n      ],\n      \"pitch\": [\n        {\n          \"drive\": \"servo\",\n          \"pin\": \"MP03\",\n          \"direction\": \"forward\",\n          \"mid_offset\": 0,\n          \"min_limit\": -60,\n          \"max_limit\": 60\n        }\n      ],\n      \"yaw_sensitivity\": 100,\n      \"pitch_sensitivity\": 100,\n      \"arrow_behavior\": \"move\",\n      \"feed_mode\": \"blockingOpenLoop\",\n      \"trigger_key\": \"E\",\n      \"reverse_feed_key\": \"D\",\n      \"trigger_speed\": 6000,\n      \"trigger_time_ms\": 250,\n      \"friction_mode\": \"brushlessEsc\",\n      \"friction_key\": \"A\",\n      \"friction_up_key\": \"B\",\n      \"friction_down_key\": \"C\",\n      \"friction_p64_max_duty\": 700,\n      \"friction_p66_max_duty\": 800,\n      \"friction_level_step\": 10,\n      \"zero_enabled\": false,\n      \"buzzer_disabled\": false\n    }\n  }\n}\n"
+    },
+    {
+      "name": "conflict_existing",
+      "args": [
+        "propose",
+        "tui/parity/cli/projects/infantry_template.pieproj",
+        "--config",
+        "tui/parity/cli/propose/infantry_channel.pieproj"
+      ],
+      "preCreateProposal": true,
+      "exitCode": 6,
+      "stdout": "",
+      "stderr": "已存在待确认的提案：tui/parity/cli/projects/infantry_template.pieproj.proposed\n确认覆盖请加 --force。\n",
+      "proposal": "stale\n"
+    },
+    {
+      "name": "invalid_config",
+      "args": [
+        "propose",
+        "tui/parity/cli/projects/infantry_template.pieproj",
+        "--config",
+        "tui/parity/cli/propose/infantry_bad.pieproj"
+      ],
+      "preCreateProposal": false,
+      "exitCode": 2,
+      "stdout": "",
+      "stderr": "提案被拒绝：候选引入了 1 个新的校验错误（工程原有 0 个错误不算在内）\n涉及字段：\n  · remote.channel\n",
+      "proposal": null
+    },
+    {
+      "name": "kind_mismatch",
+      "args": [
+        "propose",
+        "tui/parity/cli/projects/infantry_template.pieproj",
+        "--config",
+        "tui/parity/cli/projects/engineer_template.pieproj"
+      ],
+      "preCreateProposal": false,
+      "exitCode": 2,
+      "stdout": "",
+      "stderr": "提案被拒绝：候选工程类型（engineer）与目标工程（infantry）不一致\n",
+      "proposal": null
+    },
+    {
+      "name": "empty_changes",
+      "args": [
+        "propose",
+        "tui/parity/cli/projects/infantry_template.pieproj",
+        "--config",
+        "tui/parity/cli/propose/infantry_same.pieproj"
+      ],
+      "preCreateProposal": false,
+      "exitCode": 2,
+      "stdout": "",
+      "stderr": "提案被拒绝：候选配置与当前工程没有差异\n",
+      "proposal": null
+    },
+    {
+      "name": "missing_candidate",
+      "args": [
+        "propose",
+        "tui/parity/cli/projects/infantry_template.pieproj",
+        "--config",
+        "tui/parity/cli/propose/no-such.pieproj"
+      ],
+      "preCreateProposal": false,
+      "exitCode": 3,
+      "stdout": "",
+      "stderr": "候选工程不存在：tui/parity/cli/propose/no-such.pieproj\n",
+      "proposal": null
+    }
+  ]
+}
