@@ -1652,6 +1652,10 @@ impl Shell {
                 Span::styled("    步骤：", self.palette.muted()),
                 Span::styled(format!("{kind_steps} 步向导"), self.palette.text()),
             ]),
+            Line::from(Span::styled(
+                validation_summary(&session.document.config),
+                self.palette.warn(),
+            )),
             Line::from(""),
             Line::from(Span::styled(
                 "Enter/E 进入向导表单（M4 进行中）；Ctrl+S/F5 保存、O 打开、S 设置、H 首页、Q 退出。",
@@ -2698,6 +2702,73 @@ mod table_tests {
         }
         shell.handle_key(key(KeyCode::Esc));
         assert_eq!(shell.screen, Screen::Project);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+fn validation_summary(config: &pieblock_core::model::ProjectConfig) -> String {
+    let issues = pieblock_core::validate(config);
+    if issues.is_empty() {
+        return "校验：无问题".to_owned();
+    }
+    let errors = issues
+        .iter()
+        .filter(|issue| issue.severity == pieblock_core::IssueSeverity::Error)
+        .count();
+    let warnings = issues.len().saturating_sub(errors);
+    let pin_issue = issues.iter().find(|issue| {
+        issue.field_path.contains("pin")
+            || issue.message.contains("引脚")
+            || issue.message.contains("IO")
+    });
+    let mut summary = format!("校验：{errors} 错误 · {warnings} 警告 · R 查看/跳转");
+    if let Some(issue) = pin_issue {
+        summary.push_str(&format!("；引脚：{}", issue.message));
+    }
+    summary
+}
+
+#[cfg(test)]
+mod project_summary_tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn project_screen_shows_validation_summary() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target")
+            .join(format!("shell-summary-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("dir");
+        let mut shell = Shell::with_data_dir(dir.join("data"), dir.clone());
+        shell.handle_key(key(KeyCode::Char('n')));
+        shell.handle_key(key(KeyCode::Enter));
+        shell.handle_key(key(KeyCode::Enter));
+        if let Some(session) = shell.workspace.session.as_mut() {
+            if let pieblock_core::model::ProjectConfig::Infantry(config) =
+                &mut session.document.config
+            {
+                config.remote.channel = Some(999);
+            }
+        }
+        let backend = ratatui::backend::TestBackend::new(100, 30);
+        let mut terminal = ratatui::Terminal::new(backend).expect("terminal");
+        terminal.draw(|frame| shell.draw(frame)).expect("draw");
+        let buffer = terminal.backend().buffer();
+        let area = *buffer.area();
+        let mut text = String::new();
+        for y in area.y..area.y + area.height {
+            for x in area.x..area.x + area.width {
+                text.push_str(buffer[(x, y)].symbol());
+            }
+        }
+        let compact: String = text.chars().filter(|ch| !ch.is_whitespace()).collect();
+        assert!(compact.contains("校验"));
+        assert!(compact.contains("错误") || compact.contains("警告"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
