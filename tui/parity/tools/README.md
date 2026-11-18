@@ -56,7 +56,7 @@ dart run bin/export_codegen_goldens.dart
 
 输出 `tui/parity/golden/codegen/codegen.json`：9 份 fixture + 4 份模板 + 4 类默认
 文档的生成源码、表达式行号映射；配置未通过校验时记录 Dart 抛出的错误文案。
-Rust 侧目前对拍调试/步兵全部用例，工程与音乐随移植推进扩展。
+Rust 侧目前对拍调试/步兵/工程全部用例，音乐随移植推进扩展。
 
 ## 生成 CLI golden
 

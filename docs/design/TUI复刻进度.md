@@ -12,7 +12,7 @@
 | 里程碑 | 状态 | 说明 |
 | --- | --- | --- |
 | M0 技术验证 | 🟡 收尾 | Rust 工具链、workspace、M0 演示壳、表单/卷帘原型、单元测试、CI 已就绪；待：真实终端键鼠/IME 验证、hidapi 真机、SDCC+HEX 对拍、卷帘体验评审 |
-| M1 领域内核 + CLI | 🟡 进行中 | 已完成：Dart oracle golden 工具、13 份模型 golden、`.pieproj` 模型与 17→23 迁移（逐字节）、调试/步兵/工程校验规则完整对拍、表达式解析/求值/C 发射/试算、调试+步兵 C 代码生成逐字节对拍、**CLI validate/codegen（调试/步兵）与 Dart CLI 逐字节对拍**；待：工程/音乐代码生成、音乐校验规则、音乐/MIDI/五线谱模块、CLI propose |
+| M1 领域内核 + CLI | 🟡 进行中 | 已完成：Dart oracle golden 工具、13 份模型 golden、`.pieproj` 模型与 17→23 迁移（逐字节）、调试/步兵/工程校验规则完整对拍、表达式解析/求值/C 发射/试算、**调试/步兵/工程 C 代码生成逐字节对拍**、CLI validate/codegen 与 Dart CLI 逐字节对拍；待：音乐校验规则与音乐代码生成、音乐/MIDI/五线谱模块、CLI propose |
 | M2 工具链 + HID | ⬜ 未开始 | SDCC/Keil 构建、指纹/缓存、HEX/MAP、LST、hidapi 传输与烧录状态机、udev |
 | M3 TUI 基座 | 🟡 部分前置 | 已有应用循环、主题、三栏布局、焦点、状态栏；待完善文件浏览器、设置、最近项目、自动保存与 PTY 测试框架 |
 | M4 向导表单 | ⬜ 未开始 | 四类工程全部页面与问题跳转 |
@@ -58,8 +58,8 @@
 - `pieblock-core::json`：Dart 宽容语义的数值截断、字符串/布尔/数组读取、`string_enum!` 宏、`ParamNum`（整数/小数参数）。
 - `pieblock-core::validation`：公共机器人规则、步兵专属规则、**工程专属规则（PWM 角色与频率、舵机中位/两侧限幅、模式数量与切换键、动作行控制方式矩阵、表达式/变量规则、按键动作表、摩擦轮安全控制、多行覆盖警告）**、调试工程完整规则；19 份校验 golden 中调试/步兵/工程完整列表逐条一致（仅音乐规则待移植）。- `pieblock-core::expression`：表达式解析/类型检查（诊断文案与 UTF-16 偏移一致）、求值（除零→0、负数开方→0、Dart 取模）、C 代码发射（helper 调用与转换格式一致）、运行时 helper 代码、变量名规则、工程模式试算（`EngineerPreview`）；表达式 golden 覆盖 60+ 用例、6 组运行时 helper、变量名校验及工程模板逐模式试算，全部与 Dart 一致。
 - `pieblock-core::model`：补 `EngineerPinCapabilities`（工程引脚能力）、`Friction` 常量与油门映射、`PwmGroupConfig::role_of/is_servo_pin`，供校验与后续代码生成共用。
-- `pieblock-core::codegen` + `debug_cues`：调试/步兵 C 代码生成逐字节对拍（含头部/安全网/底盘/云台/拨弹/摩擦轮/无感蜂鸣反馈）；生成前校验门禁与 Dart 文案一致；17 份 codegen golden 中调试 3 份、步兵 4 份逐字节一致，工程/音乐待移植。调试提示音曲谱常量与步序映射已移植（供固件与后续试听共用）。
-- `pieblock-cli`：`validate`/`codegen` 已接领域内核，stdout/stderr/退出码与 Dart CLI 逐字节对拍（21 份工程 × validate/codegen；当前对拍 27 个用例，音乐与未移植的生成路径跳过）；版本不兼容、校验失败、`--out` 写文件等路径一致。21 份 CLI 用工程快照落在 `tui/parity/cli/projects/`。
+- `pieblock-core::codegen` + `debug_cues`：调试/步兵/**工程** C 代码生成逐字节对拍（含头部/安全网/底盘/云台/拨弹/摩擦轮/无感蜂鸣反馈；工程含 PWM 初始化、模式状态机、动作行矩阵、按键动作表、表达式行与 `/*@expr:*\` 行号映射）；生成前校验门禁与 Dart 文案一致；15 份 codegen golden 中调试 3 份、步兵 4 份、工程 8 份逐字节一致，音乐待移植。调试提示音曲谱常量与步序映射已移植（供固件与后续试听共用）。
+- `pieblock-cli`：`validate`/`codegen` 已接领域内核，stdout/stderr/退出码与 Dart CLI 逐字节对拍（21 份工程 × validate/codegen；当前对拍 38 个用例，音乐跳过）；版本不兼容、校验失败、`--out` 写文件等路径一致。21 份 CLI 用工程快照落在 `tui/parity/cli/projects/`。
 - `pieblock-core::ids`：补上 Dart `toIso8601String` 的规则——微秒为 0 时 3 位小数，否则 6 位。
 
 ## M0 演示壳命令
