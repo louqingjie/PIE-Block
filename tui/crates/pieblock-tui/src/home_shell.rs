@@ -78,6 +78,7 @@ pub struct Shell {
     pub review_selected: usize,
     pub code: Option<pieblock_ui::CodeView>,
     pub code_export_name: String,
+    pub glossary: Option<pieblock_ui::GlossaryState>,
     pub build_log: Option<pieblock_ui::CodeView>,
     pub build_listing: Option<pieblock_ui::CodeView>,
     pub build_ok: bool,
@@ -131,6 +132,7 @@ impl Shell {
             review_selected: 0,
             code: None,
             code_export_name: "main.c".to_owned(),
+            glossary: None,
             build_log: None,
             build_listing: None,
             build_ok: false,
@@ -607,6 +609,16 @@ impl Shell {
     }
 
     fn handle_code_key(&mut self, key: KeyEvent) {
+        if let Some(glossary) = self.glossary.as_mut() {
+            if glossary.handle_key(key) {
+                self.glossary = None;
+            }
+            return;
+        }
+        if key.code == KeyCode::Char('g') {
+            self.glossary = Some(pieblock_ui::GlossaryState::new());
+            return;
+        }
         let Some(code) = self.code.as_mut() else {
             self.screen = Screen::Project;
             return;
@@ -645,6 +657,9 @@ impl Shell {
         let area = frame.area();
         if let Some(code) = self.code.as_mut() {
             code.render(frame, area, true, &self.palette, self.message.as_deref());
+        }
+        if let Some(glossary) = self.glossary.as_mut() {
+            glossary.render(frame, area, &self.palette, 20);
         }
     }
 
@@ -3229,6 +3244,44 @@ mod template_tests {
         shell.handle_key(key(KeyCode::Enter));
         let session = shell.workspace.session.as_ref().expect("session");
         assert_eq!(session.document.config, template);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod glossary_tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn code_screen_opens_glossary_overlay() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target")
+            .join(format!("shell-glossary-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("dir");
+        let template = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../..")
+            .join("assets/templates/infantry.pieproj");
+        let project = dir.join("infantry.pieproj");
+        std::fs::copy(&template, &project).expect("copy template");
+        let mut shell = Shell::with_data_dir(dir.join("data"), dir.clone());
+        shell.workspace.open(&project).expect("open");
+        shell.screen = Screen::Project;
+        shell.handle_key(key(KeyCode::Char('c')));
+        assert_eq!(shell.screen, Screen::Code);
+        shell.handle_key(key(KeyCode::Char('g')));
+        assert!(shell.glossary.is_some());
+        shell.handle_key(key(KeyCode::Down));
+        shell.handle_key(key(KeyCode::Esc));
+        assert!(shell.glossary.is_none());
+        assert_eq!(shell.screen, Screen::Code);
+        shell.handle_key(key(KeyCode::Esc));
+        assert_eq!(shell.screen, Screen::Project);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -1,5 +1,7 @@
 //! PIE-Block TUI 的可复用界面层。
 
+pub mod asm_glossary;
+pub mod asm_glossary_data;
 pub mod code_view;
 pub mod flash;
 pub mod form;
@@ -10,6 +12,7 @@ pub mod screens;
 pub mod staff_view;
 pub mod theme;
 
+pub use asm_glossary::GlossaryState;
 pub use code_view::CodeView;
 pub use flash::{FlashAction, FlashState};
 pub use form::{FieldKind, FieldValue, FormAction, FormField, FormPage, FormState};

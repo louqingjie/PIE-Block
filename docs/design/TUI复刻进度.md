@@ -160,3 +160,5 @@ cd tui
 - M6 五线谱视图（已完成基础版）：音乐工程概览按 G 打开五线谱，使用 `staff_notation`（谱号基准/变音/调号）在终端绘制 13 行谱面（5 线 + 上下加线区）、按拍放置音符（●），标题含高音/低音谱号、调性、拍号、BPM 与音符数，底部列出前 24 个音名图例；C 切换高音/低音谱号，Esc 返回。测试覆盖谱面行/音符标记/音名图例与低音谱号。
 
 - M3 新建工程模板选择（已完成默认模板加载）：新建工程时按类型查找 `assets/templates/<kind>.pieproj`（依次尝试 `PIEBLOCK_TEMPLATE_DIR`、可执行文件旁 `assets/templates` 与 `data/pieblock_runtime/templates`、当前目录祖先的 `assets/templates`），解析为工程配置后作为新建模板；找不到时回退为内置默认配置。发布包已包含 `assets/templates`，测试覆盖「新建步兵工程配置 == 打包模板配置」。
+
+- M5 汇编术语查询（已完成）：新增开发期导出工具 `tui/parity/tools/bin/export_asm_glossary.dart`，从 Flutter `asm_glossary.dart` 导出全部 284 条术语（指令/寄存器/段/伪指令/记号/SFR/位，含标题/正文/补充说明）到 `tui/parity/golden/asm_glossary.json`，生成 Rust 静态数据 `pieblock_ui::asm_glossary_data`（运行时不依赖 Dart）；代码预览页按 G 打开「汇编术语」浮层，↑↓/PgUp/PgDn/Home/End 浏览，标题栏显示总数、底部显示当前词条补充说明，G/Esc 关闭。测试覆盖词表规模、导航与 110×34 渲染。

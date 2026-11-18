@@ -1,0 +1,1990 @@
+[
+  {
+    "kind": "mnemonic",
+    "key": "add",
+    "title": "ADD · 加法",
+    "description": "把源操作数与目的操作数相加，结果写回目的操作数。",
+    "detail": "语法 add 目的, 源；影响 CY、AC、OV、N、Z。AC 只在 8 位运算时变化。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "addc",
+    "title": "ADDC · 带进位加法",
+    "description": "目的 = 目的 + 源 + CY，多字节加法的高位部分用它把低位的进位接上。",
+    "detail": "语法 addc 目的, 源；影响 CY、AC、OV、N、Z。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "sub",
+    "title": "SUB · 减法",
+    "description": "把源操作数从目的操作数中减去，结果写回目的操作数。经典 8051 没有这条指令，MCS-251 才有。",
+    "detail": "语法 sub 目的, 源；影响 CY（借位）、AC、OV、N、Z。支持 8/16/32 位寄存器。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "subb",
+    "title": "SUBB · 带借位减法",
+    "description": "目的 = 目的 - 源 - CY，多字节减法的高位部分用它接上低位的借位。",
+    "detail": "语法 subb 目的, 源；影响 CY、AC、OV、N、Z。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "cmp",
+    "title": "CMP · 比较",
+    "description": "按「目的 - 源」设置标志位但不写回结果，通常紧跟 je / jne / jg 等条件跳转。MCS-251 新增。",
+    "detail": "语法 cmp 目的, 源；影响 CY、AC、OV、N、Z。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "inc",
+    "title": "INC · 加一",
+    "description": "把操作数的值加 1。",
+    "detail": "语法 inc 操作数；不影响 CY。MCS-251 支持带步长形式，如 inc spx,#2。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "dec",
+    "title": "DEC · 减一",
+    "description": "把操作数的值减 1。",
+    "detail": "语法 dec 操作数；不影响 CY。MCS-251 支持带步长形式，如 dec spx,#2 一次释放两个栈字节。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "mul",
+    "title": "MUL · 无符号乘法",
+    "description": "两个无符号数相乘。8051 写作 mul ab，乘积低 8 位在 A、高 8 位在 B；MCS-251 还支持 mul wr,wr 得到 32 位乘积。",
+    "detail": "CY 清零；高半部分非零时 OV 置 1。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "div",
+    "title": "DIV · 无符号除法",
+    "description": "8051 写作 div ab：A 除以 B，商写回 A、余数写回 B。除数为 0 时结果无定义。",
+    "detail": "CY 清零；除数为 0 时 OV 置 1。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "da",
+    "title": "DA · 十进制调整",
+    "description": "对 A 中刚做完的 BCD 加法结果做十进制修正，使每个半字节落回 0–9。",
+    "detail": "语法 da a；影响 CY。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "anl",
+    "title": "ANL · 按位与",
+    "description": "目的操作数与源操作数按位相与，结果写回目的操作数；对位操作数则是逻辑与。",
+    "detail": "语法 anl 目的, 源；常用来清掉某几位，如 anl a,#0x0f 只保留低 4 位。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "orl",
+    "title": "ORL · 按位或",
+    "description": "目的操作数与源操作数按位相或，结果写回目的操作数。",
+    "detail": "语法 orl 目的, 源；常用来置起某几位。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "xrl",
+    "title": "XRL · 按位异或",
+    "description": "目的操作数与源操作数按位异或，结果写回目的操作数。",
+    "detail": "语法 xrl 目的, 源；与自身异或（xrl a,a）是最短的清零写法。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "clr",
+    "title": "CLR · 清零",
+    "description": "把操作数清 0，可用于累加器 A、进位 CY 或某一位。",
+    "detail": "语法 clr a / clr c / clr 位；不影响其它标志。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "cpl",
+    "title": "CPL · 取反",
+    "description": "把操作数按位取反（求 1 的补数），可用于 A、CY 或某一位。",
+    "detail": "语法 cpl a / cpl c / cpl 位。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "setb",
+    "title": "SETB · 置位",
+    "description": "把进位 CY 或指定的位设为 1。",
+    "detail": "语法 setb c / setb 位；常见用法是使能中断（setb _EA）或启动定时器（setb _TR0）。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "rl",
+    "title": "RL · 循环左移",
+    "description": "把 A 的 8 位循环左移一位，最高位移入最低位，不经过 CY。",
+    "detail": null
+  },
+  {
+    "kind": "mnemonic",
+    "key": "rlc",
+    "title": "RLC · 带进位循环左移",
+    "description": "把 CY 与 A 共 9 位循环左移一位，多字节左移用它串接进位。",
+    "detail": null
+  },
+  {
+    "kind": "mnemonic",
+    "key": "rr",
+    "title": "RR · 循环右移",
+    "description": "把 A 的 8 位循环右移一位，最低位移入最高位，不经过 CY。",
+    "detail": null
+  },
+  {
+    "kind": "mnemonic",
+    "key": "rrc",
+    "title": "RRC · 带进位循环右移",
+    "description": "把 CY 与 A 共 9 位循环右移一位；除以 2 的移位常用它。",
+    "detail": null
+  },
+  {
+    "kind": "mnemonic",
+    "key": "sll",
+    "title": "SLL · 逻辑左移",
+    "description": "把寄存器内容逻辑左移一位，空出的最低位补 0。MCS-251 新增。",
+    "detail": "语法 sll Rm / sll WRj，操作数既是源也是目的；影响 CY、N、Z。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "sra",
+    "title": "SRA · 算术右移",
+    "description": "把寄存器内容右移一位，最高位用原符号位填充，用于有符号数除以 2。MCS-251 新增。",
+    "detail": "语法 sra Rm / sra WRj；影响 CY、N、Z。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "srl",
+    "title": "SRL · 逻辑右移",
+    "description": "把寄存器内容右移一位，最高位补 0，用于无符号数除以 2。MCS-251 新增。",
+    "detail": "语法 srl Rm / srl WRj；影响 CY、N、Z。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "swap",
+    "title": "SWAP · 半字节交换",
+    "description": "把 A 的高 4 位与低 4 位互换，效果相当于乘或除 16。",
+    "detail": "语法 swap a。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "mov",
+    "title": "MOV · 数据传送",
+    "description": "把源操作数的值复制到目的操作数，目的操作数原值被覆盖。",
+    "detail": "语法 mov 目的, 源；不改变标志位。MCS-251 上还支持 16/32 位寄存器（WRj / DRk）与 24 位地址 @dpx。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "movc",
+    "title": "MOVC · 查表传送",
+    "description": "以 A 为偏移从程序存储器（代码区）读取一字节送入 A，是查表的标准写法。",
+    "detail": "语法 movc a,@a+dptr 或 movc a,@a+pc；代码区只读。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "movh",
+    "title": "MOVH · 高半部分传送",
+    "description": "把 16 位立即数写入 32 位寄存器的高 16 位，低 16 位保持不变。MCS-251 新增。",
+    "detail": "语法 movh DRk(hi),#data16。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "movs",
+    "title": "MOVS · 符号扩展传送",
+    "description": "把 8 位寄存器按有符号数扩展成 16 位写入 WRj，负数的高位补 1。MCS-251 新增。",
+    "detail": "语法 movs WRj,Rm；影响 N、Z。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "movx",
+    "title": "MOVX · 外部数据传送",
+    "description": "在 A 与外部数据存储器之间传送一字节，地址由 @Ri 或 DPTR 给出。",
+    "detail": "语法 movx a,@dptr 等；MCS-251 上更常用 mov …,@dpx 直接访问 24 位平坦地址，因此列表里很少见到 movx。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "movz",
+    "title": "MOVZ · 零扩展传送",
+    "description": "把 8 位寄存器零扩展成 16 位写入 WRj，高位补 0，用于无符号数升位。MCS-251 新增。",
+    "detail": "语法 movz WRj,Rm；影响 N、Z。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "xch",
+    "title": "XCH · 交换",
+    "description": "交换 A 与源操作数的内容。",
+    "detail": "语法 xch a,Rn / xch a,dir8 / xch a,@Ri。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "xchd",
+    "title": "XCHD · 低半字节交换",
+    "description": "交换 A 的低 4 位与 @Ri 所指单元的低 4 位，高 4 位不变。",
+    "detail": "语法 xchd a,@Ri。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "push",
+    "title": "PUSH · 压栈",
+    "description": "把操作数压入硬件栈：栈指针先加，再写入数据。",
+    "detail": "语法 push 操作数。8051 只能压直接地址（push acc、push ar7）；MCS-251 还支持寄存器、16/32 位寄存器与立即数。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "pop",
+    "title": "POP · 出栈",
+    "description": "从硬件栈弹出一个值写入操作数：先读数据，栈指针再减。",
+    "detail": "语法 pop 操作数；MCS-251 支持 8/16/32 位目的。必须与 push 的宽度配对，否则栈会错位。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "cjne",
+    "title": "CJNE · 比较不等则跳转",
+    "description": "比较两个操作数，不相等时跳到相对地址，相等则顺序执行。",
+    "detail": "语法 cjne 目的, 源, 相对偏移；源大于目的时 CY 置 1，因此一条指令同时判相等与大小。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "djnz",
+    "title": "DJNZ · 减一非零则跳转",
+    "description": "把操作数减 1，结果不为 0 时跳转，是循环计数的标准写法。",
+    "detail": "语法 djnz Rn, 相对偏移 / djnz dir8, 相对偏移。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "jb",
+    "title": "JB · 位为 1 跳转",
+    "description": "指定的位为 1 时跳转到相对地址。",
+    "detail": "语法 jb 位, 相对偏移；位可以是 acc.n、可位寻址的 SFR 位或内部 RAM 位。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "jbc",
+    "title": "JBC · 位为 1 跳转并清零",
+    "description": "指定的位为 1 时跳转，并把该位清 0，适合只处理一次的事件标志。",
+    "detail": "语法 jbc 位, 相对偏移。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "jnb",
+    "title": "JNB · 位为 0 跳转",
+    "description": "指定的位为 0 时跳转到相对地址；轮询等待某位置起常用它。",
+    "detail": "语法 jnb 位, 相对偏移。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "jc",
+    "title": "JC · 进位为 1 跳转",
+    "description": "CY = 1 时跳转，通常跟在加法或比较之后判断进位与借位。",
+    "detail": "语法 jc 相对偏移。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "jnc",
+    "title": "JNC · 进位为 0 跳转",
+    "description": "CY = 0 时跳转。",
+    "detail": "语法 jnc 相对偏移。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "jz",
+    "title": "JZ · 为零跳转",
+    "description": "结果为零时跳转：8051 看 A 是否为 0，MCS-251 看 Z 标志。",
+    "detail": "语法 jz 相对偏移。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "jnz",
+    "title": "JNZ · 非零跳转",
+    "description": "结果非零时跳转；SDCC 用它实现 C 的 if 判断与函数返回值分支。",
+    "detail": "语法 jnz 相对偏移。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "je",
+    "title": "JE · 相等跳转",
+    "description": "Z = 1 时跳转，通常紧跟 cmp。MCS-251 新增。",
+    "detail": "语法 je 相对偏移。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "jne",
+    "title": "JNE · 不等跳转",
+    "description": "Z = 0 时跳转，通常紧跟 cmp。MCS-251 新增。",
+    "detail": "语法 jne 相对偏移。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "jg",
+    "title": "JG · 无符号大于跳转",
+    "description": "CY = 0 且 Z = 0 时跳转，即按无符号比较「目的 > 源」。MCS-251 新增。",
+    "detail": "语法 jg 相对偏移；先执行 cmp 设置标志。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "jle",
+    "title": "JLE · 无符号小于等于跳转",
+    "description": "CY = 1 或 Z = 1 时跳转，即按无符号比较「目的 <= 源」。MCS-251 新增。",
+    "detail": "语法 jle 相对偏移。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "jsg",
+    "title": "JSG · 有符号大于跳转",
+    "description": "Z = 0 且 N = OV 时跳转，即按有符号比较「目的 > 源」。MCS-251 新增。",
+    "detail": "语法 jsg 相对偏移。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "jsge",
+    "title": "JSGE · 有符号大于等于跳转",
+    "description": "N = OV 时跳转，即按有符号比较「目的 >= 源」。MCS-251 新增。",
+    "detail": "语法 jsge 相对偏移。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "jsl",
+    "title": "JSL · 有符号小于跳转",
+    "description": "N ≠ OV 时跳转，即按有符号比较「目的 < 源」。MCS-251 新增。",
+    "detail": "语法 jsl 相对偏移。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "jsle",
+    "title": "JSLE · 有符号小于等于跳转",
+    "description": "Z = 1 或 N ≠ OV 时跳转，即按有符号比较「目的 <= 源」。MCS-251 新增。",
+    "detail": "语法 jsle 相对偏移。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "acall",
+    "title": "ACALL · 绝对调用",
+    "description": "调用同一 2KB 页内的子程序：返回地址压栈后跳转，目标地址只编码 11 位，因此指令更短。",
+    "detail": "语法 acall 标号；目标必须与下一条指令同页。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "ajmp",
+    "title": "AJMP · 绝对跳转",
+    "description": "无条件跳转到同一 2KB 页内的地址，目标地址只编码 11 位。",
+    "detail": "语法 ajmp 标号。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "lcall",
+    "title": "LCALL · 长调用",
+    "description": "调用 64KB 地址空间内任意子程序，压入 16 位返回地址。",
+    "detail": "语法 lcall 标号。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "ljmp",
+    "title": "LJMP · 长跳转",
+    "description": "无条件跳转到 16 位地址，不压栈。复位向量处常用它跳向启动代码。",
+    "detail": "语法 ljmp 标号。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "ecall",
+    "title": "ECALL · 扩展调用",
+    "description": "调用 24 位代码空间内的子程序并压入 24 位返回地址；SDCC 生成的函数调用都是它。MCS-251 新增。",
+    "detail": "语法 ecall 标号，或 ecall @DRk 做间接调用（目标地址先零扩展装入 DR28）。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "ejmp",
+    "title": "EJMP · 扩展跳转",
+    "description": "无条件跳转到 24 位代码空间内的地址，不压栈。MCS-251 新增。",
+    "detail": "语法 ejmp 标号；SDCC 用它实现函数出口跳转与尾调用。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "jmp",
+    "title": "JMP · 间接跳转",
+    "description": "跳转到 A + DPTR 指向的代码地址，是 switch 跳转表的执行方式。",
+    "detail": "语法 jmp @a+dptr。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "sjmp",
+    "title": "SJMP · 短跳转",
+    "description": "相对当前 PC 跳转 -128…+127 字节。",
+    "detail": "语法 sjmp 相对偏移；写作 sjmp . 表示跳到自身，即原地死循环等待中断。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "ret",
+    "title": "RET · 子程序返回",
+    "description": "从栈中弹出返回地址并跳回调用处，用于 8051 的 16 位调用。",
+    "detail": "MCS-251 的 24 位返回由 eret 完成，因此列表里通常只见 eret 与 reti。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "reti",
+    "title": "RETI · 中断返回",
+    "description": "中断服务程序的返回：除弹栈跳回外，还恢复中断优先级状态，允许同级中断再次被响应。",
+    "detail": "STC32G 使用 4 字节中断帧，reti 恢复 PSW1 与 24 位 PC。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "eret",
+    "title": "ERET · 扩展返回",
+    "description": "从 24 位返回地址恢复 PC，与 ecall 配对；SDCC 生成的普通函数返回都是它。MCS-251 新增。",
+    "detail": null
+  },
+  {
+    "kind": "mnemonic",
+    "key": "nop",
+    "title": "NOP · 空操作",
+    "description": "只消耗一个指令周期，不改变任何寄存器与标志；用于短延时或占位对齐。",
+    "detail": null
+  },
+  {
+    "kind": "mnemonic",
+    "key": "esc",
+    "title": "ESC · 转义前缀",
+    "description": "指令转义前缀，用来在 MCS-251 原生编码与经典 MCS-51 编码（A5/ESC）之间切换。MCS-251 新增。",
+    "detail": "由汇编器按目标编码模式插入，一般不出现在 C 编译产物中。"
+  },
+  {
+    "kind": "mnemonic",
+    "key": "trap",
+    "title": "TRAP · 陷阱",
+    "description": "触发处理器陷阱。在 STC32G 上按 NOP 处理。MCS-251 新增。",
+    "detail": null
+  },
+  {
+    "kind": "mnemonic",
+    "key": "call",
+    "title": "CALL · 调用（汇编器别名）",
+    "description": "书写别名，不是独立的机器指令：汇编器按目标地址范围自动选择 acall / lcall / ecall。",
+    "detail": null
+  },
+  {
+    "kind": "mnemonic",
+    "key": "pushw",
+    "title": "PUSHW · 压入立即数（汇编器别名）",
+    "description": "push 的立即数写法别名，把 16 位立即数压栈；压寄存器仍写 push。",
+    "detail": null
+  },
+  {
+    "kind": "register",
+    "key": "a",
+    "title": "A · 累加器",
+    "description": "8 位累加器，绝大多数算术、逻辑与传送指令的默认操作数。",
+    "detail": "写 a 用寄存器寻址，写 acc 用直接地址 0xE0；push / pop 只能用 acc。"
+  },
+  {
+    "kind": "register",
+    "key": "acc",
+    "title": "ACC · 累加器（直接地址）",
+    "description": "累加器 A 的直接地址写法，地址 0xE0，内容与 a 完全相同。",
+    "detail": "需要把 A 当作内存单元访问时用它，例如 push acc、xrl acc,#0xff。"
+  },
+  {
+    "kind": "register",
+    "key": "b",
+    "title": "B · B 寄存器",
+    "description": "8 位通用寄存器，直接地址 0xF0。",
+    "detail": "mul ab 与 div ab 用它存放乘数、商或余数。"
+  },
+  {
+    "kind": "register",
+    "key": "ab",
+    "title": "AB · 累加器与 B 的组合",
+    "description": "把 A（低 8 位）与 B（高 8 位）看作一个 16 位操作数。",
+    "detail": "只出现在 mul ab 与 div ab 中。"
+  },
+  {
+    "kind": "register",
+    "key": "c",
+    "title": "CY · 进位标志",
+    "description": "PSW 的第 7 位，既是算术运算的进位与借位，也是位操作指令的「位累加器」。",
+    "detail": "可以直接 mov c,位 / setb c / clr c / anl c,位 操作。"
+  },
+  {
+    "kind": "register",
+    "key": "cy",
+    "title": "CY · 进位标志",
+    "description": "c 的等价写法，指 PSW 的第 7 位。",
+    "detail": "汇编器把 c 与 cy 视为同一个寄存器。"
+  },
+  {
+    "kind": "register",
+    "key": "pc",
+    "title": "PC · 程序计数器",
+    "description": "指向下一条要执行的指令地址，不能直接读写。",
+    "detail": "MCS-251 的 PC 是 24 位，可寻址 16MB 代码空间；movc a,@a+pc 以它为基址查表。"
+  },
+  {
+    "kind": "register",
+    "key": "dptr",
+    "title": "DPTR · 数据指针",
+    "description": "16 位数据指针，由 DPH（高 8 位）与 DPL（低 8 位）组成，用于查表与外部数据访问。",
+    "detail": "在 MCS-251 上它与 DPXL 一起构成 24 位平坦指针 DPX。"
+  },
+  {
+    "kind": "register",
+    "key": "dpl",
+    "title": "DPL · 数据指针低字节",
+    "description": "DPTR 的低 8 位，直接地址 0x82。",
+    "detail": "SDCC 的调用约定用 DPL 返回字节值、用 DPL/DPH 返回 16 位值。"
+  },
+  {
+    "kind": "register",
+    "key": "dph",
+    "title": "DPH · 数据指针高字节",
+    "description": "DPTR 的高 8 位，直接地址 0x83。",
+    "detail": null
+  },
+  {
+    "kind": "register",
+    "key": "dpx",
+    "title": "DPX · 24 位数据指针",
+    "description": "MCS-251 的平坦地址指针，由 DPL（位 7:0）、DPH（位 15:8）、DPXL（位 23:16）组成，可寻址 16MB。",
+    "detail": "--model-large 下全局变量都在 XSEG，通过 mov …,@dpx 访问；它同时也是 32 位寄存器 DR56。"
+  },
+  {
+    "kind": "register",
+    "key": "dpxl",
+    "title": "DPXL · 数据指针扩展字节",
+    "description": "DPX 的最高 8 位（位 23:16），直接地址 0x84。",
+    "detail": "写入它就切换到另一个 64KB 页。"
+  },
+  {
+    "kind": "register",
+    "key": "sp",
+    "title": "SP · 栈指针",
+    "description": "8051 的 8 位栈指针，直接地址 0x81，指向栈顶单元。",
+    "detail": "MCS-251 的硬件栈由 16 位 SPX 寻址，SDCC 生成的代码通常操作 spx。"
+  },
+  {
+    "kind": "register",
+    "key": "spx",
+    "title": "SPX · 扩展栈指针",
+    "description": "MCS-251 的 16 位硬件栈指针，栈向高地址增长；它同时也是 32 位寄存器 DR60。",
+    "detail": "局部变量与可重入参数用 @spx+偏移 访问；dec spx,#n / inc spx,#n 一次分配或释放多个栈字节。"
+  },
+  {
+    "kind": "register",
+    "key": "sph",
+    "title": "SPH · 栈指针高字节",
+    "description": "SPX 的高 8 位，直接地址 0x85。",
+    "detail": null
+  },
+  {
+    "kind": "register",
+    "key": "psw",
+    "title": "PSW · 程序状态字",
+    "description": "直接地址 0xD0，含 CY、AC、F0、RS1、RS0、OV、P 等标志，其中 RS1/RS0 选择当前寄存器组。",
+    "detail": "中断服务程序常 push psw / pop psw 保存与恢复标志。"
+  },
+  {
+    "kind": "register",
+    "key": "psw1",
+    "title": "PSW1 · 扩展程序状态字",
+    "description": "MCS-251 新增的状态字，直接地址 0xD1，保存 N（结果最高位）与 Z（结果为零）等标志。",
+    "detail": "cmp、je/jne/jsg 这类有符号比较依赖它；STC32G 的 4 字节中断帧会连同 24 位 PC 一起保存与恢复 PSW1。"
+  },
+  {
+    "kind": "register",
+    "key": "dps",
+    "title": "DPS · 数据指针选择",
+    "description": "选择当前使用哪一组数据指针（DPTR0 / DPTR1），直接地址 0xE3。",
+    "detail": "双指针可在两个地址之间来回切换而不必反复重装 DPTR。"
+  },
+  {
+    "kind": "register",
+    "key": "dr56",
+    "title": "DR56 · DPX 的 32 位别名",
+    "description": "32 位寄存器 DR56 与 24 位数据指针 DPX 是同一组物理寄存器。",
+    "detail": "间接调用 ecall @dr28 之外，DPX 也可按 DR56 参与 32 位运算。"
+  },
+  {
+    "kind": "register",
+    "key": "dr60",
+    "title": "DR60 · SPX 的 32 位别名",
+    "description": "32 位寄存器 DR60 与 16 位硬件栈指针 SPX 是同一组物理寄存器。",
+    "detail": "函数返回时 DR60/SPX 必须与入口一致，否则栈会失衡。"
+  },
+  {
+    "kind": "register",
+    "key": "r0",
+    "title": "R0 · 通用寄存器",
+    "description": "8 位通用工作寄存器。R0–R7 分成 4 组，由 PSW 的 RS1/RS0 选择当前使用哪一组；MCS-251 把编号扩展到 R15。",
+    "detail": "R0 还可作字节间接寻址指针（@r0）；调用方必须假设 R0–R11 会被被调函数破坏。"
+  },
+  {
+    "kind": "register",
+    "key": "r1",
+    "title": "R1 · 通用寄存器",
+    "description": "8 位通用工作寄存器。R0–R7 分成 4 组，由 PSW 的 RS1/RS0 选择当前使用哪一组；MCS-251 把编号扩展到 R15。",
+    "detail": "R1 还可作字节间接寻址指针（@r1）；调用方必须假设 R0–R11 会被被调函数破坏。"
+  },
+  {
+    "kind": "register",
+    "key": "r2",
+    "title": "R2 · 通用寄存器",
+    "description": "8 位通用工作寄存器。R0–R7 分成 4 组，由 PSW 的 RS1/RS0 选择当前使用哪一组；MCS-251 把编号扩展到 R15。",
+    "detail": "调用方必须假设 R0–R11 会被被调函数破坏；SDCC 用它们传参与存放中间值。"
+  },
+  {
+    "kind": "register",
+    "key": "r3",
+    "title": "R3 · 通用寄存器",
+    "description": "8 位通用工作寄存器。R0–R7 分成 4 组，由 PSW 的 RS1/RS0 选择当前使用哪一组；MCS-251 把编号扩展到 R15。",
+    "detail": "调用方必须假设 R0–R11 会被被调函数破坏；SDCC 用它们传参与存放中间值。"
+  },
+  {
+    "kind": "register",
+    "key": "r4",
+    "title": "R4 · 通用寄存器",
+    "description": "8 位通用工作寄存器。R0–R7 分成 4 组，由 PSW 的 RS1/RS0 选择当前使用哪一组；MCS-251 把编号扩展到 R15。",
+    "detail": "调用方必须假设 R0–R11 会被被调函数破坏；SDCC 用它们传参与存放中间值。"
+  },
+  {
+    "kind": "register",
+    "key": "r5",
+    "title": "R5 · 通用寄存器",
+    "description": "8 位通用工作寄存器。R0–R7 分成 4 组，由 PSW 的 RS1/RS0 选择当前使用哪一组；MCS-251 把编号扩展到 R15。",
+    "detail": "调用方必须假设 R0–R11 会被被调函数破坏；SDCC 用它们传参与存放中间值。"
+  },
+  {
+    "kind": "register",
+    "key": "r6",
+    "title": "R6 · 通用寄存器",
+    "description": "8 位通用工作寄存器。R0–R7 分成 4 组，由 PSW 的 RS1/RS0 选择当前使用哪一组；MCS-251 把编号扩展到 R15。",
+    "detail": "调用方必须假设 R0–R11 会被被调函数破坏；SDCC 用它们传参与存放中间值。"
+  },
+  {
+    "kind": "register",
+    "key": "r7",
+    "title": "R7 · 通用寄存器",
+    "description": "8 位通用工作寄存器。R0–R7 分成 4 组，由 PSW 的 RS1/RS0 选择当前使用哪一组；MCS-251 把编号扩展到 R15。",
+    "detail": "调用方必须假设 R0–R11 会被被调函数破坏；SDCC 用它们传参与存放中间值。"
+  },
+  {
+    "kind": "register",
+    "key": "r8",
+    "title": "R8 · 通用寄存器",
+    "description": "8 位通用工作寄存器。R0–R7 分成 4 组，由 PSW 的 RS1/RS0 选择当前使用哪一组；MCS-251 把编号扩展到 R15。",
+    "detail": "调用方必须假设 R0–R11 会被被调函数破坏；SDCC 用它们传参与存放中间值。"
+  },
+  {
+    "kind": "register",
+    "key": "r9",
+    "title": "R9 · 通用寄存器",
+    "description": "8 位通用工作寄存器。R0–R7 分成 4 组，由 PSW 的 RS1/RS0 选择当前使用哪一组；MCS-251 把编号扩展到 R15。",
+    "detail": "调用方必须假设 R0–R11 会被被调函数破坏；SDCC 用它们传参与存放中间值。"
+  },
+  {
+    "kind": "register",
+    "key": "r10",
+    "title": "R10 · 通用寄存器",
+    "description": "8 位通用工作寄存器。R0–R7 分成 4 组，由 PSW 的 RS1/RS0 选择当前使用哪一组；MCS-251 把编号扩展到 R15。",
+    "detail": "调用方必须假设 R0–R11 会被被调函数破坏；SDCC 用它们传参与存放中间值。"
+  },
+  {
+    "kind": "register",
+    "key": "r11",
+    "title": "R11 · 通用寄存器",
+    "description": "8 位通用工作寄存器。R0–R7 分成 4 组，由 PSW 的 RS1/RS0 选择当前使用哪一组；MCS-251 把编号扩展到 R15。",
+    "detail": "调用方必须假设 R0–R11 会被被调函数破坏；SDCC 用它们传参与存放中间值。"
+  },
+  {
+    "kind": "register",
+    "key": "r12",
+    "title": "R12 · 通用寄存器",
+    "description": "8 位通用工作寄存器。R0–R7 分成 4 组，由 PSW 的 RS1/RS0 选择当前使用哪一组；MCS-251 把编号扩展到 R15。",
+    "detail": "R12–R15 由被调函数负责保存与恢复。"
+  },
+  {
+    "kind": "register",
+    "key": "r13",
+    "title": "R13 · 通用寄存器",
+    "description": "8 位通用工作寄存器。R0–R7 分成 4 组，由 PSW 的 RS1/RS0 选择当前使用哪一组；MCS-251 把编号扩展到 R15。",
+    "detail": "R12–R15 由被调函数负责保存与恢复。"
+  },
+  {
+    "kind": "register",
+    "key": "r14",
+    "title": "R14 · 通用寄存器",
+    "description": "8 位通用工作寄存器。R0–R7 分成 4 组，由 PSW 的 RS1/RS0 选择当前使用哪一组；MCS-251 把编号扩展到 R15。",
+    "detail": "R12–R15 由被调函数负责保存与恢复。"
+  },
+  {
+    "kind": "register",
+    "key": "r15",
+    "title": "R15 · 通用寄存器",
+    "description": "8 位通用工作寄存器。R0–R7 分成 4 组，由 PSW 的 RS1/RS0 选择当前使用哪一组；MCS-251 把编号扩展到 R15。",
+    "detail": "R12–R15 由被调函数负责保存与恢复。"
+  },
+  {
+    "kind": "register",
+    "key": "ar0",
+    "title": "AR0 · R0 的直接地址别名",
+    "description": "R0 在当前寄存器组中的直接地址符号，由 SDCC 在列表开头用 ar0 = 0x00 定义。",
+    "detail": "push ar0 / pop ar0 就是保存与恢复 R0：8051 的 push、pop 只接受直接地址。"
+  },
+  {
+    "kind": "register",
+    "key": "ar1",
+    "title": "AR1 · R1 的直接地址别名",
+    "description": "R1 在当前寄存器组中的直接地址符号，由 SDCC 在列表开头用 ar1 = 0x01 定义。",
+    "detail": "push ar1 / pop ar1 就是保存与恢复 R1：8051 的 push、pop 只接受直接地址。"
+  },
+  {
+    "kind": "register",
+    "key": "ar2",
+    "title": "AR2 · R2 的直接地址别名",
+    "description": "R2 在当前寄存器组中的直接地址符号，由 SDCC 在列表开头用 ar2 = 0x02 定义。",
+    "detail": "push ar2 / pop ar2 就是保存与恢复 R2：8051 的 push、pop 只接受直接地址。"
+  },
+  {
+    "kind": "register",
+    "key": "ar3",
+    "title": "AR3 · R3 的直接地址别名",
+    "description": "R3 在当前寄存器组中的直接地址符号，由 SDCC 在列表开头用 ar3 = 0x03 定义。",
+    "detail": "push ar3 / pop ar3 就是保存与恢复 R3：8051 的 push、pop 只接受直接地址。"
+  },
+  {
+    "kind": "register",
+    "key": "ar4",
+    "title": "AR4 · R4 的直接地址别名",
+    "description": "R4 在当前寄存器组中的直接地址符号，由 SDCC 在列表开头用 ar4 = 0x04 定义。",
+    "detail": "push ar4 / pop ar4 就是保存与恢复 R4：8051 的 push、pop 只接受直接地址。"
+  },
+  {
+    "kind": "register",
+    "key": "ar5",
+    "title": "AR5 · R5 的直接地址别名",
+    "description": "R5 在当前寄存器组中的直接地址符号，由 SDCC 在列表开头用 ar5 = 0x05 定义。",
+    "detail": "push ar5 / pop ar5 就是保存与恢复 R5：8051 的 push、pop 只接受直接地址。"
+  },
+  {
+    "kind": "register",
+    "key": "ar6",
+    "title": "AR6 · R6 的直接地址别名",
+    "description": "R6 在当前寄存器组中的直接地址符号，由 SDCC 在列表开头用 ar6 = 0x06 定义。",
+    "detail": "push ar6 / pop ar6 就是保存与恢复 R6：8051 的 push、pop 只接受直接地址。"
+  },
+  {
+    "kind": "register",
+    "key": "ar7",
+    "title": "AR7 · R7 的直接地址别名",
+    "description": "R7 在当前寄存器组中的直接地址符号，由 SDCC 在列表开头用 ar7 = 0x07 定义。",
+    "detail": "push ar7 / pop ar7 就是保存与恢复 R7：8051 的 push、pop 只接受直接地址。"
+  },
+  {
+    "kind": "register",
+    "key": "wr0",
+    "title": "WR0 · 16 位寄存器",
+    "description": "由 R0 与 R1 拼成的 16 位寄存器（大端：R0 是高字节），编号必须是偶数。",
+    "detail": "MCS-251 新增；movz / movs / mul wr,wr / add wr,wr 等 16 位运算用它。WR16–WR30 属于调用者可破坏的范围。"
+  },
+  {
+    "kind": "register",
+    "key": "wr2",
+    "title": "WR2 · 16 位寄存器",
+    "description": "由 R2 与 R3 拼成的 16 位寄存器（大端：R2 是高字节），编号必须是偶数。",
+    "detail": "MCS-251 新增；movz / movs / mul wr,wr / add wr,wr 等 16 位运算用它。WR16–WR30 属于调用者可破坏的范围。"
+  },
+  {
+    "kind": "register",
+    "key": "wr4",
+    "title": "WR4 · 16 位寄存器",
+    "description": "由 R4 与 R5 拼成的 16 位寄存器（大端：R4 是高字节），编号必须是偶数。",
+    "detail": "MCS-251 新增；movz / movs / mul wr,wr / add wr,wr 等 16 位运算用它。WR16–WR30 属于调用者可破坏的范围。"
+  },
+  {
+    "kind": "register",
+    "key": "wr6",
+    "title": "WR6 · 16 位寄存器",
+    "description": "由 R6 与 R7 拼成的 16 位寄存器（大端：R6 是高字节），编号必须是偶数。",
+    "detail": "MCS-251 新增；movz / movs / mul wr,wr / add wr,wr 等 16 位运算用它。WR16–WR30 属于调用者可破坏的范围。"
+  },
+  {
+    "kind": "register",
+    "key": "wr8",
+    "title": "WR8 · 16 位寄存器",
+    "description": "由 R8 与 R9 拼成的 16 位寄存器（大端：R8 是高字节），编号必须是偶数。",
+    "detail": "MCS-251 新增；movz / movs / mul wr,wr / add wr,wr 等 16 位运算用它。WR16–WR30 属于调用者可破坏的范围。"
+  },
+  {
+    "kind": "register",
+    "key": "wr10",
+    "title": "WR10 · 16 位寄存器",
+    "description": "由 R10 与 R11 拼成的 16 位寄存器（大端：R10 是高字节），编号必须是偶数。",
+    "detail": "MCS-251 新增；movz / movs / mul wr,wr / add wr,wr 等 16 位运算用它。WR16–WR30 属于调用者可破坏的范围。"
+  },
+  {
+    "kind": "register",
+    "key": "wr12",
+    "title": "WR12 · 16 位寄存器",
+    "description": "由 R12 与 R13 拼成的 16 位寄存器（大端：R12 是高字节），编号必须是偶数。",
+    "detail": "MCS-251 新增；movz / movs / mul wr,wr / add wr,wr 等 16 位运算用它。WR16–WR30 属于调用者可破坏的范围。"
+  },
+  {
+    "kind": "register",
+    "key": "wr14",
+    "title": "WR14 · 16 位寄存器",
+    "description": "由 R14 与 R15 拼成的 16 位寄存器（大端：R14 是高字节），编号必须是偶数。",
+    "detail": "MCS-251 新增；movz / movs / mul wr,wr / add wr,wr 等 16 位运算用它。WR16–WR30 属于调用者可破坏的范围。"
+  },
+  {
+    "kind": "register",
+    "key": "wr16",
+    "title": "WR16 · 16 位寄存器",
+    "description": "由 R16 与 R17 拼成的 16 位寄存器（大端：R16 是高字节），编号必须是偶数。",
+    "detail": "MCS-251 新增；movz / movs / mul wr,wr / add wr,wr 等 16 位运算用它。WR16–WR30 属于调用者可破坏的范围。"
+  },
+  {
+    "kind": "register",
+    "key": "wr18",
+    "title": "WR18 · 16 位寄存器",
+    "description": "由 R18 与 R19 拼成的 16 位寄存器（大端：R18 是高字节），编号必须是偶数。",
+    "detail": "MCS-251 新增；movz / movs / mul wr,wr / add wr,wr 等 16 位运算用它。WR16–WR30 属于调用者可破坏的范围。"
+  },
+  {
+    "kind": "register",
+    "key": "wr20",
+    "title": "WR20 · 16 位寄存器",
+    "description": "由 R20 与 R21 拼成的 16 位寄存器（大端：R20 是高字节），编号必须是偶数。",
+    "detail": "MCS-251 新增；movz / movs / mul wr,wr / add wr,wr 等 16 位运算用它。WR16–WR30 属于调用者可破坏的范围。"
+  },
+  {
+    "kind": "register",
+    "key": "wr22",
+    "title": "WR22 · 16 位寄存器",
+    "description": "由 R22 与 R23 拼成的 16 位寄存器（大端：R22 是高字节），编号必须是偶数。",
+    "detail": "MCS-251 新增；movz / movs / mul wr,wr / add wr,wr 等 16 位运算用它。WR16–WR30 属于调用者可破坏的范围。"
+  },
+  {
+    "kind": "register",
+    "key": "wr24",
+    "title": "WR24 · 16 位寄存器",
+    "description": "由 R24 与 R25 拼成的 16 位寄存器（大端：R24 是高字节），编号必须是偶数。",
+    "detail": "MCS-251 新增；movz / movs / mul wr,wr / add wr,wr 等 16 位运算用它。WR16–WR30 属于调用者可破坏的范围。"
+  },
+  {
+    "kind": "register",
+    "key": "wr26",
+    "title": "WR26 · 16 位寄存器",
+    "description": "由 R26 与 R27 拼成的 16 位寄存器（大端：R26 是高字节），编号必须是偶数。",
+    "detail": "MCS-251 新增；movz / movs / mul wr,wr / add wr,wr 等 16 位运算用它。WR16–WR30 属于调用者可破坏的范围。"
+  },
+  {
+    "kind": "register",
+    "key": "wr28",
+    "title": "WR28 · 16 位寄存器",
+    "description": "由 R28 与 R29 拼成的 16 位寄存器（大端：R28 是高字节），编号必须是偶数。",
+    "detail": "MCS-251 新增；movz / movs / mul wr,wr / add wr,wr 等 16 位运算用它。WR16–WR30 属于调用者可破坏的范围。"
+  },
+  {
+    "kind": "register",
+    "key": "wr30",
+    "title": "WR30 · 16 位寄存器",
+    "description": "由 R30 与 R31 拼成的 16 位寄存器（大端：R30 是高字节），编号必须是偶数。",
+    "detail": "MCS-251 新增；movz / movs / mul wr,wr / add wr,wr 等 16 位运算用它。WR16–WR30 属于调用者可破坏的范围。"
+  },
+  {
+    "kind": "register",
+    "key": "dr0",
+    "title": "DR0 · 32 位寄存器",
+    "description": "由 R0…R3 拼成的 32 位寄存器（大端：R0 是最高字节），编号必须是 4 的倍数。",
+    "detail": "MCS-251 新增；add dr,dr / sub dr,dr 做原生 32 位加减，ecall @dr28 用它做间接调用。"
+  },
+  {
+    "kind": "register",
+    "key": "dr4",
+    "title": "DR4 · 32 位寄存器",
+    "description": "由 R4…R7 拼成的 32 位寄存器（大端：R4 是最高字节），编号必须是 4 的倍数。",
+    "detail": "MCS-251 新增；add dr,dr / sub dr,dr 做原生 32 位加减，ecall @dr28 用它做间接调用。"
+  },
+  {
+    "kind": "register",
+    "key": "dr8",
+    "title": "DR8 · 32 位寄存器",
+    "description": "由 R8…R11 拼成的 32 位寄存器（大端：R8 是最高字节），编号必须是 4 的倍数。",
+    "detail": "MCS-251 新增；add dr,dr / sub dr,dr 做原生 32 位加减，ecall @dr28 用它做间接调用。"
+  },
+  {
+    "kind": "register",
+    "key": "dr12",
+    "title": "DR12 · 32 位寄存器",
+    "description": "由 R12…R15 拼成的 32 位寄存器（大端：R12 是最高字节），编号必须是 4 的倍数。",
+    "detail": "MCS-251 新增；add dr,dr / sub dr,dr 做原生 32 位加减，ecall @dr28 用它做间接调用。"
+  },
+  {
+    "kind": "register",
+    "key": "dr16",
+    "title": "DR16 · 32 位寄存器",
+    "description": "由 R16…R19 拼成的 32 位寄存器（大端：R16 是最高字节），编号必须是 4 的倍数。",
+    "detail": "MCS-251 新增；add dr,dr / sub dr,dr 做原生 32 位加减，ecall @dr28 用它做间接调用。"
+  },
+  {
+    "kind": "register",
+    "key": "dr20",
+    "title": "DR20 · 32 位寄存器",
+    "description": "由 R20…R23 拼成的 32 位寄存器（大端：R20 是最高字节），编号必须是 4 的倍数。",
+    "detail": "MCS-251 新增；add dr,dr / sub dr,dr 做原生 32 位加减，ecall @dr28 用它做间接调用。"
+  },
+  {
+    "kind": "register",
+    "key": "dr24",
+    "title": "DR24 · 32 位寄存器",
+    "description": "由 R24…R27 拼成的 32 位寄存器（大端：R24 是最高字节），编号必须是 4 的倍数。",
+    "detail": "MCS-251 新增；add dr,dr / sub dr,dr 做原生 32 位加减，ecall @dr28 用它做间接调用。"
+  },
+  {
+    "kind": "register",
+    "key": "dr28",
+    "title": "DR28 · 32 位寄存器",
+    "description": "由 R28…R31 拼成的 32 位寄存器（大端：R28 是最高字节），编号必须是 4 的倍数。",
+    "detail": "MCS-251 新增；add dr,dr / sub dr,dr 做原生 32 位加减，ecall @dr28 用它做间接调用。"
+  },
+  {
+    "kind": "segment",
+    "key": "code",
+    "title": "CODE · 代码区",
+    "description": "存放程序与常量表的只读区，MCS-251 上是 24 位平坦地址空间。",
+    "detail": "movc 从代码区取数；常量表（如音乐频率表）也放这里。"
+  },
+  {
+    "kind": "segment",
+    "key": "data",
+    "title": "DATA · 直接寻址内部数据区",
+    "description": "内部 RAM 的低 128 字节，可用直接地址访问，也是位寻址区所在。",
+    "detail": ".area 括号里出现 DATA 表示该段落在这个空间。"
+  },
+  {
+    "kind": "segment",
+    "key": "edata",
+    "title": "EDATA · 扩展直接寻址数据区",
+    "description": "可用直接地址访问的扩展片内 RAM（STC32G 的 XRAM 低端窗口）。",
+    "detail": null
+  },
+  {
+    "kind": "segment",
+    "key": "idata",
+    "title": "IDATA · 间接寻址内部数据区",
+    "description": "内部 RAM 的 0x00–0xFF，只能用 @R0 / @R1 间接访问。",
+    "detail": null
+  },
+  {
+    "kind": "segment",
+    "key": "xdata",
+    "title": "XDATA · 外部数据区",
+    "description": "外部数据存储器；MCS-251 上是 24 位平坦地址空间，用 DPX 访问。",
+    "detail": "--model-large 把普通全局变量放在 XSEG，缺省基址 0x010000。"
+  },
+  {
+    "kind": "segment",
+    "key": "bit",
+    "title": "BIT · 位寻址区",
+    "description": "内部 RAM 的 0x20–0x2F 与可位寻址的 SFR，可按位读写。",
+    "detail": null
+  },
+  {
+    "kind": "segment",
+    "key": "home",
+    "title": "HOME · 启动代码段",
+    "description": "复位后最先执行的启动代码所在段，负责初始化栈与全局变量后跳向 main。",
+    "detail": null
+  },
+  {
+    "kind": "segment",
+    "key": "gsinit",
+    "title": "GSINIT · 全局初始化段",
+    "description": "存放全局变量与静态变量的初始化代码，启动时按序执行。",
+    "detail": null
+  },
+  {
+    "kind": "segment",
+    "key": "gsinit0",
+    "title": "GSINIT0 · 全局初始化段 0",
+    "description": "全局初始化代码的第一段；SDCC 按模块拆成 GSINIT0–GSINIT5 依次执行。",
+    "detail": null
+  },
+  {
+    "kind": "segment",
+    "key": "gsinit1",
+    "title": "GSINIT1 · 全局初始化段 1",
+    "description": "全局初始化代码分段之一，按序在 GSINIT0 之后执行。",
+    "detail": null
+  },
+  {
+    "kind": "segment",
+    "key": "gsinit2",
+    "title": "GSINIT2 · 全局初始化段 2",
+    "description": "全局初始化代码分段之一，按序执行。",
+    "detail": null
+  },
+  {
+    "kind": "segment",
+    "key": "gsinit3",
+    "title": "GSINIT3 · 全局初始化段 3",
+    "description": "全局初始化代码分段之一，按序执行。",
+    "detail": null
+  },
+  {
+    "kind": "segment",
+    "key": "gsinit4",
+    "title": "GSINIT4 · 全局初始化段 4",
+    "description": "全局初始化代码分段之一，按序执行。",
+    "detail": null
+  },
+  {
+    "kind": "segment",
+    "key": "gsinit5",
+    "title": "GSINIT5 · 全局初始化段 5",
+    "description": "全局初始化代码的最后一段，执行完跳到 HOME 继续启动流程。",
+    "detail": null
+  },
+  {
+    "kind": "segment",
+    "key": "gsfinal",
+    "title": "GSFINAL · 全局初始化结束段",
+    "description": "全局初始化结束后的收尾代码段，通常为空或只放一条跳转。",
+    "detail": null
+  },
+  {
+    "kind": "segment",
+    "key": "cseg",
+    "title": "CSEG · 代码段",
+    "description": "存放本模块指令的代码段。",
+    "detail": null
+  },
+  {
+    "kind": "segment",
+    "key": "cabs",
+    "title": "CABS · 绝对代码段",
+    "description": "按绝对地址定位、不参与重定位的代码段，中断向量表就放这里。",
+    "detail": null
+  },
+  {
+    "kind": "segment",
+    "key": "const",
+    "title": "CONST · 常量段",
+    "description": "只读常量数据段，位于代码区；字符串与查找表放这里。",
+    "detail": null
+  },
+  {
+    "kind": "segment",
+    "key": "xinit",
+    "title": "XINIT · 外部数据初值段",
+    "description": "存放 xdata 变量的初值映像，启动时由 GSINIT 代码搬到 XSEG。",
+    "detail": null
+  },
+  {
+    "kind": "segment",
+    "key": "dseg",
+    "title": "DSEG · 直接寻址数据段",
+    "description": "内部 RAM 中可用直接地址访问的数据段，--model-small 的全局变量放这里。",
+    "detail": null
+  },
+  {
+    "kind": "segment",
+    "key": "dabs",
+    "title": "DABS · 绝对直接寻址段",
+    "description": "按绝对地址定位的内部数据段。",
+    "detail": null
+  },
+  {
+    "kind": "segment",
+    "key": "iseg",
+    "title": "ISEG · 间接寻址数据段",
+    "description": "内部 RAM 中只能间接访问的数据段。",
+    "detail": null
+  },
+  {
+    "kind": "segment",
+    "key": "iabs",
+    "title": "IABS · 绝对间接寻址段",
+    "description": "按绝对地址定位的间接寻址数据段。",
+    "detail": null
+  },
+  {
+    "kind": "segment",
+    "key": "xseg",
+    "title": "XSEG · 外部数据段",
+    "description": "xdata 数据段；--model-large 下全局变量与数组都放这里，通过 DPX 访问。",
+    "detail": null
+  },
+  {
+    "kind": "segment",
+    "key": "xiseg",
+    "title": "XISEG · 间接寻址外部数据段",
+    "description": "需要间接寻址的外部数据段。",
+    "detail": null
+  },
+  {
+    "kind": "segment",
+    "key": "xabs",
+    "title": "XABS · 绝对外部数据段",
+    "description": "按绝对地址定位的外部数据段。",
+    "detail": null
+  },
+  {
+    "kind": "segment",
+    "key": "pseg",
+    "title": "PSEG · 分页外部数据段",
+    "description": "按 256 字节分页访问的外部数据段（pdata），高位地址由页寄存器给出。",
+    "detail": null
+  },
+  {
+    "kind": "segment",
+    "key": "sseg",
+    "title": "SSEG · 栈段",
+    "description": "硬件栈所在段；--stack-auto 下局部变量与可重入参数都在这里。",
+    "detail": null
+  },
+  {
+    "kind": "segment",
+    "key": "bseg",
+    "title": "BSEG · 位段",
+    "description": "位变量段，按位分配。",
+    "detail": null
+  },
+  {
+    "kind": "segment",
+    "key": "rseg",
+    "title": "RSEG · 绝对定位段",
+    "description": "用 .org 固定地址的段；SFR 符号表就定义在这一段里。",
+    "detail": null
+  },
+  {
+    "kind": "segment",
+    "key": "reg_bank_0",
+    "title": "REG_BANK_0 · 寄存器组 0 段",
+    "description": "保存 R0–R7 直接地址副本（ar0–ar7）的段，供 push / pop 使用。",
+    "detail": null
+  },
+  {
+    "kind": "segment",
+    "key": "reg_bank_1",
+    "title": "REG_BANK_1 · 寄存器组 1 段",
+    "description": "第二组 R0–R7 的直接地址副本段。",
+    "detail": null
+  },
+  {
+    "kind": "segment",
+    "key": "reg_bank_2",
+    "title": "REG_BANK_2 · 寄存器组 2 段",
+    "description": "第三组 R0–R7 的直接地址副本段。",
+    "detail": null
+  },
+  {
+    "kind": "segment",
+    "key": "reg_bank_3",
+    "title": "REG_BANK_3 · 寄存器组 3 段",
+    "description": "第四组 R0–R7 的直接地址副本段。",
+    "detail": null
+  },
+  {
+    "kind": "segment",
+    "key": "bit_bank",
+    "title": "BIT_BANK · 位寄存器段",
+    "description": "保存可位寻址单元（bits）的段，SDCC 用 b0–b7 等别名引用其中的位。",
+    "detail": null
+  },
+  {
+    "kind": "segment",
+    "key": "rel",
+    "title": "REL · 可重定位",
+    "description": ".area 属性：段的地址由链接器决定，可以在最终映像中移动。",
+    "detail": null
+  },
+  {
+    "kind": "segment",
+    "key": "ovr",
+    "title": "OVR · 可覆盖",
+    "description": ".area 属性：允许与其它段共用同一块内存。SDCC 用它让非重入函数复用局部变量空间。",
+    "detail": null
+  },
+  {
+    "kind": "segment",
+    "key": "abs",
+    "title": "ABS · 绝对地址",
+    "description": ".area 属性：段内地址固定，配合 .org 使用，不参与重定位。",
+    "detail": null
+  },
+  {
+    "kind": "segment",
+    "key": "pag",
+    "title": "PAG · 分页",
+    "description": ".area 属性：段按 256 字节边界分页。",
+    "detail": null
+  },
+  {
+    "kind": "segment",
+    "key": "con",
+    "title": "CON · 连接",
+    "description": ".area 属性：与同名段的内容首尾相连，合并成一段。",
+    "detail": null
+  },
+  {
+    "kind": "segment",
+    "key": "noload",
+    "title": "NOLOAD · 不装入映像",
+    "description": ".area 属性：只占地址，不写入输出文件。",
+    "detail": null
+  },
+  {
+    "kind": "directive",
+    "key": ".area",
+    "title": ".AREA · 段声明",
+    "description": "定义或切换到一个段，括号里写段属性。",
+    "detail": "如 .area XSEG (REL,OVR,XDATA) 表示可重定位、可覆盖的外部数据段。"
+  },
+  {
+    "kind": "directive",
+    "key": ".globl",
+    "title": ".GLOBL · 全局符号声明",
+    "description": "列出对其它模块可见的符号，链接器据此解析跨模块引用。",
+    "detail": null
+  },
+  {
+    "kind": "directive",
+    "key": ".module",
+    "title": ".MODULE · 模块名声明",
+    "description": "声明当前模块名，只影响符号命名与调试信息，不产生机器码。",
+    "detail": null
+  },
+  {
+    "kind": "directive",
+    "key": ".optsdcc",
+    "title": ".OPTSDCC · 编译选项记录",
+    "description": "写下生成该模块的 SDCC 命令行选项，供调试与工具识别，不产生机器码。",
+    "detail": null
+  },
+  {
+    "kind": "directive",
+    "key": ".db",
+    "title": ".DB · 定义字节数据",
+    "description": "按顺序把常量写入当前位置。",
+    "detail": "SDCC 会在行尾追加十进制注释，如 .db #0x02 ; 2。"
+  },
+  {
+    "kind": "directive",
+    "key": ".byte",
+    "title": ".BYTE · 定义字节数据",
+    "description": "与 .db 等价，按顺序写入若干字节常量。",
+    "detail": null
+  },
+  {
+    "kind": "directive",
+    "key": ".dw",
+    "title": ".DW · 定义字数据",
+    "description": "写入 16 位常量。MCS-251 的内存对象是大端，高字节在前。",
+    "detail": null
+  },
+  {
+    "kind": "directive",
+    "key": ".ds",
+    "title": ".DS · 保留空间",
+    "description": "从当前位置保留 n 个字节，不写入初值。",
+    "detail": "常用于声明缓冲区或栈空间。"
+  },
+  {
+    "kind": "directive",
+    "key": ".dsb",
+    "title": ".DSB · 保留字节空间",
+    "description": "保留 n 个字节，与 .ds 等价。",
+    "detail": null
+  },
+  {
+    "kind": "directive",
+    "key": ".dsw",
+    "title": ".DSW · 保留字空间",
+    "description": "保留 n 个 16 位字的空间。",
+    "detail": null
+  },
+  {
+    "kind": "directive",
+    "key": ".org",
+    "title": ".ORG · 设置位置计数器",
+    "description": "把后续代码或数据的地址固定为给定值。",
+    "detail": "如 .org 0x0000 把中断向量表定位到代码区起始处。"
+  },
+  {
+    "kind": "directive",
+    "key": ".ascii",
+    "title": ".ASCII · 定义字符串",
+    "description": "把字符串的字符依次写入，不追加结束符。",
+    "detail": null
+  },
+  {
+    "kind": "directive",
+    "key": ".asciz",
+    "title": ".ASCIZ · 定义以 0 结尾的字符串",
+    "description": "把字符串写入并在末尾追加一个 0 字节。",
+    "detail": null
+  },
+  {
+    "kind": "directive",
+    "key": ".equ",
+    "title": ".EQU · 定义符号常量",
+    "description": "给符号赋一个固定值，等价于列表里的「名字 = 值」写法。",
+    "detail": null
+  },
+  {
+    "kind": "directive",
+    "key": ".set",
+    "title": ".SET · 定义可重赋值符号",
+    "description": "给符号赋值，且允许后面再次赋值。",
+    "detail": null
+  },
+  {
+    "kind": "directive",
+    "key": ".even",
+    "title": ".EVEN · 偶地址对齐",
+    "description": "把位置计数器推进到下一个偶地址。",
+    "detail": null
+  },
+  {
+    "kind": "directive",
+    "key": ".if",
+    "title": ".IF · 条件汇编",
+    "description": "当表达式为真时才汇编其后的内容，与 .endif 配对。",
+    "detail": null
+  },
+  {
+    "kind": "directive",
+    "key": ".ifdef",
+    "title": ".IFDEF · 若符号已定义",
+    "description": "符号已定义时才汇编其后的内容。",
+    "detail": null
+  },
+  {
+    "kind": "directive",
+    "key": ".ifndef",
+    "title": ".IFNDEF · 若符号未定义",
+    "description": "符号未定义时才汇编其后的内容。",
+    "detail": null
+  },
+  {
+    "kind": "directive",
+    "key": ".else",
+    "title": ".ELSE · 条件汇编另一分支",
+    "description": "前面条件不成立时汇编这一段。",
+    "detail": null
+  },
+  {
+    "kind": "directive",
+    "key": ".endif",
+    "title": ".ENDIF · 条件汇编结束",
+    "description": "结束 .if / .ifdef / .ifndef 块。",
+    "detail": null
+  },
+  {
+    "kind": "directive",
+    "key": ".macro",
+    "title": ".MACRO · 宏定义开始",
+    "description": "定义一段可复用的汇编宏，与 .endm 配对。",
+    "detail": null
+  },
+  {
+    "kind": "directive",
+    "key": ".endm",
+    "title": ".ENDM · 宏定义结束",
+    "description": "结束 .macro 定义的宏体。",
+    "detail": null
+  },
+  {
+    "kind": "directive",
+    "key": ".include",
+    "title": ".INCLUDE · 包含源文件",
+    "description": "把另一个汇编源文件的内容插入到当前位置。",
+    "detail": null
+  },
+  {
+    "kind": "directive",
+    "key": ".end",
+    "title": ".END · 源文件结束",
+    "description": "标记汇编源文件结束，其后的内容不再汇编。",
+    "detail": null
+  },
+  {
+    "kind": "directive",
+    "key": ".list",
+    "title": ".LIST · 开启列表输出",
+    "description": "恢复列表文件输出（此前被 .nolist 关闭）。",
+    "detail": null
+  },
+  {
+    "kind": "directive",
+    "key": ".nolist",
+    "title": ".NOLIST · 关闭列表输出",
+    "description": "暂停列表文件输出，常用于跳过大段数据。",
+    "detail": null
+  },
+  {
+    "kind": "directive",
+    "key": ".page",
+    "title": ".PAGE · 列表换页",
+    "description": "在列表文件中插入换页。",
+    "detail": null
+  },
+  {
+    "kind": "directive",
+    "key": ".radix",
+    "title": ".RADIX · 设置默认进制",
+    "description": "设置未加前后缀的数字按哪种进制解释。",
+    "detail": null
+  },
+  {
+    "kind": "directive",
+    "key": ".title",
+    "title": ".TITLE · 列表标题",
+    "description": "设置列表文件的标题行。",
+    "detail": null
+  },
+  {
+    "kind": "directive",
+    "key": ".sbttl",
+    "title": ".SBTTL · 列表副标题",
+    "description": "设置列表文件的副标题。",
+    "detail": null
+  },
+  {
+    "kind": "directive",
+    "key": ".error",
+    "title": ".ERROR · 报错",
+    "description": "汇编到此处时报出自定义错误信息并停止。",
+    "detail": null
+  },
+  {
+    "kind": "notation",
+    "key": "@",
+    "title": "@ · 间接寻址",
+    "description": "操作数是一个地址寄存器，真正访问的是它的内容所指向的单元。",
+    "detail": "如 mov a,@r0 读 R0 指向的字节，mov a,@dpx 读 DPX 指向的 24 位地址，mov wr2,@spx-0x0004 读栈上的局部变量。"
+  },
+  {
+    "kind": "notation",
+    "key": "#",
+    "title": "# · 立即数前缀",
+    "description": "写在操作数前表示这是一个常量值，而不是地址或寄存器编号。",
+    "detail": "如 mov dptr,#0x00c8 把常数 200 装入 DPTR；没有 # 则是把 0x00c8 当作地址。"
+  },
+  {
+    "kind": "notation",
+    "key": ".",
+    "title": ". · 当前地址",
+    "description": "表示当前位置计数器的值。",
+    "detail": "sjmp . 就是跳到自身，形成原地死循环，通常用于等待中断。"
+  },
+  {
+    "kind": "notation",
+    "key": "::",
+    "title": ":: · 全局符号定义",
+    "description": "带两个冒号的标签对其它模块可见，需要与 .globl 声明配合。",
+    "detail": "一个冒号的标签只在本模块内有效。"
+  },
+  {
+    "kind": "notation",
+    "key": "$",
+    "title": "数字$ · 局部标号",
+    "description": "以 $ 结尾的数字标签由编译器生成，只在当前函数内有效。",
+    "detail": "SDCC 用它给 if、for、while 生成分支目标，如 00122$。"
+  },
+  {
+    "kind": "sfr",
+    "key": "P0",
+    "title": "P0 · 端口 0",
+    "description": "8 位准双向 I/O 口，可整字节读写，也可按位操作（P0.0–P0.7）。",
+    "detail": "工作模式由 P0M0 与 P0M1 配置。"
+  },
+  {
+    "kind": "sfr",
+    "key": "P1",
+    "title": "P1 · 端口 1",
+    "description": "8 位准双向 I/O 口，可整字节读写，也可按位操作。",
+    "detail": "工作模式由 P1M0 与 P1M1 配置。"
+  },
+  {
+    "kind": "sfr",
+    "key": "P2",
+    "title": "P2 · 端口 2",
+    "description": "8 位准双向 I/O 口，可整字节读写，也可按位操作。",
+    "detail": "工作模式由 P2M0 与 P2M1 配置。"
+  },
+  {
+    "kind": "sfr",
+    "key": "P3",
+    "title": "P3 · 端口 3",
+    "description": "8 位准双向 I/O 口，多数引脚复用了串口、定时器与外部中断。",
+    "detail": "工作模式由 P3M0 与 P3M1 配置。"
+  },
+  {
+    "kind": "sfr",
+    "key": "P4",
+    "title": "P4 · 端口 4",
+    "description": "8 位准双向 I/O 口。",
+    "detail": "工作模式由 P4M0 与 P4M1 配置。"
+  },
+  {
+    "kind": "sfr",
+    "key": "P5",
+    "title": "P5 · 端口 5",
+    "description": "8 位准双向 I/O 口。",
+    "detail": "工作模式由 P5M0 与 P5M1 配置。"
+  },
+  {
+    "kind": "sfr",
+    "key": "P6",
+    "title": "P6 · 端口 6",
+    "description": "8 位准双向 I/O 口。",
+    "detail": "工作模式由 P6M0 与 P6M1 配置。"
+  },
+  {
+    "kind": "sfr",
+    "key": "P7",
+    "title": "P7 · 端口 7",
+    "description": "8 位准双向 I/O 口。",
+    "detail": "工作模式由 P7M0 与 P7M1 配置。"
+  },
+  {
+    "kind": "sfr",
+    "key": "SP",
+    "title": "SP · 栈指针",
+    "description": "8051 的 8 位栈指针，地址 0x81。",
+    "detail": "MCS-251 的硬件栈由 16 位 SPX 管理。"
+  },
+  {
+    "kind": "sfr",
+    "key": "SPH",
+    "title": "SPH · 栈指针高字节",
+    "description": "SPX 的高 8 位，地址 0x85。",
+    "detail": null
+  },
+  {
+    "kind": "sfr",
+    "key": "DPL",
+    "title": "DPL · 数据指针低字节",
+    "description": "DPTR 的低 8 位，地址 0x82。",
+    "detail": null
+  },
+  {
+    "kind": "sfr",
+    "key": "DPH",
+    "title": "DPH · 数据指针高字节",
+    "description": "DPTR 的高 8 位，地址 0x83。",
+    "detail": null
+  },
+  {
+    "kind": "sfr",
+    "key": "DPXL",
+    "title": "DPXL · 数据指针扩展字节",
+    "description": "DPX 的最高 8 位（位 23:16），地址 0x84，决定访问哪一个 64KB 页。",
+    "detail": null
+  },
+  {
+    "kind": "sfr",
+    "key": "DPS",
+    "title": "DPS · 数据指针选择",
+    "description": "在两组数据指针 DPTR0 / DPTR1 之间切换，地址 0xE3。",
+    "detail": null
+  },
+  {
+    "kind": "sfr",
+    "key": "PCON",
+    "title": "PCON · 电源控制",
+    "description": "含波特率加倍位 SMOD 与空闲、掉电模式控制位，地址 0x87。",
+    "detail": null
+  },
+  {
+    "kind": "sfr",
+    "key": "TCON",
+    "title": "TCON · 定时器与外部中断控制",
+    "description": "含 TF1 TR1 TF0 TR0 IE1 IT1 IE0 IT0，地址 0x88。",
+    "detail": "TR0/TR1 启停定时器，TF0/TF1 是溢出标志，IT0/IT1 选择外部中断触发方式。"
+  },
+  {
+    "kind": "sfr",
+    "key": "TMOD",
+    "title": "TMOD · 定时器模式",
+    "description": "设置定时器 0 与 1 的工作模式、计数方式与门控，地址 0x89。",
+    "detail": null
+  },
+  {
+    "kind": "sfr",
+    "key": "TL0",
+    "title": "TL0 · 定时器 0 低字节",
+    "description": "定时器 0 计数值的低 8 位，地址 0x8A。",
+    "detail": null
+  },
+  {
+    "kind": "sfr",
+    "key": "TL1",
+    "title": "TL1 · 定时器 1 低字节",
+    "description": "定时器 1 计数值的低 8 位，地址 0x8B。",
+    "detail": null
+  },
+  {
+    "kind": "sfr",
+    "key": "TH0",
+    "title": "TH0 · 定时器 0 高字节",
+    "description": "定时器 0 计数值的高 8 位，地址 0x8C。写入初值可设定溢出周期。",
+    "detail": null
+  },
+  {
+    "kind": "sfr",
+    "key": "TH1",
+    "title": "TH1 · 定时器 1 高字节",
+    "description": "定时器 1 计数值的高 8 位，地址 0x8D。串口波特率通常由它决定。",
+    "detail": null
+  },
+  {
+    "kind": "sfr",
+    "key": "SCON",
+    "title": "SCON · 串行口控制",
+    "description": "含 SM0 SM1 SM2 REN TB8 RB8 TI RI，地址 0x98。",
+    "detail": "SM0/SM1 选择工作方式，REN 允许接收，TI/RI 是收发完成标志。"
+  },
+  {
+    "kind": "sfr",
+    "key": "SBUF",
+    "title": "SBUF · 串行口数据缓冲",
+    "description": "地址 0x99：写入即启动发送，读取即得到刚收到的字节。",
+    "detail": "发送与接收共用一个地址，由读或写决定方向；TI/RI 需要软件清零。"
+  },
+  {
+    "kind": "sfr",
+    "key": "IE",
+    "title": "IE · 中断允许",
+    "description": "总开关 EA 与各中断源使能位，地址 0xA8。",
+    "detail": "EA 清零时所有中断都被屏蔽。"
+  },
+  {
+    "kind": "sfr",
+    "key": "IP",
+    "title": "IP · 中断优先级",
+    "description": "设置各中断源的优先级，地址 0xB8。",
+    "detail": "高优先级中断可以打断低优先级的服务程序。"
+  },
+  {
+    "kind": "sfr",
+    "key": "PSW",
+    "title": "PSW · 程序状态字",
+    "description": "含 CY AC F0 RS1 RS0 OV P，地址 0xD0。",
+    "detail": "RS1/RS0 选择当前寄存器组。"
+  },
+  {
+    "kind": "sfr",
+    "key": "PSW1",
+    "title": "PSW1 · 扩展程序状态字",
+    "description": "MCS-251 新增，保存 N 与 Z 等标志，地址 0xD1。",
+    "detail": "cmp 之后的有符号比较跳转依赖它。"
+  },
+  {
+    "kind": "sfr",
+    "key": "ACC",
+    "title": "ACC · 累加器",
+    "description": "累加器 A 的直接地址形式，地址 0xE0。",
+    "detail": "push acc、xrl acc,#0xff 这类需要直接地址的场合用它。"
+  },
+  {
+    "kind": "sfr",
+    "key": "B",
+    "title": "B · B 寄存器",
+    "description": "8 位通用寄存器，地址 0xF0。",
+    "detail": "mul ab 与 div ab 用它存放乘数、商或余数。"
+  },
+  {
+    "kind": "sfr",
+    "key": "AUXR",
+    "title": "AUXR · 辅助寄存器",
+    "description": "含串口波特率发生器、定时器时钟分频、EXTRAM 等控制位，地址 0x8E。",
+    "detail": null
+  },
+  {
+    "kind": "sfr",
+    "key": "AUXR2",
+    "title": "AUXR2 · 辅助寄存器 2",
+    "description": "扩展的时钟与外设控制位，地址 0x97。",
+    "detail": null
+  },
+  {
+    "kind": "sfr",
+    "key": "WDT_CONTR",
+    "title": "WDT_CONTR · 看门狗控制",
+    "description": "看门狗的使能、清零与分频设置。",
+    "detail": "超时未喂狗会复位芯片。"
+  },
+  {
+    "kind": "sfr",
+    "key": "S2CON",
+    "title": "S2CON · 串行口 2 控制",
+    "description": "第二路串口的控制与状态位。",
+    "detail": null
+  },
+  {
+    "kind": "sfr",
+    "key": "S2BUF",
+    "title": "S2BUF · 串行口 2 数据缓冲",
+    "description": "第二路串口的收发缓冲，写入发送、读取接收。",
+    "detail": null
+  },
+  {
+    "kind": "sfr",
+    "key": "SPCTL",
+    "title": "SPCTL · SPI 控制",
+    "description": "SPI 的使能、主从、时钟极性与相位设置。",
+    "detail": null
+  },
+  {
+    "kind": "sfr",
+    "key": "SPSTAT",
+    "title": "SPSTAT · SPI 状态",
+    "description": "SPI 的传输完成与写冲突标志。",
+    "detail": null
+  },
+  {
+    "kind": "sfr",
+    "key": "SPDAT",
+    "title": "SPDAT · SPI 数据",
+    "description": "SPI 的收发数据缓冲。",
+    "detail": null
+  },
+  {
+    "kind": "sfr",
+    "key": "ADC_CONTR",
+    "title": "ADC_CONTR · ADC 控制",
+    "description": "ADC 的使能、启动、通道选择与电源控制。",
+    "detail": null
+  },
+  {
+    "kind": "sfr",
+    "key": "ADC_RES",
+    "title": "ADC_RES · ADC 结果高字节",
+    "description": "转换结果的高 8 位，低位在 ADC_RESL。",
+    "detail": null
+  },
+  {
+    "kind": "bit",
+    "key": "CY",
+    "title": "CY · 进位标志",
+    "description": "PSW.7：加法产生进位或减法需要借位时置 1，也是位操作指令的位累加器。",
+    "detail": null
+  },
+  {
+    "kind": "bit",
+    "key": "AC",
+    "title": "AC · 辅助进位标志",
+    "description": "PSW.6：低 4 位向高 4 位进位时置 1，主要供 BCD 调整（da）使用。",
+    "detail": null
+  },
+  {
+    "kind": "bit",
+    "key": "F0",
+    "title": "F0 · 用户标志位",
+    "description": "PSW.5：供程序自由使用的通用标志位。",
+    "detail": null
+  },
+  {
+    "kind": "bit",
+    "key": "RS1",
+    "title": "RS1 · 寄存器组选择高位",
+    "description": "PSW.4：与 RS0 一起选择当前使用的 R0–R7 组（00–11 对应第 0–3 组）。",
+    "detail": null
+  },
+  {
+    "kind": "bit",
+    "key": "RS0",
+    "title": "RS0 · 寄存器组选择低位",
+    "description": "PSW.3：与 RS1 一起选择当前使用的 R0–R7 组。",
+    "detail": null
+  },
+  {
+    "kind": "bit",
+    "key": "OV",
+    "title": "OV · 溢出标志",
+    "description": "PSW.2：有符号运算结果超出表示范围时置 1；除法除数为 0 时也置 1。",
+    "detail": null
+  },
+  {
+    "kind": "bit",
+    "key": "P",
+    "title": "P · 奇偶标志",
+    "description": "PSW.0：A 中 1 的个数为奇数时置 1。",
+    "detail": null
+  },
+  {
+    "kind": "bit",
+    "key": "N",
+    "title": "N · 符号标志",
+    "description": "PSW1 中保存：运算结果的最高位为 1 时置 1，供有符号比较跳转使用。",
+    "detail": null
+  },
+  {
+    "kind": "bit",
+    "key": "Z",
+    "title": "Z · 零标志",
+    "description": "PSW1 中保存：运算结果为 0 时置 1，je / jne / jz / jnz 依据它跳转。",
+    "detail": null
+  },
+  {
+    "kind": "bit",
+    "key": "EA",
+    "title": "EA · 总中断允许",
+    "description": "IE.7：清零时屏蔽全部中断，置 1 才允许响应中断。",
+    "detail": null
+  },
+  {
+    "kind": "bit",
+    "key": "ES",
+    "title": "ES · 串口中断允许",
+    "description": "IE.4：允许串行口收发中断。",
+    "detail": null
+  },
+  {
+    "kind": "bit",
+    "key": "ET0",
+    "title": "ET0 · 定时器 0 中断允许",
+    "description": "IE.1：允许定时器 0 溢出中断。",
+    "detail": null
+  },
+  {
+    "kind": "bit",
+    "key": "ET1",
+    "title": "ET1 · 定时器 1 中断允许",
+    "description": "IE.3：允许定时器 1 溢出中断。",
+    "detail": null
+  },
+  {
+    "kind": "bit",
+    "key": "EX0",
+    "title": "EX0 · 外部中断 0 允许",
+    "description": "IE.0 之上的使能位：允许外部中断 0。",
+    "detail": null
+  },
+  {
+    "kind": "bit",
+    "key": "EX1",
+    "title": "EX1 · 外部中断 1 允许",
+    "description": "允许外部中断 1。",
+    "detail": null
+  },
+  {
+    "kind": "bit",
+    "key": "TR0",
+    "title": "TR0 · 定时器 0 启动",
+    "description": "TCON.4：置 1 开始计数，清 0 停止。",
+    "detail": null
+  },
+  {
+    "kind": "bit",
+    "key": "TR1",
+    "title": "TR1 · 定时器 1 启动",
+    "description": "TCON.6：置 1 开始计数，清 0 停止。",
+    "detail": null
+  },
+  {
+    "kind": "bit",
+    "key": "TF0",
+    "title": "TF0 · 定时器 0 溢出标志",
+    "description": "TCON.5：计数溢出时由硬件置 1，进入中断服务后自动清零。",
+    "detail": null
+  },
+  {
+    "kind": "bit",
+    "key": "TF1",
+    "title": "TF1 · 定时器 1 溢出标志",
+    "description": "TCON.7：计数溢出时由硬件置 1，进入中断服务后自动清零。",
+    "detail": null
+  },
+  {
+    "kind": "bit",
+    "key": "IT0",
+    "title": "IT0 · 外部中断 0 触发方式",
+    "description": "TCON.0：0 为低电平触发，1 为下降沿触发。",
+    "detail": null
+  },
+  {
+    "kind": "bit",
+    "key": "IT1",
+    "title": "IT1 · 外部中断 1 触发方式",
+    "description": "TCON.2：0 为低电平触发，1 为下降沿触发。",
+    "detail": null
+  },
+  {
+    "kind": "bit",
+    "key": "IE0",
+    "title": "IE0 · 外部中断 0 请求标志",
+    "description": "TCON.1：检测到外部中断 0 请求时置 1。",
+    "detail": null
+  },
+  {
+    "kind": "bit",
+    "key": "IE1",
+    "title": "IE1 · 外部中断 1 请求标志",
+    "description": "TCON.3：检测到外部中断 1 请求时置 1。",
+    "detail": null
+  },
+  {
+    "kind": "bit",
+    "key": "RI",
+    "title": "RI · 串口接收中断标志",
+    "description": "SCON.0：收到一个字节时由硬件置 1，必须由软件清零，否则会反复进入中断。",
+    "detail": null
+  },
+  {
+    "kind": "bit",
+    "key": "TI",
+    "title": "TI · 串口发送中断标志",
+    "description": "SCON.1：一个字节发送完毕时由硬件置 1，必须由软件清零。",
+    "detail": "查询式发送常写成 jnb _TI,$ 等待发送完成。"
+  },
+  {
+    "kind": "bit",
+    "key": "REN",
+    "title": "REN · 串口接收允许",
+    "description": "SCON.4：置 1 才允许串行口接收数据。",
+    "detail": null
+  },
+  {
+    "kind": "bit",
+    "key": "SM0",
+    "title": "SM0 · 串口工作方式高位",
+    "description": "SCON.7：与 SM1 一起选择工作方式（00–11）。",
+    "detail": null
+  },
+  {
+    "kind": "bit",
+    "key": "SM1",
+    "title": "SM1 · 串口工作方式低位",
+    "description": "SCON.6：与 SM0 一起选择工作方式；01 是最常用的 8 位 UART。",
+    "detail": null
+  },
+  {
+    "kind": "bit",
+    "key": "SM2",
+    "title": "SM2 · 多机通信控制",
+    "description": "SCON.5：多机通信时配合第 9 位数据筛选目标机。",
+    "detail": null
+  },
+  {
+    "kind": "bit",
+    "key": "TB8",
+    "title": "TB8 · 发送的第 9 位数据",
+    "description": "SCON.3：工作方式 1 与 3 下随发送数据一起送出的第 9 位。",
+    "detail": null
+  },
+  {
+    "kind": "bit",
+    "key": "RB8",
+    "title": "RB8 · 接收的第 9 位数据",
+    "description": "SCON.2：接收到的第 9 位数据或停止位。",
+    "detail": null
+  },
+  {
+    "kind": "bit",
+    "key": "SMOD",
+    "title": "SMOD · 波特率加倍",
+    "description": "PCON.7：置 1 时串口波特率翻倍。",
+    "detail": null
+  }
+]
