@@ -1,0 +1,16 @@
+[package]
+name = "pieblock-tui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+crossterm.workspace = true
+pieblock-core.workspace = true
+pieblock-ui.workspace = true
+ratatui.workspace = true
+unicode-width.workspace = true
+
+[lints]
+workspace = true
