@@ -1064,6 +1064,7 @@ dependencies = [
 name = "pieblock-toolchain"
 version = "0.1.0"
 dependencies = [
+ "pieblock-core",
  "serde_json",
 ]
 

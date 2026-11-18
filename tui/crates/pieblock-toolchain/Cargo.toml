@@ -6,9 +6,11 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
-
-[lints]
-workspace = true
+pieblock-core = { path = "../pieblock-core" }
+serde_json.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
+
+[lints]
+workspace = true
