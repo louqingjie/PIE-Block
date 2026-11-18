@@ -1,0 +1,10 @@
+name: pieblock_tui_golden_tools
+description: 开发期 golden 生成工具（不参与 TUI 发布产物）。
+publish_to: none
+
+environment:
+  sdk: ^3.13.0
+
+dependencies:
+  pieblock_core:
+    path: ../../../packages/pieblock_core
