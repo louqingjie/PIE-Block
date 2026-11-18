@@ -1,10 +1,12 @@
 //! STC32G ROM USB-HID ISP 烧录协议（M2 里程碑）。
 //!
 //! 已移植：帧编码、报告拆分、HEX→块映射、ACK 交互、烧录状态机（含重试与
-//! 探活/操作指引）。原生 hidapi 传输将在 M2 收尾接入；当前通过 [`HidTransport`]
-//! trait 注入传输层，便于用脚本化假设备对拍协议时序。
+//! 已移植：帧编码、报告拆分、HEX→块映射、ACK 交互、烧录状态机（含重试与
+//! 探活/操作指引），以及 Windows/Linux 原生 hidapi 传输（真机验证待硬件）。
 
 pub mod flasher;
+#[cfg(any(windows, target_os = "linux"))]
+pub mod native;
 pub mod protocol;
 pub mod transport;
 
@@ -26,13 +28,15 @@ pub const VECTOR_BASE: i64 = 0x00FF_0000;
 pub const FLASH_TIMEOUT_SECS: u64 = 90;
 
 pub use flasher::{FlashEvent, FlashOptions, FlashResult, FlashStage, HidFlasher};
+#[cfg(any(windows, target_os = "linux"))]
+pub use native::NativeHidTransport;
 pub use protocol::{FlashBlock, HidProtocol, HidProtocolError};
 pub use transport::{HidTransport, TransportError};
 
 /// M2 阶段能力描述。
 #[must_use]
 pub const fn stage() -> &'static str {
-    "M2 进行中：协议/烧录状态机已移植，原生 hidapi 传输与真机验证待完成"
+    "M2 进行中：协议/烧录状态机与原生 hidapi 已移植，真机验证待完成"
 }
 
 #[cfg(test)]

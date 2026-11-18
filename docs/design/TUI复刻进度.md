@@ -13,7 +13,7 @@
 | --- | --- | --- |
 | M0 技术验证 | 🟡 收尾 | Rust 工具链、workspace、M0 演示壳、表单/卷帘原型、单元测试、CI 已就绪；待：真实终端键鼠/IME 验证、hidapi 真机、SDCC+HEX 对拍、卷帘体验评审 |
 | M1 领域内核 + CLI | ✅ 完成 | 模型/迁移/校验/表达式/四类 C 生成/音乐时间轴/MIDI/五线谱固件表/CLI validate·codegen·propose 全部移植，golden 逐字节对拍（模型 13、校验 24、表达式 60+、codegen 17、CLI validate/codegen 42、CLI propose 7、MIDI 3+往返）；五线谱布局渲染留待 M6 |
-| M2 工具链 + HID | 🟡 进行中 | 已完成：Intel HEX 解析、主控板应用区校验、SDCC HEX/MAP 布局校验（13+13+6 golden）、HID 帧/报告/块映射、烧录状态机（9 场景对拍）、运行时部署（staging/校验/rename/退避/清理）、目标文件缓存、SDCC 构建计划与中断声明头；待：FirmwareBuilder 调用 SDCC/Keil、产物仓库/LST、原生 hidapi、udev、真机烧录 |
+| M2 工具链 + HID | 🟡 进行中 | 已完成：Intel HEX 解析、主控板应用区校验、SDCC HEX/MAP 布局校验（13+13+6 golden）、HID 帧/报告/块映射、烧录状态机（9 场景对拍）、运行时部署（staging/校验/rename/退避/清理）、目标文件缓存、SDCC 构建计划与中断声明头、**原生 hidapi 传输（Windows/Linux，含取消标志）**；待：FirmwareBuilder 调用 SDCC/Keil、产物仓库/LST、udev、真机烧录 |
 | M3 TUI 基座 | 🟡 部分前置 | 已有应用循环、主题、三栏布局、焦点、状态栏；待完善文件浏览器、设置、最近项目、自动保存与 PTY 测试框架 |
 | M4 向导表单 | ⬜ 未开始 | 四类工程全部页面与问题跳转 |
 | M5 检查/代码/汇编/表达式 | ⬜ 未开始 | |
@@ -73,7 +73,8 @@
 - `pieblock-hid::flasher`：连接→擦除→分块写入（同址重发 3 次、50ms 退避）→复位状态机，含进度事件、写入失败/命令异常/帧头异常、`info` 探活与「仍在 ISP / 已掉线」操作指引。9 个脚本化场景的事件序列、结果文案、写出报告、关闭状态全部与 Dart 一致。
 - 生成器：`tui/parity/tools/bin/export_m2_goldens.dart` → `tui/parity/golden/m2/m2.json`。
 - `pieblock-toolchain` 运行时与构建编排：`file_ops`（瞬时占用重试/递归复制）、`models`（构建请求/事件/指纹/产物 JSON/结果）、`sdcc_runtime_deployer`（唯一暂存目录→SHA-256 校验 bundle→`.ready` 指纹→8 次退避 rename，残留清理与占用提示）、`sdcc_object_cache`（v1 缓存键、原子写、大小+SHA-256 复用校验、损坏回退未命中、旧指纹清理）、`sdcc_build_plan`（`build_manifest.json` 源码组/工程映射/编译链接参数、`main_*.rst` 中断声明头去重排序输出）。行为测试覆盖部署复用/损坏拒绝、缓存往返/损坏、计划与中断头。
-- 待硬件：原生 hidapi 传输、真机烧录、SDCC 构建 HEX 对拍（需要主控板与 SDCC 环境）。
+- `pieblock-hid::native`：Windows `hidapi` `windows-native` / Linux `linux-static-hidraw` 传输——按 VID/PID 枚举、`open_path`、写报告（校验完整长度）、`read_timeout` 分片等待与跨线程取消标志、关闭；无设备时枚举为 0，真机烧录待硬件验证。
+- 待硬件：真机烧录与 SDCC 构建 HEX 对拍（需要主控板与 SDCC 环境）。
 
 
 

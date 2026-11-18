@@ -8,6 +8,13 @@ license.workspace = true
 [dependencies]
 pieblock-toolchain = { path = "../pieblock-toolchain" }
 
+[target.'cfg(windows)'.dependencies]
+hidapi = { version = "2.6.7", features = ["windows-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+hidapi = { version = "2.6.7", features = ["linux-static-hidraw"] }
+
+
 [dev-dependencies]
 serde_json.workspace = true
 
