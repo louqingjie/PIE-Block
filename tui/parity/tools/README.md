@@ -28,8 +28,11 @@ dart run bin/export_validation_goldens.dart
 
 输出到 `tui/parity/golden/validation/`：输入为模板、调试 fixture、四类工程的默认
 文档，以及一组有意构造的非法/边界配置；每个 golden 包含文档 JSON、完整 `issues`
-（以及机器人类工程的 `remoteIssues` 子集）。Rust 侧先用完整列表对拍调试工程，
-公共机器人规则对拍 remote 子集，步兵/工程专属规则移植后扩展到完整列表。
+（以及机器人类工程的 `remoteIssues` 子集）。当前对比口径：
+
+- 调试工程、步兵工程：完整 `issues` 列表逐条一致；
+- 工程（engineer）：专属规则尚未移植，先对比 `remoteIssues`（公共机器人规则，工程专属
+  规则不使用 remote step，因此可完全一致）。
 
 > 后续代码生成/CLI 的 golden 也放在这里生成；生成结果提交到 git，
 > Rust 测试只读快照，不需要安装 Dart。
