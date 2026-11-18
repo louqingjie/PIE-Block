@@ -7,54 +7,13 @@ import 'dart:io';
 import 'package:pieblock_core/pieblock_core.dart';
 import 'package:test/test.dart';
 
+import 'support/infantry_fixture.dart';
+
 final _cli = Uri.file('bin/pieblock.dart').toString();
 
 /// 构造一份能通过校验的完整步兵工程，写入临时文件。
 File _validProject({String name = 'valid.pieproj'}) {
-  final config = InfantryConfig(
-    remote: const RemoteConfig(channel: 36, deadzone: 100),
-    chassis: ChassisConfig(
-      leftFront: const WheelConfig('P74 P24', Direction.forward),
-      leftRear: const WheelConfig('P75 P25', Direction.forward),
-      rightFront: const WheelConfig('P76 P26', Direction.reverse),
-      rightRear: const WheelConfig('P77 P27', Direction.reverse),
-      normalSpeed: 4000,
-      sprintSpeed: 8000,
-    ),
-    feederPin: 'P60',
-    feederDirection: Direction.forward,
-    yawActuators: const [
-      AxisActuator(
-        drive: DriveType.servo,
-        pin: 'MP74',
-        direction: Direction.forward,
-        midOffset: 0,
-      ),
-    ],
-    pitchActuators: const [
-      AxisActuator(
-        drive: DriveType.servo,
-        pin: 'MP03',
-        direction: Direction.forward,
-        midOffset: 0,
-      ),
-    ],
-    arrowBehavior: ArrowBehavior.other,
-    feedMode: FeedMode.blockingOpenLoop,
-    triggerKey: 'E',
-    triggerSpeed: 6000,
-    triggerTimeMs: 250,
-    frictionMode: FrictionMode.brushlessEsc,
-    frictionKey: 'A',
-    frictionUpKey: 'B',
-    frictionDownKey: 'C',
-    frictionP64MaxDuty: 800,
-    frictionP66MaxDuty: 700,
-    frictionLevelStep: 10,
-  );
-  final doc = ProjectDocument.create(ProjectKind.infantry).copyWith(
-    config: config,
-  );
+  final doc = validInfantryDocument();
   final file = File('${Directory.systemTemp.path}${Platform.pathSeparator}$name');
   file.writeAsStringSync(jsonEncode(doc.toJson()));
   return file;
@@ -81,7 +40,12 @@ void main() {
       expect(json['name'], 'pieblock-cli');
       expect(json['exitCodes'], containsPair('2', anything));
       expect(json['exitCodes'], containsPair('5', anything));
-      expect(json['commands'], isA<List>());
+      expect(json['exitCodes'], containsPair('6', anything));
+      final commands = json['commands'] as List;
+      expect(
+        commands.map((command) => (command as Map)['name']),
+        containsAll(['validate', 'codegen', 'propose', 'describe']),
+      );
     });
 
     test('validate 合法工程：exit 0、valid true、errors 为 0', () {

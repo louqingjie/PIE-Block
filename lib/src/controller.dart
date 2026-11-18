@@ -112,6 +112,9 @@ class AppController extends Notifier<AppState> {
   final _documentIo = const AppDocumentIo();
   Timer? _saveTimer;
 
+  /// 应用 AI 提案前的文档快照，供「撤销」用；用户再次编辑或切换工程时丢弃。
+  ProjectDocument? _proposalUndo;
+
   /// 设置写盘队列：保证多次保存按调用顺序落地，后触发的快照不会先写完。
   Future<void> _settingsWrite = Future<void>.value();
 
@@ -373,6 +376,8 @@ class AppController extends Notifier<AppState> {
   }
 
   void _adopt(ProjectDocument document, String path) {
+    // 换文档后上一份提案的撤销快照不再对应当前工程。
+    _proposalUndo = null;
     final ids = stepIds(document.kind);
     final current = ids.indexOf(document.guideProgress.currentStepId);
     final visited = document.guideProgress.visitedStepIds
@@ -404,6 +409,8 @@ class AppController extends Notifier<AppState> {
   void updateConfig(ProjectConfig config) {
     final document = state.document;
     if (document == null) return;
+    // 用户开始编辑后，上一份提案的「撤销」就不再安全。
+    _proposalUndo = null;
     state = state.copyWith(
       document: document.copyWith(config: config),
       saveStatus: SaveStatus.saving,
@@ -434,6 +441,53 @@ class AppController extends Notifier<AppState> {
         message: '自动保存失败：$error',
       );
     }
+  }
+
+  /// 应用一份 AI 提案：先取消待触发的自动保存，写盘成功后再替换内存状态。
+  ///
+  /// 只替换 `config`，保留当前向导进度、创建时间等用户侧状态。写入前的文档
+  /// 留作一次性撤销快照。失败时状态不变并返回 false，由调用方提示。
+  Future<bool> applyProposal(ProjectConfig config) async {
+    final document = state.document, path = state.path;
+    if (document == null || path == null) return false;
+    _saveTimer?.cancel();
+    final next = document.copyWith(config: config);
+    try {
+      await _writeProject(next, path);
+    } catch (error) {
+      state = state.copyWith(message: '应用 AI 提案失败：$error');
+      return false;
+    }
+    if (!ref.mounted) return false;
+    _proposalUndo = document;
+    state = state.copyWith(
+      document: next,
+      saveStatus: SaveStatus.saved,
+      clearMessage: true,
+      clearPendingField: true,
+    );
+    return true;
+  }
+
+  /// 撤销最近一次应用的提案（只支持一步）。
+  Future<bool> undoProposal() async {
+    final previous = _proposalUndo, path = state.path;
+    if (previous == null || path == null) return false;
+    _saveTimer?.cancel();
+    try {
+      await _writeProject(previous, path);
+    } catch (error) {
+      state = state.copyWith(message: '撤销 AI 提案失败：$error');
+      return false;
+    }
+    if (!ref.mounted) return false;
+    _proposalUndo = null;
+    state = state.copyWith(
+      document: previous,
+      saveStatus: SaveStatus.saved,
+      clearMessage: true,
+    );
+    return true;
   }
 
   Uint8List _encodeDocument(ProjectDocument document) {
@@ -593,6 +647,7 @@ class AppController extends Notifier<AppState> {
   void clearMessage() => state = state.copyWith(clearMessage: true);
   Future<void> closeProject() async {
     await saveNow();
+    _proposalUndo = null;
     state = state.copyWith(clearProject: true, clearMessage: true);
   }
 }

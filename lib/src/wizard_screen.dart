@@ -28,6 +28,7 @@ import 'design/asm_hover_card.dart';
 import 'design/connected_button_group.dart';
 import 'design/legacy_theme_bridge.dart';
 import 'design/wavy_progress_indicator.dart';
+import 'proposal/proposal_banner.dart';
 import 'motion.dart';
 import 'platform/file_export.dart';
 import 'platform/keil_discovery.dart';
@@ -200,6 +201,7 @@ class WizardScreen extends ConsumerWidget {
       ),
       body: Column(
         children: [
+          const ProposalBanner(),
           if (state.message != null)
             MaterialBanner(
               content: Text(state.message!),

@@ -1,15 +1,18 @@
-// PIE-Block 命令行入口：把核心能力（读工程、校验、生成代码）暴露给脚本与 AI Agent。
+// PIE-Block 命令行入口：把核心能力（读工程、校验、生成代码、提交改动提案）
+// 暴露给脚本与 AI Agent。
 //
 // 设计约定（与桌面端保持同一套语义）：
-//   - stdout 只输出机器可读数据：validate 为 JSON，codegen 为纯 C 源码。
+//   - stdout 只输出机器可读数据：validate/propose/describe 为 JSON，codegen 为纯 C 源码。
 //   - stderr 只输出人类可读的进度与错误。
 //   - 退出码：0 成功 / 1 参数错误 / 2 校验失败 / 3 IO 或格式错误 / 4 生成失败 /
-//     5 内部错误（兜底，不应发生）。
-//   - 不触碰存档写回，不编译、不烧录（这两个动作代价是硬件，仅桌面 GUI 提供）。
+//     5 内部错误（兜底，不应发生）/ 6 已有待处理提案（需 --force）。
+//   - 不直接改写工程：propose 只写 `<工程>.proposed` 提案文件，由用户在
+//     PIE-Block 里确认后由应用写入；不编译、不烧录（代价是硬件，仅桌面 GUI 提供）。
 //
 // 用法：
 //   dart run packages/pieblock_core/bin/pieblock.dart validate <工程.pieproj>
 //   dart run packages/pieblock_core/bin/pieblock.dart codegen  <工程.pieproj> [--out main.c]
+//   dart run packages/pieblock_core/bin/pieblock.dart propose  <工程.pieproj> --config <候选.pieproj>
 //   dart run packages/pieblock_core/bin/pieblock.dart describe
 //   dart run packages/pieblock_core/bin/pieblock.dart --help
 
@@ -23,7 +26,9 @@ const int exitInvalid = 2;
 const int exitIo = 3;
 const int exitGenerate = 4;
 const int exitInternal = 5;
+const int exitConflict = 6;
 const String toolName = 'pieblock-cli';
+const String cliVersion = '1.0.0';
 
 void main(List<String> args) {
   try {
@@ -62,6 +67,8 @@ void _run(List<String> args) {
       _validate(rest);
     case 'codegen':
       _codegen(rest);
+    case 'propose':
+      _propose(rest);
     default:
       stderr.writeln('未知命令：$command，见 --help。');
       exitCode = exitUsage;
@@ -70,26 +77,30 @@ void _run(List<String> args) {
 
 void _usage() {
   stdout.writeln('''
-$toolName — PIE-Block 工程命令行工具（只读，不编译不烧录）
+$toolName — PIE-Block 工程命令行工具（只写提案，不编译不烧录）
 
 用法：
   $toolName validate <工程.pieproj>          校验配置，stdout 输出 JSON
   $toolName codegen  <工程.pieproj> [--out f] 生成 main.c，stdout 输出纯 C 源码
+  $toolName propose  <工程.pieproj> --config <候选.pieproj> [--force]
+                                             生成改动提案，等待用户在 PIE-Block 确认
   $toolName describe                         输出机器可读的命令契约（JSON）
   $toolName --help                           显示本帮助
 
 输出约定：
   stdout 仅机器可读数据；stderr 仅人类可读的进度与错误。
-  退出码：0 成功 / 1 参数错误 / 2 校验失败 / 3 IO或格式错误 / 4 生成失败 / 5 内部错误。
+  退出码：0 成功 / 1 参数错误 / 2 校验失败 / 3 IO或格式错误 / 4 生成失败 /
+          5 内部错误 / 6 已有待处理提案（需 --force）。
 ''');
 }
 
 void _describe() {
   stdout.writeln(jsonEncode({
     'name': toolName,
-    'version': '1.0.0',
-    'description': 'PIE-Block 工程命令行工具：只读工程、校验配置、生成代码。',
-    'stdoutPolicy': '机器可读数据（validate=JSON, codegen=纯 C 源码, describe=JSON）',
+    'version': cliVersion,
+    'description': 'PIE-Block 工程命令行工具：校验配置、生成代码、提交改动提案。',
+    'stdoutPolicy':
+        '机器可读数据（validate/propose/describe=JSON, codegen=纯 C 源码）',
     'stderrPolicy': '人类可读的进度与错误',
     'exitCodes': {
       '0': '成功',
@@ -98,6 +109,7 @@ void _describe() {
       '3': 'IO 或格式错误（文件不存在/JSON 非法/内容结构错误/版本不兼容）',
       '4': '代码生成失败',
       '5': '内部错误（兜底；设置 PIEBLOCK_DEBUG=1 可查看调用栈）',
+      '6': '已有待处理提案（未加 --force）',
     },
     'commands': [
       {
@@ -113,6 +125,14 @@ void _describe() {
         'stdout': '纯 C 源码（可直接在 shell 里重定向到文件）',
         'stderr': '人类可读的生成摘要；失败时给出错误清单',
         'note': '配置有 error 级问题时拒绝生成（与 GUI 行为一致）。',
+      },
+      {
+        'name': 'propose',
+        'usage': '$toolName propose <工程.pieproj> --config <候选.pieproj> [--force]',
+        'stdout': 'JSON: {ok, proposal, changed, paths, baseSha256, createdAt}',
+        'stderr': '提案摘要；失败时给出字段路径',
+        'note': '只写 <工程>.proposed，不改工程；候选必须是完整 .pieproj，'
+            '应用会在用户确认后写入。已有提案时需 --force 覆盖。',
       },
       {
         'name': 'describe',
@@ -283,5 +303,159 @@ void _codegen(List<String> args) {
     stderr.writeln('参数错误：${e.message}');
     stderr.writeln('用法见 --help。');
     exit(exitUsage);
+  }
+}
+
+({String path, String config, bool force}) _parseProposalArgs(List<String> args) {
+  String? path;
+  String? config;
+  var force = false;
+  for (var i = 0; i < args.length; i++) {
+    switch (args[i]) {
+      case '--config':
+        if (i + 1 >= args.length) {
+          throw ArgumentError('--config 缺少取值');
+        }
+        config = args[++i];
+      case '--force':
+        force = true;
+      case '--help':
+      case '-h':
+        _usage();
+        exit(0);
+      default:
+        if (args[i].startsWith('-')) {
+          throw ArgumentError('未知参数 ${args[i]}');
+        }
+        if (path != null) {
+          throw ArgumentError('只允许指定一个工程文件');
+        }
+        path = args[i];
+    }
+  }
+  if (path == null) {
+    throw ArgumentError('缺少工程文件路径');
+  }
+  if (config == null) {
+    throw ArgumentError('缺少 --config 候选工程路径');
+  }
+  return (path: path, config: config, force: force);
+}
+
+/// 生成改动提案：只写 `<工程>.proposed`，不修改工程本身。
+void _propose(List<String> args) {
+  final parsed = _parseProposalArgsOrExit(args);
+  final base = _loadProject(parsed.path);
+
+  final proposalPath = proposalPathFor(parsed.path);
+  if (File(proposalPath).existsSync() && !parsed.force) {
+    stderr.writeln('已存在待确认的提案：$proposalPath');
+    stderr.writeln('确认覆盖请加 --force。');
+    exit(exitConflict);
+  }
+
+  late final List<int> baseBytes;
+  try {
+    baseBytes = File(parsed.path).readAsBytesSync();
+  } on IOException catch (error) {
+    stderr.writeln('读取工程失败：${parsed.path}\n$error');
+    exit(exitIo);
+  }
+  final baseHash = sha256Hex(baseBytes);
+  final candidateJson = _readJsonObject(parsed.config, label: '候选工程');
+
+  late final ProjectProposal proposal;
+  try {
+    proposal = ProjectProposal.create(
+      base: base,
+      candidateJson: candidateJson,
+      baseSha256: baseHash,
+      tool: '$toolName/$cliVersion',
+    );
+  } on FormatException catch (error) {
+    stderr.writeln('候选工程格式错误：${error.message}');
+    exit(exitIo);
+  } on ProposalException catch (error) {
+    final structural =
+        error.code == 'invalid_document' || error.code == 'unsupported_schema';
+    stderr.writeln('提案被拒绝：${error.message}');
+    if (error.fields.isNotEmpty) {
+      stderr.writeln('涉及字段：');
+      for (final field in error.fields.take(20)) {
+        stderr.writeln('  · $field');
+      }
+      if (error.fields.length > 20) stderr.writeln('  · …');
+    }
+    exit(structural ? exitIo : exitInvalid);
+  }
+
+  try {
+    _writeFileAtomically(proposalPath, encodeProposal(proposal));
+  } on IOException catch (error) {
+    stderr.writeln('写入提案失败：$proposalPath\n$error');
+    exit(exitIo);
+  }
+
+  stdout.writeln(
+    jsonEncode({
+      'ok': true,
+      'proposal': proposalPath,
+      'changed': proposal.changedPaths.length,
+      'paths': proposal.changedPaths,
+      'baseSha256': proposal.baseSha256,
+      'createdAt': proposal.createdAt.toIso8601String(),
+    }),
+  );
+  stderr.writeln('已生成提案：$proposalPath');
+  stderr.writeln(
+    '共 ${proposal.changedPaths.length} 处改动，等待在 PIE-Block 中确认应用。',
+  );
+}
+
+({String path, String config, bool force}) _parseProposalArgsOrExit(
+  List<String> args,
+) {
+  try {
+    return _parseProposalArgs(args);
+  } on ArgumentError catch (e) {
+    stderr.writeln('参数错误：${e.message}');
+    stderr.writeln('用法见 --help。');
+    exit(exitUsage);
+  }
+}
+
+Map<String, Object?> _readJsonObject(String path, {required String label}) {
+  final file = File(path);
+  if (!file.existsSync()) {
+    stderr.writeln('$label不存在：$path');
+    exit(exitIo);
+  }
+  late final Object? decoded;
+  try {
+    decoded = jsonDecode(file.readAsStringSync());
+  } on FormatException catch (e) {
+    stderr.writeln('$label不是合法 JSON：$path\n${e.message}');
+    exit(exitIo);
+  } on IOException catch (e) {
+    stderr.writeln('读取$label失败：$path\n$e');
+    exit(exitIo);
+  }
+  if (decoded is! Map) {
+    stderr.writeln('$label内容不是 JSON 对象：$path');
+    exit(exitIo);
+  }
+  return Map<String, Object?>.from(decoded);
+}
+
+/// 先写临时文件再改名，避免应用轮询时读到半截提案。
+void _writeFileAtomically(String path, String content) {
+  final temporary = File('$path.tmp-$pid');
+  temporary.writeAsStringSync(content, flush: true);
+  try {
+    temporary.renameSync(path);
+  } on FileSystemException {
+    final target = File(path);
+    if (target.existsSync()) target.deleteSync();
+    temporary.renameSync(path);
   }
 }

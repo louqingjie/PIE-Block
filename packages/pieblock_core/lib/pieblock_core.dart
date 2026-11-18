@@ -6,6 +6,7 @@ export 'src/expression.dart';
 export 'src/models.dart';
 export 'src/midi_codec.dart';
 export 'src/music.dart';
+export 'src/proposal.dart';
 export 'src/staff_firmware_c.dart';
 export 'src/staff_glyphs.dart';
 export 'src/staff_layout.dart';

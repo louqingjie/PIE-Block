@@ -1,10 +1,12 @@
 # 命令行工具（CLI）
 
-`pieblock-cli` 是 PIE-Block 的只读命令行入口，给脚本和 AI Agent 用：
+`pieblock-cli` 是 PIE-Block 的命令行入口，给脚本和 AI Agent 用：
 
 - 和桌面端共用同一套 `ProjectValidator` 与 `CodeGenerator`，校验结论、生成的 C 代码与
   GUI 完全一致；
-- 只读：不改写 `.pieproj`，不编译、不烧录（这两个动作代价是硬件，只在桌面 GUI 里提供）；
+- **不直接改写工程**：`propose` 只生成 `<工程>.proposed` 提案文件，由用户在 PIE-Block
+  里确认后由应用写入（应用是工程文件的唯一写者）；
+- 不编译、不烧录（这两个动作代价是硬件，只在桌面 GUI 里提供）；
 - 随安装包附带独立可执行文件，用户机器不需要装 Flutter/Dart SDK。
 
 ## 可执行文件在哪
@@ -42,6 +44,7 @@ Linux 发行包解压即用，不会改 `~/.bashrc`；需要全局命令时自�
 pieblock-cli describe                               # 输出机器可读的命令契约（JSON）
 pieblock-cli validate  <工程.pieproj>              # 校验，stdout 输出 JSON
 pieblock-cli codegen   <工程.pieproj> [--out main.c] # 生成 main.c，stdout 输出纯 C 源码
+pieblock-cli propose   <工程.pieproj> --config <候选.pieproj> [--force] # 生成改动提案
 pieblock-cli --help
 ```
 
@@ -77,9 +80,38 @@ pieblock-cli --help
 - `--out <file>` 直接写文件（父目录不存在会自动创建），此时 stdout 为空；
 - 配置存在 `error` 级问题时拒绝生成，退出码 2，错误清单在 stderr（与 GUI 行为一致）。
 
+### propose
+
+把改动作为**提案**交给用户确认，而不是直接改工程：
+
+```powershell
+# 1. 复制工程，在副本上修改要变的字段（保持完整 .pieproj JSON）
+Copy-Item .\robot.pieproj .\robot.candidate.pieproj
+# ... 编辑 robot.candidate.pieproj ...
+
+# 2. 生成提案
+pieblock-cli propose .\robot.pieproj --config .\robot.candidate.pieproj
+```
+
+- 成功后写出 `.\robot.pieproj.proposed`，stdout 输出：
+
+```json
+{"ok":true,"proposal":"…\\robot.pieproj.proposed","changed":1,
+ "paths":["chassis.normal_speed"],"baseSha256":"…","createdAt":"…"}
+```
+
+- **不会修改 `robot.pieproj`**；用户在 PIE-Block 里打开该工程时会看到顶部横幅，
+  可查看逐字段差异、应用或丢弃。应用后工程才写入，且支持一步撤销；
+- 候选必须是完整的 `.pieproj`：工程类型必须一致，配置必须能通过校验，且每个写出的
+  字段值必须能被项目模型原样读回（拼错的枚举、未知字段会被拒绝，不会静默变成默认值）；
+- 已有待确认提案时默认拒绝，退出码 6；确认覆盖时加 `--force`；
+- 提案带 `baseSha256`：应用侧发现工程在提案生成后又被保存过，会提示「基于旧版本」；
+- 应用/丢弃后，应用会写 `robot.pieproj.proposed.result`（`{"status":"applied"|"discarded"}`），
+  方便 Agent 侧做后续判断（当前 CLI 不读取它）。
+
 ## 输出约定
 
-- **stdout 只放机器可读数据**：`validate`/`describe` 是 JSON，`codegen` 是纯 C 源码。
+- **stdout 只放机器可读数据**：`validate`/`propose`/`describe` 是 JSON，`codegen` 是纯 C 源码。
 - **stderr 只放人类可读的进度与错误**：成功时也会有摘要行，不要把「stderr 非空」当成失败。
 - 输出为 UTF-8，含中文；Windows 下用 `chcp 65001` 或按 UTF-8 读取。
 
@@ -91,6 +123,7 @@ pieblock-cli --help
 | 3 | IO 或格式错误（文件不存在、JSON 非法、字段结构错误、版本不兼容） |
 | 4 | 代码生成失败 |
 | 5 | 内部错误（兜底；设置 `PIEBLOCK_DEBUG=1` 可查看调用栈） |
+| 6 | 已有待确认的提案（未加 `--force`） |
 
 ## 示例
 
@@ -102,6 +135,9 @@ $result = & $cli validate .\麦轮工程.pieproj 2>$null | ConvertFrom-Json
 if (-not $result.valid) { $result.issues | Where-Object severity -eq 'error' }
 
 & $cli codegen .\麦轮工程.pieproj --out .\build\main.c
+
+# 提交改动提案：先改副本，再 propose，最后由用户在应用里确认
+& $cli propose .\麦轮工程.pieproj --config .\麦轮工程.candidate.pieproj
 ```
 
 bash：
@@ -109,6 +145,7 @@ bash：
 ```bash
 pieblock-cli validate robot.pieproj > result.json 2> progress.log || true
 pieblock-cli codegen robot.pieproj --out main.c
+pieblock-cli propose robot.pieproj --config robot.candidate.pieproj
 ```
 
 ## 给 Agent / Skill 的接入建议
@@ -116,12 +153,17 @@ pieblock-cli codegen robot.pieproj --out main.c
 1. 先执行一次 `pieblock-cli describe`，按其中的契约调用，不要在提示词里硬编码命令细节；
 2. 工程文件路径以用户给出的为准；没有给出时只在当前目录找唯一的 `*.pieproj`，有多个就询问；
 3. 先 `validate` 再 `codegen`；`codegen` 失败时把 stderr 的错误清单转述给用户；
-4. 不要直接手改 `.pieproj`——CLI 目前不提供写入命令，手工改 JSON 会绕过字段校验；
-5. 不要尝试让 CLI 编译或烧录，它不提供这两个动作。
+4. **改配置一律走 `propose`**：复制工程 → 在副本上改 → `propose --config`；不要直接改
+   `.pieproj`，也不要指望 CLI 会写工程——写入由用户在应用里确认；
+5. `propose` 返回 6 时说明用户还没处理上一份提案：不要自动加 `--force`，先问用户；
+6. 不要尝试让 CLI 编译或烧录，它不提供这两个动作。
 
 ## 已知限制
 
-- 只读，没有写入命令；需要改配置时请在 GUI 里操作或让用户确认改动；
+- CLI 不直接写工程：提案必须由用户在 PIE-Block 里确认后才会应用（应用需处于打开状态）；
+- 同一工程同一时间只保留一份待确认提案，新提案需要 `--force` 覆盖；
 - 读取的是磁盘上的文件：GUI 有 500ms 防抖自动保存，正在编辑时可能读到稍旧的版本；
+  提案会记录基线哈希，应用侧会提示「基于旧版本」；
+- 提案只在桌面文件路径上生效；Web 与 Android（content URI）不支持；
 - 不支持的工程版本（过旧或由更新版本创建）会以退出码 3 拒绝，并在 stderr 给出升级提示；
 - 开发期用 `dart run` 调用时每次启动约 2–3 秒；发布包里的独立可执行文件约 70 ms。
