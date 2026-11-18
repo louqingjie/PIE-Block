@@ -30,6 +30,7 @@ pub enum Screen {
     Review,
     Code,
     Build,
+    Piano,
     Browser(FileBrowser),
     Settings,
 }
@@ -75,6 +76,7 @@ pub struct Shell {
     pub build_log: Option<pieblock_ui::CodeView>,
     pub build_listing: Option<pieblock_ui::CodeView>,
     pub build_ok: bool,
+    pub piano: Option<pieblock_ui::PianoRoll>,
     quit: bool,
 }
 
@@ -122,6 +124,7 @@ impl Shell {
             build_log: None,
             build_listing: None,
             build_ok: false,
+            piano: None,
             quit: false,
         }
     }
@@ -163,6 +166,7 @@ impl Shell {
             Screen::Review => self.handle_review_key(key),
             Screen::Code => self.handle_code_key(key),
             Screen::Build => self.handle_build_key(key),
+            Screen::Piano => self.handle_piano_key(key),
             Screen::Browser(mut browser) => {
                 self.handle_browser_key(key, &mut browser);
                 if matches!(self.screen, Screen::Browser(_)) {
@@ -236,6 +240,7 @@ impl Shell {
             KeyCode::Char('r') => self.enter_review(),
             KeyCode::Char('c') => self.enter_code(),
             KeyCode::Char('b') => self.enter_build(),
+            KeyCode::Char('m') => self.enter_piano(),
             KeyCode::Char('s') => self.settings_screen(),
             KeyCode::F(5) => self.save(),
             _ => {}
@@ -498,6 +503,60 @@ impl Shell {
         let area = frame.area();
         if let Some(code) = self.code.as_mut() {
             code.render(frame, area, true, &self.palette, self.message.as_deref());
+        }
+    }
+
+    fn enter_piano(&mut self) {
+        let Some(session) = self.workspace.session.as_ref() else {
+            return;
+        };
+        match &session.document.config {
+            pieblock_core::model::ProjectConfig::Music(music) => {
+                self.piano = Some(pieblock_ui::PianoRoll::new(music));
+                self.message = None;
+                self.screen = Screen::Piano;
+            }
+            _ => {
+                self.message = Some("钢琴卷帘仅用于音乐工程".to_owned());
+            }
+        }
+    }
+
+    fn handle_piano_key(&mut self, key: KeyEvent) {
+        let Some(action) = self.piano.as_mut().map(|piano| piano.handle_key(key)) else {
+            self.screen = Screen::Project;
+            return;
+        };
+        match action {
+            pieblock_ui::PianoAction::Commit => {
+                if let (Some(piano), Some(session)) =
+                    (self.piano.as_ref(), self.workspace.session.as_mut())
+                {
+                    piano.commit(&mut session.document.config);
+                    let config = session.document.config.clone();
+                    self.workspace.update_config(config);
+                }
+                self.workspace.save_now();
+                self.message = Some("钢琴卷帘修改已保存".to_owned());
+                self.screen = Screen::Project;
+            }
+            pieblock_ui::PianoAction::Changed => {
+                if let Some(session) = self.workspace.session.as_mut() {
+                    if let Some(piano) = self.piano.as_ref() {
+                        piano.commit(&mut session.document.config);
+                    }
+                    let config = session.document.config.clone();
+                    self.workspace.update_config(config);
+                }
+            }
+            pieblock_ui::PianoAction::None => {}
+        }
+    }
+
+    fn draw_piano(&mut self, frame: &mut Frame) {
+        let area = frame.area();
+        if let Some(piano) = self.piano.as_mut() {
+            piano.render(frame, area, &self.palette);
         }
     }
 
@@ -1095,6 +1154,7 @@ impl Shell {
             Screen::Review => self.draw_review(frame),
             Screen::Code => self.draw_code(frame),
             Screen::Build => self.draw_build(frame),
+            Screen::Piano => self.draw_piano(frame),
             Screen::Browser(browser) => {
                 draw_browser(frame, frame.area(), &browser, &self.palette);
                 self.draw_status(frame);
@@ -1915,6 +1975,50 @@ mod build_tests {
         assert!(shell.code.as_ref().is_some_and(|code| !code.is_empty()));
         shell.handle_key(key(KeyCode::Char('w')));
         assert!(dir.join("main.rst").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod piano_tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn piano_roll_add_note_and_commit() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target")
+            .join(format!("shell-piano-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("dir");
+        let mut shell = Shell::with_data_dir(dir.join("data"), dir.clone());
+        shell.handle_key(key(KeyCode::Char('n')));
+        for _ in 0..3 {
+            shell.handle_key(key(KeyCode::Down));
+        }
+        shell.handle_key(key(KeyCode::Enter));
+        shell.handle_key(key(KeyCode::Enter));
+        assert_eq!(shell.screen, Screen::Project);
+        shell.handle_key(key(KeyCode::Char('m')));
+        assert_eq!(shell.screen, Screen::Piano);
+        shell.handle_key(key(KeyCode::Char('a')));
+        shell.handle_key(key(KeyCode::Right));
+        shell.handle_key(key(KeyCode::Esc));
+        assert_eq!(shell.screen, Screen::Project);
+        let session = shell.workspace.session.as_ref().expect("session");
+        match &session.document.config {
+            pieblock_core::model::ProjectConfig::Music(music) => {
+                assert_eq!(music.notes.len(), 1);
+                assert!(music.notes[0].start_tick > 0);
+            }
+            other => panic!("unexpected config: {other:?}"),
+        }
+        let text = std::fs::read_to_string(&session.path).expect("saved");
+        assert!(text.contains("\"notes\""));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
