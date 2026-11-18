@@ -10,8 +10,8 @@ pub use code_view::CodeView;
 pub use form::{FieldKind, FieldValue, FormAction, FormField, FormPage, FormState};
 pub use pages::{
     debug_tests_page, engineer_mappings_page, engineer_pins, engineer_pwm_page,
-    engineer_strategy_page, infantry_controls_page, infantry_mechanism_page, remote_page,
-    wizard_pages,
+    engineer_strategy_page, infantry_controls_page, infantry_mechanism_page, music_page,
+    remote_page, wizard_pages,
 };
 pub use screens::{
     BrowserAction, BrowserEntry, FileBrowser, HomeView, RecentItem, SettingRow, draw_browser,

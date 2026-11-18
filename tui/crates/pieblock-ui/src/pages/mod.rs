@@ -7,6 +7,7 @@ use crate::form::FormPage;
 mod debug;
 mod engineer;
 mod infantry;
+mod music;
 mod remote;
 
 pub use debug::debug_tests_page;
@@ -14,6 +15,7 @@ pub use engineer::{
     engineer_mappings_page, engineer_pins, engineer_pwm_page, engineer_strategy_page,
 };
 pub use infantry::{infantry_advanced_fields, infantry_controls_page, infantry_mechanism_page};
+pub use music::music_page;
 pub use remote::{DIRECTION_CHOICES, remote_page};
 
 /// 工程类型对应的全部已移植页面。
@@ -35,6 +37,6 @@ pub fn wizard_pages(
             engineer_mappings_page(config),
         ],
         ProjectKind::Debug => vec![debug_tests_page()],
-        ProjectKind::Music => Vec::new(),
+        ProjectKind::Music => vec![music_page(config)],
     }
 }

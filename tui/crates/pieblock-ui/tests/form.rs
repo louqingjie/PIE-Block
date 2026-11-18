@@ -17,6 +17,10 @@ fn infantry_config() -> ProjectConfig {
     ProjectDocument::create(ProjectKind::Infantry).config
 }
 
+fn music_config() -> ProjectConfig {
+    ProjectDocument::create(ProjectKind::Music).config
+}
+
 fn engineer_config() -> ProjectConfig {
     ProjectDocument::create(ProjectKind::Engineer).config
 }
@@ -381,5 +385,48 @@ fn engineer_mappings_page_has_action_rows() {
             other => panic!("unexpected config: {other:?}"),
         };
         assert_eq!(action.key.as_deref(), Some("NUM_9"));
+    }
+}
+
+#[test]
+fn music_page_edits_tempo_and_metadata() {
+    use pieblock_ui::music_page;
+
+    let config = music_config();
+    let page = music_page(&config);
+    assert_eq!(page.id, "music");
+    let mut state = FormState::new(config);
+    let bpm_position = page
+        .fields
+        .iter()
+        .position(|field| field.path == "music.tempo_events.0.microseconds_per_quarter")
+        .expect("bpm");
+    state.selected = bpm_position;
+    assert_eq!(clear_editing(&mut state, &page, "150"), FormAction::Changed);
+    match &state.config {
+        ProjectConfig::Music(value) => {
+            assert_eq!(value.tempo_events[0].microseconds_per_quarter, 400_000);
+        }
+        other => panic!("unexpected config: {other:?}"),
+    }
+    state.selected = 3;
+    assert_eq!(clear_editing(&mut state, &page, "3"), FormAction::Changed);
+    match &state.config {
+        ProjectConfig::Music(value) => assert_eq!(value.key_signature_fifths, 3),
+        other => panic!("unexpected config: {other:?}"),
+    }
+    state.selected = 4;
+    assert_eq!(
+        state.handle_key(&page, key(KeyCode::Enter)),
+        FormAction::Changed
+    );
+    match &state.config {
+        ProjectConfig::Music(value) => {
+            assert_ne!(
+                value.overlap_mode,
+                pieblock_core::model::MusicOverlapMode::Nearest
+            );
+        }
+        other => panic!("unexpected config: {other:?}"),
     }
 }
