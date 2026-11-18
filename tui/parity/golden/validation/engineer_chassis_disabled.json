@@ -1,0 +1,242 @@
+{
+  "name": "engineer_chassis_disabled",
+  "kind": "engineer",
+  "document": {
+    "format_version": 23,
+    "project_kind": "engineer",
+    "created_at": "2026-11-18T07:22:20.424787Z",
+    "updated_at": "2026-11-18T07:22:20.424787Z",
+    "guide_progress": {
+      "current_step_id": "remote",
+      "visited_step_ids": [
+        "remote"
+      ]
+    },
+    "config": {
+      "remote": {
+        "channel": null,
+        "deadzone": null
+      },
+      "chassis": {
+        "enabled": false,
+        "left_front": {
+          "pin": null,
+          "direction": null
+        },
+        "left_rear": {
+          "pin": null,
+          "direction": null
+        },
+        "right_front": {
+          "pin": null,
+          "direction": null
+        },
+        "right_rear": {
+          "pin": null,
+          "direction": null
+        },
+        "normal_speed": null,
+        "sprint_speed": null,
+        "sprint_enabled": false,
+        "turn_reversed": false,
+        "turn_sensitivity": 100
+      },
+      "pwm": {
+        "pwma": null,
+        "pwmb": null,
+        "buzzer_disabled": false,
+        "pin_roles": {
+          "P60": null,
+          "P62": null,
+          "P64": null,
+          "P66": null,
+          "P74": null,
+          "P75": null,
+          "P76": null,
+          "P77": null,
+          "MP03": null,
+          "MP74": null
+        },
+        "servo_mids": {
+          "P60": null,
+          "P62": null,
+          "P64": null,
+          "P66": null,
+          "P74": null,
+          "P75": null,
+          "P76": null,
+          "P77": null,
+          "MP03": null,
+          "MP74": null
+        },
+        "servo_min_limits": {
+          "P60": null,
+          "P62": null,
+          "P64": null,
+          "P66": null,
+          "P74": null,
+          "P75": null,
+          "P76": null,
+          "P77": null,
+          "MP03": null,
+          "MP74": null
+        },
+        "servo_max_limits": {
+          "P60": null,
+          "P62": null,
+          "P64": null,
+          "P66": null,
+          "P74": null,
+          "P75": null,
+          "P76": null,
+          "P77": null,
+          "MP03": null,
+          "MP74": null
+        },
+        "friction_max_duties": {
+          "P64": null,
+          "P66": null
+        }
+      },
+      "mode_count": null,
+      "switch_strategy": null,
+      "mode_switch_key": null,
+      "mode_keys": [
+        null,
+        null,
+        null,
+        null
+      ],
+      "modes": [
+        {
+          "id": "1794986540424787",
+          "preserve_chassis": true,
+          "actions": []
+        }
+      ]
+    }
+  },
+  "issues": [
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "remote.channel",
+      "message": "遥控器通道号尚未填写",
+      "stepId": "remote"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "remote.deadzone",
+      "message": "摇杆死区尚未填写",
+      "stepId": "remote"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "pwm.pwma",
+      "message": "PWMA 初始化频率尚未选择",
+      "stepId": "pwm"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "pwm.pwmb",
+      "message": "PWMB 初始化频率尚未选择",
+      "stepId": "pwm"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "pwm.pin_roles.P60",
+      "message": "P60 输出角色尚未选择",
+      "stepId": "pwm"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "pwm.pin_roles.P62",
+      "message": "P62 输出角色尚未选择",
+      "stepId": "pwm"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "pwm.pin_roles.P64",
+      "message": "P64 输出角色尚未选择",
+      "stepId": "pwm"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "pwm.pin_roles.P66",
+      "message": "P66 输出角色尚未选择",
+      "stepId": "pwm"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "pwm.pin_roles.P74",
+      "message": "P74 输出角色尚未选择",
+      "stepId": "pwm"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "pwm.pin_roles.P75",
+      "message": "P75 输出角色尚未选择",
+      "stepId": "pwm"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "pwm.pin_roles.P76",
+      "message": "P76 输出角色尚未选择",
+      "stepId": "pwm"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "pwm.pin_roles.P77",
+      "message": "P77 输出角色尚未选择",
+      "stepId": "pwm"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "pwm.servo_mids.MP03",
+      "message": "MP03 舵机中位偏移尚未填写",
+      "stepId": "pwm"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "pwm.servo_mids.MP74",
+      "message": "MP74 舵机中位偏移尚未填写",
+      "stepId": "pwm"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "modes.count",
+      "message": "模式数量尚未填写",
+      "stepId": "strategy"
+    }
+  ],
+  "remoteIssues": [
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "remote.channel",
+      "message": "遥控器通道号尚未填写",
+      "stepId": "remote"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "remote.deadzone",
+      "message": "摇杆死区尚未填写",
+      "stepId": "remote"
+    }
+  ]
+}

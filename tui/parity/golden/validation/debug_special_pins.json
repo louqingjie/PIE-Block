@@ -1,0 +1,132 @@
+{
+  "name": "debug_special_pins",
+  "kind": "debug",
+  "document": {
+    "format_version": 23,
+    "project_kind": "debug",
+    "created_at": "2026-11-18T07:22:20.405143Z",
+    "updated_at": "2026-11-18T07:22:20.405143Z",
+    "guide_progress": {
+      "current_step_id": "tests",
+      "visited_step_ids": [
+        "tests"
+      ]
+    },
+    "config": {
+      "tests": [
+        {
+          "pin": "P60",
+          "enabled": false,
+          "drive_type": null,
+          "value": null,
+          "duration_ms": 3000
+        },
+        {
+          "pin": "P62",
+          "enabled": false,
+          "drive_type": null,
+          "value": null,
+          "duration_ms": 3000
+        },
+        {
+          "pin": "P64",
+          "enabled": true,
+          "drive_type": "friction",
+          "value": 400
+        },
+        {
+          "pin": "P66",
+          "enabled": false,
+          "drive_type": null,
+          "value": null,
+          "duration_ms": 3000
+        },
+        {
+          "pin": "P74",
+          "enabled": false,
+          "drive_type": null,
+          "value": null,
+          "duration_ms": 3000
+        },
+        {
+          "pin": "P75",
+          "enabled": false,
+          "drive_type": null,
+          "value": null,
+          "duration_ms": 3000
+        },
+        {
+          "pin": "P76",
+          "enabled": false,
+          "drive_type": null,
+          "value": null,
+          "duration_ms": 3000
+        },
+        {
+          "pin": "P77",
+          "enabled": false,
+          "drive_type": null,
+          "value": null,
+          "duration_ms": 3000
+        },
+        {
+          "pin": "MP03",
+          "enabled": true,
+          "drive_type": "motor",
+          "value": 10,
+          "duration_ms": 3000
+        },
+        {
+          "pin": "MP74",
+          "enabled": true,
+          "drive_type": "friction",
+          "value": 600
+        }
+      ]
+    }
+  },
+  "issues": [
+    {
+      "severity": "error",
+      "kind": "invalid",
+      "fieldPath": "tests.2.value",
+      "message": "P64 摩擦轮目标转速必须在 500–800 之间",
+      "stepId": "tests"
+    },
+    {
+      "severity": "warning",
+      "kind": "invalid",
+      "fieldPath": "tests.2.value",
+      "message": "P64 摩擦轮目标转速低于 650，可能带不动摩擦轮，观察不到有效结论",
+      "stepId": "tests"
+    },
+    {
+      "severity": "error",
+      "kind": "invalid",
+      "fieldPath": "tests.8.drive_type",
+      "message": "MP03 仅支持舵机",
+      "stepId": "tests"
+    },
+    {
+      "severity": "error",
+      "kind": "invalid",
+      "fieldPath": "tests.9.drive_type",
+      "message": "MP74 仅支持舵机",
+      "stepId": "tests"
+    },
+    {
+      "severity": "error",
+      "kind": "invalid",
+      "fieldPath": "tests.9.drive_type",
+      "message": "只有 P64/P66 支持摩擦轮",
+      "stepId": "tests"
+    },
+    {
+      "severity": "warning",
+      "kind": "invalid",
+      "fieldPath": "tests.9.value",
+      "message": "MP74 摩擦轮目标转速低于 650，可能带不动摩擦轮，观察不到有效结论",
+      "stepId": "tests"
+    }
+  ]
+}

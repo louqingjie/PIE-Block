@@ -1,0 +1,376 @@
+{
+  "name": "infantry_bad_fields",
+  "kind": "infantry",
+  "document": {
+    "format_version": 23,
+    "project_kind": "infantry",
+    "created_at": "2026-11-18T07:22:20.417283Z",
+    "updated_at": "2026-11-18T07:22:20.417283Z",
+    "guide_progress": {
+      "current_step_id": "remote",
+      "visited_step_ids": [
+        "remote"
+      ]
+    },
+    "config": {
+      "remote": {
+        "channel": 200,
+        "deadzone": 3000
+      },
+      "chassis": {
+        "enabled": true,
+        "left_front": {
+          "pin": null,
+          "direction": null
+        },
+        "left_rear": {
+          "pin": null,
+          "direction": null
+        },
+        "right_front": {
+          "pin": null,
+          "direction": null
+        },
+        "right_rear": {
+          "pin": null,
+          "direction": null
+        },
+        "normal_speed": 3000,
+        "sprint_speed": 2000,
+        "sprint_enabled": true,
+        "turn_reversed": false,
+        "turn_sensitivity": 250
+      },
+      "feeder_pin": null,
+      "feeder_direction": null,
+      "yaw": [
+        {
+          "drive": null,
+          "pin": null,
+          "direction": null,
+          "mid_offset": null,
+          "min_limit": null,
+          "max_limit": null
+        }
+      ],
+      "pitch": [
+        {
+          "drive": null,
+          "pin": null,
+          "direction": null,
+          "mid_offset": null,
+          "min_limit": null,
+          "max_limit": null
+        }
+      ],
+      "yaw_sensitivity": 100,
+      "pitch_sensitivity": 100,
+      "arrow_behavior": null,
+      "feed_mode": null,
+      "trigger_key": null,
+      "reverse_feed_key": null,
+      "trigger_speed": null,
+      "trigger_time_ms": null,
+      "friction_mode": null,
+      "friction_key": null,
+      "friction_up_key": null,
+      "friction_down_key": null,
+      "friction_p64_max_duty": null,
+      "friction_p66_max_duty": null,
+      "friction_level_step": null,
+      "zero_enabled": false,
+      "buzzer_disabled": false
+    }
+  },
+  "issues": [
+    {
+      "severity": "error",
+      "kind": "invalid",
+      "fieldPath": "remote.channel",
+      "message": "遥控器通道号必须在 0–125 之间",
+      "stepId": "remote"
+    },
+    {
+      "severity": "error",
+      "kind": "invalid",
+      "fieldPath": "remote.deadzone",
+      "message": "摇杆死区必须在 0–2047 之间",
+      "stepId": "remote"
+    },
+    {
+      "severity": "warning",
+      "kind": "invalid",
+      "fieldPath": "chassis.normal_speed",
+      "message": "普通速度低于 4000，底盘移动速度可能变慢",
+      "stepId": "remote"
+    },
+    {
+      "severity": "warning",
+      "kind": "invalid",
+      "fieldPath": "chassis.sprint_speed",
+      "message": "冲刺速度低于 9000，底盘移动速度可能变慢",
+      "stepId": "remote"
+    },
+    {
+      "severity": "warning",
+      "kind": "invalid",
+      "fieldPath": "chassis.sprint_speed",
+      "message": "冲刺速度低于普通速度，冲刺将无法生效",
+      "stepId": "remote"
+    },
+    {
+      "severity": "error",
+      "kind": "invalid",
+      "fieldPath": "chassis.turn_sensitivity",
+      "message": "转向灵敏度必须在 10–200 之间",
+      "stepId": "remote"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "chassis.left_front.pin",
+      "message": "左前轮 IO尚未选择",
+      "stepId": "remote"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "chassis.left_front.direction",
+      "message": "左前轮方向尚未选择",
+      "stepId": "remote"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "chassis.left_rear.pin",
+      "message": "左后轮 IO尚未选择",
+      "stepId": "remote"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "chassis.left_rear.direction",
+      "message": "左后轮方向尚未选择",
+      "stepId": "remote"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "chassis.right_front.pin",
+      "message": "右前轮 IO尚未选择",
+      "stepId": "remote"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "chassis.right_front.direction",
+      "message": "右前轮方向尚未选择",
+      "stepId": "remote"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "chassis.right_rear.pin",
+      "message": "右后轮 IO尚未选择",
+      "stepId": "remote"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "chassis.right_rear.direction",
+      "message": "右后轮方向尚未选择",
+      "stepId": "remote"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "mechanism.feeder_pin",
+      "message": "拨弹电机 IO尚未选择",
+      "stepId": "mechanism"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "mechanism.feeder_direction",
+      "message": "拨弹电机方向尚未选择",
+      "stepId": "mechanism"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "gimbal.yaw.0.drive",
+      "message": "Yaw 驱动类型尚未选择",
+      "stepId": "mechanism"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "gimbal.yaw.0.pin",
+      "message": "Yaw IO尚未选择",
+      "stepId": "mechanism"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "gimbal.yaw.0.direction",
+      "message": "Yaw 方向尚未选择",
+      "stepId": "mechanism"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "gimbal.pitch.0.drive",
+      "message": "Pitch 驱动类型尚未选择",
+      "stepId": "mechanism"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "gimbal.pitch.0.pin",
+      "message": "Pitch IO尚未选择",
+      "stepId": "mechanism"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "gimbal.pitch.0.direction",
+      "message": "Pitch 方向尚未选择",
+      "stepId": "mechanism"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "controls.arrow_behavior",
+      "message": "方向键用途尚未选择",
+      "stepId": "controls"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "controls.feed_mode",
+      "message": "拨弹模式尚未选择",
+      "stepId": "controls"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "controls.trigger_key",
+      "message": "扳机键尚未选择",
+      "stepId": "controls"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "controls.trigger_speed",
+      "message": "拨弹速度尚未填写",
+      "stepId": "controls"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "controls.friction_mode",
+      "message": "摩擦轮类型尚未选择",
+      "stepId": "controls"
+    }
+  ],
+  "remoteIssues": [
+    {
+      "severity": "error",
+      "kind": "invalid",
+      "fieldPath": "remote.channel",
+      "message": "遥控器通道号必须在 0–125 之间",
+      "stepId": "remote"
+    },
+    {
+      "severity": "error",
+      "kind": "invalid",
+      "fieldPath": "remote.deadzone",
+      "message": "摇杆死区必须在 0–2047 之间",
+      "stepId": "remote"
+    },
+    {
+      "severity": "warning",
+      "kind": "invalid",
+      "fieldPath": "chassis.normal_speed",
+      "message": "普通速度低于 4000，底盘移动速度可能变慢",
+      "stepId": "remote"
+    },
+    {
+      "severity": "warning",
+      "kind": "invalid",
+      "fieldPath": "chassis.sprint_speed",
+      "message": "冲刺速度低于 9000，底盘移动速度可能变慢",
+      "stepId": "remote"
+    },
+    {
+      "severity": "warning",
+      "kind": "invalid",
+      "fieldPath": "chassis.sprint_speed",
+      "message": "冲刺速度低于普通速度，冲刺将无法生效",
+      "stepId": "remote"
+    },
+    {
+      "severity": "error",
+      "kind": "invalid",
+      "fieldPath": "chassis.turn_sensitivity",
+      "message": "转向灵敏度必须在 10–200 之间",
+      "stepId": "remote"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "chassis.left_front.pin",
+      "message": "左前轮 IO尚未选择",
+      "stepId": "remote"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "chassis.left_front.direction",
+      "message": "左前轮方向尚未选择",
+      "stepId": "remote"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "chassis.left_rear.pin",
+      "message": "左后轮 IO尚未选择",
+      "stepId": "remote"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "chassis.left_rear.direction",
+      "message": "左后轮方向尚未选择",
+      "stepId": "remote"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "chassis.right_front.pin",
+      "message": "右前轮 IO尚未选择",
+      "stepId": "remote"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "chassis.right_front.direction",
+      "message": "右前轮方向尚未选择",
+      "stepId": "remote"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "chassis.right_rear.pin",
+      "message": "右后轮 IO尚未选择",
+      "stepId": "remote"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "chassis.right_rear.direction",
+      "message": "右后轮方向尚未选择",
+      "stepId": "remote"
+    }
+  ]
+}

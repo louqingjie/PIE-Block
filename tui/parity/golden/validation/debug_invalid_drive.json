@@ -1,0 +1,99 @@
+{
+  "name": "debug_invalid_drive",
+  "kind": "debug",
+  "document": {
+    "format_version": 23,
+    "project_kind": "debug",
+    "created_at": "2026-11-18T07:22:20.412852Z",
+    "updated_at": "2026-11-18T07:22:20.412852Z",
+    "guide_progress": {
+      "current_step_id": "tests",
+      "visited_step_ids": [
+        "tests"
+      ]
+    },
+    "config": {
+      "tests": [
+        {
+          "pin": "P60",
+          "enabled": true,
+          "drive_type": null,
+          "value": null,
+          "duration_ms": 3000
+        },
+        {
+          "pin": "P62",
+          "enabled": false,
+          "drive_type": null,
+          "value": null,
+          "duration_ms": 3000
+        },
+        {
+          "pin": "P64",
+          "enabled": false,
+          "drive_type": null,
+          "value": null,
+          "duration_ms": 3000
+        },
+        {
+          "pin": "P66",
+          "enabled": false,
+          "drive_type": null,
+          "value": null,
+          "duration_ms": 3000
+        },
+        {
+          "pin": "P74",
+          "enabled": false,
+          "drive_type": null,
+          "value": null,
+          "duration_ms": 3000
+        },
+        {
+          "pin": "P75",
+          "enabled": false,
+          "drive_type": null,
+          "value": null,
+          "duration_ms": 3000
+        },
+        {
+          "pin": "P76",
+          "enabled": false,
+          "drive_type": null,
+          "value": null,
+          "duration_ms": 3000
+        },
+        {
+          "pin": "P77",
+          "enabled": false,
+          "drive_type": null,
+          "value": null,
+          "duration_ms": 3000
+        },
+        {
+          "pin": "MP03",
+          "enabled": false,
+          "drive_type": null,
+          "value": null,
+          "duration_ms": 3000
+        },
+        {
+          "pin": "MP74",
+          "enabled": false,
+          "drive_type": null,
+          "value": null,
+          "duration_ms": 3000
+        }
+      ]
+    }
+  },
+  "issues": [
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "tests.0.drive_type",
+      "message": "P60 驱动类型尚未选择",
+      "stepId": "tests"
+    }
+  ]
+}

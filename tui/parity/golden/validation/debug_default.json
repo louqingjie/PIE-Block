@@ -1,0 +1,99 @@
+{
+  "name": "debug_default",
+  "kind": "debug",
+  "document": {
+    "format_version": 23,
+    "project_kind": "debug",
+    "created_at": "2026-11-18T07:22:20.386111Z",
+    "updated_at": "2026-11-18T07:22:20.386111Z",
+    "guide_progress": {
+      "current_step_id": "tests",
+      "visited_step_ids": [
+        "tests"
+      ]
+    },
+    "config": {
+      "tests": [
+        {
+          "pin": "P60",
+          "enabled": false,
+          "drive_type": null,
+          "value": null,
+          "duration_ms": 3000
+        },
+        {
+          "pin": "P62",
+          "enabled": false,
+          "drive_type": null,
+          "value": null,
+          "duration_ms": 3000
+        },
+        {
+          "pin": "P64",
+          "enabled": false,
+          "drive_type": null,
+          "value": null,
+          "duration_ms": 3000
+        },
+        {
+          "pin": "P66",
+          "enabled": false,
+          "drive_type": null,
+          "value": null,
+          "duration_ms": 3000
+        },
+        {
+          "pin": "P74",
+          "enabled": false,
+          "drive_type": null,
+          "value": null,
+          "duration_ms": 3000
+        },
+        {
+          "pin": "P75",
+          "enabled": false,
+          "drive_type": null,
+          "value": null,
+          "duration_ms": 3000
+        },
+        {
+          "pin": "P76",
+          "enabled": false,
+          "drive_type": null,
+          "value": null,
+          "duration_ms": 3000
+        },
+        {
+          "pin": "P77",
+          "enabled": false,
+          "drive_type": null,
+          "value": null,
+          "duration_ms": 3000
+        },
+        {
+          "pin": "MP03",
+          "enabled": false,
+          "drive_type": null,
+          "value": null,
+          "duration_ms": 3000
+        },
+        {
+          "pin": "MP74",
+          "enabled": false,
+          "drive_type": null,
+          "value": null,
+          "duration_ms": 3000
+        }
+      ]
+    }
+  },
+  "issues": [
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "tests",
+      "message": "至少启用一个调试项目",
+      "stepId": "tests"
+    }
+  ]
+}
