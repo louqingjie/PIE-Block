@@ -281,3 +281,38 @@ fn debug_page_toggles_and_edits_items() {
         other => panic!("unexpected config: {other:?}"),
     }
 }
+
+#[test]
+fn engineer_pwm_page_edits_frequency_and_buzzer() {
+    use pieblock_ui::engineer_pwm_page;
+
+    let config = engineer_config();
+    let page = engineer_pwm_page(&config);
+    assert!(page.fields.len() >= 3);
+    assert_eq!(page.fields[0].id, "pwma");
+    let mut state = FormState::new(config);
+    assert_eq!(
+        state.handle_key(&page, key(KeyCode::Enter)),
+        FormAction::Changed
+    );
+    match &state.config {
+        ProjectConfig::Engineer(value) => {
+            assert!(value.pwm.pwma.is_some());
+        }
+        other => panic!("unexpected config: {other:?}"),
+    }
+    state.selected = 2;
+    assert_eq!(
+        state.handle_key(&page, key(KeyCode::Enter)),
+        FormAction::Changed
+    );
+    match &state.config {
+        ProjectConfig::Engineer(value) => assert!(value.pwm.buzzer_disabled),
+        other => panic!("unexpected config: {other:?}"),
+    }
+    let pins = pieblock_ui::engineer_pins(&state.config);
+    if !pins.is_empty() {
+        let path = format!("pwm.{}.role", pins[0]);
+        assert!(page.fields.iter().any(|field| field.path == path.as_str()));
+    }
+}
