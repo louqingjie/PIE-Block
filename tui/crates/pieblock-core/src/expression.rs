@@ -1107,6 +1107,12 @@ where
         }
     }
 
+    /// 按目标类型发射；类型一致时直接返回，否则插入 Dart 同款转换。
+    #[must_use]
+    pub fn emit_cast(&mut self, node: &Expr, target: ExpressionType) -> String {
+        self.cast(node, target)
+    }
+
     fn cast(&mut self, node: &Expr, target: ExpressionType) -> String {
         let code = self.emit(node);
         if node.kind() == target {
