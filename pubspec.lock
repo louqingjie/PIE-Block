@@ -482,13 +482,6 @@ packages:
       relative: true
     source: path
     version: "1.0.0"
-  pieblock_mcp:
-    dependency: "direct main"
-    description:
-      path: "packages/pieblock_mcp"
-      relative: true
-    source: path
-    version: "1.0.0"
   pieblock_sdcc_native:
     dependency: "direct main"
     description:

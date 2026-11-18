@@ -29,8 +29,6 @@ class AppState {
     this.keilPath,
     this.suppressFlashGuide = false,
     this.suppressTemplateGuide = false,
-    this.revision = 0,
-    this.mcpEnabled = false,
   });
   final ProjectDocument? document;
   final String? path;
@@ -40,15 +38,6 @@ class AppState {
   final String? pendingFieldPath;
   final Set<String> validationAttemptedStepIds;
   final ThemeMode themeMode;
-
-  /// 文档版本号：只在内存里递增，不落盘、不进 `.pieproj`。
-  ///
-  /// 外部 AI 的补丁携带它做乐观并发；打开/新建项目也会 +1，这样旧补丁不会
-  /// 在新项目上「恰好」通过校验。始终单调递增，不重置。
-  final int revision;
-
-  /// 是否允许外部 AI 通过本地 MCP 服务接入。
-  final bool mcpEnabled;
 
   /// 最近打开的项目，最近打开的排在最前面。
   final List<RecentProject> recentProjects;
@@ -75,8 +64,6 @@ class AppState {
     bool clearKeilPath = false,
     bool? suppressFlashGuide,
     bool? suppressTemplateGuide,
-    int? revision,
-    bool? mcpEnabled,
     bool clearProject = false,
   }) => AppState(
     document: clearProject ? null : document ?? this.document,
@@ -98,9 +85,6 @@ class AppState {
     suppressFlashGuide: suppressFlashGuide ?? this.suppressFlashGuide,
     suppressTemplateGuide:
         suppressTemplateGuide ?? this.suppressTemplateGuide,
-    // revision 不随 clearProject 归零：旧补丁拿着 0 会在新文档上「恰好」命中。
-    revision: revision ?? this.revision,
-    mcpEnabled: mcpEnabled ?? this.mcpEnabled,
   );
 }
 
@@ -211,9 +195,6 @@ class AppController extends Notifier<AppState> {
             state.suppressTemplateGuide == initial.suppressTemplateGuide
             ? json['suppress_template_guide'] == true
             : state.suppressTemplateGuide,
-        mcpEnabled: state.mcpEnabled == initial.mcpEnabled
-            ? json['mcp_enabled'] == true
-            : state.mcpEnabled,
       );
       if (migrated) unawaited(_saveSettings());
     } catch (_) {}
@@ -266,7 +247,6 @@ class AppController extends Notifier<AppState> {
       if (state.keilPath != null) 'keil_path': state.keilPath,
       'suppress_flash_guide': state.suppressFlashGuide,
       'suppress_template_guide': state.suppressTemplateGuide,
-      'mcp_enabled': state.mcpEnabled,
     };
     _settingsWrite = _settingsWrite
         .then((_) => writeStoredSettings(snapshot))
@@ -301,13 +281,6 @@ class AppController extends Notifier<AppState> {
 
   void suppressTemplateGuide() {
     state = state.copyWith(suppressTemplateGuide: true);
-    unawaited(_saveSettings());
-  }
-
-  /// 开关本地 MCP 服务。默认关闭；服务本身由 `McpService` 监听这个状态。
-  void setMcpEnabled(bool enabled) {
-    if (state.mcpEnabled == enabled) return;
-    state = state.copyWith(mcpEnabled: enabled);
     unawaited(_saveSettings());
   }
 
@@ -424,8 +397,6 @@ class AppController extends Notifier<AppState> {
           ids[index],
       },
       recentProjects: recent,
-      // 换文档也要推进：否则旧文档的待审批补丁会落到新文档上。
-      revision: state.revision + 1,
     );
     unawaited(_saveSettings());
   }
@@ -438,7 +409,6 @@ class AppController extends Notifier<AppState> {
       saveStatus: SaveStatus.saving,
       clearMessage: true,
       clearPendingField: true,
-      revision: state.revision + 1,
     );
     _scheduleSave();
   }

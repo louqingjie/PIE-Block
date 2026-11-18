@@ -18,15 +18,12 @@ PIE-Block 是面向 W.PIE RoboMaster 校内赛的桌面集成开发环境（Wind
 - 随应用发布的离线 SDCC C251，以及可选的本地 Keil C251 全量构建
 - HEX 地址与校验和检查、按内容哈希复用构建结果、库目标文件按工具链/固件指纹增量复用、导出 HEX
 - STC32G ROM USB-HID 主控板烧录、进度、取消和失败提示
-- 桌面端本地 MCP 服务：把「读配置、校验、提改动、看代码」六个工具按 MCP 暴露到
-  `127.0.0.1`，供 CodeBuddy / Qoder / DSH 等外部 AI 客户端接入；写操作直接生效，
-  默认关闭，不需要时关掉开关或重置令牌，见 [AI 接入（MCP）](docs/design/mcp-ai-bridge.md)
 - 只读命令行工具 `pieblock-cli`：随安装包附带独立可执行文件，无需 Dart SDK；`validate`
   输出 JSON、`codegen` 输出 C 源码、`describe` 输出命令契约，供脚本与 AI Agent 调用，
   免安装版首次启动会自动把 `cli` 目录加入当前用户 PATH，
   见 [命令行工具（CLI）](docs/guides/PIE-Block命令行工具.md)
 
-暂不提供云端编译、串口/蓝牙烧录、3D 仿真，也不自动改写第三方客户端的 MCP 配置。官网嵌了一个 Web 版（只读暗色、默认打开），可以配置项目、看生成的 C 代码（汇编列表仅桌面版），烧录仍然只能在桌面版完成——浏览器里既没有本地工具链也访问不到 USB-HID。Web 版的项目存在浏览器 localStorage 里，导入导出走文件上传下载。USB-HID 烧录在 Windows 直接可用，Linux 需先安装 udev 规则（见烧录指南）；Android 版可配置、编辑与预览，但 Release 包未启用本地编译流水线、不能编译固件，烧录也受固件入场时序限制暂不可用（见 Android 移植文档）。
+暂不提供云端编译、串口/蓝牙烧录、3D 仿真；AI 接入走只读命令行，不内置常驻服务或端口监听。官网嵌了一个 Web 版（只读暗色、默认打开），可以配置项目、看生成的 C 代码（汇编列表仅桌面版），烧录仍然只能在桌面版完成——浏览器里既没有本地工具链也访问不到 USB-HID。Web 版的项目存在浏览器 localStorage 里，导入导出走文件上传下载。USB-HID 烧录在 Windows 直接可用，Linux 需先安装 udev 规则（见烧录指南）；Android 版可配置、编辑与预览，但 Release 包未启用本地编译流水线、不能编译固件，烧录也受固件入场时序限制暂不可用（见 Android 移植文档）。
 
 ## 项目结构
 
@@ -36,7 +33,6 @@ packages/pieblock_core/  纯 Dart 项目模型、校验器与 C 代码生成器
 packages/pieblock_toolchain/ Dart SDCC/Keil 构建、HEX 校验与产物缓存
 packages/pieblock_hid/   Dart 烧录协议与 Windows 原生 HID 传输
 packages/pieblock_sdcc_native/ Android C ABI 5 与多进程编译桥接
-packages/pieblock_mcp/   MCP 契约层：消息编解码、六个工具、字段目录与补丁引擎（纯 Dart）
 stc32g/                  STC32G 固件和硬件参考代码
 stc32g_sdcc/             SDCC C251 支持库与离线测试
 keil_server/             独立云编译服务（不由当前应用调用）
@@ -58,11 +54,7 @@ flutter test
 flutter build windows --release
 ```
 
-四个 Dart 包可独立运行 `dart analyze` 与 `dart test`；`pieblock_mcp` 另有端到端冒烟：
-
-```powershell
-cd packages\pieblock_mcp; dart run tool/mcp_smoke.dart
-```
+三个 Dart 包可独立运行 `dart analyze` 与 `dart test`：
 
 Windows Release 产物位于 `build/windows/x64/runner/Release/`，发布时必须保留整个目录；`pieblock_hid.dll`、`data/pieblock_runtime` 和 `data/flutter_assets` 都是运行所必需的。
 

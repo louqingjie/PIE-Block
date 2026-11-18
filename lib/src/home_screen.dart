@@ -14,7 +14,6 @@ import 'design/app_theme.dart';
 import 'design/connected_button_group.dart';
 import 'design/press_scale.dart';
 import 'design/shape_badge.dart';
-import 'mcp/mcp_panel.dart';
 import 'platform/document_io.dart';
 import 'platform/paths.dart';
 import 'project_kind_ui.dart';
@@ -476,8 +475,6 @@ class HomeScreen extends ConsumerWidget {
                           onCycleTheme: ref
                               .read(appControllerProvider.notifier)
                               .cycleTheme,
-                          mcpEnabled: state.mcpEnabled,
-                          onOpenMcp: () => showMcpPanel(context),
                         ),
                         const SizedBox(height: 44),
                         LayoutBuilder(
@@ -601,30 +598,10 @@ class HomeScreen extends ConsumerWidget {
 }
 
 class _HomeHeader extends StatelessWidget {
-  const _HomeHeader({
-    required this.themeMode,
-    required this.onCycleTheme,
-    required this.mcpEnabled,
-    required this.onOpenMcp,
-  });
+  const _HomeHeader({required this.themeMode, required this.onCycleTheme});
 
   final ThemeMode themeMode;
-  final bool mcpEnabled;
   final VoidCallback onCycleTheme;
-  final VoidCallback onOpenMcp;
-
-  /// 只有桌面端才可能出现本地 MCP 服务，其余平台直接不显示入口。
-  Widget? _mcpButton(BuildContext context) {
-    if (!mcpEntryVisible) return null;
-    return IconButton.filledTonal(
-      onPressed: onOpenMcp,
-      tooltip: mcpEnabled ? 'AI 接入已开启' : 'AI 接入（MCP）',
-      icon: Icon(
-        mcpEnabled ? Icons.smart_toy : Icons.smart_toy_outlined,
-        color: mcpEnabled ? Theme.of(context).colorScheme.primary : null,
-      ),
-    );
-  }
 
   Widget _logo({required bool compact}) => WpieLogo(
     key: const ValueKey('home.lab-logo'),
@@ -669,7 +646,7 @@ class _HomeHeader extends StatelessWidget {
                 _logo(compact: true),
                 Row(
                   mainAxisSize: MainAxisSize.min,
-                  children: [?_mcpButton(context), if (!kIsWeb) _themeButton()],
+                  children: [if (!kIsWeb) _themeButton()],
                 ),
               ],
             ),
@@ -683,9 +660,7 @@ class _HomeHeader extends StatelessWidget {
           _logo(compact: false),
           const SizedBox(width: 24),
           Expanded(child: _title(compact: false)),
-          const SizedBox(width: 18),
-          ?_mcpButton(context),
-          if (!kIsWeb) ...[const SizedBox(width: 8), _themeButton()],
+          if (!kIsWeb) ...[const SizedBox(width: 18), _themeButton()],
         ],
       );
     },

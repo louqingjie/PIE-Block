@@ -48,8 +48,6 @@ dependencies:
     path: packages/pieblock_sdcc_native
   pieblock_hid:
     path: packages/pieblock_hid
-  pieblock_mcp:
-    path: packages/pieblock_mcp
   path: ^1.9.1
   path_provider: ^2.1.5
   ffi: ^2.1.4

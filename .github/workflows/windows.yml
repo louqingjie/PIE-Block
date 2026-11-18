@@ -42,7 +42,7 @@ jobs:
       - name: Dart 包静态分析与测试
         run: |
           set -euo pipefail
-          for package in pieblock_core pieblock_hid pieblock_toolchain pieblock_mcp; do
+          for package in pieblock_core pieblock_hid pieblock_toolchain; do
             echo "::group::$package"
             (cd "packages/$package" && flutter pub get && dart analyze && dart test)
             echo "::endgroup::"
@@ -101,7 +101,7 @@ jobs:
         shell: pwsh
         run: |
           flutter pub get
-          foreach ($package in @('pieblock_core', 'pieblock_hid', 'pieblock_toolchain', 'pieblock_mcp')) {
+          foreach ($package in @('pieblock_core', 'pieblock_hid', 'pieblock_toolchain')) {
               Push-Location "packages/$package"
               try { flutter pub get } finally { Pop-Location }
           }

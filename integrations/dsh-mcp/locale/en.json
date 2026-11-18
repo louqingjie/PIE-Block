@@ -1,6 +1,0 @@
-{
-  "meta": {
-    "title": "PIE-Block MCP bridge",
-    "description": "Connects the running PIE-Block desktop app to DSH. With the app's AI 接入（MCP） switch on, its six project tools appear as mcp__pieblock__* so the agent can read the open project, validate it, propose and apply configuration changes, and read the generated C code. It applies a patch only when asked and never starts the app: tools disappear when the app closes or the switch is turned off. Loopback only; nothing leaves this machine."
-  }
-}

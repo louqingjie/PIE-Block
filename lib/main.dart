@@ -10,7 +10,6 @@ import 'src/platform/cli_path_service.dart';
 import 'src/platform/host_bridge.dart';
 import 'src/deploy_controller.dart';
 import 'src/home_screen.dart';
-import 'src/mcp/mcp_service.dart';
 import 'src/wizard_screen.dart';
 
 void main() => runApp(const ProviderScope(child: PieBlockApp()));
@@ -36,12 +35,9 @@ class _PieBlockAppState extends ConsumerState<PieBlockApp> {
     WidgetsBinding.instance.addPostFrameCallback((_) => notifyHostReady());
     // 免安装版首次启动时把 cli 目录加进用户 PATH；失败不影响应用使用。
     WidgetsBinding.instance.addPostFrameCallback((_) => _ensureCliOnPath());
-    // 初始化 MCP 服务：它自己监听 mcp_enabled 决定起停，默认关闭时什么都不做。
-    ref.read(mcpServiceProvider.notifier);
     _lifecycle = AppLifecycleListener(
       onExitRequested: () async {
         ref.read(deployControllerProvider.notifier).cancelAll();
-        await ref.read(mcpServiceProvider.notifier).stop();
         await ref.read(appControllerProvider.notifier).saveNow();
         return AppExitResponse.exit;
       },
