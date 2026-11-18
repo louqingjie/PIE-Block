@@ -49,6 +49,7 @@ pub enum Overlay {
         value: String,
         purpose: InputPurpose,
     },
+    Help,
 }
 
 /// 输入框用途。
@@ -172,6 +173,10 @@ impl Shell {
         }
         if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('s') {
             self.save();
+            return;
+        }
+        if key.code == KeyCode::F(1) || key.code == KeyCode::Char('?') {
+            self.overlay = Overlay::Help;
             return;
         }
         match self.screen.clone() {
@@ -380,6 +385,15 @@ impl Shell {
                         };
                     }
                     _ => {}
+                }
+                true
+            }
+            Overlay::Help => {
+                if key.code == KeyCode::Esc
+                    || key.code == KeyCode::F(1)
+                    || key.code == KeyCode::Char('?')
+                {
+                    self.overlay = Overlay::None;
                 }
                 true
             }
@@ -1819,6 +1833,60 @@ impl Shell {
                 );
                 frame.render_widget(paragraph, popup);
             }
+            Overlay::Help => {
+                let width = area.width.saturating_sub(8).clamp(48, 88);
+                let height = area.height.saturating_sub(4).clamp(16, 30);
+                let popup = centered(area, width, height);
+                frame.render_widget(Clear, popup);
+                let lines = vec![
+                    Line::from(Span::styled("键位速查", self.palette.title())),
+                    Line::from(""),
+                    Line::from(Span::styled(
+                        "全局：N 新建工程 · O 打开 · Ctrl+S/F5 保存 · S 设置 · H 首页 · Q 退出 · F1/? 本帮助",
+                        self.palette.text(),
+                    )),
+                    Line::from(Span::styled(
+                        "工程概览：Enter/E 向导 · R 审查/问题跳转 · C 生成代码 · B 构建（SDCC/Keil） · M 钢琴卷帘 · P 播放预览 · I 导入 MIDI · X 导出 MIDI · F 烧录",
+                        self.palette.text(),
+                    )),
+                    Line::from(Span::styled(
+                        "向导：↑↓ 选择字段 · Enter 编辑/切换 · PgUp/PgDn 翻页 · Esc 保存返回",
+                        self.palette.text(),
+                    )),
+                    Line::from(Span::styled(
+                        "列表页（云台执行器/动作行/动作表/测试序列）：A 添加 · D 删除 · K/J 上下移动 · R 动作表加行",
+                        self.palette.text(),
+                    )),
+                    Line::from(Span::styled(
+                        "钢琴卷帘：↑↓ 选音符 · ←→ 起点 · +/- 时长 · K/J 移调 · A 添加 · D 删除 · Esc 保存",
+                        self.palette.text(),
+                    )),
+                    Line::from(Span::styled(
+                        "播放预览：空格 播放/暂停 · ←→ 快退快进 · Home/End 首尾 · +/- 倍速 · Esc 返回",
+                        self.palette.text(),
+                    )),
+                    Line::from(Span::styled(
+                        "代码/汇编：↑↓/PgUp/PgDn 滚动 · W 导出 · Esc 返回；构建页 L 汇编列表 · W 导出 main.rst",
+                        self.palette.text(),
+                    )),
+                    Line::from(Span::styled(
+                        "烧录页：R 重新探测 · Enter 开始烧录 · C 取消 · Esc 返回（Linux 需 udev 规则）",
+                        self.palette.text(),
+                    )),
+                    Line::from(""),
+                    Line::from(Span::styled(
+                        "Esc 或 F1 关闭帮助；鼠标滚轮可滚动各列表。",
+                        self.palette.muted(),
+                    )),
+                ];
+                let paragraph = Paragraph::new(lines).block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .border_style(self.palette.border_focused())
+                        .title(Span::styled("帮助 · F1/?", self.palette.title())),
+                );
+                frame.render_widget(paragraph, popup);
+            }
         }
     }
 }
@@ -2875,6 +2943,48 @@ mod keil_build_tests {
             }
             other => panic!("unexpected screen: {other:?}"),
         }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod help_tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn help_overlay_opens_and_closes() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target")
+            .join(format!("shell-help-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("dir");
+        let mut shell = Shell::with_data_dir(dir.join("data"), dir.clone());
+        shell.handle_key(key(KeyCode::F(1)));
+        assert_eq!(shell.overlay, Overlay::Help);
+        let backend = ratatui::backend::TestBackend::new(110, 34);
+        let mut terminal = ratatui::Terminal::new(backend).expect("terminal");
+        terminal.draw(|frame| shell.draw(frame)).expect("draw");
+        let buffer = terminal.backend().buffer();
+        let area = *buffer.area();
+        let mut text = String::new();
+        for y in area.y..area.y + area.height {
+            for x in area.x..area.x + area.width {
+                text.push_str(buffer[(x, y)].symbol());
+            }
+        }
+        let compact: String = text.chars().filter(|ch| !ch.is_whitespace()).collect();
+        assert!(compact.contains("键位速查"));
+        shell.handle_key(key(KeyCode::Esc));
+        assert_eq!(shell.overlay, Overlay::None);
+        shell.handle_key(key(KeyCode::Char('?')));
+        assert_eq!(shell.overlay, Overlay::Help);
+        shell.handle_key(key(KeyCode::F(1)));
+        assert_eq!(shell.overlay, Overlay::None);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

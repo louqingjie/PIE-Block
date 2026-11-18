@@ -149,3 +149,6 @@ cd tui
 
 - M2 Keil C251 构建路径移植（已完成软件路径）：实现 Keil 目录发现（`UV4/uVision.com|UV4.exe`、`C251/BIN/C251.EXE`，支持 `PIEBLOCK_KEIL`/设置路径/`C:\Keil_v5`/`C:\Keil` 回退）、工具链指纹（UV4+C251 文件内容 SHA-256），`FirmwareBuilder` 支持 Keil 全量重建（复制 `stc32g/Libraries` 与工程、写入 `main.c`、`UV4 -r Project_Template.uvproj -o build.log`、逐行日志级别、`0 Error(s)` + HEX 校验、许可失败识别），并接入 TUI 设置中的编译器选择与 Keil 路径（构建屏自动区分 SDCC/Keil）。真实 Keil 授权环境的一次全量产物对照仍属人工验收项。
 - 另修复运行时资源定位：仓库开发态同时识别 `vendor/sdcc-toolchain` 与 `sdcc-toolchain`，使真实 SDCC 构建测试真正执行（此前可能被跳过）。
+
+- M3 帮助浮层（已完成）：任意界面按 F1/`?` 打开「键位速查」浮层（全局/概览/向导/列表/钢琴卷帘/播放/代码汇编/构建/烧录），Esc 或 F1 关闭；测试覆盖开关与 110×34 渲染。README 中「F1 查看键位」的承诺现已在主 Shell 生效。
+- 与 Flutter 对等性复核（待继续项）：经源码清点，尚缺 TUI 形态的对等入口——① AI 提案（proposal banner/diff/service，桌面端通过宿主编排，TUI 有 core/CLI 基础但无 UI 流程）；② Linux udev 规则安装/状态界面（HID 层已实现函数）；③ 五线谱视图（core staff_notation/staff_glyphs 已移植，TUI 仅钢琴卷帘）；④ 汇编术语悬停表（asm_glossary，TUI 汇编页无悬停/术语查询）；⑤ 表达式实时检查面板（当前依赖审查页整表校验）；⑥ 工程模板选择（TUI 按类型创建默认配置，未提供模板列表）。以上不阻塞当前自动化门禁，但属于 1.0「全部功能与 UI 信息内容」的剩余差距，不得宣称完整对等。
