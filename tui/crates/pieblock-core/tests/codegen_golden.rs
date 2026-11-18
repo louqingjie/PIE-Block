@@ -42,7 +42,7 @@ fn debug_and_infantry_codegen_match_dart_byte_for_byte() {
     let mut checked = 0;
     for case in cases {
         let kind = case["kind"].as_str().unwrap_or_default();
-        if kind != "debug" && kind != "infantry" && kind != "engineer" {
+        if kind != "debug" && kind != "infantry" && kind != "engineer" && kind != "music" {
             continue;
         }
         let name = case["name"].as_str().unwrap_or("?");
@@ -83,8 +83,5 @@ fn debug_and_infantry_codegen_match_dart_byte_for_byte() {
         );
         checked += 1;
     }
-    assert_eq!(
-        checked, 15,
-        "expected 15 debug/infantry/engineer codegen cases"
-    );
+    assert_eq!(checked, 17, "expected 17 codegen cases");
 }

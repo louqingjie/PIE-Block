@@ -23,10 +23,6 @@ fn golden() -> Value {
     serde_json::from_str(&text).expect("cli golden json")
 }
 
-fn supported(case: &Value) -> bool {
-    case["kind"].as_str().unwrap_or("unknown") != "music"
-}
-
 #[test]
 fn cli_matches_dart_byte_for_byte() {
     let golden = golden();
@@ -34,9 +30,6 @@ fn cli_matches_dart_byte_for_byte() {
     let mut checked = 0;
     let mut expected = 0;
     for case in cases {
-        if !supported(case) {
-            continue;
-        }
         expected += 1;
         let name = case["name"].as_str().unwrap_or("?");
         let args: Vec<&str> = case["args"]

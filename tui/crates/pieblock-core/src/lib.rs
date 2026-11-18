@@ -16,6 +16,9 @@ mod ids;
 pub mod midi;
 pub mod model;
 pub mod music;
+pub mod staff_firmware_c;
+pub mod staff_glyphs;
+pub mod staff_notation;
 pub mod validation;
 
 use serde::{Deserialize, Serialize};

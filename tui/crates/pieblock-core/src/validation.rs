@@ -18,6 +18,7 @@ use crate::model::{
     RemoteConfig, SwitchStrategy, WheelConfig,
 };
 use crate::music::MusicTimeline;
+use crate::staff_notation::build_staff_song;
 
 /// 调试工程摩擦轮测试项的占空比范围（与 Dart `Friction` 常量一致）。
 const FRICTION_MIN_DUTY: i64 = 500;
@@ -2854,7 +2855,20 @@ fn music_rules(config: &MusicConfig, issues: &mut Issues) {
             "music",
         );
     }
-    // TODO(M1): 五线谱固件预算提醒依赖 staff_notation 移植（buildStaffSong）。
+    let staff_song = build_staff_song(config);
+    let estimated_bytes = 50 * 1024 + i64::try_from(staff_song.events.len()).unwrap_or(0) * 11;
+    if estimated_bytes > 61 * 1024 {
+        push(
+            issues,
+            IssueSeverity::Warning,
+            "music.notes",
+            format!(
+                "曲目较长：五线谱固件预计约占 {}KB，接近 STC32G 低 64KB 应用区上限，建议缩短曲目或减少音符",
+                ((estimated_bytes as f64) / 1024.0).round() as i64
+            ),
+            "music",
+        );
+    }
 }
 
 #[cfg(test)]

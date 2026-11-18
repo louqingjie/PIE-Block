@@ -4,8 +4,6 @@
 //! 拦截错误（首条错误文案逐字一致），再按工程类型拼接源码。当前已移植调试、
 //! 步兵与工程；音乐在后续提交补齐。
 
-use std::collections::BTreeMap;
-
 use crate::expression::{
     ExpressionEmitter, ExpressionType, is_builtin_input, parse as parse_expression, runtime_code,
 };
@@ -15,7 +13,11 @@ use crate::model::{
     EngineerPinCapabilities, FeedMode, Friction, FrictionMode, InfantryConfig, MAIN_SERVO_PINS,
     PinRole, ProjectConfig, PwmFrequency, RemoteConfig, SwitchStrategy,
 };
+use crate::music::MusicTimeline;
+use crate::staff_firmware_c::emit_staff_firmware_tables;
+use crate::staff_notation::build_staff_song;
 use crate::validation::{IssueSeverity, validate};
+use std::collections::BTreeMap;
 
 /// 生成失败：配置未通过校验，或该工程类型尚未移植。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -60,9 +62,7 @@ pub fn generate(config: &ProjectConfig) -> Result<String, GenerationError> {
         ProjectConfig::Debug(debug) => Ok(debug_code(debug)),
         ProjectConfig::Infantry(infantry) => Ok(infantry_code(infantry)),
         ProjectConfig::Engineer(engineer) => Ok(engineer_code(engineer)),
-        ProjectConfig::Music(_) => Err(GenerationError::NotPorted {
-            kind: "音乐工程"
-        }),
+        ProjectConfig::Music(music) => Ok(music_code(music)),
     }
 }
 
@@ -2036,6 +2036,50 @@ fn is_friction_action_mode(mode: Option<ControlMode>) -> bool {
         )
     )
 }
+
+fn music_code(config: &crate::model::MusicConfig) -> String {
+    let segments = MusicTimeline::segments(config);
+    let staff_song = build_staff_song(config);
+    let frequencies: Vec<i64> = (0..128)
+        .map(|note| {
+            if note == 0 {
+                1000
+            } else {
+                (440.0 * 2_f64.powf((note - 69) as f64 / 12.0)).round() as i64
+            }
+        })
+        .collect();
+    let frequency_rows = (0..16)
+        .map(|row| {
+            let values = frequencies[row * 8..row * 8 + 8]
+                .iter()
+                .map(i64::to_string)
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("    {values}{}", if row < 15 { "," } else { "" })
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let segment_rows = segments
+        .iter()
+        .map(|segment| {
+            format!(
+                "    {{{}UL, {}}},",
+                segment.duration_ms,
+                segment.pitch.unwrap_or(0)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let staff_tables = emit_staff_firmware_tables(&staff_song, "staff", true);
+    MUSIC_TEMPLATE
+        .replace("__FREQUENCY_ROWS__", &frequency_rows)
+        .replace("__SEGMENT_COUNT__", &segments.len().to_string())
+        .replace("__SEGMENT_ROWS__", &segment_rows)
+        .replace("__STAFF_TABLES__", &staff_tables)
+}
+
+const MUSIC_TEMPLATE: &str = include_str!("codegen_music_template.rs");
 
 fn values(slot: usize, value: i64) -> String {
     (0..8)
