@@ -81,3 +81,16 @@ dart run bin/export_midi_goldens.dart
 （轨道/音符/速度/拍号/选中轨道配置）、running status 手工样本与 5 类错误文案。
 Rust 侧要求写出字节逐字节一致、解析结构与错误文案完全一致。
 
+## 生成提案与 CLI propose golden
+
+```powershell
+cd tui/parity/tools
+dart run bin/export_proposal_goldens.dart
+dart run bin/export_cli_propose_goldens.dart
+```
+
+- `golden/proposal/proposal.json`：固定时间（2026-01-01）与 `baseSha256` 下的提案
+  编码文本、`ProposalException` 错误码/文案/字段、`fromJson` 往返校验。
+- `golden/cli/cli_propose.json`：CLI `propose` 的退出码、stdout/stderr 与 `.proposed`
+  文件（时间戳归一化）；候选工程快照在 `tui/parity/cli/propose/`。
+

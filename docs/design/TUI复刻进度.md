@@ -12,7 +12,7 @@
 | 里程碑 | 状态 | 说明 |
 | --- | --- | --- |
 | M0 技术验证 | 🟡 收尾 | Rust 工具链、workspace、M0 演示壳、表单/卷帘原型、单元测试、CI 已就绪；待：真实终端键鼠/IME 验证、hidapi 真机、SDCC+HEX 对拍、卷帘体验评审 |
-| M1 领域内核 + CLI | 🟡 进行中 | 已完成：Dart oracle golden 工具、13 份模型 golden、`.pieproj` 模型与 17→23 迁移（逐字节）、四类工程校验规则完整对拍、表达式解析/求值/C 发射/试算、**四类工程 C 代码生成逐字节对拍**、音乐时间轴、五线谱模型/字形/固件表、MIDI 导入导出、CLI validate/codegen 与 Dart CLI 逐字节对拍（42 用例）；待：CLI propose、五线谱布局渲染（M6） |
+| M1 领域内核 + CLI | ✅ 完成 | 模型/迁移/校验/表达式/四类 C 生成/音乐时间轴/MIDI/五线谱固件表/CLI validate·codegen·propose 全部移植，golden 逐字节对拍（模型 13、校验 24、表达式 60+、codegen 17、CLI validate/codegen 42、CLI propose 7、MIDI 3+往返）；五线谱布局渲染留待 M6 |
 | M2 工具链 + HID | ⬜ 未开始 | SDCC/Keil 构建、指纹/缓存、HEX/MAP、LST、hidapi 传输与烧录状态机、udev |
 | M3 TUI 基座 | 🟡 部分前置 | 已有应用循环、主题、三栏布局、焦点、状态栏；待完善文件浏览器、设置、最近项目、自动保存与 PTY 测试框架 |
 | M4 向导表单 | ⬜ 未开始 | 四类工程全部页面与问题跳转 |
@@ -60,7 +60,8 @@
 - `pieblock-core::model`：补 `EngineerPinCapabilities`（工程引脚能力）、`Friction` 常量与油门映射、`PwmGroupConfig::role_of/is_servo_pin`，供校验与后续代码生成共用。
 - `pieblock-core::codegen` + `debug_cues`：调试/步兵/工程/**音乐** C 代码生成逐字节对拍（音乐含 128 音频率表、SDCC 五线谱固件表、Keil 蜂鸣器片段与播放循环）；生成前校验门禁与 Dart 文案一致；**17 份 codegen golden 全部逐字节一致**。调试提示音曲谱常量与步序映射已移植（供固件与后续试听共用）。
 - `pieblock-core::staff_*`：五线谱模型（调号拼写/谱号分配/时值选择/休止拆分/临时记号/barTicks/毫秒时长）、22 个字形的 1bit 点阵、固件 C 数据表发射；音乐校验的五线谱固件预算提醒已补齐。`staff_layout` 渲染留待 M6 音乐页。
-- `pieblock-cli`：`validate`/`codegen` 已接领域内核，stdout/stderr/退出码与 Dart CLI 逐字节对拍（21 份工程 × validate/codegen = **42 个用例全部一致**）；版本不兼容、校验失败、`--out` 写文件等路径一致。21 份 CLI 用工程快照落在 `tui/parity/cli/projects/`。
+- `pieblock-cli`：`validate`/`codegen`/`propose` 已接领域内核，stdout/stderr/退出码与 Dart CLI 逐字节对拍（21 份工程 × validate/codegen = **42 个用例全部一致**；propose 7 个用例：成功/强制覆盖/已有提案/新增校验错误/类型不一致/空改动/候选缺失，仅时间戳归一化）；版本不兼容、校验失败、`--out` 写文件等路径一致。21 份 CLI 用工程快照落在 `tui/parity/cli/projects/`。
+- `pieblock-core::proposal`：提案创建（类型一致/往返核对/只禁止新增 error/非空 diff）、编码（2 空格缩进 + 末尾换行逐字节）、`fromJson` 校验（schema/kind/baseSha256/document）、SHA-256、`.proposed` 路径规则；golden 9 个创建用例 + 5 个往返/校验用例。已知差异：候选字段标量类型错误在 Dart 端抛 `TypeError`（invalid_document），TUI 宽容解析可能归类为 `unroundtripped_value`，两者都拒绝提案且给出字段路径，待后续补 Dart 类型文案仿真。
 - `pieblock-core::music` + 音乐校验：重叠裁决（同 tick 选音、打断/策略比较、已打断不恢复）、发声区间、重叠处数、tick→微秒（含变速）、蜂鸣器片段合并；音乐校验覆盖调号/PPQ/音符 ID 与音高/时值/速度事件/拍号/重叠提醒/片段数/总时长。校验 golden 扩到 **24 份**（音乐 5 份完整列表逐条一致；仅五线谱固件预算提醒待 staff 模块移植）。
 - `pieblock-core::midi`：MIDI Format 0/1 解析（running status、变速/拍号/调号 meta、鼓通道过滤、VLQ、容错文案）、写回（Format 0 单轨、调号/速度/拍号/音符事件排序、轨道名 UTF-8）、`select_track` 生成音乐配置；golden 覆盖 3 份写出字节逐字节 + 往返解析结构 + running status 手工样本 + 5 类错误文案，全部一致。
 - `pieblock-core::ids`：补上 Dart `toIso8601String` 的规则——微秒为 0 时 3 位小数，否则 6 位。
