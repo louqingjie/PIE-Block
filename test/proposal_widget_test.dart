@@ -12,9 +12,16 @@ class _FakeProposalService extends ProposalService {
   _FakeProposalService(this._initial);
 
   final ProposalInspection _initial;
+  int accepted = 0;
 
   @override
   ProposalInspection build() => _initial;
+
+  @override
+  Future<ProposalApplyResult> accept() async {
+    accepted += 1;
+    return ProposalApplyResult.applied;
+  }
 }
 
 ProjectProposal _proposal() => ProjectProposal.create(
@@ -109,5 +116,38 @@ void main() {
     expect(find.textContaining('工程本身还有 2 个校验错误'), findsOneWidget);
     expect(find.text('应用'), findsOneWidget);
     expect(find.text('取消'), findsOneWidget);
+  });
+
+  testWidgets('应用后的提示条会自动消失，撤销窗口内仍可点', (tester) async {
+    final service = _FakeProposalService(
+      ProposalInspection(
+        status: ProposalStatus.pending,
+        proposal: _proposal(),
+        proposalPath: 'x.proposed',
+      ),
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          proposalServiceProvider.overrideWith(() => service),
+        ],
+        child: const MaterialApp(home: Scaffold(body: ProposalBanner())),
+      ),
+    );
+
+    await tester.tap(find.text('应用'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(service.accepted, 1);
+    expect(find.text('已应用 AI 提案'), findsOneWidget);
+    expect(find.text('撤销'), findsOneWidget);
+    // 带 action 的默认值是 persist=true（永不自动消失），这里必须是 false。
+    final snackBar = tester.widget<SnackBar>(find.byType(SnackBar));
+    expect(snackBar.persist, isFalse);
+    expect(snackBar.duration, const Duration(seconds: 6));
+
+    await tester.pump(const Duration(seconds: 7));
+    await tester.pumpAndSettle();
+    expect(find.text('已应用 AI 提案'), findsNothing);
   });
 }

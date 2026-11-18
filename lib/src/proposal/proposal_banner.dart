@@ -96,6 +96,10 @@ class ProposalBanner extends ConsumerWidget {
         messenger.showSnackBar(
           SnackBar(
             content: const Text('已应用 AI 提案'),
+            // 带 action 的 SnackBar 在 Flutter 3.47 默认 persist=true，不会自动消失；
+            // 撤销窗口自动收起，避免长期挡住页面。
+            persist: false,
+            duration: const Duration(seconds: 6),
             action: SnackBarAction(
               label: '撤销',
               onPressed: () =>
