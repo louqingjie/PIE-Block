@@ -215,3 +215,6 @@ app.*.map.json
 # 主控板主频异常筛板流程的本地产物（tools/diagnostics）
 /tools/diagnostics/screen_results.csv
 /tools/diagnostics/clock_probe_keil.hex
+# TUI 构建测试在仓库根生成的运行时/对象缓存
+/object-cache/
+/sdcc/
