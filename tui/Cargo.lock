@@ -1089,6 +1089,7 @@ version = "0.1.0"
 dependencies = [
  "crossterm",
  "pieblock-core",
+ "pieblock-hid",
  "pieblock-toolchain",
  "pieblock-ui",
  "ratatui",
@@ -1102,6 +1103,7 @@ version = "0.1.0"
 dependencies = [
  "crossterm",
  "pieblock-core",
+ "pieblock-hid",
  "ratatui",
  "unicode-width",
 ]
