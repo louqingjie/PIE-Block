@@ -619,6 +619,12 @@ impl Shell {
                         return;
                     }
                 }
+                if self.pages[index].id == "mappings" {
+                    if let Some(action) = mapping_action(key.code) {
+                        self.apply_mapping_action(action);
+                        return;
+                    }
+                }
                 let page = &self.pages[index];
                 if let Some(form) = self.form.as_mut() {
                     let action = form.handle_key(page, key);
@@ -730,6 +736,84 @@ impl Shell {
             }
             self.form = Some(next);
             self.message = Some("执行器列表已更新".to_owned());
+        }
+    }
+
+    fn apply_mapping_action(&mut self, action: MappingAction) {
+        let path = self.selected_actuator_path();
+        let selected = path.and_then(parse_mapping_path);
+        let Some(form) = self.form.as_mut() else {
+            return;
+        };
+        let mut changed = false;
+        let mut target: Option<(usize, usize)> = selected;
+        if let pieblock_core::model::ProjectConfig::Engineer(config) = &mut form.config {
+            match action {
+                MappingAction::Add => {
+                    let mode = selected
+                        .map_or(0, |(mode, _)| mode)
+                        .min(config.modes.len().saturating_sub(1));
+                    if let Some(mode_config) = config.modes.get_mut(mode) {
+                        mode_config.actions.push(default_action_mapping());
+                        target = Some((mode, mode_config.actions.len().saturating_sub(1)));
+                        changed = true;
+                    }
+                }
+                MappingAction::Delete => {
+                    if let Some((mode, action_index)) = selected {
+                        if let Some(mode_config) = config.modes.get_mut(mode) {
+                            if action_index < mode_config.actions.len() {
+                                mode_config.actions.remove(action_index);
+                                target = Some((mode, action_index.saturating_sub(1)));
+                                changed = true;
+                            }
+                        }
+                    }
+                }
+                MappingAction::MoveUp | MappingAction::MoveDown => {
+                    if let Some((mode, action_index)) = selected {
+                        if let Some(mode_config) = config.modes.get_mut(mode) {
+                            let next = match action {
+                                MappingAction::MoveUp => action_index.checked_sub(1),
+                                _ => Some(action_index + 1),
+                            };
+                            if let Some(next) = next {
+                                if next < mode_config.actions.len() {
+                                    mode_config.actions.swap(action_index, next);
+                                    target = Some((mode, next));
+                                    changed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if !changed {
+            return;
+        }
+        let config = form.config.clone();
+        self.workspace.update_config(config.clone());
+        let kind = self
+            .workspace
+            .session
+            .as_ref()
+            .map(|session| session.document.kind);
+        if let Some(kind) = kind {
+            self.pages = wizard_pages(kind, &config);
+            let mut next = FormState::new(config);
+            if let Some((mode, action_index)) = target {
+                let prefix = format!("modes.{mode}.actions.{action_index}.");
+                if let Some(position) = self.pages.get(self.wizard_index).and_then(|page| {
+                    page.fields
+                        .iter()
+                        .position(|field| field.path.starts_with(prefix.as_str()))
+                }) {
+                    next.selected = position;
+                }
+            }
+            self.form = Some(next);
+            self.message = Some("动作映射已更新".to_owned());
         }
     }
 
@@ -1436,5 +1520,47 @@ mod actuator_tests {
         shell.handle_key(key(KeyCode::Esc));
         assert_eq!(shell.screen, Screen::Project);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MappingAction {
+    Add,
+    Delete,
+    MoveUp,
+    MoveDown,
+}
+
+fn mapping_action(code: KeyCode) -> Option<MappingAction> {
+    match code {
+        KeyCode::Char('a') => Some(MappingAction::Add),
+        KeyCode::Char('d') => Some(MappingAction::Delete),
+        KeyCode::Char('K') => Some(MappingAction::MoveUp),
+        KeyCode::Char('J') => Some(MappingAction::MoveDown),
+        _ => None,
+    }
+}
+
+fn parse_mapping_path(path: &str) -> Option<(usize, usize)> {
+    let rest = path.strip_prefix("modes.")?;
+    let (mode, rest) = rest
+        .split_once('.')
+        .map_or((None, ""), |(mode, rest)| (mode.parse().ok(), rest));
+    let rest = rest.strip_prefix("actions.")?;
+    let action = rest.split('.').next()?.parse().ok()?;
+    Some((mode?, action))
+}
+
+fn default_action_mapping() -> pieblock_core::model::ActionMapping {
+    pieblock_core::model::ActionMapping {
+        id: String::new(),
+        input_kind: pieblock_core::model::ActionInputKind::Remote,
+        key: None,
+        output_kind: pieblock_core::model::ActionOutputKind::Pin,
+        pin: None,
+        variable_name: None,
+        expression: None,
+        mode: None,
+        parameter: None,
     }
 }
