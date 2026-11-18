@@ -164,3 +164,5 @@ cd tui
 - M5 汇编术语查询（已完成）：新增开发期导出工具 `tui/parity/tools/bin/export_asm_glossary.dart`，从 Flutter `asm_glossary.dart` 导出全部 284 条术语（指令/寄存器/段/伪指令/记号/SFR/位，含标题/正文/补充说明）到 `tui/parity/golden/asm_glossary.json`，生成 Rust 静态数据 `pieblock_ui::asm_glossary_data`（运行时不依赖 Dart）；代码预览页按 G 打开「汇编术语」浮层，↑↓/PgUp/PgDn/Home/End 浏览，标题栏显示总数、底部显示当前词条补充说明，G/Esc 关闭。测试覆盖词表规模、导航与 110×34 渲染。
 
 - M5/AI 提案流程（已完成 UI 路径，替代宿主编排）：工程概览进入时读取工程旁 `<工程>.proposed` 提案（`ProjectProposal::from_json`，校验工程类型一致且不引入新的校验错误），概览显示「AI 提案：N 处改动待处理 · V 预览/应用」；按 V 在代码视图预览提案元信息与改动字段列表，Y 应用（写入配置、保存工程、删除提案文件），Esc 返回且保留提案文件。生成提案仍由外部 AI/CLI（`pieblock-cli propose`）完成，与 Flutter 文件协议一致；测试覆盖提案创建→预览→应用→文件清理。
+
+- 发布候选复核：全仓 149 个测试通过；`cargo build --release` 重建后重新打包 Windows 产物（22.7MB，解压 98.3MB，SHA-256 cf1a8a34e894b4340b4445644efa2d1f721bda778e2638128aa0a3700aaa5a34），打包脚本再次验证无 Dart/Flutter 文件。软件功能对等项已全部补齐，剩余为人工/硬件验收与发布决策。
