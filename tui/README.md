@@ -19,7 +19,25 @@ cargo clippy --all-targets -- -D warnings
 cargo run -p pieblock-cli -- describe
 ```
 
-最低终端 80×24，推荐 120×36。按 `F1` 或 `?` 查看键位。
+如果终端提示 `cargo` 不是命令（Rust 安装后旧终端不会自动刷新 PATH），任选一种方式：
+
+```powershell
+# 方式一：当前终端临时补 PATH
+$env:Path = "$env:USERPROFILE\.cargo\bin;$env:Path"
+cargo run -p pieblock-tui
+
+# 方式二：使用仓库内启动脚本（自动定位 cargo）
+.\run.ps1
+.\run.ps1 -NoMouse
+
+# 方式三：绝对路径
+& "$env:USERPROFILE\.cargo\bin\cargo.exe" run -p pieblock-tui
+```
+
+cmd 用户可用 `run.cmd`，或先执行 `set PATH=%USERPROFILE%\.cargo\bin;%PATH%`。
+彻底解决：重新打开一个终端；若仍无效，重启资源管理器或注销后重新登录，让新进程继承更新后的用户 PATH。
+
+最低终端 80×24，推荐 120×36；Windows 建议使用 Windows Terminal（conhost 的宽字符/色彩支持较弱）。按 `F1` 或 `?` 查看键位。
 
 ## 目录
 
