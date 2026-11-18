@@ -1,10 +1,12 @@
 //! PIE-Block TUI 的可复用界面层。
 
+pub mod code_view;
 pub mod form;
 pub mod pages;
 pub mod screens;
 pub mod theme;
 
+pub use code_view::CodeView;
 pub use form::{FieldKind, FieldValue, FormAction, FormField, FormPage, FormState};
 pub use pages::{
     debug_tests_page, engineer_mappings_page, engineer_pins, engineer_pwm_page,

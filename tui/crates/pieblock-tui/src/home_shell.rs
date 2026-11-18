@@ -28,6 +28,7 @@ pub enum Screen {
     Project,
     Wizard,
     Review,
+    Code,
     Browser(FileBrowser),
     Settings,
 }
@@ -68,6 +69,7 @@ pub struct Shell {
     pub wizard_index: usize,
     pub issues: Vec<pieblock_core::ValidationIssue>,
     pub review_selected: usize,
+    pub code: Option<pieblock_ui::CodeView>,
     quit: bool,
 }
 
@@ -110,6 +112,7 @@ impl Shell {
             wizard_index: 0,
             issues: Vec::new(),
             review_selected: 0,
+            code: None,
             quit: false,
         }
     }
@@ -149,6 +152,7 @@ impl Shell {
             Screen::Project => self.handle_project_key(key),
             Screen::Wizard => self.handle_wizard_key(key),
             Screen::Review => self.handle_review_key(key),
+            Screen::Code => self.handle_code_key(key),
             Screen::Browser(mut browser) => {
                 self.handle_browser_key(key, &mut browser);
                 if matches!(self.screen, Screen::Browser(_)) {
@@ -220,6 +224,7 @@ impl Shell {
             KeyCode::Char('h') | KeyCode::Esc => self.screen = Screen::Home,
             KeyCode::Char('o') | KeyCode::Char('w') | KeyCode::Enter => self.enter_wizard(),
             KeyCode::Char('r') => self.enter_review(),
+            KeyCode::Char('c') => self.enter_code(),
             KeyCode::Char('s') => self.settings_screen(),
             KeyCode::F(5) => self.save(),
             _ => {}
@@ -423,6 +428,64 @@ impl Shell {
                 self.settings_selected = (self.settings_selected + 1).min(SETTINGS_ROWS.len() - 1);
             }
             _ => {}
+        }
+    }
+
+    fn enter_code(&mut self) {
+        let Some(session) = self.workspace.session.as_ref() else {
+            return;
+        };
+        match pieblock_core::generate(&session.document.config) {
+            Ok(source) => {
+                self.code = Some(pieblock_ui::CodeView::new("main.c · 生成预览", &source));
+                self.message = None;
+                self.screen = Screen::Code;
+            }
+            Err(error) => {
+                self.message = Some(format!("无法生成代码：{}", error.message()));
+            }
+        }
+    }
+
+    fn handle_code_key(&mut self, key: KeyEvent) {
+        let Some(code) = self.code.as_mut() else {
+            self.screen = Screen::Project;
+            return;
+        };
+        let visible = 20;
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('h') => self.screen = Screen::Project,
+            KeyCode::Up => code.scroll_by(-1, visible),
+            KeyCode::Down => code.scroll_by(1, visible),
+            KeyCode::PageUp => code.scroll_by(-10, visible),
+            KeyCode::PageDown => code.scroll_by(10, visible),
+            KeyCode::Home => code.scroll_to(0, visible),
+            KeyCode::End => {
+                let last = code.len().saturating_sub(1);
+                code.scroll_to(last, visible);
+            }
+            KeyCode::Char('w') => {
+                if let Some(session) = self.workspace.session.as_ref() {
+                    let target = session.path.with_file_name("main.c");
+                    let text = code.lines.join("\n");
+                    match crate::settings::atomic_write(&target, text.as_bytes()) {
+                        Ok(()) => {
+                            self.message = Some(format!("已导出：{}", target.display()));
+                        }
+                        Err(error) => {
+                            self.message = Some(format!("导出失败：{error}"));
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn draw_code(&mut self, frame: &mut Frame) {
+        let area = frame.area();
+        if let Some(code) = self.code.as_mut() {
+            code.render(frame, area, true, &self.palette, self.message.as_deref());
         }
     }
 
@@ -858,6 +921,7 @@ impl Shell {
             Screen::Project => self.draw_project(frame),
             Screen::Wizard => self.draw_wizard(frame),
             Screen::Review => self.draw_review(frame),
+            Screen::Code => self.draw_code(frame),
             Screen::Browser(browser) => {
                 draw_browser(frame, frame.area(), &browser, &self.palette);
                 self.draw_status(frame);
@@ -1562,5 +1626,46 @@ fn default_action_mapping() -> pieblock_core::model::ActionMapping {
         expression: None,
         mode: None,
         parameter: None,
+    }
+}
+
+#[cfg(test)]
+mod code_tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn code_view_generates_scrolls_and_exports() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target")
+            .join(format!("shell-code-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("dir");
+        let template = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../..")
+            .join("assets/templates/infantry.pieproj");
+        let project = dir.join("infantry.pieproj");
+        std::fs::copy(&template, &project).expect("copy template");
+        let mut shell = Shell::with_data_dir(dir.join("data"), dir.clone());
+        shell.workspace.open(&project).expect("open");
+        shell.screen = Screen::Project;
+        shell.handle_key(key(KeyCode::Char('c')));
+        assert_eq!(shell.screen, Screen::Code);
+        let code = shell.code.as_ref().expect("code view");
+        assert!(!code.is_empty());
+        assert!(code.lines.iter().any(|line| line.contains("main")));
+        shell.handle_key(key(KeyCode::PageDown));
+        let scrolled = shell.code.as_ref().expect("code").scroll;
+        shell.handle_key(key(KeyCode::End));
+        assert!(shell.code.as_ref().expect("code").scroll >= scrolled);
+        shell.handle_key(key(KeyCode::Char('w')));
+        assert!(dir.join("main.c").exists());
+        shell.handle_key(key(KeyCode::Esc));
+        assert_eq!(shell.screen, Screen::Project);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
