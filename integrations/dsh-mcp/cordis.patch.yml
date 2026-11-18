@@ -1,0 +1,5 @@
+- insert:
+    - id: pieblock-mcp
+      name: pieblock-dsh-mcp
+      config:
+        serverName: pieblock

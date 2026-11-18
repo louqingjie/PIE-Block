@@ -48,6 +48,8 @@
 - [STC32G 无线固件升级技术报告](design/STC32G无线固件升级技术报告.md)
 - [Android SDCC 多进程移植](design/android-sdcc-port.md)
 - [工程项目高级配置决策](design/工程项目高级配置决策.md)
+- [AI 接入（MCP）：契约、授权与边界](design/mcp-ai-bridge.md)
+- [把 PIE-Block 的 MCP 接入 DSH](design/mcp-dsh-onboarding.md)
 
 ## releases（发布说明）
 
