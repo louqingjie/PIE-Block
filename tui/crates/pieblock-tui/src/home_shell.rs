@@ -27,6 +27,7 @@ pub enum Screen {
     Home,
     Project,
     Wizard,
+    Review,
     Browser(FileBrowser),
     Settings,
 }
@@ -65,6 +66,8 @@ pub struct Shell {
     pub form: Option<FormState>,
     pub pages: Vec<pieblock_ui::FormPage>,
     pub wizard_index: usize,
+    pub issues: Vec<pieblock_core::ValidationIssue>,
+    pub review_selected: usize,
     quit: bool,
 }
 
@@ -105,6 +108,8 @@ impl Shell {
             form: None,
             pages: Vec::new(),
             wizard_index: 0,
+            issues: Vec::new(),
+            review_selected: 0,
             quit: false,
         }
     }
@@ -143,6 +148,7 @@ impl Shell {
             Screen::Home => self.handle_home_key(key),
             Screen::Project => self.handle_project_key(key),
             Screen::Wizard => self.handle_wizard_key(key),
+            Screen::Review => self.handle_review_key(key),
             Screen::Browser(mut browser) => {
                 self.handle_browser_key(key, &mut browser);
                 if matches!(self.screen, Screen::Browser(_)) {
@@ -213,6 +219,7 @@ impl Shell {
             KeyCode::Char('q') => self.quit = true,
             KeyCode::Char('h') | KeyCode::Esc => self.screen = Screen::Home,
             KeyCode::Char('o') | KeyCode::Char('w') | KeyCode::Enter => self.enter_wizard(),
+            KeyCode::Char('r') => self.enter_review(),
             KeyCode::Char('s') => self.settings_screen(),
             KeyCode::F(5) => self.save(),
             _ => {}
@@ -419,6 +426,140 @@ impl Shell {
         }
     }
 
+    fn enter_review(&mut self) {
+        let Some(session) = self.workspace.session.as_ref() else {
+            return;
+        };
+        self.pages = wizard_pages(session.document.kind);
+        self.issues = pieblock_core::validate(&session.document.config);
+        self.review_selected = 0;
+        self.message = None;
+        self.screen = Screen::Review;
+    }
+
+    fn handle_review_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('h') => {
+                self.screen = Screen::Project;
+            }
+            KeyCode::Up => self.review_selected = self.review_selected.saturating_sub(1),
+            KeyCode::Down => {
+                self.review_selected =
+                    (self.review_selected + 1).min(self.issues.len().saturating_sub(1));
+            }
+            KeyCode::Enter => self.jump_to_issue(),
+            _ => {}
+        }
+    }
+
+    fn jump_to_issue(&mut self) {
+        let Some(issue) = self.issues.get(self.review_selected) else {
+            return;
+        };
+        let path = issue.field_path.clone();
+        let mut target: Option<(usize, usize)> = None;
+        for (page_index, page) in self.pages.iter().enumerate() {
+            if let Some(field_index) = page.fields.iter().position(|field| field.path == path) {
+                target = Some((page_index, field_index));
+                break;
+            }
+        }
+        let Some((page_index, field_index)) = target else {
+            self.message = Some(format!("该问题位于尚未移植的页面或列表项：{path}"));
+            return;
+        };
+        if self.form.is_none() {
+            let config = self
+                .workspace
+                .session
+                .as_ref()
+                .map(|session| session.document.config.clone());
+            self.form = config.map(FormState::new);
+        }
+        self.wizard_index = page_index;
+        if let Some(form) = self.form.as_mut() {
+            form.selected = field_index;
+        }
+        self.message = Some(format!("已跳转到：{path}"));
+        self.screen = Screen::Wizard;
+    }
+
+    fn draw_review(&mut self, frame: &mut Frame) {
+        let area = frame.area();
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(4),
+                Constraint::Min(4),
+                Constraint::Length(1),
+            ])
+            .split(area);
+        let errors = self
+            .issues
+            .iter()
+            .filter(|issue| issue.severity == pieblock_core::IssueSeverity::Error)
+            .count();
+        let warnings = self.issues.len().saturating_sub(errors);
+        let header = Paragraph::new(vec![
+            Line::from(Span::styled("问题审查", self.palette.title())),
+            Line::from(Span::styled(
+                format!("错误 {errors} · 警告 {warnings} · Enter 跳转字段 · Esc 返回"),
+                self.palette.muted(),
+            )),
+        ])
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(self.palette.border_focused()),
+        );
+        frame.render_widget(header, chunks[0]);
+        let items: Vec<ListItem> = if self.issues.is_empty() {
+            vec![ListItem::new(Line::from(Span::styled(
+                "没有校验问题，可以继续生成代码。",
+                self.palette.ok(),
+            )))]
+        } else {
+            self.issues
+                .iter()
+                .map(|issue| {
+                    let is_error = issue.severity == pieblock_core::IssueSeverity::Error;
+                    let (icon, style) = if is_error {
+                        ("✖", self.palette.error())
+                    } else {
+                        ("⚠", self.palette.warn())
+                    };
+                    ListItem::new(Line::from(vec![
+                        Span::styled(format!("{icon} "), style),
+                        Span::styled(format!("{:<28}", issue.field_path), self.palette.muted()),
+                        Span::styled(issue.message.clone(), self.palette.text()),
+                    ]))
+                })
+                .collect()
+        };
+        let list = List::new(items)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(self.palette.border())
+                    .title(Span::styled("校验结果", self.palette.title())),
+            )
+            .highlight_style(self.palette.selection())
+            .highlight_symbol("▶ ");
+        let mut state = ListState::default();
+        state.select(Some(
+            self.review_selected
+                .min(self.issues.len().saturating_sub(1)),
+        ));
+        frame.render_stateful_widget(list, chunks[1], &mut state);
+        draw_status(
+            frame,
+            chunks[2],
+            "审查",
+            self.message.as_deref(),
+            &self.palette,
+        );
+    }
+
     fn enter_wizard(&mut self) {
         let Some(session) = self.workspace.session.as_ref() else {
             return;
@@ -523,6 +664,7 @@ impl Shell {
             Screen::Home => self.draw_home(frame),
             Screen::Project => self.draw_project(frame),
             Screen::Wizard => self.draw_wizard(frame),
+            Screen::Review => self.draw_review(frame),
             Screen::Browser(browser) => {
                 draw_browser(frame, frame.area(), &browser, &self.palette);
                 self.draw_status(frame);
@@ -1001,6 +1143,83 @@ mod wizard_tests {
         }
         let text = std::fs::read_to_string(&session.path).expect("saved file");
         assert!(text.contains("55"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod review_tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    fn setup() -> (Shell, std::path::PathBuf) {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target")
+            .join(format!("shell-review-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("dir");
+        let mut shell = Shell::with_data_dir(dir.join("data"), dir.clone());
+        shell.handle_key(key(KeyCode::Char('n')));
+        shell.handle_key(key(KeyCode::Enter));
+        shell.handle_key(key(KeyCode::Enter));
+        if let Some(session) = shell.workspace.session.as_mut() {
+            if let pieblock_core::model::ProjectConfig::Infantry(config) =
+                &mut session.document.config
+            {
+                config.remote.channel = Some(999);
+            }
+            session.save_now().expect("save");
+        }
+        (shell, dir)
+    }
+
+    #[test]
+    fn review_lists_issues_and_jumps_to_field() {
+        let (mut shell, dir) = setup();
+        shell.handle_key(key(KeyCode::Char('r')));
+        assert_eq!(shell.screen, Screen::Review);
+        assert!(!shell.issues.is_empty());
+        let first = shell.issues[0].clone();
+        shell.handle_key(key(KeyCode::Enter));
+        assert_eq!(shell.screen, Screen::Wizard);
+        assert_eq!(shell.wizard_index, 0);
+        let form = shell.form.as_ref().expect("form");
+        let field = &shell.pages[0].fields[form.selected];
+        assert!(first.field_path == field.path || first.field_path.starts_with(field.path));
+        assert!(
+            shell
+                .message
+                .as_deref()
+                .is_some_and(|message| message.contains("跳转"))
+        );
+        shell.handle_key(key(KeyCode::Esc));
+        assert_eq!(shell.screen, Screen::Project);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn review_renders_counts() {
+        let (mut shell, dir) = setup();
+        shell.handle_key(key(KeyCode::Char('r')));
+        let backend = ratatui::backend::TestBackend::new(100, 30);
+        let mut terminal = ratatui::Terminal::new(backend).expect("terminal");
+        terminal.draw(|frame| shell.draw(frame)).expect("draw");
+        let buffer = terminal.backend().buffer();
+        let area = *buffer.area();
+        let mut text = String::new();
+        for y in area.y..area.y + area.height {
+            for x in area.x..area.x + area.width {
+                text.push_str(buffer[(x, y)].symbol());
+            }
+        }
+        let compact: String = text.chars().filter(|ch| !ch.is_whitespace()).collect();
+        assert!(compact.contains("问题审查"));
+        assert!(compact.contains("校验结果"));
+        assert!(compact.contains("错误"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
