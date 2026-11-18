@@ -23,7 +23,7 @@ CI：`.github/workflows/tui.yml` 在 Windows/Linux 执行 fmt、clippy、全量�
 | --- | --- | --- |
 | M0 技术验证 | 自动化通过；终端手测待做 | ratatui/crossterm 骨架、CJK/宽字符渲染测试、键鼠事件、表单/卷帘原型；Demo 壳保留 `--demo` |
 | M1 核心领域 + CLI | 完成 | 模型/迁移/校验/表达式/代码生成/MIDI/五线谱；golden 对照（model 13、validation 24、expression 60+、codegen 17、CLI 42+、MIDI 3）；`.pieproj` 格式 23（读 17–23）字节一致 |
-| M2 工具链 + HID | 软件路径完成；真实硬件/Keil 待验收 | HEX 解析/MAP 布局/部署/缓存/构建计划/FirmwareBuilder；HID 协议/状态机/重试/worker/udev；真实 SDCC 构建测试通过；hid_golden 9 场景 |
+| M2 工具链 + HID | 软件路径完成；真实硬件与 Keil 产物对照待验收 | HEX 解析/MAP 布局/部署/缓存/构建计划/FirmwareBuilder；**Keil C251 构建路径已移植**（目录发现 UV4/C251、指纹、UV4 全量重建、日志解析、HEX 校验、许可失败识别）；HID 协议/状态机/重试/worker/udev；真实 SDCC 构建测试通过；hid_golden 9 场景 |
 | M3 TUI 基座 | 完成；终端手测待做 | 首页/文件浏览器/设置/项目概览、会话读写、500ms 自动保存、主题（深/浅）、鼠标滚轮、启动脚本 |
 | M4 向导表单 | 完成（自动化；终端手测待做） | 数据驱动表单引擎；步兵（遥控/底盘、云台执行器列表增删排序、控制与摩擦轮）、工程（遥控、PWM 引脚、策略模式、动作映射含动作行增删排序）、调试（10 路测试序列 + K/J 排序）、音乐（节拍/调号/速度/拍号）页；审查页（错误/警告 + 字段跳转）；动作表（按键循环切档矩阵）编辑/增删/排序、快捷概览校验与引脚提示条、审查页跳转均已覆盖 |
 | M5 代码/汇编 | 完成（Windows 真实工具链验证） | 生成 `main.c` 预览/滚动/导出；真实 SDCC 构建（自动定位工具链、SHA-256、HEX 信息）；`main.rst` 汇编列表查看/导出；错误配置与缺工具链明确提示 |
@@ -48,8 +48,8 @@ CI：`.github/workflows/tui.yml` 在 Windows/Linux 执行 fmt、clippy、全量�
 
 ## 未完成功能（不得声称 1.0 完成）
 
-- Keil C251 编译器路径与构建（Rust 工具链仅实现 SDCC，Keil 会明确提示未移植；Flutter 桌面端支持 Keil，属于功能差距）。
 - macOS 支持不在 1.0 范围。
+
 
 ## 发布判定
 
@@ -58,4 +58,4 @@ CI：`.github/workflows/tui.yml` 在 Windows/Linux 执行 fmt、clippy、全量�
 - 人工/硬件验收项 ⏳（见上）
 - 未完成功能项 ❌（见上）
 
-结论：**除 Keil C251 外，软件功能与工程化已完成并通过自动化门禁**；仍需人工/硬件验收与发布决策，且不得宣称 Keil 对等。
+结论：**软件功能与工程化已完成并通过自动化门禁（含 Keil 构建路径移植）**；仍需人工/硬件验收与发布决策。

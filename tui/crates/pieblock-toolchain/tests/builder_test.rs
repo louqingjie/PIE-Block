@@ -285,3 +285,19 @@ fn system_runner_reports_missing_executable() {
         .expect_err("missing executable");
     assert!(error.kind() == std::io::ErrorKind::NotFound || error.raw_os_error().is_some());
 }
+
+#[test]
+fn keil_fingerprint_requires_valid_directory() {
+    let dir = unique_dir("keil-fingerprint");
+    let builder = FirmwareBuilder::new(
+        dir.join("runtime"),
+        dir.join("work"),
+        BuildArtifactRepository::new(dir.join("artifacts")),
+        Box::new(SystemProcessRunner::new()),
+    );
+    match builder.resolve_compiler_fingerprint(CompilerKind::Keil, Some("Z:\\不存在的Keil目录"))
+    {
+        Ok(fingerprint) => assert!(!fingerprint.is_empty()),
+        Err(error) => assert!(error.contains("Keil 目录无效或缺少 C251"), "got {error}"),
+    }
+}

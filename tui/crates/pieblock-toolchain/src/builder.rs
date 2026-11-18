@@ -233,10 +233,13 @@ impl FirmwareBuilder {
     pub fn resolve_compiler_fingerprint(
         &self,
         compiler: CompilerKind,
-        _keil_root: Option<&str>,
+        keil_root: Option<&str>,
     ) -> Result<String, String> {
         match compiler {
-            CompilerKind::Keil => Err("Keil 工具链指纹与构建将在后续移植".to_owned()),
+            CompilerKind::Keil => {
+                let installation = resolve_keil(keil_root)?;
+                keil_fingerprint(&installation)
+            }
             CompilerKind::Sdcc => {
                 let assets = self.locate_assets()?;
                 let bundle =
@@ -291,6 +294,9 @@ impl FirmwareBuilder {
                 license_failure: false,
                 listing: None,
             };
+        }
+        if request.compiler == CompilerKind::Keil {
+            return self.build_keil_flow(request, &fingerprint, emit, sleep, &mut logs);
         }
         let work = self.work_root.join(format!(
             "{}.{}",
@@ -434,6 +440,285 @@ impl FirmwareBuilder {
             canceled: false,
             license_failure: false,
             listing: raw.listing,
+        }
+    }
+
+    fn build_keil_flow(
+        &mut self,
+        request: &BuildRequest,
+        fingerprint: &BuildFingerprint,
+        emit: &mut dyn FnMut(BuildEvent),
+        sleep: &dyn Fn(Duration),
+        logs: &mut Vec<String>,
+    ) -> BuildResult {
+        let work = self.work_root.join(format!(
+            "{}.{}",
+            &fingerprint.value[..16.min(fingerprint.value.len())],
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |duration| duration.as_micros())
+        ));
+        if let Err(error) = std::fs::create_dir_all(&work) {
+            logs.push(format!("编译失败：{error}"));
+            emit(BuildEvent {
+                stage: BuildStage::Done,
+                level: BuildEventLevel::Error,
+                message: format!("编译失败：{error}"),
+                current: None,
+                total: None,
+            });
+            return BuildResult {
+                success: false,
+                artifact: None,
+                log: logs.join("\n"),
+                exit_code: None,
+                canceled: false,
+                license_failure: false,
+                listing: None,
+            };
+        }
+        let raw = self.build_keil(request, &work, emit, sleep, logs);
+        let _ = std::fs::remove_dir_all(&work);
+        if self.cancelled.load(Ordering::SeqCst) {
+            return BuildResult {
+                success: false,
+                artifact: None,
+                log: logs.join("\n"),
+                exit_code: raw.exit_code.map(i64::from),
+                canceled: true,
+                license_failure: false,
+                listing: None,
+            };
+        }
+        if !raw.success {
+            return BuildResult {
+                success: false,
+                artifact: None,
+                log: logs.join("\n"),
+                exit_code: raw.exit_code.map(i64::from),
+                canceled: false,
+                license_failure: raw.license_failure,
+                listing: None,
+            };
+        }
+        let Some(hex_path) = raw.hex_path else {
+            return BuildResult {
+                success: false,
+                artifact: None,
+                log: logs.join("\n"),
+                exit_code: raw.exit_code.map(i64::from),
+                canceled: false,
+                license_failure: raw.license_failure,
+                listing: None,
+            };
+        };
+        let validation = IntelHexValidator::validate_application(&hex_path);
+        let level = if validation.ok {
+            BuildEventLevel::Info
+        } else {
+            BuildEventLevel::Error
+        };
+        let message = validation.message.clone();
+        logs.push(message.clone());
+        emit(BuildEvent {
+            stage: BuildStage::Validating,
+            level,
+            message,
+            current: None,
+            total: None,
+        });
+        if !validation.ok {
+            return BuildResult {
+                success: false,
+                artifact: None,
+                log: logs.join("\n"),
+                exit_code: raw.exit_code.map(i64::from),
+                canceled: false,
+                license_failure: raw.license_failure,
+                listing: raw.listing,
+            };
+        }
+        let byte_count = i64::try_from(
+            validation
+                .image
+                .as_ref()
+                .map_or(0, |image| image.bytes.len()),
+        )
+        .unwrap_or(0);
+        let artifact = BuildArtifact {
+            hex_path: hex_path.display().to_string(),
+            hex_sha256: String::new(),
+            fingerprint: fingerprint.value.clone(),
+            source_sha256: fingerprint.source_hash.clone(),
+            compiler: request.compiler,
+            compiler_fingerprint: request.compiler_fingerprint.clone(),
+            template_version: BUILD_SCHEMA_VERSION.to_owned(),
+            built_at: pieblock_core::now_iso8601(),
+            byte_count,
+            warning_count: raw.warning_count,
+            last_flashed_at: None,
+        };
+        let stored = match self.artifacts.store(&hex_path, &artifact, &logs.join("\n")) {
+            Ok(stored) => stored,
+            Err(error) => {
+                logs.push(format!("保存构建产物失败：{error}"));
+                return BuildResult {
+                    success: false,
+                    artifact: None,
+                    log: logs.join("\n"),
+                    exit_code: None,
+                    canceled: false,
+                    license_failure: false,
+                    listing: None,
+                };
+            }
+        };
+        let done = format!("编译完成：{} 字节", stored.byte_count);
+        logs.push(done.clone());
+        emit(BuildEvent {
+            stage: BuildStage::Done,
+            level: BuildEventLevel::Info,
+            message: done,
+            current: None,
+            total: None,
+        });
+        BuildResult {
+            success: true,
+            artifact: Some(stored),
+            log: logs.join("\n"),
+            exit_code: Some(0),
+            canceled: false,
+            license_failure: false,
+            listing: raw.listing,
+        }
+    }
+
+    fn build_keil(
+        &mut self,
+        request: &BuildRequest,
+        work: &Path,
+        emit: &mut dyn FnMut(BuildEvent),
+        sleep: &dyn Fn(Duration),
+        logs: &mut Vec<String>,
+    ) -> RawBuildResult {
+        macro_rules! emit_stage {
+            ($stage:expr, $level:expr, $msg:expr $(,)?) => {{
+                let message: String = $msg;
+                logs.push(message.clone());
+                emit(BuildEvent {
+                    stage: $stage,
+                    level: $level,
+                    message,
+                    current: None,
+                    total: None,
+                });
+            }};
+        }
+        let keil_root = std::env::var("PIEBLOCK_KEIL").ok();
+        let installation = match resolve_keil(request.keil_root.as_deref().or(keil_root.as_deref()))
+        {
+            Ok(installation) => installation,
+            Err(error) => {
+                emit_stage!(BuildStage::Preparing, BuildEventLevel::Error, error,);
+                return RawBuildResult::failure();
+            }
+        };
+        let assets = match self.locate_assets() {
+            Ok(assets) => assets,
+            Err(error) => {
+                emit_stage!(BuildStage::Preparing, BuildEventLevel::Error, error);
+                return RawBuildResult::failure();
+            }
+        };
+        let project = firmware_project_for(request.project_kind, CompilerKind::Keil);
+        let workspace = work.join("stc32g");
+        if let Err(error) = crate::file_ops::copy_directory(
+            &assets.keil.join("Libraries"),
+            &workspace.join("Libraries"),
+            sleep,
+        ) {
+            emit_stage!(
+                BuildStage::Preparing,
+                BuildEventLevel::Error,
+                format!("复制 Keil Libraries 失败：{error}"),
+            );
+            return RawBuildResult::failure();
+        }
+        let project_dir = workspace.join("Projects").join(project);
+        if let Err(error) = crate::file_ops::copy_directory(
+            &assets.keil.join("Projects").join(project),
+            &project_dir,
+            sleep,
+        ) {
+            emit_stage!(
+                BuildStage::Preparing,
+                BuildEventLevel::Error,
+                format!("复制 Keil 工程失败：{error}"),
+            );
+            return RawBuildResult::failure();
+        }
+        let mdk = project_dir.join("MDK");
+        for generated in [mdk.join("Objects"), mdk.join("Listings")] {
+            let _ = std::fs::remove_dir_all(&generated);
+        }
+        let main_c = project_dir.join("USER").join("src").join("main.c");
+        if let Some(parent) = main_c.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Err(error) = std::fs::write(&main_c, &request.source_code) {
+            emit_stage!(
+                BuildStage::Preparing,
+                BuildEventLevel::Error,
+                format!("写入 main.c 失败：{error}"),
+            );
+            return RawBuildResult::failure();
+        }
+        let project_file = mdk.join("Project_Template.uvproj");
+        let log_path = mdk.join("pie_block_build.log");
+        let _ = std::fs::remove_file(&log_path);
+        emit_stage!(
+            BuildStage::Compiling,
+            BuildEventLevel::Info,
+            "正在调用 Keil C251 全量重建…".to_owned(),
+        );
+        let arguments = vec![
+            "-r".to_owned(),
+            project_file.display().to_string(),
+            "-o".to_owned(),
+            log_path.display().to_string(),
+        ];
+        let mut streamed: Vec<String> = Vec::new();
+        let run = self
+            .runner
+            .run(&installation.uv4, &arguments, Some(&mdk), &mut |line| {
+                streamed.push(line.to_owned())
+            });
+        let log = std::fs::read_to_string(&log_path).unwrap_or_else(|_| streamed.join("\n"));
+        let mut warning_count = 0_i64;
+        for line in log.lines() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            let lower = line.to_lowercase();
+            let level = if lower.contains("error") {
+                BuildEventLevel::Error
+            } else if lower.contains("warning") {
+                warning_count += 1;
+                BuildEventLevel::Warning
+            } else {
+                BuildEventLevel::Info
+            };
+            emit_stage!(BuildStage::Compiling, level, line.to_owned());
+        }
+        let hex_path = mdk.join("Objects").join("Project_Template.hex");
+        let success = log.contains("0 Error(s)") && hex_path.is_file();
+        RawBuildResult {
+            success,
+            exit_code: run.as_ref().map(|output| output.exit_code).ok(),
+            hex_path: Some(hex_path),
+            warning_count,
+            license_failure: is_keil_license_failure(&log),
+            listing: None,
         }
     }
 
@@ -1108,4 +1393,98 @@ fn firmware_hash_excluded(relative: &str) -> bool {
 /// 便捷：复制发布包资源到临时目录（测试/部署复用）。
 pub fn copy_assets(source: &Path, destination: &Path) -> std::io::Result<()> {
     copy_directory(source, destination, &|_| {})
+}
+
+#[derive(Debug, Clone)]
+struct KeilInstallation {
+    uv4: PathBuf,
+    c251: PathBuf,
+}
+
+fn find_first(root: &Path, preferred: &[&str], names: &[&str]) -> Option<PathBuf> {
+    for relative in preferred {
+        let candidate = root.join(relative);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    let lower: Vec<String> = names.iter().map(|name| name.to_lowercase()).collect();
+    fn walk(directory: &Path, lower: &[String], depth: u32) -> Option<PathBuf> {
+        if depth > 8 {
+            return None;
+        }
+        let entries = std::fs::read_dir(directory).ok()?;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().to_lowercase();
+            if path.is_file() && lower.contains(&name) {
+                return Some(path);
+            }
+            if path.is_dir() {
+                if let Some(found) = walk(&path, lower, depth + 1) {
+                    return Some(found);
+                }
+            }
+        }
+        None
+    }
+    walk(root, &lower, 0)
+}
+
+fn validate_keil(root: &str) -> Option<KeilInstallation> {
+    let root = PathBuf::from(root.trim());
+    if !root.is_dir() {
+        return None;
+    }
+    let root = root.canonicalize().unwrap_or(root);
+    let uv4 = find_first(
+        &root,
+        &["UV4/uVision.com", "UV4/UV4.exe"],
+        &["uVision.com", "UV4.exe"],
+    )?;
+    let c251 = find_first(&root, &["C251/BIN/C251.EXE"], &["C251.EXE"])?;
+    Some(KeilInstallation { uv4, c251 })
+}
+
+fn resolve_keil(configured: Option<&str>) -> Result<KeilInstallation, String> {
+    let mut candidates: Vec<String> = Vec::new();
+    if let Ok(value) = std::env::var("PIEBLOCK_KEIL") {
+        if !value.trim().is_empty() {
+            candidates.push(value.trim().to_owned());
+        }
+    }
+    if let Some(value) = configured {
+        if !value.trim().is_empty() {
+            candidates.push(value.trim().to_owned());
+        }
+    }
+    candidates.push("C:\\Keil_v5".to_owned());
+    candidates.push("C:\\Keil".to_owned());
+    for candidate in candidates {
+        if let Some(installation) = validate_keil(&candidate) {
+            return Ok(installation);
+        }
+    }
+    Err("Keil 目录无效或缺少 C251（可在设置中填写 Keil 安装目录）".to_owned())
+}
+
+fn keil_fingerprint(installation: &KeilInstallation) -> Result<String, String> {
+    let mut bytes: Vec<u8> = Vec::new();
+    for path in [&installation.uv4, &installation.c251] {
+        let name = path
+            .file_name()
+            .map(|name| name.to_string_lossy().to_lowercase())
+            .unwrap_or_default();
+        bytes.extend_from_slice(name.as_bytes());
+        let content =
+            std::fs::read(path).map_err(|error| format!("读取 Keil 工具文件失败：{error}"))?;
+        bytes.extend_from_slice(&content);
+    }
+    Ok(pieblock_core::sha256_hex(&bytes))
+}
+
+fn is_keil_license_failure(log: &str) -> bool {
+    log.contains("RESTRICTED VERSION")
+        || log.contains("LICENSE ERROR")
+        || log.contains("ERROR L250")
 }

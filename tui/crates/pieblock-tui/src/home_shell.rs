@@ -2322,8 +2322,11 @@ mod code_tests {
 
 fn locate_runtime_root() -> Option<PathBuf> {
     let has_assets = |root: &std::path::Path| {
-        root.join("stc32g_sdcc/build_manifest.json").is_file()
-            && root.join("sdcc-toolchain/bundle_manifest.json").is_file()
+        let toolchain_ok = root.join("sdcc-toolchain/bundle_manifest.json").is_file()
+            || root
+                .join("vendor/sdcc-toolchain/bundle_manifest.json")
+                .is_file();
+        toolchain_ok && root.join("stc32g_sdcc/build_manifest.json").is_file()
     };
     if let Ok(root) = std::env::var("PIEBLOCK_RUNTIME_ROOT") {
         let root = PathBuf::from(root);
@@ -2825,6 +2828,53 @@ mod midi_export_tests {
         shell.handle_key(key(KeyCode::Char('x')));
         let bytes = std::fs::read(dir.join("main.mid")).expect("exported midi");
         assert!(bytes.starts_with(b"MThd"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod keil_build_tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn keil_build_with_invalid_path_reports_clear_error() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target")
+            .join(format!("shell-keil-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("dir");
+        let template = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../..")
+            .join("assets/templates/infantry.pieproj");
+        let project = dir.join("infantry.pieproj");
+        std::fs::copy(&template, &project).expect("copy template");
+        let mut shell = Shell::with_data_dir(dir.join("data"), dir.clone());
+        shell.workspace.open(&project).expect("open");
+        shell.screen = Screen::Project;
+        shell.workspace.settings.compiler = pieblock_toolchain::CompilerKind::Keil;
+        shell.workspace.settings.keil_path = Some("Z:\\不存在的Keil目录".to_owned());
+        shell.handle_key(key(KeyCode::Char('b')));
+        match shell.screen {
+            Screen::Project => {
+                assert!(
+                    shell
+                        .message
+                        .as_deref()
+                        .is_some_and(|message| message.contains("Keil")),
+                    "message={:?}",
+                    shell.message
+                );
+            }
+            Screen::Build => {
+                assert!(!shell.build_log.as_ref().is_some_and(|log| log.is_empty()));
+            }
+            other => panic!("unexpected screen: {other:?}"),
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

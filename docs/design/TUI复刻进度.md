@@ -146,3 +146,6 @@ cd tui
 
 - M4 步兵高级设置补齐：控制与摩擦轮页新增「按下右摇杆让云台归中」（zero_enabled）与「禁用蜂鸣器反馈」（buzzer_disabled）两个开关，路径 `controls.zero_enabled` / `controls.buzzer_disabled`，与控制/摩擦轮参数一起自动保存；控制页字段数 13→15。
 - 验收清单更新：M4/M6 标记自动化完成（138 测试全绿），未完成功能仅剩 Keil C251 编译器（明确未移植）与 macOS 范围外项；其余为人工/硬件验收与发布决策。
+
+- M2 Keil C251 构建路径移植（已完成软件路径）：实现 Keil 目录发现（`UV4/uVision.com|UV4.exe`、`C251/BIN/C251.EXE`，支持 `PIEBLOCK_KEIL`/设置路径/`C:\Keil_v5`/`C:\Keil` 回退）、工具链指纹（UV4+C251 文件内容 SHA-256），`FirmwareBuilder` 支持 Keil 全量重建（复制 `stc32g/Libraries` 与工程、写入 `main.c`、`UV4 -r Project_Template.uvproj -o build.log`、逐行日志级别、`0 Error(s)` + HEX 校验、许可失败识别），并接入 TUI 设置中的编译器选择与 Keil 路径（构建屏自动区分 SDCC/Keil）。真实 Keil 授权环境的一次全量产物对照仍属人工验收项。
+- 另修复运行时资源定位：仓库开发态同时识别 `vendor/sdcc-toolchain` 与 `sdcc-toolchain`，使真实 SDCC 构建测试真正执行（此前可能被跳过）。
