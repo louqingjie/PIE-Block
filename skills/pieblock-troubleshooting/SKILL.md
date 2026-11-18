@@ -1,0 +1,125 @@
+---
+name: pieblock-troubleshooting
+description: 用于排查 PIE-Block 生成代码/固件行为疑似异常：对照界面参数、.pieproj 存档与 pieblock-cli codegen 生成的 main.c，按版本阅读 GitHub/Gitee 源码定位问题，并整理可复现的 bug 报告。严禁直接修改 main.c、绕过代码生成器或自行编译烧录固件。
+---
+
+# PIE-Block 生成代码排障 Skill
+
+用户怀疑「PIE-Block 生成的代码有问题」时，你的工作是把问题**收敛成证据**：是参数、是版本、
+是硬件，还是生成器缺陷。生成代码只读，最终修复只能通过参数 + 生成器 + 用户确认。
+
+## 什么时候用
+
+- 用户说「我填的是 6000，生成的代码里不是」；
+- 生成的 C 编译失败、烧录后行为与预期不符；
+- 用户怀疑 PIE-Block 的代码生成器有 bug；
+- 需要判断某个现象是配置问题还是软件问题。
+
+纯配置需求（配底盘、加机械臂）用 `pieblock-config` Skill；这里只做诊断与上报。
+
+## 红线（任何情况下都不做）
+
+1. **不直接修改 `main.c`**：用户工程里的、生成代码页导出的、构建目录里的都算。只读、只引用；
+   不提供可直接粘贴替换的 `main.c` 或补丁。
+2. **不绕过代码生成器**：问题修复必须回到 `.pieproj` 参数 + PIE-Block 生成器。不手写/拼装固件、
+   不复刻生成器、不提供「本地修过的生成器」给用户。
+3. **不编译、不烧录**：不运行 SDCC / Keil / HID / ISP 工具，不生成 HEX/BIN，不教用户绕开
+   PIE-Block 的「生成代码 → 烧录」页，不下载第三方固件。
+4. **不直接写用户工程**：配置修正只能生成临时候选并通过 `pieblock-cli propose` 提交，由用户在
+   应用里确认；不得用 `--force` 覆盖用户还没处理的提案。
+5. **不臆造硬件参数**：引脚、方向、通道、速度以用户确认为准。
+6. **不承诺固件正确性**：应用、编译、烧录、台架测试和上场由用户负责。
+
+读源码是为了解释与定位，不是让你改仓库或给用户打补丁；不要在用户机器上修改 PIE-Block 源码。
+
+## 排障主流程
+
+### 0. 先确认版本
+
+- PIE-Block 版本（安装包/关于页）、CLI 的 `pieblock-cli describe` 里的 `version`；
+- 读源码按**同一版本 tag**（如 `v1.8.0`），不要拿 main 对照旧版本；
+- 版本不一致时先让用户升级，再谈问题。
+
+### 1. 收集四份材料
+
+| 材料 | 怎么拿 |
+| --- | --- |
+| 用户界面里填的值 | 让用户截图或口述；记录页面与字段 |
+| `.pieproj` 存档 | 用户提供工程路径，只读取需要的字段 |
+| 生成代码 | `pieblock-cli codegen <工程>` 的 stdout（规范输出） |
+| 用户实际导出的 `main.c` | 可选：让用户从「生成代码」页导出，用来确认与 CLI 输出是否一致 |
+
+工程有 error 时 `codegen` 会拒绝（退出 2）：先按 `validate` 的 issues 收敛参数问题，
+或让用户补全工程后再对照。
+
+### 2. 一致性检查
+
+1. `pieblock-cli validate <工程>` → JSON；0 error 才能继续；
+2. 用 `codegen` 生成规范 C；
+3. 如果用户导出的 `main.c` 与 CLI 输出不一致：先怀疑版本不同步、导出后被手改、或构建缓存，
+   而不是生成器 bug；
+4. 按 `references/parameter-to-code.md` 的锚点逐字段对照参数与代码。
+
+### 3. 对照参数与代码
+
+对每个用户关心的字段做一行记录（表格形式给用户看）：
+
+```text
+参数（.pieproj 路径） | 界面值 | 生成代码落点 | 代码里的值 | 一致？
+remote.channel         | 36     | uint8_t Channal = 36; | 36 | 是
+chassis.normal_speed   | 6000   | uint16_t maxSpeed = 6000; | 6000 | 是
+```
+
+生成器会给模式动作表达式写定位注释 `/*@expr:modes.N.actions.M.expression*/`，
+这是最可靠的对照锚点。完整锚点表见 `references/parameter-to-code.md`。
+
+### 4. 判定
+
+| 现象 | 结论 | 下一步 |
+| --- | --- | --- |
+| 界面值 ≠ 存档 | 保存/GUI 问题 | 让用户重新填写并保存；记录版本与复现步骤 |
+| 存档 ≠ CLI 生成代码 | 生成器缺陷候选 | 收集证据，按第 6 步上报 |
+| CLI 输出 ≠ 用户导出的 main.c | 版本不同步 / 导出被改 / 构建缓存 | 先统一版本、重新导出 |
+| 参数与代码一致但行为不符 | 预期语义、硬件、接线、烧录或操作问题 | 查项目格式文档/固件约束/编译烧录指南/playbook |
+| 编译失败 | 工具链或环境问题 | 收集完整 build log 与版本；不手改 C |
+| 烧录失败 | HID/时序/驱动问题 | 指向编译烧录指南与 udev/pitfall 文档 |
+
+### 5. 配置修正（如果是参数问题）
+
+用 `pieblock-cli propose` 提交修正：复制工程 → 改临时候选 → `validate` + `codegen` →
+`propose` → 用户在应用里确认。规则与 `pieblock-config` Skill 相同。
+
+### 6. 疑似软件缺陷：整理证据并上报
+
+按 `references/bug-report-template.md` 整理，建议用户在 GitHub Issues 提交：
+<https://github.com/louqingjie/PIE-Block/issues>
+
+证据至少包含：版本、系统、工程类型、复现步骤、期望 vs 实际、`validate` JSON、相关生成代码片段
+与行号、参数对照表结论、对应源码文件与行（按 tag 的链接）。**不要把用户完整工程或个人信息
+直接贴到公开渠道**，先脱敏。
+
+## 允许的源码阅读
+
+- GitHub：<https://github.com/louqingjie/PIE-Block>（按 tag 阅读，如 `v1.8.0`）；
+- raw 文件示例：`https://raw.githubusercontent.com/louqingjie/PIE-Block/v1.8.0/packages/pieblock_core/lib/src/code_generator.dart`；
+- 生成器入口：`packages/pieblock_core/lib/src/code_generator.dart`；
+- 表达式：`packages/pieblock_core/lib/src/expression.dart`；
+- 字段模型与校验：`packages/pieblock_core/lib/src/models.dart`、`validator.dart`；
+- 文档：`docs/reference/Flutter项目文件格式.md`、`docs/guides/Flutter编译与烧录指南.md`、
+  `docs/reference/STC32G固件约束.md`、`docs/playbook/`。
+
+如团队有 Gitee 镜像，把上面的域名替换为镜像地址即可；仓库里没有内置镜像链接，不要臆造。
+
+## 拒绝话术
+
+- 「你直接改 main.c 修一下」→ 说明生成产物会被覆盖，只能改参数；给 propose 流程。
+- 「帮我编译/烧录验证」→ 编译烧录只在 PIE-Block 桌面版里做；可以帮用户把验证步骤和证据准备好。
+- 「网上找个固件刷进去」→ 不允许；固件必须由 PIE-Block 从参数生成。
+- 「你改一下源码不就好了」→ 源码只读；确认是缺陷就走 Issue/PR 流程，不给用户本地补丁版。
+
+## 参考
+
+- 参数↔代码锚点：`references/parameter-to-code.md`
+- Bug 报告模板：`references/bug-report-template.md`
+- CLI 指南：`docs/guides/PIE-Block命令行工具.md`
+- 配置 Skill：`skills/pieblock-config/SKILL.md`（修改参数）

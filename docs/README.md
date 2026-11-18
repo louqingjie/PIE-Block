@@ -17,6 +17,7 @@
 | [`legal/`](legal/) | 第三方声明与许可证 | [第三方声明](legal/THIRD_PARTY_NOTICES.md) |
 | [`examples/`](examples/) | 示例文件 | [music.json](examples/music.json) |
 | [`assets/`](assets/) | 文档插图 | [智能交互手柄](assets/智能交互手柄/) |
+| [`../skills/`](../skills/) | AI Agent 规程（配置 / 排障） | [pieblock-config](../skills/pieblock-config/SKILL.md) |
 
 ## 先读哪几篇
 
@@ -31,6 +32,7 @@
 
 - [Flutter 编译与烧录指南](guides/Flutter编译与烧录指南.md)
 - [命令行工具（CLI）](guides/PIE-Block命令行工具.md)
+- [AI Skills 使用指南](guides/AI-Skills使用指南.md)
 - [机械拓展板使用指南](guides/机械拓展板使用指南%20.md)
 - [RM 电控指南](guides/RM电控指南.md)
 - [代码生成器 CLI 与 MCP 接入指南](guides/代码生成器CLI与MCP接入指南.md)

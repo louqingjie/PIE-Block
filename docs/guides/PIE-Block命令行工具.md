@@ -161,6 +161,10 @@ pieblock-cli propose robot.pieproj --config robot.candidate.pieproj
 5. `propose` 返回 6 时说明用户还没处理上一份提案：不要自动加 `--force`，先问用户；
 6. 不要尝试让 CLI 编译或烧录，它不提供这两个动作。
 
+配套的 Agent 规程（Skill）见仓库 [`skills/`](../../skills/)：`pieblock-config` 负责把配置需求翻译成
+参数提案，`pieblock-troubleshooting` 负责对照参数与生成代码排查问题，两种都禁止直接改
+`main.c`、绕过生成器或自行编译烧录。安装与使用见 [AI Skills 使用指南](AI-Skills使用指南.md)。
+
 ## 已知限制
 
 - CLI 不直接写工程：提案必须由用户在 PIE-Block 里确认后才会应用（应用需处于打开状态）；
