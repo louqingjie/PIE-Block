@@ -9,6 +9,8 @@ license.workspace = true
 crossterm.workspace = true
 pieblock-core.workspace = true
 pieblock-ui.workspace = true
+pieblock-toolchain = { path = "../pieblock-toolchain" }
+serde_json.workspace = true
 ratatui.workspace = true
 unicode-width.workspace = true
 
