@@ -16,6 +16,7 @@ mod ids;
 pub mod midi;
 pub mod model;
 pub mod music;
+pub mod proposal;
 pub mod staff_firmware_c;
 pub mod staff_glyphs;
 pub mod staff_notation;
@@ -26,8 +27,11 @@ use serde::{Deserialize, Serialize};
 pub use codegen::{GeneratedProgram, GenerationError, generate, generate_program};
 pub use document::{DocumentError, GuideProgress, ProjectDocument};
 pub use expression::{Expr, ExpressionDiagnostic, ExpressionType, ParsedExpression, parse};
-pub use midi::{MidiCodec, MidiError, MidiFileData, MidiTrackData};
+pub use ids::now_iso8601;
 pub use music::{MusicSegment, MusicSoundingSpan, MusicTimeline};
+pub use proposal::{
+    ProjectProposal, ProposalChange, ProposalError, encode_proposal, proposal_path_for, sha256_hex,
+};
 pub use validation::{IssueSeverity, ValidationIssue, ValidationIssueKind, validate};
 
 /// 当前 `.pieproj` 格式版本（与 Flutter 版 `ProjectDocument.formatVersion` 对齐）。

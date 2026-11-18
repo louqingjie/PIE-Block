@@ -1,0 +1,1839 @@
+{
+  "cases": [
+    {
+      "name": "valid_change",
+      "base": {
+        "format_version": 23,
+        "project_kind": "infantry",
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "updated_at": "2026-01-01T00:00:00.000Z",
+        "guide_progress": {
+          "current_step_id": "remote",
+          "visited_step_ids": [
+            "remote"
+          ]
+        },
+        "config": {
+          "remote": {
+            "channel": 36,
+            "deadzone": 100
+          },
+          "chassis": {
+            "enabled": true,
+            "left_front": {
+              "pin": "P74 P24",
+              "direction": "forward"
+            },
+            "left_rear": {
+              "pin": "P75 P25",
+              "direction": "forward"
+            },
+            "right_front": {
+              "pin": "P76 P26",
+              "direction": "reverse"
+            },
+            "right_rear": {
+              "pin": "P77 P27",
+              "direction": "reverse"
+            },
+            "normal_speed": 6000,
+            "sprint_speed": null,
+            "sprint_enabled": false,
+            "turn_reversed": false,
+            "turn_sensitivity": 100
+          },
+          "feeder_pin": "P60",
+          "feeder_direction": "forward",
+          "yaw": [
+            {
+              "drive": "servo",
+              "pin": "MP74",
+              "direction": "forward",
+              "mid_offset": 0,
+              "min_limit": -60,
+              "max_limit": 60
+            }
+          ],
+          "pitch": [
+            {
+              "drive": "servo",
+              "pin": "MP03",
+              "direction": "forward",
+              "mid_offset": 0,
+              "min_limit": -60,
+              "max_limit": 60
+            }
+          ],
+          "yaw_sensitivity": 100,
+          "pitch_sensitivity": 100,
+          "arrow_behavior": "move",
+          "feed_mode": "blockingOpenLoop",
+          "trigger_key": "E",
+          "reverse_feed_key": "D",
+          "trigger_speed": 6000,
+          "trigger_time_ms": 250,
+          "friction_mode": "brushlessEsc",
+          "friction_key": "A",
+          "friction_up_key": "B",
+          "friction_down_key": "C",
+          "friction_p64_max_duty": 700,
+          "friction_p66_max_duty": 800,
+          "friction_level_step": 10,
+          "zero_enabled": false,
+          "buzzer_disabled": false
+        }
+      },
+      "candidate": {
+        "format_version": 23,
+        "project_kind": "infantry",
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "updated_at": "2026-01-01T00:00:00.000Z",
+        "guide_progress": {
+          "current_step_id": "remote",
+          "visited_step_ids": [
+            "remote"
+          ]
+        },
+        "config": {
+          "remote": {
+            "channel": 12,
+            "deadzone": 100
+          },
+          "chassis": {
+            "enabled": true,
+            "left_front": {
+              "pin": "P74 P24",
+              "direction": "forward"
+            },
+            "left_rear": {
+              "pin": "P75 P25",
+              "direction": "forward"
+            },
+            "right_front": {
+              "pin": "P76 P26",
+              "direction": "reverse"
+            },
+            "right_rear": {
+              "pin": "P77 P27",
+              "direction": "reverse"
+            },
+            "normal_speed": 6000,
+            "sprint_speed": null,
+            "sprint_enabled": false,
+            "turn_reversed": false,
+            "turn_sensitivity": 100
+          },
+          "feeder_pin": "P60",
+          "feeder_direction": "forward",
+          "yaw": [
+            {
+              "drive": "servo",
+              "pin": "MP74",
+              "direction": "forward",
+              "mid_offset": 0,
+              "min_limit": -60,
+              "max_limit": 60
+            }
+          ],
+          "pitch": [
+            {
+              "drive": "servo",
+              "pin": "MP03",
+              "direction": "forward",
+              "mid_offset": 0,
+              "min_limit": -60,
+              "max_limit": 60
+            }
+          ],
+          "yaw_sensitivity": 100,
+          "pitch_sensitivity": 100,
+          "arrow_behavior": "move",
+          "feed_mode": "blockingOpenLoop",
+          "trigger_key": "E",
+          "reverse_feed_key": "D",
+          "trigger_speed": 6000,
+          "trigger_time_ms": 250,
+          "friction_mode": "brushlessEsc",
+          "friction_key": "A",
+          "friction_up_key": "B",
+          "friction_down_key": "C",
+          "friction_p64_max_duty": 700,
+          "friction_p66_max_duty": 800,
+          "friction_level_step": 10,
+          "zero_enabled": false,
+          "buzzer_disabled": false
+        }
+      },
+      "ok": true,
+      "encoded": "{\n  \"schema\": 1,\n  \"kind\": \"pieblock-proposal\",\n  \"baseSha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n  \"createdAt\": \"2026-01-01T00:00:00.000Z\",\n  \"tool\": \"pieblock-cli/1.0.0\",\n  \"changedPaths\": [\n    \"remote.channel\"\n  ],\n  \"document\": {\n    \"format_version\": 23,\n    \"project_kind\": \"infantry\",\n    \"created_at\": \"2026-01-01T00:00:00.000Z\",\n    \"updated_at\": \"2026-01-01T00:00:00.000Z\",\n    \"guide_progress\": {\n      \"current_step_id\": \"remote\",\n      \"visited_step_ids\": [\n        \"remote\"\n      ]\n    },\n    \"config\": {\n      \"remote\": {\n        \"channel\": 12,\n        \"deadzone\": 100\n      },\n      \"chassis\": {\n        \"enabled\": true,\n        \"left_front\": {\n          \"pin\": \"P74 P24\",\n          \"direction\": \"forward\"\n        },\n        \"left_rear\": {\n          \"pin\": \"P75 P25\",\n          \"direction\": \"forward\"\n        },\n        \"right_front\": {\n          \"pin\": \"P76 P26\",\n          \"direction\": \"reverse\"\n        },\n        \"right_rear\": {\n          \"pin\": \"P77 P27\",\n          \"direction\": \"reverse\"\n        },\n        \"normal_speed\": 6000,\n        \"sprint_speed\": null,\n        \"sprint_enabled\": false,\n        \"turn_reversed\": false,\n        \"turn_sensitivity\": 100\n      },\n      \"feeder_pin\": \"P60\",\n      \"feeder_direction\": \"forward\",\n      \"yaw\": [\n        {\n          \"drive\": \"servo\",\n          \"pin\": \"MP74\",\n          \"direction\": \"forward\",\n          \"mid_offset\": 0,\n          \"min_limit\": -60,\n          \"max_limit\": 60\n        }\n      ],\n      \"pitch\": [\n        {\n          \"drive\": \"servo\",\n          \"pin\": \"MP03\",\n          \"direction\": \"forward\",\n          \"mid_offset\": 0,\n          \"min_limit\": -60,\n          \"max_limit\": 60\n        }\n      ],\n      \"yaw_sensitivity\": 100,\n      \"pitch_sensitivity\": 100,\n      \"arrow_behavior\": \"move\",\n      \"feed_mode\": \"blockingOpenLoop\",\n      \"trigger_key\": \"E\",\n      \"reverse_feed_key\": \"D\",\n      \"trigger_speed\": 6000,\n      \"trigger_time_ms\": 250,\n      \"friction_mode\": \"brushlessEsc\",\n      \"friction_key\": \"A\",\n      \"friction_up_key\": \"B\",\n      \"friction_down_key\": \"C\",\n      \"friction_p64_max_duty\": 700,\n      \"friction_p66_max_duty\": 800,\n      \"friction_level_step\": 10,\n      \"zero_enabled\": false,\n      \"buzzer_disabled\": false\n    }\n  }\n}\n"
+    },
+    {
+      "name": "invalid_config",
+      "base": {
+        "format_version": 23,
+        "project_kind": "infantry",
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "updated_at": "2026-01-01T00:00:00.000Z",
+        "guide_progress": {
+          "current_step_id": "remote",
+          "visited_step_ids": [
+            "remote"
+          ]
+        },
+        "config": {
+          "remote": {
+            "channel": 36,
+            "deadzone": 100
+          },
+          "chassis": {
+            "enabled": true,
+            "left_front": {
+              "pin": "P74 P24",
+              "direction": "forward"
+            },
+            "left_rear": {
+              "pin": "P75 P25",
+              "direction": "forward"
+            },
+            "right_front": {
+              "pin": "P76 P26",
+              "direction": "reverse"
+            },
+            "right_rear": {
+              "pin": "P77 P27",
+              "direction": "reverse"
+            },
+            "normal_speed": 6000,
+            "sprint_speed": null,
+            "sprint_enabled": false,
+            "turn_reversed": false,
+            "turn_sensitivity": 100
+          },
+          "feeder_pin": "P60",
+          "feeder_direction": "forward",
+          "yaw": [
+            {
+              "drive": "servo",
+              "pin": "MP74",
+              "direction": "forward",
+              "mid_offset": 0,
+              "min_limit": -60,
+              "max_limit": 60
+            }
+          ],
+          "pitch": [
+            {
+              "drive": "servo",
+              "pin": "MP03",
+              "direction": "forward",
+              "mid_offset": 0,
+              "min_limit": -60,
+              "max_limit": 60
+            }
+          ],
+          "yaw_sensitivity": 100,
+          "pitch_sensitivity": 100,
+          "arrow_behavior": "move",
+          "feed_mode": "blockingOpenLoop",
+          "trigger_key": "E",
+          "reverse_feed_key": "D",
+          "trigger_speed": 6000,
+          "trigger_time_ms": 250,
+          "friction_mode": "brushlessEsc",
+          "friction_key": "A",
+          "friction_up_key": "B",
+          "friction_down_key": "C",
+          "friction_p64_max_duty": 700,
+          "friction_p66_max_duty": 800,
+          "friction_level_step": 10,
+          "zero_enabled": false,
+          "buzzer_disabled": false
+        }
+      },
+      "candidate": {
+        "format_version": 23,
+        "project_kind": "infantry",
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "updated_at": "2026-01-01T00:00:00.000Z",
+        "guide_progress": {
+          "current_step_id": "remote",
+          "visited_step_ids": [
+            "remote"
+          ]
+        },
+        "config": {
+          "remote": {
+            "channel": 999,
+            "deadzone": 100
+          },
+          "chassis": {
+            "enabled": true,
+            "left_front": {
+              "pin": "P74 P24",
+              "direction": "forward"
+            },
+            "left_rear": {
+              "pin": "P75 P25",
+              "direction": "forward"
+            },
+            "right_front": {
+              "pin": "P76 P26",
+              "direction": "reverse"
+            },
+            "right_rear": {
+              "pin": "P77 P27",
+              "direction": "reverse"
+            },
+            "normal_speed": 6000,
+            "sprint_speed": null,
+            "sprint_enabled": false,
+            "turn_reversed": false,
+            "turn_sensitivity": 100
+          },
+          "feeder_pin": "P60",
+          "feeder_direction": "forward",
+          "yaw": [
+            {
+              "drive": "servo",
+              "pin": "MP74",
+              "direction": "forward",
+              "mid_offset": 0,
+              "min_limit": -60,
+              "max_limit": 60
+            }
+          ],
+          "pitch": [
+            {
+              "drive": "servo",
+              "pin": "MP03",
+              "direction": "forward",
+              "mid_offset": 0,
+              "min_limit": -60,
+              "max_limit": 60
+            }
+          ],
+          "yaw_sensitivity": 100,
+          "pitch_sensitivity": 100,
+          "arrow_behavior": "move",
+          "feed_mode": "blockingOpenLoop",
+          "trigger_key": "E",
+          "reverse_feed_key": "D",
+          "trigger_speed": 6000,
+          "trigger_time_ms": 250,
+          "friction_mode": "brushlessEsc",
+          "friction_key": "A",
+          "friction_up_key": "B",
+          "friction_down_key": "C",
+          "friction_p64_max_duty": 700,
+          "friction_p66_max_duty": 800,
+          "friction_level_step": 10,
+          "zero_enabled": false,
+          "buzzer_disabled": false
+        }
+      },
+      "ok": false,
+      "code": "invalid_config",
+      "message": "候选引入了 1 个新的校验错误（工程原有 0 个错误不算在内）",
+      "fields": [
+        "remote.channel"
+      ]
+    },
+    {
+      "name": "unroundtripped_unknown_key",
+      "base": {
+        "format_version": 23,
+        "project_kind": "infantry",
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "updated_at": "2026-01-01T00:00:00.000Z",
+        "guide_progress": {
+          "current_step_id": "remote",
+          "visited_step_ids": [
+            "remote"
+          ]
+        },
+        "config": {
+          "remote": {
+            "channel": 36,
+            "deadzone": 100
+          },
+          "chassis": {
+            "enabled": true,
+            "left_front": {
+              "pin": "P74 P24",
+              "direction": "forward"
+            },
+            "left_rear": {
+              "pin": "P75 P25",
+              "direction": "forward"
+            },
+            "right_front": {
+              "pin": "P76 P26",
+              "direction": "reverse"
+            },
+            "right_rear": {
+              "pin": "P77 P27",
+              "direction": "reverse"
+            },
+            "normal_speed": 6000,
+            "sprint_speed": null,
+            "sprint_enabled": false,
+            "turn_reversed": false,
+            "turn_sensitivity": 100
+          },
+          "feeder_pin": "P60",
+          "feeder_direction": "forward",
+          "yaw": [
+            {
+              "drive": "servo",
+              "pin": "MP74",
+              "direction": "forward",
+              "mid_offset": 0,
+              "min_limit": -60,
+              "max_limit": 60
+            }
+          ],
+          "pitch": [
+            {
+              "drive": "servo",
+              "pin": "MP03",
+              "direction": "forward",
+              "mid_offset": 0,
+              "min_limit": -60,
+              "max_limit": 60
+            }
+          ],
+          "yaw_sensitivity": 100,
+          "pitch_sensitivity": 100,
+          "arrow_behavior": "move",
+          "feed_mode": "blockingOpenLoop",
+          "trigger_key": "E",
+          "reverse_feed_key": "D",
+          "trigger_speed": 6000,
+          "trigger_time_ms": 250,
+          "friction_mode": "brushlessEsc",
+          "friction_key": "A",
+          "friction_up_key": "B",
+          "friction_down_key": "C",
+          "friction_p64_max_duty": 700,
+          "friction_p66_max_duty": 800,
+          "friction_level_step": 10,
+          "zero_enabled": false,
+          "buzzer_disabled": false
+        }
+      },
+      "candidate": {
+        "format_version": 23,
+        "project_kind": "infantry",
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "updated_at": "2026-01-01T00:00:00.000Z",
+        "guide_progress": {
+          "current_step_id": "remote",
+          "visited_step_ids": [
+            "remote"
+          ]
+        },
+        "config": {
+          "remote": {
+            "channel": 36,
+            "deadzone": 100
+          },
+          "chassis": {
+            "enabled": true,
+            "left_front": {
+              "pin": "P74 P24",
+              "direction": "forward"
+            },
+            "left_rear": {
+              "pin": "P75 P25",
+              "direction": "forward"
+            },
+            "right_front": {
+              "pin": "P76 P26",
+              "direction": "reverse"
+            },
+            "right_rear": {
+              "pin": "P77 P27",
+              "direction": "reverse"
+            },
+            "normal_speed": 6000,
+            "sprint_speed": null,
+            "sprint_enabled": false,
+            "turn_reversed": false,
+            "turn_sensitivity": 100
+          },
+          "feeder_pin": "P60",
+          "feeder_direction": "forward",
+          "yaw": [
+            {
+              "drive": "servo",
+              "pin": "MP74",
+              "direction": "forward",
+              "mid_offset": 0,
+              "min_limit": -60,
+              "max_limit": 60
+            }
+          ],
+          "pitch": [
+            {
+              "drive": "servo",
+              "pin": "MP03",
+              "direction": "forward",
+              "mid_offset": 0,
+              "min_limit": -60,
+              "max_limit": 60
+            }
+          ],
+          "yaw_sensitivity": 100,
+          "pitch_sensitivity": 100,
+          "arrow_behavior": "move",
+          "feed_mode": "blockingOpenLoop",
+          "trigger_key": "E",
+          "reverse_feed_key": "D",
+          "trigger_speed": 6000,
+          "trigger_time_ms": 250,
+          "friction_mode": "brushlessEsc",
+          "friction_key": "A",
+          "friction_up_key": "B",
+          "friction_down_key": "C",
+          "friction_p64_max_duty": 700,
+          "friction_p66_max_duty": 800,
+          "friction_level_step": 10,
+          "zero_enabled": false,
+          "buzzer_disabled": false,
+          "unknown_option": true
+        }
+      },
+      "ok": false,
+      "code": "unroundtripped_value",
+      "message": "以下字段的取值无法被项目模型接受（拼写错误或类型不匹配）",
+      "fields": [
+        "unknown_option"
+      ]
+    },
+    {
+      "name": "unroundtripped_enum",
+      "base": {
+        "format_version": 23,
+        "project_kind": "infantry",
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "updated_at": "2026-01-01T00:00:00.000Z",
+        "guide_progress": {
+          "current_step_id": "remote",
+          "visited_step_ids": [
+            "remote"
+          ]
+        },
+        "config": {
+          "remote": {
+            "channel": 36,
+            "deadzone": 100
+          },
+          "chassis": {
+            "enabled": true,
+            "left_front": {
+              "pin": "P74 P24",
+              "direction": "forward"
+            },
+            "left_rear": {
+              "pin": "P75 P25",
+              "direction": "forward"
+            },
+            "right_front": {
+              "pin": "P76 P26",
+              "direction": "reverse"
+            },
+            "right_rear": {
+              "pin": "P77 P27",
+              "direction": "reverse"
+            },
+            "normal_speed": 6000,
+            "sprint_speed": null,
+            "sprint_enabled": false,
+            "turn_reversed": false,
+            "turn_sensitivity": 100
+          },
+          "feeder_pin": "P60",
+          "feeder_direction": "forward",
+          "yaw": [
+            {
+              "drive": "servo",
+              "pin": "MP74",
+              "direction": "forward",
+              "mid_offset": 0,
+              "min_limit": -60,
+              "max_limit": 60
+            }
+          ],
+          "pitch": [
+            {
+              "drive": "servo",
+              "pin": "MP03",
+              "direction": "forward",
+              "mid_offset": 0,
+              "min_limit": -60,
+              "max_limit": 60
+            }
+          ],
+          "yaw_sensitivity": 100,
+          "pitch_sensitivity": 100,
+          "arrow_behavior": "move",
+          "feed_mode": "blockingOpenLoop",
+          "trigger_key": "E",
+          "reverse_feed_key": "D",
+          "trigger_speed": 6000,
+          "trigger_time_ms": 250,
+          "friction_mode": "brushlessEsc",
+          "friction_key": "A",
+          "friction_up_key": "B",
+          "friction_down_key": "C",
+          "friction_p64_max_duty": 700,
+          "friction_p66_max_duty": 800,
+          "friction_level_step": 10,
+          "zero_enabled": false,
+          "buzzer_disabled": false
+        }
+      },
+      "candidate": {
+        "format_version": 23,
+        "project_kind": "infantry",
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "updated_at": "2026-01-01T00:00:00.000Z",
+        "guide_progress": {
+          "current_step_id": "remote",
+          "visited_step_ids": [
+            "remote"
+          ]
+        },
+        "config": {
+          "remote": {
+            "channel": 36,
+            "deadzone": 100
+          },
+          "chassis": {
+            "enabled": true,
+            "left_front": {
+              "pin": "P74 P24",
+              "direction": "forward"
+            },
+            "left_rear": {
+              "pin": "P75 P25",
+              "direction": "forward"
+            },
+            "right_front": {
+              "pin": "P76 P26",
+              "direction": "reverse"
+            },
+            "right_rear": {
+              "pin": "P77 P27",
+              "direction": "reverse"
+            },
+            "normal_speed": 6000,
+            "sprint_speed": null,
+            "sprint_enabled": false,
+            "turn_reversed": false,
+            "turn_sensitivity": 100
+          },
+          "feeder_pin": "P60",
+          "feeder_direction": "sideways",
+          "yaw": [
+            {
+              "drive": "servo",
+              "pin": "MP74",
+              "direction": "forward",
+              "mid_offset": 0,
+              "min_limit": -60,
+              "max_limit": 60
+            }
+          ],
+          "pitch": [
+            {
+              "drive": "servo",
+              "pin": "MP03",
+              "direction": "forward",
+              "mid_offset": 0,
+              "min_limit": -60,
+              "max_limit": 60
+            }
+          ],
+          "yaw_sensitivity": 100,
+          "pitch_sensitivity": 100,
+          "arrow_behavior": "move",
+          "feed_mode": "blockingOpenLoop",
+          "trigger_key": "E",
+          "reverse_feed_key": "D",
+          "trigger_speed": 6000,
+          "trigger_time_ms": 250,
+          "friction_mode": "brushlessEsc",
+          "friction_key": "A",
+          "friction_up_key": "B",
+          "friction_down_key": "C",
+          "friction_p64_max_duty": 700,
+          "friction_p66_max_duty": 800,
+          "friction_level_step": 10,
+          "zero_enabled": false,
+          "buzzer_disabled": false
+        }
+      },
+      "ok": false,
+      "code": "unroundtripped_value",
+      "message": "以下字段的取值无法被项目模型接受（拼写错误或类型不匹配）",
+      "fields": [
+        "feeder_direction"
+      ]
+    },
+    {
+      "name": "empty_changes",
+      "base": {
+        "format_version": 23,
+        "project_kind": "infantry",
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "updated_at": "2026-01-01T00:00:00.000Z",
+        "guide_progress": {
+          "current_step_id": "remote",
+          "visited_step_ids": [
+            "remote"
+          ]
+        },
+        "config": {
+          "remote": {
+            "channel": 36,
+            "deadzone": 100
+          },
+          "chassis": {
+            "enabled": true,
+            "left_front": {
+              "pin": "P74 P24",
+              "direction": "forward"
+            },
+            "left_rear": {
+              "pin": "P75 P25",
+              "direction": "forward"
+            },
+            "right_front": {
+              "pin": "P76 P26",
+              "direction": "reverse"
+            },
+            "right_rear": {
+              "pin": "P77 P27",
+              "direction": "reverse"
+            },
+            "normal_speed": 6000,
+            "sprint_speed": null,
+            "sprint_enabled": false,
+            "turn_reversed": false,
+            "turn_sensitivity": 100
+          },
+          "feeder_pin": "P60",
+          "feeder_direction": "forward",
+          "yaw": [
+            {
+              "drive": "servo",
+              "pin": "MP74",
+              "direction": "forward",
+              "mid_offset": 0,
+              "min_limit": -60,
+              "max_limit": 60
+            }
+          ],
+          "pitch": [
+            {
+              "drive": "servo",
+              "pin": "MP03",
+              "direction": "forward",
+              "mid_offset": 0,
+              "min_limit": -60,
+              "max_limit": 60
+            }
+          ],
+          "yaw_sensitivity": 100,
+          "pitch_sensitivity": 100,
+          "arrow_behavior": "move",
+          "feed_mode": "blockingOpenLoop",
+          "trigger_key": "E",
+          "reverse_feed_key": "D",
+          "trigger_speed": 6000,
+          "trigger_time_ms": 250,
+          "friction_mode": "brushlessEsc",
+          "friction_key": "A",
+          "friction_up_key": "B",
+          "friction_down_key": "C",
+          "friction_p64_max_duty": 700,
+          "friction_p66_max_duty": 800,
+          "friction_level_step": 10,
+          "zero_enabled": false,
+          "buzzer_disabled": false
+        }
+      },
+      "candidate": {
+        "format_version": 23,
+        "project_kind": "infantry",
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "updated_at": "2026-01-01T00:00:00.000Z",
+        "guide_progress": {
+          "current_step_id": "remote",
+          "visited_step_ids": [
+            "remote"
+          ]
+        },
+        "config": {
+          "remote": {
+            "channel": 36,
+            "deadzone": 100
+          },
+          "chassis": {
+            "enabled": true,
+            "left_front": {
+              "pin": "P74 P24",
+              "direction": "forward"
+            },
+            "left_rear": {
+              "pin": "P75 P25",
+              "direction": "forward"
+            },
+            "right_front": {
+              "pin": "P76 P26",
+              "direction": "reverse"
+            },
+            "right_rear": {
+              "pin": "P77 P27",
+              "direction": "reverse"
+            },
+            "normal_speed": 6000,
+            "sprint_speed": null,
+            "sprint_enabled": false,
+            "turn_reversed": false,
+            "turn_sensitivity": 100
+          },
+          "feeder_pin": "P60",
+          "feeder_direction": "forward",
+          "yaw": [
+            {
+              "drive": "servo",
+              "pin": "MP74",
+              "direction": "forward",
+              "mid_offset": 0,
+              "min_limit": -60,
+              "max_limit": 60
+            }
+          ],
+          "pitch": [
+            {
+              "drive": "servo",
+              "pin": "MP03",
+              "direction": "forward",
+              "mid_offset": 0,
+              "min_limit": -60,
+              "max_limit": 60
+            }
+          ],
+          "yaw_sensitivity": 100,
+          "pitch_sensitivity": 100,
+          "arrow_behavior": "move",
+          "feed_mode": "blockingOpenLoop",
+          "trigger_key": "E",
+          "reverse_feed_key": "D",
+          "trigger_speed": 6000,
+          "trigger_time_ms": 250,
+          "friction_mode": "brushlessEsc",
+          "friction_key": "A",
+          "friction_up_key": "B",
+          "friction_down_key": "C",
+          "friction_p64_max_duty": 700,
+          "friction_p66_max_duty": 800,
+          "friction_level_step": 10,
+          "zero_enabled": false,
+          "buzzer_disabled": false
+        }
+      },
+      "ok": false,
+      "code": "empty_changes",
+      "message": "候选配置与当前工程没有差异",
+      "fields": []
+    },
+    {
+      "name": "kind_mismatch",
+      "base": {
+        "format_version": 23,
+        "project_kind": "infantry",
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "updated_at": "2026-01-01T00:00:00.000Z",
+        "guide_progress": {
+          "current_step_id": "remote",
+          "visited_step_ids": [
+            "remote"
+          ]
+        },
+        "config": {
+          "remote": {
+            "channel": 36,
+            "deadzone": 100
+          },
+          "chassis": {
+            "enabled": true,
+            "left_front": {
+              "pin": "P74 P24",
+              "direction": "forward"
+            },
+            "left_rear": {
+              "pin": "P75 P25",
+              "direction": "forward"
+            },
+            "right_front": {
+              "pin": "P76 P26",
+              "direction": "reverse"
+            },
+            "right_rear": {
+              "pin": "P77 P27",
+              "direction": "reverse"
+            },
+            "normal_speed": 6000,
+            "sprint_speed": null,
+            "sprint_enabled": false,
+            "turn_reversed": false,
+            "turn_sensitivity": 100
+          },
+          "feeder_pin": "P60",
+          "feeder_direction": "forward",
+          "yaw": [
+            {
+              "drive": "servo",
+              "pin": "MP74",
+              "direction": "forward",
+              "mid_offset": 0,
+              "min_limit": -60,
+              "max_limit": 60
+            }
+          ],
+          "pitch": [
+            {
+              "drive": "servo",
+              "pin": "MP03",
+              "direction": "forward",
+              "mid_offset": 0,
+              "min_limit": -60,
+              "max_limit": 60
+            }
+          ],
+          "yaw_sensitivity": 100,
+          "pitch_sensitivity": 100,
+          "arrow_behavior": "move",
+          "feed_mode": "blockingOpenLoop",
+          "trigger_key": "E",
+          "reverse_feed_key": "D",
+          "trigger_speed": 6000,
+          "trigger_time_ms": 250,
+          "friction_mode": "brushlessEsc",
+          "friction_key": "A",
+          "friction_up_key": "B",
+          "friction_down_key": "C",
+          "friction_p64_max_duty": 700,
+          "friction_p66_max_duty": 800,
+          "friction_level_step": 10,
+          "zero_enabled": false,
+          "buzzer_disabled": false
+        }
+      },
+      "candidate": {
+        "format_version": 23,
+        "project_kind": "engineer",
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "updated_at": "2026-01-01T00:00:00.000Z",
+        "guide_progress": {
+          "current_step_id": "remote",
+          "visited_step_ids": [
+            "remote"
+          ]
+        },
+        "config": {
+          "remote": {
+            "channel": 36,
+            "deadzone": 100
+          },
+          "chassis": {
+            "enabled": true,
+            "left_front": {
+              "pin": "P74 P24",
+              "direction": "forward"
+            },
+            "left_rear": {
+              "pin": "P75 P25",
+              "direction": "forward"
+            },
+            "right_front": {
+              "pin": "P76 P26",
+              "direction": "reverse"
+            },
+            "right_rear": {
+              "pin": "P77 P27",
+              "direction": "reverse"
+            },
+            "normal_speed": 5000,
+            "sprint_speed": null,
+            "sprint_enabled": false,
+            "turn_reversed": false,
+            "turn_sensitivity": 100
+          },
+          "pwm": {
+            "pwma": "hz50",
+            "pwmb": "hz10000",
+            "buzzer_disabled": false,
+            "pin_roles": {
+              "P60": "servo",
+              "P62": "servo",
+              "P64": "friction",
+              "P66": "friction",
+              "P74": "motor",
+              "P75": "motor",
+              "P76": "motor",
+              "P77": "motor",
+              "MP03": null,
+              "MP74": null
+            },
+            "servo_mids": {
+              "P60": 0,
+              "P62": 0,
+              "P64": null,
+              "P66": null,
+              "P74": null,
+              "P75": null,
+              "P76": null,
+              "P77": null,
+              "MP03": 0,
+              "MP74": 0
+            },
+            "servo_min_limits": {
+              "P60": null,
+              "P62": null,
+              "P64": null,
+              "P66": null,
+              "P74": null,
+              "P75": null,
+              "P76": null,
+              "P77": null,
+              "MP03": null,
+              "MP74": null
+            },
+            "servo_max_limits": {
+              "P60": null,
+              "P62": null,
+              "P64": null,
+              "P66": null,
+              "P74": null,
+              "P75": null,
+              "P76": null,
+              "P77": null,
+              "MP03": null,
+              "MP74": null
+            },
+            "friction_max_duties": {
+              "P64": 700,
+              "P66": 800
+            }
+          },
+          "mode_count": 2,
+          "switch_strategy": "cycle",
+          "mode_switch_key": "E",
+          "mode_keys": [
+            null,
+            null,
+            null,
+            null
+          ],
+          "modes": [
+            {
+              "id": "template-mode-1",
+              "preserve_chassis": true,
+              "actions": [
+                {
+                  "id": "template-1-1",
+                  "input_kind": "remote",
+                  "key": "A",
+                  "output_kind": "pin",
+                  "pin": "P60",
+                  "variable": null,
+                  "expression": null,
+                  "mode": "single",
+                  "parameter": 5
+                },
+                {
+                  "id": "template-1-2",
+                  "input_kind": "remote",
+                  "key": "B",
+                  "output_kind": "pin",
+                  "pin": "P62",
+                  "variable": null,
+                  "expression": null,
+                  "mode": "continuous",
+                  "parameter": 3
+                },
+                {
+                  "id": "template-1-3",
+                  "input_kind": "remote",
+                  "key": "C",
+                  "output_kind": "pin",
+                  "pin": "P64",
+                  "variable": null,
+                  "expression": null,
+                  "mode": "frictionToggle",
+                  "parameter": 100
+                },
+                {
+                  "id": "template-1-4",
+                  "input_kind": "remote",
+                  "key": "D",
+                  "output_kind": "pin",
+                  "pin": "P66",
+                  "variable": null,
+                  "expression": null,
+                  "mode": "frictionStep",
+                  "parameter": -10
+                }
+              ]
+            },
+            {
+              "id": "template-mode-2",
+              "preserve_chassis": false,
+              "actions": [
+                {
+                  "id": "template-2-1",
+                  "input_kind": "remote",
+                  "key": "LX",
+                  "output_kind": "pin",
+                  "pin": "P60",
+                  "variable": null,
+                  "expression": null,
+                  "mode": "incremental",
+                  "parameter": 20
+                },
+                {
+                  "id": "template-2-2",
+                  "input_kind": "remote",
+                  "key": "RY",
+                  "output_kind": "pin",
+                  "pin": "P64",
+                  "variable": null,
+                  "expression": null,
+                  "mode": "frictionAxis",
+                  "parameter": 50
+                },
+                {
+                  "id": "template-2-3",
+                  "input_kind": "remote",
+                  "key": "D",
+                  "output_kind": "pin",
+                  "pin": "P62",
+                  "variable": null,
+                  "expression": null,
+                  "mode": "direct",
+                  "parameter": -45
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "ok": false,
+      "code": "kind_mismatch",
+      "message": "候选工程类型（engineer）与目标工程（infantry）不一致",
+      "fields": []
+    },
+    {
+      "name": "missing_config",
+      "base": {
+        "format_version": 23,
+        "project_kind": "music",
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "updated_at": "2026-01-01T00:00:00.000Z",
+        "guide_progress": {
+          "current_step_id": "music",
+          "visited_step_ids": [
+            "music"
+          ]
+        },
+        "config": {
+          "ticks_per_quarter": 480,
+          "source_name": null,
+          "track_name": "一闪一闪亮晶晶",
+          "notes": [
+            {
+              "id": "n1",
+              "pitch": 60,
+              "start_tick": 0,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n2",
+              "pitch": 60,
+              "start_tick": 480,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n3",
+              "pitch": 67,
+              "start_tick": 960,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n4",
+              "pitch": 67,
+              "start_tick": 1440,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n5",
+              "pitch": 69,
+              "start_tick": 1920,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n6",
+              "pitch": 69,
+              "start_tick": 2400,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n7",
+              "pitch": 67,
+              "start_tick": 2880,
+              "duration_ticks": 960
+            },
+            {
+              "id": "n8",
+              "pitch": 65,
+              "start_tick": 3840,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n9",
+              "pitch": 65,
+              "start_tick": 4320,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n10",
+              "pitch": 64,
+              "start_tick": 4800,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n11",
+              "pitch": 64,
+              "start_tick": 5280,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n12",
+              "pitch": 62,
+              "start_tick": 5760,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n13",
+              "pitch": 62,
+              "start_tick": 6240,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n14",
+              "pitch": 60,
+              "start_tick": 6720,
+              "duration_ticks": 960
+            }
+          ],
+          "overlap_mode": "nearest",
+          "new_note_interrupts": true,
+          "key_signature_fifths": 0,
+          "tempo_events": [
+            {
+              "tick": 0,
+              "microseconds_per_quarter": 500000
+            }
+          ],
+          "time_signature_events": [
+            {
+              "tick": 0,
+              "numerator": 4,
+              "denominator": 4
+            }
+          ]
+        }
+      },
+      "candidate": {
+        "format_version": 23,
+        "project_kind": "music",
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "updated_at": "2026-01-01T00:00:00.000Z",
+        "guide_progress": {
+          "current_step_id": "music",
+          "visited_step_ids": [
+            "music"
+          ]
+        }
+      },
+      "ok": false,
+      "code": "invalid_document",
+      "message": "候选工程缺少 config 对象",
+      "fields": []
+    },
+    {
+      "name": "music_valid_change",
+      "base": {
+        "format_version": 23,
+        "project_kind": "music",
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "updated_at": "2026-01-01T00:00:00.000Z",
+        "guide_progress": {
+          "current_step_id": "music",
+          "visited_step_ids": [
+            "music"
+          ]
+        },
+        "config": {
+          "ticks_per_quarter": 480,
+          "source_name": null,
+          "track_name": "一闪一闪亮晶晶",
+          "notes": [
+            {
+              "id": "n1",
+              "pitch": 60,
+              "start_tick": 0,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n2",
+              "pitch": 60,
+              "start_tick": 480,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n3",
+              "pitch": 67,
+              "start_tick": 960,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n4",
+              "pitch": 67,
+              "start_tick": 1440,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n5",
+              "pitch": 69,
+              "start_tick": 1920,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n6",
+              "pitch": 69,
+              "start_tick": 2400,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n7",
+              "pitch": 67,
+              "start_tick": 2880,
+              "duration_ticks": 960
+            },
+            {
+              "id": "n8",
+              "pitch": 65,
+              "start_tick": 3840,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n9",
+              "pitch": 65,
+              "start_tick": 4320,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n10",
+              "pitch": 64,
+              "start_tick": 4800,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n11",
+              "pitch": 64,
+              "start_tick": 5280,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n12",
+              "pitch": 62,
+              "start_tick": 5760,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n13",
+              "pitch": 62,
+              "start_tick": 6240,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n14",
+              "pitch": 60,
+              "start_tick": 6720,
+              "duration_ticks": 960
+            }
+          ],
+          "overlap_mode": "nearest",
+          "new_note_interrupts": true,
+          "key_signature_fifths": 0,
+          "tempo_events": [
+            {
+              "tick": 0,
+              "microseconds_per_quarter": 500000
+            }
+          ],
+          "time_signature_events": [
+            {
+              "tick": 0,
+              "numerator": 4,
+              "denominator": 4
+            }
+          ]
+        }
+      },
+      "candidate": {
+        "format_version": 23,
+        "project_kind": "music",
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "updated_at": "2026-01-01T00:00:00.000Z",
+        "guide_progress": {
+          "current_step_id": "music",
+          "visited_step_ids": [
+            "music"
+          ]
+        },
+        "config": {
+          "ticks_per_quarter": 480,
+          "source_name": null,
+          "track_name": "一闪一闪亮晶晶",
+          "notes": [
+            {
+              "id": "n1",
+              "pitch": 60,
+              "start_tick": 0,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n2",
+              "pitch": 60,
+              "start_tick": 480,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n3",
+              "pitch": 67,
+              "start_tick": 960,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n4",
+              "pitch": 67,
+              "start_tick": 1440,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n5",
+              "pitch": 69,
+              "start_tick": 1920,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n6",
+              "pitch": 69,
+              "start_tick": 2400,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n7",
+              "pitch": 67,
+              "start_tick": 2880,
+              "duration_ticks": 960
+            },
+            {
+              "id": "n8",
+              "pitch": 65,
+              "start_tick": 3840,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n9",
+              "pitch": 65,
+              "start_tick": 4320,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n10",
+              "pitch": 64,
+              "start_tick": 4800,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n11",
+              "pitch": 64,
+              "start_tick": 5280,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n12",
+              "pitch": 62,
+              "start_tick": 5760,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n13",
+              "pitch": 62,
+              "start_tick": 6240,
+              "duration_ticks": 480
+            },
+            {
+              "id": "n14",
+              "pitch": 60,
+              "start_tick": 6720,
+              "duration_ticks": 960
+            }
+          ],
+          "overlap_mode": "nearest",
+          "new_note_interrupts": true,
+          "key_signature_fifths": -3,
+          "tempo_events": [
+            {
+              "tick": 0,
+              "microseconds_per_quarter": 500000
+            }
+          ],
+          "time_signature_events": [
+            {
+              "tick": 0,
+              "numerator": 4,
+              "denominator": 4
+            }
+          ]
+        }
+      },
+      "ok": true,
+      "encoded": "{\n  \"schema\": 1,\n  \"kind\": \"pieblock-proposal\",\n  \"baseSha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n  \"createdAt\": \"2026-01-01T00:00:00.000Z\",\n  \"tool\": \"pieblock-cli/1.0.0\",\n  \"changedPaths\": [\n    \"key_signature_fifths\"\n  ],\n  \"document\": {\n    \"format_version\": 23,\n    \"project_kind\": \"music\",\n    \"created_at\": \"2026-01-01T00:00:00.000Z\",\n    \"updated_at\": \"2026-01-01T00:00:00.000Z\",\n    \"guide_progress\": {\n      \"current_step_id\": \"music\",\n      \"visited_step_ids\": [\n        \"music\"\n      ]\n    },\n    \"config\": {\n      \"ticks_per_quarter\": 480,\n      \"source_name\": null,\n      \"track_name\": \"一闪一闪亮晶晶\",\n      \"notes\": [\n        {\n          \"id\": \"n1\",\n          \"pitch\": 60,\n          \"start_tick\": 0,\n          \"duration_ticks\": 480\n        },\n        {\n          \"id\": \"n2\",\n          \"pitch\": 60,\n          \"start_tick\": 480,\n          \"duration_ticks\": 480\n        },\n        {\n          \"id\": \"n3\",\n          \"pitch\": 67,\n          \"start_tick\": 960,\n          \"duration_ticks\": 480\n        },\n        {\n          \"id\": \"n4\",\n          \"pitch\": 67,\n          \"start_tick\": 1440,\n          \"duration_ticks\": 480\n        },\n        {\n          \"id\": \"n5\",\n          \"pitch\": 69,\n          \"start_tick\": 1920,\n          \"duration_ticks\": 480\n        },\n        {\n          \"id\": \"n6\",\n          \"pitch\": 69,\n          \"start_tick\": 2400,\n          \"duration_ticks\": 480\n        },\n        {\n          \"id\": \"n7\",\n          \"pitch\": 67,\n          \"start_tick\": 2880,\n          \"duration_ticks\": 960\n        },\n        {\n          \"id\": \"n8\",\n          \"pitch\": 65,\n          \"start_tick\": 3840,\n          \"duration_ticks\": 480\n        },\n        {\n          \"id\": \"n9\",\n          \"pitch\": 65,\n          \"start_tick\": 4320,\n          \"duration_ticks\": 480\n        },\n        {\n          \"id\": \"n10\",\n          \"pitch\": 64,\n          \"start_tick\": 4800,\n          \"duration_ticks\": 480\n        },\n        {\n          \"id\": \"n11\",\n          \"pitch\": 64,\n          \"start_tick\": 5280,\n          \"duration_ticks\": 480\n        },\n        {\n          \"id\": \"n12\",\n          \"pitch\": 62,\n          \"start_tick\": 5760,\n          \"duration_ticks\": 480\n        },\n        {\n          \"id\": \"n13\",\n          \"pitch\": 62,\n          \"start_tick\": 6240,\n          \"duration_ticks\": 480\n        },\n        {\n          \"id\": \"n14\",\n          \"pitch\": 60,\n          \"start_tick\": 6720,\n          \"duration_ticks\": 960\n        }\n      ],\n      \"overlap_mode\": \"nearest\",\n      \"new_note_interrupts\": true,\n      \"key_signature_fifths\": -3,\n      \"tempo_events\": [\n        {\n          \"tick\": 0,\n          \"microseconds_per_quarter\": 500000\n        }\n      ],\n      \"time_signature_events\": [\n        {\n          \"tick\": 0,\n          \"numerator\": 4,\n          \"denominator\": 4\n        }\n      ]\n    }\n  }\n}\n"
+    },
+    {
+      "name": "debug_valid_change",
+      "base": {
+        "format_version": 23,
+        "project_kind": "debug",
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "updated_at": "2026-01-01T00:00:00.000Z",
+        "guide_progress": {
+          "current_step_id": "tests",
+          "visited_step_ids": [
+            "tests"
+          ]
+        },
+        "config": {
+          "tests": [
+            {
+              "pin": "P60",
+              "enabled": true,
+              "drive_type": "motor",
+              "value": 5000,
+              "duration_ms": 3000
+            },
+            {
+              "pin": "P62",
+              "enabled": true,
+              "drive_type": "motor",
+              "value": 5000,
+              "duration_ms": 3000
+            },
+            {
+              "pin": "P64",
+              "enabled": true,
+              "drive_type": "friction",
+              "value": 700
+            },
+            {
+              "pin": "P66",
+              "enabled": true,
+              "drive_type": "friction",
+              "value": 700
+            },
+            {
+              "pin": "P74",
+              "enabled": true,
+              "drive_type": "motor",
+              "value": 5000,
+              "duration_ms": 3000
+            },
+            {
+              "pin": "P75",
+              "enabled": true,
+              "drive_type": "motor",
+              "value": 5000,
+              "duration_ms": 3000
+            },
+            {
+              "pin": "P76",
+              "enabled": true,
+              "drive_type": "motor",
+              "value": 5000,
+              "duration_ms": 3000
+            },
+            {
+              "pin": "P77",
+              "enabled": true,
+              "drive_type": "motor",
+              "value": 5000,
+              "duration_ms": 3000
+            },
+            {
+              "pin": "MP03",
+              "enabled": true,
+              "drive_type": "servo",
+              "value": 45,
+              "duration_ms": 3000
+            },
+            {
+              "pin": "MP74",
+              "enabled": true,
+              "drive_type": "servo",
+              "value": 45,
+              "duration_ms": 3000
+            }
+          ]
+        }
+      },
+      "candidate": {
+        "format_version": 23,
+        "project_kind": "debug",
+        "created_at": "2026-01-01T00:00:00.000Z",
+        "updated_at": "2026-01-01T00:00:00.000Z",
+        "guide_progress": {
+          "current_step_id": "tests",
+          "visited_step_ids": [
+            "tests"
+          ]
+        },
+        "config": {
+          "tests": [
+            {
+              "pin": "P60",
+              "enabled": true,
+              "drive_type": "motor",
+              "value": 5000,
+              "duration_ms": 4000
+            },
+            {
+              "pin": "P62",
+              "enabled": true,
+              "drive_type": "motor",
+              "value": 5000,
+              "duration_ms": 3000
+            },
+            {
+              "pin": "P64",
+              "enabled": true,
+              "drive_type": "friction",
+              "value": 700
+            },
+            {
+              "pin": "P66",
+              "enabled": true,
+              "drive_type": "friction",
+              "value": 700
+            },
+            {
+              "pin": "P74",
+              "enabled": true,
+              "drive_type": "motor",
+              "value": 5000,
+              "duration_ms": 3000
+            },
+            {
+              "pin": "P75",
+              "enabled": true,
+              "drive_type": "motor",
+              "value": 5000,
+              "duration_ms": 3000
+            },
+            {
+              "pin": "P76",
+              "enabled": true,
+              "drive_type": "motor",
+              "value": 5000,
+              "duration_ms": 3000
+            },
+            {
+              "pin": "P77",
+              "enabled": true,
+              "drive_type": "motor",
+              "value": 5000,
+              "duration_ms": 3000
+            },
+            {
+              "pin": "MP03",
+              "enabled": true,
+              "drive_type": "servo",
+              "value": 45,
+              "duration_ms": 3000
+            },
+            {
+              "pin": "MP74",
+              "enabled": true,
+              "drive_type": "servo",
+              "value": 45,
+              "duration_ms": 3000
+            }
+          ]
+        }
+      },
+      "ok": true,
+      "encoded": "{\n  \"schema\": 1,\n  \"kind\": \"pieblock-proposal\",\n  \"baseSha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n  \"createdAt\": \"2026-01-01T00:00:00.000Z\",\n  \"tool\": \"pieblock-cli/1.0.0\",\n  \"changedPaths\": [\n    \"tests[0].duration_ms\"\n  ],\n  \"document\": {\n    \"format_version\": 23,\n    \"project_kind\": \"debug\",\n    \"created_at\": \"2026-01-01T00:00:00.000Z\",\n    \"updated_at\": \"2026-01-01T00:00:00.000Z\",\n    \"guide_progress\": {\n      \"current_step_id\": \"tests\",\n      \"visited_step_ids\": [\n        \"tests\"\n      ]\n    },\n    \"config\": {\n      \"tests\": [\n        {\n          \"pin\": \"P60\",\n          \"enabled\": true,\n          \"drive_type\": \"motor\",\n          \"value\": 5000,\n          \"duration_ms\": 4000\n        },\n        {\n          \"pin\": \"P62\",\n          \"enabled\": true,\n          \"drive_type\": \"motor\",\n          \"value\": 5000,\n          \"duration_ms\": 3000\n        },\n        {\n          \"pin\": \"P64\",\n          \"enabled\": true,\n          \"drive_type\": \"friction\",\n          \"value\": 700\n        },\n        {\n          \"pin\": \"P66\",\n          \"enabled\": true,\n          \"drive_type\": \"friction\",\n          \"value\": 700\n        },\n        {\n          \"pin\": \"P74\",\n          \"enabled\": true,\n          \"drive_type\": \"motor\",\n          \"value\": 5000,\n          \"duration_ms\": 3000\n        },\n        {\n          \"pin\": \"P75\",\n          \"enabled\": true,\n          \"drive_type\": \"motor\",\n          \"value\": 5000,\n          \"duration_ms\": 3000\n        },\n        {\n          \"pin\": \"P76\",\n          \"enabled\": true,\n          \"drive_type\": \"motor\",\n          \"value\": 5000,\n          \"duration_ms\": 3000\n        },\n        {\n          \"pin\": \"P77\",\n          \"enabled\": true,\n          \"drive_type\": \"motor\",\n          \"value\": 5000,\n          \"duration_ms\": 3000\n        },\n        {\n          \"pin\": \"MP03\",\n          \"enabled\": true,\n          \"drive_type\": \"servo\",\n          \"value\": 45,\n          \"duration_ms\": 3000\n        },\n        {\n          \"pin\": \"MP74\",\n          \"enabled\": true,\n          \"drive_type\": \"servo\",\n          \"value\": 45,\n          \"duration_ms\": 3000\n        }\n      ]\n    }\n  }\n}\n"
+    }
+  ],
+  "roundtrip": [
+    {
+      "name": "roundtrip_valid",
+      "json": {
+        "schema": 1,
+        "kind": "pieblock-proposal",
+        "baseSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "createdAt": "2026-01-01T00:00:00.000Z",
+        "tool": "pieblock-cli/1.0.0",
+        "changedPaths": [
+          "remote.channel"
+        ],
+        "document": {
+          "format_version": 23,
+          "project_kind": "infantry",
+          "created_at": "2026-01-01T00:00:00.000Z",
+          "updated_at": "2026-01-01T00:00:00.000Z",
+          "guide_progress": {
+            "current_step_id": "remote",
+            "visited_step_ids": [
+              "remote"
+            ]
+          },
+          "config": {
+            "remote": {
+              "channel": 12,
+              "deadzone": 100
+            },
+            "chassis": {
+              "enabled": true,
+              "left_front": {
+                "pin": "P74 P24",
+                "direction": "forward"
+              },
+              "left_rear": {
+                "pin": "P75 P25",
+                "direction": "forward"
+              },
+              "right_front": {
+                "pin": "P76 P26",
+                "direction": "reverse"
+              },
+              "right_rear": {
+                "pin": "P77 P27",
+                "direction": "reverse"
+              },
+              "normal_speed": 6000,
+              "sprint_speed": null,
+              "sprint_enabled": false,
+              "turn_reversed": false,
+              "turn_sensitivity": 100
+            },
+            "feeder_pin": "P60",
+            "feeder_direction": "forward",
+            "yaw": [
+              {
+                "drive": "servo",
+                "pin": "MP74",
+                "direction": "forward",
+                "mid_offset": 0,
+                "min_limit": -60,
+                "max_limit": 60
+              }
+            ],
+            "pitch": [
+              {
+                "drive": "servo",
+                "pin": "MP03",
+                "direction": "forward",
+                "mid_offset": 0,
+                "min_limit": -60,
+                "max_limit": 60
+              }
+            ],
+            "yaw_sensitivity": 100,
+            "pitch_sensitivity": 100,
+            "arrow_behavior": "move",
+            "feed_mode": "blockingOpenLoop",
+            "trigger_key": "E",
+            "reverse_feed_key": "D",
+            "trigger_speed": 6000,
+            "trigger_time_ms": 250,
+            "friction_mode": "brushlessEsc",
+            "friction_key": "A",
+            "friction_up_key": "B",
+            "friction_down_key": "C",
+            "friction_p64_max_duty": 700,
+            "friction_p66_max_duty": 800,
+            "friction_level_step": 10,
+            "zero_enabled": false,
+            "buzzer_disabled": false
+          }
+        }
+      },
+      "isValid": true,
+      "encoded": "{\n  \"schema\": 1,\n  \"kind\": \"pieblock-proposal\",\n  \"baseSha256\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n  \"createdAt\": \"2026-01-01T00:00:00.000Z\",\n  \"tool\": \"pieblock-cli/1.0.0\",\n  \"changedPaths\": [\n    \"remote.channel\"\n  ],\n  \"document\": {\n    \"format_version\": 23,\n    \"project_kind\": \"infantry\",\n    \"created_at\": \"2026-01-01T00:00:00.000Z\",\n    \"updated_at\": \"2026-01-01T00:00:00.000Z\",\n    \"guide_progress\": {\n      \"current_step_id\": \"remote\",\n      \"visited_step_ids\": [\n        \"remote\"\n      ]\n    },\n    \"config\": {\n      \"remote\": {\n        \"channel\": 12,\n        \"deadzone\": 100\n      },\n      \"chassis\": {\n        \"enabled\": true,\n        \"left_front\": {\n          \"pin\": \"P74 P24\",\n          \"direction\": \"forward\"\n        },\n        \"left_rear\": {\n          \"pin\": \"P75 P25\",\n          \"direction\": \"forward\"\n        },\n        \"right_front\": {\n          \"pin\": \"P76 P26\",\n          \"direction\": \"reverse\"\n        },\n        \"right_rear\": {\n          \"pin\": \"P77 P27\",\n          \"direction\": \"reverse\"\n        },\n        \"normal_speed\": 6000,\n        \"sprint_speed\": null,\n        \"sprint_enabled\": false,\n        \"turn_reversed\": false,\n        \"turn_sensitivity\": 100\n      },\n      \"feeder_pin\": \"P60\",\n      \"feeder_direction\": \"forward\",\n      \"yaw\": [\n        {\n          \"drive\": \"servo\",\n          \"pin\": \"MP74\",\n          \"direction\": \"forward\",\n          \"mid_offset\": 0,\n          \"min_limit\": -60,\n          \"max_limit\": 60\n        }\n      ],\n      \"pitch\": [\n        {\n          \"drive\": \"servo\",\n          \"pin\": \"MP03\",\n          \"direction\": \"forward\",\n          \"mid_offset\": 0,\n          \"min_limit\": -60,\n          \"max_limit\": 60\n        }\n      ],\n      \"yaw_sensitivity\": 100,\n      \"pitch_sensitivity\": 100,\n      \"arrow_behavior\": \"move\",\n      \"feed_mode\": \"blockingOpenLoop\",\n      \"trigger_key\": \"E\",\n      \"reverse_feed_key\": \"D\",\n      \"trigger_speed\": 6000,\n      \"trigger_time_ms\": 250,\n      \"friction_mode\": \"brushlessEsc\",\n      \"friction_key\": \"A\",\n      \"friction_up_key\": \"B\",\n      \"friction_down_key\": \"C\",\n      \"friction_p64_max_duty\": 700,\n      \"friction_p66_max_duty\": 800,\n      \"friction_level_step\": 10,\n      \"zero_enabled\": false,\n      \"buzzer_disabled\": false\n    }\n  }\n}\n",
+      "baseSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "changedPaths": [
+        "remote.channel"
+      ]
+    },
+    {
+      "name": "schema_too_new",
+      "json": {
+        "schema": 2,
+        "kind": "pieblock-proposal"
+      },
+      "isValid": false,
+      "code": "unsupported_schema",
+      "message": "提案格式版本 2 不受支持（本版本支持 1）"
+    },
+    {
+      "name": "kind_mismatch",
+      "json": {
+        "schema": 1,
+        "kind": "other"
+      },
+      "isValid": false,
+      "code": "invalid_document",
+      "message": "不是 PIE-Block 改动提案文件"
+    },
+    {
+      "name": "bad_base_sha",
+      "json": {
+        "schema": 1,
+        "kind": "pieblock-proposal",
+        "baseSha256": "x"
+      },
+      "isValid": false,
+      "code": "invalid_document",
+      "message": "提案缺少合法的 baseSha256"
+    },
+    {
+      "name": "missing_document",
+      "json": {
+        "schema": 1,
+        "kind": "pieblock-proposal",
+        "baseSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "isValid": false,
+      "code": "invalid_document",
+      "message": "提案缺少 document 对象"
+    }
+  ]
+}
