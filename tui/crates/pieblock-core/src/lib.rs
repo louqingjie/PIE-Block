@@ -8,6 +8,8 @@
 #[macro_use]
 mod json;
 
+pub mod codegen;
+pub mod debug_cues;
 pub mod document;
 pub mod expression;
 mod ids;
@@ -16,6 +18,7 @@ pub mod validation;
 
 use serde::{Deserialize, Serialize};
 
+pub use codegen::{GeneratedProgram, GenerationError, generate, generate_program};
 pub use document::{DocumentError, GuideProgress, ProjectDocument};
 pub use expression::{Expr, ExpressionDiagnostic, ExpressionType, ParsedExpression, parse};
 pub use validation::{IssueSeverity, ValidationIssue, ValidationIssueKind, validate};
