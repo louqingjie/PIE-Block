@@ -47,19 +47,19 @@ fi
 
 bundle="build/linux/x64/release/bundle"
 
-# 编译独立 CLI（pie-block，无需用户安装 Dart SDK），放进 bundle/cli。
+# 编译独立 CLI（pieblock-cli，无需用户安装 Dart SDK），放进 bundle/cli。
 # 与 Windows 包同构；PATH 注入指向这个目录即可。
 cli_dir="$bundle/cli"
 mkdir -p "$cli_dir"
 (
   cd packages/pieblock_core
   dart pub get
-  dart compile exe bin/pieblock.dart -o "$repo_root/$cli_dir/pie-block"
+  dart compile exe bin/pieblock.dart -o "$repo_root/$cli_dir/pieblock-cli"
 )
 
 required=(
   "$bundle/pieblock_app"
-  "$cli_dir/pie-block"
+  "$cli_dir/pieblock-cli"
   "$bundle/data/icudtl.dat"
   "$bundle/data/flutter_assets"
   "$bundle/data/flutter_assets/assets/fonts/NotoSansSC-Regular-subset.ttf"
@@ -102,7 +102,7 @@ chmod -R u+w "$stage"
 # 顶层目录保留可执行位；去除构建过程产生的写权限差异，统一交给解包者。
 find "$stage" -type f -exec chmod 644 {} +
 chmod 755 "$stage/pieblock_app"
-chmod 755 "$stage/cli/pie-block"
+chmod 755 "$stage/cli/pieblock-cli"
 chmod 755 "$stage/data/pieblock_runtime/sdcc-toolchain/bin/"*
 
 # udev 规则随包附带：解包后运行 tools/install_udev_rules.sh（或手工拷贝到

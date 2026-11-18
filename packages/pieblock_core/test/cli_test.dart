@@ -1,5 +1,5 @@
 // CLI 输出契约的回归测试：锁住 stdout/stderr 双通道、JSON 结构与退出码。
-// 这些契约是 AI Agent 通过 pie-block 命令行操作工程的基础，不能随意变动。
+// 这些契约是 AI Agent 通过 pieblock-cli 命令行操作工程的基础，不能随意变动。
 
 import 'dart:convert';
 import 'dart:io';
@@ -68,7 +68,7 @@ ProcessResult _run(List<String> args) => Process.runSync(
 );
 
 void main() {
-  group('pie-block CLI 输出契约', () {
+  group('pieblock-cli 输出契约', () {
     late File project;
     setUp(() => project = _validProject());
     tearDown(() => project.existsSync() ? project.deleteSync() : null);
@@ -78,7 +78,7 @@ void main() {
       expect(r.exitCode, 0);
       expect(r.stderr, isEmpty);
       final json = jsonDecode(r.stdout as String) as Map;
-      expect(json['name'], 'pie-block');
+      expect(json['name'], 'pieblock-cli');
       expect(json['exitCodes'], containsPair('2', anything));
       expect(json['exitCodes'], containsPair('5', anything));
       expect(json['commands'], isA<List>());

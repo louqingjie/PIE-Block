@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
     # 复用已有的 Release 构建产物，跳过 flutter build
     [switch]$SkipBuild,
@@ -79,7 +79,7 @@ if (!$SkipBuild) {
     }
 }
 
-# --- 编译独立 CLI（pie-block.exe，无需用户安装 Dart SDK）---
+# --- 编译独立 CLI（pieblock-cli.exe，无需用户安装 Dart SDK）---
 # 放进 Release\cli；便携版整目录打包，解压后即可使用。
 $cliDir = Join-Path $releaseDir 'cli'
 & (Join-Path $PSScriptRoot 'build_cli.ps1') -Target windows-x64 -OutDir $cliDir
@@ -88,7 +88,7 @@ if ($LASTEXITCODE -ne 0) { throw '构建独立 CLI 失败。' }
 # --- Release 产物完整性校验：单 exe 必须包含工具链与固件模板，缺一不可 ---
 $required = @(
     'PIE-Block.exe',
-    'cli\pie-block.exe',
+    'cli\pieblock-cli.exe',
     'pieblock_hid.dll',
     'flutter_windows.dll',
     'data\icudtl.dat',

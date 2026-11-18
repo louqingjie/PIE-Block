@@ -41,8 +41,8 @@ elseif (![System.IO.Path]::IsPathRooted($OutDir)) {
 }
 
 $exeName = switch ($Target) {
-    'windows-x64' { 'pie-block.exe' }
-    'linux-x64' { 'pie-block' }
+    'windows-x64' { 'pieblock-cli.exe' }
+    'linux-x64' { 'pieblock-cli' }
 }
 $targetExe = Join-Path $OutDir $exeName
 

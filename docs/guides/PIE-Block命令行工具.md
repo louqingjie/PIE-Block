@@ -1,6 +1,6 @@
 # 命令行工具（CLI）
 
-`pie-block` 是 PIE-Block 的只读命令行入口，给脚本和 AI Agent 用：
+`pieblock-cli` 是 PIE-Block 的只读命令行入口，给脚本和 AI Agent 用：
 
 - 和桌面端共用同一套 `ProjectValidator` 与 `CodeGenerator`，校验结论、生成的 C 代码与
   GUI 完全一致；
@@ -11,9 +11,9 @@
 
 | 发行方式 | 路径 |
 | --- | --- |
-| Windows 安装版 | `<安装目录>\cli\pie-block.exe`（默认 `C:\Program Files\PIE-Block\cli\`） |
-| Windows 便携版 | 解压目录 `cli\pie-block.exe` |
-| Linux 包 | `bundle/cli/pie-block` |
+| Windows 安装版 | `<安装目录>\cli\pieblock-cli.exe`（默认 `C:\Program Files\PIE-Block\cli\`） |
+| Windows 便携版 | 解压目录 `cli\pieblock-cli.exe` |
+| Linux 包 | `bundle/cli/pieblock-cli` |
 | 开发期（仓库内） | `dart run packages/pieblock_core/bin/pieblock.dart` |
 
 建议把 `cli` 目录加入 `PATH`。Agent 或脚本也可以设置 `PIEBLOCK_CLI` 指向可执行文件，
@@ -22,10 +22,10 @@
 ## 命令
 
 ```powershell
-pie-block describe                               # 输出机器可读的命令契约（JSON）
-pie-block validate  <工程.pieproj>              # 校验，stdout 输出 JSON
-pie-block codegen   <工程.pieproj> [--out main.c] # 生成 main.c，stdout 输出纯 C 源码
-pie-block --help
+pieblock-cli describe                               # 输出机器可读的命令契约（JSON）
+pieblock-cli validate  <工程.pieproj>              # 校验，stdout 输出 JSON
+pieblock-cli codegen   <工程.pieproj> [--out main.c] # 生成 main.c，stdout 输出纯 C 源码
+pieblock-cli --help
 ```
 
 ### validate
@@ -80,7 +80,7 @@ pie-block --help
 PowerShell：
 
 ```powershell
-$cli = "$env:ProgramFiles\PIE-Block\cli\pie-block.exe"
+$cli = "$env:ProgramFiles\PIE-Block\cli\pieblock-cli.exe"
 $result = & $cli validate .\麦轮工程.pieproj 2>$null | ConvertFrom-Json
 if (-not $result.valid) { $result.issues | Where-Object severity -eq 'error' }
 
@@ -90,13 +90,13 @@ if (-not $result.valid) { $result.issues | Where-Object severity -eq 'error' }
 bash：
 
 ```bash
-pie-block validate robot.pieproj > result.json 2> progress.log || true
-pie-block codegen robot.pieproj --out main.c
+pieblock-cli validate robot.pieproj > result.json 2> progress.log || true
+pieblock-cli codegen robot.pieproj --out main.c
 ```
 
 ## 给 Agent / Skill 的接入建议
 
-1. 先执行一次 `pie-block describe`，按其中的契约调用，不要在提示词里硬编码命令细节；
+1. 先执行一次 `pieblock-cli describe`，按其中的契约调用，不要在提示词里硬编码命令细节；
 2. 工程文件路径以用户给出的为准；没有给出时只在当前目录找唯一的 `*.pieproj`，有多个就询问；
 3. 先 `validate` 再 `codegen`；`codegen` 失败时把 stderr 的错误清单转述给用户；
 4. 不要直接手改 `.pieproj`——CLI 目前不提供写入命令，手工改 JSON 会绕过字段校验；

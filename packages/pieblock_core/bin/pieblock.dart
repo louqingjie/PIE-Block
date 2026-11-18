@@ -23,7 +23,7 @@ const int exitInvalid = 2;
 const int exitIo = 3;
 const int exitGenerate = 4;
 const int exitInternal = 5;
-const String toolName = 'pie-block';
+const String toolName = 'pieblock-cli';
 
 void main(List<String> args) {
   try {

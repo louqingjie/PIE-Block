@@ -21,7 +21,7 @@ PIE-Block 是面向 W.PIE RoboMaster 校内赛的桌面集成开发环境（Wind
 - 桌面端本地 MCP 服务：把「读配置、校验、提改动、看代码」六个工具按 MCP 暴露到
   `127.0.0.1`，供 CodeBuddy / Qoder / DSH 等外部 AI 客户端接入；写操作直接生效，
   默认关闭，不需要时关掉开关或重置令牌，见 [AI 接入（MCP）](docs/design/mcp-ai-bridge.md)
-- 只读命令行工具 `pie-block`：随安装包附带独立可执行文件，无需 Dart SDK；`validate`
+- 只读命令行工具 `pieblock-cli`：随安装包附带独立可执行文件，无需 Dart SDK；`validate`
   输出 JSON、`codegen` 输出 C 源码、`describe` 输出命令契约，供脚本与 AI Agent 调用，
   见 [命令行工具（CLI）](docs/guides/PIE-Block命令行工具.md)
 
