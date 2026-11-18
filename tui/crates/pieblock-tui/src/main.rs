@@ -15,7 +15,14 @@ fn main() -> io::Result<()> {
         execute!(io::stdout(), EnableMouseCapture)?;
     }
 
-    let result = app::App::new(mouse_enabled).run(&mut terminal);
+    let demo = args.iter().any(|arg| arg == "--demo");
+    let result = if demo {
+        app::App::new(mouse_enabled).run(&mut terminal)
+    } else {
+        let start = std::env::current_dir().unwrap_or_default();
+        let mut shell = pieblock_tui::home_shell::Shell::new(start);
+        shell.run(&mut terminal)
+    };
 
     if mouse_enabled {
         let _ = execute!(io::stdout(), DisableMouseCapture);

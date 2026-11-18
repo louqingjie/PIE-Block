@@ -3,6 +3,7 @@
 //! 终端界面与交互仍在 `pieblock-tui` 二进制（`app.rs`/`ui.rs`）；本库把
 //! 文件/设置/会话等非界面逻辑独立出来，便于单元测试与后续页面接线。
 
+pub mod home_shell;
 pub mod paths;
 pub mod session;
 pub mod settings;

@@ -52,7 +52,7 @@ pub enum BrowserAction {
 }
 
 /// 可测试的目录浏览器状态机。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileBrowser {
     pub current_dir: PathBuf,
     pub entries: Vec<BrowserEntry>,

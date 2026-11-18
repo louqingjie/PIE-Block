@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use pieblock_core::ProjectKind;
+use pieblock_toolchain::models::CompilerKind;
 
 use crate::session::{ProjectSession, SaveStatus, SessionError, read_project_kind};
 use crate::settings::{AppSettings, SettingsStore, ThemePreference, atomic_write};
@@ -200,6 +201,38 @@ impl Workspace {
             ThemePreference::Light => "浅色",
             ThemePreference::Dark => "深色",
         }
+    }
+
+    /// 手动保存设置。
+    pub fn save_settings(&mut self) {
+        self.persist_settings();
+    }
+
+    /// 切换编译器（SDCC ↔ Keil）。
+    pub fn toggle_compiler(&mut self) {
+        self.settings.compiler = match self.settings.compiler {
+            CompilerKind::Sdcc => CompilerKind::Keil,
+            CompilerKind::Keil => CompilerKind::Sdcc,
+        };
+        self.persist_settings();
+    }
+
+    /// 设置 Keil 安装目录（空字符串表示清除）。
+    pub fn set_keil_path(&mut self, path: Option<String>) {
+        self.settings.keil_path = path.filter(|value| !value.trim().is_empty());
+        self.persist_settings();
+    }
+
+    /// 切换烧录引导提示开关。
+    pub fn toggle_suppress_flash_guide(&mut self) {
+        self.settings.suppress_flash_guide = !self.settings.suppress_flash_guide;
+        self.persist_settings();
+    }
+
+    /// 切换模板引导提示开关。
+    pub fn toggle_suppress_template_guide(&mut self) {
+        self.settings.suppress_template_guide = !self.settings.suppress_template_guide;
+        self.persist_settings();
     }
 }
 

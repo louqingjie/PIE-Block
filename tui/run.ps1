@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-    [switch]$NoMouse
+    [switch]$NoMouse,
+    [switch]$Demo
 )
 
 $ErrorActionPreference = 'Stop'
@@ -22,13 +23,13 @@ if (-not $cargoPath) {
     exit 1
 }
 
+$forward = @()
+if ($NoMouse) { $forward += '--no-mouse' }
+if ($Demo) { $forward += '--demo' }
+
 Push-Location $repoTui
 try {
-    if ($NoMouse) {
-        & $cargoPath run -p pieblock-tui -- --no-mouse
-    } else {
-        & $cargoPath run -p pieblock-tui
-    }
+    & $cargoPath run -p pieblock-tui -- @forward
     exit $LASTEXITCODE
 } finally {
     Pop-Location
