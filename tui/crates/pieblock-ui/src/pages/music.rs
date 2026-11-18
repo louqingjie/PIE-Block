@@ -283,6 +283,24 @@ pub fn music_page(_config: &ProjectConfig) -> FormPage {
         }),
     });
     fields.push(FormField {
+        id: "music.overlaps",
+        path: "music.overlaps",
+        label: "重叠提示".to_owned(),
+        help: "只读：同 tick 多音符的重叠处数，按上方「重叠处理」策略只发声一个。",
+        kind: FieldKind::Number {
+            min: 0,
+            max: 100_000,
+            step: 1,
+            unit: "处",
+        },
+        get: Box::new(|config| {
+            FieldValue::Int(music_of(config).map_or(0, |music| {
+                pieblock_core::MusicTimeline::overlap_count(music)
+            }))
+        }),
+        set: Box::new(|_config, _value| {}),
+    });
+    fields.push(FormField {
         id: "music.notes",
         path: "music.notes",
         label: "音符数量".to_owned(),

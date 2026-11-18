@@ -261,6 +261,7 @@ impl Shell {
             KeyCode::Char('p') => self.enter_playback(),
             KeyCode::Char('f') => self.enter_flash(),
             KeyCode::Char('i') => self.begin_midi_import(),
+            KeyCode::Char('x') => self.export_midi(),
             KeyCode::Char('s') => self.settings_screen(),
             KeyCode::F(5) => self.save(),
             _ => {}
@@ -502,6 +503,28 @@ impl Shell {
                 self.workspace.save_now();
                 self.message = Some(format!("已导入 MIDI：{track_name}（{notes} 个音符）"));
             }
+        }
+    }
+
+    fn export_midi(&mut self) {
+        let Some(session) = self.workspace.session.as_ref() else {
+            return;
+        };
+        let pieblock_core::model::ProjectConfig::Music(music) = &session.document.config else {
+            self.message = Some("MIDI 导出仅用于音乐工程".to_owned());
+            return;
+        };
+        let bytes = pieblock_core::midi::MidiCodec::write(music);
+        let target = session.path.with_file_name("main.mid");
+        match crate::settings::atomic_write(&target, &bytes) {
+            Ok(()) => {
+                self.message = Some(format!(
+                    "已导出 MIDI：{}（{} 字节）",
+                    target.display(),
+                    bytes.len()
+                ));
+            }
+            Err(error) => self.message = Some(format!("MIDI 导出失败：{error}")),
         }
     }
 
@@ -2769,6 +2792,39 @@ mod project_summary_tests {
         let compact: String = text.chars().filter(|ch| !ch.is_whitespace()).collect();
         assert!(compact.contains("校验"));
         assert!(compact.contains("错误") || compact.contains("警告"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod midi_export_tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn music_export_writes_midi_file() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target")
+            .join(format!("shell-midi-export-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("dir");
+        let mut shell = Shell::with_data_dir(dir.join("data"), dir.clone());
+        shell.handle_key(key(KeyCode::Char('n')));
+        for _ in 0..3 {
+            shell.handle_key(key(KeyCode::Down));
+        }
+        shell.handle_key(key(KeyCode::Enter));
+        shell.handle_key(key(KeyCode::Enter));
+        shell.handle_key(key(KeyCode::Char('m')));
+        shell.handle_key(key(KeyCode::Char('a')));
+        shell.handle_key(key(KeyCode::Esc));
+        shell.handle_key(key(KeyCode::Char('x')));
+        let bytes = std::fs::read(dir.join("main.mid")).expect("exported midi");
+        assert!(bytes.starts_with(b"MThd"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

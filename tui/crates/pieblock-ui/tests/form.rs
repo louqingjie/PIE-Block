@@ -494,3 +494,38 @@ fn engineer_tables_page_edits_matrix() {
         other => panic!("unexpected config: {other:?}"),
     }
 }
+
+#[test]
+fn music_page_shows_overlap_count() {
+    use pieblock_ui::music_page;
+
+    let mut config = music_config();
+    if let ProjectConfig::Music(music) = &mut config {
+        music.notes.push(pieblock_core::model::MusicNote {
+            id: "1".to_owned(),
+            pitch: 60,
+            start_tick: 0,
+            duration_ticks: 480,
+        });
+        music.notes.push(pieblock_core::model::MusicNote {
+            id: "2".to_owned(),
+            pitch: 64,
+            start_tick: 0,
+            duration_ticks: 480,
+        });
+    }
+    let page = music_page(&config);
+    let mut state = FormState::new(config);
+    let overlaps = page
+        .fields
+        .iter()
+        .position(|field| field.path == "music.overlaps")
+        .expect("overlaps");
+    state.selected = overlaps;
+    assert!(
+        pieblock_core::MusicTimeline::overlap_count(match &state.config {
+            ProjectConfig::Music(music) => music,
+            other => panic!("unexpected config: {other:?}"),
+        }) > 0
+    );
+}
