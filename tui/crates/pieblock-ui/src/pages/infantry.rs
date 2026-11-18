@@ -71,7 +71,7 @@ fn number(
     FormField {
         id,
         path,
-        label,
+        label: label.to_owned(),
         help,
         kind: FieldKind::Number {
             min,
@@ -100,7 +100,7 @@ fn text(
     FormField {
         id,
         path,
-        label,
+        label: label.to_owned(),
         help,
         kind: FieldKind::Text {
             max_len: 24,
@@ -136,7 +136,7 @@ fn choice(
     FormField {
         id,
         path,
-        label,
+        label: label.to_owned(),
         help,
         kind: FieldKind::Choice(options),
         get: Box::new(move |config| FieldValue::Choice(get(config))),

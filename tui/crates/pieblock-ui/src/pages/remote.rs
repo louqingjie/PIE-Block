@@ -117,7 +117,7 @@ fn number_field(
     FormField {
         id,
         path,
-        label,
+        label: label.to_owned(),
         help,
         kind: FieldKind::Number {
             min,
@@ -146,7 +146,7 @@ fn toggle_field(
     FormField {
         id,
         path,
-        label,
+        label: label.to_owned(),
         help,
         kind: FieldKind::Toggle,
         get: Box::new(move |config| FieldValue::Bool(get(config))),
@@ -171,7 +171,7 @@ fn text_field(
     FormField {
         id,
         path,
-        label,
+        label: label.to_owned(),
         help,
         kind: FieldKind::Text {
             max_len: 16,
@@ -205,7 +205,7 @@ fn direction_field(
     FormField {
         id,
         path,
-        label,
+        label: label.to_owned(),
         help,
         kind: FieldKind::Choice(&DIRECTION_CHOICES),
         get: Box::new(move |config| {

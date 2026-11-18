@@ -4,9 +4,11 @@ use pieblock_core::ProjectKind;
 
 use crate::form::FormPage;
 
+mod debug;
 mod infantry;
 mod remote;
 
+pub use debug::debug_tests_page;
 pub use infantry::{infantry_advanced_fields, infantry_controls_page, infantry_mechanism_page};
 pub use remote::{DIRECTION_CHOICES, remote_page};
 
@@ -20,6 +22,7 @@ pub fn wizard_pages(kind: ProjectKind) -> Vec<FormPage> {
             infantry_controls_page(),
         ],
         ProjectKind::Engineer => vec![remote_page(kind)],
-        ProjectKind::Debug | ProjectKind::Music => Vec::new(),
+        ProjectKind::Debug => vec![debug_tests_page()],
+        ProjectKind::Music => Vec::new(),
     }
 }

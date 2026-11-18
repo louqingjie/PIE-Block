@@ -237,3 +237,46 @@ fn infantry_pages_edit_scalar_fields() {
         other => panic!("unexpected config: {other:?}"),
     }
 }
+
+#[test]
+fn debug_page_toggles_and_edits_items() {
+    use pieblock_core::model::DebugDriveType;
+    use pieblock_ui::debug_tests_page;
+
+    let page = debug_tests_page();
+    assert_eq!(page.id, "tests");
+    assert_eq!(page.fields.len(), 40, "10 pins × 4 fields");
+    let config = ProjectDocument::create(ProjectKind::Debug).config;
+    let mut state = FormState::new(config);
+    // 第 1 项：启用开关。
+    assert_eq!(
+        state.handle_key(&page, key(KeyCode::Enter)),
+        FormAction::Changed
+    );
+    match &state.config {
+        ProjectConfig::Debug(value) => assert!(value.tests[0].enabled),
+        other => panic!("unexpected config: {other:?}"),
+    }
+    // 驱动类型选择：下一项。
+    state.selected = 1;
+    assert_eq!(
+        state.handle_key(&page, key(KeyCode::Right)),
+        FormAction::Changed
+    );
+    match &state.config {
+        ProjectConfig::Debug(value) => {
+            assert_eq!(value.tests[0].drive_type, Some(DebugDriveType::Servo));
+        }
+        other => panic!("unexpected config: {other:?}"),
+    }
+    // 测试时长：第 4 项（索引 3）。
+    state.selected = 3;
+    assert_eq!(
+        clear_editing(&mut state, &page, "4500"),
+        FormAction::Changed
+    );
+    match &state.config {
+        ProjectConfig::Debug(value) => assert_eq!(value.tests[0].duration_ms, 4500),
+        other => panic!("unexpected config: {other:?}"),
+    }
+}
