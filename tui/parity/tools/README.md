@@ -37,3 +37,14 @@ dart run bin/export_validation_goldens.dart
 > 后续代码生成/CLI 的 golden 也放在这里生成；生成结果提交到 git，
 > Rust 测试只读快照，不需要安装 Dart。
 
+## 生成表达式 golden
+
+```powershell
+cd tui/parity/tools
+dart run bin/export_expression_goldens.dart
+```
+
+输出 `tui/parity/golden/expression/expression.json`：60+ 条表达式（合法/非法）的
+诊断、类型、C 代码、helpers、求值结果，6 组运行时 helper 完整代码，变量名合法性
+用例，以及工程模板逐模式的试算结果。
+
