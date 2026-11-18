@@ -111,3 +111,5 @@ cd tui
 - 列表编辑（步兵云台执行器）：`infantry_mechanism_page(config)` 按当前配置动态生成每个 Yaw/Pitch 执行器的 6 个字段（驱动类型、IO、方向、归中偏移、逆时针/顺时针限幅）；主循环在机制页按 A/B 追加 Yaw/Pitch 执行器、D 删除当前执行器、K/J 上下移动，操作后重建页面/表单并立即写入工作区与自动保存；测试覆盖添加（页面字段与配置同步增长）、删除、返回保存。
 
 - 工程 PWM 页：`engineer_pwm_page(config)` 提供 PWMA/PWMB 频率（50Hz/10kHz）、蜂鸣器禁用开关，并按配置中出现过的引脚动态生成每引脚字段（角色 舵机/电机/摩擦轮/抖动电机/未使用、舵机中位与双向限幅、摩擦轮最大 duty、备注）；字段路径对齐 `pwm.<pin>.*`，供审查页跳转；测试覆盖频率切换/蜂鸣器开关/引脚字段存在，工程向导现有遥控器 + PWM 两页。
+
+- 工程策略页：`engineer_strategy_page(config)` 提供模式数量（1–4）、切换策略（循环/数字直选）、循环切换键，以及按模式动态生成的数字直选键与「保留底盘」开关；路径对齐 `modes.count/modes.switch_strategy/modes.switch_key/modes.keys.<i>/modes.<i>.preserve_chassis`，供审查页跳转；工程向导现有遥控器、PWM、策略三页。
