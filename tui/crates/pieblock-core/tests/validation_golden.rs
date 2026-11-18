@@ -87,6 +87,26 @@ fn infantry_validation_matches_dart_fully() {
 }
 
 #[test]
+fn music_validation_matches_dart_fully() {
+    let mut checked = 0;
+    for (path, golden) in load_cases() {
+        if golden["kind"].as_str() != Some("music") {
+            continue;
+        }
+        let document = document_of(&golden);
+        let actual = issue_values(&validate(&document.config));
+        assert_eq!(
+            actual,
+            golden["issues"],
+            "{}: music validation mismatch",
+            path.display()
+        );
+        checked += 1;
+    }
+    assert_eq!(checked, 5, "expected 5 music cases");
+}
+
+#[test]
 fn engineer_validation_matches_dart_fully() {
     let mut checked = 0;
     for (path, golden) in load_cases() {

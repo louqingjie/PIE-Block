@@ -1,0 +1,48 @@
+{
+  "name": "music_default",
+  "kind": "music",
+  "document": {
+    "format_version": 23,
+    "project_kind": "music",
+    "created_at": "2026-11-18T08:53:58.880967Z",
+    "updated_at": "2026-11-18T08:53:58.880967Z",
+    "guide_progress": {
+      "current_step_id": "music",
+      "visited_step_ids": [
+        "music"
+      ]
+    },
+    "config": {
+      "ticks_per_quarter": 480,
+      "source_name": null,
+      "track_name": null,
+      "notes": [],
+      "overlap_mode": "nearest",
+      "new_note_interrupts": true,
+      "key_signature_fifths": 0,
+      "tempo_events": [
+        {
+          "tick": 0,
+          "microseconds_per_quarter": 500000
+        }
+      ],
+      "time_signature_events": [
+        {
+          "tick": 0,
+          "numerator": 4,
+          "denominator": 4
+        }
+      ]
+    }
+  },
+  "issues": [
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "music.notes",
+      "message": "至少添加一个音符",
+      "stepId": "music"
+    }
+  ],
+  "remoteIssues": []
+}

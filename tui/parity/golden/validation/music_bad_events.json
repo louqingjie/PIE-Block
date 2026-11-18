@@ -1,0 +1,83 @@
+{
+  "name": "music_bad_events",
+  "kind": "music",
+  "document": {
+    "format_version": 23,
+    "project_kind": "music",
+    "created_at": "2026-11-18T08:53:58.883964Z",
+    "updated_at": "2026-11-18T08:53:58.883964Z",
+    "guide_progress": {
+      "current_step_id": "music",
+      "visited_step_ids": [
+        "music"
+      ]
+    },
+    "config": {
+      "ticks_per_quarter": 0,
+      "source_name": null,
+      "track_name": null,
+      "notes": [],
+      "overlap_mode": "nearest",
+      "new_note_interrupts": true,
+      "key_signature_fifths": 8,
+      "tempo_events": [
+        {
+          "tick": 10,
+          "microseconds_per_quarter": 0
+        }
+      ],
+      "time_signature_events": [
+        {
+          "tick": 0,
+          "numerator": 0,
+          "denominator": 3
+        }
+      ]
+    }
+  },
+  "issues": [
+    {
+      "severity": "error",
+      "kind": "invalid",
+      "fieldPath": "music.key_signature_fifths",
+      "message": "调号升降号个数必须在 -7–7 之间",
+      "stepId": "music"
+    },
+    {
+      "severity": "error",
+      "kind": "invalid",
+      "fieldPath": "music.ticks_per_quarter",
+      "message": "MIDI PPQ 必须在 1–32767 之间",
+      "stepId": "music"
+    },
+    {
+      "severity": "error",
+      "kind": "required",
+      "fieldPath": "music.notes",
+      "message": "至少添加一个音符",
+      "stepId": "music"
+    },
+    {
+      "severity": "error",
+      "kind": "invalid",
+      "fieldPath": "music.tempo_events",
+      "message": "速度事件必须从 tick 0 开始",
+      "stepId": "music"
+    },
+    {
+      "severity": "error",
+      "kind": "invalid",
+      "fieldPath": "music.tempo_events.0",
+      "message": "速度事件超出标准 MIDI 范围",
+      "stepId": "music"
+    },
+    {
+      "severity": "error",
+      "kind": "invalid",
+      "fieldPath": "music.time_signature_events.0",
+      "message": "拍号必须使用正分子和 1–64 的二次幂分母",
+      "stepId": "music"
+    }
+  ],
+  "remoteIssues": []
+}

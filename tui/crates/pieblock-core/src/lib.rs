@@ -14,6 +14,7 @@ pub mod document;
 pub mod expression;
 mod ids;
 pub mod model;
+pub mod music;
 pub mod validation;
 
 use serde::{Deserialize, Serialize};
@@ -21,6 +22,7 @@ use serde::{Deserialize, Serialize};
 pub use codegen::{GeneratedProgram, GenerationError, generate, generate_program};
 pub use document::{DocumentError, GuideProgress, ProjectDocument};
 pub use expression::{Expr, ExpressionDiagnostic, ExpressionType, ParsedExpression, parse};
+pub use music::{MusicSegment, MusicSoundingSpan, MusicTimeline};
 pub use validation::{IssueSeverity, ValidationIssue, ValidationIssueKind, validate};
 
 /// 当前 `.pieproj` 格式版本（与 Flutter 版 `ProjectDocument.formatVersion` 对齐）。

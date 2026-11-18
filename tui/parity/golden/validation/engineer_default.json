@@ -4,8 +4,8 @@
   "document": {
     "format_version": 23,
     "project_kind": "engineer",
-    "created_at": "2026-11-18T08:08:57.405500Z",
-    "updated_at": "2026-11-18T08:08:57.405500Z",
+    "created_at": "2026-11-18T08:53:58.870966Z",
+    "updated_at": "2026-11-18T08:53:58.870966Z",
     "guide_progress": {
       "current_step_id": "remote",
       "visited_step_ids": [
@@ -109,7 +109,7 @@
       ],
       "modes": [
         {
-          "id": "1794989337405500",
+          "id": "1794992038871966",
           "preserve_chassis": true,
           "actions": []
         }

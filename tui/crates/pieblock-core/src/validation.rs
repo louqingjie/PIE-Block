@@ -1,10 +1,11 @@
 //! 校验器（M1 移植中）。
 //!
 //! 已移植：公共机器人规则（遥控器/底盘）、步兵专属规则（云台/拨弹/摩擦轮/
-//! 按键冲突/引脚占用与 PWMA 提醒）、**工程专属规则（PWM 角色/频率/舵机限幅、
-//! 模式策略、动作行矩阵、表达式与变量、按键动作表、摩擦轮安全控制）**、
-//! 调试工程。校验顺序与文案与 `packages/pieblock_core/lib/src/validator.dart`
-//! 一致；音乐规则（依赖 `music.dart` / `staff_notation.dart` 移植）在后续提交补齐。
+//! 按键冲突/引脚占用与 PWMA 提醒）、工程专属规则（PWM 角色/频率/舵机限幅、
+//! 模式策略、动作行矩阵、表达式与变量、按键动作表、摩擦轮安全控制）、
+//! 调试工程、音乐工程（调号/PPQ/音符/速度/拍号/重叠/片段与时长）。校验顺序
+//! 与文案与 `packages/pieblock_core/lib/src/validator.dart` 一致；五线谱固件
+//! 预算提醒待 `staff_notation` 移植后补齐。
 
 use serde_json::{Map, Value};
 
@@ -13,9 +14,10 @@ use crate::model::{
     ActionInputKind, ActionMapping, ActionOutputKind, ArrowBehavior, ChassisConfig, ControlMode,
     DEBUG_PINS, DebugConfig, DebugDriveType, Direction, DriveType, EXPANSION_PINS, EngineerConfig,
     EngineerModeConfig, EngineerPinCapabilities, FeedMode, Friction, FrictionMode, InfantryConfig,
-    LEGACY_FRICTION_PINS, MAIN_SERVO_PINS, PinRole, ProjectConfig, PwmFrequency, RemoteConfig,
-    SwitchStrategy, WheelConfig,
+    LEGACY_FRICTION_PINS, MAIN_SERVO_PINS, MusicConfig, PinRole, ProjectConfig, PwmFrequency,
+    RemoteConfig, SwitchStrategy, WheelConfig,
 };
+use crate::music::MusicTimeline;
 
 /// 调试工程摩擦轮测试项的占空比范围（与 Dart `Friction` 常量一致）。
 const FRICTION_MIN_DUTY: i64 = 500;
@@ -116,9 +118,7 @@ pub fn validate(config: &ProjectConfig) -> Issues {
             engineer_rules(engineer, &mut issues);
         }
         ProjectConfig::Debug(debug) => debug_rules(debug, &mut issues),
-        ProjectConfig::Music(_music) => {
-            // TODO(M1): 音乐规则（依赖 MusicTimeline/staff_notation 移植）。
-        }
+        ProjectConfig::Music(music) => music_rules(music, &mut issues),
     }
     issues
 }
@@ -2677,6 +2677,184 @@ fn servo_button_sensitivity(issues: &mut Issues, value: Option<crate::json::Para
             "mappings",
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// 音乐工程规则
+// ---------------------------------------------------------------------------
+
+fn ordered_events(issues: &mut Issues, ticks: &[i64], path: &str, label: &str) {
+    if ticks.is_empty() || ticks[0] != 0 {
+        push(
+            issues,
+            IssueSeverity::Error,
+            path,
+            format!("{label}事件必须从 tick 0 开始"),
+            "music",
+        );
+        return;
+    }
+    for (index, tick) in ticks.iter().enumerate() {
+        if *tick < 0 || (index > 0 && *tick <= ticks[index - 1]) {
+            push(
+                issues,
+                IssueSeverity::Error,
+                path,
+                format!("{label}事件必须按 tick 严格递增且不能重复"),
+                "music",
+            );
+            return;
+        }
+    }
+}
+
+fn music_rules(config: &MusicConfig, issues: &mut Issues) {
+    if config.key_signature_fifths < -7 || config.key_signature_fifths > 7 {
+        push(
+            issues,
+            IssueSeverity::Error,
+            "music.key_signature_fifths",
+            "调号升降号个数必须在 -7–7 之间",
+            "music",
+        );
+    }
+    if config.ticks_per_quarter < 1 || config.ticks_per_quarter > 0x7fff {
+        push(
+            issues,
+            IssueSeverity::Error,
+            "music.ticks_per_quarter",
+            "MIDI PPQ 必须在 1–32767 之间",
+            "music",
+        );
+    }
+    if config.notes.is_empty() {
+        push_required(
+            issues,
+            IssueSeverity::Error,
+            "music.notes",
+            "至少添加一个音符",
+            "music",
+        );
+    }
+    if config.notes.len() > 32768 {
+        push(
+            issues,
+            IssueSeverity::Error,
+            "music.notes",
+            "MIDI 音符总数不能超过 32768",
+            "music",
+        );
+    }
+    let mut ids: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    for (index, note) in config.notes.iter().enumerate() {
+        let path = format!("music.notes.{index}");
+        if note.id.is_empty() || !ids.insert(note.id.as_str()) {
+            push(
+                issues,
+                IssueSeverity::Error,
+                format!("{path}.id"),
+                "音符 ID 不能为空或重复",
+                "music",
+            );
+        }
+        if !(1..=127).contains(&note.pitch) {
+            push(
+                issues,
+                IssueSeverity::Error,
+                format!("{path}.pitch"),
+                "MIDI 音高必须在 1–127 之间",
+                "music",
+            );
+        }
+        if note.start_tick < 0 {
+            push(
+                issues,
+                IssueSeverity::Error,
+                format!("{path}.start_tick"),
+                "音符起始 tick 不能为负数",
+                "music",
+            );
+        }
+        if note.duration_ticks <= 0 {
+            push(
+                issues,
+                IssueSeverity::Error,
+                format!("{path}.duration_ticks"),
+                "音符时值必须大于 0",
+                "music",
+            );
+        }
+    }
+    let overlaps = MusicTimeline::overlap_count(config);
+    if overlaps > 0 {
+        push(
+            issues,
+            IssueSeverity::Warning,
+            "music.notes",
+            format!(
+                "检测到 {overlaps} 处音符重叠，将按「{}」只发声一个；可在钢琴卷帘工具栏调整重叠处理",
+                config.overlap_mode.label()
+            ),
+            "music",
+        );
+    }
+    let tempo_ticks: Vec<i64> = config.tempo_events.iter().map(|event| event.tick).collect();
+    ordered_events(issues, &tempo_ticks, "music.tempo_events", "速度");
+    for (index, event) in config.tempo_events.iter().enumerate() {
+        if event.microseconds_per_quarter < 1 || event.microseconds_per_quarter > 0x00ff_ffff {
+            push(
+                issues,
+                IssueSeverity::Error,
+                format!("music.tempo_events.{index}"),
+                "速度事件超出标准 MIDI 范围",
+                "music",
+            );
+        }
+    }
+    let signature_ticks: Vec<i64> = config
+        .time_signature_events
+        .iter()
+        .map(|event| event.tick)
+        .collect();
+    ordered_events(
+        issues,
+        &signature_ticks,
+        "music.time_signature_events",
+        "拍号",
+    );
+    for (index, event) in config.time_signature_events.iter().enumerate() {
+        let denominator = event.denominator;
+        if event.numerator < 1 || denominator > 64 || (denominator & (denominator - 1)) != 0 {
+            push(
+                issues,
+                IssueSeverity::Error,
+                format!("music.time_signature_events.{index}"),
+                "拍号必须使用正分子和 1–64 的二次幂分母",
+                "music",
+            );
+        }
+    }
+    let segments = MusicTimeline::segments(config);
+    if segments.len() > 8192 {
+        push(
+            issues,
+            IssueSeverity::Error,
+            "music.notes",
+            "生成片段不能超过 8192 个",
+            "music",
+        );
+    }
+    let duration: i64 = segments.iter().map(|segment| segment.duration_ms).sum();
+    if duration > 20 * 60 * 1000 {
+        push(
+            issues,
+            IssueSeverity::Error,
+            "music.notes",
+            "音乐总时长不能超过 20 分钟",
+            "music",
+        );
+    }
+    // TODO(M1): 五线谱固件预算提醒依赖 staff_notation 移植（buildStaffSong）。
 }
 
 #[cfg(test)]

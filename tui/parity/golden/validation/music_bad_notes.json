@@ -1,0 +1,102 @@
+{
+  "name": "music_bad_notes",
+  "kind": "music",
+  "document": {
+    "format_version": 23,
+    "project_kind": "music",
+    "created_at": "2026-11-18T08:53:58.881965Z",
+    "updated_at": "2026-11-18T08:53:58.881965Z",
+    "guide_progress": {
+      "current_step_id": "music",
+      "visited_step_ids": [
+        "music"
+      ]
+    },
+    "config": {
+      "ticks_per_quarter": 480,
+      "source_name": null,
+      "track_name": null,
+      "notes": [
+        {
+          "id": "",
+          "pitch": 300,
+          "start_tick": -1,
+          "duration_ticks": 0
+        },
+        {
+          "id": "a",
+          "pitch": 60,
+          "start_tick": 0,
+          "duration_ticks": 100
+        },
+        {
+          "id": "a",
+          "pitch": 61,
+          "start_tick": 50,
+          "duration_ticks": 100
+        }
+      ],
+      "overlap_mode": "nearest",
+      "new_note_interrupts": true,
+      "key_signature_fifths": 0,
+      "tempo_events": [
+        {
+          "tick": 0,
+          "microseconds_per_quarter": 500000
+        }
+      ],
+      "time_signature_events": [
+        {
+          "tick": 0,
+          "numerator": 4,
+          "denominator": 4
+        }
+      ]
+    }
+  },
+  "issues": [
+    {
+      "severity": "error",
+      "kind": "invalid",
+      "fieldPath": "music.notes.0.id",
+      "message": "音符 ID 不能为空或重复",
+      "stepId": "music"
+    },
+    {
+      "severity": "error",
+      "kind": "invalid",
+      "fieldPath": "music.notes.0.pitch",
+      "message": "MIDI 音高必须在 1–127 之间",
+      "stepId": "music"
+    },
+    {
+      "severity": "error",
+      "kind": "invalid",
+      "fieldPath": "music.notes.0.start_tick",
+      "message": "音符起始 tick 不能为负数",
+      "stepId": "music"
+    },
+    {
+      "severity": "error",
+      "kind": "invalid",
+      "fieldPath": "music.notes.0.duration_ticks",
+      "message": "音符时值必须大于 0",
+      "stepId": "music"
+    },
+    {
+      "severity": "error",
+      "kind": "invalid",
+      "fieldPath": "music.notes.2.id",
+      "message": "音符 ID 不能为空或重复",
+      "stepId": "music"
+    },
+    {
+      "severity": "warning",
+      "kind": "invalid",
+      "fieldPath": "music.notes",
+      "message": "检测到 1 处音符重叠，将按「取最近音阶」只发声一个；可在钢琴卷帘工具栏调整重叠处理",
+      "stepId": "music"
+    }
+  ],
+  "remoteIssues": []
+}

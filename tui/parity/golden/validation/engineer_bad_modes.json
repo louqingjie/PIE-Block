@@ -196,7 +196,7 @@
               "parameter": -45
             },
             {
-              "id": "1794989337414381",
+              "id": "1794992038878965",
               "input_kind": "remote",
               "key": "ZZ",
               "output_kind": "pin",
@@ -207,7 +207,7 @@
               "parameter": 500
             },
             {
-              "id": "1794989337414381",
+              "id": "1794992038878965",
               "input_kind": "remote",
               "key": "D",
               "output_kind": "pin",
@@ -218,7 +218,7 @@
               "parameter": 10
             },
             {
-              "id": "1794989337414381",
+              "id": "1794992038878965",
               "input_kind": "unspecified",
               "key": "B",
               "output_kind": "pin",
@@ -229,7 +229,7 @@
               "parameter": 1
             },
             {
-              "id": "1794989337414381",
+              "id": "1794992038878965",
               "input_kind": "unspecified",
               "key": null,
               "output_kind": "integer",
@@ -240,7 +240,7 @@
               "parameter": null
             },
             {
-              "id": "1794989337414381",
+              "id": "1794992038878965",
               "input_kind": "unspecified",
               "key": null,
               "output_kind": "integer",
@@ -251,7 +251,7 @@
               "parameter": null
             },
             {
-              "id": "1794989337414381",
+              "id": "1794992038878965",
               "input_kind": "unspecified",
               "key": null,
               "output_kind": "integer",
@@ -264,7 +264,7 @@
           ],
           "action_tables": [
             {
-              "id": "1794989337415381",
+              "id": "1794992038879966",
               "key": "E",
               "prev_key": "E",
               "steps": 3,

@@ -210,6 +210,35 @@ void main() {
         },
       ];
     })),
+    _Case('music_default', _defaultDocument(ProjectKind.music)),
+    _Case('music_template', _loadProject(repoRoot, 'assets/templates/music.pieproj')),
+    _Case('music_bad_notes', _mutateRobot(_defaultDocument(ProjectKind.music), (config) {
+      config['notes'] = [
+        {'id': '', 'pitch': 300, 'start_tick': -1, 'duration_ticks': 0},
+        {'id': 'a', 'pitch': 60, 'start_tick': 0, 'duration_ticks': 100},
+        {'id': 'a', 'pitch': 61, 'start_tick': 50, 'duration_ticks': 100},
+      ];
+    })),
+    _Case('music_bad_events', _mutateRobot(_defaultDocument(ProjectKind.music), (config) {
+      config['key_signature_fifths'] = 8;
+      config['ticks_per_quarter'] = 0;
+      config['tempo_events'] = [
+        {'tick': 10, 'microseconds_per_quarter': 0},
+      ];
+      config['time_signature_events'] = [
+        {'tick': 0, 'numerator': 0, 'denominator': 3},
+      ];
+    })),
+    _Case('music_long', _mutateRobot(_defaultDocument(ProjectKind.music), (config) {
+      config['notes'] = [
+        {
+          'id': 'long',
+          'pitch': 60,
+          'start_tick': 0,
+          'duration_ticks': 2000000,
+        },
+      ];
+    })),
   ];
 
   for (final item in cases) {
