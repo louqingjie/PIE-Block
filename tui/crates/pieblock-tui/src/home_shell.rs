@@ -29,6 +29,7 @@ pub enum Screen {
     Wizard,
     Review,
     Code,
+    Build,
     Browser(FileBrowser),
     Settings,
 }
@@ -70,6 +71,10 @@ pub struct Shell {
     pub issues: Vec<pieblock_core::ValidationIssue>,
     pub review_selected: usize,
     pub code: Option<pieblock_ui::CodeView>,
+    pub code_export_name: String,
+    pub build_log: Option<pieblock_ui::CodeView>,
+    pub build_listing: Option<pieblock_ui::CodeView>,
+    pub build_ok: bool,
     quit: bool,
 }
 
@@ -113,6 +118,10 @@ impl Shell {
             issues: Vec::new(),
             review_selected: 0,
             code: None,
+            code_export_name: "main.c".to_owned(),
+            build_log: None,
+            build_listing: None,
+            build_ok: false,
             quit: false,
         }
     }
@@ -153,6 +162,7 @@ impl Shell {
             Screen::Wizard => self.handle_wizard_key(key),
             Screen::Review => self.handle_review_key(key),
             Screen::Code => self.handle_code_key(key),
+            Screen::Build => self.handle_build_key(key),
             Screen::Browser(mut browser) => {
                 self.handle_browser_key(key, &mut browser);
                 if matches!(self.screen, Screen::Browser(_)) {
@@ -225,6 +235,7 @@ impl Shell {
             KeyCode::Char('o') | KeyCode::Char('w') | KeyCode::Enter => self.enter_wizard(),
             KeyCode::Char('r') => self.enter_review(),
             KeyCode::Char('c') => self.enter_code(),
+            KeyCode::Char('b') => self.enter_build(),
             KeyCode::Char('s') => self.settings_screen(),
             KeyCode::F(5) => self.save(),
             _ => {}
@@ -437,6 +448,7 @@ impl Shell {
         };
         match pieblock_core::generate(&session.document.config) {
             Ok(source) => {
+                self.code_export_name = "main.c".to_owned();
                 self.code = Some(pieblock_ui::CodeView::new("main.c · 生成预览", &source));
                 self.message = None;
                 self.screen = Screen::Code;
@@ -466,7 +478,7 @@ impl Shell {
             }
             KeyCode::Char('w') => {
                 if let Some(session) = self.workspace.session.as_ref() {
-                    let target = session.path.with_file_name("main.c");
+                    let target = session.path.with_file_name(&self.code_export_name);
                     let text = code.lines.join("\n");
                     match crate::settings::atomic_write(&target, text.as_bytes()) {
                         Ok(()) => {
@@ -486,6 +498,166 @@ impl Shell {
         let area = frame.area();
         if let Some(code) = self.code.as_mut() {
             code.render(frame, area, true, &self.palette, self.message.as_deref());
+        }
+    }
+
+    fn enter_build(&mut self) {
+        let Some(session) = self.workspace.session.as_ref() else {
+            return;
+        };
+        let kind = session.document.kind;
+        let source = match pieblock_core::generate(&session.document.config) {
+            Ok(source) => source,
+            Err(error) => {
+                self.message = Some(format!("无法构建：{}", error.message()));
+                return;
+            }
+        };
+        let Some(runtime_root) = locate_runtime_root() else {
+            self.message = Some(
+                "未找到 SDCC 工具链（vendor/sdcc-toolchain 与 stc32g_sdcc），请先将运行时资源放到程序目录或仓库根目录。"
+                    .to_owned(),
+            );
+            return;
+        };
+        let work_root = self.workspace.data_dir.join("build");
+        let artifacts =
+            pieblock_toolchain::BuildArtifactRepository::new(work_root.join("artifacts"));
+        let mut builder = pieblock_toolchain::FirmwareBuilder::new(
+            runtime_root.clone(),
+            work_root,
+            artifacts,
+            Box::new(pieblock_toolchain::SystemProcessRunner::new()),
+        )
+        .with_assets_root(runtime_root.clone());
+        let fingerprint = match builder
+            .resolve_compiler_fingerprint(pieblock_toolchain::CompilerKind::Sdcc, None)
+        {
+            Ok(fingerprint) => fingerprint,
+            Err(error) => {
+                self.message = Some(format!("工具链指纹计算失败：{error}"));
+                return;
+            }
+        };
+        let request = pieblock_toolchain::BuildRequest {
+            project_kind: kind,
+            source_code: source,
+            compiler: pieblock_toolchain::CompilerKind::Sdcc,
+            compiler_fingerprint: fingerprint,
+            keil_root: None,
+        };
+        let mut logs: Vec<String> = Vec::new();
+        let result = {
+            let mut emit = |event: pieblock_toolchain::BuildEvent| {
+                logs.push(format!(
+                    "[{}] {}{}",
+                    event.stage.as_str(),
+                    event.message,
+                    event
+                        .current
+                        .zip(event.total)
+                        .map_or_else(String::new, |(current, total)| format!(
+                            "（{current}/{total}）"
+                        ))
+                ));
+            };
+            builder.build(&request, &mut emit, &|_| {})
+        };
+        self.build_ok = result.success;
+        logs.push(String::new());
+        logs.push(if result.success {
+            "构建成功。".to_owned()
+        } else if result.canceled {
+            "构建已取消。".to_owned()
+        } else {
+            format!(
+                "构建失败（退出码 {}）。请查看上方日志。",
+                result
+                    .exit_code
+                    .map_or_else(|| "未知".to_owned(), |code| code.to_string())
+            )
+        });
+        if let Some(artifact) = result.artifact.as_ref() {
+            logs.push(format!(
+                "HEX：{}（{} 字节，SHA-256 {}）",
+                artifact.hex_path,
+                artifact.byte_count,
+                &artifact.hex_sha256[..artifact.hex_sha256.len().min(16)]
+            ));
+        }
+        self.build_listing = result
+            .listing
+            .as_deref()
+            .map(|listing| pieblock_ui::CodeView::new("main.rst · 汇编列表", listing));
+        self.build_log = Some(pieblock_ui::CodeView::new(
+            "构建日志 · SDCC",
+            &logs.join("\n"),
+        ));
+        self.message = Some(if result.success {
+            "构建成功，L 查看汇编列表，W 导出".to_owned()
+        } else {
+            "构建失败，请查看日志".to_owned()
+        });
+        self.screen = Screen::Build;
+    }
+
+    fn handle_build_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('h') => self.screen = Screen::Project,
+            KeyCode::Char('l') => {
+                if let Some(listing) = self.build_listing.take() {
+                    self.code = Some(listing);
+                    self.code_export_name = "main.rst".to_owned();
+                    self.message = Some("汇编列表；W 导出 main.rst".to_owned());
+                    self.screen = Screen::Code;
+                } else {
+                    self.message = Some("本次构建没有汇编列表".to_owned());
+                }
+            }
+            KeyCode::Char('w') => {
+                if let Some(listing) = self.build_listing.as_ref() {
+                    if let Some(session) = self.workspace.session.as_ref() {
+                        let target = session.path.with_file_name("main.rst");
+                        let text = listing.lines.join("\n");
+                        match crate::settings::atomic_write(&target, text.as_bytes()) {
+                            Ok(()) => {
+                                self.message = Some(format!("已导出：{}", target.display()));
+                            }
+                            Err(error) => {
+                                self.message = Some(format!("导出失败：{error}"));
+                            }
+                        }
+                    }
+                }
+            }
+            KeyCode::Up => {
+                if let Some(log) = self.build_log.as_mut() {
+                    log.scroll_by(-1, 20);
+                }
+            }
+            KeyCode::Down => {
+                if let Some(log) = self.build_log.as_mut() {
+                    log.scroll_by(1, 20);
+                }
+            }
+            KeyCode::PageUp => {
+                if let Some(log) = self.build_log.as_mut() {
+                    log.scroll_by(-10, 20);
+                }
+            }
+            KeyCode::PageDown => {
+                if let Some(log) = self.build_log.as_mut() {
+                    log.scroll_by(10, 20);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn draw_build(&mut self, frame: &mut Frame) {
+        let area = frame.area();
+        if let Some(log) = self.build_log.as_mut() {
+            log.render(frame, area, false, &self.palette, self.message.as_deref());
         }
     }
 
@@ -922,6 +1094,7 @@ impl Shell {
             Screen::Wizard => self.draw_wizard(frame),
             Screen::Review => self.draw_review(frame),
             Screen::Code => self.draw_code(frame),
+            Screen::Build => self.draw_build(frame),
             Screen::Browser(browser) => {
                 draw_browser(frame, frame.area(), &browser, &self.palette);
                 self.draw_status(frame);
@@ -1666,6 +1839,82 @@ mod code_tests {
         assert!(dir.join("main.c").exists());
         shell.handle_key(key(KeyCode::Esc));
         assert_eq!(shell.screen, Screen::Project);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+fn locate_runtime_root() -> Option<PathBuf> {
+    let has_assets = |root: &std::path::Path| {
+        root.join("stc32g_sdcc/build_manifest.json").is_file()
+            && root.join("sdcc-toolchain/bundle_manifest.json").is_file()
+    };
+    if let Ok(root) = std::env::var("PIEBLOCK_RUNTIME_ROOT") {
+        let root = PathBuf::from(root);
+        if has_assets(&root) {
+            return Some(root);
+        }
+    }
+    if let Ok(cwd) = std::env::current_dir() {
+        let mut cursor = Some(cwd);
+        for _ in 0..8 {
+            let Some(directory) = cursor else {
+                break;
+            };
+            if has_assets(&directory) {
+                return Some(directory);
+            }
+            cursor = directory.parent().map(Path::to_path_buf);
+        }
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            let root = parent.join("data").join("pieblock_runtime");
+            if has_assets(&root) {
+                return Some(root);
+            }
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod build_tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn build_real_sdcc_and_show_listing() {
+        if locate_runtime_root().is_none() {
+            return;
+        }
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target")
+            .join(format!("shell-build-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("dir");
+        let template = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../..")
+            .join("assets/templates/infantry.pieproj");
+        let project = dir.join("infantry.pieproj");
+        std::fs::copy(&template, &project).expect("copy template");
+        let mut shell = Shell::with_data_dir(dir.join("data"), dir.clone());
+        shell.workspace.open(&project).expect("open");
+        shell.screen = Screen::Project;
+        shell.handle_key(key(KeyCode::Char('b')));
+        assert_eq!(shell.screen, Screen::Build);
+        let log = shell.build_log.as_ref().expect("log");
+        assert!(shell.build_ok);
+        assert!(log.lines.iter().any(|line| line.contains("构建成功")));
+        assert!(shell.build_listing.is_some(), "listing should exist");
+        shell.handle_key(key(KeyCode::Char('l')));
+        assert_eq!(shell.screen, Screen::Code);
+        assert!(shell.code.as_ref().is_some_and(|code| !code.is_empty()));
+        shell.handle_key(key(KeyCode::Char('w')));
+        assert!(dir.join("main.rst").exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
