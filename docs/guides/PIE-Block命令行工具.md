@@ -16,8 +16,25 @@
 | Linux 包 | `bundle/cli/pieblock-cli` |
 | 开发期（仓库内） | `dart run packages/pieblock_core/bin/pieblock.dart` |
 
-建议把 `cli` 目录加入 `PATH`。Agent 或脚本也可以设置 `PIEBLOCK_CLI` 指向可执行文件，
-不依赖安装位置。
+Agent 或脚本也可以设置 `PIEBLOCK_CLI` 指向可执行文件，不依赖安装位置。
+
+## PATH：免安装版会自动处理
+
+Windows 免安装版（zip）第一次从解压目录启动时，应用会把 `<解压目录>\cli` 写进
+**当前用户**的 PATH（`HKCU\Environment\Path`）：
+
+- 不需要管理员权限，只影响当前 Windows 账户；
+- 写入后**已经打开的终端不会更新**，新开一个终端 `pieblock-cli` 才可用；
+- 写入成功会提示一次；应用被移动到新目录、或新版本解压到别处后，下次启动会自动
+  删掉自己写过的旧条目、再写入当前目录；
+- **同一个目录只加一次**：如果你从 PATH 里手动删掉了它，应用不会再偷偷加回来；
+  想恢复时删除 `%APPDATA%\com.wpie\PIE-Block\cli-path.json` 后重启应用即可；
+- 便携单文件版（解压到 `%LOCALAPPDATA%\PIE-Block\portable\...`）和开发构建
+  （`build\windows\...`）不写 PATH——前者每次解压到带哈希的新目录，写进去只会变成垃圾；
+- 写入记录在 `%APPDATA%\com.wpie\PIE-Block\cli-path.json`；直接删除应用目录不会
+  清理 PATH，需要时用「系统属性 → 高级 → 环境变量」手动删掉那一条。
+
+Linux 发行包解压即用，不会改 `~/.bashrc`；需要全局命令时自行建软链接。
 
 ## 命令
 

@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'src/controller.dart';
 import 'src/design/app_theme.dart';
+import 'src/platform/cli_path_service.dart';
 import 'src/platform/host_bridge.dart';
 import 'src/deploy_controller.dart';
 import 'src/home_screen.dart';
@@ -13,6 +14,9 @@ import 'src/mcp/mcp_service.dart';
 import 'src/wizard_screen.dart';
 
 void main() => runApp(const ProviderScope(child: PieBlockApp()));
+
+/// 启动早期没有 BuildContext，PATH 维护的提示走这个全局 messenger。
+final _messengerKey = GlobalKey<ScaffoldMessengerState>();
 
 class PieBlockApp extends ConsumerStatefulWidget {
   const PieBlockApp({super.key});
@@ -30,6 +34,8 @@ class _PieBlockAppState extends ConsumerState<PieBlockApp> {
     // 首帧出来才算真的能用：官网把 Web 版嵌在 iframe 里，收到这个信号
     // 之前一直显示加载态，超时就退回静态示例。
     WidgetsBinding.instance.addPostFrameCallback((_) => notifyHostReady());
+    // 免安装版首次启动时把 cli 目录加进用户 PATH；失败不影响应用使用。
+    WidgetsBinding.instance.addPostFrameCallback((_) => _ensureCliOnPath());
     // 初始化 MCP 服务：它自己监听 mcp_enabled 决定起停，默认关闭时什么都不做。
     ref.read(mcpServiceProvider.notifier);
     _lifecycle = AppLifecycleListener(
@@ -46,6 +52,22 @@ class _PieBlockAppState extends ConsumerState<PieBlockApp> {
   void dispose() {
     _lifecycle.dispose();
     super.dispose();
+  }
+
+  /// 把 `cli` 目录补进用户 PATH，并清掉旧版本留下的条目。
+  ///
+  /// 入口只在 Windows 发行包生效（见 [CliPathMaintenance.ensure]）。这里吞掉
+  /// 所有异常：PATH 维护属于锦上添花，不能让它拖垮启动。
+  Future<void> _ensureCliOnPath() async {
+    try {
+      final changed = await CliPathMaintenance.ensure();
+      if (!changed || !mounted) return;
+      _messengerKey.currentState?.showSnackBar(
+        const SnackBar(content: Text('已更新用户 PATH，新开的终端可直接使用 pieblock-cli')),
+      );
+    } catch (error) {
+      debugPrint('维护 CLI PATH 失败：$error');
+    }
   }
 
   ThemeData _theme(Brightness brightness) {
@@ -69,6 +91,7 @@ class _PieBlockAppState extends ConsumerState<PieBlockApp> {
     final state = ref.watch(appControllerProvider);
     return MaterialApp(
       debugShowCheckedModeBanner: false,
+      scaffoldMessengerKey: _messengerKey,
       title: 'PIE-Block',
       theme: _theme(Brightness.light),
       darkTheme: _theme(Brightness.dark),

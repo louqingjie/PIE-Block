@@ -52,6 +52,7 @@ dependencies:
     path: packages/pieblock_mcp
   path: ^1.9.1
   path_provider: ^2.1.5
+  ffi: ^2.1.4
 
 dev_dependencies:
   flutter_test:
