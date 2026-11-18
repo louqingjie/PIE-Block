@@ -166,3 +166,6 @@ cd tui
 - M5/AI 提案流程（已完成 UI 路径，替代宿主编排）：工程概览进入时读取工程旁 `<工程>.proposed` 提案（`ProjectProposal::from_json`，校验工程类型一致且不引入新的校验错误），概览显示「AI 提案：N 处改动待处理 · V 预览/应用」；按 V 在代码视图预览提案元信息与改动字段列表，Y 应用（写入配置、保存工程、删除提案文件），Esc 返回且保留提案文件。生成提案仍由外部 AI/CLI（`pieblock-cli propose`）完成，与 Flutter 文件协议一致；测试覆盖提案创建→预览→应用→文件清理。
 
 - 发布候选复核：全仓 149 个测试通过；`cargo build --release` 重建后重新打包 Windows 产物（22.7MB，解压 98.3MB，SHA-256 cf1a8a34e894b4340b4445644efa2d1f721bda778e2638128aa0a3700aaa5a34），打包脚本再次验证无 Dart/Flutter 文件。软件功能对等项已全部补齐，剩余为人工/硬件验收与发布决策。
+
+- 发布决策记录（2026-11，用户确认）：① 先完成人工验收再发布（不现在打 Tag）；② 当前无 STC32G 硬件，真实烧录验收记为阻塞项；③ 终端人工走查由项目所有者按 `docs/design/TUI人工验收指南.md` 执行。
+- 人工验收支持：新增 `--diagnostics`（平台/数据目录/运行时资源/SDCC 与 stc32g_sdcc/模板目录/HID 设备数/Linux udev/Keil 环境）不启动 TUI 即可输出；新增人工验收指南（Windows Terminal/conhost、Linux 终端、硬件烧录、Keil 与决策记录）；README 补充诊断命令。

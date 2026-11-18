@@ -8,6 +8,12 @@ use crossterm::execute;
 
 fn main() -> io::Result<()> {
     let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|arg| arg == "--diagnostics") {
+        for line in pieblock_tui::home_shell::diagnostics() {
+            println!("{line}");
+        }
+        return Ok(());
+    }
     let mouse_enabled = !args.iter().any(|arg| arg == "--no-mouse");
 
     let mut terminal = ratatui::init();

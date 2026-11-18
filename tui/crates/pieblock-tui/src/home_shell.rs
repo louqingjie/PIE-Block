@@ -3461,3 +3461,79 @@ mod proposal_tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
+
+/// 终端人工验收用的环境诊断信息（不启动 TUI）。
+#[must_use]
+pub fn diagnostics() -> Vec<String> {
+    let mut lines = vec![
+        format!("PIE-Block TUI {}", env!("CARGO_PKG_VERSION")),
+        format!(
+            "平台：{} {}（{}）",
+            std::env::consts::OS,
+            std::env::consts::ARCH,
+            std::env::consts::FAMILY
+        ),
+        format!("数据目录：{}", crate::paths::app_data_dir().display()),
+        format!(
+            "终端：{}×{}（COLUMNS×LINES，未知时为空）",
+            std::env::var("COLUMNS").unwrap_or_default(),
+            std::env::var("LINES").unwrap_or_default()
+        ),
+        format!("UTF-8 code page：{:?}", std::env::var("PYTHONUTF8").ok()),
+    ];
+    if let Some(root) = locate_runtime_root() {
+        lines.push(format!("运行时资源：{}", root.display()));
+        lines.push(format!(
+            "SDCC 工具链清单：{}",
+            root.join("vendor/sdcc-toolchain/bundle_manifest.json")
+                .is_file()
+                || root.join("sdcc-toolchain/bundle_manifest.json").is_file()
+        ));
+        lines.push(format!(
+            "stc32g_sdcc：{}",
+            root.join("stc32g_sdcc/build_manifest.json").is_file()
+        ));
+    } else {
+        lines.push("运行时资源：未找到（SDCC 构建不可用）".to_owned());
+    }
+    if let Some(templates) = template_root_candidates()
+        .into_iter()
+        .find(|root| root.is_dir())
+    {
+        lines.push(format!("模板目录：{}", templates.display()));
+    } else {
+        lines.push("模板目录：未找到（使用内置默认配置）".to_owned());
+    }
+    #[cfg(any(windows, target_os = "linux"))]
+    {
+        let devices = pieblock_hid::NativeHidTransport::new()
+            .map(|mut transport| pieblock_hid::HidFlasher::detect_device_count(&mut transport))
+            .unwrap_or(0);
+        lines.push(format!("HID 设备数：{devices}"));
+    }
+    #[cfg(target_os = "linux")]
+    lines.push(format!(
+        "udev 规则：{}",
+        if pieblock_hid::is_installed(pieblock_hid::udev::UDEV_RULE_TARGET_PATH) {
+            "已安装"
+        } else {
+            "未安装"
+        }
+    ));
+    lines.push(format!(
+        "Keil（PIEBLOCK_KEIL）：{}",
+        std::env::var("PIEBLOCK_KEIL").unwrap_or_else(|_| "未设置".to_owned())
+    ));
+    lines
+}
+
+#[cfg(test)]
+mod diagnostics_tests {
+    #[test]
+    fn diagnostics_contain_core_fields() {
+        let lines = super::diagnostics();
+        assert!(lines.iter().any(|line| line.contains("PIE-Block TUI")));
+        assert!(lines.iter().any(|line| line.contains("平台")));
+        assert!(lines.iter().any(|line| line.contains("数据目录")));
+    }
+}
