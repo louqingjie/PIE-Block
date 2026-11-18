@@ -1148,6 +1148,12 @@ impl Shell {
                         return;
                     }
                 }
+                if self.pages[index].id == "tables" {
+                    if let Some(action) = table_action(key.code) {
+                        self.apply_table_action(action);
+                        return;
+                    }
+                }
                 if self.pages[index].id == "mappings" {
                     if let Some(action) = mapping_action(key.code) {
                         self.apply_mapping_action(action);
@@ -1343,6 +1349,102 @@ impl Shell {
             }
             self.form = Some(next);
             self.message = Some("动作映射已更新".to_owned());
+        }
+    }
+
+    fn apply_table_action(&mut self, action: TableAction) {
+        let selected = self.selected_actuator_path().and_then(parse_table_path);
+        let Some(form) = self.form.as_mut() else {
+            return;
+        };
+        let mut changed = false;
+        let mut target = selected;
+        if let pieblock_core::model::ProjectConfig::Engineer(config) = &mut form.config {
+            let mode = selected
+                .map_or(0, |(mode, _)| mode)
+                .min(config.modes.len().saturating_sub(1));
+            match action {
+                TableAction::Add => {
+                    if let Some(mode_config) = config.modes.get_mut(mode) {
+                        mode_config.action_tables.push(default_action_table());
+                        target = Some((mode, mode_config.action_tables.len() - 1));
+                        changed = true;
+                    }
+                }
+                TableAction::AddRow => {
+                    if let Some((mode, table)) = selected {
+                        if let Some(table_config) = config
+                            .modes
+                            .get_mut(mode)
+                            .and_then(|mode_config| mode_config.action_tables.get_mut(table))
+                        {
+                            let steps = table_config.steps.unwrap_or(1).clamp(1, 32);
+                            table_config
+                                .rows
+                                .push(pieblock_core::model::ActionTableRow {
+                                    pin: None,
+                                    values: vec![Some(0); usize::try_from(steps).unwrap_or(1)],
+                                });
+                            target = Some((mode, table));
+                            changed = true;
+                        }
+                    }
+                }
+                TableAction::Delete => {
+                    if let Some((mode, table)) = selected {
+                        if let Some(mode_config) = config.modes.get_mut(mode) {
+                            if table < mode_config.action_tables.len() {
+                                mode_config.action_tables.remove(table);
+                                target = Some((mode, table.saturating_sub(1)));
+                                changed = true;
+                            }
+                        }
+                    }
+                }
+                TableAction::MoveUp | TableAction::MoveDown => {
+                    if let Some((mode, table)) = selected {
+                        if let Some(mode_config) = config.modes.get_mut(mode) {
+                            let next = match action {
+                                TableAction::MoveUp => table.checked_sub(1),
+                                _ => Some(table + 1),
+                            };
+                            if let Some(next) = next {
+                                if next < mode_config.action_tables.len() {
+                                    mode_config.action_tables.swap(table, next);
+                                    target = Some((mode, next));
+                                    changed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if !changed {
+            return;
+        }
+        let config = form.config.clone();
+        self.workspace.update_config(config.clone());
+        let kind = self
+            .workspace
+            .session
+            .as_ref()
+            .map(|session| session.document.kind);
+        if let Some(kind) = kind {
+            self.pages = wizard_pages(kind, &config);
+            let mut next = FormState::new(config);
+            if let Some((mode, table)) = target {
+                let prefix = format!("modes.{mode}.action_tables.{table}.");
+                if let Some(position) = self.pages.get(self.wizard_index).and_then(|page| {
+                    page.fields
+                        .iter()
+                        .position(|field| field.path.starts_with(prefix.as_str()))
+                }) {
+                    next.selected = position;
+                }
+            }
+            self.form = Some(next);
+            self.message = Some("动作表已更新".to_owned());
         }
     }
 
@@ -2505,6 +2607,95 @@ mod debug_reorder_tests {
         };
         assert_eq!(after_first, second);
         assert_eq!(after_second, first);
+        shell.handle_key(key(KeyCode::Esc));
+        assert_eq!(shell.screen, Screen::Project);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TableAction {
+    Add,
+    AddRow,
+    Delete,
+    MoveUp,
+    MoveDown,
+}
+
+fn table_action(code: KeyCode) -> Option<TableAction> {
+    match code {
+        KeyCode::Char('a') => Some(TableAction::Add),
+        KeyCode::Char('r') => Some(TableAction::AddRow),
+        KeyCode::Char('d') => Some(TableAction::Delete),
+        KeyCode::Char('K') => Some(TableAction::MoveUp),
+        KeyCode::Char('J') => Some(TableAction::MoveDown),
+        _ => None,
+    }
+}
+
+fn parse_table_path(path: &str) -> Option<(usize, usize)> {
+    let rest = path.strip_prefix("modes.")?;
+    let (mode, rest) = rest.split_once('.')?;
+    let rest = rest.strip_prefix("action_tables.")?;
+    let table = rest.split('.').next()?.parse().ok()?;
+    Some((mode.parse().ok()?, table))
+}
+
+fn default_action_table() -> pieblock_core::model::ActionTable {
+    pieblock_core::model::ActionTable {
+        id: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_micros().to_string())
+            .unwrap_or_default(),
+        key: None,
+        previous_key: None,
+        steps: Some(1),
+        rows: vec![pieblock_core::model::ActionTableRow {
+            pin: None,
+            values: vec![Some(0)],
+        }],
+        wrap: false,
+    }
+}
+
+#[cfg(test)]
+mod table_tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn action_tables_can_be_created_and_rows_added() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target")
+            .join(format!("shell-tables-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("dir");
+        let mut shell = Shell::with_data_dir(dir.join("data"), dir.clone());
+        shell.handle_key(key(KeyCode::Char('n')));
+        shell.handle_key(key(KeyCode::Down));
+        shell.handle_key(key(KeyCode::Enter));
+        shell.handle_key(key(KeyCode::Enter));
+        shell.handle_key(key(KeyCode::Enter));
+        assert_eq!(shell.screen, Screen::Wizard);
+        shell.handle_key(key(KeyCode::PageDown));
+        shell.handle_key(key(KeyCode::PageDown));
+        shell.handle_key(key(KeyCode::PageDown));
+        shell.handle_key(key(KeyCode::PageDown));
+        assert_eq!(shell.pages[shell.wizard_index].id, "tables");
+        shell.handle_key(key(KeyCode::Char('a')));
+        shell.handle_key(key(KeyCode::Char('r')));
+        match &shell.form.as_ref().expect("form").config {
+            pieblock_core::model::ProjectConfig::Engineer(value) => {
+                let table = &value.modes[0].action_tables[0];
+                assert_eq!(table.rows.len(), 2);
+                assert_eq!(table.rows[0].values.len(), 1);
+            }
+            other => panic!("unexpected config: {other:?}"),
+        }
         shell.handle_key(key(KeyCode::Esc));
         assert_eq!(shell.screen, Screen::Project);
         let _ = std::fs::remove_dir_all(&dir);

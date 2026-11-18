@@ -14,8 +14,8 @@ pub use flash::{FlashAction, FlashState};
 pub use form::{FieldKind, FieldValue, FormAction, FormField, FormPage, FormState};
 pub use pages::{
     debug_tests_page, engineer_mappings_page, engineer_pins, engineer_pwm_page,
-    engineer_strategy_page, infantry_controls_page, infantry_mechanism_page, music_page,
-    remote_page, wizard_pages,
+    engineer_strategy_page, engineer_tables_page, infantry_controls_page, infantry_mechanism_page,
+    music_page, remote_page, wizard_pages,
 };
 pub use piano_roll::{PianoAction, PianoRoll};
 pub use playback::{Playback, PlaybackAction};

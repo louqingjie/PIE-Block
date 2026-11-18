@@ -675,3 +675,266 @@ pub fn engineer_mappings_page(config: &ProjectConfig) -> FormPage {
         fields,
     }
 }
+
+fn table_of(
+    config: &ProjectConfig,
+    mode: usize,
+    table: usize,
+) -> Option<&pieblock_core::model::ActionTable> {
+    match config {
+        ProjectConfig::Engineer(value) => value
+            .modes
+            .get(mode)
+            .and_then(|mode| mode.action_tables.get(table)),
+        _ => None,
+    }
+}
+
+fn table_mut(
+    config: &mut ProjectConfig,
+    mode: usize,
+    table: usize,
+) -> Option<&mut pieblock_core::model::ActionTable> {
+    match config {
+        ProjectConfig::Engineer(value) => value
+            .modes
+            .get_mut(mode)
+            .and_then(|mode| mode.action_tables.get_mut(table)),
+        _ => None,
+    }
+}
+
+fn table_text_field(
+    mode: usize,
+    table: usize,
+    suffix: &str,
+    label: String,
+    help: &'static str,
+    getter: fn(&pieblock_core::model::ActionTable) -> Option<String>,
+    setter: fn(&mut pieblock_core::model::ActionTable, Option<String>),
+) -> FormField {
+    let path: &'static str =
+        Box::leak(format!("modes.{mode}.action_tables.{table}.{suffix}").into_boxed_str());
+    FormField {
+        id: path,
+        path,
+        label,
+        help,
+        kind: FieldKind::Text {
+            max_len: 24,
+            placeholder: "（未设置）",
+        },
+        get: Box::new(move |config| {
+            FieldValue::Text(
+                table_of(config, mode, table)
+                    .and_then(getter)
+                    .unwrap_or_default(),
+            )
+        }),
+        set: Box::new(move |config, value| {
+            if let FieldValue::Text(text) = value {
+                if let Some(table) = table_mut(config, mode, table) {
+                    let trimmed = text.trim();
+                    setter(
+                        table,
+                        if trimmed.is_empty() {
+                            None
+                        } else {
+                            Some(trimmed.to_owned())
+                        },
+                    );
+                }
+            }
+        }),
+    }
+}
+
+/// 「动作表」页（工程）：动作表的步骤/按键/回绕与行引脚/数值矩阵。
+#[must_use]
+pub fn engineer_tables_page(config: &ProjectConfig) -> FormPage {
+    let mut fields: Vec<FormField> = Vec::new();
+    let mode_count = match config {
+        ProjectConfig::Engineer(value) => value.modes.len(),
+        _ => 0,
+    };
+    for mode in 0..mode_count {
+        let table_count = match config {
+            ProjectConfig::Engineer(value) => value
+                .modes
+                .get(mode)
+                .map_or(0, |mode| mode.action_tables.len()),
+            _ => 0,
+        };
+        for table in 0..table_count {
+            fields.push(table_text_field(
+                mode,
+                table,
+                "key",
+                format!("模式{} 表{} 触发键", mode + 1, table + 1),
+                "触发动作表的遥控按键，如 NUM_4。",
+                |table| table.key.clone(),
+                |table, value| table.key = value,
+            ));
+            fields.push(table_text_field(
+                mode,
+                table,
+                "prev_key",
+                format!("模式{} 表{} 上一键", mode + 1, table + 1),
+                "可选：反向执行的按键；与触发键相同则自动推断。",
+                |table| table.previous_key.clone(),
+                |table, value| table.previous_key = value,
+            ));
+            let steps_path: &'static str =
+                Box::leak(format!("modes.{mode}.action_tables.{table}.steps").into_boxed_str());
+            fields.push(FormField {
+                id: steps_path,
+                path: steps_path,
+                label: format!("模式{} 表{} 步数", mode + 1, table + 1),
+                help: "动作表步数（1–32），每行需要相同数量的数值。",
+                kind: FieldKind::Number {
+                    min: 1,
+                    max: 32,
+                    step: 1,
+                    unit: "步",
+                },
+                get: Box::new(move |config| {
+                    FieldValue::Int(table_of(config, mode, table).map_or(1, |table| {
+                        table
+                            .steps
+                            .or_else(|| table.rows.first().map(|row| row.values.len() as i64))
+                            .unwrap_or(1)
+                            .clamp(1, 32)
+                    }))
+                }),
+                set: Box::new(move |config, value| {
+                    if let FieldValue::Int(number) = value {
+                        if let Some(table) = table_mut(config, mode, table) {
+                            table.steps = Some(number);
+                            let count = usize::try_from(number).unwrap_or(1);
+                            for row in &mut table.rows {
+                                row.values.resize(count, Some(0));
+                            }
+                        }
+                    }
+                }),
+            });
+            let wrap_path: &'static str =
+                Box::leak(format!("modes.{mode}.action_tables.{table}.wrap").into_boxed_str());
+            fields.push(FormField {
+                id: wrap_path,
+                path: wrap_path,
+                label: format!("模式{} 表{} 循环", mode + 1, table + 1),
+                help: "启用后到达末尾回到第一步。",
+                kind: FieldKind::Toggle,
+                get: Box::new(move |config| {
+                    FieldValue::Bool(table_of(config, mode, table).is_some_and(|table| table.wrap))
+                }),
+                set: Box::new(move |config, value| {
+                    if let (FieldValue::Bool(flag), Some(table)) =
+                        (value, table_mut(config, mode, table))
+                    {
+                        table.wrap = flag;
+                    }
+                }),
+            });
+            let row_count = table_of(config, mode, table).map_or(0, |table| table.rows.len());
+            for row in 0..row_count {
+                let pin_path: &'static str = Box::leak(
+                    format!("modes.{mode}.action_tables.{table}.rows.{row}.pin").into_boxed_str(),
+                );
+                fields.push(FormField {
+                    id: pin_path,
+                    path: pin_path,
+                    label: format!("模式{} 表{} 行{} 引脚", mode + 1, table + 1, row + 1),
+                    help: "该行输出的引脚名。",
+                    kind: FieldKind::Text {
+                        max_len: 16,
+                        placeholder: "（未设置）",
+                    },
+                    get: Box::new(move |config| {
+                        FieldValue::Text(
+                            table_of(config, mode, table)
+                                .and_then(|table| table.rows.get(row))
+                                .and_then(|row| row.pin.clone())
+                                .unwrap_or_default(),
+                        )
+                    }),
+                    set: Box::new(move |config, value| {
+                        if let FieldValue::Text(text) = value {
+                            if let Some(row_value) = table_mut(config, mode, table)
+                                .and_then(|table| table.rows.get_mut(row))
+                            {
+                                let trimmed = text.trim();
+                                row_value.pin = if trimmed.is_empty() {
+                                    None
+                                } else {
+                                    Some(trimmed.to_owned())
+                                };
+                            }
+                        }
+                    }),
+                });
+                let steps = table_of(config, mode, table).map_or(1, |table| {
+                    table
+                        .steps
+                        .or_else(|| table.rows.first().map(|row| row.values.len() as i64))
+                        .unwrap_or(1)
+                        .clamp(1, 32)
+                });
+                for column in 0..steps {
+                    let column = usize::try_from(column).unwrap_or(0);
+                    let value_path: &'static str = Box::leak(
+                        format!("modes.{mode}.action_tables.{table}.rows.{row}.values.{column}")
+                            .into_boxed_str(),
+                    );
+                    fields.push(FormField {
+                        id: value_path,
+                        path: value_path,
+                        label: format!(
+                            "模式{} 表{} 行{} 步{}",
+                            mode + 1,
+                            table + 1,
+                            row + 1,
+                            column + 1
+                        ),
+                        help: "该步的输出值（-10000–10000）。",
+                        kind: FieldKind::Number {
+                            min: -10000,
+                            max: 10000,
+                            step: 1,
+                            unit: "",
+                        },
+                        get: Box::new(move |config| {
+                            FieldValue::Int(
+                                table_of(config, mode, table)
+                                    .and_then(|table| table.rows.get(row))
+                                    .and_then(|row| row.values.get(column))
+                                    .copied()
+                                    .flatten()
+                                    .unwrap_or(0),
+                            )
+                        }),
+                        set: Box::new(move |config, value| {
+                            if let FieldValue::Int(number) = value {
+                                if let Some(row_value) = table_mut(config, mode, table)
+                                    .and_then(|table| table.rows.get_mut(row))
+                                {
+                                    if row_value.values.len() <= column {
+                                        row_value.values.resize(column + 1, Some(0));
+                                    }
+                                    row_value.values[column] = Some(number);
+                                }
+                            }
+                        }),
+                    });
+                }
+            }
+        }
+    }
+    FormPage {
+        id: "tables",
+        title: "第 5 步：动作表",
+        subtitle: "按 A 新建动作表、R 加行、D 删除当前表、K/J 调整表顺序；编辑触发键/步数/循环与数值矩阵。",
+        fields,
+    }
+}

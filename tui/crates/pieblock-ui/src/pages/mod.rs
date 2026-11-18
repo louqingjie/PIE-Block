@@ -13,6 +13,7 @@ mod remote;
 pub use debug::debug_tests_page;
 pub use engineer::{
     engineer_mappings_page, engineer_pins, engineer_pwm_page, engineer_strategy_page,
+    engineer_tables_page,
 };
 pub use infantry::{infantry_advanced_fields, infantry_controls_page, infantry_mechanism_page};
 pub use music::music_page;
@@ -35,6 +36,7 @@ pub fn wizard_pages(
             engineer_pwm_page(config),
             engineer_strategy_page(config),
             engineer_mappings_page(config),
+            engineer_tables_page(config),
         ],
         ProjectKind::Debug => vec![debug_tests_page()],
         ProjectKind::Music => vec![music_page(config)],

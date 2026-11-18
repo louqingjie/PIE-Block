@@ -430,3 +430,67 @@ fn music_page_edits_tempo_and_metadata() {
         other => panic!("unexpected config: {other:?}"),
     }
 }
+
+#[test]
+fn engineer_tables_page_edits_matrix() {
+    use pieblock_ui::engineer_tables_page;
+
+    let mut config = engineer_config();
+    if let ProjectConfig::Engineer(value) = &mut config {
+        value.modes[0]
+            .action_tables
+            .push(pieblock_core::model::ActionTable {
+                id: "t1".to_owned(),
+                key: Some("NUM_4".to_owned()),
+                previous_key: None,
+                steps: Some(2),
+                rows: vec![pieblock_core::model::ActionTableRow {
+                    pin: Some("P20".to_owned()),
+                    values: vec![Some(0), Some(100)],
+                }],
+                wrap: false,
+            });
+    }
+    let page = engineer_tables_page(&config);
+    assert_eq!(page.id, "tables");
+    assert!(
+        page.fields
+            .iter()
+            .any(|field| field.path == "modes.0.action_tables.0.key")
+    );
+    assert!(
+        page.fields
+            .iter()
+            .any(|field| field.path == "modes.0.action_tables.0.rows.0.values.1")
+    );
+    let mut state = FormState::new(config);
+    let steps_position = page
+        .fields
+        .iter()
+        .position(|field| field.path == "modes.0.action_tables.0.steps")
+        .expect("steps");
+    state.selected = steps_position;
+    assert_eq!(clear_editing(&mut state, &page, "3"), FormAction::Changed);
+    match &state.config {
+        ProjectConfig::Engineer(value) => {
+            let table = &value.modes[0].action_tables[0];
+            assert_eq!(table.steps, Some(3));
+            assert_eq!(table.rows[0].values.len(), 3);
+        }
+        other => panic!("unexpected config: {other:?}"),
+    }
+    let wrap_position = page
+        .fields
+        .iter()
+        .position(|field| field.path == "modes.0.action_tables.0.wrap")
+        .expect("wrap");
+    state.selected = wrap_position;
+    assert_eq!(
+        state.handle_key(&page, key(KeyCode::Enter)),
+        FormAction::Changed
+    );
+    match &state.config {
+        ProjectConfig::Engineer(value) => assert!(value.modes[0].action_tables[0].wrap),
+        other => panic!("unexpected config: {other:?}"),
+    }
+}
