@@ -9,7 +9,7 @@
 cd tui
 cargo fmt --all --check
 cargo clippy --all-targets -- -D warnings
-cargo test                 # 当前 149 个测试、31 个测试目标，全部通过
+cargo test                 # 当前 152 个测试、32 个测试目标，全部通过
 pwsh -File scripts/package.ps1 -SkipBuild   # Windows x64 发布包 + sha256
 bash scripts/package.sh                     # Linux x86_64 发布包（CI 执行）
 ```
@@ -59,4 +59,4 @@ CI：`.github/workflows/tui.yml` 在 Windows/Linux 执行 fmt、clippy、全量�
 - 人工/硬件验收项 ⏳（见上）
 - 未完成功能项 ❌（见上）
 
-结论：**软件功能与工程化已完成并通过自动化门禁（149 测试全绿，最新 Windows 发布包已重建并在无关目录验证自包含运行时资源：22.7MB / 解压 98.3MB）**；用户已决定先人工验收再发布；硬件烧录验收因无硬件记为阻塞；验收步骤见 `TUI人工验收指南.md`。
+结论：**软件功能与工程化已完成并通过自动化门禁（152 测试全绿，最新 Windows 发布包已重建并在无关目录验证自包含运行时资源：22.7MB / 解压 98.3MB）**；用户已决定先人工验收再发布；硬件烧录验收因无硬件记为阻塞；验收步骤见 `TUI人工验收指南.md`。
