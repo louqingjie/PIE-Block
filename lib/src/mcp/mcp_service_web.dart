@@ -23,5 +23,9 @@ class McpService extends Notifier<McpServiceState> {
 
   Future<void> restart() async {}
 
+  Future<void> rotateToken() async {}
+
+  Future<void> setPort(int port) async {}
+
   void appendAudit(McpAuditEntry entry) {}
 }
