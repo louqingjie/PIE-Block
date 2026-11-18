@@ -1,6 +1,8 @@
 //! 步兵专属页面：云台与拨弹机构、控制与摩擦轮。
 
-use pieblock_core::model::{ArrowBehavior, Direction, FeedMode, FrictionMode, ProjectConfig};
+use pieblock_core::model::{
+    ArrowBehavior, AxisActuator, Direction, DriveType, FeedMode, FrictionMode, ProjectConfig,
+};
 
 use crate::form::{Choice, FieldKind, FieldValue, FormField, FormPage};
 
@@ -152,10 +154,168 @@ fn direction_choices() -> &'static [Choice] {
     &crate::pages::DIRECTION_CHOICES
 }
 
-/// 「云台与拨弹机构」页（步兵）。
+/// 云台执行器驱动类型。
+const AXIS_DRIVE_CHOICES: [Choice; 2] = [
+    Choice {
+        value: "servo",
+        label: "舵机",
+    },
+    Choice {
+        value: "motor",
+        label: "电机（PWM）",
+    },
+];
+
+const AXIS_NAMES: [&str; 2] = ["Yaw", "Pitch"];
+
+fn axis_actuators(config: &ProjectConfig, axis: u8) -> Option<&Vec<AxisActuator>> {
+    infantry_of(config).map(|value| if axis == 0 { &value.yaw } else { &value.pitch })
+}
+
+fn axis_actuators_mut(config: &mut ProjectConfig, axis: u8) -> Option<&mut Vec<AxisActuator>> {
+    infantry_mut(config).map(|value| {
+        if axis == 0 {
+            &mut value.yaw
+        } else {
+            &mut value.pitch
+        }
+    })
+}
+
+fn actuator_of(config: &ProjectConfig, axis: u8, index: usize) -> Option<&AxisActuator> {
+    axis_actuators(config, axis).and_then(|list| list.get(index))
+}
+
+fn actuator_mut(config: &mut ProjectConfig, axis: u8, index: usize) -> Option<&mut AxisActuator> {
+    axis_actuators_mut(config, axis).and_then(|list| list.get_mut(index))
+}
+
+fn leak(text: String) -> &'static str {
+    Box::leak(text.into_boxed_str())
+}
+
+/// 一个执行器的 6 个字段（驱动/引脚/方向/归中/逆时针限幅/顺时针限幅）。
+fn push_actuator_fields(fields: &mut Vec<FormField>, axis: u8, index: usize) {
+    let axis_name = AXIS_NAMES[usize::from(axis)];
+    let segment = if axis == 0 { "yaw" } else { "pitch" };
+    let base = format!("gimbal.{segment}.{index}");
+    let title = format!("{axis_name} #{}", index + 1);
+    fields.push(FormField {
+        id: leak(format!("{base}.drive")),
+        path: leak(format!("{base}.drive")),
+        label: format!("{title} 驱动"),
+        help: "舵机或电机（PWM）；MP03/MP74 只能接舵机。",
+        kind: FieldKind::Choice(&AXIS_DRIVE_CHOICES),
+        get: Box::new(move |config| {
+            FieldValue::Choice(
+                actuator_of(config, axis, index)
+                    .and_then(|actuator| actuator.drive)
+                    .map_or_else(String::new, |drive| drive.as_str().to_owned()),
+            )
+        }),
+        set: Box::new(move |config, value| {
+            if let FieldValue::Choice(choice) = value {
+                if let Some(actuator) = actuator_mut(config, axis, index) {
+                    actuator.drive = DriveType::from_str_lenient(&choice);
+                }
+            }
+        }),
+    });
+    fields.push(FormField {
+        id: leak(format!("{base}.pin")),
+        path: leak(format!("{base}.pin")),
+        label: format!("{title} IO"),
+        help: "扩展板 IO 名称；留空表示未分配。",
+        kind: FieldKind::Text {
+            max_len: 16,
+            placeholder: "（未分配）",
+        },
+        get: Box::new(move |config| {
+            FieldValue::Text(
+                actuator_of(config, axis, index)
+                    .and_then(|actuator| actuator.pin.clone())
+                    .unwrap_or_default(),
+            )
+        }),
+        set: Box::new(move |config, value| {
+            if let FieldValue::Text(text) = value {
+                if let Some(actuator) = actuator_mut(config, axis, index) {
+                    let text = text.trim();
+                    actuator.pin = if text.is_empty() {
+                        None
+                    } else {
+                        Some(text.to_owned())
+                    };
+                }
+            }
+        }),
+    });
+    fields.push(FormField {
+        id: leak(format!("{base}.direction")),
+        path: leak(format!("{base}.direction")),
+        label: format!("{title} 方向"),
+        help: "电机转向与预期相反时改为「反转」。",
+        kind: FieldKind::Choice(&crate::pages::DIRECTION_CHOICES),
+        get: Box::new(move |config| {
+            FieldValue::Choice(
+                actuator_of(config, axis, index)
+                    .and_then(|actuator| actuator.direction)
+                    .map_or_else(String::new, |direction| direction.as_str().to_owned()),
+            )
+        }),
+        set: Box::new(move |config, value| {
+            if let FieldValue::Choice(choice) = value {
+                if let Some(actuator) = actuator_mut(config, axis, index) {
+                    actuator.direction = Direction::from_str_lenient(&choice);
+                }
+            }
+        }),
+    });
+    for (suffix, label, field) in [
+        ("mid_offset", "归中偏移", 0_u8),
+        ("min_limit", "逆时针限幅", 1_u8),
+        ("max_limit", "顺时针限幅", 2_u8),
+    ] {
+        fields.push(FormField {
+            id: leak(format!("{base}.{suffix}")),
+            path: leak(format!("{base}.{suffix}")),
+            label: format!("{title} {label}"),
+            help: "相对中位的 PWM 偏移；归中偏移范围 -1000–1000。",
+            kind: FieldKind::Number {
+                min: -1000,
+                max: 1000,
+                step: 10,
+                unit: "",
+            },
+            get: Box::new(move |config| {
+                FieldValue::Int(actuator_of(config, axis, index).map_or(0, |actuator| {
+                    match field {
+                        0 => actuator.mid_offset,
+                        1 => actuator.min_limit,
+                        _ => actuator.max_limit,
+                    }
+                    .unwrap_or(0)
+                }))
+            }),
+            set: Box::new(move |config, value| {
+                if let FieldValue::Int(number) = value {
+                    if let Some(actuator) = actuator_mut(config, axis, index) {
+                        match field {
+                            0 => actuator.mid_offset = Some(number),
+                            1 => actuator.min_limit = Some(number),
+                            _ => actuator.max_limit = Some(number),
+                        }
+                    }
+                }
+            }),
+        });
+    }
+}
+
+/// 「云台与拨弹机构」页（步兵）。执行器数量来自当前配置，添加/删除由主循环按键处理。
 #[must_use]
-pub fn infantry_mechanism_page() -> FormPage {
-    let fields = vec![
+pub fn infantry_mechanism_page(config: &ProjectConfig) -> FormPage {
+    let mut fields = vec![
         text(
             "mechanism.feeder_pin",
             "mechanism.feeder_pin",
@@ -218,6 +378,12 @@ pub fn infantry_mechanism_page() -> FormPage {
             },
         ),
     ];
+    for index in 0..axis_actuators(config, 0).map_or(0, Vec::len) {
+        push_actuator_fields(&mut fields, 0, index);
+    }
+    for index in 0..axis_actuators(config, 1).map_or(0, Vec::len) {
+        push_actuator_fields(&mut fields, 1, index);
+    }
     FormPage {
         id: "mechanism",
         title: "第 2 步：云台与拨弹机构",

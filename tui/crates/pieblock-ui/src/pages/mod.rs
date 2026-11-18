@@ -14,11 +14,14 @@ pub use remote::{DIRECTION_CHOICES, remote_page};
 
 /// 工程类型对应的全部已移植页面。
 #[must_use]
-pub fn wizard_pages(kind: ProjectKind) -> Vec<FormPage> {
+pub fn wizard_pages(
+    kind: ProjectKind,
+    config: &pieblock_core::model::ProjectConfig,
+) -> Vec<FormPage> {
     match kind {
         ProjectKind::Infantry => vec![
             remote_page(kind),
-            infantry_mechanism_page(),
+            infantry_mechanism_page(config),
             infantry_controls_page(),
         ],
         ProjectKind::Engineer => vec![remote_page(kind)],

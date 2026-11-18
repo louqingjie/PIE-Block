@@ -430,7 +430,7 @@ impl Shell {
         let Some(session) = self.workspace.session.as_ref() else {
             return;
         };
-        self.pages = wizard_pages(session.document.kind);
+        self.pages = wizard_pages(session.document.kind, &session.document.config);
         self.issues = pieblock_core::validate(&session.document.config);
         self.review_selected = 0;
         self.message = None;
@@ -564,7 +564,7 @@ impl Shell {
         let Some(session) = self.workspace.session.as_ref() else {
             return;
         };
-        self.pages = wizard_pages(session.document.kind);
+        self.pages = wizard_pages(session.document.kind, &session.document.config);
         if self.pages.is_empty() {
             self.message = Some("该工程类型的向导页尚未移植（M4 进行中）".to_owned());
             return;
@@ -613,6 +613,12 @@ impl Shell {
             KeyCode::Esc | KeyCode::Char('h') => self.leave_wizard(),
             _ => {
                 let index = self.wizard_index.min(self.pages.len().saturating_sub(1));
+                if self.pages[index].id == "mechanism" {
+                    if let Some(action) = actuator_action(key.code) {
+                        self.apply_actuator_action(action);
+                        return;
+                    }
+                }
                 let page = &self.pages[index];
                 if let Some(form) = self.form.as_mut() {
                     let action = form.handle_key(page, key);
@@ -621,6 +627,109 @@ impl Shell {
                     }
                 }
             }
+        }
+    }
+
+    fn selected_actuator_path(&self) -> Option<&'static str> {
+        let index = self.wizard_index.min(self.pages.len().saturating_sub(1));
+        let form = self.form.as_ref()?;
+        let page = self.pages.get(index)?;
+        page.fields.get(form.selected).map(|field| field.path)
+    }
+
+    fn apply_actuator_action(&mut self, action: ActuatorAction) {
+        let path = self.selected_actuator_path();
+        let selected = path.and_then(parse_actuator_path);
+        let Some(form) = self.form.as_mut() else {
+            return;
+        };
+        let mut changed = false;
+        if let pieblock_core::model::ProjectConfig::Infantry(config) = &mut form.config {
+            match action {
+                ActuatorAction::AddYaw => {
+                    config.yaw.push(default_axis_actuator());
+                    changed = true;
+                }
+                ActuatorAction::AddPitch => {
+                    config.pitch.push(default_axis_actuator());
+                    changed = true;
+                }
+                ActuatorAction::Delete => {
+                    if let Some((axis, index)) = selected {
+                        let list = if axis == 0 {
+                            &mut config.yaw
+                        } else {
+                            &mut config.pitch
+                        };
+                        if index < list.len() {
+                            list.remove(index);
+                            changed = true;
+                        }
+                    }
+                }
+                ActuatorAction::MoveUp | ActuatorAction::MoveDown => {
+                    if let Some((axis, index)) = selected {
+                        let list = if axis == 0 {
+                            &mut config.yaw
+                        } else {
+                            &mut config.pitch
+                        };
+                        let target = match action {
+                            ActuatorAction::MoveUp => index.checked_sub(1),
+                            _ => Some(index + 1),
+                        };
+                        if let Some(target) = target {
+                            if target < list.len() {
+                                list.swap(index, target);
+                                changed = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if !changed {
+            return;
+        }
+        let config = form.config.clone();
+        let old_selected = form.selected;
+        self.workspace.update_config(config.clone());
+        let kind = self
+            .workspace
+            .session
+            .as_ref()
+            .map(|session| session.document.kind);
+        if let Some(kind) = kind {
+            self.pages = wizard_pages(kind, &config);
+            let mut next = FormState::new(config.clone());
+            let page_len = self
+                .pages
+                .get(self.wizard_index)
+                .map_or(0, |page| page.fields.len());
+            next.selected = old_selected.min(page_len.saturating_sub(1));
+            if matches!(action, ActuatorAction::AddYaw | ActuatorAction::AddPitch) {
+                let (segment, new_index) = match (&config, action) {
+                    (
+                        pieblock_core::model::ProjectConfig::Infantry(infantry),
+                        ActuatorAction::AddYaw,
+                    ) => ("yaw", infantry.yaw.len().saturating_sub(1)),
+                    (
+                        pieblock_core::model::ProjectConfig::Infantry(infantry),
+                        ActuatorAction::AddPitch,
+                    ) => ("pitch", infantry.pitch.len().saturating_sub(1)),
+                    _ => ("yaw", 0),
+                };
+                let prefix = format!("gimbal.{segment}.{new_index}.");
+                if let Some(position) = self.pages.get(self.wizard_index).and_then(|page| {
+                    page.fields
+                        .iter()
+                        .position(|field| field.path.starts_with(prefix.as_str()))
+                }) {
+                    next.selected = position;
+                }
+            }
+            self.form = Some(next);
+            self.message = Some("执行器列表已更新".to_owned());
         }
     }
 
@@ -1220,6 +1329,112 @@ mod review_tests {
         assert!(compact.contains("问题审查"));
         assert!(compact.contains("校验结果"));
         assert!(compact.contains("错误"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ActuatorAction {
+    AddYaw,
+    AddPitch,
+    Delete,
+    MoveUp,
+    MoveDown,
+}
+
+fn actuator_action(code: KeyCode) -> Option<ActuatorAction> {
+    match code {
+        KeyCode::Char('a') => Some(ActuatorAction::AddYaw),
+        KeyCode::Char('b') => Some(ActuatorAction::AddPitch),
+        KeyCode::Char('d') => Some(ActuatorAction::Delete),
+        KeyCode::Char('K') => Some(ActuatorAction::MoveUp),
+        KeyCode::Char('J') => Some(ActuatorAction::MoveDown),
+        _ => None,
+    }
+}
+
+fn parse_actuator_path(path: &str) -> Option<(u8, usize)> {
+    let rest = path.strip_prefix("gimbal.")?;
+    let (axis, rest) = if let Some(rest) = rest.strip_prefix("yaw.") {
+        (0_u8, rest)
+    } else {
+        (1_u8, rest.strip_prefix("pitch.")?)
+    };
+    let index = rest.split('.').next()?.parse().ok()?;
+    Some((axis, index))
+}
+
+fn default_axis_actuator() -> pieblock_core::model::AxisActuator {
+    pieblock_core::model::AxisActuator {
+        drive: Some(pieblock_core::model::DriveType::Servo),
+        pin: None,
+        direction: None,
+        mid_offset: Some(0),
+        min_limit: Some(-500),
+        max_limit: Some(500),
+    }
+}
+
+#[cfg(test)]
+mod actuator_tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn mechanism_page_add_and_delete_actuators() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target")
+            .join(format!("shell-actuators-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("dir");
+        let mut shell = Shell::with_data_dir(dir.join("data"), dir.clone());
+        shell.handle_key(key(KeyCode::Char('n')));
+        shell.handle_key(key(KeyCode::Enter));
+        shell.handle_key(key(KeyCode::Enter));
+        shell.handle_key(key(KeyCode::Enter));
+        assert_eq!(shell.screen, Screen::Wizard);
+        shell.handle_key(key(KeyCode::PageDown));
+        assert_eq!(shell.pages[shell.wizard_index].id, "mechanism");
+        let before = match &shell
+            .workspace
+            .session
+            .as_ref()
+            .expect("session")
+            .document
+            .config
+        {
+            pieblock_core::model::ProjectConfig::Infantry(config) => config.yaw.len(),
+            _ => 0,
+        };
+        let fields_before = shell.pages[shell.wizard_index].fields.len();
+        println!(
+            "before={before} fields={fields_before} sel={}",
+            shell.form.as_ref().map(|f| f.selected).unwrap_or(0)
+        );
+        shell.handle_key(key(KeyCode::Char('a')));
+        let after = match &shell.form.as_ref().expect("form").config {
+            pieblock_core::model::ProjectConfig::Infantry(config) => config.yaw.len(),
+            _ => 0,
+        };
+        assert_eq!(after, before + 1);
+        assert!(shell.pages[shell.wizard_index].fields.len() > fields_before);
+        println!(
+            "after add={after} sel={:?} path={:?}",
+            shell.form.as_ref().map(|f| f.selected),
+            shell.selected_actuator_path()
+        );
+        shell.handle_key(key(KeyCode::Char('d')));
+        let after_delete = match &shell.form.as_ref().expect("form").config {
+            pieblock_core::model::ProjectConfig::Infantry(config) => config.yaw.len(),
+            _ => 0,
+        };
+        assert_eq!(after_delete, before);
+        shell.handle_key(key(KeyCode::Esc));
+        assert_eq!(shell.screen, Screen::Project);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

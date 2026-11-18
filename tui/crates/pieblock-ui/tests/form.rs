@@ -205,10 +205,11 @@ impl Navigate for FormState {
 fn infantry_pages_edit_scalar_fields() {
     use pieblock_ui::{infantry_controls_page, infantry_mechanism_page};
 
-    let mechanism = infantry_mechanism_page();
-    assert_eq!(mechanism.fields.len(), 4);
+    let mechanism_config = infantry_config();
+    let mechanism = infantry_mechanism_page(&mechanism_config);
+    assert!(mechanism.fields.len() >= 4);
     assert_eq!(mechanism.fields[0].id, "mechanism.feeder_pin");
-    let mut state = FormState::new(infantry_config());
+    let mut state = FormState::new(mechanism_config);
     state.selected = 2;
     assert_eq!(
         clear_editing(&mut state, &mechanism, "150"),
