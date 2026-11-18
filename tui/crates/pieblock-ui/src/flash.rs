@@ -49,6 +49,22 @@ impl FlashState {
             expected_sha256,
             ..Self::default()
         };
+        #[cfg(target_os = "linux")]
+        {
+            let installed = pieblock_hid::is_installed(pieblock_hid::udev::UDEV_RULE_TARGET_PATH);
+            state.push_log(if installed {
+                "udev 规则：已安装（可直接访问 USB 设备）".to_owned()
+            } else {
+                format!(
+                    "udev 规则：未安装；否则需要在终端执行 sudo 安装到 {} 后重新插拔设备",
+                    pieblock_hid::udev::UDEV_RULE_TARGET_PATH
+                )
+            });
+        }
+        #[cfg(not(target_os = "linux"))]
+        state.push_log(
+            "设备访问：Windows 无需 udev 规则；首次烧录如失败请以管理员身份运行".to_owned(),
+        );
         state.push_log(if device_count > 0 {
             format!("已检测到 {device_count} 个 STC32G ISP 设备。")
         } else {
