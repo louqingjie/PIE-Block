@@ -395,7 +395,7 @@ pub fn infantry_mechanism_page(config: &ProjectConfig) -> FormPage {
 /// 「控制与摩擦轮」页（步兵）。
 #[must_use]
 pub fn infantry_controls_page() -> FormPage {
-    let fields = vec![
+    let mut fields = vec![
         choice(
             "controls.arrow_behavior",
             "controls.arrow_behavior",
@@ -608,6 +608,36 @@ pub fn infantry_controls_page() -> FormPage {
             },
         ),
     ];
+    fields.push(FormField {
+        id: "controls.zero_enabled",
+        path: "controls.zero_enabled",
+        label: "按下右摇杆让云台归中".to_owned(),
+        help: "启用后按下右摇杆（ZERO）会把云台中位归零。",
+        kind: FieldKind::Toggle,
+        get: Box::new(|config| {
+            FieldValue::Bool(infantry_of(config).is_some_and(|value| value.zero_enabled))
+        }),
+        set: Box::new(|config, value| {
+            if let (Some(infantry), FieldValue::Bool(flag)) = (infantry_mut(config), value) {
+                infantry.zero_enabled = flag;
+            }
+        }),
+    });
+    fields.push(FormField {
+        id: "controls.buzzer_disabled",
+        path: "controls.buzzer_disabled",
+        label: "禁用蜂鸣器反馈".to_owned(),
+        help: "关闭启动诊断与运行状态的声音提示。",
+        kind: FieldKind::Toggle,
+        get: Box::new(|config| {
+            FieldValue::Bool(infantry_of(config).is_some_and(|value| value.buzzer_disabled))
+        }),
+        set: Box::new(|config, value| {
+            if let (Some(infantry), FieldValue::Bool(flag)) = (infantry_mut(config), value) {
+                infantry.buzzer_disabled = flag;
+            }
+        }),
+    });
     FormPage {
         id: "controls",
         title: "第 3 步：控制与摩擦轮",

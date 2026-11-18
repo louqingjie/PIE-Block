@@ -225,7 +225,7 @@ fn infantry_pages_edit_scalar_fields() {
     }
 
     let controls = infantry_controls_page();
-    assert_eq!(controls.fields.len(), 13);
+    assert_eq!(controls.fields.len(), 15);
     let trigger_speed = controls
         .fields
         .iter()
