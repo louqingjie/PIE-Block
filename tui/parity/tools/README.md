@@ -58,3 +58,15 @@ dart run bin/export_codegen_goldens.dart
 文档的生成源码、表达式行号映射；配置未通过校验时记录 Dart 抛出的错误文案。
 Rust 侧目前对拍调试/步兵全部用例，工程与音乐随移植推进扩展。
 
+## 生成 CLI golden
+
+```powershell
+cd tui/parity/tools
+dart run bin/export_cli_goldens.dart
+```
+
+把 21 份工程快照写到 `tui/parity/cli/projects/`，再逐份运行 Dart CLI 的
+`validate`/`codegen`，输出 `tui/parity/golden/cli/cli.json`（退出码 + stdout +
+stderr 逐字节）。Rust 侧集成测试用同一份工程快照调用 `pieblock-cli` 对拍；
+音乐工程与未移植的生成路径暂时跳过。
+
