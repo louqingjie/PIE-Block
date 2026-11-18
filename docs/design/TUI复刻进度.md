@@ -123,3 +123,5 @@ cd tui
 - M5 代码预览（已完成第一步）：工程概览按 C 调用 `pieblock_core::generate`，在只读代码视图中显示生成的 `main.c`（行号、C 关键字/预处理/注释/数字着色、↑↓/PgUp/PgDn/Home/End 滚动、W 导出到工程目录 `main.c`、Esc 返回）；配置有错误时不生成并提示第一条校验错误。测试覆盖模板工程生成、滚动与导出。汇编列表（`.rst`）与 SDCC 构建留待下一步；真实 SDCC/Keil 环境验证仍需构建机准备。
 
 - M5 SDCC 构建与汇编列表（已完成）：工程概览按 B 调用 `FirmwareBuilder`（自动定位 `vendor/sdcc-toolchain` 与 `stc32g_sdcc`，可用 `PIEBLOCK_RUNTIME_ROOT` 覆盖），同步收集 `BuildEvent` 进度到构建日志页；成功显示 HEX 路径/字节数/SHA-256，L 打开 `main.rst` 汇编列表（复用代码视图，W 导出 `main.rst`）；失败显示退出码与完整日志、工具链缺失时给出明确提示。真实 SDCC 构建测试在本机通过（无工具链环境自动跳过），完整 clippy/测试全绿。
+
+- M6 音乐工程元信息页（进行中）：`music_page` 提供源文件/音轨名称、每四分音符 tick（96–960）、调号五度圈（-7–7）、重叠处理（最高/最低/最近音）、新音符打断开关、起始 BPM（20–400，存为 microseconds_per_quarter）、拍号分子/分母（1/2/4/8/16）与音符数量只读展示；音乐工程进入向导即可编辑，变更自动保存。测试覆盖 BPM→微秒换算、调号与重叠策略；钢琴卷帘/音符编辑、播放试听与 MIDI 导入留待下一步。
