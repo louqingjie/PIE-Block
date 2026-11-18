@@ -147,6 +147,33 @@ impl ParamNum {
             Self::Float(value) => Self::Float(-value),
         }
     }
+
+    /// Dart `num.toDouble()`。
+    #[must_use]
+    pub fn to_f64(self) -> f64 {
+        match self {
+            Self::Int(value) => value as f64,
+            Self::Float(value) => value,
+        }
+    }
+
+    /// Dart `num.toInt()`（向零截断）。
+    #[must_use]
+    pub fn to_i64(self) -> i64 {
+        match self {
+            Self::Int(value) => value,
+            Self::Float(value) => value.trunc() as i64,
+        }
+    }
+
+    /// 值是否为整数（浮点 2.0 也算整数，2.5 不算）。
+    #[must_use]
+    pub fn is_integral(self) -> bool {
+        match self {
+            Self::Int(_) => true,
+            Self::Float(value) => value.is_finite() && value.fract() == 0.0,
+        }
+    }
 }
 
 #[cfg(test)]

@@ -87,28 +87,21 @@ fn infantry_validation_matches_dart_fully() {
 }
 
 #[test]
-fn common_robot_rules_match_dart() {
-    let mut engineer_checked = 0;
+fn engineer_validation_matches_dart_fully() {
+    let mut checked = 0;
     for (path, golden) in load_cases() {
-        let kind = golden["kind"].as_str().unwrap_or_default();
-        if kind != "engineer" {
+        if golden["kind"].as_str() != Some("engineer") {
             continue;
         }
         let document = document_of(&golden);
-        let all = validate(&document.config);
-        let actual: Vec<Value> = all
-            .iter()
-            .filter(|issue| issue.step_id == "remote")
-            .map(ValidationIssue::to_json)
-            .collect();
-        // 工程专属规则不使用 remote step，remote 列表应完全等于公共规则输出。
+        let actual = issue_values(&validate(&document.config));
         assert_eq!(
-            Value::Array(actual),
-            golden["remoteIssues"],
-            "{}: common robot rule mismatch",
+            actual,
+            golden["issues"],
+            "{}: engineer validation mismatch",
             path.display()
         );
-        engineer_checked += 1;
+        checked += 1;
     }
-    assert_eq!(engineer_checked, 3, "expected 3 engineer cases");
+    assert_eq!(checked, 6, "expected 6 engineer cases");
 }

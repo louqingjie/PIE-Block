@@ -107,6 +107,109 @@ void main() {
         _mutateRobot(_defaultDocument(ProjectKind.engineer), (config) {
       (config['chassis']! as Map<String, Object?>)['enabled'] = false;
     })),
+    _Case('engineer_bad_pwm',
+        _mutateRobot(_loadProject(repoRoot, 'assets/templates/engineer.pieproj'), (config) {
+      final pwm = config['pwm']! as Map<String, Object?>;
+      (pwm['pin_roles']! as Map<String, Object?>)['P60'] = 'motor';
+      (pwm['pin_roles']! as Map<String, Object?>)['MP03'] = 'motor';
+      (pwm['servo_mids']! as Map<String, Object?>)['P62'] = 200;
+      config['mode_switch_key'] = 'ZZ';
+      (config['chassis']! as Map<String, Object?>)
+        ..['sprint_enabled'] = true
+        ..['sprint_speed'] = 9000;
+    })),
+    _Case('engineer_bad_modes',
+        _mutateRobot(_loadProject(repoRoot, 'assets/templates/engineer.pieproj'), (config) {
+      config['switch_strategy'] = 'direct';
+      config['mode_keys'] = ['E', 'LC'];
+      (config['chassis']! as Map<String, Object?>)
+        ..['sprint_enabled'] = true
+        ..['sprint_speed'] = 9000;
+      final mode = ((config['modes']! as List<Object?>)[1]!)
+          as Map<String, Object?>;
+      final actions = mode['actions']! as List<Object?>;
+      actions.addAll([
+        {
+          'input_kind': 'remote',
+          'key': 'ZZ',
+          'output_kind': 'pin',
+          'pin': 'P99',
+          'mode': 'direct',
+          'parameter': 500,
+        },
+        {
+          'input_kind': 'remote',
+          'key': 'D',
+          'output_kind': 'pin',
+          'pin': 'P60',
+          'mode': 'direct',
+          'parameter': 10,
+        },
+        {
+          'input_kind': 'unspecified',
+          'key': 'B',
+          'output_kind': 'pin',
+          'pin': 'P60',
+          'expression': '1+',
+          'mode': 'direct',
+          'parameter': 1,
+        },
+        {
+          'input_kind': 'unspecified',
+          'output_kind': 'integer',
+          'variable': 'bad name',
+          'expression': '1.5',
+        },
+        {
+          'input_kind': 'unspecified',
+          'output_kind': 'integer',
+          'variable': 'dup',
+          'expression': '1',
+        },
+        {
+          'input_kind': 'unspecified',
+          'output_kind': 'integer',
+          'variable': 'dup',
+          'expression': '2',
+        },
+      ]);
+      mode['action_tables'] = [
+        {
+          'key': 'E',
+          'prev_key': 'E',
+          'steps': 3,
+          'wrap': false,
+          'rows': [
+            {
+              'pin': 'P62',
+              'values': [10, 20],
+            },
+          ],
+        },
+      ];
+    })),
+    _Case('engineer_variable_types',
+        _mutateRobot(_loadProject(repoRoot, 'assets/templates/engineer.pieproj'), (config) {
+      final modes = config['modes']! as List<Object?>;
+      (modes[0]! as Map<String, Object?>)['actions'] = [
+        ...(modes[0]! as Map<String, Object?>)['actions']! as List<Object?>,
+        {
+          'input_kind': 'unspecified',
+          'output_kind': 'integer',
+          'variable': 'shared',
+          'expression': '1',
+        },
+      ];
+      (modes[1]! as Map<String, Object?>)['actions'] = [
+        ...(modes[1]! as Map<String, Object?>)['actions']! as List<Object?>,
+        {
+          'input_kind': 'unspecified',
+          'output_kind': 'rational',
+          'variable': 'shared',
+          'expression': '1.5',
+        },
+      ];
+    })),
   ];
 
   for (final item in cases) {

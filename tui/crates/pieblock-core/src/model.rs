@@ -87,6 +87,60 @@ pub const DEBUG_PINS: [&str; 10] = [
 ];
 pub const LEGACY_FRICTION_PINS: [&str; 2] = ["P64", "P66"];
 
+/// 摩擦轮控制常量（与 Dart `Friction` 对齐）。
+pub struct Friction;
+
+impl Friction {
+    pub const START_DUTY: i64 = 500;
+    pub const LEVEL_MAX: i64 = 100;
+    pub const MIN_MAX_DUTY: i64 = 500;
+    pub const MAX_MAX_DUTY: i64 = 800;
+    pub const LOW_DUTY_WARNING: i64 = 650;
+
+    /// 把百分比油门按满油占空比映射为占空比。
+    #[must_use]
+    pub fn duty_of_level(level: i64, max_duty: i64) -> i64 {
+        let span = max_duty - Self::START_DUTY;
+        Self::START_DUTY + (level.clamp(0, Self::LEVEL_MAX) * span) / Self::LEVEL_MAX
+    }
+}
+
+/// 工程输出引脚的硬件能力（与 Dart `EngineerPinCapabilities` 对齐）。
+pub struct EngineerPinCapabilities;
+
+impl EngineerPinCapabilities {
+    pub const MOTOR_PINS: [&str; 6] = ["P60", "P62", "P74", "P75", "P76", "P77"];
+    pub const ALL_OUTPUT_PINS: [&str; 10] = [
+        "P60", "P62", "P64", "P66", "P74", "P75", "P76", "P77", "MP03", "MP74",
+    ];
+    pub const LEGACY_FRICTION_PINS: [&str; 2] = ["P64", "P66"];
+    pub const SERVO_PINS: [&str; 10] = Self::ALL_OUTPUT_PINS;
+
+    #[must_use]
+    pub fn supports_role(pin: &str, role: PinRole) -> bool {
+        match role {
+            PinRole::Motor | PinRole::JitterMotor => Self::MOTOR_PINS.contains(&pin),
+            PinRole::Friction | PinRole::Servo | PinRole::Unused => {
+                Self::ALL_OUTPUT_PINS.contains(&pin)
+            }
+        }
+    }
+
+    #[must_use]
+    pub fn allowed_roles(pin: &str) -> Vec<PinRole> {
+        [
+            PinRole::Motor,
+            PinRole::Servo,
+            PinRole::Friction,
+            PinRole::JitterMotor,
+            PinRole::Unused,
+        ]
+        .into_iter()
+        .filter(|role| Self::supports_role(pin, *role))
+        .collect()
+    }
+}
+
 fn object(entries: Vec<(&str, Value)>) -> Value {
     let mut map = Map::new();
     for (key, value) in entries {
@@ -315,6 +369,24 @@ pub struct PwmGroupConfig {
 }
 
 impl PwmGroupConfig {
+    /// 引脚的最终输出角色；主控板 MP03/MP74 未显式配置时按历史行为视为舵机。
+    #[must_use]
+    pub fn role_of(&self, pin: &str) -> Option<PinRole> {
+        self.pin_roles
+            .get(pin)
+            .copied()
+            .or(if MAIN_SERVO_PINS.contains(&pin) {
+                Some(PinRole::Servo)
+            } else {
+                None
+            })
+    }
+
+    #[must_use]
+    pub fn is_servo_pin(&self, pin: &str) -> bool {
+        self.role_of(pin) == Some(PinRole::Servo)
+    }
+
     #[must_use]
     pub fn from_json(map: &JsonMap) -> Self {
         let mut roles = BTreeMap::new();

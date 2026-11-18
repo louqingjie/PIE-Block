@@ -1,16 +1,20 @@
 //! 校验器（M1 移植中）。
 //!
 //! 已移植：公共机器人规则（遥控器/底盘）、步兵专属规则（云台/拨弹/摩擦轮/
-//! 按键冲突/引脚占用与 PWMA 提醒）、调试工程。校验顺序与文案与
-//! `packages/pieblock_core/lib/src/validator.dart` 一致；工程专属规则（含表达式
-//! 相关规则）与音乐规则在后续提交补齐（golden 已生成）。
+//! 按键冲突/引脚占用与 PWMA 提醒）、**工程专属规则（PWM 角色/频率/舵机限幅、
+//! 模式策略、动作行矩阵、表达式与变量、按键动作表、摩擦轮安全控制）**、
+//! 调试工程。校验顺序与文案与 `packages/pieblock_core/lib/src/validator.dart`
+//! 一致；音乐规则（依赖 `music.dart` / `staff_notation.dart` 移植）在后续提交补齐。
 
 use serde_json::{Map, Value};
 
+use crate::expression::{ExpressionType, is_valid_variable_name, parse as parse_expression};
 use crate::model::{
-    ArrowBehavior, ChassisConfig, DEBUG_PINS, DebugConfig, DebugDriveType, Direction, DriveType,
-    EXPANSION_PINS, FeedMode, FrictionMode, InfantryConfig, LEGACY_FRICTION_PINS, MAIN_SERVO_PINS,
-    ProjectConfig, RemoteConfig, WheelConfig,
+    ActionInputKind, ActionMapping, ActionOutputKind, ArrowBehavior, ChassisConfig, ControlMode,
+    DEBUG_PINS, DebugConfig, DebugDriveType, Direction, DriveType, EXPANSION_PINS, EngineerConfig,
+    EngineerModeConfig, EngineerPinCapabilities, FeedMode, Friction, FrictionMode, InfantryConfig,
+    LEGACY_FRICTION_PINS, MAIN_SERVO_PINS, PinRole, ProjectConfig, PwmFrequency, RemoteConfig,
+    SwitchStrategy, WheelConfig,
 };
 
 /// 调试工程摩擦轮测试项的占空比范围（与 Dart `Friction` 常量一致）。
@@ -109,7 +113,7 @@ pub fn validate(config: &ProjectConfig) -> Issues {
                 true,
                 &mut issues,
             );
-            // TODO(M1): _engineer 专属规则。
+            engineer_rules(engineer, &mut issues);
         }
         ProjectConfig::Debug(debug) => debug_rules(debug, &mut issues),
         ProjectConfig::Music(_music) => {
@@ -575,6 +579,10 @@ fn debug_rules(config: &DebugConfig, issues: &mut Issues) {
 // ---------------------------------------------------------------------------
 
 const DIGITAL_REMOTE_KEYS: &[&str] = &["E", "↑", "↓", "←", "→", "A", "B", "C", "D", "LC", "RC"];
+const AXIS_REMOTE_INPUTS: &[&str] = &["LX", "LY", "RX", "RY"];
+const REMOTE_KEYS: &[&str] = &[
+    "E", "↑", "↓", "←", "→", "A", "B", "C", "D", "LC", "RC", "LX", "LY", "RX", "RY",
+];
 /// 步兵固定 50Hz 的 PWMA 引脚；电机落在这里会给“可能一卡一卡”提醒。
 const PWMA_MOTOR_PINS: &[&str] = &["P60", "P62", "P64", "P66"];
 /// 步兵舵机可选引脚（PWMA 四路 + 主控板舵机口）。
@@ -1166,6 +1174,1508 @@ fn infantry_pins(config: &InfantryConfig, issues: &mut Issues) {
                 },
             );
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 工程专属规则
+// ---------------------------------------------------------------------------
+
+fn engineer_role_label(role: PinRole) -> &'static str {
+    match role {
+        PinRole::Motor => "平滑电机",
+        PinRole::Servo => "舵机",
+        PinRole::Friction => "摩擦轮",
+        PinRole::JitterMotor => "抖动电机",
+        PinRole::Unused => "未使用",
+    }
+}
+
+fn motor_role(role: PinRole) -> bool {
+    matches!(
+        role,
+        PinRole::Motor | PinRole::Friction | PinRole::JitterMotor
+    )
+}
+
+fn is_friction_mode(mode: Option<ControlMode>) -> bool {
+    matches!(
+        mode,
+        Some(
+            ControlMode::FrictionToggle
+                | ControlMode::FrictionStep
+                | ControlMode::FrictionContinuous
+                | ControlMode::FrictionAxis
+        )
+    )
+}
+
+fn has_friction_control(config: &EngineerConfig) -> bool {
+    let count = usize::try_from(config.mode_count.unwrap_or(0)).unwrap_or(0);
+    config.modes.iter().take(count).any(|mode| {
+        mode.actions
+            .iter()
+            .any(|action| is_friction_mode(action.mode))
+    })
+}
+
+fn normalized_chassis_pins(chassis: &ChassisConfig) -> Vec<String> {
+    [
+        &chassis.left_front,
+        &chassis.left_rear,
+        &chassis.right_front,
+        &chassis.right_rear,
+    ]
+    .into_iter()
+    .map(|wheel| normalize_pin(wheel.pin.as_deref()))
+    .collect()
+}
+
+fn engineer_rules(config: &EngineerConfig, issues: &mut Issues) {
+    choice(
+        issues,
+        config.pwm.pwma.map(PwmFrequency::as_str),
+        "pwm.pwma",
+        "PWMA 初始化频率",
+        "pwm",
+    );
+    choice(
+        issues,
+        config.pwm.pwmb.map(PwmFrequency::as_str),
+        "pwm.pwmb",
+        "PWMB 初始化频率",
+        "pwm",
+    );
+    let chassis_enabled = config.chassis.enabled;
+    let chassis_used: Vec<String> = if chassis_enabled {
+        normalized_chassis_pins(&config.chassis)
+    } else {
+        Vec::new()
+    };
+    for (index, pin) in EXPANSION_PINS.iter().enumerate() {
+        let role = config.pwm.pin_roles.get(*pin).copied();
+        choice(
+            issues,
+            role.map(PinRole::as_str),
+            &format!("pwm.pin_roles.{pin}"),
+            &format!("{pin} 输出角色"),
+            "pwm",
+        );
+        let role_supported =
+            role.is_some_and(|role| EngineerPinCapabilities::supports_role(pin, role));
+        if let Some(role) = role {
+            if !role_supported {
+                push(
+                    issues,
+                    IssueSeverity::Error,
+                    format!("pwm.pin_roles.{pin}"),
+                    format!("{pin} 不支持{}", engineer_role_label(role)),
+                    "pwm",
+                );
+            }
+            if chassis_used.iter().any(|used| used == pin) && !motor_role(role) {
+                push(
+                    issues,
+                    IssueSeverity::Error,
+                    format!("pwm.pin_roles.{pin}"),
+                    format!("{pin} 已用于底盘，输出角色必须是电机"),
+                    "pwm",
+                );
+            }
+        }
+        let frequency = if index < 4 {
+            config.pwm.pwma
+        } else {
+            config.pwm.pwmb
+        };
+        if role_supported {
+            if let (Some(role), Some(frequency)) = (role, frequency) {
+                let expected = if role == PinRole::Motor {
+                    PwmFrequency::Hz10000
+                } else {
+                    PwmFrequency::Hz50
+                };
+                if role != PinRole::Unused && frequency != expected {
+                    push(
+                        issues,
+                        IssueSeverity::Warning,
+                        format!("pwm.pin_roles.{pin}"),
+                        format!("{pin} 的输出角色与所在 PWM 组频率不匹配"),
+                        "pwm",
+                    );
+                }
+            }
+        }
+        if role == Some(PinRole::Servo) {
+            range(
+                issues,
+                config.pwm.servo_mids.get(*pin).copied(),
+                -90,
+                90,
+                &format!("pwm.servo_mids.{pin}"),
+                &format!("{pin} 舵机中位偏移"),
+                "pwm",
+                true,
+            );
+            if let Some(mid) = config.pwm.servo_mids.get(*pin).copied() {
+                if (-90..=90).contains(&mid) {
+                    servo_travel_limits(
+                        issues,
+                        mid,
+                        config.pwm.servo_min_limits.get(*pin).copied(),
+                        config.pwm.servo_max_limits.get(*pin).copied(),
+                        &format!("pwm.servo_min_limits.{pin}"),
+                        &format!("pwm.servo_max_limits.{pin}"),
+                        &format!("{pin} 舵机逆时针限幅"),
+                        &format!("{pin} 舵机顺时针限幅"),
+                        "pwm",
+                    );
+                }
+            }
+        }
+    }
+    for pin in MAIN_SERVO_PINS {
+        let role = config.pwm.role_of(pin);
+        if let Some(role) = role {
+            if !EngineerPinCapabilities::supports_role(pin, role) {
+                push(
+                    issues,
+                    IssueSeverity::Error,
+                    format!("pwm.pin_roles.{pin}"),
+                    format!("{pin} 不支持{}", engineer_role_label(role)),
+                    "pwm",
+                );
+            }
+        }
+        if role != Some(PinRole::Servo) {
+            continue;
+        }
+        range(
+            issues,
+            config.pwm.servo_mids.get(pin).copied(),
+            -90,
+            90,
+            &format!("pwm.servo_mids.{pin}"),
+            &format!("{pin} 舵机中位偏移"),
+            "pwm",
+            true,
+        );
+        if let Some(mid) = config.pwm.servo_mids.get(pin).copied() {
+            if (-90..=90).contains(&mid) {
+                servo_travel_limits(
+                    issues,
+                    mid,
+                    config.pwm.servo_min_limits.get(pin).copied(),
+                    config.pwm.servo_max_limits.get(pin).copied(),
+                    &format!("pwm.servo_min_limits.{pin}"),
+                    &format!("pwm.servo_max_limits.{pin}"),
+                    &format!("{pin} 舵机逆时针限幅"),
+                    &format!("{pin} 舵机顺时针限幅"),
+                    "pwm",
+                );
+            }
+        }
+    }
+
+    for pin in EngineerPinCapabilities::ALL_OUTPUT_PINS {
+        range(
+            issues,
+            config.pwm.friction_max_duties.get(pin).copied(),
+            Friction::MIN_MAX_DUTY,
+            Friction::MAX_MAX_DUTY,
+            &format!("pwm.friction_max_duties.{pin}"),
+            &format!("{pin} 摩擦轮满油转速"),
+            "pwm",
+            false,
+        );
+    }
+    if has_friction_control(config) {
+        let friction_pins: Vec<&str> = EngineerPinCapabilities::ALL_OUTPUT_PINS
+            .iter()
+            .copied()
+            .filter(|pin| config.pwm.role_of(pin) == Some(PinRole::Friction))
+            .collect();
+        for pin in &friction_pins {
+            if !config.pwm.friction_max_duties.contains_key(*pin) {
+                push(
+                    issues,
+                    IssueSeverity::Error,
+                    format!("pwm.friction_max_duties.{pin}"),
+                    format!("{pin} 摩擦轮满油转速尚未填写"),
+                    "pwm",
+                );
+            }
+        }
+        let expansion_friction: Vec<&&str> = friction_pins
+            .iter()
+            .filter(|pin| EXPANSION_PINS.contains(*pin))
+            .collect();
+        if expansion_friction.iter().any(|pin| {
+            EXPANSION_PINS
+                .iter()
+                .position(|item| item == *pin)
+                .is_some_and(|index| index < 4)
+        }) && config.pwm.pwma != Some(PwmFrequency::Hz50)
+        {
+            push(
+                issues,
+                IssueSeverity::Error,
+                "pwm.pwma",
+                "使用摩擦轮控制时 PWMA 必须为 50Hz",
+                "pwm",
+            );
+        }
+        if expansion_friction.iter().any(|pin| {
+            EXPANSION_PINS
+                .iter()
+                .position(|item| item == *pin)
+                .is_some_and(|index| index >= 4)
+        }) && config.pwm.pwmb != Some(PwmFrequency::Hz50)
+        {
+            push(
+                issues,
+                IssueSeverity::Error,
+                "pwm.pwmb",
+                "使用摩擦轮控制时 PWMB 必须为 50Hz",
+                "pwm",
+            );
+        }
+    }
+
+    range(
+        issues,
+        config.mode_count,
+        1,
+        4,
+        "modes.count",
+        "模式数量",
+        "strategy",
+        true,
+    );
+    let Some(count) = config.mode_count.filter(|count| (1..=4).contains(count)) else {
+        return;
+    };
+    let count = usize::try_from(count).unwrap_or(0);
+    if config.modes.len() < count {
+        push(
+            issues,
+            IssueSeverity::Error,
+            "modes",
+            "模式配置数量不足",
+            "mappings",
+        );
+        return;
+    }
+    if !chassis_enabled {
+        for (index, mode) in config.modes.iter().take(count).enumerate() {
+            if mode.preserve_chassis {
+                push(
+                    issues,
+                    IssueSeverity::Error,
+                    format!("modes.{index}.preserve_chassis"),
+                    "未启用底盘控制时不能保留底盘控制",
+                    "mappings",
+                );
+            }
+        }
+    }
+    let mut switch_entries: Vec<(String, Option<String>)> = Vec::new();
+    if count > 1 {
+        choice(
+            issues,
+            config.switch_strategy.map(SwitchStrategy::as_str),
+            "modes.switch_strategy",
+            "模式切换策略",
+            "strategy",
+        );
+        match config.switch_strategy {
+            Some(SwitchStrategy::Cycle) => switch_entries.push((
+                "modes.switch_key".to_owned(),
+                config.mode_switch_key.clone(),
+            )),
+            Some(SwitchStrategy::Direct) => {
+                for index in 0..count {
+                    switch_entries.push((
+                        format!("modes.keys.{index}"),
+                        config.mode_keys.get(index).cloned().flatten(),
+                    ));
+                }
+            }
+            None => {}
+        }
+    }
+    let mut switch_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for (path, key) in &switch_entries {
+        choice(issues, key.as_deref(), path, "模式切换按键", "strategy");
+        if let Some(key) = key {
+            if !DIGITAL_REMOTE_KEYS.contains(&key.as_str()) {
+                push(
+                    issues,
+                    IssueSeverity::Error,
+                    path,
+                    "模式切换只能使用数字按键",
+                    "strategy",
+                );
+            }
+            if !switch_keys.insert(key.clone()) {
+                push(
+                    issues,
+                    IssueSeverity::Error,
+                    path,
+                    "模式切换按键不能重复",
+                    "strategy",
+                );
+            }
+        }
+    }
+    let sprint_reserved = chassis_enabled && config.chassis.sprint_enabled;
+    if sprint_reserved {
+        for (path, key) in &switch_entries {
+            if key.as_deref() == Some("LC") {
+                push(
+                    issues,
+                    IssueSeverity::Error,
+                    path,
+                    "LC 已用于底盘冲刺，不能同时作为模式切换按键",
+                    "strategy",
+                );
+            }
+        }
+    }
+
+    let mut variable_types: std::collections::BTreeMap<String, ExpressionType> =
+        std::collections::BTreeMap::new();
+    let mut variable_modes: std::collections::BTreeMap<String, std::collections::BTreeSet<usize>> =
+        std::collections::BTreeMap::new();
+    for (mode_index, mode) in config.modes.iter().take(count).enumerate() {
+        let mut seen_names: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for (action_index, action) in mode.actions.iter().enumerate() {
+            if action.output_kind == ActionOutputKind::Pin {
+                continue;
+            }
+            let name = action.variable_name.as_deref().map(str::trim).unwrap_or("");
+            if name.is_empty()
+                || !is_valid_variable_name(name)
+                || !seen_names.insert(name.to_owned())
+            {
+                continue;
+            }
+            let kind = if action.output_kind == ActionOutputKind::Integer {
+                ExpressionType::Integer
+            } else {
+                ExpressionType::Rational
+            };
+            match variable_types.get(name) {
+                Some(existing) if *existing != kind => push(
+                    issues,
+                    IssueSeverity::Error,
+                    format!("modes.{mode_index}.actions.{action_index}.variable"),
+                    "同名变量在不同模式中的类型必须一致",
+                    "mappings",
+                ),
+                Some(_) => {}
+                None => {
+                    variable_types.insert(name.to_owned(), kind);
+                }
+            }
+            variable_modes
+                .entry(name.to_owned())
+                .or_default()
+                .insert(mode_index);
+        }
+    }
+    let global_variables: std::collections::BTreeMap<String, ExpressionType> = variable_types
+        .iter()
+        .filter(|(name, _)| {
+            variable_modes
+                .get(*name)
+                .is_some_and(|modes| modes.len() >= 2)
+        })
+        .map(|(name, kind)| (name.clone(), *kind))
+        .collect();
+    for (mode_index, mode) in config.modes.iter().take(count).enumerate() {
+        let mut seen: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        let mut seen_variables: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
+        let mut mode_variables = global_variables.clone();
+        let mut duty_pin_rows: Vec<(String, Vec<usize>)> = Vec::new();
+        for (action_index, action) in mode.actions.iter().enumerate() {
+            let path = format!("modes.{mode_index}.actions.{action_index}");
+            if action.output_kind != ActionOutputKind::Pin {
+                let name = action.variable_name.as_deref().map(str::trim).unwrap_or("");
+                if !name.is_empty() && !seen_variables.insert(name.to_owned()) {
+                    push(
+                        issues,
+                        IssueSeverity::Error,
+                        format!("{path}.variable"),
+                        "本模式内变量名不能重复",
+                        "mappings",
+                    );
+                }
+            }
+            action_rules(
+                config,
+                mode,
+                action,
+                &path,
+                &switch_keys,
+                &mode_variables,
+                issues,
+            );
+            if sprint_reserved && action.key.as_deref() == Some("LC") {
+                push(
+                    issues,
+                    IssueSeverity::Error,
+                    format!("{path}.key"),
+                    "LC 已用于底盘冲刺，不能同时作为动作输入",
+                    "mappings",
+                );
+            }
+            if action.output_kind != ActionOutputKind::Pin {
+                let name = action.variable_name.as_deref().map(str::trim).unwrap_or("");
+                if is_valid_variable_name(name) {
+                    mode_variables.insert(
+                        name.to_owned(),
+                        if action.output_kind == ActionOutputKind::Integer {
+                            ExpressionType::Integer
+                        } else {
+                            ExpressionType::Rational
+                        },
+                    );
+                }
+            }
+            if let Some(key) = &action.key {
+                if let Some(previous) = seen.get(key) {
+                    push(
+                        issues,
+                        IssueSeverity::Warning,
+                        format!("{path}.key"),
+                        format!(
+                            "该按键已被本模式第 {} 行使用，两行动作会同时生效",
+                            previous + 1
+                        ),
+                        "mappings",
+                    );
+                } else {
+                    seen.insert(key.clone(), action_index);
+                }
+            }
+            if action.output_kind == ActionOutputKind::Pin {
+                if let Some(pin) = &action.pin {
+                    if EXPANSION_PINS.contains(&pin.as_str())
+                        || MAIN_SERVO_PINS.contains(&pin.as_str())
+                    {
+                        if let Some(group) = duty_pin_rows
+                            .iter_mut()
+                            .find(|(existing, _)| existing == pin)
+                        {
+                            group.1.push(action_index);
+                        } else {
+                            duty_pin_rows.push((pin.clone(), vec![action_index]));
+                        }
+                    }
+                }
+            }
+        }
+        for (pin, rows) in &duty_pin_rows {
+            if rows.len() < 2 {
+                continue;
+            }
+            let actions: Vec<&ActionMapping> =
+                rows.iter().map(|index| &mode.actions[*index]).collect();
+            let servo = config.pwm.is_servo_pin(pin);
+            let (clobbers, message) = if servo {
+                let clobbers = actions.iter().any(|action| {
+                    action.input_kind == ActionInputKind::Unspecified
+                        || action
+                            .key
+                            .as_deref()
+                            .is_some_and(|key| AXIS_REMOTE_INPUTS.contains(&key))
+                });
+                (
+                    clobbers,
+                    format!("{pin} 在本模式被多行输出，摇杆行/表达式行每周期都会覆盖其他行的结果"),
+                )
+            } else {
+                let all_direct = actions.iter().all(|action| {
+                    action.mode == Some(ControlMode::Direct)
+                        && action.input_kind == ActionInputKind::Remote
+                });
+                if all_direct {
+                    continue;
+                }
+                let clobbers = actions.iter().any(|action| {
+                    action.input_kind == ActionInputKind::Unspecified
+                        || action.mode == Some(ControlMode::Direct)
+                        || action.mode == Some(ControlMode::Speed)
+                });
+                (
+                    clobbers,
+                    format!("{pin} 在本模式被多行输出，行序在后的赋值会覆盖前面的结果"),
+                )
+            };
+            if !clobbers {
+                continue;
+            }
+            push(
+                issues,
+                IssueSeverity::Warning,
+                format!("modes.{mode_index}.actions.{}.pin", rows[rows.len() - 1]),
+                message,
+                "mappings",
+            );
+        }
+        action_tables_rules(config, mode, mode_index, &switch_keys, issues);
+    }
+}
+
+fn action_tables_rules(
+    config: &EngineerConfig,
+    mode: &EngineerModeConfig,
+    mode_index: usize,
+    switch_keys: &std::collections::HashSet<String>,
+    issues: &mut Issues,
+) {
+    if mode.action_tables.is_empty() {
+        return;
+    }
+    let action_keys: std::collections::HashSet<&str> = mode
+        .actions
+        .iter()
+        .filter_map(|action| action.key.as_deref())
+        .collect();
+    let action_pins: std::collections::HashSet<&str> = mode
+        .actions
+        .iter()
+        .filter_map(|action| action.pin.as_deref())
+        .collect();
+    let mut used_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut used_pins: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for (table_index, table) in mode.action_tables.iter().enumerate() {
+        let base = format!("modes.{mode_index}.action_tables.{table_index}");
+        range(
+            issues,
+            table.steps,
+            2,
+            8,
+            &format!("{base}.steps"),
+            "档位数",
+            "mappings",
+            true,
+        );
+        let mut check_key = |issues: &mut Issues, key: &str, path: &str, label: &str| {
+            if !DIGITAL_REMOTE_KEYS.contains(&key) {
+                push(
+                    issues,
+                    IssueSeverity::Error,
+                    path,
+                    format!("{label}必须是数字按键"),
+                    "mappings",
+                );
+                return;
+            }
+            if switch_keys.contains(key) {
+                push(
+                    issues,
+                    IssueSeverity::Error,
+                    path,
+                    format!("{label}与模式切换按键冲突"),
+                    "mappings",
+                );
+            }
+            if action_keys.contains(key) {
+                push(
+                    issues,
+                    IssueSeverity::Error,
+                    path,
+                    format!("按键 {key} 已被本模式动作行使用，不能同时作为{label}"),
+                    "mappings",
+                );
+            }
+            if !used_keys.insert(key.to_owned()) {
+                push(
+                    issues,
+                    IssueSeverity::Error,
+                    path,
+                    format!("按键 {key} 已被本模式其他动作表使用"),
+                    "mappings",
+                );
+            }
+        };
+        if let Some(key) = &table.key {
+            check_key(issues, key, &format!("{base}.key"), "下一档键");
+        } else {
+            push_required(
+                issues,
+                IssueSeverity::Error,
+                format!("{base}.key"),
+                "下一档键尚未选择",
+                "mappings",
+            );
+        }
+        if let Some(previous) = &table.previous_key {
+            if Some(previous) == table.key.as_ref() {
+                push(
+                    issues,
+                    IssueSeverity::Error,
+                    format!("{base}.prev_key"),
+                    "上一档键不能与下一档键相同",
+                    "mappings",
+                );
+            } else {
+                check_key(issues, previous, &format!("{base}.prev_key"), "上一档键");
+            }
+        }
+        if !table.wrap && table.previous_key.is_none() {
+            push(
+                issues,
+                IssueSeverity::Error,
+                format!("{base}.wrap"),
+                "只有下一档键时必须开启越界重复",
+                "mappings",
+            );
+        }
+        if table.rows.is_empty() {
+            push_required(
+                issues,
+                IssueSeverity::Error,
+                format!("{base}.rows"),
+                "动作表至少需要一行输出",
+                "mappings",
+            );
+        }
+        for (row_index, row) in table.rows.iter().enumerate() {
+            let row_path = format!("{base}.rows.{row_index}");
+            choice(
+                issues,
+                row.pin.as_deref(),
+                &format!("{row_path}.pin"),
+                "引脚",
+                "mappings",
+            );
+            let mut role = PinRole::Motor;
+            if let Some(pin) = &row.pin {
+                match config.pwm.role_of(pin) {
+                    None => push(
+                        issues,
+                        IssueSeverity::Error,
+                        format!("{row_path}.pin"),
+                        format!("未知引脚 {pin}"),
+                        "mappings",
+                    ),
+                    Some(PinRole::Unused) => push(
+                        issues,
+                        IssueSeverity::Error,
+                        format!("{row_path}.pin"),
+                        format!("{pin} 未启用，不能用于动作表"),
+                        "mappings",
+                    ),
+                    Some(PinRole::Friction) => push(
+                        issues,
+                        IssueSeverity::Error,
+                        format!("{row_path}.pin"),
+                        format!("{pin} 是摩擦轮引脚，必须用摩擦轮控制方式，不能放进动作表"),
+                        "mappings",
+                    ),
+                    Some(resolved) => role = resolved,
+                }
+                if action_pins.contains(pin.as_str()) {
+                    push(
+                        issues,
+                        IssueSeverity::Error,
+                        format!("{row_path}.pin"),
+                        format!("引脚 {pin} 已被本模式动作行使用，不能再放进动作表"),
+                        "mappings",
+                    );
+                }
+                if !used_pins.insert(pin.clone()) {
+                    push(
+                        issues,
+                        IssueSeverity::Error,
+                        format!("{row_path}.pin"),
+                        format!("引脚 {pin} 在本模式动作表里重复出现"),
+                        "mappings",
+                    );
+                }
+            }
+            let Some(steps) = table.steps else {
+                continue;
+            };
+            if i64::try_from(row.values.len()).unwrap_or(i64::MAX) != steps {
+                push(
+                    issues,
+                    IssueSeverity::Error,
+                    format!("{row_path}.values"),
+                    format!("每个引脚的档位值数量必须等于档位数（{steps}）"),
+                    "mappings",
+                );
+            }
+            let steps_usize = usize::try_from(steps.max(0)).unwrap_or(0);
+            for (column, value) in row.values.iter().take(steps_usize).enumerate() {
+                let value = *value;
+                let value_path = format!("{row_path}.values.{column}");
+                let label = format!("第 {} 档", column + 1);
+                let Some(value) = value else {
+                    push_required(
+                        issues,
+                        IssueSeverity::Error,
+                        &value_path,
+                        format!("{label}尚未填写"),
+                        "mappings",
+                    );
+                    continue;
+                };
+                if role == PinRole::Servo {
+                    range(
+                        issues,
+                        Some(value),
+                        -90,
+                        90,
+                        &value_path,
+                        &format!("{label}角度"),
+                        "mappings",
+                        true,
+                    );
+                } else {
+                    range(
+                        issues,
+                        Some(value),
+                        -10000,
+                        10000,
+                        &value_path,
+                        &format!("{label} duty"),
+                        "mappings",
+                        true,
+                    );
+                }
+            }
+        }
+    }
+}
+
+fn expression_or_variable_row(
+    config: &EngineerConfig,
+    parent: &EngineerModeConfig,
+    action: &ActionMapping,
+    path: &str,
+    switch_keys: &std::collections::HashSet<String>,
+    variables: &std::collections::BTreeMap<String, ExpressionType>,
+    issues: &mut Issues,
+) {
+    let input_unspecified = action.input_kind == ActionInputKind::Unspecified;
+    let pin_output = action.output_kind == ActionOutputKind::Pin;
+    if input_unspecified {
+        if action.key.is_some() {
+            push(
+                issues,
+                IssueSeverity::Error,
+                format!("{path}.key"),
+                "输入为未指定时不能再选择按键",
+                "mappings",
+            );
+        }
+    } else {
+        choice(
+            issues,
+            action.key.as_deref(),
+            &format!("{path}.key"),
+            "动作输入",
+            "mappings",
+        );
+        if let Some(key) = &action.key {
+            if !REMOTE_KEYS.contains(&key.as_str()) {
+                push(
+                    issues,
+                    IssueSeverity::Error,
+                    format!("{path}.key"),
+                    "未知遥控器输入",
+                    "mappings",
+                );
+            }
+            if switch_keys.contains(key) {
+                push(
+                    issues,
+                    IssueSeverity::Error,
+                    format!("{path}.key"),
+                    "动作输入与模式切换按键冲突",
+                    "mappings",
+                );
+            }
+            if parent.preserve_chassis && (key == "LX" || key == "LY") {
+                push(
+                    issues,
+                    IssueSeverity::Error,
+                    format!("{path}.key"),
+                    "当前模式保留底盘控制，LX/LY 不能用于动作",
+                    "mappings",
+                );
+            }
+        }
+    }
+    if pin_output {
+        choice(
+            issues,
+            action.pin.as_deref(),
+            &format!("{path}.pin"),
+            "动作输出",
+            "mappings",
+        );
+        if let Some(pin) = &action.pin {
+            if !EXPANSION_PINS.contains(&pin.as_str()) && !MAIN_SERVO_PINS.contains(&pin.as_str()) {
+                push(
+                    issues,
+                    IssueSeverity::Error,
+                    format!("{path}.pin"),
+                    "动作输出无效",
+                    "mappings",
+                );
+            }
+        }
+        if action.variable_name.is_some() {
+            push(
+                issues,
+                IssueSeverity::Error,
+                format!("{path}.variable"),
+                "引脚输出不能填写变量名",
+                "mappings",
+            );
+        }
+    } else {
+        if action.pin.is_some() {
+            push(
+                issues,
+                IssueSeverity::Error,
+                format!("{path}.pin"),
+                "变量输出不能同时选择引脚",
+                "mappings",
+            );
+        }
+        choice(
+            issues,
+            action.variable_name.as_deref(),
+            &format!("{path}.variable"),
+            "变量名",
+            "mappings",
+        );
+        let name = action.variable_name.as_deref().map(str::trim).unwrap_or("");
+        if action
+            .variable_name
+            .as_deref()
+            .is_some_and(|original| name != original)
+        {
+            push(
+                issues,
+                IssueSeverity::Error,
+                format!("{path}.variable"),
+                "变量名首尾不能有空格",
+                "mappings",
+            );
+        }
+        if !name.is_empty() && !is_valid_variable_name(name) {
+            push(
+                issues,
+                IssueSeverity::Error,
+                format!("{path}.variable"),
+                "变量名必须是合法 C 标识符，且不能使用内置输入/常量/函数/关键字",
+                "mappings",
+            );
+        }
+    }
+    if !input_unspecified && action.expression.is_some() {
+        push(
+            issues,
+            IssueSeverity::Error,
+            format!("{path}.expression"),
+            "只有输入为未指定时才能填写表达式",
+            "mappings",
+        );
+    }
+    if input_unspecified {
+        choice(
+            issues,
+            action.expression.as_deref(),
+            &format!("{path}.expression"),
+            "表达式",
+            "mappings",
+        );
+        if action.mode.is_some() {
+            push(
+                issues,
+                IssueSeverity::Error,
+                format!("{path}.mode"),
+                "表达式行不使用控制方式",
+                "mappings",
+            );
+        }
+        if action.parameter.is_some() {
+            push(
+                issues,
+                IssueSeverity::Error,
+                format!("{path}.parameter"),
+                "表达式行不使用参数",
+                "mappings",
+            );
+        }
+        if let Some(source) = &action.expression {
+            if !source.trim().is_empty() {
+                let parsed = parse_expression(source, variables);
+                for diagnostic in &parsed.diagnostics {
+                    push(
+                        issues,
+                        IssueSeverity::Error,
+                        format!("{path}.expression"),
+                        diagnostic.message.clone(),
+                        "mappings",
+                    );
+                }
+            }
+        }
+    } else {
+        if action.mode.is_some() {
+            push(
+                issues,
+                IssueSeverity::Error,
+                format!("{path}.mode"),
+                "变量赋值行不使用控制方式",
+                "mappings",
+            );
+        }
+        if action.parameter.is_some() {
+            push(
+                issues,
+                IssueSeverity::Error,
+                format!("{path}.parameter"),
+                "变量赋值行不使用参数",
+                "mappings",
+            );
+        }
+    }
+    if pin_output && input_unspecified {
+        if let Some(pin) = &action.pin {
+            let role = config.pwm.role_of(pin);
+            if role == Some(PinRole::Friction) {
+                push(
+                    issues,
+                    IssueSeverity::Error,
+                    format!("{path}.pin"),
+                    "摩擦轮脚不能使用表达式，请使用摩擦轮专用控制方式",
+                    "mappings",
+                );
+            }
+            if role == Some(PinRole::Unused) {
+                push(
+                    issues,
+                    IssueSeverity::Error,
+                    format!("{path}.pin"),
+                    format!("{pin} 已标记为未使用，不能作为动作输出"),
+                    "mappings",
+                );
+            }
+            let chassis_used = if config.chassis.enabled {
+                normalized_chassis_pins(&config.chassis)
+            } else {
+                Vec::new()
+            };
+            if chassis_used.contains(pin) {
+                push(
+                    issues,
+                    IssueSeverity::Error,
+                    format!("{path}.pin"),
+                    format!("{pin} 已被底盘电机占用"),
+                    "mappings",
+                );
+            }
+        }
+    }
+}
+
+fn action_rules(
+    config: &EngineerConfig,
+    parent: &EngineerModeConfig,
+    action: &ActionMapping,
+    path: &str,
+    switch_keys: &std::collections::HashSet<String>,
+    variables: &std::collections::BTreeMap<String, ExpressionType>,
+    issues: &mut Issues,
+) {
+    if action.output_kind != ActionOutputKind::Pin
+        || action.input_kind == ActionInputKind::Unspecified
+    {
+        expression_or_variable_row(config, parent, action, path, switch_keys, variables, issues);
+        return;
+    }
+    if action.expression.is_some() {
+        push(
+            issues,
+            IssueSeverity::Error,
+            format!("{path}.expression"),
+            "只有输入为未指定时才能填写表达式",
+            "mappings",
+        );
+    }
+    if action.variable_name.is_some() {
+        push(
+            issues,
+            IssueSeverity::Error,
+            format!("{path}.variable"),
+            "引脚输出不能填写变量名",
+            "mappings",
+        );
+    }
+    choice(
+        issues,
+        action.key.as_deref(),
+        &format!("{path}.key"),
+        "动作输入",
+        "mappings",
+    );
+    let friction_mode = is_friction_mode(action.mode);
+    choice(
+        issues,
+        action.mode.map(ControlMode::as_str),
+        &format!("{path}.mode"),
+        "控制方式",
+        "mappings",
+    );
+    choice(
+        issues,
+        action.pin.as_deref(),
+        &format!("{path}.pin"),
+        "动作 IO",
+        "mappings",
+    );
+    if let Some(key) = &action.key {
+        if !REMOTE_KEYS.contains(&key.as_str()) {
+            push(
+                issues,
+                IssueSeverity::Error,
+                format!("{path}.key"),
+                "未知遥控器输入",
+                "mappings",
+            );
+        }
+        if switch_keys.contains(key) {
+            push(
+                issues,
+                IssueSeverity::Error,
+                format!("{path}.key"),
+                "动作输入与模式切换按键冲突",
+                "mappings",
+            );
+        }
+        if parent.preserve_chassis && (key == "LX" || key == "LY") {
+            push(
+                issues,
+                IssueSeverity::Error,
+                format!("{path}.key"),
+                "当前模式保留底盘控制，LX/LY 不能用于动作",
+                "mappings",
+            );
+        }
+    }
+    let is_axis = action
+        .key
+        .as_deref()
+        .is_some_and(|key| AXIS_REMOTE_INPUTS.contains(&key));
+    let is_button = action
+        .key
+        .as_deref()
+        .is_some_and(|key| DIGITAL_REMOTE_KEYS.contains(&key));
+    if let Some(pin) = &action.pin {
+        if !EXPANSION_PINS.contains(&pin.as_str()) && !MAIN_SERVO_PINS.contains(&pin.as_str()) {
+            push(
+                issues,
+                IssueSeverity::Error,
+                format!("{path}.pin"),
+                "动作 IO 无效",
+                "mappings",
+            );
+        }
+    }
+    let chassis_used = if config.chassis.enabled {
+        normalized_chassis_pins(&config.chassis)
+    } else {
+        Vec::new()
+    };
+    if let Some(pin) = &action.pin {
+        if chassis_used.contains(pin) {
+            push(
+                issues,
+                IssueSeverity::Error,
+                format!("{path}.pin"),
+                format!("{pin} 已被底盘电机占用"),
+                "mappings",
+            );
+        }
+    }
+    let role = action.pin.as_ref().and_then(|pin| config.pwm.role_of(pin));
+    let motor = role.is_some_and(motor_role);
+    let friction = role == Some(PinRole::Friction);
+    let main_friction = friction
+        && action
+            .pin
+            .as_deref()
+            .is_some_and(|pin| MAIN_SERVO_PINS.contains(&pin));
+    if role == Some(PinRole::Unused) {
+        if let Some(pin) = &action.pin {
+            push(
+                issues,
+                IssueSeverity::Error,
+                format!("{path}.pin"),
+                format!("{pin} 已标记为未使用，不能作为动作输出"),
+                "mappings",
+            );
+        }
+    }
+    if friction_mode {
+        if role != Some(PinRole::Friction) {
+            push(
+                issues,
+                IssueSeverity::Error,
+                format!("{path}.pin"),
+                "摩擦轮专用控制方式只能用于角色为摩擦轮的输出引脚",
+                "mappings",
+            );
+        }
+        if action.output_kind != ActionOutputKind::Pin
+            || action.variable_name.is_some()
+            || action.expression.is_some()
+        {
+            push(
+                issues,
+                IssueSeverity::Error,
+                format!("{path}.pin"),
+                "摩擦轮专用控制方式必须输出到引脚",
+                "mappings",
+            );
+        }
+        if action.input_kind != ActionInputKind::Remote {
+            push(
+                issues,
+                IssueSeverity::Error,
+                format!("{path}.key"),
+                "摩擦轮专用控制方式需要遥控器输入",
+                "mappings",
+            );
+        }
+        if action.mode == Some(ControlMode::FrictionAxis) {
+            if !is_axis {
+                push(
+                    issues,
+                    IssueSeverity::Error,
+                    format!("{path}.key"),
+                    "摇杆油门只能使用摇杆轴输入",
+                    "mappings",
+                );
+            }
+        } else if !is_button {
+            push(
+                issues,
+                IssueSeverity::Error,
+                format!("{path}.key"),
+                "启停/单次/持续只能使用数字按键输入",
+                "mappings",
+            );
+        }
+    } else if friction {
+        if has_friction_control(config) {
+            push(
+                issues,
+                IssueSeverity::Error,
+                format!("{path}.mode"),
+                "同一配置中摩擦轮脚不能混用旧控制方式",
+                "mappings",
+            );
+        } else {
+            push(
+                issues,
+                IssueSeverity::Warning,
+                format!("{path}.mode"),
+                "摩擦轮脚上的旧控制方式直接写转速，不受安全斜坡保护",
+                "mappings",
+            );
+        }
+    }
+    let allowed: Vec<ControlMode> = match role {
+        None => Vec::new(),
+        Some(PinRole::Friction) => {
+            if main_friction {
+                if is_axis {
+                    vec![ControlMode::FrictionAxis]
+                } else if is_button {
+                    vec![
+                        ControlMode::FrictionToggle,
+                        ControlMode::FrictionStep,
+                        ControlMode::FrictionContinuous,
+                    ]
+                } else {
+                    Vec::new()
+                }
+            } else if is_axis {
+                vec![
+                    ControlMode::FrictionAxis,
+                    ControlMode::Speed,
+                    ControlMode::Accelerate,
+                ]
+            } else if is_button {
+                vec![
+                    ControlMode::FrictionToggle,
+                    ControlMode::FrictionStep,
+                    ControlMode::FrictionContinuous,
+                    ControlMode::Direct,
+                ]
+            } else {
+                Vec::new()
+            }
+        }
+        Some(_) if motor => {
+            if is_axis {
+                vec![ControlMode::Speed, ControlMode::Accelerate]
+            } else if is_button {
+                vec![ControlMode::Direct]
+            } else {
+                Vec::new()
+            }
+        }
+        Some(_) => {
+            if is_axis {
+                vec![ControlMode::Incremental, ControlMode::Direct]
+            } else if is_button {
+                vec![
+                    ControlMode::Direct,
+                    ControlMode::Single,
+                    ControlMode::Continuous,
+                ]
+            } else {
+                Vec::new()
+            }
+        }
+    };
+    if let Some(mode) = action.mode {
+        if !allowed.contains(&mode) {
+            push(
+                issues,
+                IssueSeverity::Error,
+                format!("{path}.mode"),
+                "控制方式与输入类型或 IO 输出角色不匹配",
+                "mappings",
+            );
+        }
+    }
+    if let Some(mode) = action.mode {
+        if !allowed.contains(&mode) {
+            return;
+        }
+        match mode {
+            ControlMode::Incremental => {
+                action_integer_range(
+                    issues,
+                    action.parameter,
+                    -90,
+                    90,
+                    &format!("{path}.parameter"),
+                    "舵机增量",
+                    "mappings",
+                );
+                if action.parameter.is_some_and(|value| value.to_f64() == 0.0) {
+                    push(
+                        issues,
+                        IssueSeverity::Warning,
+                        format!("{path}.parameter"),
+                        "舵机增量为 0，该动作不会产生变化",
+                        "mappings",
+                    );
+                }
+                if action
+                    .parameter
+                    .is_some_and(|value| value.to_f64().abs() > 30.0)
+                {
+                    push(
+                        issues,
+                        IssueSeverity::Warning,
+                        format!("{path}.parameter"),
+                        "单次增量偏大，建议使用 −30–30°",
+                        "mappings",
+                    );
+                }
+            }
+            ControlMode::Direct => {
+                action_integer_range(
+                    issues,
+                    action.parameter,
+                    if motor { -10000 } else { -90 },
+                    if motor { 10000 } else { 90 },
+                    &format!("{path}.parameter"),
+                    if motor {
+                        "电机速度"
+                    } else {
+                        "舵机角度"
+                    },
+                    "mappings",
+                );
+            }
+            ControlMode::Speed | ControlMode::Accelerate => {
+                action_integer_range(
+                    issues,
+                    action.parameter,
+                    0,
+                    10000,
+                    &format!("{path}.parameter"),
+                    "电机控制参数",
+                    "mappings",
+                );
+            }
+            ControlMode::Single | ControlMode::Continuous => {
+                servo_button_sensitivity(issues, action.parameter, &format!("{path}.parameter"));
+            }
+            ControlMode::FrictionToggle => {
+                action_integer_range(
+                    issues,
+                    action.parameter,
+                    1,
+                    100,
+                    &format!("{path}.parameter"),
+                    "目标油门 %",
+                    "mappings",
+                );
+            }
+            ControlMode::FrictionStep => {
+                action_integer_range(
+                    issues,
+                    action.parameter,
+                    -100,
+                    100,
+                    &format!("{path}.parameter"),
+                    "单次油门 %",
+                    "mappings",
+                );
+                if action.parameter.is_some_and(|value| value.to_f64() == 0.0) {
+                    push(
+                        issues,
+                        IssueSeverity::Error,
+                        format!("{path}.parameter"),
+                        "单次油门不能为 0，用正负表示加/减",
+                        "mappings",
+                    );
+                }
+            }
+            ControlMode::FrictionContinuous => {
+                action_integer_range(
+                    issues,
+                    action.parameter,
+                    -100,
+                    100,
+                    &format!("{path}.parameter"),
+                    "持续油门 %/秒",
+                    "mappings",
+                );
+                if action.parameter.is_some_and(|value| value.to_f64() == 0.0) {
+                    push(
+                        issues,
+                        IssueSeverity::Error,
+                        format!("{path}.parameter"),
+                        "持续油门不能为 0，用正负表示加/减",
+                        "mappings",
+                    );
+                }
+            }
+            ControlMode::FrictionAxis => {
+                action_integer_range(
+                    issues,
+                    action.parameter,
+                    1,
+                    100,
+                    &format!("{path}.parameter"),
+                    "摇杆油门 %/秒",
+                    "mappings",
+                );
+            }
+        }
+    } else {
+        choice(
+            issues,
+            action.parameter.map(|_| "present"),
+            &format!("{path}.parameter"),
+            "动作参数",
+            "mappings",
+        );
+    }
+}
+
+fn action_integer_range(
+    issues: &mut Issues,
+    value: Option<crate::json::ParamNum>,
+    min: i64,
+    max: i64,
+    path: &str,
+    label: &str,
+    step: &str,
+) {
+    if let Some(value) = value {
+        if !value.is_integral() {
+            push(
+                issues,
+                IssueSeverity::Error,
+                path,
+                format!("{label}必须为整数"),
+                step,
+            );
+            return;
+        }
+    }
+    range(
+        issues,
+        value.map(crate::json::ParamNum::to_i64),
+        min,
+        max,
+        path,
+        label,
+        step,
+        true,
+    );
+}
+
+fn servo_button_sensitivity(issues: &mut Issues, value: Option<crate::json::ParamNum>, path: &str) {
+    let Some(value) = value else {
+        push_required(
+            issues,
+            IssueSeverity::Error,
+            path,
+            "舵机灵敏度尚未填写",
+            "mappings",
+        );
+        return;
+    };
+    let numeric = value.to_f64();
+    if !numeric.is_finite() || numeric == 0.0 || numeric.abs() > 20.0 {
+        push(
+            issues,
+            IssueSeverity::Error,
+            path,
+            "舵机灵敏度绝对值必须大于 0 且不超过 20，正负表示方向",
+            "mappings",
+        );
+        return;
+    }
+    let hundredths = numeric * 100.0;
+    if (hundredths - hundredths.round()).abs() > 1e-9 {
+        push(
+            issues,
+            IssueSeverity::Error,
+            path,
+            "舵机灵敏度最多保留两位小数",
+            "mappings",
+        );
+        return;
+    }
+    if numeric.abs() > 10.0 {
+        push(
+            issues,
+            IssueSeverity::Warning,
+            path,
+            "舵机角度变化速度可能过快",
+            "mappings",
+        );
     }
 }
 
