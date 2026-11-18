@@ -24,18 +24,7 @@ fn golden() -> Value {
 }
 
 fn supported(case: &Value) -> bool {
-    let kind = case["kind"].as_str().unwrap_or("unknown");
-    if kind == "music" {
-        return false;
-    }
-    if case["command"].as_str() == Some("codegen") {
-        let exit = case["exitCode"].as_i64().unwrap_or(-1);
-        // 工程/音乐代码生成尚未移植：只对拍会因校验被拒绝的用例。
-        if kind == "engineer" && exit == 0 {
-            return false;
-        }
-    }
-    true
+    case["kind"].as_str().unwrap_or("unknown") != "music"
 }
 
 #[test]
