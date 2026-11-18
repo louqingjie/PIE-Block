@@ -49,3 +49,26 @@ crates/pieblock-ui         TUI 主题/组件/布局
 crates/pieblock-tui        主程序（当前 M0 演示壳）
 crates/pieblock-cli        只读 CLI（validate/codegen/describe）
 ```
+
+## 发布包
+
+```powershell
+# Windows x64
+pwsh -File scripts/package.ps1
+# 复用已构建的 release：pwsh -File scripts/package.ps1 -SkipBuild
+
+# Linux x86_64
+SKIP_BUILD=1 ./scripts/package.sh
+```
+
+产物在 `tui/dist/`：`PIE-Block-TUI-<版本>-<平台>.zip|tar.gz` 与 `.sha256`。包内布局：
+
+```text
+pieblock-tui(.exe)              主程序
+data/pieblock_runtime/          SDCC 工具链与 stc32g_sdcc 固件支撑（构建/烧录使用）
+assets/templates/               新建工程模板
+THIRD_PARTY_NOTICES.txt         SDCC 等第三方组件声明
+README.md
+```
+
+发布产物不包含 Dart/Flutter 运行时（打包脚本会扫描 `.dart/.dill/libapp*/flutter_*` 并拒绝）。服务端 CI 见 `.github/workflows/tui.yml`，每次推送构建并上传 Windows/Linux 发布包。
