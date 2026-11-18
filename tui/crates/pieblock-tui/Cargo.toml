@@ -10,6 +10,7 @@ crossterm.workspace = true
 pieblock-core.workspace = true
 pieblock-ui.workspace = true
 pieblock-toolchain = { path = "../pieblock-toolchain" }
+pieblock-hid = { path = "../pieblock-hid" }
 serde_json.workspace = true
 ratatui.workspace = true
 unicode-width.workspace = true

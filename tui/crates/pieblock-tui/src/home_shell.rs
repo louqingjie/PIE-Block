@@ -32,6 +32,7 @@ pub enum Screen {
     Build,
     Piano,
     Playback,
+    Flash,
     Browser(FileBrowser),
     Settings,
 }
@@ -79,6 +80,9 @@ pub struct Shell {
     pub build_ok: bool,
     pub piano: Option<pieblock_ui::PianoRoll>,
     pub playback: Option<pieblock_ui::Playback>,
+    pub flash: Option<pieblock_ui::FlashState>,
+    pub flash_hex: Option<(PathBuf, String)>,
+    pub flash_op: Option<pieblock_hid::FlashOperation>,
     quit: bool,
 }
 
@@ -128,6 +132,9 @@ impl Shell {
             build_ok: false,
             piano: None,
             playback: None,
+            flash: None,
+            flash_hex: None,
+            flash_op: None,
             quit: false,
         }
     }
@@ -147,6 +154,7 @@ impl Shell {
                 }
             }
             self.workspace.tick(Instant::now());
+            self.poll_flash();
             if let Some(playback) = self.playback.as_mut() {
                 playback.tick(Instant::now());
             }
@@ -174,6 +182,7 @@ impl Shell {
             Screen::Build => self.handle_build_key(key),
             Screen::Piano => self.handle_piano_key(key),
             Screen::Playback => self.handle_playback_key(key),
+            Screen::Flash => self.handle_flash_key(key),
             Screen::Browser(mut browser) => {
                 self.handle_browser_key(key, &mut browser);
                 if matches!(self.screen, Screen::Browser(_)) {
@@ -249,6 +258,7 @@ impl Shell {
             KeyCode::Char('b') => self.enter_build(),
             KeyCode::Char('m') => self.enter_piano(),
             KeyCode::Char('p') => self.enter_playback(),
+            KeyCode::Char('f') => self.enter_flash(),
             KeyCode::Char('s') => self.settings_screen(),
             KeyCode::F(5) => self.save(),
             _ => {}
@@ -511,6 +521,99 @@ impl Shell {
         let area = frame.area();
         if let Some(code) = self.code.as_mut() {
             code.render(frame, area, true, &self.palette, self.message.as_deref());
+        }
+    }
+
+    fn enter_flash(&mut self) {
+        let Some(session) = self.workspace.session.as_ref() else {
+            return;
+        };
+        let project_dir = session.path.parent().map(Path::to_path_buf);
+        let found = self.flash_hex.clone().or_else(|| {
+            project_dir.as_ref().and_then(|directory| {
+                let hex = directory.join("main.hex");
+                if hex.is_file() {
+                    std::fs::read(&hex)
+                        .ok()
+                        .map(|bytes| (hex, pieblock_core::sha256_hex(&bytes)))
+                } else {
+                    None
+                }
+            })
+        });
+        let (hex_path, sha) = found.map_or((None, None), |(path, sha)| (Some(path), Some(sha)));
+        self.flash = Some(pieblock_ui::FlashState::with_probe(hex_path, sha));
+        self.message = None;
+        self.screen = Screen::Flash;
+    }
+
+    fn poll_flash(&mut self) {
+        let Some(operation) = self.flash_op.as_ref() else {
+            return;
+        };
+        let mut finished = false;
+        let mut events = Vec::new();
+        while let Some(event) = operation.try_recv_event() {
+            if matches!(
+                event.stage,
+                pieblock_hid::FlashStage::Done | pieblock_hid::FlashStage::Canceled
+            ) {
+                finished = true;
+            }
+            events.push(event);
+            if finished {
+                break;
+            }
+        }
+        let Some(state) = self.flash.as_mut() else {
+            return;
+        };
+        for event in events {
+            state.push_event(event);
+        }
+        if finished {
+            if let Some(operation) = self.flash_op.take() {
+                let result = operation.wait();
+                state.finish(result);
+            }
+        }
+    }
+
+    fn handle_flash_key(&mut self, key: KeyEvent) {
+        let Some(action) = self.flash.as_mut().map(|flash| flash.handle_key(key)) else {
+            self.screen = Screen::Project;
+            return;
+        };
+        match action {
+            pieblock_ui::FlashAction::Close => self.screen = Screen::Project,
+            pieblock_ui::FlashAction::Cancel => {
+                if let Some(operation) = self.flash_op.as_ref() {
+                    operation.cancel();
+                }
+            }
+            pieblock_ui::FlashAction::Start { hex_path, sha256 } => {
+                let transport = pieblock_hid::NativeHidTransport::with_cancel_flag;
+                let operation = pieblock_hid::start_flash(
+                    hex_path,
+                    sha256,
+                    transport,
+                    pieblock_ui::FlashState::options(),
+                );
+                if let Some(state) = self.flash.as_mut() {
+                    state.running = true;
+                    state.log.clear();
+                    state.push_log("开始烧录…".to_owned());
+                }
+                self.flash_op = Some(operation);
+            }
+            pieblock_ui::FlashAction::None => {}
+        }
+    }
+
+    fn draw_flash(&mut self, frame: &mut Frame) {
+        let area = frame.area();
+        if let Some(flash) = self.flash.as_mut() {
+            flash.render(frame, area, &self.palette);
         }
     }
 
@@ -1201,6 +1304,7 @@ impl Shell {
             Screen::Build => self.draw_build(frame),
             Screen::Piano => self.draw_piano(frame),
             Screen::Playback => self.draw_playback(frame),
+            Screen::Flash => self.draw_flash(frame),
             Screen::Browser(browser) => {
                 draw_browser(frame, frame.area(), &browser, &self.palette);
                 self.draw_status(frame);
@@ -1695,7 +1799,13 @@ mod review_tests {
     fn setup() -> (Shell, std::path::PathBuf) {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../target")
-            .join(format!("shell-review-{}", std::process::id()));
+            .join(format!(
+                "shell-review-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |d| d.as_nanos())
+            ));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("dir");
         let mut shell = Shell::with_data_dir(dir.join("data"), dir.clone());
@@ -2106,6 +2216,40 @@ mod playback_tests {
         );
         shell.handle_key(key(KeyCode::Char(' ')));
         assert!(shell.playback.as_ref().is_some_and(|p| p.playing));
+        shell.handle_key(key(KeyCode::Esc));
+        assert_eq!(shell.screen, Screen::Project);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod flash_tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn flash_screen_opens_without_device_and_closes() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target")
+            .join(format!("shell-flash-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("dir");
+        let mut shell = Shell::with_data_dir(dir.join("data"), dir.clone());
+        shell.handle_key(key(KeyCode::Char('n')));
+        shell.handle_key(key(KeyCode::Enter));
+        shell.handle_key(key(KeyCode::Enter));
+        shell.handle_key(key(KeyCode::Char('f')));
+        assert_eq!(shell.screen, Screen::Flash);
+        assert!(
+            shell
+                .flash
+                .as_ref()
+                .is_some_and(|flash| !flash.log.is_empty())
+        );
         shell.handle_key(key(KeyCode::Esc));
         assert_eq!(shell.screen, Screen::Project);
         let _ = std::fs::remove_dir_all(&dir);

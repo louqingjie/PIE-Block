@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 crossterm.workspace = true
 pieblock-core.workspace = true
+pieblock-hid = { path = "../pieblock-hid" }
 ratatui.workspace = true
 unicode-width.workspace = true
 
