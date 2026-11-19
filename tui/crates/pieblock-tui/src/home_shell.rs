@@ -4,7 +4,9 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers, MouseEventKind};
+use crossterm::event::{
+    self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEventKind,
+};
 use pieblock_core::ProjectKind;
 use pieblock_toolchain::models::CompilerKind;
 use pieblock_ui::ThemeMode;
@@ -159,7 +161,11 @@ impl Shell {
             terminal.draw(|frame| self.draw(frame))?;
             if event::poll(std::time::Duration::from_millis(200))? {
                 match event::read()? {
-                    Event::Key(key) => self.handle_key(key),
+                    Event::Key(key) => {
+                        if should_handle_key(key.kind) {
+                            self.handle_key(key);
+                        }
+                    }
                     Event::Mouse(mouse) => self.handle_mouse(mouse.kind),
                     _ => {}
                 }
@@ -3535,5 +3541,22 @@ mod diagnostics_tests {
         assert!(lines.iter().any(|line| line.contains("PIE-Block TUI")));
         assert!(lines.iter().any(|line| line.contains("平台")));
         assert!(lines.iter().any(|line| line.contains("数据目录")));
+    }
+}
+
+fn should_handle_key(kind: KeyEventKind) -> bool {
+    matches!(kind, KeyEventKind::Press | KeyEventKind::Repeat)
+}
+
+#[cfg(test)]
+mod key_kind_tests {
+    use super::should_handle_key;
+    use crossterm::event::KeyEventKind;
+
+    #[test]
+    fn release_events_are_ignored() {
+        assert!(should_handle_key(KeyEventKind::Press));
+        assert!(should_handle_key(KeyEventKind::Repeat));
+        assert!(!should_handle_key(KeyEventKind::Release));
     }
 }

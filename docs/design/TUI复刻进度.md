@@ -176,3 +176,5 @@ cd tui
 - CLI 发布收尾：主程序新增 `--version/-V`、`--help/-h`、`--diagnostics`（不进入 TUI），新增集成测试覆盖三个选项的输出；人工验收指南可先用 `--version/--diagnostics` 确认二进制与运行环境。
 
 - 等待人工验收状态（Round 51–53）：软件功能、打包与自动化门禁均已完成（152 测试全绿）；用户已确认「先人工验收再发布」「当前无硬件」「终端清单由用户执行」。后续发布（v0.1.0 Tag/Release）依赖用户人工验收结果，真实烧录依赖硬件环境，均属外部阻塞。
+
+- 修复键盘重复触发（用户 Round 53 反馈）：Windows 终端下按一下方向键会先收到 Press、松手再收到 Release，主循环此前未过滤 `KeyEventKind`，导致一次按键移动两次。主 Shell 事件循环现只处理 `Press`/`Repeat`（与 Demo 壳一致），`Release` 忽略；新增 `key_kind_tests`，debug/release 重建并重新打包（Windows 包 SHA-256 `bbc168af5a88d89c0fdfbac663dcba0b827804252c560d19c9943a3babf10f28`）。
