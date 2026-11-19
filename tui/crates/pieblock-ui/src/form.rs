@@ -352,7 +352,7 @@ impl FormState {
             lines.push(Line::from(Span::styled(message.clone(), palette.warn())));
         }
         lines.push(Line::from(Span::styled(
-            "↑↓ 选择  Tab 切换  Enter 编辑/切换  PgUp/PgDn 翻页  Esc 返回",
+            "↑↓ 选择  Tab 切换  Enter 编辑/切换  PgUp/PgDn 翻页  Esc 保存返回",
             palette.muted(),
         )));
         frame.render_widget(Paragraph::new(lines), chunks[2]);

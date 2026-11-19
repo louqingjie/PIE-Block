@@ -1353,7 +1353,7 @@ impl Shell {
         };
         self.pages = wizard_pages(session.document.kind, &session.document.config);
         if self.pages.is_empty() {
-            self.message = Some("该工程类型的向导页尚未移植（M4 进行中）".to_owned());
+            self.message = Some("该工程类型暂无向导页（内部错误，请报告）".to_owned());
             return;
         }
         self.wizard_index = 0;
@@ -1940,7 +1940,7 @@ impl Shell {
             )),
             Line::from(""),
             Line::from(Span::styled(
-                "Enter/E 进入向导表单（M4 进行中）；Ctrl+S/F5 保存、O 打开、S 设置、H 首页、Q 退出。",
+                "Enter/E 向导 · R 审查 · C 代码 · B 构建 · F 烧录 · M 钢琴卷帘 · G 五线谱 · P 播放 · I 导入 MIDI · X 导出 MIDI · V AI 提案 · Ctrl+S/F5 保存 · O 打开 · S 设置 · H 首页 · Q 退出。",
                 self.palette.muted(),
             )),
         ];
@@ -2249,7 +2249,8 @@ mod tests {
         let text = compact(&render(&mut shell, 120, 36));
         assert!(text.contains("工程概览"));
         assert!(text.contains("工程项目"));
-        assert!(text.contains("M4"));
+        assert!(text.contains("构建"));
+        assert!(text.contains("烧录"));
     }
 
     #[test]
