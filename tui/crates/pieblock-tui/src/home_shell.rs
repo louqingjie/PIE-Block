@@ -3809,3 +3809,74 @@ mod click_navigation_tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
+
+#[cfg(test)]
+mod click_home_settings_tests {
+    use super::*;
+    use crossterm::event::{
+        KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+    };
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn clicking_home_recent_opens_project() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target")
+            .join(format!("shell-click-home-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("dir");
+        let project = dir.join("infantry.pieproj");
+        std::fs::copy(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../..")
+                .join("assets/templates/infantry.pieproj"),
+            &project,
+        )
+        .expect("template");
+        let mut shell = Shell::with_data_dir(dir.join("data"), dir.clone());
+        shell.workspace.open(&project).expect("open");
+        shell.enter_project();
+        shell.handle_key(key(KeyCode::Esc));
+        assert_eq!(shell.screen, Screen::Home);
+        assert!(!shell.workspace.settings.recent.is_empty());
+        let backend = ratatui::backend::TestBackend::new(100, 30);
+        let mut terminal = ratatui::Terminal::new(backend).expect("terminal");
+        terminal.draw(|frame| shell.draw(frame)).expect("draw");
+        let area = shell.last_area;
+        shell.handle_mouse_event(MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: area.x + 4,
+            row: area.y + 7,
+            modifiers: KeyModifiers::NONE,
+        });
+        assert_eq!(shell.screen, Screen::Project);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn clicking_settings_row_selects() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target")
+            .join(format!("shell-click-settings-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("dir");
+        let mut shell = Shell::with_data_dir(dir.join("data"), dir.clone());
+        shell.handle_key(key(KeyCode::Char('s')));
+        assert_eq!(shell.screen, Screen::Settings);
+        let backend = ratatui::backend::TestBackend::new(100, 30);
+        let mut terminal = ratatui::Terminal::new(backend).expect("terminal");
+        terminal.draw(|frame| shell.draw(frame)).expect("draw");
+        let area = shell.last_area;
+        shell.handle_mouse_event(MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: area.x + 4,
+            row: area.y + 4 + 2,
+            modifiers: KeyModifiers::NONE,
+        });
+        assert_eq!(shell.settings_selected, 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
