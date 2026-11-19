@@ -92,6 +92,8 @@ pub struct Shell {
     pub flash: Option<pieblock_ui::FlashState>,
     pub flash_hex: Option<(PathBuf, String)>,
     pub flash_op: Option<pieblock_hid::FlashOperation>,
+    /// 最近一次绘制时的终端区域（鼠标点击定位用）。
+    pub last_area: ratatui::layout::Rect,
     pub staff_clef: i64,
     quit: bool,
 }
@@ -148,6 +150,7 @@ impl Shell {
             flash: None,
             flash_hex: None,
             flash_op: None,
+            last_area: ratatui::layout::Rect::default(),
             staff_clef: 0,
             quit: false,
         }
@@ -674,15 +677,55 @@ impl Shell {
     }
 
     fn handle_left_click(&mut self, row: u16) {
-        if !matches!(self.screen, Screen::Wizard) {
-            return;
-        }
-        let index = self.wizard_index.min(self.pages.len().saturating_sub(1));
-        let field_count = self.pages.get(index).map_or(0, |page| page.fields.len());
-        if let Some(form) = self.form.as_mut() {
-            if form.select_at_row(row, field_count) {
-                self.message = None;
+        let area = self.last_area;
+        match self.screen.clone() {
+            Screen::Wizard => {
+                let index = self.wizard_index.min(self.pages.len().saturating_sub(1));
+                let field_count = self.pages.get(index).map_or(0, |page| page.fields.len());
+                if let Some(form) = self.form.as_mut() {
+                    if form.select_at_row(row, field_count) {
+                        self.message = None;
+                    }
+                }
             }
+            Screen::Home => {
+                let list_top = area.y.saturating_add(7);
+                if row < list_top {
+                    return;
+                }
+                let index = usize::from(row - list_top);
+                if index < self.workspace.settings.recent.len() {
+                    self.home_selected = index;
+                    self.handle_home_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+                }
+            }
+            Screen::Browser(browser) => {
+                let list_top = area.y.saturating_add(4);
+                if row < list_top {
+                    return;
+                }
+                let index = usize::from(row - list_top);
+                if index < browser.entries.len() {
+                    let mut next = browser;
+                    next.selected = index;
+                    self.screen = Screen::Browser(next.clone());
+                    self.handle_browser_key(
+                        KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+                        &mut next,
+                    );
+                }
+            }
+            Screen::Settings => {
+                let list_top = area.y.saturating_add(4);
+                if row < list_top {
+                    return;
+                }
+                let index = usize::from((row - list_top) / 2);
+                if index < SETTINGS_ROWS.len() {
+                    self.settings_selected = index;
+                }
+            }
+            _ => {}
         }
     }
 
@@ -3723,6 +3766,46 @@ mod click_tests {
             modifiers: KeyModifiers::NONE,
         });
         assert_eq!(shell.form.as_ref().expect("form").selected, 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod click_navigation_tests {
+    use super::*;
+    use crossterm::event::{
+        KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+    };
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn clicking_browser_entry_opens_project() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target")
+            .join(format!("shell-click-nav-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("dir");
+        let template = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../..")
+            .join("assets/templates/infantry.pieproj");
+        std::fs::copy(&template, dir.join("infantry.pieproj")).expect("template");
+        let mut shell = Shell::with_data_dir(dir.join("data"), dir.clone());
+        shell.handle_key(key(KeyCode::Char('o')));
+        assert!(matches!(shell.screen, Screen::Browser(_)));
+        let backend = ratatui::backend::TestBackend::new(100, 30);
+        let mut terminal = ratatui::Terminal::new(backend).expect("terminal");
+        terminal.draw(|frame| shell.draw(frame)).expect("draw");
+        let area = shell.last_area;
+        shell.handle_mouse_event(MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: area.x + 4,
+            row: area.y + 4,
+            modifiers: KeyModifiers::NONE,
+        });
+        assert_eq!(shell.screen, Screen::Project);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
