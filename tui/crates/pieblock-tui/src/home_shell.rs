@@ -683,8 +683,45 @@ impl Shell {
             (MouseEventKind::ScrollDown, Screen::Settings) => {
                 self.settings_selected = (self.settings_selected + 1).min(SETTINGS_ROWS.len() - 1);
             }
+            (MouseEventKind::ScrollUp, Screen::Wizard) => self.wizard_scroll(-1),
+            (MouseEventKind::ScrollDown, Screen::Wizard) => self.wizard_scroll(1),
+            (MouseEventKind::ScrollUp, Screen::Code) => {
+                if let Some(code) = self.code.as_mut() {
+                    code.scroll_by(-3, 20);
+                }
+            }
+            (MouseEventKind::ScrollDown, Screen::Code) => {
+                if let Some(code) = self.code.as_mut() {
+                    code.scroll_by(3, 20);
+                }
+            }
+            (MouseEventKind::ScrollUp, Screen::Build) => {
+                if let Some(log) = self.build_log.as_mut() {
+                    log.scroll_by(-3, 20);
+                }
+            }
+            (MouseEventKind::ScrollDown, Screen::Build) => {
+                if let Some(log) = self.build_log.as_mut() {
+                    log.scroll_by(3, 20);
+                }
+            }
             _ => {}
         }
+    }
+
+    fn wizard_scroll(&mut self, delta: i32) {
+        let index = self.wizard_index.min(self.pages.len().saturating_sub(1));
+        let field_count = self.pages.get(index).map_or(0, |page| page.fields.len());
+        if field_count == 0 {
+            return;
+        }
+        let Some(form) = self.form.as_mut() else {
+            return;
+        };
+        let current = i64::try_from(form.selected).unwrap_or(0);
+        let next =
+            (current + i64::from(delta)).clamp(0, i64::try_from(field_count - 1).unwrap_or(0));
+        form.selected = usize::try_from(next).unwrap_or(0);
     }
 
     fn enter_code(&mut self) {
@@ -3587,6 +3624,39 @@ mod key_release_shell_tests {
         let press = KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE);
         shell.handle_key(press);
         assert!(matches!(shell.overlay, Overlay::KindPicker { .. }));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod mouse_tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEventKind};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn mouse_wheel_scrolls_wizard_selection() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target")
+            .join(format!("shell-mouse-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("dir");
+        let mut shell = Shell::with_data_dir(dir.join("data"), dir.clone());
+        shell.handle_key(key(KeyCode::Char('n')));
+        shell.handle_key(key(KeyCode::Enter));
+        shell.handle_key(key(KeyCode::Enter));
+        shell.handle_key(key(KeyCode::Enter));
+        assert_eq!(shell.screen, Screen::Wizard);
+        assert_eq!(shell.form.as_ref().expect("form").selected, 0);
+        shell.handle_mouse(MouseEventKind::ScrollDown);
+        assert_eq!(shell.form.as_ref().expect("form").selected, 1);
+        shell.handle_mouse(MouseEventKind::ScrollUp);
+        assert_eq!(shell.form.as_ref().expect("form").selected, 0);
+        shell.handle_mouse(MouseEventKind::ScrollUp);
+        assert_eq!(shell.form.as_ref().expect("form").selected, 0);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
