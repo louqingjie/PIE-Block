@@ -178,3 +178,6 @@ cd tui
 - 等待人工验收状态（Round 51–53）：软件功能、打包与自动化门禁均已完成（152 测试全绿）；用户已确认「先人工验收再发布」「当前无硬件」「终端清单由用户执行」。后续发布（v0.1.0 Tag/Release）依赖用户人工验收结果，真实烧录依赖硬件环境，均属外部阻塞。
 
 - 修复键盘重复触发（用户 Round 53 反馈）：Windows 终端下按一下方向键会先收到 Press、松手再收到 Release，主循环此前未过滤 `KeyEventKind`，导致一次按键移动两次。主 Shell 事件循环现只处理 `Press`/`Repeat`（与 Demo 壳一致），`Release` 忽略；新增 `key_kind_tests`，debug/release 重建并重新打包（Windows 包 SHA-256 `bbc168af5a88d89c0fdfbac663dcba0b827804252c560d19c9943a3babf10f28`）。
+
+- 键盘释放事件防护加固：`Shell::handle_key` 自身也过滤 `KeyEventKind::Release`（不只依赖事件循环），并新增 Shell 级测试「Release 的 N 键不打开类型选择、Press 正常打开」。
+- 发布脚本自检：Windows/Linux 打包脚本在压缩前从无关工作目录运行包内二进制的 `--diagnostics`，断言运行时资源定位到包内 `data/pieblock_runtime`，失败即中止打包；CI 增加 `cargo run -- --diagnostics` 冒烟步骤。最新 Windows 包 SHA-256 `2a4c3c00da8ab3c84f16b1054ac38e2a8b026374dcbc995a999549e9c846cb5c`。

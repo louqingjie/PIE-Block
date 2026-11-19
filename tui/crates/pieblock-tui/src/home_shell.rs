@@ -183,6 +183,9 @@ impl Shell {
 
     /// 处理按键（测试可直接调用）。
     pub fn handle_key(&mut self, key: KeyEvent) {
+        if !should_handle_key(key.kind) {
+            return;
+        }
         if self.handle_overlay_key(key) {
             return;
         }
@@ -3558,5 +3561,32 @@ mod key_kind_tests {
         assert!(should_handle_key(KeyEventKind::Press));
         assert!(should_handle_key(KeyEventKind::Repeat));
         assert!(!should_handle_key(KeyEventKind::Release));
+    }
+}
+
+#[cfg(test)]
+mod key_release_shell_tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+
+    #[test]
+    fn shell_ignores_release_events() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target")
+            .join(format!("shell-key-release-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("dir");
+        let mut shell = Shell::with_data_dir(dir.join("data"), dir.clone());
+        let release = KeyEvent::new_with_kind(
+            KeyCode::Char('n'),
+            KeyModifiers::NONE,
+            KeyEventKind::Release,
+        );
+        shell.handle_key(release);
+        assert_eq!(shell.overlay, Overlay::None);
+        let press = KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE);
+        shell.handle_key(press);
+        assert!(matches!(shell.overlay, Overlay::KindPicker { .. }));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

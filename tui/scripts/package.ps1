@@ -77,6 +77,20 @@ $dartDirs = Get-ChildItem -Path $Stage -Recurse -Directory | Where-Object {
 }
 if ($dartDirs) { throw "发布产物包含 Dart/Flutter 目录" }
 
+# 自检：从无关目录启动，解压态可执行文件应自行定位包内运行时资源。
+Write-Host "==> 自检发布包运行环境…"
+Push-Location $env:TEMP
+try {
+    $diag = & (Join-Path $Stage "pieblock-tui.exe") --diagnostics
+    if ($LASTEXITCODE -ne 0) { throw "发布包 --diagnostics 自检失败" }
+} finally {
+    Pop-Location
+}
+$diagText = ($diag -join [Environment]::NewLine)
+$Runtime = Join-Path $Stage "data\pieblock_runtime"
+if (-not $diagText.Contains($Runtime)) { throw "发布包未定位到自身运行时资源：`n$diagText" }
+$diag | ForEach-Object { Write-Host "    $_" }
+
 $Zip = Join-Path $OutputRoot "$StageName.zip"
 if (Test-Path $Zip) { Remove-Item -Force $Zip }
 Compress-Archive -Path (Join-Path $Stage "*") -DestinationPath $Zip -CompressionLevel Optimal

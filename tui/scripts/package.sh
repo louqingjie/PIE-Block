@@ -56,6 +56,12 @@ if find "$STAGE" -type d \( -name flutter -o -name dart-sdk -o -name .dart_tool 
   exit 1
 fi
 
+# 自检：从无关目录启动，可执行文件应自行定位包内运行时资源。
+echo "==> 自检发布包运行环境…"
+DIAG="$(cd /tmp && "$STAGE/pieblock-tui" --diagnostics)"
+echo "$DIAG"
+grep -qF "$STAGE/data/pieblock_runtime" <<< "$DIAG" || { echo "发布包未定位到自身运行时资源" >&2; exit 1; }
+
 TARBALL="$OUTPUT_ROOT/$STAGE_NAME.tar.gz"
 rm -f "$TARBALL"
 tar -czf "$TARBALL" -C "$OUTPUT_ROOT" "$STAGE_NAME"
