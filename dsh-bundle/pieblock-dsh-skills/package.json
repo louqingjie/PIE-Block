@@ -1,0 +1,17 @@
+{
+  "name": "pieblock-dsh-skills",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "PIE-Block AI 规程（配置 / 排障）的 DSH 插件：只提供 skill，不含运行时代码。",
+  "files": [
+    "cordis.patch.yml",
+    "README.md",
+    "skills"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}
