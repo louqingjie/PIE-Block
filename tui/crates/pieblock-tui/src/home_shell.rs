@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use crossterm::event::{
-    self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEventKind,
+    self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent,
+    MouseEventKind,
 };
 use pieblock_core::ProjectKind;
 use pieblock_toolchain::models::CompilerKind;
@@ -166,7 +167,7 @@ impl Shell {
                             self.handle_key(key);
                         }
                     }
-                    Event::Mouse(mouse) => self.handle_mouse(mouse.kind),
+                    Event::Mouse(mouse) => self.handle_mouse_event(mouse),
                     _ => {}
                 }
             }
@@ -665,6 +666,26 @@ impl Shell {
     }
 
     /// 鼠标滚轮移动选择。
+    pub fn handle_mouse_event(&mut self, mouse: MouseEvent) {
+        match mouse.kind {
+            MouseEventKind::Down(MouseButton::Left) => self.handle_left_click(mouse.row),
+            kind => self.handle_mouse(kind),
+        }
+    }
+
+    fn handle_left_click(&mut self, row: u16) {
+        if !matches!(self.screen, Screen::Wizard) {
+            return;
+        }
+        let index = self.wizard_index.min(self.pages.len().saturating_sub(1));
+        let field_count = self.pages.get(index).map_or(0, |page| page.fields.len());
+        if let Some(form) = self.form.as_mut() {
+            if form.select_at_row(row, field_count) {
+                self.message = None;
+            }
+        }
+    }
+
     pub fn handle_mouse(&mut self, kind: MouseEventKind) {
         match (kind, self.screen.clone()) {
             (MouseEventKind::ScrollUp, Screen::Home) => self.select_home(-1),
@@ -3658,6 +3679,50 @@ mod mouse_tests {
         assert_eq!(shell.form.as_ref().expect("form").selected, 0);
         shell.handle_mouse(MouseEventKind::ScrollUp);
         assert_eq!(shell.form.as_ref().expect("form").selected, 0);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod click_tests {
+    use super::*;
+    use crossterm::event::{
+        KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+    };
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn clicking_wizard_row_selects_field() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target")
+            .join(format!("shell-click-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("dir");
+        let mut shell = Shell::with_data_dir(dir.join("data"), dir.clone());
+        shell.handle_key(key(KeyCode::Char('n')));
+        shell.handle_key(key(KeyCode::Enter));
+        shell.handle_key(key(KeyCode::Enter));
+        shell.handle_key(key(KeyCode::Enter));
+        assert_eq!(shell.screen, Screen::Wizard);
+        let backend = ratatui::backend::TestBackend::new(110, 30);
+        let mut terminal = ratatui::Terminal::new(backend).expect("terminal");
+        terminal.draw(|frame| shell.draw(frame)).expect("draw");
+        let area = shell
+            .form
+            .as_ref()
+            .expect("form")
+            .list_area
+            .expect("list area");
+        shell.handle_mouse_event(MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: area.x + 4,
+            row: area.y + 2,
+            modifiers: KeyModifiers::NONE,
+        });
+        assert_eq!(shell.form.as_ref().expect("form").selected, 1);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

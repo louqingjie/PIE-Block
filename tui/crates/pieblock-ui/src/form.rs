@@ -104,6 +104,10 @@ pub enum FormAction {
 pub struct FormState {
     pub config: ProjectConfig,
     pub selected: usize,
+    /// 最近一次渲染的字段列表区域（供鼠标点击定位）。
+    pub list_area: Option<Rect>,
+    /// 列表当前滚动偏移。
+    pub list_offset: usize,
     /// 正在编辑的文本缓冲；`Some` 时字符输入写入这里。
     pub editing: Option<String>,
     pub message: Option<String>,
@@ -116,6 +120,8 @@ impl FormState {
         Self {
             config,
             selected: 0,
+            list_area: None,
+            list_offset: 0,
             editing: None,
             message: None,
             dirty: false,
@@ -292,6 +298,22 @@ impl FormState {
     }
 
     /// 渲染页面。
+    /// 按终端行坐标选择字段；返回是否命中字段列表。
+    pub fn select_at_row(&mut self, row: u16, field_count: usize) -> bool {
+        let Some(area) = self.list_area else {
+            return false;
+        };
+        if row <= area.y || row >= area.y + area.height.saturating_sub(1) || field_count == 0 {
+            return false;
+        }
+        let index = self.list_offset + usize::from(row - area.y - 1);
+        if index >= field_count {
+            return false;
+        }
+        self.selected = index;
+        true
+    }
+
     pub fn render(&mut self, frame: &mut Frame, area: Rect, page: &FormPage, palette: &Palette) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -339,6 +361,8 @@ impl FormState {
         let mut state = ListState::default();
         state.select(Some(self.selected.min(page.fields.len().saturating_sub(1))));
         frame.render_stateful_widget(list, chunks[1], &mut state);
+        self.list_area = Some(chunks[1]);
+        self.list_offset = state.offset();
 
         let field_help = page
             .fields
