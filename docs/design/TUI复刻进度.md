@@ -181,3 +181,5 @@ cd tui
 
 - 键盘释放事件防护加固：`Shell::handle_key` 自身也过滤 `KeyEventKind::Release`（不只依赖事件循环），并新增 Shell 级测试「Release 的 N 键不打开类型选择、Press 正常打开」。
 - 发布脚本自检：Windows/Linux 打包脚本在压缩前从无关工作目录运行包内二进制的 `--diagnostics`，断言运行时资源定位到包内 `data/pieblock_runtime`，失败即中止打包；CI 增加 `cargo run -- --diagnostics` 冒烟步骤。最新 Windows 包 SHA-256 `2a4c3c00da8ab3c84f16b1054ac38e2a8b026374dcbc995a999549e9c846cb5c`。
+
+- 启动脚本改进：`tui/run.ps1` 支持 `-Diagnostics`/`-Version`（透传主程序标志），并在构建/启动失败且检测到仍有 `pieblock-tui` 进程时提示「先退出正在运行的 TUI（Windows 锁定 target\debug exe）」；README 与人工验收指南同步给出脚本用法。

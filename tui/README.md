@@ -14,6 +14,7 @@
 cd tui
 cargo run -p pieblock-tui        # 启动 TUI（默认启用鼠标捕获；可用 --no-mouse 关闭）
 cargo run -p pieblock-tui -- --diagnostics  # 打印发布验收用环境诊断（不启动 TUI）
+.\run.ps1 -Diagnostics                      # 同上（脚本会自动定位 cargo；-Version 打印版本）
 cargo test                       # 单元测试
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings
