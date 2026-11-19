@@ -3880,3 +3880,104 @@ mod click_home_settings_tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
+
+#[cfg(test)]
+mod render_smoke_tests {
+    use super::*;
+    use pieblock_core::ProjectKind;
+    use pieblock_ui::FileBrowser;
+
+    fn shell_with_kind(kind: ProjectKind, suffix: &str) -> (Shell, std::path::PathBuf) {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target")
+            .join(format!(
+                "shell-render-{}-{}-{}",
+                kind.as_str(),
+                suffix,
+                std::process::id()
+            ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("dir");
+        let template = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../..")
+            .join("assets/templates")
+            .join(format!("{}.pieproj", kind.as_str()));
+        let project = dir.join(format!("{}.pieproj", kind.as_str()));
+        std::fs::copy(&template, &project).expect("template");
+        let mut shell = Shell::with_data_dir(dir.join("data"), dir.clone());
+        shell.workspace.open(&project).expect("open");
+        shell.enter_project();
+        (shell, dir)
+    }
+
+    fn render(shell: &mut Shell, width: u16, height: u16) {
+        let backend = ratatui::backend::TestBackend::new(width, height);
+        let mut terminal = ratatui::Terminal::new(backend).expect("terminal");
+        terminal.draw(|frame| shell.draw(frame)).expect("draw");
+    }
+
+    fn render_all(shell: &mut Shell) {
+        for (width, height) in [(80, 24), (120, 36), (140, 42)] {
+            shell.screen = Screen::Home;
+            render(shell, width, height);
+            shell.overlay = Overlay::Help;
+            render(shell, width, height);
+            shell.overlay = Overlay::None;
+            shell.enter_project();
+            render(shell, width, height);
+            shell.enter_review();
+            render(shell, width, height);
+            shell.enter_wizard();
+            for index in 0..shell.pages.len() {
+                shell.wizard_index = index;
+                render(shell, width, height);
+            }
+            shell.screen = Screen::Project;
+            shell.enter_code();
+            render(shell, width, height);
+            shell.build_log = Some(pieblock_ui::CodeView::new(
+                "构建日志 · 冒烟",
+                "准备\n编译\n链接\n校验\n完成",
+            ));
+            shell.screen = Screen::Build;
+            render(shell, width, height);
+            shell.enter_flash();
+            render(shell, width, height);
+            shell.screen = Screen::Browser(FileBrowser::new(shell.start_dir.clone()));
+            render(shell, width, height);
+            shell.screen = Screen::Settings;
+            render(shell, width, height);
+            if matches!(
+                shell
+                    .workspace
+                    .session
+                    .as_ref()
+                    .expect("session")
+                    .document
+                    .kind,
+                ProjectKind::Music
+            ) {
+                shell.enter_piano();
+                render(shell, width, height);
+                shell.enter_staff();
+                render(shell, width, height);
+                shell.enter_playback();
+                render(shell, width, height);
+            }
+        }
+    }
+
+    #[test]
+    fn every_project_kind_renders_all_screens_without_panic() {
+        for kind in [
+            ProjectKind::Infantry,
+            ProjectKind::Engineer,
+            ProjectKind::Debug,
+            ProjectKind::Music,
+        ] {
+            let (mut shell, dir) = shell_with_kind(kind, "all");
+            render_all(&mut shell);
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
+}
