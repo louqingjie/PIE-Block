@@ -57,7 +57,7 @@
 
 工程项目的 `pwm.pin_notes`（格式 20 起）保存可选的引脚备注，例如 `{"MP03": "工程一级舵机"}`。备注只用于动作映射页的引脚选择显示 `MP03（工程一级舵机）`，方便区分同型号的多路输出；缺省为空，不参与校验，也不影响生成代码。备注以引脚名为键，保存时只写出固定引脚顺序中的非空备注。
 
-工程动作的 `mode` 支持 `direct`、`incremental`、`speed`、`accelerate`、`single`、`continuous`、`frictionToggle`、`frictionStep`、`frictionContinuous` 和 `frictionAxis`。数字按键控制舵机时可使用 `direct`（按键上升沿到达相对中位点的预设角度）、`single`（按键上升沿按灵敏度单次增加）或 `continuous`（按住期间按灵敏度逐主循环增加）。格式 19 起动作行不再保存 `direction`，方向由 `parameter` 正负表示：`direct` 的 `parameter` 为带符号整数（舵机 −90–90、电机 −10000–10000），正负决定中位点两侧与转向；`single` 和 `continuous` 的 `parameter` 保存带符号、最多两位小数的角度灵敏度；`speed`/`accelerate` 等由摇杆方向决定的模式参数仍为非负幅值。其他动作参数仍为整数。格式 17 起动作行还保存 `input_kind`（`remote`/`unspecified`）、`output_kind`（`pin`/`integer`/`rational`）、`variable` 与 `expression`：`input_kind == unspecified` 的行使用 `expression` 单条受限表达式，`output_kind` 非 `pin` 时输出到同名变量。
+工程动作的 `mode` 支持 `direct`、`incremental`、`speed`、`accelerate`、`single`、`continuous`、`frictionToggle`、`frictionStep`、`frictionContinuous` 和 `frictionAxis`。数字按键控制舵机时可使用 `direct`（按键上升沿到达相对中位点的预设角度）、`single`（按键上升沿按灵敏度单次增加）或 `continuous`（按住期间按灵敏度逐主循环增加）。格式 19 起动作行不再保存 `direction`，方向由 `parameter` 正负表示：`direct` 的 `parameter` 为带符号整数：电机是 −10000–10000 的 duty；舵机是相对中位的角度，可填范围取该脚两侧行程（逆时针 `90 − 中位`、顺时针 `−(90 + 中位)`）与 ±90° 的并集，中位为 0 时就是 −90–90，超出该侧行程或该脚限幅的角度按端点截断。正负决定中位点两侧与转向；`single` 和 `continuous` 的 `parameter` 保存带符号、最多两位小数的角度灵敏度；`speed`/`accelerate` 等由摇杆方向决定的模式参数仍为非负幅值。其他动作参数仍为整数。格式 17 起动作行还保存 `input_kind`（`remote`/`unspecified`）、`output_kind`（`pin`/`integer`/`rational`）、`variable` 与 `expression`：`input_kind == unspecified` 的行使用 `expression` 单条受限表达式，`output_kind` 非 `pin` 时输出到同名变量。
 
 同一模式里多行输出到同一个电机引脚时，`direct` 行会按行序合并成一条 `if / else if / else` 链：行序在后的优先，全部松开输出 0。因此「B 反向、C 正向」这类双键正反转直接用两条 `direct` 行即可，不会出现后一行把前一行清成 0 的情况。其余组合（`direct` 与 `speed`/`accelerate` 混用、两条表达式行写同一引脚等）仍按行序覆盖，校验器会给出「在本模式被多行输出」的警告。
 
@@ -87,7 +87,7 @@
 - `key` 必填：下一档键（数字遥控键），每次按下上升沿前进一档；`prev_key` 可选：上一档键，反向切换，不能与 `key` 相同。
 - `wrap` 对应界面的「越界重复」，缺省 `true`：开启时下一档键在最后一档后回到第 1 档、上一档键在第 1 档后回到最后一档；关闭时下一档键停在最后一档、上一档键停在第一档。只有 `key` 没有 `prev_key` 时 `wrap` 必须为 `true`，否则校验报错。
 - `steps` 为 2–8；`rows` 至少一行，每行 `values` 长度必须等于 `steps` 且每格必填。
-- 值按引脚角色解释：舵机是带符号的相对归中角度（−90–+90），电机是带符号 duty（−10000–10000）；摩擦轮引脚不允许放进动作表（必须走摩擦轮安全斜坡）。
+- 值按引脚角色解释：舵机是带符号的相对归中角度（范围与动作行一致，中位为 0 时 −90–+90），电机是带符号 duty（−10000–10000）；摩擦轮引脚不允许放进动作表（必须走摩擦轮安全斜坡）。
 - 写入语义是「写一次、保持」：伺服保持角度、电机锁存 duty，不是按住才输出。上电初始为「未选档」，第一次按键进入第 1 档；切模式时档位计数清零。
 - 表键与上一档键不能同时是本模式的模式切换键、也不能出现在本模式动作行的输入里；表内引脚不能与本模式动作行或其他动作表重复，否则校验器报错。
 - 档位提示音受「禁用蜂鸣器反馈」控制：每次切档响一声与档位对应的短音（880/1047/1319/1568/1975/2349/2637/2794 Hz）。
