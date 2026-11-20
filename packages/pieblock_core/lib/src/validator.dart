@@ -499,6 +499,24 @@ abstract final class ProjectValidator {
     );
   }
 
+  /// 舵机动作可以直接下达的「相对中位」角度区间。
+  ///
+  /// 中位偏移把电气 ±90° 切成两侧行程（逆时针 `90 − 中位`、顺时针
+  /// `−(90 + 中位)`），动作角度按这两侧行程放宽：中位 60° 时顺时针可以填
+  /// 到 −120°（绝对 −60°），不再被固定的 ±90° 截住。
+  ///
+  /// 取「两侧行程」与 ±90° 的并集、只放宽不收紧：旧存档在 ±90° 内填过的
+  /// 角度继续有效，超出该侧行程的部分本来就会在电气端点或限幅处截断。
+  static ({int min, int max}) _servoAngleRange(
+    EngineerConfig config,
+    String pin,
+  ) {
+    final mid = (config.pwm.servoMids[pin] ?? 0).clamp(-90, 90);
+    final cw = -(90 + mid);
+    final ccw = 90 - mid;
+    return (min: cw < -90 ? cw : -90, max: ccw > 90 ? ccw : 90);
+  }
+
   static void _chassis(ChassisConfig chassis, _AddIssue issue) {
     final wheels =
         <({String path, String label, WheelConfig value, String side})>[
@@ -1565,8 +1583,18 @@ abstract final class ProjectValidator {
             );
             continue;
           }
-          if (role == PinRole.servo) {
-            _range(value, -90, 90, valuePath, '$label角度', 'mappings', issue);
+          if (role == PinRole.servo && pin != null) {
+            // 动作表的舵机档位值同样相对中位，按该脚两侧行程校验。
+            final range = _servoAngleRange(config, pin);
+            _range(
+              value,
+              range.min,
+              range.max,
+              valuePath,
+              '$label角度',
+              'mappings',
+              issue,
+            );
           } else {
             _range(value, -10000, 10000, valuePath, '$label duty', 'mappings', issue);
           }
@@ -1925,15 +1953,44 @@ abstract final class ProjectValidator {
           );
         }
       case ControlMode.direct:
-        _actionIntegerRange(
-          action.parameter,
-          motor ? -10000 : -90,
-          motor ? 10000 : 90,
-          '$path.parameter',
-          motor ? '电机速度' : '舵机角度',
-          'mappings',
-          issue,
-        );
+        if (motor) {
+          _actionIntegerRange(
+            action.parameter,
+            -10000,
+            10000,
+            '$path.parameter',
+            '电机速度',
+            'mappings',
+            issue,
+          );
+        } else if (isAxis ||
+            action.pin == null ||
+            !config.pwm.isServoPin(action.pin!)) {
+          // 摇杆跟随只有一个幅值、两侧共用，仍按 ±90° 校验；引脚缺失或角色
+          // 不是舵机时也走这里，具体问题由引脚本身报错。
+          _actionIntegerRange(
+            action.parameter,
+            -90,
+            90,
+            '$path.parameter',
+            '舵机角度',
+            'mappings',
+            issue,
+          );
+        } else {
+          // 舵机角度相对中位，两侧行程由中位偏移决定：中位 60° 时顺时针
+          // 可以填到 −120°，不再被 ±90° 截住；超出行程或限幅仍按端点截断。
+          final range = _servoAngleRange(config, action.pin!);
+          _actionIntegerRange(
+            action.parameter,
+            range.min,
+            range.max,
+            '$path.parameter',
+            '舵机角度',
+            'mappings',
+            issue,
+          );
+        }
       case ControlMode.speed || ControlMode.accelerate:
         _actionIntegerRange(
           action.parameter,

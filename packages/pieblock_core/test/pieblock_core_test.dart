@@ -1263,6 +1263,41 @@ void main() {
       );
     });
 
+    test('舵机档位值按中位两侧行程校验并照常截断', () {
+      EngineerConfig shifted(int mid, List<int> values) {
+        final source = tableEngineer(
+          tables: [
+            ActionTable(
+              key: 'A',
+              previousKey: 'D',
+              steps: 3,
+              rows: [ActionTableRow(pin: 'P60', values: values)],
+            ),
+          ],
+        );
+        return source.copyWith(
+          pwm: source.pwm.copyWith(
+            servoMids: {...source.pwm.servoMids, 'P60': mid},
+          ),
+        );
+      }
+
+      // 中位 60°：顺时针可以填到 −120°（绝对 −60°），生成 417 duty。
+      final wide = shifted(60, const [-120, 0, 30]);
+      expect(
+        ProjectValidator.validate(wide)
+            .where((issue) => issue.severity == IssueSeverity.error),
+        isEmpty,
+      );
+      expect(CodeGenerator.generate(wide), contains('dutyOfMotor[0] = 417;'));
+
+      // 超出该侧行程（顺时针 −150°）仍报错。
+      final tooFar = ProjectValidator.validate(shifted(60, const [-151, 0, 30]))
+          .where((issue) => issue.severity == IssueSeverity.error);
+      expect(tooFar.single.message, '第 1 档角度必须在 -150–90 之间');
+      expect(tooFar.single.fieldPath, 'modes.0.action_tables.0.rows.0.values.0');
+    });
+
     test('旧动作表缺少 wrap 时按越界重复开启读入', () {
       final legacy = ActionTable.fromJson({
         'id': 'legacy',
@@ -1784,6 +1819,58 @@ void main() {
       // 中位 0°、逆时针限幅 45°：目标 90° 被截到 1000 duty。
       expect(code, contains('dutyOfMotor[0] = 1000;'));
       expect(code, isNot(contains('dutyOfMotor[0] = 1250;')));
+    });
+
+    test('工程直接模式角度按中位两侧行程放宽', () {
+      EngineerConfig direct(
+        int parameter, {
+        int mid = 0,
+        int? cw,
+        int? ccw,
+      }) {
+        final source = servoButtonEngineer(
+          mode: ControlMode.direct,
+          parameter: parameter,
+        );
+        return source.copyWith(
+          pwm: source.pwm.copyWith(
+            servoMids: {...source.pwm.servoMids, 'P60': mid},
+            servoMinLimits: cw == null ? const {} : {'P60': -cw},
+            servoMaxLimits: ccw == null ? const {} : {'P60': ccw},
+          ),
+        );
+      }
+
+      List<ValidationIssue> errors(EngineerConfig config) => ProjectValidator
+          .validate(config)
+          .where((issue) => issue.severity == IssueSeverity.error)
+          .toList();
+
+      // 中位 60°、顺时针限幅 120°：目标 −120° 合法，落到绝对 −60°（417 duty）。
+      final wide = direct(-120, mid: 60, cw: 120, ccw: 0);
+      expect(errors(wide), isEmpty);
+      expect(CodeGenerator.generate(wide), contains('dutyOfMotor[0] = 417;'));
+      // 负中位同理：逆时针可以填到 90 + 70 = 160°。
+      final negativeMid = direct(100, mid: -70, ccw: 100);
+      expect(errors(negativeMid), isEmpty);
+      expect(
+        CodeGenerator.generate(negativeMid),
+        contains('dutyOfMotor[0] = 917;'),
+      );
+      // 超出该侧行程仍然报错。
+      final tooFar = errors(direct(-151, mid: 60)).single;
+      expect(tooFar.message, '舵机角度必须在 -150–90 之间');
+      expect(tooFar.fieldPath, 'modes.0.actions.0.parameter');
+      // 旧存档里 ±90° 以内的角度继续有效，落点按电气端点截断。
+      expect(
+        CodeGenerator.generate(direct(90, mid: 60)),
+        contains('dutyOfMotor[0] = 1250;'),
+      );
+      // 超出限幅的目标仍按限幅截断（中位 60°、顺时针限幅 60° 落到 750）。
+      expect(
+        CodeGenerator.generate(direct(-120, mid: 60, cw: 60)),
+        contains('dutyOfMotor[0] = 750;'),
+      );
     });
 
     test('步兵云台限位按轴取交集且未填时维持满行程', () {

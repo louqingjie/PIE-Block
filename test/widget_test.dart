@@ -603,6 +603,9 @@ ProjectDocument _engineerParameterDocument(
   ControlMode mode,
   num parameter, {
   String key = 'A',
+  int mid = 0,
+  int? cwLimit,
+  int? ccwLimit,
 }) {
   final source = _engineerDocument();
   final config = source.config as EngineerConfig;
@@ -610,7 +613,9 @@ ProjectDocument _engineerParameterDocument(
     config: config.copyWith(
       pwm: config.pwm.copyWith(
         pinRoles: const {'P60': PinRole.servo},
-        servoMids: const {'P60': 0},
+        servoMids: {'P60': mid},
+        servoMinLimits: cwLimit == null ? const {} : {'P60': -cwLimit},
+        servoMaxLimits: ccwLimit == null ? const {} : {'P60': ccwLimit},
       ),
       modes: [
         EngineerModeConfig(
@@ -635,13 +640,23 @@ Future<void> _pumpParameterField(
   ControlMode mode,
   num parameter, {
   String key = 'A',
+  int mid = 0,
+  int? cwLimit,
+  int? ccwLimit,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
         appControllerProvider.overrideWith(
           () => _StaticProjectController(
-            _engineerParameterDocument(mode, parameter, key: key),
+            _engineerParameterDocument(
+              mode,
+              parameter,
+              key: key,
+              mid: mid,
+              cwLimit: cwLimit,
+              ccwLimit: ccwLimit,
+            ),
             3,
           ),
         ),
@@ -3275,6 +3290,36 @@ void main() {
     await tester.pumpAndSettle();
     expect(_parameterEditable(tester).controller.text, '3000');
     expect(_storedParameter(tester), 3000);
+  });
+
+  testWidgets('工程直接模式目标角度可填到中位两侧行程之外', (tester) async {
+    // 中位 60°、顺时针限幅 120°：−120° 是绝对 −60°，落在电气行程内。
+    await _pumpParameterField(
+      tester,
+      ControlMode.direct,
+      30,
+      mid: 60,
+      cwLimit: 120,
+    );
+    final field = find.byKey(_parameterFieldKey);
+    await tester.ensureVisible(field);
+    await tester.pumpAndSettle();
+    await tester.enterText(field, '-120');
+    await tester.pumpAndSettle();
+    expect(_storedParameter(tester), -120);
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+    await _expandStepProblems(tester);
+    expect(find.text('舵机角度必须在 -150–90 之间'), findsNothing);
+    // 超出该侧行程仍然报错，提示范围随中位变化。
+    await tester.enterText(field, '-151');
+    await tester.pumpAndSettle();
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+    await _expandStepProblems(tester);
+    expect(find.text('舵机角度必须在 -150–90 之间'), findsWidgets);
+    // 等自动保存的防抖定时器跑完，否则测试结束时会报「Timer 仍挂起」。
+    await tester.pump(const Duration(milliseconds: 600));
   });
 
   testWidgets('工程参数输入框拒绝中间的负号并保留原值', (tester) async {
