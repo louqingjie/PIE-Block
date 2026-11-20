@@ -653,6 +653,22 @@ fn servo_travel_limits(
     );
 }
 
+/// 舵机动作可直接下达的「相对中位」角度区间：中位把电气 ±90° 切成两侧
+/// 行程（逆时针 `90 − 中位`、顺时针 `−(90 + 中位)`），动作角度按这两侧行程
+/// 放宽（中位 60° 时顺时针可填到 −120°）。与 ±90° 取并集、只放宽不收紧，
+/// 旧存档里 ±90° 内的值继续有效；超出该侧行程或限幅的部分仍按端点截断。
+fn servo_angle_range(mid: i64) -> (i64, i64) {
+    let mid = mid.clamp(-90, 90);
+    let cw = -(90 + mid);
+    let ccw = 90 - mid;
+    (cw.min(-90), ccw.max(90))
+}
+
+/// 引脚上配置的舵机中位偏移，未填写按 0° 处理。
+fn servo_mid(config: &EngineerConfig, pin: &str) -> i64 {
+    config.pwm.servo_mids.get(pin).copied().unwrap_or(0)
+}
+
 fn infantry_rules(config: &InfantryConfig, issues: &mut Issues) {
     choice(
         issues,
@@ -1927,11 +1943,16 @@ fn action_tables_rules(
                     continue;
                 };
                 if role == PinRole::Servo {
+                    // 动作表的舵机档位值同样相对中位，按该脚两侧行程校验。
+                    let (min, max) = row
+                        .pin
+                        .as_deref()
+                        .map_or((-90, 90), |pin| servo_angle_range(servo_mid(config, pin)));
                     range(
                         issues,
                         Some(value),
-                        -90,
-                        90,
+                        min,
+                        max,
                         &value_path,
                         &format!("{label}角度"),
                         "mappings",
@@ -2501,11 +2522,22 @@ fn action_rules(
                 }
             }
             ControlMode::Direct => {
+                let (min, max) = if motor {
+                    (-10000, 10000)
+                } else {
+                    match action.pin.as_deref() {
+                        // 摇杆跟随只有一个幅值、两侧共用，仍按 ±90° 校验。
+                        Some(pin) if !is_axis && config.pwm.is_servo_pin(pin) => {
+                            servo_angle_range(servo_mid(config, pin))
+                        }
+                        _ => (-90, 90),
+                    }
+                };
                 action_integer_range(
                     issues,
                     action.parameter,
-                    if motor { -10000 } else { -90 },
-                    if motor { 10000 } else { 90 },
+                    min,
+                    max,
                     &format!("{path}.parameter"),
                     if motor {
                         "电机速度"
@@ -2917,5 +2949,17 @@ mod tests {
         assert_eq!(normalize_pin(Some("P60 P61")), "P60");
         assert_eq!(normalize_pin(Some("P60")), "P60");
         assert_eq!(normalize_pin(None), "");
+    }
+
+    #[test]
+    fn servo_angle_range_follows_mid_offset() {
+        // 中位 0：两侧都是 ±90，与旧版一致。
+        assert_eq!(servo_angle_range(0), (-90, 90));
+        // 中位 60：顺时针放宽到 −150（绝对 −90），逆时针保留 ±90 内的旧值。
+        assert_eq!(servo_angle_range(60), (-150, 90));
+        // 中位 −70：逆时针放宽到 160（绝对 +90）。
+        assert_eq!(servo_angle_range(-70), (-90, 160));
+        // 越界中位按 ±90 夹住（中位本身另有报错），不会放出超过 180° 的偏移。
+        assert_eq!(servo_angle_range(200), (-180, 90));
     }
 }
