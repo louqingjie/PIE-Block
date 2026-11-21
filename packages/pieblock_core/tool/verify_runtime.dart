@@ -58,10 +58,18 @@ class PwmLine {
   final int ms, channel, freq, duty;
 }
 
+/// `RemoteStatusSend` 的一包十路 IO 状态（虚拟时间 + 10 个 int 值）。
+class StatusLine {
+  StatusLine(this.ms, this.values);
+  final int ms;
+  final List<int> values;
+}
+
 class RunLog {
-  RunLog(this.frames, this.pwm, this.endMs);
+  RunLog(this.frames, this.pwm, this.status, this.endMs);
   final List<FrameLine> frames;
   final List<PwmLine> pwm;
+  final List<StatusLine> status;
   final int endMs;
 
   List<FrameLine> dutyFrames() =>
@@ -171,6 +179,18 @@ uint8_t RcKeyValueRead(int key) { PbPump(); return (uint8_t)(g_key[key] != 0); }
 int RcRockerValueRead(int rocker) { PbPump(); return g_rocker[rocker]; }
 void nrf_handler(void) { PbPump(); }
 
+/* 与固件 RemoteStatusSend 相同：5 次分频，首次调用立即发送一包。 */
+static uint8_t g_statusDivider = 4;
+void RemoteStatusSend(int v0, int v1, int v2, int v3, int v4,
+                      int v5, int v6, int v7, int v8, int v9)
+{
+    PbPump();
+    if (++g_statusDivider < 5) return;
+    g_statusDivider = 0;
+    printf("S %llu %d %d %d %d %d %d %d %d %d %d\\n", g_ms,
+           v0, v1, v2, v3, v4, v5, v6, v7, v8, v9);
+}
+
 int main(void)
 {
     setvbuf(stdout, NULL, _IOLBF, 0);
@@ -183,7 +203,7 @@ int main(void)
 }
 
 RunLog parseLog(String stdoutText) {
-  final frames = <FrameLine>[], pwm = <PwmLine>[];
+  final frames = <FrameLine>[], pwm = <PwmLine>[], status = <StatusLine>[];
   var endMs = 0;
   for (final line in stdoutText.split('\n')) {
     if (line.isEmpty) continue;
@@ -202,16 +222,26 @@ RunLog parseLog(String stdoutText) {
           int.parse(parts[3]),
           int.parse(parts[4]),
         ));
+      case 'S':
+        status.add(StatusLine(
+          int.parse(parts[1]),
+          [for (var i = 0; i < 10; i++) int.parse(parts[2 + i])],
+        ));
       case 'E':
         endMs = int.parse(parts[1]);
     }
   }
-  return RunLog(frames, pwm, endMs);
+  return RunLog(frames, pwm, status, endMs);
 }
 
-bool hasGcc() =>
-    Process.runSync('which', [_gcc]).exitCode == 0 &&
-    Process.runSync(_gcc, ['--version']).exitCode == 0;
+/// 直接问 gcc 是否存在：Windows 没有 `which`，用 `--version` 探测才跨平台。
+bool hasGcc() {
+  try {
+    return Process.runSync(_gcc, ['--version']).exitCode == 0;
+  } on ProcessException {
+    return false;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // 结构性检查（纯 Dart，无编译器依赖）
@@ -1814,7 +1844,151 @@ List<Scenario> scenarios() {
     },
   ));
 
+  // --- 步兵：十路 IO 状态回传（值/符号/0 值） ---
+  // 顺序固定为 P60/P62/P64/P66/P74/P75/P76/P77/MP03/MP74：舵机回传角度、
+  // 摩擦轮回传占空比、其余回传有符号 duty。5 次分频（首次立即发）。
+  scenarios.add(Scenario(
+    'inf-status',
+    infantryBase(
+      feedMode: FeedMode.visualClosedLoop,
+      frictionMode: FrictionMode.disabled,
+    ),
+    14000,
+    [
+      (6000, 'RX', 2047), // yaw 上行到 1250 → +90°
+      (6000, 'E', 1), // 拨弹 3000
+      (9000, 'RX', -2047), (9000, 'E', 0), // yaw 下行到 250 → -90°
+    ],
+    (log) {
+      final failures = <String>[];
+      final status = log.status;
+      if (status.isEmpty) return ['没有任何状态回传包'];
+      if (status.any((line) => line.values.length != 10)) {
+        failures.add('状态包参数不是 10 个');
+      }
+      // 分频：每 5 个主循环一包，主循环约 20ms，包间隔应 >60ms。
+      for (var i = 1; i < status.length; i++) {
+        if (status[i].ms - status[i - 1].ms < 60) {
+          failures.add('状态包间隔过密：${status[i - 1].ms}→${status[i].ms}ms');
+          break;
+        }
+      }
+      if (status.length * 4 > log.dutyFrames().length) {
+        failures.add('状态包数量 ${status.length} 相对主循环过多（应按 5 次分频）');
+      }
+      // 开局全 0：底盘/拨弹未动、云台在中位 750 → 角度 0。
+      final first = status.first.values;
+      if (first.any((value) => value != 0)) {
+        failures.add('开局状态包应全为 0（得到 $first）');
+      }
+      // 拨弹时 P60=3000，yaw 打满后 MP74=+90；pitch 未动保持 0。
+      final upper = status.where((line) => line.ms >= 8500 && line.ms < 9000);
+      if (upper.isEmpty) {
+        failures.add('8500-9000ms 没有状态包');
+      } else {
+        final values = upper.last.values;
+        final expected = [3000, 0, 0, 0, 0, 0, 0, 0, 0, 90];
+        if (!_listEquals(values, expected)) {
+          failures.add('上行段状态 $values ≠ $expected');
+        }
+      }
+      // 反向打满后 MP74=-90，拨弹松开 P60=0（符号与 0 值）。
+      final lower = status.where((line) => line.ms > 12500);
+      if (lower.isEmpty) {
+        failures.add('12500ms 之后没有状态包');
+      } else {
+        final values = lower.last.values;
+        final expected = [0, 0, 0, 0, 0, 0, 0, 0, 0, -90];
+        if (!_listEquals(values, expected)) {
+          failures.add('下行段状态 $values ≠ $expected');
+        }
+      }
+      return failures;
+    },
+  ));
+
+  // --- 工程：十路 IO 状态回传（舵机角度 / 有符号 duty / 未用主控脚 0） ---
+  scenarios.add(Scenario(
+    'eng-status',
+    engineerBase(
+      chassisEnabled: false,
+      roles: const {
+        'P60': PinRole.servo,
+        'P62': PinRole.motor,
+        'P64': PinRole.friction,
+        'P66': PinRole.friction,
+        'P74': PinRole.motor,
+        'P75': PinRole.unused,
+        'P76': PinRole.unused,
+        'P77': PinRole.unused,
+        'MP03': PinRole.servo,
+        'MP74': PinRole.unused,
+      },
+      modes: [
+        EngineerModeConfig(actions: [
+          action('A', pin: 'P60', mode: ControlMode.direct, direction: Direction.forward, parameter: 45),
+          action('B', pin: 'P74', mode: ControlMode.direct, direction: Direction.forward, parameter: 5000),
+          action('C', pin: 'P74', mode: ControlMode.direct, direction: Direction.reverse, parameter: 5000),
+          action('D', pin: 'MP03', mode: ControlMode.direct, direction: Direction.forward, parameter: 30),
+        ]),
+      ],
+    ),
+    16000,
+    [
+      (3000, 'A', 1), (5000, 'A', 0), // 舵机 45° → duty 1000 → 角度 45
+      (6000, 'B', 1), (8000, 'B', 0), // 电机正转 +5000
+      (9000, 'C', 1), (11000, 'C', 0), // 电机反转 -5000
+      (12000, 'D', 1), (13500, 'D', 0), // 主控板舵机 MP03 30° → 角度 30
+    ],
+    (log) {
+      final failures = <String>[];
+      final status = log.status;
+      if (status.isEmpty) return ['没有任何状态回传包'];
+      List<int>? valuesNear(int fromMs, int toMs) {
+        final window =
+            status.where((line) => line.ms >= fromMs && line.ms < toMs).toList();
+        return window.isEmpty ? null : window.last.values;
+      }
+
+      final servo = valuesNear(4000, 5500);
+      if (servo == null) {
+        failures.add('4000-5500ms 没有状态包');
+      } else {
+        const expected = [45, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        if (!_listEquals(servo, expected)) {
+          failures.add('舵机段状态 $servo ≠ $expected');
+        }
+      }
+      final forward = valuesNear(7000, 7900);
+      if (forward == null || forward[4] != 5000) {
+        failures.add('正转段 P74 应为 +5000（得到 ${forward?[4]}）');
+      }
+      final reverse = valuesNear(10000, 10900);
+      if (reverse == null || reverse[4] != -5000) {
+        failures.add('反转段 P74 应为 -5000（得到 ${reverse?[4]}）');
+      }
+      final mainServo = valuesNear(14000, 16000);
+      if (mainServo == null) {
+        failures.add('14000ms 之后没有状态包');
+      } else {
+        const expected = [45, 0, 0, 0, 0, 0, 0, 0, 30, 0];
+        if (!_listEquals(mainServo, expected)) {
+          failures.add('主控舵机段状态 $mainServo ≠ $expected');
+        }
+      }
+      return failures;
+    },
+  ));
+
   return scenarios;
+}
+
+bool _listEquals(List<int> actual, List<int> expected) {
+  if (actual.length != expected.length) return false;
+  for (var i = 0; i < actual.length; i++) {
+    if (actual[i] != expected[i]) return false;
+  }
+  return true;
 }
 
 // ---------------------------------------------------------------------------

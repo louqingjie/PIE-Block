@@ -63,6 +63,8 @@ void PWM_SET_Frequency(int channel, int frequency, int duty);
 uint8_t RcKeyValueRead(int key);
 int RcRockerValueRead(int rocker);
 void nrf_handler(void);
+void RemoteStatusSend(int v0, int v1, int v2, int v3, int v4, int v5, int v6,
+                      int v7, int v8, int v9);
 
 /* 生成代码的 main 由 -Dmain=robot_main 改名后调用。 */
 void robot_main(void);
