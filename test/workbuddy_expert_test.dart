@@ -73,10 +73,15 @@ void main() {
     expect((profession['zh']! as String).isNotEmpty, isTrue);
     expect((profession['en']! as String).isNotEmpty, isTrue);
 
-    // 官方要求中文 40–50 字。
+    // 官方要求中文 40–50 字（校验脚本按整串长度计）。
     final zh = description['zh']! as String;
+    expect(
+      zh.length,
+      inInclusiveRange(40, 50),
+      reason: 'displayDescription 应为 40–50 字符，当前 ${zh.length}',
+    );
     final cjk = RegExp(r'[\u4e00-\u9fff]').allMatches(zh).length;
-    expect(cjk, inInclusiveRange(40, 50), reason: 'displayDescription 中文 $cjk 字');
+    expect(cjk, greaterThanOrEqualTo(35), reason: 'displayDescription 中文字符过少');
     expect((description['en']! as String).isNotEmpty, isTrue);
 
     final defaultPrompt = manifest['defaultInitPrompt']! as Map;

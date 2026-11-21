@@ -25,7 +25,7 @@
   },
   "displayDescription": {
     "en": "Configures PIE-Block chassis, arm, and shooter parameters from natural-language requirements, and troubleshoots generated code against filled-in parameters, drafting evidence for the team Feishu group.",
-    "zh": "面向 PIE-Block 学生，按需求配置底盘、机械臂和发射机构等工程参数，并对照界面参数与生成代码排查问题，整理证据发到飞书群。"
+    "zh": "按需求配置底盘、机械臂和发射机构参数，并对照界面参数与生成代码排查问题，整理证据发飞书群。"
   },
   "avatar": "avatars/expert.png",
   "categoryId": "02-Engineering",
