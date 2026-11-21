@@ -104,6 +104,11 @@ pub fn duty_span(degrees: i64) -> i64 {
     (degrees as f64 * 1000.0 / 180.0).round() as i64
 }
 
+/// 十路 IO 状态回传里的舵机值：duty 折算回角度（中位 750 → 0°，±500 → ±90°）。
+fn status_angle(duty: &str) -> String {
+    format!("(int)(((int32_t)({duty}) - 750L) * 180L / 1000L)")
+}
+
 fn dir(value: Direction) -> i64 {
     if value == Direction::Forward { 1 } else { 0 }
 }
@@ -562,6 +567,41 @@ fn infantry_code(config: &InfantryConfig) -> String {
     } else {
         "        UpdateBuzzerFeedback();"
     };
+    // 十路 IO 状态回传：顺序固定为 P60/P62/P64/P66/P74/P75/P76/P77/MP03/MP74。
+    // 舵机回传角度，摩擦轮回传占空比，其余扩展脚回传有符号 duty；主控脚只有
+    // 作云台舵机时才回传角度，否则回传 0。
+    let servo_duty_at_pin = |pin: &str| -> Option<String> {
+        servo_actuators.iter().find_map(|(yaw, index)| {
+            let actuator = actuator_at(*yaw, *index).expect("actuator");
+            if actuator.pin.as_deref() == Some(pin) {
+                Some(duty_name(*yaw, *index))
+            } else {
+                None
+            }
+        })
+    };
+    let mut remote_status_args: Vec<String> = Vec::new();
+    for (slot, pin) in EXPANSION_PINS.iter().enumerate() {
+        if let Some(duty) = servo_duty_at_pin(pin) {
+            remote_status_args.push(status_angle(&duty));
+        } else if friction_enabled && *pin == "P64" {
+            remote_status_args.push("(int)(frictionDutyP64)".to_owned());
+        } else if friction_enabled && *pin == "P66" {
+            remote_status_args.push("(int)(frictionDutyP66)".to_owned());
+        } else {
+            remote_status_args.push(format!("(int)(dutyOfMotor[{slot}])"));
+        }
+    }
+    for pin in MAIN_SERVO_PINS {
+        remote_status_args.push(match servo_duty_at_pin(pin) {
+            Some(duty) => status_angle(&duty),
+            None => "0".to_owned(),
+        });
+    }
+    let remote_status_line = format!(
+        "        RemoteStatusSend({});\n",
+        remote_status_args.join(", ")
+    );
     let friction_globals_line = if friction_globals.is_empty() {
         String::new()
     } else {
@@ -640,6 +680,7 @@ fn infantry_code(config: &InfantryConfig) -> String {
         source.push_str(buzzer_feedback_call);
         source.push('\n');
     }
+    source.push_str(&remote_status_line);
     source.push_str("        Ms_Delay(10);\n    }\n}\n");
     source
 }
@@ -1843,6 +1884,30 @@ fn engineer_code(config: &EngineerConfig) -> String {
     let early_main_servo_duty = friction_role_pins
         .iter()
         .any(|pin| MAIN_SERVO_PINS.contains(pin));
+    // 十路 IO 状态回传：顺序固定为 P60/P62/P64/P66/P74/P75/P76/P77/MP03/MP74。
+    // 扩展脚作舵机时回传角度，其余回传有符号 duty；主控脚只回传真正在输出的
+    // 角色（舵机需被动作引用，摩擦轮由共享油门驱动），其余回传 0。
+    let mut remote_status_args: Vec<String> = Vec::new();
+    for (slot, pin) in EXPANSION_PINS.iter().enumerate() {
+        if config.pwm.role_of(pin) == Some(PinRole::Servo) {
+            remote_status_args.push(status_angle(&format!("dutyOfMotor[{slot}]")));
+        } else {
+            remote_status_args.push(format!("(int)(dutyOfMotor[{slot}])"));
+        }
+    }
+    for (index, pin) in MAIN_SERVO_PINS.iter().enumerate() {
+        remote_status_args.push(match config.pwm.role_of(pin) {
+            Some(PinRole::Servo) if used_pins.iter().any(|item| item.as_str() == *pin) => {
+                status_angle(&format!("mainServoDuty[{index}]"))
+            }
+            Some(PinRole::Friction) => format!("(int)(mainServoDuty[{index}])"),
+            _ => "0".to_owned(),
+        });
+    }
+    let remote_status_line = format!(
+        "        RemoteStatusSend({});\n",
+        remote_status_args.join(", ")
+    );
     let mut source = String::new();
     source.push_str(&header(
         &config.remote,
@@ -1941,6 +2006,7 @@ fn engineer_code(config: &EngineerConfig) -> String {
     } else {
         source.push('\n');
     }
+    source.push_str(&remote_status_line);
     source.push_str("        Ms_Delay(10);\n    }\n}\n");
     source
 }

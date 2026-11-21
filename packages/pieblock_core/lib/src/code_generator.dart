@@ -60,6 +60,10 @@ abstract final class CodeGenerator {
   static int _servoDuty(int? degrees) =>
       (750 + ((degrees ?? 0) * 1000 / 180)).round().clamp(250, 1250);
 
+  /// 十路 IO 状态回传里的舵机值：duty 折算回角度（中位 750 → 0°，±500 → ±90°）。
+  static String _statusAngle(String duty) =>
+      '(int)(((int32_t)($duty) - 750L) * 180L / 1000L)';
+
   /// 角度对应的 duty 跨度，与 [_servoDuty] 同一换算（±90° = ±500 duty）。
   static int _dutySpan(int degrees) => (degrees * 1000 / 180).round();
 
@@ -723,6 +727,36 @@ ${frictionEnabled ? '    else if (frictionActivateLoops == 0 && (frictionDutyP64
     else PWM_SET_Frequency(BUZZER_CH, 500, 0);
 }
 ''';
+    // 十路 IO 状态回传：顺序固定为 P60/P62/P64/P66/P74/P75/P76/P77/MP03/MP74。
+    // 舵机回传角度，摩擦轮回传占空比，其余扩展脚回传有符号 duty；主控脚只有
+    // 作云台舵机时才回传角度，否则回传 0。
+    String? servoDutyAtPin(String pin) {
+      for (final item in servoActuators) {
+        if (actuatorAt(yaw: item.yaw, index: item.index)!.pin == pin) {
+          return dutyName(yaw: item.yaw, index: item.index);
+        }
+      }
+      return null;
+    }
+
+    String expansionStatusArg(int slot) {
+      final pin = expansionPins[slot];
+      final servoDuty = servoDutyAtPin(pin);
+      if (servoDuty != null) return _statusAngle(servoDuty);
+      if (frictionEnabled && pin == 'P64') return '(int)(frictionDutyP64)';
+      if (frictionEnabled && pin == 'P66') return '(int)(frictionDutyP66)';
+      return '(int)(dutyOfMotor[$slot])';
+    }
+
+    final remoteStatusArgs = <String>[
+      for (var slot = 0; slot < expansionPins.length; slot++)
+        expansionStatusArg(slot),
+      for (final pin in mainServoPins)
+        switch (servoDutyAtPin(pin)) {
+          final duty? => _statusAngle(duty),
+          null => '0',
+        },
+    ];
     return '''${_header(c, '步兵机器人控制代码', c.buzzerDisabled)}
 $frictionDefines
 $dutyDeclarations
@@ -786,6 +820,7 @@ $arrowUpdate
         Ms_Delay(EXPANSION_FRAME_GAP_MS);
 ${mainServoUpdates.join('\n')}
 ${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
+        RemoteStatusSend(${remoteStatusArgs.join(', ')});
         Ms_Delay(10);
     }
 }
@@ -1550,6 +1585,22 @@ ${frictionStackEnabled ? '    else if (frictionActivateLoops == 0 && ($frictionF
 
     final mainServoDutyDeclaration =
         'int mainServoDuty[2] = {${_servoDuty(c.pwm.servoMids['MP03'])}, ${_servoDuty(c.pwm.servoMids['MP74'])}};';
+    // 十路 IO 状态回传：顺序固定为 P60/P62/P64/P66/P74/P75/P76/P77/MP03/MP74。
+    // 扩展脚作舵机时回传角度，其余回传有符号 duty；主控脚只回传真正在输出的
+    // 角色（舵机需被动作引用，摩擦轮由共享油门驱动），其余回传 0。
+    final remoteStatusArgs = <String>[
+      for (var slot = 0; slot < expansionPins.length; slot++)
+        c.pwm.roleOf(expansionPins[slot]) == PinRole.servo
+            ? _statusAngle('dutyOfMotor[$slot]')
+            : '(int)(dutyOfMotor[$slot])',
+      for (var index = 0; index < mainServoPins.length; index++)
+        switch (c.pwm.roleOf(mainServoPins[index])) {
+          PinRole.servo when usedPins.contains(mainServoPins[index]) =>
+            _statusAngle('mainServoDuty[$index]'),
+          PinRole.friction => '(int)(mainServoDuty[$index])',
+          _ => '0',
+        },
+    ];
     // 主控板脚作摩擦轮时，UpdateFriction 要在声明之前写 mainServoDuty，
     // 因此提前声明；其余配置保持原来的声明位置与生成字节。
     final earlyMainServoDuty = frictionRolePins.any(
@@ -1616,6 +1667,7 @@ $frictionUpdateCall        ExpansionBoradControl(Dir_Change_Order, $directionArg
 ${mainServoUpdate('MP03', 0)}
 ${mainServoUpdate('MP74', 1)}
 ${engineerFeedback.isEmpty ? '' : '        UpdateServoFeedback();'}
+        RemoteStatusSend(${remoteStatusArgs.join(', ')});
         Ms_Delay(10);
     }
 }
