@@ -86,7 +86,9 @@ AI 按 `pieblock-troubleshooting`：
 2. 收集界面值、`.pieproj`、`codegen` 输出；
 3. 按锚点表核对 `chassis.normal_speed` ↔ `uint16_t maxSpeed`；
 4. 判断是存档没保存、版本不同步还是生成器缺陷；
-5. 是参数问题 → 用 `propose` 修正；疑似缺陷 → 按模板整理 Issue。
+5. 是参数问题 → 用 `propose` 修正；疑似缺陷 → 按模板整理成一段群消息，发到飞书**「机械培训群」**
+   公开反馈（不要私聊，飞书组织限制也不支持），学生不需要自己开 GitHub Issue；问题解决后在
+   同一话题补一句结论，方便别人复用。
 
 ## 为什么不直接让 AI 改代码
 

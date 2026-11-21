@@ -1,6 +1,6 @@
 {
   "name": "pieblock-dsh-skills",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "把 PIE-Block 的两个 AI 规程（工程配置 / 生成代码排障）装进 DeepSeek Harness：装一次，所有会话可用，无需 PIE-Block 源码仓库。",
   "type": "module",
   "main": "index.js",

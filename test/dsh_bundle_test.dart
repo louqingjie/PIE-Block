@@ -170,4 +170,21 @@ void main() {
       isTrue,
     );
   });
+
+  test('随包排障 Skill 与仓库一致：反馈走飞书群而不是 GitHub Issue', () {
+    final skill = _read(
+      '$_bundle/skills/pieblock-troubleshooting/SKILL.md',
+    );
+    expect(skill, contains('机械培训群'));
+    expect(skill, contains('不要用飞书私聊'));
+    expect(skill, isNot(contains('建议用户在 GitHub Issues 提交')));
+    final template = _read(
+      '$_bundle/skills/pieblock-troubleshooting/references/bug-report-template.md',
+    );
+    expect(template, contains('机械培训群'));
+    expect(template, contains('不要私聊'));
+    expect(template, contains('不需要脱敏'));
+    final canonical = _read('skills/pieblock-troubleshooting/SKILL.md');
+    expect(canonical, contains('机械培训群'));
+  });
 }

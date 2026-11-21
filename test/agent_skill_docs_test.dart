@@ -162,4 +162,22 @@ void main() {
       contains('能力矩阵'),
     );
   });
+
+  test('排障反馈走团队飞书群，不要求学生自己开 GitHub Issue', () {
+    final skill = _read('skills/pieblock-troubleshooting/SKILL.md');
+    expect(skill, contains('机械培训群'));
+    expect(skill, contains('不要用飞书私聊'));
+    expect(skill, isNot(contains('建议用户在 GitHub Issues 提交')));
+
+    final template = _read(
+      'skills/pieblock-troubleshooting/references/bug-report-template.md',
+    );
+    expect(template, contains('机械培训群'));
+    expect(template, contains('不要私聊'));
+    expect(template, contains('不需要脱敏'));
+    expect(template, isNot(contains('脱敏后')));
+    expect(template, isNot(contains('提交 Issue 前')));
+
+    expect(_read('docs/guides/AI-Skills使用指南.md'), contains('机械培训群'));
+  });
 }
