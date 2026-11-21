@@ -1,19 +1,10 @@
-# 只做一件事：把包内 `skills/` 作为 Host 级 skill provider 注册到 global layer。
+# PIE-Block AI 规程的 DSH 插件挂载声明。
 #
-# 为什么不是复制到 ~/.dsh/skills：写入用户目录属于副作用，卸载会残留；Host provider
-# 随插件生命周期注册/注销，所有会话（与工作目录、preset 无关）都能看到这些 skill，
-# 用户自己在 ~/.dsh/skills 放的同名 skill 位于 preset 层、离 agent 更近，会覆盖插件版本。
-#
-# 使用 bundledSkillDir（环境自带技能根）：provider 会把它当作 trusted host root，
-# 用 Node 文件系统而非会话 ctx.fs 读取。
-#
-# 路径解析：profile 安装时 DSH_PROFILE_DIR 指向 ~/.dsh/profiles/<name>，本包作为
-# profile 的直接依赖位于其 node_modules 下。不要在这里用 baseUrl（Loader 在 host
-# patch 里求值时它不可用/不可靠，会得到不存在的路径并静默扫描不到技能；已实测）。
+# 插件本身只做一件事：apply 时把包内 skills/ 里的两个 Skill 注册到 DSH 的
+# skill 注册表（Host 全局层），装完所有会话可见；卸载即注销。不写用户目录、
+# 不改 preset、不需要 PIE-Block 源码仓库。技能正文里的 assets/examples 与
+# assets/docs 随包分发，resourceBase 指向技能目录。
 - insert:
     - id: pieblock-skills
-      name: '@deepseek-ai/dsh-skill-filesystem'
-      config:
-        providerName: pieblock
-        includeDefaultRoots: false
-        bundledSkillDir: !!js process.getBuiltinModule('node:path').join(process.env.DSH_PROFILE_DIR ?? '', 'node_modules', 'pieblock-dsh-skills', 'skills')
+      name: pieblock-dsh-skills
+      config: {}

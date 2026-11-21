@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "PIE-Block AI skills",
+    "description": "Loads two PIE-Block skills for DSH: configure drivetrain, arm and shooter parameters from natural language, and troubleshoot generated code against the parameters you filled in. Both skills edit projects only through proposals and never bypass PIE-Block's code generator. No PIE-Block source checkout is required."
+  }
+}

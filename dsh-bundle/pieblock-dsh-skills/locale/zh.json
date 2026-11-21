@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "PIE-Block AI 规程",
+    "description": "给 DSH 装上 PIE-Block 的两个技能：按自然语言配置底盘、机械臂、发射机构等工程参数，以及对照界面参数与生成代码排查问题。两者都只通过提案修改工程，不绕过 PIE-Block 的代码生成器。安装后不需要 PIE-Block 源码仓库。"
+  }
+}

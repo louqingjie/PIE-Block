@@ -4,8 +4,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 /// DSH 插件分发版 Skill 的契约测试：
-/// - 插件清单与 patch 保持最小形态（只装 skill，不写用户目录）；
-/// - patch 用 DSH_PROFILE_DIR 定位包内技能根（baseUrl 在 host patch 里不可用，已实测）；
+/// - 插件是可发布的 npm 包：manifest、locale、icon、patch 形态正确；
+/// - 插件只注册 skill（index.js 调用 ctx.skills.register），不写用户目录；
 /// - 随包的示例工程/文档与仓库源文件保持一致，避免两份漂移；
 /// - 技能 frontmatter 与红线不被误删。
 const _bundle = 'dsh-bundle/pieblock-dsh-skills';
@@ -32,32 +32,73 @@ Map<String, String> _frontmatter(String text) {
 }
 
 void main() {
-  test('插件清单声明了 bundle patch', () {
+  test('插件清单是可发布的 npm 包', () {
     final manifest =
         jsonDecode(_read('$_bundle/package.json')) as Map<String, Object?>;
     expect(manifest['name'], 'pieblock-dsh-skills');
-    expect(manifest['private'], isTrue);
+    expect(manifest['description'], contains('PIE-Block'));
+    expect(manifest['private'], isNull, reason: '发布包不能声明 private');
+    expect(manifest['type'], 'module');
     final dsh = manifest['dsh']! as Map<String, Object?>;
     final bundle = dsh['bundle']! as Map<String, Object?>;
-    final patch = bundle['patch'] as String;
-    expect(File('$_bundle/$patch').existsSync(), isTrue);
-    expect(patch, './cordis.patch.yml');
+    expect(bundle['patch'], './cordis.patch.yml');
+    final exports = manifest['exports']! as Map<String, Object?>;
+    expect(exports['.'], './index.js');
+    expect(exports['./locale/*.json'], './locale/*.json');
+    expect(exports['./icon'], './icon.svg');
+    final files = (manifest['files']! as List<Object?>).cast<String>();
+    for (final required in [
+      'index.js',
+      'cordis.patch.yml',
+      'icon.svg',
+      'skills',
+    ]) {
+      expect(files, contains(required), reason: 'files 缺少 $required');
+    }
+    expect(manifest['keywords'], contains('dsh-plugin'));
+    expect(manifest['repository'], isNotNull);
   });
 
-  test('patch 只注册 Host 级 skill provider', () {
+  test('插件只注册 skill，不写用户技能目录', () {
     final patch = _read('$_bundle/cordis.patch.yml');
-    expect(patch, contains('id: pieblock-skills'));
-    expect(patch, contains('@deepseek-ai/dsh-skill-filesystem'));
-    expect(patch, contains('providerName: pieblock'));
-    expect(patch, contains('includeDefaultRoots: false'));
-    expect(patch, contains('bundledSkillDir'));
-    // 回归：host patch 里的 !!js 不能依赖 baseUrl（实测会得到不存在的路径）。
-    expect(patch, contains('DSH_PROFILE_DIR'));
     final effective = patch
         .split('\n')
         .where((line) => !line.trimLeft().startsWith('#'))
         .join('\n');
-    expect(effective, isNot(contains('baseUrl')));
+    expect(effective, contains('id: pieblock-skills'));
+    expect(effective, contains('name: pieblock-dsh-skills'));
+    expect(effective, isNot(contains('skill-filesystem')));
+    expect(effective, isNot(contains('bundledSkillDir')));
+
+    final index = _read('$_bundle/index.js');
+    expect(index, contains('ctx.skills.register'));
+    expect(index, contains('resourceBase'));
+    expect(index, contains('pieblock-config'));
+    expect(index, contains('pieblock-troubleshooting'));
+    // 插件只读包内文件并注册技能，不向用户技能目录写文件。
+    expect(index, isNot(contains('writeFile')));
+    expect(index, isNot(contains('mkdir')));
+  });
+
+  test('locale 提供中英文标题与说明', () {
+    for (final language in ['en', 'zh']) {
+      final locale =
+          jsonDecode(_read('$_bundle/locale/$language.json'))
+              as Map<String, Object?>;
+      final meta = locale['meta']! as Map<String, Object?>;
+      expect(meta['title'], isA<String>());
+      expect(meta['description'], isA<String>());
+      expect((meta['title']! as String).isNotEmpty, isTrue);
+      expect((meta['description']! as String).isNotEmpty, isTrue);
+    }
+  });
+
+  test('图标是 36x36 的独立 SVG', () {
+    final icon = _read('$_bundle/icon.svg');
+    expect(icon, contains('<svg'));
+    expect(icon, contains('viewBox="0 0 36 36"'));
+    expect(icon, isNot(contains('<text')));
+    expect(icon, isNot(contains('<script')));
   });
 
   for (final name in ['pieblock-config', 'pieblock-troubleshooting']) {

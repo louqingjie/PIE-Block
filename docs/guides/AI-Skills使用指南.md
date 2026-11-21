@@ -38,24 +38,29 @@ Skill 采用通用的 Agent Skills 格式（`SKILL.md` + YAML frontmatter），�
 
 ## DSH 插件（可选，装一次全局生效）
 
-如果学生用的是 DSH，且不想手动管理 skills 目录，可以安装仓库里的插件包：
+如果学生用的是 DSH，且不想手动管理 skills 目录，可以安装已发布到 npm 的插件
+[`pieblock-dsh-skills`](https://www.npmjs.com/package/pieblock-dsh-skills)：
 
-```text
-dsh-bundle/pieblock-dsh-skills/
-```
-
-- **安装**：DSH 侧边栏 **Plugins → Add plugin → 本地目录**，选择该目录（或把目录路径交给 Agent，
-  用 `plugin_manager` 的 `install_bundle` 安装）；
+- **安装**：DSH 侧边栏 **Plugins → Add plugin**，输入包名 `pieblock-dsh-skills`；
+  或命令行 `dsh plugin --profile <你的 profile> add pieblock-dsh-skills`；
 - **效果**：装完开新会话，技能目录里出现 `pieblock-config` 与 `pieblock-troubleshooting`，
   对所有工作目录、所有 preset 生效；
-- **原理**：插件只挂一个 Host 级 `dsh-skill-filesystem` provider，把包内 `skills/` 注册到
+- **原理**：插件只做一件事——`apply` 时用 `ctx.skills.register(...)` 把包内两个 Skill 注册到
   skill 注册表的 global layer；**不会往 `~/.dsh/skills` 写任何文件**，卸载插件即注销；
 - **自包含**：包内带 `assets/examples/`（`omni3` / `mecanum4` / `arm2dof`）与 `assets/docs/`
   （项目格式、固件约束、编译烧录），没有 PIE-Block 源码仓库也能用；
 - 用户自己在 `~/.dsh/skills` 放的技能位于 preset 层、离 Agent 更近，会覆盖插件版同名技能（符合预期）；
 - 插件只覆盖 DSH；其他 Agent（Claude Code / CodeBuddy / Trae 等）仍按上面的目录复制方式使用。
 
-插件包的样例内容与约束由 `test/dsh_bundle_test.dart` 守护（patch 形态、红线、随包示例/文档与仓库一致）。
+本地开发时用仓库里的插件目录安装：
+
+```bash
+dsh plugin --profile <你的 profile> add link:D:/path/to/pie-block/dsh-bundle/pieblock-dsh-skills
+```
+
+或在 **Add plugin → 本地目录** 选择 `dsh-bundle/pieblock-dsh-skills/`。
+
+插件包的样例内容与约束由 `test/dsh_bundle_test.dart` 守护（manifest、红线、随包示例/文档与仓库一致）。
 
 ## 典型对话
 
