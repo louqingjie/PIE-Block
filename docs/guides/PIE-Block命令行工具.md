@@ -48,6 +48,23 @@ pieblock-cli propose   <工程.pieproj> --config <候选.pieproj> [--force] # �
 pieblock-cli --help
 ```
 
+### describe
+
+输出机器可读契约，供 AI Agent 在调用前确认命令、退出码与版本：
+
+```json
+{
+  "name": "pieblock-cli",
+  "version": "1.1.0",
+  "release": "1.8.0",
+  "formatVersion": 23
+}
+```
+
+- `version` 是 CLI 契约版本，**不要求**与应用版本相等；
+- `release` 是这份 CLI 对应的 PIE-Block 应用发布版本（`major.minor.patch`），应与安装包/关于页的版本前缀一致；
+- `formatVersion` 是当前 CLI 支持的最高工程格式版本，应等于工程文件里的 `format_version`。
+
 ### validate
 
 无论有没有问题都会输出 JSON：

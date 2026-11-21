@@ -55,8 +55,10 @@ description: 用于按自然语言需求设计/填写 PIE-Block 工程参数（�
 
 1. 找到 CLI：PATH 里的 `pieblock-cli`、环境变量 `PIEBLOCK_CLI`，或应用目录下的 `cli/pieblock-cli[.exe]`；
    先跑一次 `pieblock-cli describe` 读契约。
-2. 确认 PIE-Block 版本（安装包/关于页）与 CLI 版本一致；源码与示例按**同一版本 tag** 阅读
-   （如 `v1.8.0`），不要拿 main 对照旧版本。
+2. 确认版本：`formatVersion` 应等于工程的 `format_version`；若 `describe` 提供 `release`（应用发布
+   版本），它应与安装包版本前缀一致——旧版 CLI 可能没有该字段，缺失时跳过这条比对。`version` 只是
+   CLI 工具契约版本，不要拿它和应用版本比较。源码与示例按
+   **同一版本 tag** 阅读（如 `v1.8.0`），不要拿 main 对照旧版本。
 3. 确认工程路径。**新建工程必须由用户在应用里创建并保存**（选「工程」或「步兵」等类型），
    CLI 不能创建工程；你只对已有工程提交提案。
 

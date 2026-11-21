@@ -43,9 +43,10 @@ description: 用于排查 PIE-Block 生成代码/固件行为疑似异常：对�
 
 ### 0. 先确认版本
 
-- PIE-Block 版本（安装包/关于页）、CLI 的 `pieblock-cli describe` 里的 `version`；
+- PIE-Block 版本（安装包/关于页）；`pieblock-cli describe` 的 `formatVersion`（工程格式版本）；若提供 `release`（旧版 CLI 可能
+  没有），它是应用发布版本、应与安装包版本前缀一致；`version` 只是 CLI 工具版本，只用于记录，不要与应用版本比较；
 - 读源码按**同一版本 tag**（如 `v1.8.0`），不要拿 main 对照旧版本；
-- 版本不一致时先让用户升级，再谈问题。
+- describe 提供 elease 时与应用版本前缀不一致、或工程 ormat_version 超出 CLI 支持范围时，先让用户升级。
 
 ### 1. 收集四份材料
 

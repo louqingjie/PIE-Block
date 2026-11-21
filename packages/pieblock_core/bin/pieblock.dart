@@ -28,7 +28,7 @@ const int exitGenerate = 4;
 const int exitInternal = 5;
 const int exitConflict = 6;
 const String toolName = 'pieblock-cli';
-const String cliVersion = '1.0.0';
+const String cliVersion = '1.1.0';
 
 void main(List<String> args) {
   try {
@@ -98,6 +98,8 @@ void _describe() {
   stdout.writeln(jsonEncode({
     'name': toolName,
     'version': cliVersion,
+    'release': pieblockRelease,
+    'formatVersion': ProjectDocument.formatVersion,
     'description': 'PIE-Block 工程命令行工具：校验配置、生成代码、提交改动提案。',
     'stdoutPolicy':
         '机器可读数据（validate/propose/describe=JSON, codegen=纯 C 源码）',

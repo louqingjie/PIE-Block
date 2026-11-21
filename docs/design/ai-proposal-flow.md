@@ -43,7 +43,7 @@ AI                     CLI                        应用（唯一写者）
   "kind": "pieblock-proposal",
   "baseSha256": "<工程文件内容的 SHA-256>",
   "createdAt": "2026-11-18T06:30:00.000Z",
-  "tool": "pieblock-cli/1.0.0",
+  "tool": "pieblock-cli/1.1.0",
   "changedPaths": ["chassis.normal_speed"],
   "document": { "format_version": 23, "project_kind": "infantry", "config": { } }
 }

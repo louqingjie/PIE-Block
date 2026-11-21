@@ -8,7 +8,7 @@ pieblock-cli describe
 
 - PATH 里没有时：用环境变量 `PIEBLOCK_CLI`，或应用目录下的
   `cli/pieblock-cli.exe`（便携版/安装版）、`build\windows\x64\runner\Release\cli\pieblock-cli.exe`（开发构建）；
-- `describe` 里的 `version` 应与 PIE-Block 版本一致；不一致时先让用户升级，再做配置。
+- `formatVersion` 应等于工程 `format_version`；若 `describe` 提供 `release`（旧版 CLI 可能没有），它应与安装包版本前缀一致。`version` 只是 CLI 工具版本，不要与应用版本比较。不一致时先让用户升级，再做配置。
 
 契约要点：stdout 只放机器可读数据，stderr 是人类可读进度；退出码：
 

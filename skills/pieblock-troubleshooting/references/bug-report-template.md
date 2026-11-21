@@ -18,10 +18,10 @@
 ```markdown
 ### 版本与环境
 - PIE-Block 版本（安装包/关于页）：
-- `pieblock-cli describe` 的 version：
+- `pieblock-cli describe` 的 release / formatVersion / version：
 - 操作系统/版本（Windows 10/11、Linux 发行版等）：
 - 编译器：内置 SDCC C251 / 本地 Keil C251（含许可证状态）
-- 工程类型与格式：infantry / engineer / debug / music，format_version=23
+- 工程类型与格式：infantry / engineer / debug / music，format_version=（describe.formatVersion，当前 23）
 - 是否 Web/Android 版：
 
 ### 现象

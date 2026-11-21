@@ -38,6 +38,10 @@ void main() {
       expect(r.stderr, isEmpty);
       final json = jsonDecode(r.stdout as String) as Map;
       expect(json['name'], 'pieblock-cli');
+      // release 对应应用发布版本，formatVersion 对应工程格式；两者都不能靠猜。
+      expect(json['release'], pieblockRelease);
+      expect(json['formatVersion'], ProjectDocument.formatVersion);
+      expect(json['version'], isNotEmpty);
       expect(json['exitCodes'], containsPair('2', anything));
       expect(json['exitCodes'], containsPair('5', anything));
       expect(json['exitCodes'], containsPair('6', anything));
