@@ -91,6 +91,78 @@ class FirmwareSafetyContractTests(unittest.TestCase):
         self.assertIn("for (retry = 0; retry < 20; retry++)", source)
         self.assertIn("SPI_ReadWriteByte", (ROOT / "libraries" / "boards" / "src" / "nrf24l01.c").read_text(encoding="utf-8"))
 
+    def test_remote_status_send_contract(self) -> None:
+        """十路 IO 状态回传：两端固件实现一致，payload 为 10 个 int16 小端。
+
+        协议（与手柄端约定）：payload[20] 依次是
+        P60/P62/P64/P66/P74/P75/P76/P77/MP03/MP74 的 int16 小端值，
+        nrf_tx_packet 再加帧头长度与校验，最终无线帧 22 字节。
+        """
+        sources = [
+            ROOT / "libraries" / "boards" / "src" / "nrf24l01.c",
+            ROOT.parent / "stc32g" / "Libraries" / "boards" / "src" / "nrf24l01.c",
+        ]
+        headers = [
+            ROOT / "libraries" / "boards" / "inc" / "nrf24l01.h",
+            ROOT.parent / "stc32g" / "Libraries" / "boards" / "inc" / "nrf24l01.h",
+        ]
+        declaration = (
+            "void RemoteStatusSend(int v0, int v1, int v2, int v3, int v4, "
+            "int v5, int v6, int v7, int v8, int v9);"
+        )
+        for path in headers:
+            # stc32g 的 Keil 头是 GBK；声明本身是纯 ASCII，按字节比对。
+            self.assertIn(
+                declaration.encode("ascii"), path.read_bytes(), str(path)
+            )
+        for path in sources:
+            source = path.read_text(encoding="utf-8")
+            self.assertIn(
+                "void RemoteStatusSend(int v0, int v1, int v2, int v3, int v4,\n",
+                source,
+                str(path),
+            )
+            self.assertIn("uint8_t payload[20];", source, str(path))
+            for slot in range(10):
+                self.assertIn(
+                    f"payload[{slot * 2}] = (uint8_t)((uint16_t)v{slot} & 0xFF);",
+                    source,
+                    str(path),
+                )
+                self.assertIn(
+                    f"payload[{slot * 2 + 1}] = (uint8_t)(((uint16_t)v{slot} >> 8) & 0xFF);",
+                    source,
+                    str(path),
+                )
+            # 5 次分频：divider 初值 4，首次调用立即发送，之后每 5 次一包。
+            self.assertIn("static uint8_t divider = 4;", source, str(path))
+            self.assertIn(
+                "if (++divider < 5)\n    return;\n  divider = 0;",
+                source,
+                str(path),
+            )
+            self.assertIn("nrf_tx_packet(payload, 20);", source, str(path))
+            self.assertIn("Ms_Delay(3);\n  nrf_handler();", source, str(path))
+            # 落帧不能写成「数组 + 变址循环」：SDCC 对这类写法取字节有误。
+            self.assertIsNone(
+                re.search(r"payload\[[A-Za-z_]\w*\]\s*=", source),
+                f"{path}: payload 必须逐元素展开赋值",
+            )
+
+    def test_nrf_tx_mode_settle_delay_shortened(self) -> None:
+        """状态回传每 5 圈进一次 TX，切模式等待从 25ms 缩到 1ms 以保持主循环节奏。"""
+        for path in (
+            ROOT / "libraries" / "boards" / "src" / "nrf24l01.c",
+            ROOT.parent / "stc32g" / "Libraries" / "boards" / "src" / "nrf24l01.c",
+        ):
+            source = path.read_text(encoding="utf-8")
+            match = re.search(
+                r"void nrf_tx_mode\(void\)\n\{(.*?)\n\}", source, re.DOTALL
+            )
+            self.assertIsNotNone(match, f"{path}: 找不到 nrf_tx_mode 定义")
+            self.assertIn("Ms_Delay(1);", match.group(1), str(path))
+            self.assertNotIn("Ms_Delay(25);", match.group(1), str(path))
+
     def test_robot_projects_use_known_good_bytewise_uart_query(self) -> None:
         projects = (
             "0000.培训模板",

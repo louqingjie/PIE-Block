@@ -227,7 +227,7 @@ void nrf_tx_mode(void)
 
   nrf_mode = TX_MODE;
 
-  Ms_Delay(25);
+  Ms_Delay(1);
 }
 
 // ���Ͳ���̫��
@@ -296,6 +296,46 @@ void nrf_handler(void)
   if (state & TX_FULL) // TX FIFO ��
   {
   }
+}
+
+// 十路 IO 状态回传：10 个 int16 小端值，依次为 P60/P62/P64/P66/P74/P75/P76/P77/MP03/MP74。
+// 5 次分频：首次调用立即发送，之后每 5 次调用发送一包。
+void RemoteStatusSend(int v0, int v1, int v2, int v3, int v4,
+                      int v5, int v6, int v7, int v8, int v9)
+{
+  static uint8_t divider = 4;
+  uint8_t payload[20];
+
+  if (++divider < 5)
+    return;
+  divider = 0;
+
+  /* 逐字节落帧：SDCC 对「数组 + 变址循环」取字节有误（10000 发成 0x2727、500 发成 0x0101），
+     这里直接从形参取高低字节，与 ExpansionBoradControl 的写法一致。 */
+  payload[0] = (uint8_t)((uint16_t)v0 & 0xFF);
+  payload[1] = (uint8_t)(((uint16_t)v0 >> 8) & 0xFF);
+  payload[2] = (uint8_t)((uint16_t)v1 & 0xFF);
+  payload[3] = (uint8_t)(((uint16_t)v1 >> 8) & 0xFF);
+  payload[4] = (uint8_t)((uint16_t)v2 & 0xFF);
+  payload[5] = (uint8_t)(((uint16_t)v2 >> 8) & 0xFF);
+  payload[6] = (uint8_t)((uint16_t)v3 & 0xFF);
+  payload[7] = (uint8_t)(((uint16_t)v3 >> 8) & 0xFF);
+  payload[8] = (uint8_t)((uint16_t)v4 & 0xFF);
+  payload[9] = (uint8_t)(((uint16_t)v4 >> 8) & 0xFF);
+  payload[10] = (uint8_t)((uint16_t)v5 & 0xFF);
+  payload[11] = (uint8_t)(((uint16_t)v5 >> 8) & 0xFF);
+  payload[12] = (uint8_t)((uint16_t)v6 & 0xFF);
+  payload[13] = (uint8_t)(((uint16_t)v6 >> 8) & 0xFF);
+  payload[14] = (uint8_t)((uint16_t)v7 & 0xFF);
+  payload[15] = (uint8_t)(((uint16_t)v7 >> 8) & 0xFF);
+  payload[16] = (uint8_t)((uint16_t)v8 & 0xFF);
+  payload[17] = (uint8_t)(((uint16_t)v8 >> 8) & 0xFF);
+  payload[18] = (uint8_t)((uint16_t)v9 & 0xFF);
+  payload[19] = (uint8_t)(((uint16_t)v9 >> 8) & 0xFF);
+
+  nrf_tx_packet(payload, 20);
+  Ms_Delay(3);
+  nrf_handler();
 }
 
 // ���ݰ�ѹ������

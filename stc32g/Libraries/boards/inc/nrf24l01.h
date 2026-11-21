@@ -56,6 +56,8 @@ void nrf_tx_packet(uint8_t* pBuf, uint8_t len);     //nrf·¢ËÍ
 
 void nrf_handler(void); 
 
+void RemoteStatusSend(int v0, int v1, int v2, int v3, int v4, int v5, int v6, int v7, int v8, int v9);
+
 void RCPacket_Send(void);
 
 #endif	/* __NRF24L01_H */
