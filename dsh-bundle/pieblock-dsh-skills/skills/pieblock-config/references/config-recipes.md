@@ -39,7 +39,7 @@
 - **改现有工程**：候选必须从用户当前 `.pieproj` 复制，只改需要项；拿示例整份替换会覆盖用户配置。
 - **新/空工程**：可以从示例整份生成，但 `project_kind` 必须与用户工程一致。
 - 示例优先用本地仓库副本；没有副本时按版本 tag 从 GitHub 取
-  `https://raw.githubusercontent.com/louqingjie/PIE-Block/v1.8.0/assets/examples/<name>.pieproj`。
+  Gitee 优先 `https://gitee.com/louqingjie/pie-block/raw/v1.8.0/book/examples/<name>.pieproj`，GitHub 备用 `https://raw.githubusercontent.com/louqingjie/PIE-Block/v1.8.0/book/examples/<name>.pieproj`。
 
 ## 3. 项目类型与底盘开关
 

@@ -47,7 +47,7 @@
 
 ### 源码定位（可选但很有帮助）
 - 怀疑的生成逻辑：按 tag 的 `packages/pieblock_core/lib/src/code_generator.dart` 第 N 行附近（GitHub）
-- 对应 tag 的链接（如 `https://github.com/louqingjie/PIE-Block/blob/v1.8.0/...`）
+- 对应 tag 的链接（Gitee 优先：`https://gitee.com/louqingjie/pie-block/blob/v1.8.0/...`；GitHub 备用）
 
 ### 已排除
 - 版本不一致：是/否

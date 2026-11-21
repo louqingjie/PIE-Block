@@ -104,15 +104,18 @@ chassis.normal_speed   | 6000   | uint16_t maxSpeed = 6000; | 6000 | 是
 
 ## 允许的源码阅读
 
-- GitHub：<https://github.com/louqingjie/PIE-Block>（按 tag 阅读，如 `v1.8.0`）；
-- raw 文件示例：`https://raw.githubusercontent.com/louqingjie/PIE-Block/v1.8.0/packages/pieblock_core/lib/src/code_generator.dart`；
+- **Gitee 镜像（国内访问稳定，优先）**：<https://gitee.com/louqingjie/pie-block>（按 tag 阅读，如 `v1.8.0`）；
+- GitHub 备用：<https://github.com/louqingjie/PIE-Block>（与 Gitee 同 tag 同内容）；
+- raw 文件示例（Gitee）：`https://gitee.com/louqingjie/pie-block/raw/v1.8.0/packages/pieblock_core/lib/src/code_generator.dart`；
+  GitHub 备用：`https://raw.githubusercontent.com/louqingjie/PIE-Block/v1.8.0/packages/pieblock_core/lib/src/code_generator.dart`；
 - 生成器入口：`packages/pieblock_core/lib/src/code_generator.dart`；
 - 表达式：`packages/pieblock_core/lib/src/expression.dart`；
 - 字段模型与校验：`packages/pieblock_core/lib/src/models.dart`、`validator.dart`；
 - 文档：`docs/reference/Flutter项目文件格式.md`、`docs/guides/Flutter编译与烧录指南.md`、
   `docs/reference/STC32G固件约束.md`、`docs/playbook/`。
 
-如团队有 Gitee 镜像，把上面的域名替换为镜像地址即可；仓库里没有内置镜像链接，不要臆造。
+镜像与 GitHub 版本不一致时，以应用 `describe.release` 对应的 tag 为准，不要混用版本；Gitee raw 路径与
+GitHub 相同，只换域名。**不要臆造不存在的仓库地址。**
 
 ## 拒绝话术
 

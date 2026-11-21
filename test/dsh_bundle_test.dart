@@ -177,6 +177,7 @@ void main() {
     );
     expect(skill, contains('机械培训群'));
     expect(skill, contains('不要用飞书私聊'));
+    expect(skill, contains('gitee.com/louqingjie/pie-block'));
     expect(skill, isNot(contains('建议用户在 GitHub Issues 提交')));
     final template = _read(
       '$_bundle/skills/pieblock-troubleshooting/references/bug-report-template.md',

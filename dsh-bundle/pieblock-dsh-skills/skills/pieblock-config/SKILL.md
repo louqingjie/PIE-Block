@@ -74,7 +74,7 @@ description: 用于按自然语言需求设计/填写 PIE-Block 工程参数（�
 - **新工程 / 空工程**：可以从 `book/examples/*.pieproj`（`omni3`、`mecanum4`、`arm2dof`）
   或应用模板整份生成候选。
 - 参考示例优先用仓库副本；没有副本时按版本 tag 从 GitHub 取
-  （`https://raw.githubusercontent.com/louqingjie/PIE-Block/v1.8.0/book/examples/omni3.pieproj`）。
+  （Gitee 优先：`https://gitee.com/louqingjie/pie-block/raw/v1.8.0/book/examples/omni3.pieproj`；GitHub 备用：`https://raw.githubusercontent.com/louqingjie/PIE-Block/v1.8.0/book/examples/omni3.pieproj`）。
 
 ### 3. 生成候选
 
@@ -135,4 +135,4 @@ pieblock-cli propose <用户工程.pieproj> --config <候选.pieproj>
 - 固件约束：`assets/docs/STC32G固件约束.md`
 - 编译与烧录：`assets/docs/Flutter编译与烧录指南.md`
 - CLI 契约：GitHub `docs/guides/PIE-Block命令行工具.md`
-- 仓库：<https://github.com/louqingjie/PIE-Block>
+- 仓库：Gitee 镜像 <https://gitee.com/louqingjie/pie-block>（国内优先）；GitHub <https://github.com/louqingjie/PIE-Block>

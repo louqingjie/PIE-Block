@@ -163,6 +163,14 @@ void main() {
     );
   });
 
+  test('源码阅读说明优先指向 Gitee 镜像', () {
+    final config = _read('skills/pieblock-config/SKILL.md');
+    expect(config, contains('gitee.com/louqingjie/pie-block'));
+    final troubleshooting = _read('skills/pieblock-troubleshooting/SKILL.md');
+    expect(troubleshooting, contains('gitee.com/louqingjie/pie-block'));
+    expect(troubleshooting, contains('GitHub 备用'));
+  });
+
   test('排障反馈走团队飞书群，不要求学生自己开 GitHub Issue', () {
     final skill = _read('skills/pieblock-troubleshooting/SKILL.md');
     expect(skill, contains('机械培训群'));
