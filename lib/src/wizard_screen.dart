@@ -2,6 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
+// Flutter 3.47 的 material_ui 不导出 ScrollCacheExtent，但 wizard_screen 的 part
+// 文件（wizard_pages_debug/engineer）要用；本地 3.50 会提示多余，这里保留并忽略。
+// ignore: unnecessary_import
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_selector/file_selector.dart';
