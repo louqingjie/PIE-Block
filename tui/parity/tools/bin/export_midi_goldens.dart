@@ -91,7 +91,7 @@ void main() {
       'MIDI 文件意外结束',
     ),
   ];
-  for (final (name, bytes, message) in errorCases) {
+  for (final (name, bytes, _) in errorCases) {
     try {
       MidiCodec.parse(bytes);
       parseCases.add({'name': name, 'hex': _hex(bytes), 'error': null});

@@ -1,3 +1,5 @@
+// re_editor 仍使用 flutter/material 的主题树，这里刻意保留旧版导入做桥接。
+// ignore: deprecated_member_use
 import 'package:flutter/material.dart' as legacy;
 import 'package:material_ui/material_ui.dart';
 

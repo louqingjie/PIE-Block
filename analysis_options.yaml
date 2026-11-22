@@ -18,6 +18,9 @@ analyzer:
     - windows/**
     - macos/**
     - linux/**
+    # TUI golden 生成工具是独立 Dart 包（自带 pubspec，不参与应用构建），
+    # 其源码由 tui 侧单独维护，不纳入 Flutter 应用的 flutter analyze 门禁。
+    - tui/parity/tools/**
 
 linter:
   # The lint rules applied to this project can be customized in the
