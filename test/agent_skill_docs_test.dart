@@ -188,4 +188,39 @@ void main() {
 
     expect(_read('docs/guides/AI-Skills使用指南.md'), contains('机械培训群'));
   });
+
+  test('跨工具安装提示词保持极简且来源正确', () {
+    final doc = _read('docs/guides/agent-skill-install-prompt.md');
+    for (final marker in [
+      'pieblock-config',
+      'pieblock-troubleshooting',
+      'pieblock-dsh-skills',
+      '不需要 npm',
+      'registry.npmmirror.com',
+      'registry.npmjs.org',
+    ]) {
+      expect(doc, contains(marker), reason: '安装提示词缺少 $marker');
+    }
+
+    // 交给 Agent 的提示词必须短：宿主机判断、目录路径这些 Agent 自己知道，
+    // 不需要我们在提示词里逐条列。
+    final block = RegExp(r'```text\n([\s\S]*?)```').firstMatch(doc);
+    expect(block, isNotNull, reason: '缺少可复制的提示词代码块');
+    final prompt = block!.group(1)!.trim();
+    expect(
+      prompt.split('\n').length,
+      lessThanOrEqualTo(6),
+      reason: '安装提示词过长，不要替 Agent 罗列工具与目录',
+    );
+
+    // 学生没有源码仓库：提示词只能依赖公开的 npm 源。
+    expect(prompt, isNot(contains('本机')), reason: '提示词不能假设本机有仓库');
+    expect(prompt, isNot(contains('dsh-bundle')), reason: '提示词不能指向仓库内路径');
+
+    // 使用指南要能引导到这段提示词。
+    expect(
+      _read('docs/guides/AI-Skills使用指南.md'),
+      contains('agent-skill-install-prompt.md'),
+    );
+  });
 }

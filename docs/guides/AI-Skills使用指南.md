@@ -28,11 +28,23 @@ Skill 采用通用的 Agent Skills 格式（`SKILL.md` + YAML frontmatter），�
 
 常见做法：
 
-1. 把 `skills/pieblock-config/` 或 `skills/pieblock-troubleshooting/` 整个目录复制到你所用
-   Agent 的 skills 目录（例如 Claude Code 的个人 skills 目录 `~/.claude/skills/`；其他工具
-   按各自文档放置）；
-2. 或者把整个 `skills/` 目录放到项目里，让 Agent 从工程目录读取；
+1. 从 npm 包 `pieblock-dsh-skills` 解压出 `package/skills/`（或直接用仓库里的
+   [`dsh-bundle/pieblock-dsh-skills/skills/`](../../dsh-bundle/pieblock-dsh-skills/skills/)），
+   把两个技能目录整个复制到你所用 Agent 的 skills 目录；注意仓库根
+   [`skills/`](../../skills/) 是源码版，没有 `assets/`，不要拿它安装；
+2. 或者把技能目录放到项目里，让 Agent 从工程目录读取；
 3. 确保 Agent 能访问 `pieblock-cli`（PATH、`PIEBLOCK_CLI`，或应用目录下的 `cli/`）。
+
+### 让 AI 自己装（推荐）
+
+不用记目录，把[安装提示词](agent-skill-install-prompt.md)发给任意 AI 工具即可，一句话：
+
+> 帮我安装 PIE-Block 的两个 Agent Skill：pieblock-config、pieblock-troubleshooting。
+> 源用 npm 包 `pieblock-dsh-skills`（不需要 npm，下载 npmmirror 镜像 latest 的 `dist.tarball`，
+> `package/skills/` 就是），装到你自己加载 skills 的目录。
+
+Agent 自己知道宿主工具、skills 目录和验证方式；Trae / WorkBuddy 这类只能 UI 导入的工具，
+它会给出操作步骤。
 
 > 本 Skill 不随安装包分发，也不是 MCP / 常驻服务；它只是给 AI 的规程文件。
 

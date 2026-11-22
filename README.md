@@ -27,7 +27,8 @@ PIE-Block 是面向 W.PIE RoboMaster 校内赛的桌面集成开发环境（Wind
   翻译成工程参数提案，`pieblock-troubleshooting` 对照参数与生成代码排查问题；两者都禁止直接改
   `main.c`、绕过代码生成器或自行编译烧录固件。DSH 用户可直接在插件页输入
   [`pieblock-dsh-skills`](https://www.npmjs.com/package/pieblock-dsh-skills) 安装，装一次全局生效。
-  见 [AI Skills 使用指南](docs/guides/AI-Skills使用指南.md)
+  见 [AI Skills 使用指南](docs/guides/AI-Skills使用指南.md)；其他 AI 工具把
+  [安装提示词](docs/guides/agent-skill-install-prompt.md)发给 Agent，它会自己完成安装。
 
 暂不提供云端编译、串口/蓝牙烧录、3D 仿真；AI 接入走命令行 + 提案确认，不内置常驻服务或端口监听。官网嵌了一个 Web 版（只读暗色、默认打开），可以配置项目、看生成的 C 代码（汇编列表仅桌面版），烧录仍然只能在桌面版完成——浏览器里既没有本地工具链也访问不到 USB-HID。Web 版的项目存在浏览器 localStorage 里，导入导出走文件上传下载。USB-HID 烧录在 Windows 直接可用，Linux 需先安装 udev 规则（见烧录指南）；Android 版可配置、编辑与预览，但 Release 包未启用本地编译流水线、不能编译固件，烧录也受固件入场时序限制暂不可用（见 Android 移植文档）。
 

@@ -33,6 +33,7 @@
 - [Flutter 编译与烧录指南](guides/Flutter编译与烧录指南.md)
 - [命令行工具（CLI）](guides/PIE-Block命令行工具.md)
 - [AI Skills 使用指南](guides/AI-Skills使用指南.md)
+- [AI Skill 安装提示词](guides/agent-skill-install-prompt.md)
 - [机械拓展板使用指南](guides/机械拓展板使用指南%20.md)
 - [RM 电控指南](guides/RM电控指南.md)
 - [代码生成器 CLI 与 MCP 接入指南](guides/代码生成器CLI与MCP接入指南.md)
