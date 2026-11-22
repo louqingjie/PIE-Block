@@ -225,3 +225,9 @@ app.*.map.json
 # TUI 构建测试在仓库根生成的运行时/对象缓存
 /object-cache/
 /sdcc/
+
+# 本地发布产物与运行时文件（由 CI 或打包脚本重新生成，不提交）
+/output/
+/workbuddy-expert/*.zip
+*.pieproj.proposed
+*.pieproj.proposed.result
