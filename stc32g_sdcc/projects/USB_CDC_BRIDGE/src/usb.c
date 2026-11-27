@@ -19,6 +19,12 @@
 
 volatile BYTE DeviceState;
 volatile __xdata SETUP Setup;
+volatile BYTE UsbIrqCount;
+volatile BYTE UsbResetCount;
+volatile BYTE UsbSetupCount;
+volatile BYTE UsbLastIntrusb;
+volatile BYTE UsbLastIntrin;
+volatile BYTE UsbLastIntrout;
 volatile __xdata EPSTATE Ep0State;
 volatile BYTE InEpState;
 volatile BYTE OutEpState;
@@ -46,12 +52,17 @@ void usb_init(void)
        USBCKS/USBCKS2 清成 0（PLL/2）。这里显式选择 USB 专用 IRC48M。 */
     P_SW2 |= 0x80;
     IRCBAND = (IRCBAND & 0x03) | 0x80;
+    printf("[USB] IRCBAND=%02X\r\n", (unsigned int)IRCBAND);
 
+    printf("[USB] wait IRC48M...\r\n");
     IRC48MCR = 0x80;
     while (!(IRC48MCR & 0x01));
+    printf("[USB] IRC48MCR=%02X\r\n", (unsigned int)IRC48MCR);
 
     USBCLK = 0x00;
     USBCON = 0x90;
+    printf("[USB] USBCLK=%02X USBCON=%02X\r\n",
+           (unsigned int)USBCLK, (unsigned int)USBCON);
 
     usb_write_reg(FADDR, 0x00);
     usb_write_reg(POWER, 0x08);
@@ -73,6 +84,7 @@ void usb_init(void)
     TxWptr = 0;
 
     IE2 |= 0x80;   /* EUSB：IE2 不是可位寻址 SFR，必须整字节操作。 */
+    printf("[USB] init done IE2=%02X\r\n", (unsigned int)IE2);
 }
 
 BYTE usb_read_reg(BYTE addr)
@@ -129,6 +141,11 @@ void usb_isr(void) __interrupt (25)
     intrin = usb_read_reg(INTRIN1);
     introut = usb_read_reg(INTROUT1);
 
+    UsbIrqCount++;
+    UsbLastIntrusb = intrusb;
+    UsbLastIntrin = intrin;
+    UsbLastIntrout = introut;
+
     if (intrusb & RSUIF) usb_resume();
     if (intrusb & RSTIF) usb_reset();
 
@@ -175,8 +192,9 @@ void usb_resume()
 {
 }
 
-void usb_reset()
+void usb_reset(void)
 {
+    UsbResetCount++;
     usb_write_reg(FADDR, 0x00);
     DeviceState = DEVSTATE_DEFAULT;
     Ep0State.bState = EPSTATE_IDLE;
@@ -234,6 +252,9 @@ void usb_setup()
 
     usb_write_reg(INDEX, 0);
     csr = usb_read_reg(CSR0);
+
+    if (csr & OPRDY)
+        UsbSetupCount++;
 
     if (csr & STSTL)
     {

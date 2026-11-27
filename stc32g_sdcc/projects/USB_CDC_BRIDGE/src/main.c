@@ -24,15 +24,40 @@ void main(void)
     P36 = 1;
 
     Register_Set();
+    DebugUartInit();
+
+    printf("\r\n[BOOT] IRCBAND=%02X\r\n", (unsigned int)IRCBAND);
 
     usb_init();
     uart_init();
 
+    printf("[BOOT] ready\r\n");
+
     EA = 1;
 
-    while (1)
     {
-        uart_polling();
-        P36 = (DeviceState == DEVSTATE_CONFIGURED) ? 0 : 1;
+        static BYTE lastState = 0xFF;
+        static uint16_t dbgDiv = 0;
+
+        while (1)
+        {
+            uart_polling();
+            P36 = (DeviceState == DEVSTATE_CONFIGURED) ? 0 : 1;
+
+            if ((DeviceState != lastState) || (++dbgDiv == 0))
+            {
+                lastState = DeviceState;
+                printf("[LOOP] st=%u irq=%u rst=%u setup=%u intr=%02X/%02X/%02X ie2=%02X usbcon=%02X\r\n",
+                       (unsigned int)DeviceState,
+                       (unsigned int)UsbIrqCount,
+                       (unsigned int)UsbResetCount,
+                       (unsigned int)UsbSetupCount,
+                       (unsigned int)UsbLastIntrusb,
+                       (unsigned int)UsbLastIntrin,
+                       (unsigned int)UsbLastIntrout,
+                       (unsigned int)IE2,
+                       (unsigned int)USBCON);
+            }
+        }
     }
 }

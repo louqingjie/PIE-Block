@@ -112,7 +112,8 @@
       "projects/USB_CDC_BRIDGE/src/usb_req_class.c",
       "projects/USB_CDC_BRIDGE/src/usb_req_vendor.c",
       "projects/USB_CDC_BRIDGE/src/util.c",
-      "projects/USB_CDC_BRIDGE/src/uart_cdc.c"
+      "projects/USB_CDC_BRIDGE/src/uart_cdc.c",
+      "projects/USB_CDC_BRIDGE/src/debug_uart.c"
     ]
   },
   "projects": {

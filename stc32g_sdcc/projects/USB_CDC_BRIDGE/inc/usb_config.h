@@ -7,6 +7,9 @@
 /* 板间 UART2：固定 115200 8N1，不跟随电脑端 CDC 的 line coding。 */
 #define CDC_UART_BAUD 115200UL
 
+/* 独立调试串口 UART3 P0.0/P0.1。 */
+#define CDC_DEBUG_BAUD 115200UL
+
 /* 0: UART2 P1.0(RX)/P1.1(TX)；1: UART2 P4.6(RX)/P4.7(TX)。 */
 #define CDC_UART_PIN_GROUP 0
 

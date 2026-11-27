@@ -102,6 +102,12 @@ void usb_out_ep5(void);
 
 extern volatile BYTE DeviceState;
 extern volatile __xdata SETUP Setup;
+extern volatile BYTE UsbIrqCount;
+extern volatile BYTE UsbResetCount;
+extern volatile BYTE UsbSetupCount;
+extern volatile BYTE UsbLastIntrusb;
+extern volatile BYTE UsbLastIntrin;
+extern volatile BYTE UsbLastIntrout;
 extern volatile __xdata EPSTATE Ep0State;
 extern volatile BYTE InEpState;
 extern volatile BYTE OutEpState;

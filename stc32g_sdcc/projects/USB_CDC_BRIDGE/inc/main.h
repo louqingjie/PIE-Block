@@ -10,6 +10,7 @@
 
 #include "usb.h"
 #include "uart_cdc.h"
+#include "debug_uart.h"
 
 /* common.c 里定义，但 common.h 没有声明。 */
 extern void Register_Set(void);

@@ -232,6 +232,38 @@ pwsh .\stc32g_sdcc\build.ps1 -Project USB_CDC_BRIDGE `
    CDC/HID 时，按复位脚不会进入 USB 下载模式；要重新烧录，请用“P3.2 拉低后
    冷启动”或用户程序里的 `@STCISP#` 软复位命令。
 
+### 调试串口（UART3 P0.0/P0.1）
+
+桥固件另外开了一路独立调试串口，用来打印启动/USB 状态：
+
+- **UART3：P0.0 = RX，P0.1 = TX，115200 8N1，只发送。**
+- USB-TTL 的 **RX 接 P0.1**，GND 共地即可；P0.0 可以不接。
+- **不要用 P1.0/P1.1 做 printf**：那是桥的 UART2，已经用于接机器人；
+  接调试器会和机器人链路冲突。
+
+启动后串口会输出：
+
+```text
+[BOOT] IRCBAND=82
+[USB] IRCBAND=82
+[USB] wait IRC48M...
+[USB] IRC48MCR=81
+[USB] USBCLK=00 USBCON=90
+[USB] init done IE2=80
+[BOOT] ready
+[LOOP] st=0 irq=0 rst=0 setup=0 intr=00/00/00 ie2=80 usbcon=90
+```
+
+判读方法：
+
+- 连 `[BOOT]` 都没有：应用没跑或 UART3 没初始化，先回到 P3.5/ISP 排查。
+- 停在 `[USB] wait IRC48M...`：IRC48M 没稳定，USB 初始化卡死。
+- `[USB] init done` 后 `irq` 一直为 0：USB 中断没进来，检查 P3.0/P3.1、
+  `IE2.EUSB`、`USBCON` 和 USB 线。
+- `irq` 在涨但 `setup=0`：USB 中断进了，但没有 SETUP 包，重点查端点/描述符。
+- `setup` 在涨、`st` 变成 4：枚举完成，CDC 应出现；若仍无 COM 口，
+  再查描述符和 VID/PID。
+
 ### 实现说明
 
 - 源码从 STC 官方 `70-CDC(Communication Device Class)协议范例` 移植，
