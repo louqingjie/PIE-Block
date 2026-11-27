@@ -169,3 +169,50 @@ pwsh .\stc32g_sdcc\tests\run_qemu_smoke.ps1 `
 MCS-251 启动、UART 和基础寄存器语义的回归，NRF24L01、扩展板和精确引脚复用仍
 需要桩测试或真机验证。SPI 驱动的原有 `SPI_ReadWriteByte()` API 已改为有限等待，
 未接外设时返回 `0xFF`，正式工程不会因为 NRF 链路缺失永久卡死。
+
+## USB_CDC_BRIDGE：第二块主控板做 USB-CDC 调试桥
+
+`projects/USB_CDC_BRIDGE` 是一块固定的桥固件：第二块 STC32G12K128 烧录后，
+USB（P3.0/P3.1）枚举为 CDC 虚拟串口，UART2（P1.0/P1.1）与机器人主控板
+UART2 交叉相连。机器人侧的调试字节流原样转发到电脑 COM 口，电脑下发的字节
+原样转发回机器人。
+
+```powershell
+pwsh .\stc32g_sdcc\build.ps1 -Project USB_CDC_BRIDGE `
+  -Sdcc .\vendor\sdcc-toolchain\bin\sdcc.exe `
+  -LibDir .\vendor\sdcc-toolchain\lib\mcs251-large-stack-auto `
+  -StdInclude .\vendor\sdcc-toolchain\include
+```
+
+输出：`stc32g_sdcc/build/USB_CDC_BRIDGE/USB_CDC_BRIDGE.hex`。
+
+### 接线
+
+```text
+机器人 P1.1 (UART2 TX)  ->  桥 P1.0 (UART2 RX)
+机器人 P1.0 (UART2 RX)  <-  桥 P1.1 (UART2 TX)
+机器人 GND              ---  桥 GND
+```
+
+只做单向打印时可以只接第一根 TX 线和 GND。两块板各自供电，不要通过调试线
+互供 VCC；必须共地。
+
+### 串口参数
+
+- 板间 UART2 固定 **115200 8N1**。
+- 电脑端 CDC 的“波特率/校验位”设置不会改变机器人链路；桥只把
+  `GET_LINE_CODING` 当作回读值。
+- Win10 1903+/Win11 免驱，设备管理器出现 COM 口即可用普通串口助手打开；
+  Win10 1903 之前的系统需要安装 STC USB CDC 驱动。
+
+### 实现说明
+
+- 源码从 STC 官方 `70-CDC(Communication Device Class)协议范例` 移植，
+  保留原始版权头；SDCC 侧使用 `__code`/`__xdata`、`__interrupt` 和
+  3 字节 flat 指针。
+- `IE2`、`P_SW2`、`IRCBAND`、`S2CON`、`AUXR` 都不是可位寻址 SFR，
+  固件全部使用字节掩码，避免 SDCC 把伪 `__sbit` 写到错误位地址。
+- EP0 描述符先复制到 XDATA `Ep0Stage`，再交给通用指针发送；
+  `SETUP`/`LINECODING` 有编译期大小检查。
+- UART2 环形缓冲有满检查；ISR 共享索引和标志均为 `volatile`。
+- QEMU 的 `stc32g144k246` 模型不模拟 USB PHY/CDC，本工程必须真机验证。

@@ -404,6 +404,110 @@ class StaffDisplayContractTests(unittest.TestCase):
                 )
 
 
+class UsbCdcBridgeContractTests(unittest.TestCase):
+    """USB_CDC_BRIDGE 的 SDCC 移植契约。
+
+    固件来自 STC 官方 70-CDC 例程，但必须按 SDCC MCS-251 的规则改写：
+    - 不允许把 Keil 的 code/xdata/bit/interrupt 关键字带回来；
+    - IE2/P_SW2/IRCBAND/S2CON/AUXR 不是可位寻址 SFR，必须整字节操作；
+    - EP0 描述符必须先拷到 XDATA，不能把 __code 数组直接赋给 generic 指针；
+    - ISR 共享变量必须 volatile，环形缓冲回绕判断必须用 (BYTE)(w - r)。
+    """
+
+    PROJECT = ROOT / "projects" / "USB_CDC_BRIDGE"
+
+    @staticmethod
+    def _strip_comments(text: str) -> str:
+        return re.sub(r"/\*.*?\*/|//[^\n]*", "", text, flags=re.DOTALL)
+
+    def _source(self, name: str) -> str:
+        return (self.PROJECT / "src" / name).read_text(encoding="utf-8")
+
+    def test_no_keil_storage_or_interrupt_keywords(self) -> None:
+        for path in sorted((self.PROJECT / "src").glob("*.c")):
+            text = self._strip_comments(path.read_text(encoding="utf-8"))
+            self.assertIsNone(
+                re.search(r"\b(?:code|xdata|bit|interrupt)\b", text),
+                f"{path.name}: 仍含 Keil 关键字",
+            )
+
+    def test_non_addressable_sfr_bits_use_byte_masks(self) -> None:
+        usb = self._strip_comments(self._source("usb.c"))
+        uart = self._strip_comments(self._source("uart_cdc.c"))
+
+        self.assertNotRegex(usb, r"\bEUSB\b\s*=")
+        self.assertNotRegex(usb, r"\b(?:EAXFR|USBCKS|USBCKS2)\b\s*=")
+        self.assertIn("IE2 |= 0x80", usb)
+        self.assertIn("IRCBAND = (IRCBAND & 0x03) | 0x80", usb)
+
+        self.assertNotRegex(uart, r"\b(?:ES2|S2_S|S2TI|S2RI|S2TB8|T2x12|T2R)\b\s*=")
+        self.assertIn("IE2 |= 0x01", uart)
+        self.assertIn("AUXR |= 0x14", uart)
+        self.assertIn("S2CON", uart)
+
+    def test_usb_and_uart_isr_signatures(self) -> None:
+        usb = self._source("usb.c")
+        uart = self._source("uart_cdc.c")
+        isr = self._source("isr.c")
+
+        self.assertIn("void usb_isr(void) __interrupt (25)", usb)
+        self.assertIn(
+            "void uart2_isr(void) __interrupt (UART2_VECTOR)", uart
+        )
+        self.assertIn(
+            "void Default_Isr(void) __interrupt (I2SRXDMA_VECTOR)", isr
+        )
+
+    def test_ep0_descriptors_are_staged_in_xdata(self) -> None:
+        std = self._strip_comments(self._source("usb_req_std.c"))
+        self.assertIn("__xdata BYTE Ep0Stage[EP0_STAGE_SIZE];", std)
+        self.assertIn("Ep0LoadDescriptor", std)
+        self.assertNotRegex(
+            std,
+            r"Ep0State\.pData\s*=\s*(?:DEVICEDESC|CONFIGDESC|LANGIDDESC|"
+            r"MANUFACTDESC|PRODUCTDESC)",
+        )
+
+    def test_shared_isr_state_is_volatile(self) -> None:
+        usb = self._source("usb.c")
+        uart = self._source("uart_cdc.c")
+        for declaration in (
+            "volatile BYTE DeviceState;",
+            "volatile BOOL UsbInBusy;",
+            "volatile BOOL UsbOutBusy;",
+            "volatile BYTE RxWptr;",
+            "volatile BYTE TxWptr;",
+        ):
+            self.assertIn(declaration, usb)
+        self.assertIn("volatile BOOL UartBusy", uart)
+
+    def test_ring_buffers_use_byte_difference(self) -> None:
+        usb = self._strip_comments(self._source("usb.c"))
+        uart = self._strip_comments(self._source("uart_cdc.c"))
+        self.assertIn("(BYTE)(RxWptr - RxRptr)", usb)
+        self.assertIn("(BYTE)(TxWptr - TxRptr)", uart)
+
+    def test_wire_struct_sizes_are_checked(self) -> None:
+        usb = self._source("usb.c")
+        self.assertIn("sizeof(SETUP) == 8", usb)
+        self.assertIn("sizeof(LINECODING) == 7", usb)
+
+    def test_manifest_lists_bridge_sources(self) -> None:
+        manifest = json.loads((ROOT / "build_manifest.json").read_text(encoding="utf-8"))
+        self.assertIn("USB_CDC_BRIDGE", manifest["projects"])
+        self.assertEqual(
+            ["usb_cdc"],
+            list(manifest["projects"]["USB_CDC_BRIDGE"]["library_groups"]),
+        )
+        relative_sources = manifest["source_groups"]["usb_cdc"]
+        self.assertEqual(len(relative_sources), len(set(relative_sources)))
+        for relative_source in relative_sources:
+            self.assertTrue(
+                (ROOT / relative_source).is_file(),
+                f"usb_cdc 源组里的文件不存在: {relative_source}",
+            )
+
+
 if __name__ == "__main__":
     unittest.main()
 

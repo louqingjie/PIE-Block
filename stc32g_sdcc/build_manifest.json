@@ -104,6 +104,15 @@
     ],
     "gpio": [
       "libraries/drivers/src/CNU_PIE_GPIO.c"
+    ],
+    "usb_cdc": [
+      "projects/USB_CDC_BRIDGE/src/usb.c",
+      "projects/USB_CDC_BRIDGE/src/usb_desc.c",
+      "projects/USB_CDC_BRIDGE/src/usb_req_std.c",
+      "projects/USB_CDC_BRIDGE/src/usb_req_class.c",
+      "projects/USB_CDC_BRIDGE/src/usb_req_vendor.c",
+      "projects/USB_CDC_BRIDGE/src/util.c",
+      "projects/USB_CDC_BRIDGE/src/uart_cdc.c"
     ]
   },
   "projects": {
@@ -126,6 +135,7 @@
     "UART1_IRQ_SMOKE": {"library_groups": ["uart"]},
     "ROBOMASTER_ENGINEER": {"library_groups": ["boards", "radio", "drivers"]},
     "ROBOMASTER_INFANTRY": {"library_groups": ["boards", "radio", "drivers"]},
-    "TEST": {"library_groups": ["boards", "radio", "drivers"]}
+    "TEST": {"library_groups": ["boards", "radio", "drivers"]},
+    "USB_CDC_BRIDGE": {"library_groups": ["usb_cdc"]}
   }
 }
