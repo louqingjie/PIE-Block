@@ -273,6 +273,17 @@ pwsh .\stc32g_sdcc\build.ps1 -Project UART2_DEBUG_TEST `
 机器人 GND              ---  桥 GND
 ```
 
+测试固件还开了一路**机器人侧 UART3 调试口**，用来单独观察 UART2 中断：
+
+```text
+USB-TTL RX  ->  机器人 P0.1 (UART3 TX)
+USB-TTL GND ->  机器人 GND
+115200 8N1
+```
+
+- P3.5 每秒翻转一次，做应用心跳（低电平点亮）；不闪说明应用没跑。
+- UART3 只发送，不占用 UART2；桥的 UART3 调试口是另一个物理口，不要混接。
+
 行为：
 
 - 每 1 秒发送 `UART2 OK <counter>`；
@@ -303,6 +314,18 @@ UART2 OK 1
 如果只回显第一个 `h`，说明板上还是旧的“查询接收”版本，需要重新烧录中断版。
 桥的 256 字节 `TxBuffer` 在 PC 未打开 COM 口时会累积并丢字节，正式协议需要
 帧头/长度/CRC 让 PC 端重新同步；测试固件只负责验证物理链路。
+
+机器人侧 UART3 调试口启动时应看到：
+
+```text
+[BOOT] UART2 test; UART3 debug P0.1 115200
+[INIT] S2CON=50 IE2=01 EA=1
+[DBG] u2irq=0 drop=0 head=0 tail=0 s2con=50 ie2=01 ea=1
+```
+
+在 CDC 连续发 `hello` 时，`u2irq` 应增加 5，`head`/`tail` 也应增加；
+如果 `u2irq` 一直是 0，说明 UART2 中断没进，重点查 `IE2`、`EA`、向量表；
+如果 `u2irq` 在涨但 CDC 没回显，查环形缓冲和回显逻辑。
 
 测完后按桥的恢复流程烧回机器人固件即可；这个测试固件不写 Flash、不改
 ISP 设置，不会影响后续烧录。

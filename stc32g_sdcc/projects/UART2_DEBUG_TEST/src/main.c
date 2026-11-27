@@ -20,6 +20,37 @@ static const char __code MSG_OK[] = "UART2 OK ";
 static const char __code MSG_RX[] = "[RX] ";
 static const char __code MSG_CRLF[] = "\r\n";
 
+/* UART3 P0.0/P0.1 独立调试口：只发送，115200 8N1，轮询。 */
+static void DebugUartInit(void)
+{
+    P_SW2 &= ~(0x01 << 1); /* UART3 -> P0.0/P0.1 */
+    P0M1 &= ~0x03;
+    P0M0 &= ~0x01;
+    P0M0 |= 0x02; /* P0.1 TX 推挽；P0.0 保持准双向输入 */
+    S3CON = 0x50;
+    T3L = (uint8_t)BR(115200);
+    T3H = (uint8_t)(BR(115200) >> 8);
+    T4T3M |= 0x0a; /* T3x12 = 1, T3R = 1 */
+    S3CON &= ~0x02;
+}
+
+static void DebugUartPutChar(uint8_t c)
+{
+    S3CON &= ~0x02;
+    S3BUF = c;
+    while (!(S3CON & 0x02))
+    {
+    }
+    S3CON &= ~0x02;
+}
+
+/* 让 printf() 输出到 UART3，而不是 UART2。 */
+int putchar(int c)
+{
+    DebugUartPutChar((uint8_t)c);
+    return c;
+}
+
 /*
  * UART2 接收中断 + 环形缓冲。115200 下连续字节间隔只有约 87us，
  * 主循环轮询会覆盖 S2BUF，必须由中断及时搬走。
@@ -28,11 +59,15 @@ static const char __code MSG_CRLF[] = "\r\n";
 static volatile uint8_t RxBuffer[UART2_RX_SIZE];
 static volatile uint8_t RxHead = 0;
 static volatile uint8_t RxTail = 0;
+static volatile uint16_t Uart2IrqCount = 0;
+static volatile uint16_t Uart2DropCount = 0;
 
 void Uart2Isr(void) __interrupt (UART2_VECTOR)
 {
     uint8_t dat;
     uint8_t next;
+
+    Uart2IrqCount++;
 
     if (S2CON & 0x01) /* S2RI */
     {
@@ -45,6 +80,10 @@ void Uart2Isr(void) __interrupt (UART2_VECTOR)
         {
             RxBuffer[RxHead] = dat;
             RxHead = next;
+        }
+        else
+        {
+            Uart2DropCount++;
         }
     }
 
@@ -106,7 +145,18 @@ void main(void)
     uint8_t c;
 
     Register_Set();
+    DebugUartInit();
+    printf("\r\n[BOOT] UART2 test; UART3 debug P0.1 115200\r\n");
+
+    /* P3.5 心跳：低电平点亮，每秒翻转一次。 */
+    P3M0 |= 0x20;
+    P3M1 &= ~0x20;
+    P35 = 0;
+
     Uart2Init();
+    printf("[INIT] S2CON=%02X IE2=%02X EA=%u\r\n",
+           (unsigned int)S2CON, (unsigned int)IE2, (unsigned int)(EA ? 1 : 0));
+
     Uart2SendStr(MSG_BOOT);
 
     while (1)
@@ -126,9 +176,20 @@ void main(void)
         if (++tick >= 1000)
         {
             tick = 0;
+            P35 = !P35;
+
             Uart2SendStr(MSG_OK);
             Uart2SendUint(count++);
             Uart2SendStr(MSG_CRLF);
+
+            printf("[DBG] u2irq=%u drop=%u head=%u tail=%u s2con=%02X ie2=%02X ea=%u\r\n",
+                   (unsigned int)Uart2IrqCount,
+                   (unsigned int)Uart2DropCount,
+                   (unsigned int)RxHead,
+                   (unsigned int)RxTail,
+                   (unsigned int)S2CON,
+                   (unsigned int)IE2,
+                   (unsigned int)(EA ? 1 : 0));
         }
 
         Ms_Delay(1);
