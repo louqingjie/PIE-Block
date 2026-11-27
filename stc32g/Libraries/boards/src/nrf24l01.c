@@ -306,7 +306,9 @@ void nrf_handler(void)
     state = nrf_readreg(STATUS);
     nrf_writereg(NRF_WRITE_REG + STATUS, state);
 
-    if (state & RX_DR)
+    /* RX_P_NO = 111 表示 RX FIFO 空。FIFO 里还有包时 RX_DR 可能已经被清掉，
+       不能用 RX_DR 判断是否继续读，否则每次只读一包。 */
+    if ((state & 0x0E) != 0x0E)
     {
       RF2G4_CE_LOW;
       nrf_readbuf(RD_RX_PLOAD, RX_Buff, RX_PACKET_LENTH);
@@ -330,7 +332,7 @@ void nrf_handler(void)
         nrf_rx_mode();
     }
 
-    if (!(state & RX_DR))
+    if ((state & 0x0E) == 0x0E)
       break;
   }
 
