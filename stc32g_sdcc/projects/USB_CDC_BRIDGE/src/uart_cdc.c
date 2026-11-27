@@ -22,6 +22,30 @@ volatile BOOL UartBusy = 0;
 volatile BYTE TxOverflow = 0;
 volatile BYTE RxOverflow = 0;
 
+/* 和 STC USB 库一致的“不停电下载”命令；从 CDC 收到后软复位到系统 ISP。 */
+static const char IspCommand[] = "@STCISP#";
+static BYTE ispIndex = 0;
+static BOOL ispRequested = 0;
+
+static void IspCommandFeed(BYTE dat)
+{
+    if (dat == (BYTE)IspCommand[ispIndex])
+    {
+        ispIndex++;
+        if (IspCommand[ispIndex] == '\0')
+        {
+            ispRequested = 1;
+            ispIndex = 0;
+        }
+    }
+    else
+    {
+        ispIndex = 0;
+        if (dat == (BYTE)IspCommand[0])
+            ispIndex = 1;
+    }
+}
+
 void uart_init(void)
 {
 #if (CDC_UART_PIN_GROUP == 0)
@@ -198,6 +222,19 @@ void uart_polling(void)
     if (!UartBusy && (RxRptr != RxWptr))
     {
         dat = RxBuffer[RxRptr++];
+
+        /* 收到 "@STCISP#" 就软复位到系统 ISP，方便重新烧录机器人固件。 */
+        IspCommandFeed(dat);
+        if (ispRequested)
+        {
+            printf("\r\n[ISP] reset to system ISP\r\n");
+            EA = 0;
+            IAP_CONTR = 0x60;
+            while (1)
+            {
+            }
+        }
+
         UartBusy = 1;
 
         /* 固定 8N1：TB8 始终为 0，不读取电脑端 line coding。 */
