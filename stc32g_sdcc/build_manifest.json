@@ -91,6 +91,10 @@
       "libraries/drivers/src/CNU_PIE_GPIO.c",
       "libraries/drivers/src/CNU_PIE_UART.c"
     ],
+    "dbg_console": [
+      "projects/DBG_CONSOLE/src/dbg_console.c",
+      "projects/DBG_CONSOLE/src/nrf_dbg.c"
+    ],
     "lcd": [
       "libraries/boards/src/LCD.c",
       "libraries/boards/src/Font.c",
@@ -138,6 +142,7 @@
     "ROBOMASTER_INFANTRY": {"library_groups": ["boards", "radio", "drivers"]},
     "TEST": {"library_groups": ["boards", "radio", "drivers"]},
     "USB_CDC_BRIDGE": {"library_groups": ["usb_cdc"]},
-    "UART2_DEBUG_TEST": {"library_groups": []}
+    "UART2_DEBUG_TEST": {"library_groups": []},
+    "DBG_CONSOLE": {"library_groups": ["drivers", "dbg_console"]}
   }
 }

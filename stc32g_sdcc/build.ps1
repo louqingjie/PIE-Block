@@ -1,6 +1,6 @@
 ﻿[CmdletBinding()]
 param(
-[ValidateSet('0000.培训模板', '0001.JDY08设置密码', 'BUZZER_MUSIC_SMOKE', 'BUZZER_MUSIC_SONG_SMOKE', 'BUZZER_MUSIC_GENERATED', 'BUZZER_VOICE_SMOKE', 'DELAY_SMOKE', 'FRICTION_CALIBRATION', 'LCD_SPI_SMOKE', 'PWM_SMOKE', 'PWM_B_SMOKE', 'TIMER_IRQ_SMOKE', 'UART1_IRQ_SMOKE', 'ROBOMASTER_ENGINEER', 'ROBOMASTER_INFANTRY', 'TEST', 'USB_CDC_BRIDGE', 'UART2_DEBUG_TEST')]
+[ValidateSet('0000.培训模板', '0001.JDY08设置密码', 'BUZZER_MUSIC_SMOKE', 'BUZZER_MUSIC_SONG_SMOKE', 'BUZZER_MUSIC_GENERATED', 'BUZZER_VOICE_SMOKE', 'DELAY_SMOKE', 'FRICTION_CALIBRATION', 'LCD_SPI_SMOKE', 'PWM_SMOKE', 'PWM_B_SMOKE', 'TIMER_IRQ_SMOKE', 'UART1_IRQ_SMOKE', 'ROBOMASTER_ENGINEER', 'ROBOMASTER_INFANTRY', 'TEST', 'USB_CDC_BRIDGE', 'UART2_DEBUG_TEST', 'DBG_CONSOLE')]
     [string]$Project = 'TEST',
     [switch]$All,
     [switch]$SmokeTest,
@@ -30,7 +30,8 @@ $projectNames = @(
     'ROBOMASTER_INFANTRY',
     'TEST',
     'USB_CDC_BRIDGE',
-    'UART2_DEBUG_TEST'
+    'UART2_DEBUG_TEST',
+    'DBG_CONSOLE'
 )
 
 function Resolve-Executable([string]$Name) {
@@ -157,6 +158,23 @@ function Invoke-ProjectBuild([string]$Name) {
         }
     }
     $generatedInterruptHeader = Join-Path $output 'generated_interrupt_declarations.h'
+    # 调试台 banner 的固件身份：构建时注入 git 短哈希与日期。
+    $buildInfoLines = @()
+    if ($Name -eq 'DBG_CONSOLE') {
+        $fwHash = 'local'
+        try {
+            $fwHash = (& git -C $PSScriptRoot rev-parse --short HEAD 2>$null)
+            if ($null -eq $fwHash) { $fwHash = 'local' }
+            $fwHash = ([string]$fwHash).Trim()
+            if ([string]::IsNullOrWhiteSpace($fwHash)) { $fwHash = 'local' }
+        } catch {
+            $fwHash = 'local'
+        }
+        $buildDate = Get-Date -Format 'yyyy-MM-dd'
+        $buildHashLine = '#define PIE_BLOCK_FW_HASH "' + $fwHash + '"'
+        $buildDateLine = '#define PIE_BLOCK_BUILD_DATE "' + $buildDate + '"'
+        $buildInfoLines = @($buildHashLine, $buildDateLine)
+    }
     $interruptHeaderLines = @(
         '#ifndef PIE_BLOCK_GENERATED_INTERRUPT_DECLARATIONS_H'
         '#define PIE_BLOCK_GENERATED_INTERRUPT_DECLARATIONS_H'
@@ -164,7 +182,7 @@ function Invoke-ProjectBuild([string]$Name) {
         '#include <stdlib.h>'
     ) + ($interruptDeclarations.GetEnumerator() |
         Sort-Object Name |
-        ForEach-Object { $_.Value }) + @(
+        ForEach-Object { $_.Value }) + $buildInfoLines + @(
         '#endif'
     )
     Set-Content -LiteralPath $generatedInterruptHeader -Value $interruptHeaderLines -Encoding ascii
