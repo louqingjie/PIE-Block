@@ -49,8 +49,16 @@ typedef char usb_linecoding_size_check[(sizeof(LINECODING) == 7) ? 1 : -1];
 
 void usb_init(void)
 {
+    /*
+     * 冷启动时 ROM ISP 可能已经用 HID Writer 枚举过一次。先显式断开
+     * USB 20ms，让主机丢掉旧的 HID 设备，再按 CDC 重新枚举，避免
+     * 插拔后设备管理器里残留 HID Writer。
+     */
+    USBCON = 0x00;
     P3M0 &= ~0x03;
     P3M1 |= 0x03;
+    printf("[USB] disconnect 20ms\r\n");
+    Ms_Delay(20);
 
     /* Register_Set() 会把 IRCBAND 的 SEL 位写成 27M 频段，并把
        USBCKS/USBCKS2 清成 0（PLL/2）。这里显式选择 USB 专用 IRC48M。 */
