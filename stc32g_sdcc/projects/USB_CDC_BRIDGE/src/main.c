@@ -47,7 +47,7 @@ void main(void)
             if ((DeviceState != lastState) || (++dbgDiv == 0))
             {
                 lastState = DeviceState;
-                printf("[LOOP] st=%u irq=%u rst=%u setup=%u intr=%02X/%02X/%02X ie2=%02X usbcon=%02X\r\n",
+                printf("[LOOP] st=%u irq=%u rst=%u setup=%u intr=%02X/%02X/%02X ie2=%02X shadow=%02X en=%u usbcon=%02X\r\n",
                        (unsigned int)DeviceState,
                        (unsigned int)UsbIrqCount,
                        (unsigned int)UsbResetCount,
@@ -56,6 +56,8 @@ void main(void)
                        (unsigned int)UsbLastIntrin,
                        (unsigned int)UsbLastIntrout,
                        (unsigned int)IE2,
+                       (unsigned int)Ie2Shadow,
+                       (unsigned int)UsbIrqEnabled,
                        (unsigned int)USBCON);
             }
         }

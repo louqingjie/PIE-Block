@@ -19,6 +19,10 @@
 
 volatile BYTE DeviceState;
 volatile __xdata SETUP Setup;
+/* IE2 的 EUSB(bit7) 是只写位，读回永远为 0；绝不能对 IE2 做 |= / &=。
+   Ie2Shadow 保存除 EUSB 外的 IE2 位，写 IE2 时始终用 Ie2Shadow|0x80。 */
+volatile BYTE Ie2Shadow;
+volatile BYTE UsbIrqEnabled;
 volatile BYTE UsbIrqCount;
 volatile BYTE UsbResetCount;
 volatile BYTE UsbSetupCount;
@@ -83,8 +87,11 @@ void usb_init(void)
     TxRptr = 0;
     TxWptr = 0;
 
-    IE2 |= 0x80;   /* EUSB：IE2 不是可位寻址 SFR，必须整字节操作。 */
-    printf("[USB] init done IE2=%02X\r\n", (unsigned int)IE2);
+    /* EUSB(bit7) 是只写位，读回为 0；这里整字节写入 Ie2Shadow|0x80。 */
+    IE2 = Ie2Shadow | 0x80;
+    UsbIrqEnabled = 1;
+    printf("[USB] init done IE2=%02X shadow=%02X\r\n",
+           (unsigned int)IE2, (unsigned int)Ie2Shadow);
 }
 
 BYTE usb_read_reg(BYTE addr)

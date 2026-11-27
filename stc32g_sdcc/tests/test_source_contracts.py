@@ -437,13 +437,29 @@ class UsbCdcBridgeContractTests(unittest.TestCase):
 
         self.assertNotRegex(usb, r"\bEUSB\b\s*=")
         self.assertNotRegex(usb, r"\b(?:EAXFR|USBCKS|USBCKS2)\b\s*=")
-        self.assertIn("IE2 |= 0x80", usb)
+        self.assertNotRegex(usb, r"\bIE2\s*[|&]=")
+        self.assertIn("IE2 = Ie2Shadow | 0x80", usb)
         self.assertIn("IRCBAND = (IRCBAND & 0x03) | 0x80", usb)
 
         self.assertNotRegex(uart, r"\b(?:ES2|S2_S|S2TI|S2RI|S2TB8|T2x12|T2R)\b\s*=")
-        self.assertIn("IE2 |= 0x01", uart)
+        self.assertNotRegex(uart, r"\bIE2\s*[|&]=")
+        self.assertIn("Ie2Shadow |= 0x01", uart)
+        self.assertIn("IE2 = Ie2Shadow | 0x80", uart)
         self.assertIn("AUXR |= 0x14", uart)
         self.assertIn("S2CON", uart)
+
+    def test_ie2_is_always_written_as_a_whole_byte(self) -> None:
+        """EUSB 是只写位，读回为 0；IE2 的 |= / &= 会把它清掉。"""
+        for path in sorted((self.PROJECT / "src").glob("*.c")):
+            text = self._strip_comments(path.read_text(encoding="utf-8"))
+            self.assertIsNone(
+                re.search(r"\bIE2\s*[|&]=", text),
+                f"{path.name}: IE2 不能使用读-修改-写",
+            )
+        usb = self._strip_comments(self._source("usb.c"))
+        uart = self._strip_comments(self._source("uart_cdc.c"))
+        self.assertIn("IE2 = Ie2Shadow | 0x80", usb)
+        self.assertIn("IE2 = Ie2Shadow", uart)
 
     def test_usb_and_uart_isr_signatures(self) -> None:
         usb = self._source("usb.c")

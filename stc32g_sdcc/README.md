@@ -271,6 +271,11 @@ pwsh .\stc32g_sdcc\build.ps1 -Project USB_CDC_BRIDGE `
   3 字节 flat 指针。
 - `IE2`、`P_SW2`、`IRCBAND`、`S2CON`、`AUXR` 都不是可位寻址 SFR，
   固件全部使用字节掩码，避免 SDCC 把伪 `__sbit` 写到错误位地址。
+- **`IE2` 的 EUSB(bit7) 是只写位，读回永远为 0**。因此绝不能写
+  `IE2 |= 0x80` / `IE2 &= ~0x80` / `IE2 |= 0x01`——这些读-修改-写会把
+  EUSB 清掉，表现为 USB 中断永远不进（`irq=0`）。桥固件用
+  `Ie2Shadow` 保存除 EUSB 外的位，写回时统一 `IE2 = Ie2Shadow | 0x80`。
+  调试打印里的 `ie2` 看不到 EUSB，应看 `shadow` 和 `en`。
 - EP0 描述符先复制到 XDATA `Ep0Stage`，再交给通用指针发送；
   `SETUP`/`LINECODING` 有编译期大小检查。
 - UART2 环形缓冲有满检查；ISR 共享索引和标志均为 `volatile`。

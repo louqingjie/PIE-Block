@@ -102,6 +102,8 @@ void usb_out_ep5(void);
 
 extern volatile BYTE DeviceState;
 extern volatile __xdata SETUP Setup;
+extern volatile BYTE Ie2Shadow;
+extern volatile BYTE UsbIrqEnabled;
 extern volatile BYTE UsbIrqCount;
 extern volatile BYTE UsbResetCount;
 extern volatile BYTE UsbSetupCount;

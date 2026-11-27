@@ -40,7 +40,12 @@ void uart_init(void)
     T2L = (BYTE)BR(CDC_UART_BAUD);
     T2H = BR(CDC_UART_BAUD) >> 8;
     AUXR |= 0x14;   /* T2x12 = 1, T2R = 1；AUXR 不是可位寻址 SFR。 */
-    IE2 |= 0x01;    /* ES2 */
+
+    /* IE2 的 EUSB(bit7) 是只写位，不能对 IE2 做 |= / &=；
+       先更新 shadow，再整字节写回，并保持 EUSB=1。 */
+    Ie2Shadow |= 0x01;              /* ES2 */
+    IE2 = Ie2Shadow | 0x80;         /* EUSB + ES2 */
+    UsbIrqEnabled = 1;
 
     /* CDC line coding 的 GET_LINE_CODING 回读值；不应用到 UART。 */
     LineCoding.dwDTERate = 0x00c20100;  /* 115200，USB 小端字节序 */
@@ -170,7 +175,8 @@ void uart_polling(void)
     /* UART2 RX -> USB CDC IN。 */
     if (!UsbInBusy && (TxRptr != TxWptr))
     {
-        IE2 &= ~0x80;   /* EUSB = 0 */
+        IE2 = Ie2Shadow;    /* EUSB = 0；不能用 IE2 &= ~0x80 */
+        UsbIrqEnabled = 0;
         UsbInBusy = 1;
         usb_write_reg(INDEX, 1);
         cnt = 0;
@@ -184,7 +190,8 @@ void uart_polling(void)
         }
 
         usb_write_reg(INCSR1, INIPRDY);
-        IE2 |= 0x80;
+        IE2 = Ie2Shadow | 0x80;    /* EUSB = 1 */
+        UsbIrqEnabled = 1;
     }
 
     /* USB CDC OUT -> UART2 TX。 */
@@ -205,13 +212,15 @@ void uart_polling(void)
     /* USB OUT 缓冲满时，等主循环腾出空间后重新放行 OUT 端点。 */
     if (UsbOutBusy)
     {
-        IE2 &= ~0x80;
+        IE2 = Ie2Shadow;    /* EUSB = 0 */
+        UsbIrqEnabled = 0;
         if ((BYTE)(RxWptr - RxRptr) <= (256 - EP1OUT_SIZE))
         {
             UsbOutBusy = 0;
             usb_write_reg(INDEX, 1);
             usb_write_reg(OUTCSR1, 0);
         }
-        IE2 |= 0x80;
+        IE2 = Ie2Shadow | 0x80;    /* EUSB = 1 */
+        UsbIrqEnabled = 1;
     }
 }
