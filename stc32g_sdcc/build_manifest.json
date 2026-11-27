@@ -137,6 +137,7 @@
     "ROBOMASTER_ENGINEER": {"library_groups": ["boards", "radio", "drivers"]},
     "ROBOMASTER_INFANTRY": {"library_groups": ["boards", "radio", "drivers"]},
     "TEST": {"library_groups": ["boards", "radio", "drivers"]},
-    "USB_CDC_BRIDGE": {"library_groups": ["usb_cdc"]}
+    "USB_CDC_BRIDGE": {"library_groups": ["usb_cdc"]},
+    "UART2_DEBUG_TEST": {"library_groups": []}
   }
 }

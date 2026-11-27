@@ -250,6 +250,57 @@ pwsh .\stc32g_sdcc\build.ps1 -Project USB_CDC_BRIDGE `
 用户程序，需要烧录时按住按钮即可。如果想要最短启动时间可以勾选；想保留每次
 冷启动的 HID 窗口也可以不勾。
 
+### UART2_DEBUG_TEST：机器人侧 UART2 临时测试
+
+`projects/UART2_DEBUG_TEST` 是给机器人主控板用的临时测试固件，只初始化系统
+时钟和 UART2，**不初始化电机、NRF、拓展板**，测试时机器人不会动作。它用来
+先验证机器人 UART2 → 桥 → USB CDC 的物理链路，再定正式协议。
+
+```powershell
+pwsh .\stc32g_sdcc\build.ps1 -Project UART2_DEBUG_TEST `
+  -Sdcc .\vendor\sdcc-toolchain\bin\sdcc.exe `
+  -LibDir .\vendor\sdcc-toolchain\lib\mcs251-large-stack-auto `
+  -StdInclude .\vendor\sdcc-toolchain\include
+```
+
+输出：`stc32g_sdcc/build/UART2_DEBUG_TEST/UART2_DEBUG_TEST.hex`。
+
+接线与桥一致：
+
+```text
+机器人 P1.1 (UART2 TX)  ->  桥 P1.0 (UART2 RX)
+机器人 P1.0 (UART2 RX)  <-  桥 P1.1 (UART2 TX)
+机器人 GND              ---  桥 GND
+```
+
+行为：
+
+- 每 1 秒发送 `UART2 OK <counter>`；
+- 收到 PC 经桥下发的字节后回显 `[RX] <byte>`；
+- 115200 8N1，查询收发，不使用中断。
+
+电脑 CDC 串口应看到：
+
+```text
+[UART2 TEST] P1.0=RX P1.1=TX 115200 8N1
+UART2 OK 0
+UART2 OK 1
+...
+```
+
+在 COM 口发送 `hello`，应看到：
+
+```text
+[RX] h
+[RX] e
+[RX] l
+[RX] l
+[RX] o
+```
+
+测完后按桥的恢复流程烧回机器人固件即可；这个测试固件不写 Flash、不改
+ISP 设置，不会影响后续烧录。
+
 ### 调试串口（UART3 P0.0/P0.1）
 
 桥固件另外开了一路独立调试串口，用来打印启动/USB 状态：
