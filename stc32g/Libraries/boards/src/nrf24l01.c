@@ -18,14 +18,6 @@ int RecFPS = 0;
 
 #define CHANAL 36 // Ƶ��ѡ��
 
-/* Ci24R1 / nRF24L01+ 统一使用 0x07：1Mbps、最大发射功率、LNA 高增益。
- * 0x06 会关闭 LNA 高增益，接收灵敏度明显下降，是之前链路余量不足的原因之一。 */
-#define NRF_RF_SETUP 0x07
-
-/* 连续这么多次轮询都没有 RX_DR / TX_DS 时软复位射频，防止 FIFO 满或寄存器
- * 被干扰后永久卡死。主循环约 20ms 一次，100 次约 2s。 */
-#define NRF_REINIT_IDLE_LOOPS 100
-
 uint8_t TX_ADDRESS[5] = {'R', 'C', 'T', 'L', 0}; // ���͵�ַ
 uint8_t RX_ADDRESS[5] = {'R', 'C', 'T', 'L', 0}; // ���յ�ַ
 
@@ -88,8 +80,6 @@ uint8_t nrf_readreg(uint8_t reg);
 void nrf_writebuf(uint8_t reg, uint8_t *pBuf, uint16_t len) reentrant;
 void nrf_readbuf(uint8_t reg, uint8_t *pBuf, uint16_t len) reentrant;
 
-static void nrf_soft_reinit(void); /* 射频软复位：只重写寄存器，不动 GPIO/SPI */
-
 void nrf_rx_mode(void);       // �������ģʽ
 void nrf_tx_mode(void);       // ���뷢��ģʽ
 uint8_t nrf_link_check(void); // ���NRF24L01+�뵥Ƭ���Ƿ�ͨ������
@@ -130,7 +120,7 @@ uint8_t NRF24L01_Init(void)
    *     1Mbps   |  0x06   0dBm  |  0x07    7dBm | 0x07  11dBm
    *     250kbps |  0x26   0dBm  |  0x27    7dBm | 0x27  11dBm
    */
-  nrf_writereg(NRF_WRITE_REG + RF_SETUP, NRF_RF_SETUP); // ����TX�������
+  nrf_writereg(NRF_WRITE_REG + RF_SETUP, 0x06); // ����TX�������
 
   // nrf_writereg(NRF_WRITE_REG + FEATURE, 0x04);	 									//ʹ�ܶ�̬���� SI24R1 Ci24R1
 
@@ -240,29 +230,6 @@ void nrf_tx_mode(void)
   Ms_Delay(1);
 }
 
-/* Soft-reset the radio without touching GPIO/SPI.
- * Forces PWR_UP=0 to leave any stuck TX/RX/FIFO state, then restores all
- * registers used by this driver and returns to RX mode. */
-static void nrf_soft_reinit(void)
-{
-  RF2G4_CE_LOW;
-  nrf_writereg(NRF_WRITE_REG + CONFIG, 0x00); /* power down */
-  Us_Delay(2000);                             /* >1.5ms power-up delay */
-
-  nrf_writereg(NRF_WRITE_REG + SETUP_AW, ADR_WIDTH - 2);
-  nrf_writereg(NRF_WRITE_REG + RF_CH, Channal);
-  nrf_writereg(NRF_WRITE_REG + RF_SETUP, NRF_RF_SETUP);
-  nrf_writereg(NRF_WRITE_REG + EN_AA, 0x01);
-  nrf_writereg(NRF_WRITE_REG + EN_RXADDR, 0x01);
-  nrf_writebuf(NRF_WRITE_REG + RX_ADDR_P0, RX_ADDRESS, ADR_WIDTH);
-  nrf_writereg(NRF_WRITE_REG + RX_PW_P0, RX_PACKET_LENTH);
-  nrf_writereg(FLUSH_RX, _NOP);
-  nrf_writebuf(NRF_WRITE_REG + TX_ADDR, TX_ADDRESS, ADR_WIDTH);
-  nrf_writereg(NRF_WRITE_REG + SETUP_RETR, 0x05);
-  nrf_writereg(FLUSH_TX, _NOP);
-  nrf_rx_mode();
-}
-
 // ���Ͳ���̫��
 void nrf_tx_packet(uint8_t *txbuf, uint8_t len)
 {
@@ -281,74 +248,49 @@ void nrf_tx_packet(uint8_t *txbuf, uint8_t len)
     nrf_tx_mode();
   }
   RF2G4_CE_LOW;
-  nrf_writereg(FLUSH_TX, _NOP);                        /* drop stale payload */
-  nrf_writereg(NRF_WRITE_REG + STATUS, TX_DS | MAX_RT); /* clear TX flags, keep RX_DR */
   nrf_writebuf(WR_TX_PLOAD, (uint8_t *)TX_Buff, len + 2);
   RF2G4_CE_HIGH;
 }
 
 /*
- * 轮询 NRF：一次把所有排队的数据包读完。
- * 生成的主循环关闭了 P2.6 EXTI（高优先级 ISR 里做 SPI 会卡死），只在本循环
- * 里轮询一次。主循环约 20ms 一次，如果每次只读一包，3 深度的 RX FIFO 很快
- * 填满，之后新包不再被 ACK，表现为约 50% 丢包。这里循环读空 FIFO，
- * 保证 100Hz 遥控数据及时取走并 ACK。
+ * Poll NRF. The generated main loop calls this only once per ~20ms (P2.6 EXTI
+ * is disabled), so drain the whole 3-deep RX FIFO here. RX_DR is only an
+ * interrupt flag: after it is cleared, payloads already in the FIFO do not
+ * re-assert it. Use FIFO_STATUS.RX_EMPTY (bit6) to know when to stop.
  */
 void nrf_handler(void)
 {
   uint8_t state;
   uint8_t round;
-  uint8_t activity = 0;
-  static uint16_t idle_rounds = 0;
 
-  for (round = 0; round < 4; round++)
+  state = nrf_readreg(STATUS);
+  nrf_writereg(NRF_WRITE_REG + STATUS, state);
+
+  if (state & RX_DR)
   {
-    state = nrf_readreg(STATUS);
-    nrf_writereg(NRF_WRITE_REG + STATUS, state);
-
-    /* RX_P_NO = 111 表示 RX FIFO 空。FIFO 里还有包时 RX_DR 可能已经被清掉，
-       不能用 RX_DR 判断是否继续读，否则每次只读一包。 */
-    if ((state & 0x0E) != 0x0E)
+    for (round = 0; round < 3; round++)
     {
       RF2G4_CE_LOW;
       nrf_readbuf(RD_RX_PLOAD, RX_Buff, RX_PACKET_LENTH);
       Rc_unpack_data(RX_Buff);
       RF2G4_CE_HIGH;
-      activity = 1;
+      if (nrf_readreg(FIFO_STATUS) & 0x40) /* RX_EMPTY */
+        break;
     }
-
-    if (state & TX_DS)
-    {
-      nrf_writereg(FLUSH_TX, _NOP);
-      if (nrf_mode != RX_MODE)
-        nrf_rx_mode();
-      activity = 1;
-    }
-
-    if (state & MAX_RT)
-    {
-      nrf_writereg(FLUSH_TX, _NOP);
-      if (nrf_mode != RX_MODE)
-        nrf_rx_mode();
-    }
-
-    if ((state & 0x0E) == 0x0E)
-      break;
   }
 
-  if (activity)
+  if (state & TX_DS)
   {
-    idle_rounds = 0;
-  }
-  else if (idle_rounds < NRF_REINIT_IDLE_LOOPS)
-  {
-    idle_rounds++;
+    nrf_writereg(FLUSH_TX, _NOP);
+    if (nrf_mode != RX_MODE)
+      nrf_rx_mode();
   }
 
-  if (idle_rounds >= NRF_REINIT_IDLE_LOOPS)
+  if (state & MAX_RT)
   {
-    nrf_soft_reinit();
-    idle_rounds = 0;
+    nrf_writereg(FLUSH_TX, _NOP);
+    if (nrf_mode != RX_MODE)
+      nrf_rx_mode();
   }
 }
 
