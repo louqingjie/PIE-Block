@@ -68,6 +68,17 @@ void UART2_Isr(void) __interrupt (8)
 - 复现/确认技巧：`build/DBG_CONSOLE/isr.asm` 里搜 `push dpxl`；固件启动行会打印
   `# LAST stage=.. t=.. spmax=..`（保留 XRAM 面包屑）可定位残余跑飞点。
 
+## 上游修复
+
+编译器级修复已提交到上游 PR：
+[gevico/sdcc-c251#1](https://github.com/gevico/sdcc-c251/pull/1)
+（`mcs251: preserve DPXL and DR28 across interrupts`）——ISR 序言统一
+push/pop `DPXL`/`DR28`，只在确实不访问 flat 数据、也不调用函数的 ISR 上由
+现有清理逻辑省略；同时新增 `src/mcs251/tests/check-codegen.sh` 回归断言。
+
+合并后重建 `vendor/sdcc-toolchain` 并升级本仓库的 `sdcc-c251` 子模块，
+即可删除 `isr.c` 里手工 `push dpxl` 的 workaround。
+
 ## 适用范围
 
 仓库里所有 SDCC mcs251 工程都受这条编译器限制影响：**只要 ISR 里访问 XDATA，
