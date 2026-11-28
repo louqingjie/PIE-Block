@@ -146,6 +146,25 @@ class DbgConsoleContractTests(unittest.TestCase):
                           flags=re.DOTALL)
             self.assertNotIn("printf(", text, path.name)
 
+    def test_isrs_preserve_dpxl(self) -> None:
+        """SDCC mcs251 的 ISR 序言不保存 DPXL，ISR 必须手工 push/pop。
+
+        主循环的 switch 跳表（GPIO_Write_Bit）与 __code 字符串读取都依赖 DPXL；
+        ISR 里访问 XDATA 会改掉它，返回后可能 ejmp 到非程序区（ROMOVF 复位）。
+        """
+        isr = (PROJECT / "src" / "isr.c").read_text(encoding="utf-8")
+        for name, vector in (("UART1_Isr", 4), ("UART2_Isr", 8), ("TM3_Isr", 19)):
+            pattern = re.compile(
+                r"void\s+%s\s*\(void\)\s*__interrupt\s*\(\s*%d\s*\)\s*\{(.*?)\n\}"
+                % (name, vector),
+                re.DOTALL,
+            )
+            match = pattern.search(isr)
+            self.assertIsNotNone(match, f"缺少 {name} 定义")
+            body = match.group(1)
+            self.assertIn("push dpxl", body, f"{name} 未保存 DPXL")
+            self.assertIn("pop dpxl", body, f"{name} 未恢复 DPXL")
+
     def test_main_loop_calls_debug_hooks(self) -> None:
         for token in (
             "Dbg_Init(PIE_BLOCK_FW_HASH, PIE_BLOCK_BUILD_DATE)",
