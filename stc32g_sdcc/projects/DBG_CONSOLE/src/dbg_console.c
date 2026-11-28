@@ -952,12 +952,33 @@ static void TxProbeCommand(void)
     LineHex8(p.st_2ms);
     LineStr(" st20=");
     LineHex8(p.st_20ms);
+    LineStr(" st50=");
+    LineHex8(p.st_50ms);
     LineStr(" fifo_a=");
     LineHex8(p.fifo_after);
     LineStr(" obs=");
     LineHex8(p.observe);
+    LineStr(" rfch=");
+    LineHex8(p.spi_check);
     LineStr(" mode=");
     LineU16(p.mode_after);
+    LineEnd();
+
+    /*
+     * CE 测试：ce_before 应为 0x01（RX FIFO 空）；
+     * CE 拉低 60ms 若 ce_low 变成 bit0=0（又收到包）→ CE 不受 P3.4 控制。
+     */
+    LineReset();
+    LineStr("# CETEST before=");
+    LineHex8(p.ce_fifo_before);
+    LineStr(" ce_low=");
+    LineHex8(p.ce_fifo_low);
+    LineStr(" ce_high=");
+    LineHex8(p.ce_fifo_high);
+    LineStr(" p3_low=");
+    LineHex8(p.ce_p3_low);
+    LineStr(" p3_high=");
+    LineHex8(p.ce_p3_high);
     LineEnd();
 
     /* P3.4=CE 应为推挽输出（P3M1.4=0、P3M0.4=1）；PWM4P(ENO4P) 不应使能。 */

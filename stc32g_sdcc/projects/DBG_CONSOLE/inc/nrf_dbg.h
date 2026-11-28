@@ -101,13 +101,25 @@ void Nrf_ReadBuf(uint8_t reg, uint8_t *buf, uint8_t len);
 typedef struct
 {
     uint8_t cfg_enter;  /* 进 TX 后回读 CONFIG（应 0x0E） */
-    uint8_t fifo_write; /* 写 TX FIFO 后 FIFO_STATUS（bit0 TX_EMPTY 应为 0） */
+    uint8_t fifo_write; /* 写 TX FIFO 后 FIFO_STATUS（bit4 TX_EMPTY 应为 0） */
     uint8_t st_imm;     /* CE 拉高后立即读 STATUS */
     uint8_t st_2ms;
     uint8_t st_20ms;
-    uint8_t fifo_after; /* 20 ms 后 FIFO_STATUS */
+    uint8_t st_50ms;
+    uint8_t fifo_after; /* 50 ms 后 FIFO_STATUS */
     uint8_t observe;    /* OBSERVE_TX */
-    uint8_t mode_after; /* 探针结束后 mode（应 RX=2） */
+    uint8_t mode_after; /* 探针结束后 mode（应 RX=1） */
+
+    /*
+     * CE 有效性测试（RX 模式下做）：CE 拉低 60ms，若期间仍收到包
+     * （FIFO_STATUS.RX_EMPTY 变 0），说明 CE 并不受 P3.4 控制。
+     */
+    uint8_t ce_fifo_before; /* 清 RX 后：应为 0x01 */
+    uint8_t ce_p3_low;      /* CE 低时 P3 寄存器（bit4 应为 0） */
+    uint8_t ce_fifo_low;    /* CE 低 60ms 后：仍收包则 bit0=0 */
+    uint8_t ce_p3_high;     /* CE 高时 P3（bit4 应为 1） */
+    uint8_t ce_fifo_high;   /* CE 高 60ms 后：应收到包 bit0=0 */
+    uint8_t spi_check;      /* 探针后回读 RF_CH，应 = NRF_CHANNEL */
 } NrfTxProbe;
 
 void Nrf_TxProbe(NrfTxProbe *out);

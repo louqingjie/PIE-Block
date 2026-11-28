@@ -530,10 +530,34 @@ void Nrf_TxProbe(NrfTxProbe *out)
     out->st_imm = 0;
     out->st_2ms = 0;
     out->st_20ms = 0;
+    out->st_50ms = 0;
     out->fifo_after = 0;
     out->observe = 0;
     out->mode_after = 0;
+    out->ce_fifo_before = 0;
+    out->ce_p3_low = 0;
+    out->ce_fifo_low = 0;
+    out->ce_p3_high = 0;
+    out->ce_fifo_high = 0;
+    out->spi_check = 0;
 
+    /* --- 第一步：CE 有效性测试（RX 模式）--- */
+    nrf_enter_rx();
+    nrf_writereg(NRF_WRITE_REG + NRF_REG_STATUS, 0x70);
+    nrf_writereg(FLUSH_RX, NRF_NOP);
+    out->ce_fifo_before = nrf_readreg(NRF_REG_FIFO_STATUS);
+
+    NRF_CE_LOW();
+    Ms_Delay(60);
+    out->ce_p3_low = P3;
+    out->ce_fifo_low = nrf_readreg(NRF_REG_FIFO_STATUS);
+
+    NRF_CE_HIGH();
+    Ms_Delay(60);
+    out->ce_p3_high = P3;
+    out->ce_fifo_high = nrf_readreg(NRF_REG_FIFO_STATUS);
+
+    /* --- 第二步：TX 探针 --- */
     nrf_enter_tx();
     out->cfg_enter = nrf_readreg(NRF_REG_CONFIG);
 
@@ -550,8 +574,10 @@ void Nrf_TxProbe(NrfTxProbe *out)
     out->st_imm = nrf_readreg(NRF_REG_STATUS);
     Ms_Delay(2);
     out->st_2ms = nrf_readreg(NRF_REG_STATUS);
-    Ms_Delay(20);
+    Ms_Delay(18);
     out->st_20ms = nrf_readreg(NRF_REG_STATUS);
+    Ms_Delay(30);
+    out->st_50ms = nrf_readreg(NRF_REG_STATUS);
     out->fifo_after = nrf_readreg(NRF_REG_FIFO_STATUS);
     out->observe = nrf_readreg(NRF_REG_OBSERVE_TX);
 
@@ -559,4 +585,5 @@ void Nrf_TxProbe(NrfTxProbe *out)
     nrf_writereg(FLUSH_TX, NRF_NOP);
     nrf_enter_rx();
     out->mode_after = (uint8_t)nrf_mode;
+    out->spi_check = nrf_readreg(NRF_REG_RF_CH);
 }
