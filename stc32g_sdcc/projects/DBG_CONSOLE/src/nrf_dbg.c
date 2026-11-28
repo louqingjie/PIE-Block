@@ -35,10 +35,16 @@
 #define NRF_IRQ_PORT GPIO_P2
 #define NRF_IRQ_PIN GPIO_Pin_6
 
-#define NRF_CE_LOW() GPIO_Write_Bit(NRF_CE_PORT, NRF_CE_PIN, 0)
-#define NRF_CE_HIGH() GPIO_Write_Bit(NRF_CE_PORT, NRF_CE_PIN, 1)
-#define NRF_CSN_LOW() GPIO_Write_Bit(NRF_CSN_PORT, NRF_CSN_PIN, 0)
-#define NRF_CSN_HIGH() GPIO_Write_Bit(NRF_CSN_PORT, NRF_CSN_PIN, 1)
+/*
+ * CE/CSN 直接用位寻址 SFR 写，不再走 GPIO_Write_Bit()。
+ * 后者是 switch + 跳表（movc 取目标地址 → ejmp @dr28），而 SDCC mcs251 的
+ * __interrupt 序言不保存 DPXL；这里属于主循环最高频路径，改成单指令位写
+ * 后既快，也不依赖 24 位跳表取址。
+ */
+#define NRF_CE_LOW() (P34 = 0)
+#define NRF_CE_HIGH() (P34 = 1)
+#define NRF_CSN_LOW() (P22 = 0)
+#define NRF_CSN_HIGH() (P22 = 1)
 
 static uint8_t nrf_addr[5] = {'R', 'C', 'T', 'L', NRF_CHANNEL};
 static uint8_t nrf_rx_buff[NRF_RX_PAYLOAD];
@@ -184,9 +190,11 @@ static void nrf_send_payload(uint8_t *payload, uint8_t len)
     if (nrf_mode != NRF_MODE_TX)
         nrf_enter_tx();
 
+    Dbg_Mark(60);
     NRF_CE_LOW();
     nrf_writebuf(WR_TX_PLOAD, nrf_tx_buff, (uint8_t)(len + 2));
     NRF_CE_HIGH();
+    Dbg_Mark(61);
 }
 
 /*
@@ -214,6 +222,7 @@ static uint8_t nrf_wait_tx_done(uint8_t timeout_ms)
                 stat_maxrt++;
                 nrf_writereg(FLUSH_TX, NRF_NOP);
             }
+            Dbg_Mark(54);
             nrf_enter_rx();
             return 1;
         }
@@ -222,6 +231,7 @@ static uint8_t nrf_wait_tx_done(uint8_t timeout_ms)
 
     /* 超时：清 TX FIFO，强制回 RX；计数供日志判断下行链路质量。 */
     stat_tx_to++;
+    Dbg_Mark(55);
     nrf_writereg(FLUSH_TX, NRF_NOP);
     nrf_enter_rx();
     return 0;
@@ -305,8 +315,10 @@ void Nrf_Handler(void)
     uint8_t round;
     uint8_t drained = 0;
 
+    Dbg_Mark(50);
     state = nrf_readreg(NRF_REG_STATUS);
     fifo = nrf_readreg(NRF_REG_FIFO_STATUS);
+    Dbg_Mark(51);
 
     stat_st = state;
     stat_fifo = fifo;
@@ -337,12 +349,14 @@ void Nrf_Handler(void)
                 break;
         }
     }
+    Dbg_Mark(52);
 
     stat_drain = drained;
     if (drained > stat_drain_max)
         stat_drain_max = drained;
     if (drained == 3 || (fifo & NRF_RX_FULL))
         nrf_events |= NRF_EVT_FIFO_FULL;
+    Dbg_Mark(53);
 
     if (state & NRF_TX_DS)
     {

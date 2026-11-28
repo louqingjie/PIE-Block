@@ -29,6 +29,24 @@
 static volatile __xdata __at (0x011FF0) uint16_t boot_seq_ram;
 static volatile __xdata __at (0x011FF2) uint8_t boot_magic_ram;
 
+/*
+ * 跑飞面包屑：同一条 XRAM 尾巴内记录“最后执行到的主循环阶段”。
+ * 复位后由启动代码打印 # LAST stage=.. t=..，定位 ROMOVF 发生的位置。
+ *   stage 0      = 尚未进入主循环
+ *   10..19       = 主循环各步骤（见 main.c 的 Dbg_Mark 调用）
+ *   30..39       = Dbg_EndLoop / PrintSnapshot 内部
+ *   50..59       = nRF 中断处理/发送内部
+ *   60..69       = UART2 发送内部
+ */
+static volatile __xdata __at (0x011FF3) uint8_t mark_stage;
+static volatile __xdata __at (0x011FF4) uint32_t mark_ms;
+static volatile __xdata __at (0x011FF8) uint16_t mark_sp_max;
+
+static uint8_t last_stage;
+static uint32_t last_ms;
+static uint16_t last_sp_max;
+
+
 static volatile uint32_t dbg_ms;
 
 static volatile uint8_t tx_ring[DBG_TX_RING_SIZE];
@@ -70,6 +88,7 @@ static void PrintHelp(void);
 static void DumpRegs(void);
 static void PrintVersion(void);
 static void PrintResetEvent(void);
+static void PrintLastMark(void);
 static void HandleCommand(uint8_t *cmd);
 
 /* ------------------------------------------------------------------------- */
@@ -262,12 +281,41 @@ uint32_t Dbg_AgeMs(void)
 static void LoadBoot(void)
 {
     if (boot_magic_ram == DBG_BOOT_MAGIC && boot_seq_ram != 0xFFFFU)
+    {
         boot_seq_ram++;
+        /* 上一轮留下的面包屑就是这次复位前的最后现场 */
+        last_stage = mark_stage;
+        last_ms = mark_ms;
+        last_sp_max = mark_sp_max;
+    }
     else
+    {
         boot_seq_ram = 1;
+        last_stage = 0;
+        last_ms = 0;
+        last_sp_max = 0;
+    }
 
     boot_magic_ram = DBG_BOOT_MAGIC;
     boot_count = boot_seq_ram;
+
+    mark_stage = 0;
+    mark_ms = 0;
+    mark_sp_max = 0;
+}
+
+/*
+ * 面包屑写入点：只写几个 XRAM 字节，开销可忽略。
+ * 同时记录观测到的最大 SP（栈深），用于判断是否栈溢出。
+ */
+void Dbg_Mark(uint8_t stage)
+{
+    uint16_t sp = (uint16_t)(((uint16_t)SPH << 8) | (uint16_t)SP);
+
+    mark_stage = stage;
+    mark_ms = dbg_ms;
+    if (sp > mark_sp_max)
+        mark_sp_max = sp;
 }
 
 /*
@@ -467,6 +515,23 @@ static void PrintResetEvent(void)
 void Dbg_PrintResetInfo(void)
 {
     PrintResetEvent();
+    PrintLastMark();
+}
+
+/* 上一次复位前最后执行到的阶段（上电首启时 last_stage=0，不打印）。 */
+static void PrintLastMark(void)
+{
+    if (last_stage == 0 && last_ms == 0)
+        return;
+
+    LineReset();
+    LineStr("# LAST stage=");
+    LineU16(last_stage);
+    LineStr(" t=");
+    LineU32(last_ms);
+    LineStr(" spmax=");
+    LineU16(last_sp_max);
+    LineEnd();
 }
 
 /* Nrf_Init() 之后调用：每次启动都打印一次 nRF 状态，用于确认模块是否真的通了。 */
@@ -583,9 +648,11 @@ static void PrintSnapshot(void)
     uint32_t now;
     uint32_t age;
 
+    Dbg_Mark(40);
     Nrf_GetStats(&s);
     now = Dbg_Millis();
     age = Dbg_AgeMs();
+    Dbg_Mark(41);
 
     LineReset();
     LineStr("t=");
@@ -609,6 +676,7 @@ static void PrintSnapshot(void)
     LineU16(s.drain);
     LineStr(" drain_max=");
     LineU16(s.drain_max);
+    Dbg_Mark(42);
     LineStr(" rx=");
     LineU32(s.rx);
     LineStr(" rx_dr=");
@@ -639,7 +707,9 @@ static void PrintSnapshot(void)
     LineHex8(WDT_CONTR);
     LineStr(" dbg_dropped=");
     LineU32(dbg_dropped);
+    Dbg_Mark(43);
     LineEnd();
+    Dbg_Mark(44);
 }
 
 static void PrintBurstLine(void)
@@ -667,6 +737,8 @@ void Dbg_EndLoop(uint16_t loop_ms, uint16_t exp_ms)
 {
     uint32_t now;
     uint32_t age;
+
+    Dbg_Mark(30);
 
     last_loop = loop_ms;
     last_exp = exp_ms;
@@ -709,8 +781,11 @@ void Dbg_EndLoop(uint16_t loop_ms, uint16_t exp_ms)
     if ((uint32_t)(now - last_print_ms) >= (uint32_t)print_interval_ms)
     {
         last_print_ms = now;
+        Dbg_Mark(31);
         PrintSnapshot();
+        Dbg_Mark(32);
     }
+    Dbg_Mark(33);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -1073,4 +1148,5 @@ void Dbg_Init(const char __code *fw, const char __code *build)
 
     PrintBanner();
     PrintResetEvent();
+    PrintLastMark();
 }

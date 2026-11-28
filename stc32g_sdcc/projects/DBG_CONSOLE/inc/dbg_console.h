@@ -65,4 +65,10 @@ void Dbg_InitDone(void);
 /* `e` 命令：重复打印本次启动的复位信息。 */
 void Dbg_PrintResetInfo(void);
 
+/*
+ * 跑飞面包屑：主循环各阶段调用（stage 见 main.c/nrf_dbg.c 注释编号）。
+ * 复位后启动行会打印上一次复位前的最后 stage/t/spmax，用于定位 ROMOVF。
+ */
+void Dbg_Mark(uint8_t stage);
+
 #endif /* __DBG_CONSOLE_H */

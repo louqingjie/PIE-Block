@@ -205,17 +205,23 @@ void main(void)
 
     while (1)
     {
+        Dbg_Mark(10);
         loop_start = Dbg_Millis();
 
         Nrf_Handler();
+        Dbg_Mark(11);
         Dbg_AfterNrfHandler();
+        Dbg_Mark(12);
         Dbg_PollCommands();
+        Dbg_Mark(13);
 
         ReadControllerInputs();
         if (Dbg_AgeMs() > DBG_LINK_TIMEOUT_MS)
             ZeroControllerInputs();
+        Dbg_Mark(14);
 
         RunMecanum();
+        Dbg_Mark(15);
 
         exp_start = Dbg_Millis();
         ExpansionBoradControl(Dir_Change_Order,
@@ -223,19 +229,24 @@ void main(void)
                               dutyOfMotor[2] >= 0, dutyOfMotor[3] >= 0,
                               dutyOfMotor[4] >= 0, dutyOfMotor[5] >= 0,
                               dutyOfMotor[6] >= 0, dutyOfMotor[7] >= 0);
+        Dbg_Mark(16);
         Ms_Delay(EXPANSION_FRAME_GAP_MS);
         ExpansionBoradControl(Duty_Change_Order,
                               (uint16_t)abs(dutyOfMotor[0]), (uint16_t)abs(dutyOfMotor[1]),
                               (uint16_t)abs(dutyOfMotor[2]), (uint16_t)abs(dutyOfMotor[3]),
                               (uint16_t)abs(dutyOfMotor[4]), (uint16_t)abs(dutyOfMotor[5]),
                               (uint16_t)abs(dutyOfMotor[6]), (uint16_t)abs(dutyOfMotor[7]));
+        Dbg_Mark(17);
         Ms_Delay(EXPANSION_FRAME_GAP_MS);
         exp_ms = (uint16_t)(Dbg_Millis() - exp_start);
+        Dbg_Mark(18);
 
         Nrf_SendTelemetry(dutyOfMotor[0], dutyOfMotor[1], dutyOfMotor[2], dutyOfMotor[3],
                           dutyOfMotor[4], dutyOfMotor[5], dutyOfMotor[6], dutyOfMotor[7],
                           0, 0);
+        Dbg_Mark(19);
         Ms_Delay(10);
+        Dbg_Mark(20);
 
         loop_ms = (uint16_t)(Dbg_Millis() - loop_start);
         Dbg_EndLoop(loop_ms, exp_ms);
