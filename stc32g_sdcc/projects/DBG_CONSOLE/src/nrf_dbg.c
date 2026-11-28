@@ -515,3 +515,48 @@ void Nrf_ReadBuf(uint8_t reg, uint8_t *buf, uint8_t len)
 {
     nrf_readbuf(reg, buf, len);
 }
+
+/*
+ * 同步 TX 探针（命令 t）：一次性把“能不能发出去”测清楚。
+ * 与主循环的发送路径完全同序：CE 低 → 写 FIFO → CE 高，只是等待时间拉长到
+ * 20 ms 并分三个时刻回读 STATUS，避免 8 ms 窗口把 MAX_RT 截断。
+ */
+void Nrf_TxProbe(NrfTxProbe *out)
+{
+    uint8_t i;
+
+    out->cfg_enter = 0;
+    out->fifo_write = 0;
+    out->st_imm = 0;
+    out->st_2ms = 0;
+    out->st_20ms = 0;
+    out->fifo_after = 0;
+    out->observe = 0;
+    out->mode_after = 0;
+
+    nrf_enter_tx();
+    out->cfg_enter = nrf_readreg(NRF_REG_CONFIG);
+
+    nrf_tx_buff[0] = (uint8_t)(NRF_TX_PAYLOAD + 1);
+    for (i = 0; i < NRF_TX_PAYLOAD; i++)
+        nrf_tx_buff[i + 1] = (uint8_t)(0xA0 + i);
+    nrf_tx_buff[NRF_TX_PAYLOAD + 1] = 0x5A;
+
+    NRF_CE_LOW();
+    nrf_writebuf(WR_TX_PLOAD, nrf_tx_buff, (uint8_t)(NRF_TX_PAYLOAD + 2));
+    out->fifo_write = nrf_readreg(NRF_REG_FIFO_STATUS);
+    NRF_CE_HIGH();
+
+    out->st_imm = nrf_readreg(NRF_REG_STATUS);
+    Ms_Delay(2);
+    out->st_2ms = nrf_readreg(NRF_REG_STATUS);
+    Ms_Delay(20);
+    out->st_20ms = nrf_readreg(NRF_REG_STATUS);
+    out->fifo_after = nrf_readreg(NRF_REG_FIFO_STATUS);
+    out->observe = nrf_readreg(NRF_REG_OBSERVE_TX);
+
+    nrf_writereg(NRF_WRITE_REG + NRF_REG_STATUS, 0x70);
+    nrf_writereg(FLUSH_TX, NRF_NOP);
+    nrf_enter_rx();
+    out->mode_after = (uint8_t)nrf_mode;
+}

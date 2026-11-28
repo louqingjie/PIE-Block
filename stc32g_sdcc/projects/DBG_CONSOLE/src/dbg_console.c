@@ -924,6 +924,59 @@ static void DumpRegs(void)
     LineEnd();
 }
 
+/*
+ * `t` 命令：同步 TX 探针。
+ * 输出回读到的 CONFIG/TX FIFO/STATUS 以及 P3 引脚与 PWM 使能位，
+ * 用来区分“没发出去（CE/PRIM_RX 切换问题）”和“发了但没 ACK”。
+ */
+static void TxProbeCommand(void)
+{
+    static NrfTxProbe p;
+    uint8_t p3m1 = P3M1;
+    uint8_t p3m0 = P3M0;
+    uint8_t p3 = P3;
+    uint8_t eno = PWMA_ENO;
+    uint8_t ccer1 = PWMA_CCER1;
+    uint16_t ccr4 = (uint16_t)(((uint16_t)PWMA_CCR4H << 8) | (uint16_t)PWMA_CCR4L);
+
+    Nrf_TxProbe(&p);
+
+    LineReset();
+    LineStr("# TXPROBE cfg=");
+    LineHex8(p.cfg_enter);
+    LineStr(" fifo_w=");
+    LineHex8(p.fifo_write);
+    LineStr(" st0=");
+    LineHex8(p.st_imm);
+    LineStr(" st2=");
+    LineHex8(p.st_2ms);
+    LineStr(" st20=");
+    LineHex8(p.st_20ms);
+    LineStr(" fifo_a=");
+    LineHex8(p.fifo_after);
+    LineStr(" obs=");
+    LineHex8(p.observe);
+    LineStr(" mode=");
+    LineU16(p.mode_after);
+    LineEnd();
+
+    /* P3.4=CE 应为推挽输出（P3M1.4=0、P3M0.4=1）；PWM4P(ENO4P) 不应使能。 */
+    LineReset();
+    LineStr("# PINS p3m1=");
+    LineHex8(p3m1);
+    LineStr(" p3m0=");
+    LineHex8(p3m0);
+    LineStr(" p3=");
+    LineHex8(p3);
+    LineStr(" eno=");
+    LineHex8(eno);
+    LineStr(" ccer1=");
+    LineHex8(ccer1);
+    LineStr(" ccr4=");
+    LineU16(ccr4);
+    LineEnd();
+}
+
 static void PrintVersion(void)
 {
     static NrfStats s;
@@ -962,7 +1015,7 @@ static void PrintHelp(void)
     PrintAck("UART2 P1.0=RX P1.1=TX 115200 8N1, 3.3V TTL, common GND");
     PrintAck("? help | s snapshot | r clear counters | d nrf regs");
     PrintAck("e reset info | v version | l <hz> 1-20 | m rx | m tx");
-    PrintAck("z buzzer off | p beep 1kHz 200ms");
+    PrintAck("t tx probe | z buzzer off | p beep 1kHz 200ms");
     PrintAck("w show wdt/rstflag | w0 disable wdt | wf feed wdt(ps=7)");
     PrintAck("b <n> 1ms burst (control paused, n<=200; 115200 drops lines)");
 }
@@ -1075,6 +1128,9 @@ static void HandleCommand(uint8_t *cmd)
         break;
     case 'w':
         WdtCommand(cmd);
+        break;
+    case 't':
+        TxProbeCommand();
         break;
     default:
         PrintAck("unknown command, send ? for help");

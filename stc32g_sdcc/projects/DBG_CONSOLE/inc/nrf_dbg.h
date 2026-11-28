@@ -91,4 +91,25 @@ int16_t Nrf_Rocker(uint8_t index);
 uint8_t Nrf_ReadReg(uint8_t reg);
 void Nrf_ReadBuf(uint8_t reg, uint8_t *buf, uint8_t len);
 
+/*
+ * 同步 TX 探针：强制进 TX、写一包测试数据、CE 拉高，并在立即/2ms/20ms
+ * 三个时刻回读 STATUS。判断依据：
+ *   - st20 有 TX_DS(0x20) → 发了且被 ACK；
+ *   - st20 有 MAX_RT(0x10) → 发了但没 ACK；
+ *   - 两个都没有且 fifo_after 里 TX_EMPTY=0 → 数据还在 TX FIFO，根本没发射。
+ */
+typedef struct
+{
+    uint8_t cfg_enter;  /* 进 TX 后回读 CONFIG（应 0x0E） */
+    uint8_t fifo_write; /* 写 TX FIFO 后 FIFO_STATUS（bit0 TX_EMPTY 应为 0） */
+    uint8_t st_imm;     /* CE 拉高后立即读 STATUS */
+    uint8_t st_2ms;
+    uint8_t st_20ms;
+    uint8_t fifo_after; /* 20 ms 后 FIFO_STATUS */
+    uint8_t observe;    /* OBSERVE_TX */
+    uint8_t mode_after; /* 探针结束后 mode（应 RX=2） */
+} NrfTxProbe;
+
+void Nrf_TxProbe(NrfTxProbe *out);
+
 #endif /* __NRF_DBG_H */
