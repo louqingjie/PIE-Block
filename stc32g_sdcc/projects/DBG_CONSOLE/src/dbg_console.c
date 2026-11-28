@@ -1,19 +1,33 @@
 /*
- * 车体串口调试台实现。
+ * 车体串口调试台实现（v2 诊断版）。
  *
  * 组成：
  *   - UART2 P1.0/P1.1 收发环形缓冲（发送由 ISR 续发，不阻塞主循环）
  *   - Timer3 1 ms 节拍（loop/age/周期输出）
- *   - 周期快照、FIFO_FULL / LOOP_STALL / LINK_LOST / RESET 事件
- *   - ? s r d l b m v 命令
- *   - PCON/WDT_CONTR/RSTFLAG 复位原因 + EEPROM 启动次数
+ *   - 周期快照、FIFO_FULL / TX_STUCK / LOOP_STALL / LINK_LOST / RESET 事件
+ *   - ? s r d l b m v e z p w 命令
+ *   - 复位原因按手册 9.1.4 解码（LVD/WDG/SW/ROMOVF/PIN）+ 原始 RSTFLAG/WDT_CONTR
+ *   - 复位之间的启动序号：用不参与 SDCC 启动清零的绝对 XDATA 保存，不依赖 EEPROM
  *
  * 注意：调试输出绝不使用 printf —— SDCC 默认 putchar 会写 UART1，
  * 与扩展板 230400 帧互相打断。
  */
 #include "main.h"
 
-#define EE_BASE 0x000000UL
+/*
+ * 复位之间保留的启动序号（不依赖 EEPROM）。
+ *
+ * SDCC 的 crtxclear 只清 XSEG 区（本工程 0x010000..0x01074B），XABS 不会被
+ * 启动代码清零；STC32G 的 XRAM 在除上电以外的复位后内容保留，因此这块
+ * “绝对 XDATA 小尾巴”可以数清同一上电周期内复位了几次：
+ *   - 冷上电：magic 不匹配 → seq=1；
+ *   - 之后每次复位：magic 匹配 → seq++。
+ * 地址 0x011FF0 在 --xram-size 0x2000（0x010000..0x011FFF）范围内、远离
+ * XSEG 区，也不与 MCS-251 的 EDATA 栈（0x000000 起）冲突。
+ */
+#define DBG_BOOT_MAGIC 0x5AU
+static volatile __xdata __at (0x011FF0) uint16_t boot_seq_ram;
+static volatile __xdata __at (0x011FF2) uint8_t boot_magic_ram;
 
 static volatile uint32_t dbg_ms;
 
@@ -35,7 +49,12 @@ static uint16_t last_loop;
 static uint16_t last_exp;
 static uint16_t loop_max;
 static uint8_t link_lost;
-static uint8_t rst_code;
+
+/* 复位原因原始值（DetectReset 一次性采样，命令 e 可重复打印）。 */
+static uint8_t rst_raw;
+static uint8_t rst_pcon;
+static uint8_t rst_wdt;
+static uint8_t rst_rstcfg;
 
 static uint16_t boot_count;
 static const char __code *dbg_fw;
@@ -50,6 +69,7 @@ static void PrintBurstLine(void);
 static void PrintHelp(void);
 static void DumpRegs(void);
 static void PrintVersion(void);
+static void PrintResetEvent(void);
 static void HandleCommand(uint8_t *cmd);
 
 /* ------------------------------------------------------------------------- */
@@ -229,154 +249,123 @@ uint32_t Dbg_AgeMs(void)
 }
 
 /* ------------------------------------------------------------------------- */
-/* 复位原因与 EEPROM 启动次数                                                */
+/* 复位原因与启动序号                                                        */
 /* ------------------------------------------------------------------------- */
 
-static void IapEnable(void)
-{
-    P_SW2 |= 0x80;
-    IAP_TPS = (uint8_t)(FOSC / 1000000UL);
-    IAP_CONTR = 0x80; /* IAPEN=1；不使用 SWBS/SWRST */
-}
-
-static void IapDisable(void)
-{
-    IAP_CONTR = 0;
-    IAP_CMD = 0;
-    IAP_TRIG = 0;
-    IAP_ADDRH = 0xFF;
-    IAP_ADDRL = 0xFF;
-}
-
-static void IapAddr(uint32_t addr)
-{
-    IAP_ADDRE = (uint8_t)(addr >> 16);
-    IAP_ADDRH = (uint8_t)(addr >> 8);
-    IAP_ADDRL = (uint8_t)addr;
-}
-
-static void IapTrigger(void)
-{
-    uint8_t ea = EA;
-
-    EA = 0;
-    IAP_TRIG = 0x5A;
-    IAP_TRIG = 0xA5;
-    _nop_();
-    _nop_();
-    _nop_();
-    _nop_();
-    EA = ea;
-}
-
-static void EeRead(uint32_t addr, uint8_t *buf, uint8_t n)
-{
-    uint8_t i;
-
-    IapEnable();
-    IAP_CMD = 1;
-    for (i = 0; i < n; i++)
-    {
-        IapAddr(addr + i);
-        IapTrigger();
-        buf[i] = IAP_DATA;
-    }
-    IapDisable();
-}
-
-static void EeWrite(uint32_t addr, uint8_t *buf, uint8_t n)
-{
-    uint8_t i;
-
-    IapEnable();
-    IAP_CMD = 2;
-    for (i = 0; i < n; i++)
-    {
-        IapAddr(addr + i);
-        IAP_DATA = buf[i];
-        IapTrigger();
-    }
-    IapDisable();
-}
-
-static void EeErase(uint32_t addr)
-{
-    IapEnable();
-    IAP_CMD = 3;
-    IapAddr(addr);
-    IapTrigger();
-    IapDisable();
-}
-
 /*
- * 只读 EEPROM 首扇区 4 字节：'P','B',boot_lo,boot_hi。
- *
- * 不要在这里擦写。之前每次上电都会 EeErase + EeWrite 一次：在 STC-ISP
- * 未分配用户 EEPROM 的芯片上，IAP 地址 0x000000 与程序区重叠，擦除会
- * 破坏刚下载的固件，表现为“烧录后第一次运行正常，断电再上电就不启动”。
- * 日志里 boot 恒为 1 也说明写入本来没有生效。需要持久化时应在显式命令
- * 中写，并先确认 EEPROM 已分配。
+ * 启动序号：XRAM 不参与 SDCC 启动清零的绝对地址区，复位后内容保留，
+ * 用 magic 判断是「同一上电周期内的第几次复位」还是「冷上电首启」。
+ * 仅用于诊断，不做持久化；启动路径不再访问 IAP/EEPROM——旧实现读写的
+ * 0x000000 并不是这颗芯片的用户 EEPROM 地址（用户 EEPROM 在 flash 顶部，
+ * 地址取决于 STC-ISP 分配），写入还可能破坏程序区。
  */
 static void LoadBoot(void)
 {
-    uint8_t buf[4];
-
-    EeRead(EE_BASE, buf, 4);
-    if (buf[0] != 'P' || buf[1] != 'B')
-        boot_count = 1;
+    if (boot_magic_ram == DBG_BOOT_MAGIC && boot_seq_ram != 0xFFFFU)
+        boot_seq_ram++;
     else
-        boot_count = (uint16_t)((uint16_t)buf[2] | ((uint16_t)buf[3] << 8));
+        boot_seq_ram = 1;
+
+    boot_magic_ram = DBG_BOOT_MAGIC;
+    boot_count = boot_seq_ram;
 }
 
 /*
- * 复位原因：
- *   PCON.POF(bit4) 上电；WDT_CONTR.WDT_FLAG(bit7) 看门狗；
- *   RSTFLAG bit2 软件复位、bit3 外部引脚复位。
- * 头文件里的 POF/WDT_FLAG/IAPEN sbit 地址不可用，这里全部用字节掩码。
+ * RSTFLAG（扩展 SFR 0x7EFE99，手册 9.1.4）：
+ *   B4 LVDRSTF 低压复位、B3 WDTRSTF 看门狗复位、B2 SWRSTF 软件复位、
+ *   B1 ROMOVF  代码区溢出（跑飞/中断向量缺失）、B0 EXRSTF 复位脚。
+ * 读 1 有效；写 1 清除（写 0 无效）。上电默认 LVD+SW 置位（0x14）。
+ * SWRSTF 不清：STC-ISP 的「软复位进系统区」判断依赖它。
+ *
+ * PCON.POF 只在本次是上电复位时为 1，用来把「上电默认 0x14」与
+ * 「真正的低压复位」区分开。
  */
+#define RST_LVD 0x10U
+#define RST_WDT 0x08U
+#define RST_SW 0x04U
+#define RST_ROV 0x02U
+#define RST_PIN 0x01U
+#define RST_CLEAR_MASK (RST_LVD | RST_WDT | RST_ROV | RST_PIN)
+#define PCON_POF_MASK 0x10U
+
 static void DetectReset(void)
 {
     uint8_t pcon = PCON;
     uint8_t wdt = WDT_CONTR;
-    uint8_t rf = RSTFLAG;
+    uint8_t rstcfg = RSTCFG;
+    uint8_t rf;
+    uint8_t ea = EA;
 
-    if (pcon & 0x10)
-    {
-        rst_code = 0;
-        PCON = (uint8_t)(pcon & (uint8_t)~0x10);
-    }
-    else if (wdt & 0x80)
-    {
-        rst_code = 1;
-        WDT_CONTR = (uint8_t)(wdt & (uint8_t)~0x80);
-    }
-    else if (rf & 0x04)
-    {
-        rst_code = 2;
-    }
-    else if (rf & 0x08)
-    {
-        rst_code = 3;
-    }
-    else
-    {
-        rst_code = 0;
-    }
+    /* RSTFLAG 在扩展 SFR 区，访问前必须 EAXFR=1。 */
+    EA = 0;
+    P_SW2 |= 0x80;
+    rf = RSTFLAG;
+    RSTFLAG = RST_CLEAR_MASK; /* 写 1 清零，留 SWRSTF 给 ISP */
+    EA = ea;
+
+    rst_raw = rf;
+    rst_pcon = pcon;
+    rst_wdt = wdt;
+    rst_rstcfg = rstcfg;
+
+    if (pcon & PCON_POF_MASK)
+        PCON = (uint8_t)(pcon & (uint8_t)~PCON_POF_MASK);
 }
 
 static const char __code *RstText(void)
 {
-    switch (rst_code)
-    {
-    case 1:
+    if (rst_raw & RST_WDT)
         return "WDG";
-    case 2:
-        return "SW";
-    case 3:
+    if (rst_raw & RST_ROV)
+        return "ROV";
+    if (rst_raw & RST_PIN)
         return "PIN";
-    default:
-        return "POR";
+    if (rst_raw & RST_LVD)
+        return (rst_pcon & PCON_POF_MASK) ? "POR" : "LVD";
+    if (rst_raw & RST_SW)
+        return "SW";
+    return "POR";
+}
+
+static void LineRstFlags(uint8_t raw)
+{
+    uint8_t first = 1;
+
+    if (raw & RST_LVD)
+    {
+        LineStr("LVD");
+        first = 0;
     }
+    if (raw & RST_WDT)
+    {
+        if (!first)
+            LineChar('+');
+        LineStr("WDG");
+        first = 0;
+    }
+    if (raw & RST_ROV)
+    {
+        if (!first)
+            LineChar('+');
+        LineStr("ROV");
+        first = 0;
+    }
+    if (raw & RST_PIN)
+    {
+        if (!first)
+            LineChar('+');
+        LineStr("PIN");
+        first = 0;
+    }
+    if (raw & RST_SW)
+    {
+        if (!first)
+            LineChar('+');
+        LineStr("SW");
+        first = 0;
+    }
+    if (first)
+        LineStr("none");
 }
 
 /* ------------------------------------------------------------------------- */
@@ -438,13 +427,13 @@ void Dbg_UartIsr(void)
 }
 
 /* ------------------------------------------------------------------------- */
-/* 快照、事件                                                                */
+/* 启动自检与复位信息                                                        */
 /* ------------------------------------------------------------------------- */
 
 static void PrintBanner(void)
 {
     LineReset();
-    LineStr("# P" "IE-Block DBG v1 fw=");
+    LineStr("# P" "IE-Block DBG v2diag fw=");
     LineStr(dbg_fw);
     LineStr(" build=");
     LineStr(dbg_build);
@@ -462,12 +451,83 @@ static void PrintResetEvent(void)
     LineStr(RstText());
     LineStr(" boot=");
     LineU16(boot_count);
+    LineStr(" raw=");
+    LineHex8(rst_raw);
+    LineStr(" flags=");
+    LineRstFlags(rst_raw);
+    LineStr(" pcon=");
+    LineHex8(rst_pcon);
+    LineStr(" wdt=");
+    LineHex8(rst_wdt);
+    LineStr(" rstcfg=");
+    LineHex8(rst_rstcfg);
     LineEnd();
 }
 
+void Dbg_PrintResetInfo(void)
+{
+    PrintResetEvent();
+}
+
+/* Nrf_Init() 之后调用：每次启动都打印一次 nRF 状态，用于确认模块是否真的通了。 */
+void Dbg_BootNrfReport(void)
+{
+    uint8_t addr[5];
+    uint8_t i;
+
+    LineReset();
+    LineStr("# NRF init=");
+    LineU16(Nrf_InitOk());
+    LineStr(" config=");
+    LineHex8(Nrf_ReadReg(NRF_REG_CONFIG));
+    LineStr(" enaa=");
+    LineHex8(Nrf_ReadReg(NRF_REG_EN_AA));
+    LineStr(" enrx=");
+    LineHex8(Nrf_ReadReg(NRF_REG_EN_RXADDR));
+    LineStr(" rxq=");
+    LineHex8(Nrf_ReadReg(NRF_REG_RX_PW_P0));
+    LineStr(" fifo=");
+    LineHex8(Nrf_ReadReg(NRF_REG_FIFO_STATUS));
+    LineStr(" st=");
+    LineHex8(Nrf_ReadReg(NRF_REG_STATUS));
+    LineEnd();
+
+    LineReset();
+    LineStr("# NRF ch=");
+    LineHex8(Nrf_ReadReg(NRF_REG_RF_CH));
+    LineStr(" rf=");
+    LineHex8(Nrf_ReadReg(NRF_REG_RF_SETUP));
+    LineStr(" retr=");
+    LineHex8(Nrf_ReadReg(NRF_REG_SETUP_RETR));
+    Nrf_ReadBuf(NRF_REG_TX_ADDR, addr, 5);
+    LineStr(" txadr=");
+    for (i = 0; i < 5; i++)
+    {
+        if (i)
+            LineChar(' ');
+        LineHex8(addr[i]);
+    }
+    LineEnd();
+}
+
+/* All_Init() 末尾调用：看到这行才说明初始化完整跑完、准备进主循环。 */
+void Dbg_InitDone(void)
+{
+    LineReset();
+    LineStr("# init done t=");
+    LineU32(Dbg_Millis());
+    LineStr(" nrf=");
+    LineU16(Nrf_InitOk());
+    LineEnd();
+}
+
+/* ------------------------------------------------------------------------- */
+/* 快照、事件                                                                */
+/* ------------------------------------------------------------------------- */
+
 static void PrintFifoFull(void)
 {
-    NrfStats s;
+    static NrfStats s;
 
     Nrf_GetStats(&s);
     LineReset();
@@ -486,17 +546,40 @@ static void PrintFifoFull(void)
     LineEnd();
 }
 
+static void PrintTxStuck(void)
+{
+    static NrfStats s;
+
+    Nrf_GetStats(&s);
+    LineReset();
+    LineStr("ev=TX_STUCK t=");
+    LineU32(Dbg_Millis());
+    LineStr(" st=");
+    LineHex8(s.st);
+    LineStr(" fifo=");
+    LineHex8(s.fifo);
+    LineStr(" txto=");
+    LineU32(s.tx_to);
+    LineStr(" stuck=");
+    LineU32(s.tx_stuck);
+    LineStr(" age=");
+    LineU32(Dbg_AgeMs());
+    LineEnd();
+}
+
 void Dbg_AfterNrfHandler(void)
 {
     uint8_t events = Nrf_TakeEvents();
 
     if (events & NRF_EVT_FIFO_FULL)
         PrintFifoFull();
+    if (events & NRF_EVT_TX_STUCK)
+        PrintTxStuck();
 }
 
 static void PrintSnapshot(void)
 {
-    NrfStats s;
+    static NrfStats s;
     uint32_t now;
     uint32_t age;
 
@@ -536,6 +619,10 @@ static void PrintSnapshot(void)
     LineU32(s.tx_ds);
     LineStr(" maxrt=");
     LineU32(s.maxrt);
+    LineStr(" txto=");
+    LineU32(s.tx_to);
+    LineStr(" stuck=");
+    LineU32(s.tx_stuck);
     LineStr(" age=");
     LineU32(age);
     LineStr(" ch=");
@@ -548,6 +635,8 @@ static void PrintSnapshot(void)
     LineStr(RstText());
     LineStr(" boot=");
     LineU16(boot_count);
+    LineStr(" wdt=");
+    LineHex8(WDT_CONTR);
     LineStr(" dbg_dropped=");
     LineU32(dbg_dropped);
     LineEnd();
@@ -555,7 +644,7 @@ static void PrintSnapshot(void)
 
 static void PrintBurstLine(void)
 {
-    NrfStats s;
+    static NrfStats s;
 
     Nrf_GetStats(&s);
     LineReset();
@@ -762,12 +851,12 @@ static void DumpRegs(void)
 
 static void PrintVersion(void)
 {
-    NrfStats s;
+    static NrfStats s;
 
     Nrf_GetStats(&s);
 
     LineReset();
-    LineStr("# P" "IE-Block DBG v1 fw=");
+    LineStr("# P" "IE-Block DBG v2diag fw=");
     LineStr(dbg_fw);
     LineStr(" build=");
     LineStr(dbg_build);
@@ -777,6 +866,12 @@ static void PrintVersion(void)
     LineHex8(s.rf);
     LineStr(" retr=");
     LineHex8(s.retr);
+    LineStr(" link=");
+    LineU16(s.link);
+    LineStr(" txto=");
+    LineU32(s.tx_to);
+    LineStr(" stuck=");
+    LineU32(s.tx_stuck);
     LineEnd();
 
     LineReset();
@@ -788,13 +883,69 @@ static void PrintVersion(void)
 
 static void PrintHelp(void)
 {
-    PrintAck("P" "IE-Block DBG v1 help");
+    PrintAck("P" "IE-Block DBG v2diag help");
     PrintAck("UART2 P1.0=RX P1.1=TX 115200 8N1, 3.3V TTL, common GND");
     PrintAck("? help | s snapshot | r clear counters | d nrf regs");
-    PrintAck("l <hz> 1-20 | b <n> 1ms burst (control paused, n<=200)");
-    PrintAck("m rx | m tx | v version");
-    PrintAck("b at 115200 drops lines (dbg_dropped); 921600 recommended");
-    PrintAck("STC-ISP: set user EEPROM >=1 sector for boot counter");
+    PrintAck("e reset info | v version | l <hz> 1-20 | m rx | m tx");
+    PrintAck("z buzzer off | p beep 1kHz 200ms");
+    PrintAck("w show wdt/rstflag | w0 disable wdt | wf feed wdt(ps=7)");
+    PrintAck("b <n> 1ms burst (control paused, n<=200; 115200 drops lines)");
+}
+
+/*
+ * 看门狗/复位标志查看命令。
+ *
+ * WDT_CONTR（0xC1H，手册 9.3）：B7 WDT_FLAG、B5 EN_WDT、B4 CLR_WDT、
+ * B3 IDL_WDT、B2:0 WDT_PS。EN_WDT=1 表示看门狗正在计数；若没喂狗，
+ * 硬件会在超时后复位（日志表现为 ev=RESET flags=WDG）。
+ */
+static void WdtCommand(uint8_t *cmd)
+{
+    uint8_t *p = cmd + 1;
+    uint8_t raw;
+    uint8_t ea = EA;
+
+    while (*p == ' ')
+        p++;
+
+    if (p[0] == '0')
+    {
+        EA = 0;
+        P_SW2 |= 0x80;
+        WDT_CONTR = 0x00; /* EN_WDT=0：关闭看门狗 */
+        EA = ea;
+        PrintAck("wdt disabled (WDT_CONTR=0)");
+        return;
+    }
+
+    if (p[0] == 'f' || p[0] == 'F')
+    {
+        EA = 0;
+        P_SW2 |= 0x80;
+        WDT_CONTR = 0x37; /* EN_WDT=1 + CLR_WDT=1 + WDT_PS=111（约 4.5 s） */
+        EA = ea;
+        PrintAck("wdt fed, ps=7 (~4.5s)");
+        return;
+    }
+
+    raw = WDT_CONTR;
+    LineReset();
+    LineStr("# wdt_contr=");
+    LineHex8(raw);
+    LineStr(" en_wdt=");
+    LineU16((raw & 0x20U) ? 1 : 0);
+    LineStr(" ps=");
+    LineU16((uint16_t)(raw & 0x07U));
+    EA = 0;
+    P_SW2 |= 0x80;
+    LineStr(" rstflag=");
+    LineHex8(RSTFLAG);
+    EA = ea;
+    LineStr(" boot=");
+    LineU16(boot_count);
+    LineStr(" rstcfg=");
+    LineHex8(RSTCFG);
+    LineEnd();
 }
 
 static void HandleCommand(uint8_t *cmd)
@@ -835,6 +986,20 @@ static void HandleCommand(uint8_t *cmd)
         break;
     case 'm':
         ForceMode(cmd);
+        break;
+    case 'e':
+        Dbg_PrintResetInfo();
+        break;
+    case 'z':
+        Buzzer_Silence();
+        PrintAck("buzzer silenced");
+        break;
+    case 'p':
+        Buzzer_Beep(1000, 200);
+        PrintAck("beep 1000Hz 200ms");
+        break;
+    case 'w':
+        WdtCommand(cmd);
         break;
     default:
         PrintAck("unknown command, send ? for help");

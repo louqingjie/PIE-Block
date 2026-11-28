@@ -37,7 +37,7 @@
 #define LED1_PIN GPIO_Pin_5
 #define LED2_PIN GPIO_Pin_6
 #define LED3_PIN GPIO_Pin_7
-#define BUZZER_CH PWMA_CH4N_P33
+/* 蜂鸣器通道定义在 main.h（PWMA_CH4N_P33，与生成代码一致）。 */
 
 static uint8_t control_frame_pack[21];
 static int16_t rocker[4];
@@ -146,11 +146,26 @@ static void RunMecanum(void)
     dutyOfMotor[7] = (int)ScaleDuty(-(vx - vy + turn));
 }
 
-static void Beep(uint16_t freq, uint16_t ms)
+/*
+ * 蜂鸣器：静音 / 试音。
+ * 调试台命令 z（静音）与 p（1 kHz 200 ms）直接调用，用来区分
+ * “初始化提示音反复响是复位”还是“PWM 停在发声状态”。
+ */
+void Buzzer_Silence(void)
+{
+    PWM_SET_Frequency(BUZZER_CH, 500, 0);
+}
+
+void Buzzer_Beep(uint16_t freq, uint16_t ms)
 {
     PWM_SET_Frequency(BUZZER_CH, freq, 5000);
     Ms_Delay(ms);
     PWM_SET_Frequency(BUZZER_CH, freq, 0);
+}
+
+static void Beep(uint16_t freq, uint16_t ms)
+{
+    Buzzer_Beep(freq, ms);
 }
 
 static void All_Init(void)
@@ -164,6 +179,7 @@ static void All_Init(void)
 
     Nrf_Init();
     P2INTE &= ~GPIO_Pin_6; /* 关闭 nRF IRQ 外部中断，主循环轮询 */
+    Dbg_BootNrfReport();   /* nRF 初始化结果与关键寄存器回读（每次启动都打） */
 
     ExpansionBoradControl(Init_Order, 50, 50, 50, 50, 10000, 10000, 10000, 10000);
     Ms_Delay(EXPANSION_FRAME_GAP_MS);
@@ -172,6 +188,10 @@ static void All_Init(void)
     Beep(659, 120);
     Beep(784, 120);
     Beep(1047, 240);
+    Buzzer_Silence();
+
+    /* 初始化完成标记：复位循环时串口会反复出现这一行的 t=0~ 很接近的值。 */
+    Dbg_InitDone();
 }
 
 void main(void)

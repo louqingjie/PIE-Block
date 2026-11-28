@@ -48,12 +48,16 @@ static int16_t nrf_rocker[4];
 static NrfMode nrf_mode = NRF_MODE_INIT;
 static uint8_t nrf_force_tx = 0;
 static uint8_t nrf_events = 0;
+static uint8_t nrf_link_ok = 0;
+static uint8_t tx_stall_rounds = 0;
 
 static uint32_t stat_rx = 0;
 static uint32_t stat_rx_dr = 0;
 static uint32_t stat_tx = 0;
 static uint32_t stat_tx_ds = 0;
 static uint32_t stat_maxrt = 0;
+static uint32_t stat_tx_to = 0;
+static uint32_t stat_tx_stuck = 0;
 static uint16_t stat_drain_max = 0;
 static uint8_t stat_drain = 0;
 static uint8_t stat_st = 0;
@@ -185,6 +189,44 @@ static void nrf_send_payload(uint8_t *payload, uint8_t len)
     NRF_CE_HIGH();
 }
 
+/*
+ * 有界等待遥测发送结果（TX_DS 或 MAX_RT），无论成功/超时都立即切回 RX。
+ *
+ * 旧实现固定 Ms_Delay(3) 后调用 handler：250 kbps、ARC=5 时重发跑满要 4 ms
+ * 以上，3 ms 内看不到标志，nrf_mode 就一直停在 TX；主循环随后再也收不到
+ * 控制包（日志表现：mode=TX、tx_ds=0、maxrt=0、age 单调增长）。
+ */
+static uint8_t nrf_wait_tx_done(uint8_t timeout_ms)
+{
+    uint8_t i;
+    uint8_t state;
+
+    for (i = 0; i < timeout_ms; i++)
+    {
+        state = nrf_readreg(NRF_REG_STATUS);
+        if (state & (NRF_TX_DS | NRF_MAX_RT))
+        {
+            nrf_writereg(NRF_WRITE_REG + NRF_REG_STATUS, state);
+            if (state & NRF_TX_DS)
+                stat_tx_ds++;
+            if (state & NRF_MAX_RT)
+            {
+                stat_maxrt++;
+                nrf_writereg(FLUSH_TX, NRF_NOP);
+            }
+            nrf_enter_rx();
+            return 1;
+        }
+        Ms_Delay(1);
+    }
+
+    /* 超时：清 TX FIFO，强制回 RX；计数供日志判断下行链路质量。 */
+    stat_tx_to++;
+    nrf_writereg(FLUSH_TX, NRF_NOP);
+    nrf_enter_rx();
+    return 0;
+}
+
 /* 控制包协议：帧头 11、10 字节数据、1 字节累加校验，共 12 字节。 */
 static uint8_t nrf_unpack(const uint8_t *data)
 {
@@ -226,10 +268,12 @@ void Nrf_Init(void)
     nrf_addr[4] = NRF_CHANNEL;
     nrf_apply_config();
 
+    nrf_link_ok = 0;
     for (retry = 0; retry < 20; retry++)
     {
         if (nrf_link_check())
         {
+            nrf_link_ok = 1;
             Ms_Delay(200); /* 与生成工程 remoteControlInitWithTimeout 一致 */
             break;
         }
@@ -315,6 +359,27 @@ void Nrf_Handler(void)
         if (!nrf_force_tx && nrf_mode != NRF_MODE_RX)
             nrf_enter_rx();
     }
+
+    /*
+     * 兜底：只要还停在 TX，连续 3 次 handler 都没等到 TX_DS/MAX_RT，
+     * 就强制清 TX FIFO 回 RX（正常路径在 nrf_wait_tx_done 里已经回 RX，
+     * 这里只防“射频模块不响应/被强制 TX”等异常，避免永久聋掉）。
+     */
+    if (nrf_mode == NRF_MODE_TX && !nrf_force_tx)
+    {
+        if (++tx_stall_rounds >= 3)
+        {
+            tx_stall_rounds = 0;
+            stat_tx_stuck++;
+            nrf_writereg(FLUSH_TX, NRF_NOP);
+            nrf_enter_rx();
+            nrf_events |= NRF_EVT_TX_STUCK;
+        }
+    }
+    else
+    {
+        tx_stall_rounds = 0;
+    }
 }
 
 /*
@@ -325,7 +390,7 @@ void Nrf_SendTelemetry(int v0, int v1, int v2, int v3, int v4,
                        int v5, int v6, int v7, int v8, int v9)
 {
     static uint8_t divider = 4;
-    uint8_t payload[NRF_TX_PAYLOAD];
+    static uint8_t payload[NRF_TX_PAYLOAD];
 
     if (++divider < 5)
         return;
@@ -356,8 +421,9 @@ void Nrf_SendTelemetry(int v0, int v1, int v2, int v3, int v4,
     nrf_send_payload(payload, NRF_TX_PAYLOAD);
     stat_tx++;
 
-    /* 与共享驱动一致：给 ACK 留 3 ms，然后立即处理 TX_DS/MAX_RT 并回 RX。 */
-    Ms_Delay(3);
+    /* 有界等待 TX_DS/MAX_RT（最多 NRF_TX_WAIT_MS），然后无论结果都回 RX；
+       收包统计在随后的 handler 里完成。 */
+    (void)nrf_wait_tx_done(NRF_TX_WAIT_MS);
     Nrf_Handler();
 }
 
@@ -380,6 +446,8 @@ void Nrf_GetStats(NrfStats *out)
     out->tx = stat_tx;
     out->tx_ds = stat_tx_ds;
     out->maxrt = stat_maxrt;
+    out->tx_to = stat_tx_to;
+    out->tx_stuck = stat_tx_stuck;
     out->drain_max = stat_drain_max;
     out->drain = stat_drain;
     out->st = stat_st;
@@ -388,6 +456,7 @@ void Nrf_GetStats(NrfStats *out)
     out->ch = stat_ch;
     out->rf = stat_rf;
     out->retr = stat_retr;
+    out->link = nrf_link_ok;
 }
 
 void Nrf_ResetCounters(void)
@@ -397,9 +466,16 @@ void Nrf_ResetCounters(void)
     stat_tx = 0;
     stat_tx_ds = 0;
     stat_maxrt = 0;
+    stat_tx_to = 0;
+    stat_tx_stuck = 0;
     stat_drain_max = 0;
     stat_drain = 0;
     nrf_events = 0;
+}
+
+uint8_t Nrf_InitOk(void)
+{
+    return nrf_link_ok;
 }
 
 uint8_t Nrf_TakeEvents(void)
