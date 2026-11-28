@@ -56,7 +56,7 @@ pieblock-cli --help
 {
   "name": "pieblock-cli",
   "version": "1.1.0",
-  "release": "1.9.0",
+  "release": "1.10.0",
   "formatVersion": 23
 }
 ```

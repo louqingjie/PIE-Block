@@ -11,7 +11,7 @@
 | [`reference/`](reference/) | 规范与字段定义 | [项目文件格式](reference/Flutter项目文件格式.md) |
 | [`reference/schemas/`](reference/schemas/) | 各项目类型的 JSON Schema（由 CLI `schema` 命令生成，与代码同步） | [infantry.schema.json](reference/schemas/infantry.schema.json) |
 | [`design/`](design/) | 实现说明与技术报告 | [Android SDCC 多进程移植](design/android-sdcc-port.md) |
-| [`releases/`](releases/) | 发布说明（发版时 CI 取 `docs/releases/<版本>.md` 作为 Release 正文） | [1.9.0](releases/1.9.0.md) |
+| [`releases/`](releases/) | 发布说明（发版时 CI 取 `docs/releases/<版本>.md` 作为 Release 正文） | [1.10.0](releases/1.10.0.md) |
 | [`pitfall/`](pitfall/) | 具体故障案例（绑定到出现该问题的版本） | [SDCC 组帧低字节丢失](pitfall/sdcc-组帧低字节丢失.md)、[HID 烧录写块无响应](pitfall/HID烧录写块无响应.md) |
 | [`playbook/`](playbook/) | 可复用的排障流程 | [拓展板通信排障](playbook/拓展板通信排障.md) |
 | [`legal/`](legal/) | 第三方声明与许可证 | [第三方声明](legal/THIRD_PARTY_NOTICES.md) |
@@ -50,6 +50,7 @@
 ## design（实现说明 / 技术报告）
 
 - [STC32G 无线固件升级技术报告](design/STC32G无线固件升级技术报告.md)
+- [车体接收端无线通信质量审阅报告](design/车体接收端无线通信质量审阅报告.md)
 - [Android SDCC 多进程移植](design/android-sdcc-port.md)
 - [工程项目高级配置决策](design/工程项目高级配置决策.md)
 - [AI 改动提案：提案-确认流程](design/ai-proposal-flow.md)
@@ -69,10 +70,12 @@
 - [1.8.0](releases/1.8.0.md)
 - [1.8.1](releases/1.8.1.md)
 - [1.9.0](releases/1.9.0.md)
+- [1.10.0](releases/1.10.0.md)
 
 ## pitfall（故障案例）
 
 - [SDCC 组帧低字节丢失](pitfall/sdcc-组帧低字节丢失.md)
+- [SDCC mcs251 中断不保存 DPXL 导致 ROMOVF 复位](pitfall/SDCC-251中断不保存DPXL导致ROMOVF复位.md)
 - [USB-HID 烧录在第二块（0x0080）设备无响应](pitfall/HID烧录写块无响应.md)
 
 ## playbook（排障流程）
