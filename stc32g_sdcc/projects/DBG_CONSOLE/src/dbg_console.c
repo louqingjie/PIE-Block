@@ -308,31 +308,24 @@ static void EeErase(uint32_t addr)
     IapDisable();
 }
 
-/* 读改写 EEPROM 首扇区 4 字节：'P','B',boot_lo,boot_hi。 */
+/*
+ * 只读 EEPROM 首扇区 4 字节：'P','B',boot_lo,boot_hi。
+ *
+ * 不要在这里擦写。之前每次上电都会 EeErase + EeWrite 一次：在 STC-ISP
+ * 未分配用户 EEPROM 的芯片上，IAP 地址 0x000000 与程序区重叠，擦除会
+ * 破坏刚下载的固件，表现为“烧录后第一次运行正常，断电再上电就不启动”。
+ * 日志里 boot 恒为 1 也说明写入本来没有生效。需要持久化时应在显式命令
+ * 中写，并先确认 EEPROM 已分配。
+ */
 static void LoadBoot(void)
 {
     uint8_t buf[4];
-    uint16_t v;
 
     EeRead(EE_BASE, buf, 4);
     if (buf[0] != 'P' || buf[1] != 'B')
-    {
         boot_count = 1;
-    }
     else
-    {
-        v = (uint16_t)buf[2] | ((uint16_t)buf[3] << 8);
-        boot_count = (v == 0xFFFF) ? 0xFFFF : (uint16_t)(v + 1);
-    }
-
-    buf[0] = 'P';
-    buf[1] = 'B';
-    buf[2] = (uint8_t)(boot_count & 0xFF);
-    buf[3] = (uint8_t)(boot_count >> 8);
-
-    /* 用户 EEPROM 未在 STC-ISP 中分配时，擦写无效，boot 每次退化为 1。 */
-    EeErase(EE_BASE);
-    EeWrite(EE_BASE, buf, 4);
+        boot_count = (uint16_t)((uint16_t)buf[2] | ((uint16_t)buf[3] << 8));
 }
 
 /*
