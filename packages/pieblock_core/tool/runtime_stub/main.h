@@ -10,6 +10,9 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+/* 与板级运行时 nrf24l01.h 对齐的 API 版本（生成代码做编译期下限检查）。 */
+#define PIEBLOCK_RADIO_API 2
+
 typedef unsigned int GPIO_Pin_enum;
 typedef unsigned char GPIO_Port_enum;
 #define GPIO_P3 ((GPIO_Port_enum)3)
@@ -42,6 +45,7 @@ enum {
     KEY_OFFSET_D,
     KEY_OFFSET_Rocker11, /* LC */
     KEY_OFFSET_Rocker21, /* RC */
+    KEY_RCDISCONNECTED = 15, /* 断链标志（板级运行时置位） */
 };
 
 enum {

@@ -3474,7 +3474,7 @@ void main() {
       expect(reverseBranch(blocking), contains('dutyOfMotor[0] = -6000;'));
       // 松开反向键必须归零，不能停在反转占空比上
       expect(reverseBranch(blocking), contains('dutyOfMotor[0] = 0;'));
-      expect(reverseBranch(blocking), contains('Ms_Delay(250)'));
+      expect(reverseBranch(blocking), contains('BlockingDelayWithRadio(250)'));
 
       final visual = CodeGenerator.generate(
         completeInfantry(
@@ -3487,7 +3487,7 @@ void main() {
         reverseBranch(visual),
         contains('dutyOfMotor[0] = trigger ? 6000 : 0;'),
       );
-      expect(visual, isNot(contains('Ms_Delay(250)')));
+      expect(visual, isNot(contains('BlockingDelayWithRadio(250)')));
 
       // 拨弹方向本身为反向时，退弹方向翻转为正
       final reversedFeeder = CodeGenerator.generate(
@@ -3502,7 +3502,7 @@ void main() {
     });
 
     test('阻塞单发脉冲先补发方向帧再发占空比帧', () {
-      // 脉冲在 Ms_Delay 期间主循环停摆，方向寄存器不会刷新；方向帧缺失时
+      // 脉冲在阻塞延时期间不下发扩展板帧，方向寄存器不会刷新；方向帧缺失时
       // 反向电机的扳机单发会沿用遗留的正转方向，与反向拨弹键同向。
       final pulseSendsDirection = RegExp(
         r'dutyOfMotor\[0\] = -?6000;\n'
@@ -3511,7 +3511,7 @@ void main() {
         r'\s*Ms_Delay\(EXPANSION_FRAME_GAP_MS\);\n'
         r'\s*ExpansionBoradControl\(Duty_Change_Order, abs\(dutyOfMotor\[0\]\),'
         r'[^;]*\);\n'
-        r'\s*Ms_Delay\(250\);',
+        r'\s*BlockingDelayWithRadio\(250\);',
       );
 
       // 配了反向键：扳机脉冲在 else 分支里，正向电机写 +6000
@@ -3638,7 +3638,7 @@ void main() {
             .copyWith(arrowBehavior: ArrowBehavior.move, buzzerDisabled: true),
       );
       expect(visual, contains('= trigger ? 6000 : 0'));
-      expect(visual, isNot(contains('Ms_Delay(250)')));
+      expect(visual, isNot(contains('BlockingDelayWithRadio(250)')));
       expect(visual, contains('KEY_OFFSET_UP'));
       expect(visual, isNot(contains('Beep(')));
 

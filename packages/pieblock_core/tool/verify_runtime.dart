@@ -43,6 +43,7 @@ int _inputId(String input) => switch (input) {
   'D' => 16 + 9,
   'LC' => 16 + 10,
   'RC' => 16 + 11,
+  'LINK' => 20,
   _ => throw ArgumentError('未知输入 $input'),
 };
 
@@ -65,11 +66,17 @@ class StatusLine {
   final List<int> values;
 }
 
+class LedLine {
+  LedLine(this.ms, this.index, this.value);
+  final int ms, index, value;
+}
+
 class RunLog {
-  RunLog(this.frames, this.pwm, this.status, this.endMs);
+  RunLog(this.frames, this.pwm, this.status, this.leds, this.endMs);
   final List<FrameLine> frames;
   final List<PwmLine> pwm;
   final List<StatusLine> status;
+  final List<LedLine> leds;
   final int endMs;
 
   List<FrameLine> dutyFrames() =>
@@ -128,14 +135,27 @@ static const int g_eventCount = (int)(sizeof(g_events) / sizeof(g_events[0]));
 static int g_eventIdx = 0;
 static int g_rocker[4] = {0, 0, 0, 0};
 static int g_key[16] = {0};
+static int g_link = 1;
+static int g_link_ready = 0;
+static unsigned long long g_last_rx = 0;
 
 static void PbPump(void)
 {
     while (g_eventIdx < g_eventCount && g_events[g_eventIdx].at <= g_ms) {
         const PbEvent *e = &g_events[g_eventIdx++];
-        if (e->id < 4) g_rocker[e->id] = e->value;
+        if (e->id == 20) g_link = e->value;
+        else if (e->id < 4) g_rocker[e->id] = e->value;
         else g_key[e->id - 16] = e->value;
     }
+    /* 链路正常时每 40 ms 模拟一帧到达；断链后不再刷新，年龄自然增长。 */
+    if (!g_link_ready) { g_last_rx = g_ms; g_link_ready = 1; }
+    if (g_link && (g_ms - g_last_rx) >= 40) g_last_rx = g_ms;
+}
+
+/* 与板级运行时 RC_LINK_TIMEOUT_MS 保持一致。 */
+static int PbLinkOk(void)
+{
+    return g_link && (g_ms - g_last_rx) <= 150;
 }
 
 void Ms_Delay(uint32_t ms)
@@ -152,7 +172,15 @@ void UART_Init(int id, int rx, int tx, int baud, int tim)
 void GPIO_Init(GPIO_Port_enum port, GPIO_Pin_enum pins, int mode)
 { (void)port; (void)pins; (void)mode; }
 void GPIO_Write_Bit(GPIO_Port_enum port, GPIO_Pin_enum pin, int value)
-{ (void)port; (void)pin; (void)value; }
+{
+    int index = -1;
+    PbPump();
+    if (port != GPIO_P3) return;
+    if (pin == GPIO_Pin_5) index = 0;
+    else if (pin == GPIO_Pin_6) index = 1;
+    else if (pin == GPIO_Pin_7) index = 2;
+    if (index >= 0) printf("L %llu %d %d\\n", g_ms, index, value ? 1 : 0);
+}
 
 static uint8_t g_frame[21];
 static int g_frameLen = 0;
@@ -175,8 +203,18 @@ void PWM_Init(int channel, int frequency, int duty)
 void PWM_SET_Frequency(int channel, int frequency, int duty)
 { PbPump(); printf("P %llu %d %d %d\\n", g_ms, channel, frequency, duty); }
 
-uint8_t RcKeyValueRead(int key) { PbPump(); return (uint8_t)(g_key[key] != 0); }
-int RcRockerValueRead(int rocker) { PbPump(); return g_rocker[rocker]; }
+uint8_t RcKeyValueRead(int key)
+{
+    PbPump();
+    if (key == 15) return (uint8_t)(PbLinkOk() ? 0 : 1); /* KEY_RCDISCONNECTED */
+    return (uint8_t)(PbLinkOk() && g_key[key] != 0);
+}
+int RcRockerValueRead(int rocker)
+{
+    PbPump();
+    if (!PbLinkOk()) return 0;
+    return g_rocker[rocker];
+}
 void nrf_handler(void) { PbPump(); }
 
 /* 与固件 RemoteStatusSend 相同：5 次分频，首次调用立即发送一包。 */
@@ -204,6 +242,7 @@ int main(void)
 
 RunLog parseLog(String stdoutText) {
   final frames = <FrameLine>[], pwm = <PwmLine>[], status = <StatusLine>[];
+  final leds = <LedLine>[];
   var endMs = 0;
   for (final line in stdoutText.split('\n')) {
     if (line.isEmpty) continue;
@@ -227,11 +266,13 @@ RunLog parseLog(String stdoutText) {
           int.parse(parts[1]),
           [for (var i = 0; i < 10; i++) int.parse(parts[2 + i])],
         ));
+      case 'L':
+        leds.add(LedLine(int.parse(parts[1]), int.parse(parts[2]), int.parse(parts[3])));
       case 'E':
         endMs = int.parse(parts[1]);
     }
   }
-  return RunLog(frames, pwm, status, endMs);
+  return RunLog(frames, pwm, status, leds, endMs);
 }
 
 /// 直接问 gcc 是否存在：Windows 没有 `which`，用 `--version` 探测才跨平台。
@@ -1980,7 +2021,108 @@ List<Scenario> scenarios() {
     },
   ));
 
+
+  // --- 步兵：断链停车 / 恢复 ---
+  scenarios.add(Scenario(
+    'inf-link-loss',
+    infantryBase(frictionMode: FrictionMode.disabled),
+    14000,
+    [
+      (3000, 'LY', -2047), // 前进
+      (6000, 'LINK', 0), // 断链
+      (10000, 'LINK', 1), // 恢复
+      (11500, 'LY', 0), // 松杆
+    ],
+    (log) {
+      final failures = <String>[];
+      final duty = log.dutyFrames();
+      final lost = duty.where((f) => f.ms >= 6350 && f.ms < 10000).toList();
+      if (lost.isEmpty) {
+        failures.add('断链后没有占空比帧');
+      } else if (lost.any((f) =>
+          f.duties[4] != 0 ||
+          f.duties[5] != 0 ||
+          f.duties[6] != 0 ||
+          f.duties[7] != 0)) {
+        failures.add('断链后底盘占空比未归零（${lost.last.duties}）');
+      }
+      final lostLed = ledAt(log, 7000);
+      if (lostLed.any((value) => value != 0)) {
+        failures.add('断链后三灯应全亮（active-low=0），实际 $lostLed');
+      }
+      final resumed = duty.where((f) => f.ms >= 10500 && f.ms < 11500).toList();
+      if (resumed.isEmpty || resumed.last.duties[4] == 0) {
+        failures.add('链路恢复后底盘未恢复输出');
+      }
+      final resumedLed = ledAt(log, 10800);
+      if (resumedLed.any((value) => value != 1)) {
+        failures.add('恢复后三灯应熄灭，实际 $resumedLed');
+      }
+      final stopped = duty.where((f) => f.ms >= 11800).toList();
+      if (stopped.isNotEmpty && stopped.last.duties[4] != 0) {
+        failures.add('松杆后底盘未停机（${stopped.last.duties[4]}）');
+      }
+      return failures;
+    },
+  ));
+
+  // --- 工程：动作表/舵机在断链时的取舍 ---
+  scenarios.add(Scenario(
+    'eng-link-loss-table',
+    engineerBase(
+      chassisEnabled: false,
+      modes: [
+        EngineerModeConfig(actionTables: [
+          ActionTable(key: 'A', steps: 3, rows: const [
+            ActionTableRow(pin: 'P74', values: [1000, 2000, 3000]),
+            ActionTableRow(pin: 'P60', values: [30, 60, 90]),
+          ]),
+        ]),
+      ],
+    ),
+    14000,
+    [
+      (2000, 'A', 1), (2200, 'A', 0), // 第 1 档
+      (3000, 'A', 1), (3200, 'A', 0), // 第 2 档：P74=2000，P60=60°
+      (4000, 'LINK', 0), // 断链
+      (8000, 'LINK', 1), // 恢复
+      (9000, 'A', 1), (9200, 'A', 0), // 恢复后重新按键前进到第 3 档
+    ],
+    (log) {
+      final failures = <String>[];
+      final duty = log.dutyFrames();
+      final lost = duty.where((f) => f.ms >= 4500 && f.ms < 8000).toList();
+      if (lost.isEmpty) {
+        failures.add('断链后没有占空比帧');
+      } else if (lost.any((f) => f.duties[4] != 0)) {
+        failures.add('断链后动作表电机 P74 未归零（${lost.last.duties[4]}）');
+      }
+      if (lost.isNotEmpty && lost.last.duties[0] == 0) {
+        failures.add('断链不应把舵机 P60 归零（应保持最后位置）');
+      }
+      final beforePress = duty.where((f) => f.ms >= 8300 && f.ms < 9000).toList();
+      if (beforePress.any((f) => f.duties[4] != 0)) {
+        failures.add('恢复后未重新按键时动作表电机不应自行恢复');
+      }
+      final afterPress = duty.where((f) => f.ms >= 9500).toList();
+      if (afterPress.isEmpty || afterPress.last.duties[4] != 3000) {
+        failures.add('恢复后按键应前进到第 3 档（P74=3000），实际 ${afterPress.isEmpty ? "?" : afterPress.last.duties[4]}');
+      }
+      return failures;
+    },
+  ));
+
   return scenarios;
+}
+
+/// 虚拟时刻 ms 时三颗 LED 的 GPIO 电平（1=灭，0=亮，与 LedShow 一致）。
+List<int> ledAt(RunLog log, int ms) {
+  final values = <int>[1, 1, 1];
+  for (final line in log.leds) {
+    if (line.ms > ms) break;
+    values[line.index] = line.value;
+  }
+  return values;
 }
 
 bool _listEquals(List<int> actual, List<int> expected) {

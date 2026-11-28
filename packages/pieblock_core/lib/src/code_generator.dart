@@ -124,17 +124,32 @@ static void Uart1TxQuery(uint8_t dat)
 }
 ''';
 
-  static String _runtimeSafety(bool buzzerEnabled) =>
+  static String _runtimeSafety(bool buzzerEnabled,
+      {bool blockingDelay = false}) =>
       '''
-static void remoteControlInitWithTimeout(void)
+static uint8_t remoteControlInitWithTimeout(void)
 {
     uint8_t retry;
     for (retry = 0; retry < 20; retry++) {
-        if (NRF24L01_Init()) { Ms_Delay(200); return; }
+        if (NRF24L01_Init()) { Ms_Delay(200); return 1; }
         Ms_Delay(10);
     }
+    return 0;
 }
-
+${blockingDelay ? '''
+/* 阻塞动作（单发）期间继续收包与链路计时：最多 10 ms 一段，
+   避免 RX FIFO 溢出，也让断链超时不被整段动作拖后。 */
+static void BlockingDelayWithRadio(uint16_t ms)
+{
+    uint16_t step;
+    while (ms > 0) {
+        step = (ms > 10) ? 10 : ms;
+        Ms_Delay(step);
+        ms -= step;
+        nrf_handler();
+    }
+}
+''' : ''}
 $_uart1TxQuery
 #define LED_PORT GPIO_P3
 #define LED1_PIN GPIO_Pin_5
@@ -158,7 +173,12 @@ static void StepDone(uint8_t step) { Beep(500 + (uint16_t)(step % 8) * 60, 60); 
 ''' : 'static void StepDone(uint8_t step) { (void)step; }'}
 ''';
 
-  static String _header(RobotConfig c, String title, bool buzzerDisabled) {
+  static String _header(
+    RobotConfig c,
+    String title,
+    bool buzzerDisabled, {
+    bool blockingDelay = false,
+  }) {
     final chassisEnabled = !(c is EngineerConfig && !c.chassis.enabled);
     final chassisConstants = chassisEnabled
         ? '''uint16_t maxSpeed = ${c.chassis.normalSpeed!};
@@ -168,6 +188,10 @@ uint16_t ultraSpeed = ${c.chassis.sprintSpeed ?? c.chassis.normalSpeed!};
     return '''// $title（由 PIE-Block Flutter 配置器自动生成）
 #include "main.h"
 #include <stdlib.h>
+
+#if !defined(PIEBLOCK_RADIO_API) || (PIEBLOCK_RADIO_API < 2)
+#error "板级运行时过旧：缺少车体断链保护（PIEBLOCK_RADIO_API >= 2）。请更新 PIE-Block 内置运行时，或把 PIEBLOCK_RUNTIME_ROOT 指向当前仓库运行时后重编。"
+#endif
 
 uint8_t Channal = ${c.remote.channel!};
 ${chassisConstants}uint16_t deadBandOfLeft = ${c.remote.deadzone!};
@@ -188,7 +212,7 @@ int valueOfRoker[2][2];
 int dutyOfMotor[8];
 uint8_t control_frame_pack[21];
 
-${_runtimeSafety(!buzzerDisabled)}
+${_runtimeSafety(!buzzerDisabled, blockingDelay: blockingDelay)}
 
 void ExpansionBoradControl(uint8_t command,
     uint16_t p60, uint16_t p62, uint16_t p64, uint16_t p66,
@@ -432,6 +456,11 @@ $turnScale$turnReverse    dutyOfMotor[${_slot(c.leftFront.pin)}] = ${_dir(c.left
           if (c.actuators(yaw)[index].drive == DriveType.servo)
             (yaw: yaw, index: index),
     ];
+    final servoSlots = <int>{
+      for (final item in servoActuators)
+        if (_slot(actuatorAt(yaw: item.yaw, index: item.index)!.pin) >= 0)
+          _slot(actuatorAt(yaw: item.yaw, index: item.index)!.pin),
+    };
     final dutyVariables = <({String name, int home})>[
       for (final yaw in yawAndPitch)
         if (c.actuators(yaw).isNotEmpty) ...[
@@ -650,7 +679,7 @@ ${frictionRamp('P66')}
         ExpansionBoradControl(Dir_Change_Order, $directionArgs);
         Ms_Delay(EXPANSION_FRAME_GAP_MS);
         ExpansionBoradControl(Duty_Change_Order, $dutyArgs);
-        Ms_Delay(${c.triggerTimeMs!});
+        BlockingDelayWithRadio(${c.triggerTimeMs!});
         dutyOfMotor[$feederSlot] = 0;
     }
 ''';
@@ -671,7 +700,7 @@ ${frictionRamp('P66')}
             ExpansionBoradControl(Dir_Change_Order, $directionArgs);
             Ms_Delay(EXPANSION_FRAME_GAP_MS);
             ExpansionBoradControl(Duty_Change_Order, $dutyArgs);
-            Ms_Delay(${c.triggerTimeMs!});
+            BlockingDelayWithRadio(${c.triggerTimeMs!});
         }
         dutyOfMotor[$feederSlot] = 0;
     }
@@ -757,16 +786,39 @@ ${frictionEnabled ? '    else if (frictionActivateLoops == 0 && (frictionDutyP64
           null => '0',
         },
     ];
-    return '''${_header(c, '步兵机器人控制代码', c.buzzerDisabled)}
+    final infantrySafeZeroSlots = [
+      for (var slot = 0; slot < expansionPins.length; slot++)
+        if (!servoSlots.contains(slot)) slot,
+    ];
+    final safeState = '''
+/* 断链安全状态：清零所有电机/摩擦轮输出，舵机保持最后位置。 */
+static void RemoteSafeState(void)
+{
+${[for (final slot in infantrySafeZeroSlots) '    dutyOfMotor[$slot] = 0;'].join('\n')}
+${frictionEnabled ? '''    frictionEnabled = 0;
+    frictionLevel = 0;
+    frictionDutyP64 = 0;
+    frictionDutyP66 = 0;
+    frictionTargetDutyP64 = 0;
+    frictionTargetDutyP66 = 0;
+    frictionActivateLoops = 0;''' : ''}
+${c.buzzerDisabled ? '' : '    PWM_SET_Frequency(BUZZER_CH, 500, 0);'}
+}
+''';
+
+    return '''${_header(c, '步兵机器人控制代码', c.buzzerDisabled,
+        blockingDelay: c.feedMode == FeedMode.blockingOpenLoop)}
 $frictionDefines
 $dutyDeclarations
 $frictionGlobals
 $frictionHelpers
 $buzzerFeedback
+$safeState
 
 ${_chassis(c.chassis)}
 void All_Init(void)
 {
+    uint8_t radioOk;
     StepBegin(0);
     Board_Init();
     StepDone(0);
@@ -777,17 +829,24 @@ void All_Init(void)
 ${c.buzzerDisabled ? '' : '    PWM_Init(BUZZER_CH, 500, 0);'}
     StepBegin(3);
     EA = 0;
-    remoteControlInitWithTimeout();
+    radioOk = remoteControlInitWithTimeout();
     P2INTE &= ~GPIO_Pin_6;
     EA = 1;
     StepDone(3);
     ExpansionBoradControl(Init_Order, 50, 50, 50, 50, 10000, 10000, 10000, 10000);
 ${mainServoInit.join('\n')}
     Ms_Delay(1000);
-${c.buzzerDisabled ? '' : '''    Beep(523, 120);
-    Beep(659, 120);
-    Beep(784, 120);
-    Beep(1047, 240);'''}
+    if (!radioOk) {
+        LedShow(0x07);
+${c.buzzerDisabled ? '' : '''        Beep(220, 300);
+        Ms_Delay(80);
+        Beep(220, 300);'''}
+    } else {
+${c.buzzerDisabled ? '' : '''        Beep(523, 120);
+        Beep(659, 120);
+        Beep(784, 120);
+        Beep(1047, 240);'''}
+    }
 }
 
 void UpdateGimbal(void)
@@ -809,17 +868,23 @@ void main(void)
     All_Init();
     while (1) {
         nrf_handler(); // 轮询 NRF 接收（P2.6 中断已关）
-        ReadControllerInputs();
+        if (RcKeyValueRead(KEY_RCDISCONNECTED)) {
+            LedShow(0x07); /* 断链/射频故障：三灯常亮 */
+            RemoteSafeState();
+        } else {
+            LedShow(0x00);
+            ReadControllerInputs();
 $arrowUpdate
         CalculateChassis();
         UpdateGimbal();
-        UpdateWeapons();
+            UpdateWeapons();
+${buzzerFeedback.isEmpty ? '' : '            UpdateBuzzerFeedback();'}
+        }
         ExpansionBoradControl(Dir_Change_Order, $directionArgs);
         Ms_Delay(EXPANSION_FRAME_GAP_MS);
         ExpansionBoradControl(Duty_Change_Order, $dutyArgs);
         Ms_Delay(EXPANSION_FRAME_GAP_MS);
 ${mainServoUpdates.join('\n')}
-${buzzerFeedback.isEmpty ? '' : '        UpdateBuzzerFeedback();'}
         RemoteStatusSend(${remoteStatusArgs.join(', ')});
         Ms_Delay(10);
     }
@@ -1606,6 +1671,27 @@ ${frictionStackEnabled ? '    else if (frictionActivateLoops == 0 && ($frictionF
     final earlyMainServoDuty = frictionRolePins.any(
       (pin) => mainServoPins.contains(pin),
     );
+    final engineerSafeSlots = [
+      for (var slot = 0; slot < expansionPins.length; slot++)
+        if (c.pwm.pinRoles[expansionPins[slot]] != PinRole.servo) slot,
+    ];
+    final engineerFrictionMain = [
+      for (final pin in mainServoPins)
+        if (c.pwm.pinRoles[pin] == PinRole.friction) pin,
+    ];
+    final engineerSafeState = '''
+/* 断链安全状态：清零所有电机/摩擦轮输出，舵机保持最后位置。 */
+static void RemoteSafeState(void)
+{
+${[for (final slot in engineerSafeSlots) '    dutyOfMotor[$slot] = 0;'].join('\n')}
+${[for (final pin in engineerFrictionMain) '    mainServoDuty[${pin == 'MP74' ? 1 : 0}] = 0;'].join('\n')}
+${frictionStackEnabled ? '''    frictionLevel = 0;
+    frictionActivateLoops = 0;
+${[for (final pin in frictionRolePins) '    frictionTargetDuty$pin = 0;\n    frictionDuty$pin = 0;'].join('\n')}''' : ''}
+${c.pwm.buzzerDisabled ? '' : '    PWM_SET_Frequency(BUZZER_CH, 500, 0);'}
+}
+''';
+
     return '''${_header(c, '工程机器人控制代码', c.pwm.buzzerDisabled)}
 ${earlyMainServoDuty ? '$mainServoDutyDeclaration\n' : ''}$frictionSupport${expressionPrelude}uint8_t currentMode = 1;
 uint8_t lastSwitch = 0;
@@ -1620,8 +1706,10 @@ $actionTableCode
 ${c.chassis.enabled ? _chassis(c.chassis) : ''}
 ${modeFunctions.join('\n\n')}
 
+$engineerSafeState
 void All_Init(void)
 {
+    uint8_t radioOk;
     StepBegin(0);
     Board_Init();
     StepDone(0);
@@ -1632,7 +1720,7 @@ void All_Init(void)
 ${c.pwm.buzzerDisabled ? '' : '    PWM_Init(BUZZER_CH, 500, 0);'}
     StepBegin(3);
     EA = 0;
-    remoteControlInitWithTimeout();
+    radioOk = remoteControlInitWithTimeout();
     P2INTE &= ~GPIO_Pin_6;
     EA = 1;
     StepDone(3);
@@ -1640,10 +1728,17 @@ ${_pwmInit(c.pwm, usedPins)}
     Ms_Delay(EXPANSION_FRAME_GAP_MS);
 ${usedPins.where(expansionPins.contains).where((pin) => c.pwm.pinRoles[pin] == PinRole.servo).map((pin) => '    dutyOfMotor[${expansionPins.indexOf(pin)}] = ${_servoDuty(c.pwm.servoMids[pin])};').join('\n')}
     PrepareMode(1);
-${c.pwm.buzzerDisabled ? '' : '''    Beep(523, 120);
-    Beep(659, 120);
-    Beep(784, 120);
-    Beep(1047, 240);'''}
+    if (!radioOk) {
+        LedShow(0x07);
+${c.pwm.buzzerDisabled ? '' : '''        Beep(220, 300);
+        Ms_Delay(80);
+        Beep(220, 300);'''}
+    } else {
+${c.pwm.buzzerDisabled ? '' : '''        Beep(523, 120);
+        Beep(659, 120);
+        Beep(784, 120);
+        Beep(1047, 240);'''}
+    }
 }
 
 void main(void)
@@ -1651,7 +1746,12 @@ void main(void)
     All_Init();
     while (1) {
         nrf_handler(); // 轮询 NRF 接收（P2.6 中断已关）
-        ReadControllerInputs();
+        if (RcKeyValueRead(KEY_RCDISCONNECTED)) {
+            LedShow(0x07); /* 断链/射频故障：三灯常亮 */
+            RemoteSafeState();
+        } else {
+            LedShow(0x00);
+            ReadControllerInputs();
         $switchLogic
 ${servoButtonEdgeActions.isEmpty ? '' : '''        if (servoButtonStateMode != currentMode) {
             SyncServoButtonKeys(currentMode);
@@ -1660,13 +1760,13 @@ ${servoButtonEdgeActions.isEmpty ? '' : '''        if (servoButtonStateMode != c
 $frictionSyncCall${actionTableCode.isEmpty ? '' : '        UpdateActionTables();\n'}        switch (currentMode) {
 ${cases.join('\n')}
         }
-$frictionUpdateCall        ExpansionBoradControl(Dir_Change_Order, $directionArgs);
+$frictionUpdateCall${engineerFeedback.isEmpty ? '' : '        UpdateServoFeedback();\n'}        }
+        ExpansionBoradControl(Dir_Change_Order, $directionArgs);
         Ms_Delay(EXPANSION_FRAME_GAP_MS);
         ExpansionBoradControl(Duty_Change_Order, abs(dutyOfMotor[0]),abs(dutyOfMotor[1]),abs(dutyOfMotor[2]),abs(dutyOfMotor[3]),abs(dutyOfMotor[4]),abs(dutyOfMotor[5]),abs(dutyOfMotor[6]),abs(dutyOfMotor[7]));
         Ms_Delay(EXPANSION_FRAME_GAP_MS);
 ${mainServoUpdate('MP03', 0)}
 ${mainServoUpdate('MP74', 1)}
-${engineerFeedback.isEmpty ? '' : '        UpdateServoFeedback();'}
         RemoteStatusSend(${remoteStatusArgs.join(', ')});
         Ms_Delay(10);
     }
