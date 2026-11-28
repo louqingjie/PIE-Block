@@ -8,6 +8,14 @@ extern uint8_t Channal; //频道全局定义
 
 
 
+/* PIE-Block radio runtime API version: link-loss watchdog / stats = 2.
+   Generated code requires >= 2 at compile time so an old runtime fails
+   loudly instead of silently dropping the protection. */
+#define PIEBLOCK_RADIO_API 2
+
+/* NRF24L01_Init failure reason: 0=ok, 1=SPI/link, 2=config read-back. */
+extern uint8_t nrf_init_error;
+
 #define TX_PACKET_LENTH		32 //12
 #define RX_PACKET_LENTH   12
 #define ADR_WIDTH         5       //定义地址长度（3~5）

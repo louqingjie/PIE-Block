@@ -8,6 +8,14 @@ extern uint8_t Channal; //Ƶ��ȫ�ֶ���
 
 
 
+/* PIE-Block 板级无线运行时 API 版本：断链保护 / 链路统计 = 2。
+   生成代码在编译期要求该值 >= 2，旧运行时会在编译阶段报错，
+   而不是静默失去断链保护。 */
+#define PIEBLOCK_RADIO_API 2
+
+/* NRF24L01_Init 失败原因：0=成功，1=SPI/链路，2=配置回读不一致。 */
+extern uint8_t nrf_init_error;
+
 #define TX_PACKET_LENTH		32 //12
 #define RX_PACKET_LENTH   12
 #define ADR_WIDTH         5       //�����ַ���ȣ�3~5��

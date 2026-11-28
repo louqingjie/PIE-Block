@@ -16,6 +16,16 @@ typedef enum
 
 int RecFPS = 0;
 
+/* 射频参数与遥控器保持一致：250 kbps、0 dBm、ARD 500us、ARC 5。 */
+#define NRF_RF_SETUP_VALUE 0x27
+#define NRF_SETUP_RETR_VALUE 0x15
+
+/* 回传完成后等待 TX_DS/MAX_RT 的上限（250kbps + 5 次重发约 4 ms）。 */
+#define NRF_TX_WAIT_MS 8
+
+/* NRF24L01_Init 的失败原因：0=成功，1=SPI/链路，2=配置回读不一致。 */
+uint8_t nrf_init_error = 0;
+
 #define CHANAL 36 // Ƶ��ѡ��
 
 uint8_t TX_ADDRESS[5] = {'R', 'C', 'T', 'L', 0}; // ���͵�ַ
@@ -67,8 +77,17 @@ uint8_t RX_Buff[RX_PACKET_LENTH];
 #define RX_PW_P5 0x16    // 'RX payload width, pipe5' register address
 #define FIFO_STATUS 0x17 // 'FIFO Status Register' register address
 
+/* FIFO_STATUS 位定义（nRF24L01+ 规格书 v1.0 p.61）：
+ *   bit0 RX_EMPTY、bit1 RX_FULL、bit4 TX_EMPTY、bit5 TX_FULL、bit6 TX_REUSE。
+ * 旧代码用 0x40 判 RX_EMPTY（那是 TX_REUSE）、用 0x10 判 RX_FULL（那是
+ * TX_EMPTY），必须按手册修正。 */
+#define FIFO_RX_EMPTY 0x01
+#define FIFO_RX_FULL 0x02
+#define FIFO_TX_EMPTY 0x10
+#define FIFO_TX_FULL 0x20
+#define FIFO_TX_REUSE 0x40
+
 // ������Ҫ��״̬���
-#define TX_FULL 0x01 // TX FIFO �Ĵ�������־�� 1 Ϊ ����0Ϊ ����
 #define MAX_RT 0x10  // �ﵽ����ط������жϱ�־λ
 #define TX_DS 0x20   // ��������жϱ�־λ
 #define RX_DR 0x40   // ���յ������жϱ�־λ
@@ -92,6 +111,11 @@ volatile uint8_t nrf_mode = NOT_INIT;
 //------------------------------------------------------------------------------------------
 uint8_t NRF24L01_Init(void)
 {
+  uint8_t ok;
+
+  /* 断链保护时基：上电即启动，模块故障时也能在超时后进入安全状态。 */
+  RcLinkClockInit();
+  nrf_init_error = 0;
 
   GPIO_Init(RF2G4_CE_Port, RF2G4_CE_Pin, GPIO_OUT_PP);
   GPIO_Init(RF2G4_CSN_Port, RF2G4_CSN_Pin, GPIO_OUT_PP);
@@ -109,78 +133,98 @@ uint8_t NRF24L01_Init(void)
   RX_ADDRESS[4] = Channal;
   TX_ADDRESS[4] = Channal;
 
-  // 2401�Ĵ�������
   RF2G4_CE_LOW;
 
-  nrf_writereg(NRF_WRITE_REG + SETUP_AW, ADR_WIDTH - 2); // ���õ�ַ����Ϊ TX_ADR_WIDTH
+  nrf_writereg(NRF_WRITE_REG + SETUP_AW, ADR_WIDTH - 2);
 
-  nrf_writereg(NRF_WRITE_REG + RF_CH, Channal); // ����RFͨ��ΪCHANAL
+  nrf_writereg(NRF_WRITE_REG + RF_CH, Channal);
 
-  /*            | NRF24L01      | SI24R1        |Ci24R1
+  /*            | nRF24L01      | SI24R1        | Ci24R1
    *     1Mbps   |  0x06   0dBm  |  0x07    7dBm | 0x07  11dBm
    *     250kbps |  0x26   0dBm  |  0x27    7dBm | 0x27  11dBm
+   *
+   * nRF24L01+ 规格书 RF_SETUP：bit5=RF_DR_LOW（250kbps）、bit3=RF_DR_HIGH、
+   * bit2:1=RF_PWR（11=0dBm）、bit0=Obsolete/Don't care。bit0 在
+   * SI24R1/Ci24R1 上才是 LNA 高增益，不能按 nRF24L01+ 的 "LNA 高增益" 理解。
    */
-  nrf_writereg(NRF_WRITE_REG + RF_SETUP, 0x06); // ����TX�������
+  nrf_writereg(NRF_WRITE_REG + RF_SETUP, NRF_RF_SETUP_VALUE);
 
-  // nrf_writereg(NRF_WRITE_REG + FEATURE, 0x04);	 									//ʹ�ܶ�̬���� SI24R1 Ci24R1
+  nrf_writereg(NRF_WRITE_REG + EN_AA, 0x01);
 
-  nrf_writereg(NRF_WRITE_REG + EN_AA, 0x01); // ʹ��ͨ��0���Զ�Ӧ��
+  nrf_writereg(NRF_WRITE_REG + EN_RXADDR, 0x01);
 
-  nrf_writereg(NRF_WRITE_REG + EN_RXADDR, 0x01); // ʹ��ͨ��0�Ľ��յ�ַ
+  nrf_writebuf(NRF_WRITE_REG + RX_ADDR_P0, RX_ADDRESS, ADR_WIDTH);
 
-  // RXģʽ����
-  nrf_writebuf(NRF_WRITE_REG + RX_ADDR_P0, RX_ADDRESS, ADR_WIDTH); // дRX0�ڵ��ַ
+  nrf_writereg(NRF_WRITE_REG + RX_PW_P0, RX_PACKET_LENTH);
 
-  nrf_writereg(NRF_WRITE_REG + RX_PW_P0, RX_PACKET_LENTH); // ѡ��ͨ��0����Ч���ݿ���
+  nrf_writereg(FLUSH_RX, _NOP);
 
-  nrf_writereg(FLUSH_RX, _NOP); // ���RX FIFO�Ĵ���
+  nrf_writebuf(NRF_WRITE_REG + TX_ADDR, TX_ADDRESS, ADR_WIDTH);
 
-  // TXģʽ����
-  nrf_writebuf(NRF_WRITE_REG + TX_ADDR, TX_ADDRESS, ADR_WIDTH); // дTX�ڵ��ַ
+  nrf_writereg(NRF_WRITE_REG + SETUP_RETR, NRF_SETUP_RETR_VALUE);
 
-  nrf_writereg(NRF_WRITE_REG + SETUP_RETR, 0x05); // �����Զ��ط����ʱ��:250us; ����Զ��ط�����:10��
+  nrf_writereg(FLUSH_TX, _NOP);
 
-  nrf_writereg(FLUSH_TX, _NOP); // ���TX FIFO�Ĵ���
-
-  nrf_rx_mode(); // Ĭ�Ͻ������ģʽ
+  nrf_rx_mode();
 
   RF2G4_CE_HIGH;
 
-  return nrf_link_check();
+  ok = nrf_link_check();
+
+  /* 回读关键射频配置：SPI 能通但配置没落地（或模块被换/被改写）时判失败。 */
+  if (ok)
+  {
+    if (nrf_readreg(RF_CH) != Channal ||
+        nrf_readreg(RF_SETUP) != NRF_RF_SETUP_VALUE ||
+        nrf_readreg(SETUP_RETR) != NRF_SETUP_RETR_VALUE ||
+        nrf_readreg(EN_AA) != 0x01 ||
+        nrf_readreg(EN_RXADDR) != 0x01 ||
+        nrf_readreg(RX_PW_P0) != RX_PACKET_LENTH)
+    {
+      ok = 0;
+      nrf_init_error = 2;
+    }
+  }
+  if (!ok && nrf_init_error == 0)
+    nrf_init_error = 1;
+
+  /* 初始化期间 P2.6 可能已挂起一个下降沿：清掉，避免旧工程打开 EXTI 后误进 ISR。 */
+  (void)GPIO_EXTI_Flag_Read(GPIO_P2);
+  (void)GPIO_EXTI_Flag_Clear(GPIO_P2);
+
+  return ok;
 }
 
 // ���NRF24L01+��MCU�Ƿ���������
-// return = 0:�ɹ�,	1:ʧ��
 //---------------------------------------------------------------------------------------------------
+/*
+ * 检测 NRF24L01+ 与 MCU 的 SPI 是否连通。
+ * return = 1: 成功; 0: 失败（模块未接/SPI 无响应）。
+ * 校验会临时改写 TX_ADDR，返回前必须恢复，否则后续发送地址错误。
+ */
 uint8_t nrf_link_check(void)
 {
-#define NRF_CHECH_DATA 0x06 // ��ֵΪУ������ʱʹ�ã����޸�Ϊ����ֵ
-
+#define NRF_CHECH_DATA 0x06
   uint8_t reg;
 
   uint8_t buff[5] = {NRF_CHECH_DATA, NRF_CHECH_DATA, NRF_CHECH_DATA, NRF_CHECH_DATA, NRF_CHECH_DATA};
   uint8_t i;
-  // д��У������
+
   reg = NRF_WRITE_REG + TX_ADDR;
-
   RF2G4_CE_LOW;
-
-  nrf_writebuf(reg, buff, 5); // д��У������
-
-  // ��ȡУ������
+  nrf_writebuf(reg, buff, 5);
   reg = TX_ADDR;
-  nrf_readbuf(reg, buff, 5); // ��ȡУ������
-
+  nrf_readbuf(reg, buff, 5);
+  /* 恢复真实发送地址 */
+  nrf_writebuf(NRF_WRITE_REG + TX_ADDR, TX_ADDRESS, ADR_WIDTH);
   RF2G4_CE_HIGH;
-  /*�Ƚ�*/
+
   for (i = 0; i < 5; i++)
   {
     if (buff[i] != NRF_CHECH_DATA)
-    {
-      return 0; // MCU��NRF����������
-    }
+      return 0;
   }
-  return 1; // MCU��NRF�ɹ�����
+  return 1;
 }
 
 /*!
@@ -206,6 +250,21 @@ void nrf_rx_mode(void)
 
   RF2G4_CE_HIGH;
 
+  nrf_mode = RX_MODE;
+}
+
+/*!
+ *  @brief      轻量切回 RX：只写 CONFIG，不清 RX FIFO。
+ *
+ *  TX 窗口内到达的控制包已经进入 RX FIFO，如果在这里 FLUSH_RX 会直接丢掉，
+ *  这是回传期间丢包的隐藏来源之一（旧 nrf_rx_mode() 每次都清 FIFO）。
+ *  @since      v5.1
+ */
+static void nrf_enter_rx(void)
+{
+  RF2G4_CE_LOW;
+  nrf_writereg(NRF_WRITE_REG + CONFIG, 0x0B | (IS_CRC16 << 2));
+  RF2G4_CE_HIGH;
   nrf_mode = RX_MODE;
 }
 
@@ -252,45 +311,98 @@ void nrf_tx_packet(uint8_t *txbuf, uint8_t len)
   RF2G4_CE_HIGH;
 }
 
+/* 等待回传完成，最多 timeout_ms；无论成功/超时都切回 RX。
+ * 固定延时 3ms 在重发次数跑满时不够：那时还停在 TX，控制包窗口被拉长。 */
+static uint8_t nrf_wait_tx_done(uint8_t timeout_ms)
+{
+  uint8_t i;
+  uint8_t state;
+
+  for (i = 0; i < timeout_ms; i++)
+  {
+    state = nrf_readreg(STATUS);
+    if (state & (TX_DS | MAX_RT))
+    {
+      nrf_writereg(NRF_WRITE_REG + STATUS, state);
+      if (state & TX_DS)
+        rc_link_stats.tx_ds++;
+      if (state & MAX_RT)
+      {
+        rc_link_stats.max_rt++;
+        nrf_writereg(FLUSH_TX, _NOP);
+      }
+      nrf_enter_rx();
+      return 1;
+    }
+    Ms_Delay(1);
+  }
+
+  nrf_writereg(FLUSH_TX, _NOP);
+  nrf_enter_rx();
+  return 0;
+}
+
 /*
- * Poll NRF. The generated main loop calls this only once per ~20ms (P2.6 EXTI
- * is disabled), so drain the whole 3-deep RX FIFO here. RX_DR is only an
- * interrupt flag: after it is cleared, payloads already in the FIFO do not
- * re-assert it. Use FIFO_STATUS.RX_EMPTY (bit6) to know when to stop.
+ * 轮询 NRF 接收。生成代码的主循环每圈调用一次（P2.6 EXTI 已关），这里按
+ * FIFO_STATUS 把 3 级 RX FIFO 一次排空。
+ *
+ * RX_DR 只是中断标志：清掉之后 FIFO 里已有的包不会再置位，因此不能只用
+ * RX_DR 判断是否要读；排空条件必须看 FIFO_STATUS.RX_EMPTY。该位在
+ * nRF24L01+ 手册（p.61）是 bit0，旧代码误写成 bit6（TX_REUSE），导致每次
+ * 固定读 3 次空 FIFO 并把未定义数据喂给 Rc_unpack_data()。
  */
 void nrf_handler(void)
 {
   uint8_t state;
+  uint8_t fifo;
   uint8_t round;
+  uint8_t drained = 0;
+
+  RcLinkService();
 
   state = nrf_readreg(STATUS);
+  fifo = nrf_readreg(FIFO_STATUS);
+
+  /* SPI 无响应时两个寄存器都读为 0xFF：模块未接/掉线，直接跳过。 */
+  if (state == 0xFF && fifo == 0xFF)
+    return;
+
+  /* 回写 STATUS 清掉本次观察到的 RX_DR/TX_DS/MAX_RT。 */
   nrf_writereg(NRF_WRITE_REG + STATUS, state);
 
-  if (state & RX_DR)
+  if (fifo & FIFO_RX_FULL)
+    rc_link_stats.rx_full++;
+
+  if (!(fifo & FIFO_RX_EMPTY))
   {
     for (round = 0; round < 3; round++)
     {
       RF2G4_CE_LOW;
       nrf_readbuf(RD_RX_PLOAD, RX_Buff, RX_PACKET_LENTH);
-      Rc_unpack_data(RX_Buff);
+      (void)Rc_unpack_data(RX_Buff);
       RF2G4_CE_HIGH;
-      if (nrf_readreg(FIFO_STATUS) & 0x40) /* RX_EMPTY */
+      drained++;
+      if (nrf_readreg(FIFO_STATUS) & FIFO_RX_EMPTY)
         break;
     }
   }
+  if (drained == 3)
+    rc_link_stats.rx_full++;
 
   if (state & TX_DS)
   {
+    rc_link_stats.tx_ds++;
     nrf_writereg(FLUSH_TX, _NOP);
     if (nrf_mode != RX_MODE)
-      nrf_rx_mode();
+      nrf_enter_rx();
   }
 
   if (state & MAX_RT)
   {
+    rc_link_stats.max_rt++;
     nrf_writereg(FLUSH_TX, _NOP);
     if (nrf_mode != RX_MODE)
-      nrf_rx_mode();
+      nrf_enter_rx();
   }
 }
 
@@ -301,6 +413,9 @@ void RemoteStatusSend(int v0, int v1, int v2, int v3, int v4,
 {
   static uint8_t divider = 4;
   uint8_t payload[20];
+
+  /* 即使本次不发回传也要采样链路时基。 */
+  RcLinkService();
 
   if (++divider < 5)
     return;
@@ -330,7 +445,8 @@ void RemoteStatusSend(int v0, int v1, int v2, int v3, int v4,
   payload[19] = (uint8_t)(((uint16_t)v9 >> 8) & 0xFF);
 
   nrf_tx_packet(payload, 20);
-  Ms_Delay(3);
+  /* 有界等待 TX_DS/MAX_RT 后立即回 RX；固定 3ms 在重发 5 次时不够。 */
+  (void)nrf_wait_tx_done(NRF_TX_WAIT_MS);
   nrf_handler();
 }
 

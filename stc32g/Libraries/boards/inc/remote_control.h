@@ -139,4 +139,40 @@ void ShowLineClear(uint8_t row, uint8_t Size);
 uint8_t Rc_unpack_data(uint8_t* data_t); //Э�������
 SendPack_t* get_sendpack_point(void);
 
+/*
+ * 链路失效保护与接收质量统计（见 remote_control.c）。
+ *
+ * 时基使用 Timer0 轮询（不启用定时器中断）：SDCC 的 ISR 入口不保存 DPXL，
+ * 1 ms 中断里访问 XDATA 会破坏主循环正在进行的 MOVC/@DPX 访问。轮询点
+ * 放在 nrf_handler()/RemoteStatusSend() 与生成代码的阻塞收包助手里，保证
+ * 相邻采样间隔远小于 Timer0 16-bit 溢出周期（约 23.7 ms）。
+ */
+#define RC_LINK_TIMEOUT_MS 150
+
+typedef struct
+{
+  uint16_t valid;          /* 校验通过并解包的控制帧 */
+  uint16_t header_error;   /* 帧头错误 */
+  uint16_t checksum_error; /* 校验和错误 */
+  uint8_t rx_full;         /* RX FIFO 满或一次读满 3 包 */
+  uint8_t max_rt;          /* 车体回传重发耗尽 */
+  uint8_t tx_ds;           /* 车体回传发送成功 */
+  uint8_t timeouts;        /* 断链超时次数 */
+} RC_LinkStats_t;
+
+extern RC_LinkStats_t rc_link_stats;
+
+/* 启动 1 ms 轮询时基；由 NRF24L01_Init() 调用，可重复调用。 */
+void RcLinkClockInit(void);
+
+/* 采样时基并检查断链；由 nrf_handler()/RemoteStatusSend() 调用。 */
+void RcLinkService(void);
+
+/* 距最近一次有效控制帧的毫秒数（16 位回绕）。 */
+uint16_t RcLinkAgeMs(void);
+
+/* 1 = 当前处于断链安全状态（rc_ctrl 已被清零并置 KEY_RCDISCONNECTED）。 */
+uint8_t RcLinkIsLost(void);
+
+
 #endif      //__REMOTE_CONTROL_H_     

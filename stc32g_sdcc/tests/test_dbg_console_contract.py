@@ -158,6 +158,14 @@ class DbgConsoleContractTests(unittest.TestCase):
             self.assertIn(token, self.main)
         self.assertIn("Dbg_AgeMs() > DBG_LINK_TIMEOUT_MS", self.main)
 
+
+    def test_fifo_status_bits_match_datasheet(self) -> None:
+        """FIFO_STATUS 位定义必须按 nRF24L01+ 手册 p.61：bit0 RX_EMPTY、bit1 RX_FULL。"""
+        self.assertIn("#define NRF_RX_EMPTY 0x01", self.nrf)
+        self.assertIn("#define NRF_RX_FULL 0x02", self.nrf)
+        self.assertNotIn("#define NRF_RX_EMPTY 0x40", self.nrf)
+        self.assertNotIn("#define NRF_RX_FULL 0x10", self.nrf)
+
     def test_mecanum_mapping_matches_generated_baseline(self) -> None:
         # ROCKER_OFFSET_t: 0=LY, 1=LX, 2=RY, 3=RX；生成代码为 vx=-LY, vy=-LX, turn=-RX。
         for token in (

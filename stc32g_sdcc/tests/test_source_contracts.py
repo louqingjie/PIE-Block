@@ -142,12 +142,102 @@ class FirmwareSafetyContractTests(unittest.TestCase):
                 str(path),
             )
             self.assertIn("nrf_tx_packet(payload, 20);", source, str(path))
-            self.assertIn("Ms_Delay(3);\n  nrf_handler();", source, str(path))
+            # 回传后不能固定等 3ms：有界等待 TX_DS/MAX_RT 后立即切回 RX。
+            self.assertIn("static uint8_t nrf_wait_tx_done(uint8_t timeout_ms)", source, str(path))
+            self.assertIn("#define NRF_TX_WAIT_MS 8", source, str(path))
+            self.assertIn(
+                "(void)nrf_wait_tx_done(NRF_TX_WAIT_MS);\n  nrf_handler();",
+                source,
+                str(path),
+            )
+            self.assertIn("RcLinkService();", source, str(path))
             # 落帧不能写成「数组 + 变址循环」：SDCC 对这类写法取字节有误。
             self.assertIsNone(
                 re.search(r"payload\[[A-Za-z_]\w*\]\s*=", source),
                 f"{path}: payload 必须逐元素展开赋值",
             )
+
+
+    def test_nrf_fifo_and_rx_mode_contract(self) -> None:
+        """FIFO_STATUS 位按手册、排空看 RX_EMPTY、切回 RX 不清 FIFO。"""
+        for path in (
+            ROOT / "libraries" / "boards" / "src" / "nrf24l01.c",
+            ROOT.parent / "stc32g" / "Libraries" / "boards" / "src" / "nrf24l01.c",
+        ):
+            source = path.read_text(encoding="utf-8")
+            self.assertIn("#define FIFO_RX_EMPTY 0x01", source, str(path))
+            self.assertIn("#define FIFO_RX_FULL 0x02", source, str(path))
+            self.assertIn("#define FIFO_TX_EMPTY 0x10", source, str(path))
+            self.assertIn("#define FIFO_TX_FULL 0x20", source, str(path))
+            self.assertIn("#define FIFO_TX_REUSE 0x40", source, str(path))
+
+            handler_start = source.index("void nrf_handler(void)")
+            handler_end = source.index("\n}", handler_start)
+            handler = source[handler_start:handler_end]
+            self.assertIn("if (!(fifo & FIFO_RX_EMPTY))", handler, str(path))
+            self.assertIn("FIFO_STATUS) & FIFO_RX_EMPTY", handler, str(path))
+            self.assertNotIn("& 0x40", handler, str(path))
+
+            rx_start = source.index("static void nrf_enter_rx(void)")
+            rx_end = source.index("void nrf_tx_mode(void)", rx_start)
+            self.assertNotIn("FLUSH_RX", source[rx_start:rx_end], str(path))
+
+    def test_nrf_init_readback_and_exti_flag_contract(self) -> None:
+        """关键射频寄存器回读 + 清 P2.6 EXTI 挂起标志。"""
+        for path in (
+            ROOT / "libraries" / "boards" / "src" / "nrf24l01.c",
+            ROOT.parent / "stc32g" / "Libraries" / "boards" / "src" / "nrf24l01.c",
+        ):
+            source = path.read_text(encoding="utf-8")
+            self.assertIn("nrf_readreg(RF_CH) != Channal", source, str(path))
+            self.assertIn("nrf_readreg(RF_SETUP) != NRF_RF_SETUP_VALUE", source, str(path))
+            self.assertIn("nrf_readreg(SETUP_RETR) != NRF_SETUP_RETR_VALUE", source, str(path))
+            self.assertIn("nrf_readreg(RX_PW_P0) != RX_PACKET_LENTH", source, str(path))
+            self.assertIn("(void)GPIO_EXTI_Flag_Read(GPIO_P2);", source, str(path))
+            self.assertIn("(void)GPIO_EXTI_Flag_Clear(GPIO_P2);", source, str(path))
+            # nrf_link_check 临时改写 TX_ADDR 后必须恢复
+            check_start = source.index("uint8_t nrf_link_check(void)")
+            check_end = source.index("\n}", check_start)
+            self.assertIn(
+                "nrf_writebuf(NRF_WRITE_REG + TX_ADDR, TX_ADDRESS, ADR_WIDTH);",
+                source[check_start:check_end],
+                str(path),
+            )
+
+    def test_link_watchdog_contract(self) -> None:
+        """断链保护：Timer0 轮询、150ms 超时、无 TIM4 旧协议 ISR。"""
+        trees = [
+            (ROOT / "libraries" / "boards", ROOT / "libraries" / "boards" / "src", ROOT / "libraries" / "boards" / "inc"),
+            (
+                ROOT.parent / "stc32g" / "Libraries" / "boards",
+                ROOT.parent / "stc32g" / "Libraries" / "boards" / "src",
+                ROOT.parent / "stc32g" / "Libraries" / "boards" / "inc",
+            ),
+        ]
+        for _, src, inc in trees:
+            rc = (src / "remote_control.c").read_text(encoding="utf-8")
+            header = (inc / "remote_control.h").read_text(encoding="utf-8")
+            self.assertIn("#define RC_LINK_TIMEOUT_MS 150", header)
+            self.assertIn("typedef struct", header)
+            self.assertIn("extern RC_LinkStats_t rc_link_stats;", header)
+            self.assertIn("void RcLinkClockInit(void);", header)
+            self.assertIn("void RcLinkService(void);", header)
+            self.assertIn("void RcLinkClockInit(void)\n{", rc)
+            self.assertIn("void RcLinkService(void)\n{", rc)
+            self.assertIn("TR0 = 1;", rc)
+            self.assertIn("ET0 = 0;", rc)  # 纯轮询，不开放 Timer0 中断
+            self.assertIn("rc_link_last_rx_ms = rc_link_ms;", rc)
+            self.assertIn("memset(&rc_ctrl, 0, sizeof(rc_ctrl));", rc)
+            self.assertIn("KEY_RCDISCONNECTED", rc)
+            self.assertNotIn("TM4_Isr", rc)
+            self.assertNotIn("RCPacket_Send();", rc)
+
+        # API 版本宏：SDCC 头为 UTF-8，Keil 头是 GBK，按字节比较。
+        for header in (
+            ROOT / "libraries" / "boards" / "inc" / "nrf24l01.h",
+            ROOT.parent / "stc32g" / "Libraries" / "boards" / "inc" / "nrf24l01.h",
+        ):
+            self.assertIn(b"#define PIEBLOCK_RADIO_API 2", header.read_bytes(), str(header))
 
     def test_nrf_tx_mode_settle_delay_shortened(self) -> None:
         """状态回传每 5 圈进一次 TX，切模式等待从 25ms 缩到 1ms 以保持主循环节奏。"""

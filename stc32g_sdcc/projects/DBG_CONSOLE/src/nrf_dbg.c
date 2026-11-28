@@ -19,8 +19,11 @@
 #define NRF_RX_DR 0x40
 #define NRF_TX_DS 0x20
 #define NRF_MAX_RT 0x10
-#define NRF_RX_FULL 0x10
-#define NRF_RX_EMPTY 0x40
+/* FIFO_STATUS 位（nRF24L01+ 规格书 v1.0 p.61）：
+ * bit0 RX_EMPTY、bit1 RX_FULL；旧实现误写成 bit6/bit4，导致 drain 与
+ * FIFO_FULL 事件长期失真。 */
+#define NRF_RX_FULL 0x02
+#define NRF_RX_EMPTY 0x01
 
 /* 引脚：CE=P3.4，CSN=P2.2，IRQ=P2.6，SPI2: SCK=P2.5/MOSI=P2.3/MISO=P2.4 */
 #define NRF_CE_PORT GPIO_P3

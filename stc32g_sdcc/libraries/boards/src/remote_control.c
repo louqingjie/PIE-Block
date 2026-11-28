@@ -12,20 +12,126 @@
 RC_ctrl_t rc_ctrl;   // ң����ʵ�廯
 SendPack_t sendpack; // ��������ʵ�廯
 
-// ң������ʼ��
+/* =====================================================
+ * 链路失效保护：Timer0 1 ms 轮询时基 + 接收质量计数
+ *
+ * 设计要点：
+ * - 不使用定时器中断：SDCC 的 ISR 入口不保存 DPXL，1 ms 中断里访问 XDATA
+ *   会破坏主循环正在进行的代码/XDATA 访问（与 MusicClock 同一结论）。
+ * - Timer0 12T 自由计数，主上下文轮询差值；采样点放在 nrf_handler()、
+ *   RemoteStatusSend() 和生成代码的阻塞收包助手里，保证相邻采样间隔远小于
+ *   16-bit 溢出周期（约 23.7 ms）。
+ * - 有效帧刷新 last_rx；age 超过 RC_LINK_TIMEOUT_MS 时清零 rc_ctrl 并置
+ *   KEY_RCDISCONNECTED，生成代码据此进入安全状态；收到新帧自动恢复。
+ * ===================================================================== */
+#define RC_LINK_TICKS_PER_MS (FOSC / 12000UL)
+
+RC_LinkStats_t rc_link_stats;
+
+static uint8_t rc_link_clock_started;
+static uint8_t rc_link_lost;
+static uint16_t rc_link_ms;
+static uint16_t rc_link_last_rx_ms;
+static uint16_t rc_link_timer_last;
+static uint32_t rc_link_timer_acc;
+
+static uint16_t RcLinkReadTimer(void)
+{
+  uint8_t hi;
+  uint8_t lo;
+  uint8_t hi_again;
+
+  for (;;)
+  {
+    hi = TH0;
+    lo = TL0;
+    hi_again = TH0;
+    if (hi == hi_again)
+      return (uint16_t)(((uint16_t)hi_again << 8) | (uint16_t)lo);
+  }
+}
+
+void RcLinkClockInit(void)
+{
+  if (rc_link_clock_started)
+    return;
+
+  TR0 = 0;
+  TF0 = 0;
+  ET0 = 0;                    /* 纯轮询，不开放 Timer0 中断 */
+  AUXR &= (uint8_t)~0x80;      /* Timer0 固定 12T，与 RC_LINK_TICKS_PER_MS 一致 */
+  TMOD = (uint8_t)((TMOD & 0xF0u) | 0x01u); /* Timer0 mode 1：16 位自由计数 */
+  TH0 = 0;
+  TL0 = 0;
+  TR0 = 1;
+
+  rc_link_ms = 0;
+  rc_link_last_rx_ms = 0;
+  rc_link_lost = 0;
+  rc_link_timer_acc = 0;
+  rc_link_timer_last = RcLinkReadTimer();
+  rc_link_clock_started = 1;
+}
+
+static void RcLinkPoll(void)
+{
+  uint16_t now;
+  uint16_t delta;
+
+  if (!rc_link_clock_started)
+    return;
+
+  now = RcLinkReadTimer();
+  delta = (uint16_t)(now - rc_link_timer_last);
+  rc_link_timer_last = now;
+  rc_link_timer_acc += (uint32_t)delta;
+  while (rc_link_timer_acc >= RC_LINK_TICKS_PER_MS)
+  {
+    rc_link_timer_acc -= RC_LINK_TICKS_PER_MS;
+    rc_link_ms++;
+  }
+}
+
+void RcLinkService(void)
+{
+  if (!rc_link_clock_started)
+    return;
+
+  RcLinkPoll();
+  if (!rc_link_lost &&
+      (uint16_t)(rc_link_ms - rc_link_last_rx_ms) > RC_LINK_TIMEOUT_MS)
+  {
+    rc_link_lost = 1;
+    rc_link_stats.timeouts++;
+    /* 不再沿用旧值：清零输入并置断链标志，生成代码据此输出安全值。 */
+    memset(&rc_ctrl, 0, sizeof(rc_ctrl));
+    rc_ctrl.key.value |= (uint16_t)(1u << KEY_RCDISCONNECTED);
+  }
+}
+
+uint16_t RcLinkAgeMs(void)
+{
+  return (uint16_t)(rc_link_ms - rc_link_last_rx_ms);
+}
+
+uint8_t RcLinkIsLost(void)
+{
+  return rc_link_lost;
+}
+
 void remote_control_init(void)
 {
-  // Ci24R1��ʼ��
-  while (!NRF24L01_Init())
-    ;
-  // NRF24L01_Init();
+  uint8_t retry;
+
+  /* NRF 初始化：20 次有界重试。模块缺失时不永久卡死，交给断链保护进入安全状态。 */
+  for (retry = 0; retry < 20; retry++)
+  {
+    if (NRF24L01_Init())
+      break;
+    Ms_Delay(10);
+  }
 
   memset(&sendpack, 0, sizeof(SendPack_t));
-
-  // ��ʼ�����������ж�
-  // PIT4�ж����� 1ms�ж�
-
-  // PIT_Timer_Ms(TIM4, 1);
 
   Ms_Delay(200);
 }
@@ -36,18 +142,28 @@ uint8_t Rc_unpack_data(uint8_t *data_t)
   int i;
   uint8_t check = 0;
   if (data_t[0] != 11)
-    return 0; // ֡ͷУ��ʧ��
+  {
+    rc_link_stats.header_error++;
+    return 0; /* 帧头校验失败 */
+  }
   for (i = 1; i < 11; i++)
     check += data_t[i];
   if (check != data_t[11])
-    return 0; // ֡βУ��ʧ��
+  {
+    rc_link_stats.checksum_error++;
+    return 0; /* 帧尾校验失败 */
+  }
 
-  // ���
   rc_ctrl.rocker.value[0] = (int16_t)(data_t[1] | data_t[2] << 8);
   rc_ctrl.rocker.value[1] = (int16_t)(data_t[3] | data_t[4] << 8);
   rc_ctrl.rocker.value[2] = (int16_t)(data_t[5] | data_t[6] << 8);
   rc_ctrl.rocker.value[3] = (int16_t)(data_t[7] | data_t[8] << 8);
   rc_ctrl.key.value = (uint16_t)(data_t[9] | data_t[10] << 8);
+
+  /* 收到有效帧：刷新链路年龄并退出安全状态。 */
+  rc_link_last_rx_ms = rc_link_ms;
+  rc_link_lost = 0;
+  rc_link_stats.valid++;
   return 1;
 }
 
@@ -130,26 +246,6 @@ int16_t RcRockerValueRead(ROCKER_OFFSET_t offset)
   return rc_ctrl.rocker.value[offset];
 }
 
-// �жϻص�����
-static uint32_t timeline = 0; // ʱ����
-uint8_t Clear_Time = 0;       // ң�����Ͽ��������
-float Offset = 0;             // �첽����ƫ����
-void TM4_Isr(void) __interrupt (20)
-{
-  PIT_Timer_Clear(TIM4);
-  timeline++;
-  if ((timeline % 20) == 0) // 20ms ����һ��
-  {
-    RCPacket_Send();
-  }
-  Clear_Time++;
-  if (Clear_Time >= 50) // 50msδ���յ�ң�������������������Ϣ
-  {
-    Clear_Time = 0;
-    memset(&rc_ctrl, 0, sizeof(rc_ctrl));
-    rc_ctrl.key.value |= 1 << KEY_RCDISCONNECTED;
-  }
-}
 // ��������ָ��
 SendPack_t *get_sendpack_point(void)
 {
